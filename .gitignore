@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Build
+dist/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Vercel (migrated to Cloudflare)
+.vercel/
+
+# Environment
+.env
+.env.local
+.env.*.local

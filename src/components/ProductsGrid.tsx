@@ -1,10 +1,23 @@
 import { useFadeIn, useStaggerChildren } from '@/hooks/useScrollAnimation';
-import { products } from '@/data/content';
+import { products as fallbackProducts } from '@/data/content';
+import { useProdutos } from '@/hooks/useApi';
 import { ArrowRight } from 'lucide-react';
 
 export default function ProductsGrid() {
   const titleRef = useFadeIn<HTMLDivElement>('up');
   const gridRef = useStaggerChildren<HTMLDivElement>(0.15);
+  const { produtos } = useProdutos();
+
+  // Use API data if available, fallback to hardcoded
+  const products = produtos.length > 0
+    ? produtos.slice(0, 6).map((p) => ({
+        id: p.slug,
+        name: p.titulo_site || p.nome,
+        specs: p.categorias_site || [],
+        image: p.imagem_principal,
+        description: p.descricao_curta || '',
+      }))
+    : fallbackProducts.map(p => ({ ...p, id: String(p.id), image: null as string | null, description: '' }));
 
   return (
     <section id="produtos" className="py-16 md:py-24 bg-offwhite">
@@ -35,12 +48,17 @@ export default function ProductsGrid() {
               key={product.id}
               className="group bg-white border border-black/5 overflow-hidden hover:shadow-[0_8px_30px_rgba(0,0,0,0.12)] transition-all duration-300"
             >
-              {/* Image placeholder */}
+              {/* Image */}
               <div className="aspect-[16/10] bg-secondary relative overflow-hidden">
+                {product.image ? (
+                  <img src={product.image} alt={product.name} className="absolute inset-0 w-full h-full object-cover" />
+                ) : null}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-white/20 font-heading text-6xl font-bold uppercase select-none">G</span>
-                </div>
+                {!product.image && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-white/20 font-heading text-6xl font-bold uppercase select-none">G</span>
+                  </div>
+                )}
               </div>
 
               {/* Content */}
@@ -49,15 +67,19 @@ export default function ProductsGrid() {
                   {product.name}
                 </h3>
 
-                {/* Spec list */}
-                <ul className="space-y-1.5 mb-6">
-                  {product.specs.map((spec) => (
-                    <li key={spec} className="flex items-center gap-2 text-gray-text text-sm">
-                      <div className="w-1.5 h-1.5 bg-accent shrink-0" />
-                      {spec}
-                    </li>
-                  ))}
-                </ul>
+                {/* Spec list or description */}
+                {product.specs.length > 0 ? (
+                  <ul className="space-y-1.5 mb-6">
+                    {product.specs.slice(0, 4).map((spec) => (
+                      <li key={spec} className="flex items-center gap-2 text-gray-text text-sm">
+                        <div className="w-1.5 h-1.5 bg-accent shrink-0" />
+                        {spec}
+                      </li>
+                    ))}
+                  </ul>
+                ) : product.description ? (
+                  <p className="text-gray-text text-sm mb-6 line-clamp-3">{product.description}</p>
+                ) : null}
 
                 {/* Two buttons */}
                 <div className="flex gap-3">
@@ -65,13 +87,13 @@ export default function ProductsGrid() {
                     href="#"
                     className="flex-1 text-center bg-accent hover:bg-accent-hover text-primary font-bold text-sm py-3 uppercase tracking-wider transition-colors"
                   >
-                    {product.cta1}
+                    Ver Detalhes
                   </a>
                   <a
                     href="#contato"
                     className="flex-1 text-center border-2 border-primary text-primary hover:bg-primary hover:text-white font-bold text-sm py-3 uppercase tracking-wider transition-colors"
                   >
-                    {product.cta2}
+                    Solicitar Orcamento
                   </a>
                 </div>
               </div>

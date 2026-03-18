@@ -1,9 +1,25 @@
 import { useFadeIn } from '@/hooks/useScrollAnimation';
-import { newsItems } from '@/data/content';
+import { newsItems as fallbackNews } from '@/data/content';
+import { usePosts } from '@/hooks/useApi';
 import { ArrowRight } from 'lucide-react';
 
 export default function NewsSection() {
   const titleRef = useFadeIn<HTMLDivElement>('up');
+  const { posts } = usePosts();
+
+  // Use API data if available, fallback to hardcoded
+  const newsItems = posts.length > 0
+    ? posts.map((p, i) => ({
+        id: i + 1,
+        title: p.titulo,
+        excerpt: p.resumo || '',
+        date: p.publicado_em || '',
+        image: p.imagem_url,
+        category: p.categoria_nome || 'Geral',
+        featured: p.destaque,
+      }))
+    : fallbackNews;
+
   const featured = newsItems.find((n) => n.featured) ?? newsItems[0];
   const latest = newsItems.filter((n) => n.id !== featured.id).slice(0, 3);
 

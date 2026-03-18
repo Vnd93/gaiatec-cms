@@ -3,7 +3,8 @@ import { Swiper, SwiperSlide } from 'swiper/react';
 import { Autoplay, Navigation } from 'swiper/modules';
 import 'swiper/css';
 import 'swiper/css/navigation';
-import { sectors } from '@/data/content';
+import { sectors as fallbackSectors } from '@/data/content';
+import { useSetores } from '@/hooks/useApi';
 import { useFadeIn } from '@/hooks/useScrollAnimation';
 import { ArrowRight, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Swiper as SwiperType } from 'swiper';
@@ -11,6 +12,17 @@ import type { Swiper as SwiperType } from 'swiper';
 export default function SectorsCarousel() {
   const titleRef = useFadeIn<HTMLDivElement>('up');
   const [activeIndex, setActiveIndex] = useState(0);
+  const { setores } = useSetores();
+
+  // Use API data if available, fallback to hardcoded
+  const sectors = setores.length > 0
+    ? setores.map((s, i) => ({
+        id: i + 1,
+        name: s.titulo,
+        description: s.descricao_curta || '',
+        bgImage: s.imagem_url,
+      }))
+    : fallbackSectors;
 
   const handleSlideChange = useCallback((swiper: SwiperType) => {
     setActiveIndex(swiper.realIndex);

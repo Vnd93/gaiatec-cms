@@ -1,10 +1,23 @@
 import { useFadeIn, useStaggerChildren } from '@/hooks/useScrollAnimation';
 import { solutions } from '@/data/content';
+import { useServicos } from '@/hooks/useApi';
 import { ArrowRight } from 'lucide-react';
 
 export default function InnovativeSolutions() {
   const titleRef = useFadeIn<HTMLDivElement>('up');
   const gridRef = useStaggerChildren<HTMLDivElement>(0.15);
+  const { servicos } = useServicos();
+
+  // Use API data if available, fallback to hardcoded
+  const items = servicos.length > 0
+    ? servicos.filter(s => s.destaque).slice(0, 3).map(s => ({
+        id: s.slug,
+        title: s.titulo,
+        description: s.descricao_curta || '',
+        image: s.imagem_url,
+        href: '#',
+      }))
+    : solutions.map(s => ({ ...s, id: String(s.id), image: s.image }));
 
   return (
     <section id="solucoes" className="py-16 md:py-24 bg-offwhite">
@@ -21,17 +34,22 @@ export default function InnovativeSolutions() {
 
         {/* 3 Image Cards */}
         <div ref={gridRef} className="grid md:grid-cols-3 gap-6">
-          {solutions.map((sol) => (
+          {items.map((sol) => (
             <a
               key={sol.id}
               href={sol.href}
               className="group block relative overflow-hidden bg-secondary aspect-[3/4] md:aspect-[3/4]"
             >
-              {/* Background placeholder */}
+              {/* Background image or placeholder */}
+              {sol.image ? (
+                <img src={sol.image} alt={sol.title} className="absolute inset-0 w-full h-full object-cover" />
+              ) : null}
               <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent" />
-              <div className="absolute inset-0 flex items-center justify-center opacity-20">
-                <span className="font-heading text-8xl font-bold text-white select-none">{sol.id}</span>
-              </div>
+              {!sol.image && (
+                <div className="absolute inset-0 flex items-center justify-center opacity-20">
+                  <span className="font-heading text-8xl font-bold text-white select-none">G</span>
+                </div>
+              )}
 
               {/* Hover overlay */}
               <div className="absolute inset-0 bg-accent/0 group-hover:bg-accent/10 transition-colors duration-300" />

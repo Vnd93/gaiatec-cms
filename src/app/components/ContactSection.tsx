@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Phone, MessageSquare, MapPin, ChevronRight } from "lucide-react";
 import { AnimateOnScroll } from "./useScrollAnimation";
-import { useConteudo } from "../hooks/useSiteData";
+import { useContactInfo } from "../hooks/useSiteData";
 
 const FALLBACK_CTAS = [
   { icon: Phone, title: "Telefone Comercial", description: "(11) 2207-1933 · Fax: (11) 2207-1986", href: "tel:+551122071933" },
@@ -12,16 +12,31 @@ const FALLBACK_CTAS = [
 const enquiryTypes = ["Orçamento", "Suporte Técnico", "Calibração", "Instrumentação", "Automação", "Proteção Catódica", "Outros"];
 
 export function ContactSection() {
-  const { data: contato } = useConteudo("contato");
+  const { contact } = useContactInfo();
   const [formData, setFormData] = useState({
     firstName: "", lastName: "", email: "", phone: "", company: "", enquiryType: "", message: "", consent: false,
   });
 
-  const contactCtas = (contato["contato.telefone"])
+  const contactCtas = contact.telefone
     ? [
-        { icon: Phone, title: "Telefone Comercial", description: `${contato["contato.telefone"]} · Fax: ${contato["contato.fax"] || "(11) 2207-1986"}`, href: `tel:+55${(contato["contato.telefone"] || "").replace(/\D/g, "")}` },
-        { icon: MessageSquare, title: "WhatsApp", description: `${contato["contato.whatsapp"]} · ${contato["contato.whatsapp_horario"] || "Seg. a Sex., 8h às 18h"}`, href: `https://wa.me/55${(contato["contato.whatsapp"] || "").replace(/\D/g, "")}` },
-        { icon: MapPin, title: "Localização", description: `${contato["contato.endereco"]} — ${contato["contato.bairro_cidade"] || ""}`, href: "#" },
+        {
+          icon: Phone,
+          title: "Telefone Comercial",
+          description: `${contact.telefone}${contact.fax ? ` · Fax: ${contact.fax}` : ""}`,
+          href: `tel:+55${contact.telefone.replace(/\D/g, "")}`,
+        },
+        {
+          icon: MessageSquare,
+          title: "WhatsApp",
+          description: `${contact.whatsapp}${contact.whatsapp_horario ? ` · ${contact.whatsapp_horario}` : ""}`,
+          href: `https://wa.me/55${(contact.whatsapp || "").replace(/\D/g, "")}`,
+        },
+        {
+          icon: MapPin,
+          title: "Localização",
+          description: `${contact.endereco}${contact.bairro_cidade ? ` — ${contact.bairro_cidade}` : ""}`,
+          href: "#",
+        },
       ]
     : FALLBACK_CTAS;
 

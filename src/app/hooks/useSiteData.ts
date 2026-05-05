@@ -119,15 +119,40 @@ function useCachedFetch<T>(
 // Hooks
 // ---------------------------------------------------------------------------
 
-/** Fetch hero slides from conteudo_site grupo "home.hero" */
+/**
+ * Fetch hero slides for the home page.
+ * Prefers the new CMS blocks (`site_blocos` with type `hero_slides`); falls
+ * back to the legacy key/value `home.hero.slide_N.*` shape if the page has
+ * no hero block (so the site never goes blank during rollout).
+ */
 export function useHeroSlides(): { slides: HeroSlide[]; loading: boolean } {
   const FIELDS = ['label', 'titulo', 'descricao', 'cta_texto', 'cta_link', 'imagem'] as const
 
   const { data, loading } = useCachedFetch<HeroSlide[]>(
     'heroSlides',
     async () => {
+      // ─── 1) Try new block model ──────────────────────────────────────
+      try {
+        const home = await fetchPagina('home')
+        const heroBlock = home.blocos.find((b) => b.tipo === 'hero_slides')
+        const blockSlides = (heroBlock?.dados as { slides?: Array<Record<string, string>> } | undefined)?.slides
+        if (Array.isArray(blockSlides) && blockSlides.length > 0) {
+          return blockSlides.map((s) => ({
+            label: s.label ?? '',
+            titulo: s.titulo ?? '',
+            descricao: s.descricao ?? '',
+            cta_texto: s.cta_texto ?? '',
+            cta_link: s.cta_link ?? '',
+            // The CMS field is `imagem_url`; older entries also used `imagem`.
+            imagem: s.imagem_url ?? s.imagem ?? '',
+          }))
+        }
+      } catch {
+        // Block fetch failed — fall through to legacy.
+      }
+
+      // ─── 2) Legacy fallback (key/value flat) ────────────────────────
       const raw = await fetchConteudo('home.hero')
-      // Keys look like: home.hero.slide_1.titulo, home.hero.slide_2.imagem, etc.
       const slideMap = new Map<number, Partial<HeroSlide>>()
 
       for (const [chave, valor] of Object.entries(raw)) {
@@ -240,4 +265,66 @@ export function usePagina(slug: string): { pagina: PaginaResponse | null; loadin
     null,
   )
   return { pagina: data, loading }
+}
+
+export interface ContactInfo {
+  telefone: string
+  fax: string
+  whatsapp: string
+  whatsapp_horario: string
+  email: string
+  endereco: string
+  bairro_cidade: string
+  lgpd: string
+}
+
+const EMPTY_CONTACT: ContactInfo = {
+  telefone: '', fax: '', whatsapp: '', whatsapp_horario: '',
+  email: '', endereco: '', bairro_cidade: '', lgpd: '',
+}
+
+/**
+ * Fetch contact info. Prefers the new CMS block (page `contato`, type
+ * `contact_info`); falls back to legacy `conteudo_site` keys (`contato.*`)
+ * during rollout.
+ */
+export function useContactInfo(): { contact: ContactInfo; loading: boolean } {
+  const { data, loading } = useCachedFetch<ContactInfo>(
+    'contactInfo',
+    async () => {
+      try {
+        const page = await fetchPagina('contato')
+        const block = page.blocos.find((b) => b.tipo === 'contact_info')
+        if (block) {
+          const d = block.dados as Partial<ContactInfo>
+          return {
+            telefone: d.telefone ?? '',
+            fax: d.fax ?? '',
+            whatsapp: d.whatsapp ?? '',
+            whatsapp_horario: d.whatsapp_horario ?? '',
+            email: d.email ?? '',
+            endereco: d.endereco ?? '',
+            bairro_cidade: d.bairro_cidade ?? '',
+            lgpd: d.lgpd ?? '',
+          }
+        }
+      } catch {
+        // fall through to legacy
+      }
+
+      const raw = await fetchConteudo('contato')
+      return {
+        telefone: raw['contato.telefone'] ?? '',
+        fax: raw['contato.fax'] ?? '',
+        whatsapp: raw['contato.whatsapp'] ?? '',
+        whatsapp_horario: raw['contato.whatsapp_horario'] ?? '',
+        email: raw['contato.email'] ?? '',
+        endereco: raw['contato.endereco'] ?? '',
+        bairro_cidade: raw['contato.bairro_cidade'] ?? '',
+        lgpd: raw['contato.lgpd'] ?? '',
+      }
+    },
+    EMPTY_CONTACT,
+  )
+  return { contact: data, loading }
 }

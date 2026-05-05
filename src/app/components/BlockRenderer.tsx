@@ -445,6 +445,13 @@ interface DynamicBlocksProps {
   after?: ReactNode;
   /** Mostra placeholder enquanto carrega (default: nada). */
   loadingFallback?: ReactNode;
+  /**
+   * Tipos de bloco a NÃO renderizar (já têm componente fixo na página).
+   * Útil pra evitar duplicar conteúdo: ex: HeroBanner já usa hero_slides
+   * via useHeroSlides; aqui passamos `skip={['hero_slides']}` pra
+   * <DynamicBlocks> não renderizar o mesmo bloco.
+   */
+  skip?: string[];
 }
 
 /**
@@ -452,8 +459,9 @@ interface DynamicBlocksProps {
  * todos os blocos visíveis em ordem. Reflete edits do painel
  * /marketing/site no próximo carregamento.
  */
-export function DynamicBlocks({ slug, before, after, loadingFallback }: DynamicBlocksProps) {
+export function DynamicBlocks({ slug, before, after, loadingFallback, skip }: DynamicBlocksProps) {
   const { pagina, loading } = usePagina(slug);
+  const skipSet = new Set(skip ?? []);
 
   // Sync document title and meta when SEO data is provided.
   const lastTitleRef = useRef<string | null>(null);
@@ -488,9 +496,11 @@ export function DynamicBlocks({ slug, before, after, loadingFallback }: DynamicB
   return (
     <>
       {before}
-      {pagina.blocos.map((b) => (
-        <BlockRenderer key={b.id} bloco={b} />
-      ))}
+      {pagina.blocos
+        .filter((b) => !skipSet.has(b.tipo))
+        .map((b) => (
+          <BlockRenderer key={b.id} bloco={b} />
+        ))}
       {after}
     </>
   );

@@ -1,6 +1,7 @@
 import { Link } from "react-router";
 import { AnimateOnScroll } from "../components/useScrollAnimation";
 import { ChevronRight, ArrowRight } from "lucide-react";
+import { DynamicBlocks } from "../components/BlockRenderer";
 
 const KNOCKOUT = "'Knockout HTF68', sans-serif";
 
@@ -483,6 +484,12 @@ export default function BiodigestorPage() {
           </AnimateOnScroll>
         </div>
       </section>
+
+      {/* ═══════════════════════════════════════════════════
+          CMS-driven sections (editáveis em /marketing/site)
+          Pula o hero (já fixo acima) e linked_list (n/a aqui)
+         ═══════════════════════════════════════════════════ */}
+      <DynamicBlocks slug="biodigestor" skip={["hero_slides", "linked_list"]} />
     </>
   );
 }

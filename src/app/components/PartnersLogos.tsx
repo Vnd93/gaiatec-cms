@@ -1,12 +1,22 @@
 import { AnimateOnScroll } from "./useScrollAnimation";
+import { usePartnersLogos } from "../hooks/useSiteData";
 
-const certifications = [
+/* ────────────────────────────────────────────────────────
+   FALLBACK — usado se nenhum bloco partners_logos existir
+   no CMS. Pedro edita pelo painel ERP em /marketing/site →
+   Página Inicial → "Certificações".
+   ──────────────────────────────────────────────────────── */
+const FALLBACK_CERTIFICATIONS: Array<{ name: string; label: string; image?: string | null }> = [
   { name: "RBC", label: "Rede Brasileira de Calibração" },
   { name: "INMETRO", label: "Homologação INMETRO" },
   { name: "ISO", label: "Certificação ISO" },
 ];
 
 export function PartnersLogos() {
+  const { certifications } = usePartnersLogos({
+    certifications: FALLBACK_CERTIFICATIONS,
+  });
+
   return (
     <section className="bg-white py-16 md:py-24">
       <div className="max-w-[1400px] mx-auto px-4 md:px-6">
@@ -23,18 +33,26 @@ export function PartnersLogos() {
 
         <div className="flex flex-wrap items-center justify-center gap-8 md:gap-16">
           {certifications.map((cert, i) => (
-            <AnimateOnScroll key={cert.name} direction="up" delay={i * 0.1}>
+            <AnimateOnScroll key={`${cert.name}-${i}`} direction="up" delay={i * 0.1}>
               <div className="flex flex-col items-center gap-3 group cursor-default">
                 <div
-                  className="w-[90px] h-[90px] md:w-[110px] md:h-[110px] border-2 border-[#FF6A00] flex items-center justify-center transition-all duration-300 group-hover:bg-[#FF6A00]"
+                  className="w-[90px] h-[90px] md:w-[110px] md:h-[110px] border-2 border-[#FF6A00] flex items-center justify-center transition-all duration-300 group-hover:bg-[#FF6A00] overflow-hidden"
                   style={{ borderRadius: "50%" }}
                 >
-                  <span
-                    className="text-[#FF6A00] group-hover:text-black transition-colors duration-300"
-                    style={{ fontSize: 18, fontWeight: 800, letterSpacing: "0.5px", fontFamily: "Arial, sans-serif" }}
-                  >
-                    {cert.name}
-                  </span>
+                  {cert.image ? (
+                    <img
+                      src={cert.image.startsWith("http") ? cert.image : `https://gaiatecsistemas.com.br${cert.image.startsWith("/") ? "" : "/"}${cert.image}`}
+                      alt={cert.name}
+                      className="w-[60%] h-[60%] object-contain"
+                    />
+                  ) : (
+                    <span
+                      className="text-[#FF6A00] group-hover:text-black transition-colors duration-300"
+                      style={{ fontSize: 18, fontWeight: 800, letterSpacing: "0.5px", fontFamily: "Arial, sans-serif" }}
+                    >
+                      {cert.name}
+                    </span>
+                  )}
                 </div>
                 <span className="text-[12px] text-[#888] text-center max-w-[120px]" style={{ fontWeight: 500 }}>
                   {cert.label}

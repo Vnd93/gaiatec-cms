@@ -312,6 +312,146 @@ interface SobreContent {
   loading: boolean
 }
 
+// ---------------------------------------------------------------------------
+// Home — hooks adapter por componente
+// Cada um lê só o que faz sentido pro design existente. Caem pro
+// fallback hardcoded se nada vier do CMS.
+// ---------------------------------------------------------------------------
+
+interface ContentSectionData {
+  intro: string
+  services: Array<{ title: string; href: string; desc: string; cta: string; ctaHref: string }>
+  loading: boolean
+}
+
+/**
+ * ContentSection (a seção lindona com sticky title + 4 serviços).
+ * - intro: vem do text_block "Manchete Principal" da home (campo `paragrafo`)
+ * - services: vem do feature_grid "Soluções Inovadoras" da home — cada
+ *   item vira um service card com title + descricao. icone do bloco
+ *   é ignorado (ContentSection não tem ícones no design).
+ * Fallback hardcoded preserva o design caso o CMS esteja vazio.
+ */
+export function useContentSection(fallback: {
+  intro: string
+  services: Array<{ title: string; href: string; desc: string; cta: string; ctaHref: string }>
+}): ContentSectionData {
+  const { pagina, loading } = usePagina('home')
+
+  if (!pagina) return { ...fallback, loading }
+
+  const blocos = pagina.blocos
+
+  const introBlock = blocos.find(
+    (b) => b.tipo === 'text_block' && (b.nome ?? '').toLowerCase().includes('manchete')
+  )
+  const introData = introBlock?.dados as { paragrafo?: string } | undefined
+  const intro = introData?.paragrafo ?? fallback.intro
+
+  const servicesBlock = blocos.find(
+    (b) =>
+      b.tipo === 'feature_grid' &&
+      ((b.nome ?? '').toLowerCase().includes('solu') ||
+        (b.nome ?? '').toLowerCase().includes('serv'))
+  )
+  const servicesItems = (servicesBlock?.dados as { items?: Array<{ titulo?: string; descricao?: string }> } | undefined)?.items
+  const services =
+    servicesItems && servicesItems.length > 0
+      ? servicesItems.slice(0, 4).map((it) => ({
+          title: it.titulo ?? '',
+          href: '#',
+          desc: it.descricao ?? '',
+          cta: 'Ver Serviço →',
+          ctaHref: '#',
+        }))
+      : fallback.services
+
+  return { intro, services, loading }
+}
+
+interface InnovativeSolutionsData {
+  subtitle: string
+  title: string
+  blocks: Array<{ title: string; description: string }>
+  loading: boolean
+}
+
+/**
+ * InnovativeSolutions (sticky title à esquerda, 3 cards à direita).
+ * Lê o feature_grid "Soluções Inovadoras". Pega `titulo` e `subtitulo`
+ * do bloco e os 3 primeiros items pros cards.
+ */
+export function useInnovativeSolutions(fallback: {
+  subtitle: string
+  title: string
+  blocks: Array<{ title: string; description: string }>
+}): InnovativeSolutionsData {
+  const { pagina, loading } = usePagina('home')
+
+  if (!pagina) return { ...fallback, loading }
+
+  const block = pagina.blocos.find(
+    (b) =>
+      b.tipo === 'feature_grid' &&
+      ((b.nome ?? '').toLowerCase().includes('inovador') ||
+        (b.nome ?? '').toLowerCase().includes('solu'))
+  )
+  if (!block) return { ...fallback, loading }
+
+  const d = block.dados as {
+    titulo?: string
+    subtitulo?: string
+    items?: Array<{ titulo?: string; descricao?: string }>
+  }
+
+  return {
+    subtitle: d.subtitulo || fallback.subtitle,
+    title: d.titulo || fallback.title,
+    blocks:
+      d.items && d.items.length > 0
+        ? d.items.slice(0, 3).map((it) => ({
+            title: it.titulo ?? '',
+            description: it.descricao ?? '',
+          }))
+        : fallback.blocks,
+    loading,
+  }
+}
+
+interface PartnersLogosData {
+  certifications: Array<{ name: string; label: string; image?: string | null }>
+  loading: boolean
+}
+
+/**
+ * PartnersLogos — lê o bloco partners_logos "Certificações" da home.
+ * Cada logo tem: nome (label curto), label (descrição), imagem_url
+ * opcional. Fallback hardcoded RBC/INMETRO/ISO.
+ */
+export function usePartnersLogos(fallback: {
+  certifications: Array<{ name: string; label: string; image?: string | null }>
+}): PartnersLogosData {
+  const { pagina, loading } = usePagina('home')
+
+  if (!pagina) return { ...fallback, loading }
+
+  const block = pagina.blocos.find((b) => b.tipo === 'partners_logos')
+  if (!block) return { ...fallback, loading }
+
+  const d = block.dados as { items?: Array<{ nome?: string; label?: string; imagem_url?: string | null }> }
+  const items = d.items
+  if (!items || items.length === 0) return { ...fallback, loading }
+
+  return {
+    certifications: items.map((it) => ({
+      name: it.nome ?? '',
+      label: it.label ?? '',
+      image: it.imagem_url ?? null,
+    })),
+    loading,
+  }
+}
+
 /**
  * Mapeia blocos da página `sobre` em arrays prontos pra SobrePage.
  * - principles: vem dos blocos rich_text "Missão", "Visão", "Valores"

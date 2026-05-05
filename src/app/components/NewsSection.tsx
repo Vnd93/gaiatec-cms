@@ -1,29 +1,53 @@
 import { ChevronRight } from "lucide-react";
+import { Link } from "react-router";
+import { useMemo } from "react";
 import { AnimateOnScroll } from "./useScrollAnimation";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
+import { useBlogPosts } from "../hooks/useSiteData";
 
-const featuredNews = [
+/* ────────────────────────────────────────────────────────
+   FALLBACK — usado se ainda não existem posts publicados.
+   Pedro publica em /marketing/blog (tabela blog_posts) e
+   eles aparecem aqui automaticamente, ordenados por data.
+   ──────────────────────────────────────────────────────── */
+const FALLBACK_NEWS = [
   {
     title: "Como Escolher o Medidor de Vazão Ideal para a Sua Aplicação",
     category: "Instrumentação",
     description: "Descubra os critérios técnicos para selecionar entre medidores ultrassônicos, eletromagnéticos e de deslocamento positivo.",
     image: "/images/blog/6.2.png",
+    href: "/blog",
   },
   {
     title: "Implantação de Sistema de Macromedição Ultrassônica em Rede Municipal",
     category: "Estudo de Caso",
     description: "Como a Gaiatec reduziu as perdas de água não faturada em 18% com medidores clamp-on em adutoras de grande diâmetro.",
     image: "/images/blog/6.3.png",
+    href: "/blog",
   },
   {
     title: "Biometano: A Revolução do Gás Renovável no Brasil e o Papel da Instrumentação",
     category: "Biogás",
     description: "O mercado de biometano brasileiro cresce acelerado. Entenda como a instrumentação é fundamental para garantir qualidade e segurança.",
     image: "/images/blog/6.4.png",
+    href: "/blog",
   },
 ];
 
 export function NewsSection() {
+  const { posts } = useBlogPosts();
+
+  const featuredNews = useMemo(() => {
+    if (!posts || posts.length === 0) return FALLBACK_NEWS;
+    return posts.slice(0, 3).map((p) => ({
+      title: p.titulo,
+      category: (p as unknown as { categoria_nome?: string }).categoria_nome || "Blog",
+      description: p.resumo || "",
+      image: p.imagem_url || "/images/blog/6.2.png",
+      href: `/blog/${p.slug}`,
+    }));
+  }, [posts]);
+
   return (
     <section className="bg-white py-16 md:py-24" id="news">
       <div className="max-w-[1400px] mx-auto px-4 md:px-6">
@@ -41,21 +65,21 @@ export function NewsSection() {
                 Artigos, estudos de caso e novidades do setor industrial, biogás, saneamento e automação.
               </p>
             </div>
-            <a
-              href="#"
+            <Link
+              to="/blog"
               className="hidden md:inline-flex items-center gap-2 border border-[#FF6A00] text-[#FF6A00] px-5 py-2 text-[12px] tracking-wider hover:bg-[#FF6A00] hover:text-black transition-all"
               style={{ fontWeight: 600 }}
             >
               Ver Todos os Artigos <ChevronRight size={12} />
-            </a>
+            </Link>
           </div>
         </AnimateOnScroll>
 
         {/* Featured news cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
           {featuredNews.map((news, i) => (
-            <AnimateOnScroll key={news.title} direction="up" delay={i * 0.1}>
-              <a href="#" className="group block relative overflow-hidden" style={{ minHeight: "400px" }}>
+            <AnimateOnScroll key={`${news.title}-${i}`} direction="up" delay={i * 0.1}>
+              <Link to={news.href} className="group block relative overflow-hidden" style={{ minHeight: "400px" }}>
                 <div className="absolute inset-0">
                   <ImageWithFallback
                     src={news.image}
@@ -78,20 +102,20 @@ export function NewsSection() {
                     Ler artigo <ChevronRight size={14} />
                   </div>
                 </div>
-              </a>
+              </Link>
             </AnimateOnScroll>
           ))}
         </div>
 
         {/* Mobile CTA */}
         <div className="md:hidden text-center">
-          <a
-            href="#"
+          <Link
+            to="/blog"
             className="inline-flex items-center gap-2 border border-[#FF6A00] text-[#FF6A00] px-5 py-2 text-[12px] tracking-wider hover:bg-[#FF6A00] hover:text-black transition-all"
             style={{ fontWeight: 600 }}
           >
             Ver Todos os Artigos <ChevronRight size={12} />
-          </a>
+          </Link>
         </div>
       </div>
     </section>

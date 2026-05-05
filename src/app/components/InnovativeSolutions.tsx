@@ -1,6 +1,7 @@
 import { AnimateOnScroll } from "./useScrollAnimation";
 import { ScrollTextFill } from "./ScrollTextFill";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
+import { useInnovativeSolutions } from "../hooks/useSiteData";
 
 /* ────────────────────────────────────────────────────────
    FONTS (matching Builder.io JSON)
@@ -8,30 +9,32 @@ import { ImageWithFallback } from "./figma/ImageWithFallback";
 const BODY_FONT = "Arial, sans-serif";
 
 /* ────────────────────────────────────────────────────────
-   RIGHT-COLUMN DATA (3 content blocks)
+   FALLBACK DATA — usado se nenhum bloco "Soluções Inovadoras"
+   existir no CMS. Cada item vira um card à direita; imagem é
+   sempre hardcoded (não editável pelo painel).
    ──────────────────────────────────────────────────────── */
-const blocks = [
+const FALLBACK_BLOCKS = [
   {
     title: "Nossas Soluções",
     description:
       "Atendemos desde projetos simples de instrumentação até plantas completas de automação, biogás e proteção catódica — com soluções desenvolvidas sob medida para cada cliente.",
-    image: "/images/solutions/3.1.png",
-    href: "#",
   },
   {
     title: "Nossas Capacidades",
     description:
       "RBC Acreditado · INMETRO Homologado · ISO · Equipe técnica com engenheiros e especialistas em campo · +20 anos de experiência · 11 setores industriais atendidos.",
-    image: "/images/solutions/3.2.png",
-    href: "#",
   },
   {
     title: "Serviço e Suporte Técnico",
     description:
       "Oferecemos manutenção preventiva e corretiva, calibração periódica, instalação e comissionamento, consultoria técnica e atendimento de campo em todo o Brasil.",
-    image: "/images/solutions/3.3.png",
-    href: "#",
   },
+];
+
+const BLOCK_IMAGES = [
+  "/images/solutions/3.1.png",
+  "/images/solutions/3.2.png",
+  "/images/solutions/3.3.png",
 ];
 
 /* ────────────────────────────────────────────────────────
@@ -68,6 +71,22 @@ const blocks = [
    </div>
    ──────────────────────────────────────────────────────── */
 export function InnovativeSolutions() {
+  // Subtitle, título e 3 blocks editáveis em /marketing/site →
+  // Página Inicial → "Soluções Inovadoras". Imagem fixa.
+  const { subtitle, title, blocks: cmsBlocks } = useInnovativeSolutions({
+    subtitle: "Por que a Gaiatec",
+    title: "Soluções Técnicas Integradas",
+    blocks: FALLBACK_BLOCKS,
+  });
+
+  // Anexa imagem hardcoded posicionalmente. Items extras (>3) reusam
+  // a última imagem.
+  const blocks = cmsBlocks.map((b, i) => ({
+    ...b,
+    image: BLOCK_IMAGES[i] || BLOCK_IMAGES[BLOCK_IMAGES.length - 1],
+    href: "#",
+  }));
+
   return (
     <>
       <style>{`
@@ -203,13 +222,13 @@ export function InnovativeSolutions() {
                           color: "#000",
                         }}
                       >
-                        Por que a Gaiatec
+                        {subtitle}
                       </span>
                     </AnimateOnScroll>
 
                     {/* H2 — scroll-based letter color fill */}
                     <ScrollTextFill
-                      text="Soluções Técnicas Integradas"
+                      text={title}
                       as="h2"
                       className="sec5-title-h2"
                       style={{

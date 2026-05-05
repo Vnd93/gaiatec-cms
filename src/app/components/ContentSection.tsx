@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback } from "react";
+import { useContentSection } from "../hooks/useSiteData";
 
 /* ────────────────────────────────────────────────────────
    FONT CONSTANTS  (Knockout HTF68 → Barlow Condensed fallback)
@@ -8,50 +9,40 @@ const BODY_FONT = "Arial, sans-serif";
 const STICKY_TOP = 100;
 
 /* ────────────────────────────────────────────────────────
-   DATA — right column service blocks
+   FALLBACK DATA — usado se o CMS estiver indisponível.
+   Pedro edita pelo painel ERP em /marketing/site → tab
+   Página Inicial → Manchete Principal (intro paragraph) e
+   Soluções Inovadoras (4 service cards).
    ──────────────────────────────────────────────────────── */
-const services = [
+const FALLBACK_INTRO =
+  "A Gaiatec Sistemas é uma empresa brasileira fundada em 2004 com o objetivo de desenvolver sistemas e tecnologias para atender a indústria do petróleo, mineração, agronegócio, química, elétrica, marítima, saneamento e para tudo que envolve o controle de gases e fluidos. Com uma equipe altamente qualificada, a empresa se destaca pela capacidade de inovar e oferecer soluções completas para as necessidades de seus clientes.";
+
+const FALLBACK_SERVICES = [
   {
     title: "Instrumentação Industrial",
     href: "#",
-    desc: (
-      <>
-        Medição, controle e monitoramento de variáveis de processo: vazão, pressão, nível, temperatura e qualidade. Soluções completas desde a especificação até a instalação.
-      </>
-    ),
+    desc: "Medição, controle e monitoramento de variáveis de processo: vazão, pressão, nível, temperatura e qualidade. Soluções completas desde a especificação até a instalação.",
     cta: "Ver Serviço →",
     ctaHref: "#",
   },
   {
     title: "Automação Industrial",
     href: "#",
-    desc: (
-      <>
-        Projetos de automação com CLPs, IHMs, sistemas supervisórios SCADA e integração IoT para processos industriais de alta complexidade.
-      </>
-    ),
+    desc: "Projetos de automação com CLPs, IHMs, sistemas supervisórios SCADA e integração IoT para processos industriais de alta complexidade.",
     cta: "Ver Serviço →",
     ctaHref: "#",
   },
   {
     title: "Proteção Catódica",
     href: "#",
-    desc: (
-      <>
-        Projeto, instalação e monitoramento de sistemas de proteção catódica para dutos, tanques e estruturas enterradas, garantindo integridade ao longo do tempo.
-      </>
-    ),
+    desc: "Projeto, instalação e monitoramento de sistemas de proteção catódica para dutos, tanques e estruturas enterradas, garantindo integridade ao longo do tempo.",
     cta: "Ver Serviço →",
     ctaHref: "#",
   },
   {
     title: "Calibração RBC Acreditada",
     href: "#",
-    desc: (
-      <>
-        Calibração de instrumentos com rastreabilidade metrológica reconhecida internacionalmente, conforme normas ABNT e ISO. Laboratório acreditado pela RBC e homologado pelo INMETRO.
-      </>
-    ),
+    desc: "Calibração de instrumentos com rastreabilidade metrológica reconhecida internacionalmente, conforme normas ABNT e ISO. Laboratório acreditado pela RBC e homologado pelo INMETRO.",
     cta: "Ver Serviço →",
     ctaHref: "#",
   },
@@ -99,6 +90,14 @@ const TOTAL_CHARS = TITLE_WORDS.reduce((a, w) => a + w.length, 0);
    </section>
    ──────────────────────────────────────────────────────── */
 export function ContentSection() {
+  // Intro paragraph + 4 service cards são editáveis em
+  // /marketing/site → Página Inicial. Caem pros fallbacks acima
+  // se nenhum bloco existir / API indisponível.
+  const { intro, services } = useContentSection({
+    intro: FALLBACK_INTRO,
+    services: FALLBACK_SERVICES,
+  });
+
   const trackRef = useRef<HTMLDivElement>(null);
   const stickyRef = useRef<HTMLDivElement>(null);
   const sectionRef = useRef<HTMLElement>(null);
@@ -416,16 +415,17 @@ export function ContentSection() {
                 <div>
                   {/* content wrapper */}
                   <div>
-                    {/* Intro paragraph */}
+                    {/* Intro paragraph (CMS-driven, fallback hardcoded) */}
                     <p
                       style={{
                         fontSize: 20,
                         lineHeight: "32px",
                         marginBottom: 24,
                         color: "#000000",
+                        whiteSpace: "pre-line",
                       }}
                     >
-                      A Gaiatec Sistemas é uma empresa brasileira fundada em 2004 com o objetivo de desenvolver sistemas e tecnologias para atender a indústria do petróleo, mineração, agronegócio, química, elétrica, marítima, saneamento e para tudo que envolve o controle de gases e fluidos. Com uma equipe altamente qualificada, a empresa se destaca pela capacidade de inovar e oferecer soluções completas para as necessidades de seus clientes.
+                      {intro}
                     </p>
 
                     {/* Service blocks */}

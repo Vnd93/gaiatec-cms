@@ -1,33 +1,42 @@
 import { HeroBanner } from "../components/HeroBanner";
 import { DiagonalLine } from "../components/DiagonalLine";
+import { ContentSection } from "../components/ContentSection";
 import { ProductsGrid } from "../components/ProductsGrid";
 import { IndustriesCarousel } from "../components/IndustriesCarousel";
+import { InnovativeSolutions } from "../components/InnovativeSolutions";
 import { SliderModule } from "../components/SliderModule";
+import { PartnersLogos } from "../components/PartnersLogos";
+import { NewsSection } from "../components/NewsSection";
 import { ContactSection } from "../components/ContactSection";
-import { DynamicBlocks } from "../components/BlockRenderer";
 
 /**
- * HomePage — composição:
- *   • HeroBanner: carrossel auto-rotacional (consome hero_slides do CMS
- *     via useHeroSlides — UI específica que o BlockRenderer não tem)
- *   • DynamicBlocks: renderiza os blocos editáveis do CMS na ordem que
- *     Pedro definir em /marketing/site (Manchete, Stats, Soluções,
- *     Certificações, CTA, Notícias). Skipa hero_slides (já feito) e
- *     linked_list (sem renderer ainda).
- *   • ProductsGrid / IndustriesCarousel / SliderModule: componentes
- *     com UI complexa específica que ainda não viraram tipo de bloco.
- *   • ContactSection: form + contato (consome contact_info via
- *     useContactInfo).
+ * Design original 100% preservado. Cada componente é responsável por
+ * ler seus textos do CMS via hooks adapter — o layout/animações ficam
+ * exatamente como antes.
+ *
+ *   HeroBanner          → useHeroSlides (bloco hero_slides)
+ *   ContentSection      → useContentSection (text_block + servicos_site)
+ *   IndustriesCarousel  → useSetores (setores_site)
+ *   InnovativeSolutions → useInnovativeSolutions (feature_grid)
+ *   PartnersLogos       → usePartnersLogos (partners_logos)
+ *   NewsSection         → useBlogPosts (top 3 destaques)
+ *   ContactSection      → useContactInfo (contact_info)
+ *
+ * Nada usa <DynamicBlocks> aqui — esse é o ponto: cada componente tem
+ * design único e lê apenas os pedaços que fazem sentido.
  */
 export default function HomePage() {
   return (
     <>
       <HeroBanner />
       <DiagonalLine topColor="white" bottomColor="black" />
-      <DynamicBlocks slug="home" skip={["hero_slides", "linked_list"]} />
+      <ContentSection />
       <ProductsGrid />
       <IndustriesCarousel />
+      <InnovativeSolutions />
       <SliderModule />
+      <PartnersLogos />
+      <NewsSection />
       <ContactSection />
     </>
   );

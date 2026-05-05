@@ -1,6 +1,29 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Search, Phone, ChevronRight, Menu, X, ChevronDown, ArrowRight } from "lucide-react";
 import { searchIndex, type SearchItem } from "../data/searchIndex";
+import { useMenu } from "../hooks/useSiteData";
+import type { SiteMenuItem } from "../../lib/supabase";
+
+/* The hardcoded `navItems` below stays as fallback. When the CMS API
+   returns at least one item, it overrides. This makes the menu safely
+   editable from the ERP painel without breaking the site if Supabase
+   is briefly unreachable. */
+type NavItem = {
+  label: string;
+  href: string;
+  children?: NavItem[];
+};
+
+function adaptApiMenu(items: SiteMenuItem[]): NavItem[] {
+  return items.map((it) => ({
+    label: it.label,
+    // The API allows href=null (pure groupers). The Header's hover/click
+    // logic assumes `href` is always a string, so coerce to "#".
+    href: it.href ?? "#",
+    children:
+      it.children && it.children.length > 0 ? adaptApiMenu(it.children) : undefined,
+  }));
+}
 
 /* ────────────────────────────────────────────────────────
    NAV DATA
@@ -119,6 +142,15 @@ const navItems = [
 ];
 
 export function Header() {
+  // Menu vem do CMS (ERP painel /marketing/site, tab Menu). Cai pro
+  // hardcoded `navItems` se a API ainda não respondeu, falhou, ou
+  // retornou vazio — o site nunca fica sem menu.
+  const { menu: cmsMenu } = useMenu();
+  const effectiveNavItems = useMemo<NavItem[]>(() => {
+    if (cmsMenu && cmsMenu.length > 0) return adaptApiMenu(cmsMenu);
+    return navItems as NavItem[];
+  }, [cmsMenu]);
+
   const [scrolled, setScrolled] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -185,7 +217,7 @@ export function Header() {
     clearTimeout(menuTimeout.current);
   }, []);
 
-  const activeItem = activeMenu !== null ? navItems[activeMenu] : null;
+  const activeItem = activeMenu !== null ? effectiveNavItems[activeMenu] : null;
   const hasChildren = activeItem?.children && activeItem.children.length > 0;
 
   return (
@@ -582,7 +614,7 @@ export function Header() {
                   margin: 0,
                 }}
               >
-                {navItems.map((item, i) => (
+                {effectiveNavItems.map((item, i) => (
                   <li
                     key={item.label}
                     className={`hdr-nav-li${activeMenu === i ? " active" : ""}`}
@@ -763,7 +795,7 @@ export function Header() {
           </div>
 
           <div style={{ marginTop: 16 }}>
-            {navItems.map((item, i) => (
+            {effectiveNavItems.map((item, i) => (
               <div key={item.label} style={{ borderTop: "1px solid rgba(255,255,255,0.1)" }}>
                 {item.children ? (
                   <>

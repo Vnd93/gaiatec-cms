@@ -17,7 +17,7 @@ export async function fetchSiteContent<T = unknown>(params: Record<string, strin
   return json as T
 }
 
-/** Fetch conteudo_site by grupo prefix and return as key-value map */
+/** Fetch conteudo_site by grupo prefix and return as key-value map (legacy) */
 export async function fetchConteudo(grupo: string): Promise<Record<string, string>> {
   const items = await fetchSiteContent<Array<{ chave: string; valor: string }>>({
     type: 'conteudo',
@@ -28,4 +28,51 @@ export async function fetchConteudo(grupo: string): Promise<Record<string, strin
     map[item.chave] = item.valor
   }
   return map
+}
+
+/** Item de menu retornado pelo CMS (já em árvore, com children inline). */
+export interface SiteMenuItem {
+  id: string
+  parent_id: string | null
+  label: string
+  href: string | null
+  ordem: number
+  abrir_nova_aba: boolean
+  icone: string | null
+  children?: SiteMenuItem[]
+}
+
+/** Fetch menu hierárquico (árvore com children inline). */
+export async function fetchMenu(): Promise<SiteMenuItem[]> {
+  return fetchSiteContent<SiteMenuItem[]>({ type: 'menu' })
+}
+
+/** Bloco genérico do CMS (tipo discriminado pelo campo `tipo`). */
+export interface SiteBloco<T = Record<string, unknown>> {
+  id: string
+  tipo: string
+  nome: string | null
+  dados: T
+  ordem: number
+}
+
+export interface SitePagina {
+  id: string
+  slug: string
+  titulo: string
+  descricao: string | null
+  seo_title: string | null
+  seo_description: string | null
+  og_image_url: string | null
+  publicada: boolean
+}
+
+export interface PaginaResponse {
+  pagina: SitePagina
+  blocos: SiteBloco[]
+}
+
+/** Fetch página completa do CMS — meta + blocos tipados. */
+export async function fetchPagina(slug: string): Promise<PaginaResponse> {
+  return fetchSiteContent<PaginaResponse>({ type: 'pagina', slug })
 }

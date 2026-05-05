@@ -1,7 +1,14 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { fetchSiteContent, fetchConteudo } from '../../lib/supabase'
+import {
+  fetchSiteContent,
+  fetchConteudo,
+  fetchMenu,
+  fetchPagina,
+  type SiteMenuItem,
+  type PaginaResponse,
+} from '../../lib/supabase'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -202,11 +209,35 @@ export function useBlogPosts(): { posts: BlogPost[]; loading: boolean } {
   return { posts: data, loading }
 }
 
-/** Fetch conteudo_site by grupo and return as key-value map */
+/** Fetch conteudo_site by grupo and return as key-value map (legacy) */
 export function useConteudo(grupo: string): { data: Record<string, string>; loading: boolean } {
   return useCachedFetch<Record<string, string>>(
     `conteudo:${grupo}`,
     () => fetchConteudo(grupo),
     {},
   )
+}
+
+// ---------------------------------------------------------------------------
+// CMS v2: menu hierárquico + páginas com blocos
+// ---------------------------------------------------------------------------
+
+/** Fetch menu items (hierarquia já em árvore). */
+export function useMenu(): { menu: SiteMenuItem[]; loading: boolean } {
+  const { data, loading } = useCachedFetch<SiteMenuItem[]>(
+    'menu',
+    () => fetchMenu(),
+    [],
+  )
+  return { menu: data, loading }
+}
+
+/** Fetch página completa (meta + blocos tipados). */
+export function usePagina(slug: string): { pagina: PaginaResponse | null; loading: boolean } {
+  const { data, loading } = useCachedFetch<PaginaResponse | null>(
+    `pagina:${slug}`,
+    () => fetchPagina(slug),
+    null,
+  )
+  return { pagina: data, loading }
 }

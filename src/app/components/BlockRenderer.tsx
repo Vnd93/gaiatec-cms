@@ -277,9 +277,162 @@ export function BlockRenderer({ bloco }: { bloco: SiteBloco }) {
       // Por enquanto deixamos o componente fixo da página renderizar isso —
       // o BlockRenderer só serve para conteúdo livre.
       return null;
+    case "timeline":
+      return <TimelineBlock dados={bloco.dados as { titulo?: string; subtitulo?: string; items: Array<{ ano?: string; titulo?: string; descricao?: string }> }} />;
+    case "news_grid":
+      return <NewsGridBlock dados={bloco.dados as { titulo?: string; subtitulo?: string; fonte?: 'auto' | 'manual'; limit?: number; items: Array<{ titulo?: string; resumo?: string; imagem_url?: string; link?: string; categoria?: string }> }} />;
+    case "partners_logos":
+      return <PartnersLogosBlock dados={bloco.dados as { titulo?: string; subtitulo?: string; items: Array<{ nome?: string; label?: string; imagem_url?: string | null }> }} />;
+    case "text_block":
+      return <TextBlockBlock dados={bloco.dados as { titulo?: string; subtitulo?: string; paragrafo?: string; alinhamento?: 'left' | 'center' | 'right' }} />;
     default:
       return null;
   }
+}
+
+// ─── Timeline ───────────────────────────────────────────────────────────────
+
+function TimelineBlock({ dados }: { dados: { titulo?: string; subtitulo?: string; items: Array<{ ano?: string; titulo?: string; descricao?: string }> } }) {
+  return (
+    <Wrapper className="bg-[#f7f7f7]">
+      {dados.titulo && (
+        <h2 className="text-2xl md:text-4xl font-bold text-black mb-2 text-center">{dados.titulo}</h2>
+      )}
+      {dados.subtitulo && (
+        <p className="text-[#666] text-center mb-12">{dados.subtitulo}</p>
+      )}
+      <div className="relative max-w-3xl mx-auto pl-8 md:pl-12">
+        {/* vertical line */}
+        <div className="absolute left-3 md:left-4 top-2 bottom-2 w-px bg-[#e0e0e0]" />
+        {(dados.items ?? []).map((it, i) => (
+          <div key={i} className="relative mb-10 last:mb-0">
+            <div className="absolute -left-7 md:-left-9 top-1 w-4 h-4 rounded-full bg-[#FF6A00] border-4 border-white shadow-[0_0_0_1px_#FF6A00]" />
+            <div className="text-sm font-bold text-[#FF6A00] uppercase tracking-wide">{it.ano}</div>
+            {it.titulo && <h3 className="text-lg md:text-xl font-bold text-black mt-1">{it.titulo}</h3>}
+            {it.descricao && <p className="text-[#666] mt-2 leading-relaxed">{it.descricao}</p>}
+          </div>
+        ))}
+      </div>
+    </Wrapper>
+  );
+}
+
+// ─── News Grid ──────────────────────────────────────────────────────────────
+
+function NewsGridBlock({ dados }: { dados: { titulo?: string; subtitulo?: string; fonte?: 'auto' | 'manual'; limit?: number; items: Array<{ titulo?: string; resumo?: string; imagem_url?: string; link?: string; categoria?: string }> } }) {
+  // 'auto' mode: fetch from blog API. Done by the consumer page (HomePage)
+  // — here we only render the manual items to avoid double fetch coupling.
+  // For 'auto', the consumer should compose with NewsSection (legacy) or use
+  // useBlogPosts() + pass items into a manual-style block.
+  const items = dados.items ?? [];
+  if (items.length === 0) return null;
+  return (
+    <Wrapper className="bg-white">
+      {dados.titulo && (
+        <h2 className="text-2xl md:text-4xl font-bold text-black mb-2 text-center">{dados.titulo}</h2>
+      )}
+      {dados.subtitulo && (
+        <p className="text-[#666] text-center mb-12">{dados.subtitulo}</p>
+      )}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {items.map((it, i) => {
+          const card = (
+            <article className="group flex flex-col bg-white border border-[#e0e0e0] hover:border-[#FF6A00] transition-colors h-full">
+              {it.imagem_url && (
+                <div className="aspect-[16/9] overflow-hidden">
+                  <img
+                    src={resolveImg(it.imagem_url)}
+                    alt={it.titulo ?? ""}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                    loading="lazy"
+                  />
+                </div>
+              )}
+              <div className="p-6 flex-1 flex flex-col">
+                {it.categoria && (
+                  <div className="text-xs font-semibold uppercase tracking-wide text-[#FF6A00] mb-2">{it.categoria}</div>
+                )}
+                {it.titulo && <h3 className="text-lg font-bold text-black mb-2 leading-tight">{it.titulo}</h3>}
+                {it.resumo && <p className="text-sm text-[#666] leading-relaxed">{it.resumo}</p>}
+                {it.link && (
+                  <span className="mt-auto pt-4 inline-flex items-center gap-1 text-sm font-semibold text-[#FF6A00]">
+                    Ler mais <ChevronRight size={14} />
+                  </span>
+                )}
+              </div>
+            </article>
+          );
+          return it.link ? (
+            <a key={i} href={it.link} className="block">
+              {card}
+            </a>
+          ) : (
+            <div key={i}>{card}</div>
+          );
+        })}
+      </div>
+    </Wrapper>
+  );
+}
+
+// ─── Partners Logos ─────────────────────────────────────────────────────────
+
+function PartnersLogosBlock({ dados }: { dados: { titulo?: string; subtitulo?: string; items: Array<{ nome?: string; label?: string; imagem_url?: string | null }> } }) {
+  return (
+    <Wrapper className="bg-[#f7f7f7]">
+      {dados.titulo && (
+        <h2 className="text-2xl md:text-3xl font-bold text-black mb-2 text-center">{dados.titulo}</h2>
+      )}
+      {dados.subtitulo && (
+        <p className="text-[#666] text-center mb-10">{dados.subtitulo}</p>
+      )}
+      <div className="flex flex-wrap items-center justify-center gap-8 md:gap-16">
+        {(dados.items ?? []).map((it, i) => (
+          <div key={i} className="flex flex-col items-center text-center min-w-[120px]">
+            {it.imagem_url ? (
+              <img src={resolveImg(it.imagem_url)} alt={it.nome ?? ""} className="h-12 md:h-16 object-contain mb-2" loading="lazy" />
+            ) : (
+              <div
+                className="text-3xl md:text-4xl font-bold text-[#FF6A00] mb-2 leading-none"
+                style={{ fontFamily: "'Knockout HTF68', 'Barlow Condensed', sans-serif" }}
+              >
+                {it.nome}
+              </div>
+            )}
+            {it.label && <div className="text-xs uppercase tracking-wide text-[#666]">{it.label}</div>}
+          </div>
+        ))}
+      </div>
+    </Wrapper>
+  );
+}
+
+// ─── Text Block ─────────────────────────────────────────────────────────────
+
+function TextBlockBlock({ dados }: { dados: { titulo?: string; subtitulo?: string; paragrafo?: string; alinhamento?: 'left' | 'center' | 'right' } }) {
+  const alignMap = { left: 'text-left', center: 'text-center', right: 'text-right' };
+  const align = alignMap[(dados.alinhamento ?? 'left') as keyof typeof alignMap];
+  return (
+    <Wrapper className="bg-white">
+      <div className={`max-w-4xl mx-auto ${align}`}>
+        {dados.subtitulo && (
+          <div className="text-sm font-semibold uppercase tracking-widest text-[#FF6A00] mb-3">
+            {dados.subtitulo}
+          </div>
+        )}
+        {dados.titulo && (
+          <h2 className="text-2xl md:text-4xl font-bold text-black mb-6 leading-tight">
+            {dados.titulo}
+          </h2>
+        )}
+        {dados.paragrafo && (
+          <p className="text-base md:text-lg text-[#444] leading-relaxed whitespace-pre-line">
+            {dados.paragrafo}
+          </p>
+        )}
+      </div>
+    </Wrapper>
+  );
 }
 
 // ─── Full page renderer (busca + ordena) ────────────────────────────────────

@@ -1,7 +1,9 @@
 import { Link } from "react-router";
 import { AnimateOnScroll } from "../components/useScrollAnimation";
 import { ChevronRight, Award, Shield, CheckCircle, Users, Briefcase, Settings, Target } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useRef, useEffect } from "react";
+import { useSobreContent, type SobreDiferencial } from "../hooks/useSiteData";
 
 /* ────────────────────────────────────────────────────────
    IMAGES
@@ -10,52 +12,89 @@ const HERO_IMAGE = "/images/heroes/1.1.png";
 const TEAM_IMAGE = "/images/heroes/1.2.png";
 
 /* ────────────────────────────────────────────────────────
-   DATA
+   FALLBACK DATA — usado quando o CMS está indisponível ou
+   nenhum bloco foi criado. Pedro edita pelo painel ERP em
+   /marketing/site → tab Sobre a Gaiatec.
    ──────────────────────────────────────────────────────── */
-const principles = [
+const FALLBACK_PRINCIPLES = [
   {
     num: "01",
-    title: "Missao",
-    text: "Desenvolver sistemas e tecnologias inovadoras para atender as necessidades da industria nacional e internacional, oferecendo solucoes completas em controle de gases e fluidos.",
+    title: "Missão",
+    text: "Desenvolver sistemas e tecnologias inovadoras para atender às necessidades da indústria nacional e internacional, oferecendo soluções completas em controle de gases e fluidos.",
   },
   {
     num: "02",
-    title: "Visao",
-    text: "Ser referencia em solucoes tecnologicas para a industria, reconhecida pela excelencia, inovacao e compromisso com a satisfacao dos clientes.",
+    title: "Visão",
+    text: "Ser referência em soluções tecnológicas para a indústria, reconhecida pela excelência, inovação e compromisso com a satisfação dos clientes.",
   },
   {
     num: "03",
     title: "Valores",
-    text: "Qualidade e excelencia em produtos e servicos. Inovacao continua em processos e tecnologias. Compromisso com o cliente. Adaptabilidade frente as demandas do mercado. Responsabilidade em todas as acoes.",
+    text: "Qualidade e excelência em produtos e serviços. Inovação contínua em processos e tecnologias. Compromisso com o cliente. Adaptabilidade frente às demandas do mercado.",
   },
 ];
 
-const timeline = [
-  { year: "2004", title: "Fundacao", desc: "Gaiatec Sistemas e fundada com foco em solucoes para controle de gases e fluidos na industria brasileira." },
-  { year: "2007", title: "Expansao de Portfolio", desc: "Ampliacao do portfolio para atender novos segmentos: petroleo e gas, mineracao e agronegocio." },
-  { year: "2010", title: "Protecao Catodica", desc: "Estruturacao da area de protecao catodica com equipe tecnica especializada." },
-  { year: "2013", title: "Automacao Industrial", desc: "Implantacao de projetos de automacao industrial e sistemas supervisorios." },
-  { year: "2016", title: "Biodigestores", desc: "Inicio da linha GT-BIODIGEST para biodigestores e aproveitamento de biogas." },
-  { year: "2019", title: "Certificacoes", desc: "Obtencao de acreditacoes e homologacoes: RBC Acreditado, INMETRO Homologado, ISO." },
-  { year: "2022", title: "Telemetria e IoT", desc: "Expansao para solucoes de telemetria remota, monitoramento IoT e sistemas conectados." },
-  { year: "2025", title: "20+ Anos de Mercado", desc: "Mais de 20 anos consolidando expertise tecnica em 11 setores industriais no Brasil." },
+const FALLBACK_TIMELINE = [
+  { year: "2004", title: "Fundação", desc: "Gaiatec Sistemas é fundada com foco em soluções para controle de gases e fluidos na indústria brasileira." },
+  { year: "2007", title: "Expansão de Portfólio", desc: "Ampliação do portfólio para atender novos segmentos: petróleo e gás, mineração e agronegócio." },
+  { year: "2010", title: "Proteção Catódica", desc: "Estruturação da área de proteção catódica com equipe técnica especializada." },
+  { year: "2013", title: "Automação Industrial", desc: "Implantação de projetos de automação industrial e sistemas supervisórios." },
+  { year: "2016", title: "Biodigestores", desc: "Início da linha GT-BIODIGEST para biodigestores e aproveitamento de biogás." },
+  { year: "2019", title: "Certificações", desc: "Obtenção de acreditações e homologações: RBC Acreditado, INMETRO Homologado, ISO." },
+  { year: "2022", title: "Telemetria e IoT", desc: "Expansão para soluções de telemetria remota, monitoramento IoT e sistemas conectados." },
+  { year: "2025", title: "20+ Anos de Mercado", desc: "Mais de 20 anos consolidando expertise técnica em 11 setores industriais no Brasil." },
 ];
 
-const diferenciais = [
-  { icon: Award, title: "Acreditacao RBC", desc: "Calibracoes rastreaveis e reconhecidas internacionalmente" },
-  { icon: Shield, title: "Homologacao INMETRO", desc: "Conformidade com normas metrologicas brasileiras" },
-  { icon: CheckCircle, title: "Certificacao ISO", desc: "Sistema de gestao da qualidade consolidado" },
-  { icon: Briefcase, title: "20+ anos de experiencia", desc: "Portfolio tecnico amplo e credibilidade de mercado" },
-  { icon: Target, title: "11 Setores Atendidos", desc: "Atuacao transversal na industria brasileira" },
-  { icon: Users, title: "Equipe especializada", desc: "Engenheiros e tecnicos com expertise em campo" },
-  { icon: Settings, title: "Projetos sob medida", desc: "Cada solucao dimensionada para a realidade do cliente" },
+const FALLBACK_DIFERENCIAIS = [
+  { iconName: "🏆", title: "Acreditação RBC", desc: "Calibrações rastreáveis e reconhecidas internacionalmente" },
+  { iconName: "🛡️", title: "Homologação INMETRO", desc: "Conformidade com normas metrológicas brasileiras" },
+  { iconName: "✓", title: "Certificação ISO", desc: "Sistema de gestão da qualidade consolidado" },
+  { iconName: "💼", title: "20+ anos de experiência", desc: "Portfólio técnico amplo e credibilidade de mercado" },
+  { iconName: "🎯", title: "11 Setores Atendidos", desc: "Atuação transversal na indústria brasileira" },
+  { iconName: "👥", title: "Equipe especializada", desc: "Engenheiros e técnicos com expertise em campo" },
+  { iconName: "⚙️", title: "Projetos sob medida", desc: "Cada solução dimensionada para a realidade do cliente" },
 ];
+
+/**
+ * Mapeia uma string (emoji ou keyword) para um Lucide Icon. Mantém o
+ * design original com ícones nítidos quando possível; se vier emoji
+ * direto, renderiza como texto. SobrePage chama isso pra cada
+ * diferencial.
+ */
+function diferencialIcon(d: SobreDiferencial): { Icon: LucideIcon | null; emoji: string | null } {
+  const lookup: Record<string, LucideIcon> = {
+    award: Award, certificacao: Award, certification: Award, rbc: Award, "🏆": Award,
+    shield: Shield, security: Shield, inmetro: Shield, "🛡️": Shield, "🛡": Shield,
+    check: CheckCircle, iso: CheckCircle, qualidade: CheckCircle, "✓": CheckCircle, "✔": CheckCircle,
+    briefcase: Briefcase, experience: Briefcase, anos: Briefcase, "💼": Briefcase,
+    target: Target, setor: Target, "🎯": Target,
+    users: Users, equipe: Users, time: Users, "👥": Users,
+    settings: Settings, projeto: Settings, custom: Settings, "⚙️": Settings,
+  };
+  const key = (d.iconName || "").toLowerCase().trim();
+  if (lookup[key]) return { Icon: lookup[key], emoji: null };
+  // Match by partial keyword (e.g. iconName="award" matches "award")
+  for (const k of Object.keys(lookup)) {
+    if (key.includes(k)) return { Icon: lookup[k], emoji: null };
+  }
+  // Fallback: render the raw string (likely an emoji)
+  return { Icon: null, emoji: d.iconName || "★" };
+}
 
 /* ────────────────────────────────────────────────────────
    COMPONENT
    ──────────────────────────────────────────────────────── */
 export default function SobrePage() {
   const timelineRef = useRef<HTMLDivElement>(null);
+
+  // Princípios, timeline e diferenciais vêm do CMS quando Pedro editar
+  // pelo painel /marketing/site → tab Sobre. Caem pros fallbacks acima
+  // se a API estiver fora ou os blocos ainda não tiverem sido criados.
+  const { principles, timeline, diferenciais } = useSobreContent({
+    principles: FALLBACK_PRINCIPLES,
+    timeline: FALLBACK_TIMELINE,
+    diferenciais: FALLBACK_DIFERENCIAIS,
+  });
 
   /* Horizontal scroll drag for timeline on mobile */
   useEffect(() => {
@@ -487,8 +526,10 @@ export default function SobrePage() {
           </AnimateOnScroll>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {diferenciais.map((d, i) => (
-              <AnimateOnScroll key={d.title} delay={i * 0.08}>
+            {diferenciais.map((d, i) => {
+              const { Icon, emoji } = diferencialIcon(d);
+              return (
+              <AnimateOnScroll key={`${d.title}-${i}`} delay={i * 0.08}>
                 <div
                   style={{
                     backgroundColor: "#fff",
@@ -508,7 +549,11 @@ export default function SobrePage() {
                     e.currentTarget.style.transform = "translateY(0)";
                   }}
                 >
-                  <d.icon size={28} style={{ color: "#FF6A00", marginBottom: 16 }} />
+                  {Icon ? (
+                    <Icon size={28} style={{ color: "#FF6A00", marginBottom: 16 }} />
+                  ) : (
+                    <span style={{ fontSize: 28, color: "#FF6A00", marginBottom: 16, display: "block" }}>{emoji}</span>
+                  )}
                   <h4
                     style={{
                       fontSize: 15,
@@ -524,7 +569,8 @@ export default function SobrePage() {
                   </p>
                 </div>
               </AnimateOnScroll>
-            ))}
+              );
+            })}
           </div>
         </div>
       </section>

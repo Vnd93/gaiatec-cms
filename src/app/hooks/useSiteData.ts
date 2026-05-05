@@ -283,6 +283,122 @@ const EMPTY_CONTACT: ContactInfo = {
   email: '', endereco: '', bairro_cidade: '', lgpd: '',
 }
 
+// ---------------------------------------------------------------------------
+// Sobre — adapter hook que mapeia blocos do CMS pros 3 arrays usados
+// pela SobrePage (principles, timeline, diferenciais), preservando o
+// design horizontal/timeline animada.
+// ---------------------------------------------------------------------------
+
+export interface SobrePrinciple {
+  num: string
+  title: string
+  text: string
+}
+export interface SobreTimelineEntry {
+  year: string
+  title: string
+  desc: string
+}
+export interface SobreDiferencial {
+  iconName: string  // emoji/string que SobrePage renderiza como texto
+  title: string
+  desc: string
+}
+
+interface SobreContent {
+  principles: SobrePrinciple[]
+  timeline: SobreTimelineEntry[]
+  diferenciais: SobreDiferencial[]
+  loading: boolean
+}
+
+/**
+ * Mapeia blocos da página `sobre` em arrays prontos pra SobrePage.
+ * - principles: vem dos blocos rich_text "Missão", "Visão", "Valores"
+ *   na ordem em que aparecem (paragrafo_1 vira o text).
+ * - timeline: vem do bloco timeline (1º que existir).
+ * - diferenciais: vem do bloco feature_grid "Diferenciais" (ou 1º que
+ *   exista). icone do bloco vira string passada adiante (SobrePage
+ *   pode ignorar e usar o ícone Lucide do fallback).
+ * Retorna fallback hardcoded enquanto loading ou se nenhum bloco
+ * existir.
+ */
+export function useSobreContent(fallback: {
+  principles: SobrePrinciple[]
+  timeline: SobreTimelineEntry[]
+  diferenciais: SobreDiferencial[]
+}): SobreContent {
+  const { pagina, loading } = usePagina('sobre')
+
+  if (!pagina) {
+    return { ...fallback, loading }
+  }
+
+  const blocos = pagina.blocos
+
+  // ── Principles (Missão / Visão / Valores) ───────────────────────
+  const principleNames = ['missão', 'visao', 'visão', 'valores', 'mission']
+  const principleBlocks = blocos
+    .filter(
+      (b) =>
+        b.tipo === 'rich_text' &&
+        b.nome &&
+        principleNames.some((p) => b.nome!.toLowerCase().includes(p.replace('ã', 'a')))
+    )
+    // Order: Missão, Visão, Valores
+    .sort((a, b) => {
+      const order = ['miss', 'vis', 'val']
+      const ai = order.findIndex((o) => (a.nome || '').toLowerCase().includes(o))
+      const bi = order.findIndex((o) => (b.nome || '').toLowerCase().includes(o))
+      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
+    })
+
+  const principles: SobrePrinciple[] =
+    principleBlocks.length > 0
+      ? principleBlocks.slice(0, 3).map((b, i) => {
+          const d = b.dados as { titulo?: string; paragrafo_1?: string; paragrafo_2?: string }
+          return {
+            num: String(i + 1).padStart(2, '0'),
+            title: d.titulo ?? b.nome ?? '',
+            text: [d.paragrafo_1, d.paragrafo_2].filter(Boolean).join(' '),
+          }
+        })
+      : fallback.principles
+
+  // ── Timeline ────────────────────────────────────────────────────
+  const timelineBlock = blocos.find((b) => b.tipo === 'timeline')
+  const timeline: SobreTimelineEntry[] = timelineBlock
+    ? ((timelineBlock.dados as { items?: Array<{ ano?: string; titulo?: string; descricao?: string }> }).items ?? []).map(
+        (it) => ({
+          year: it.ano ?? '',
+          title: it.titulo ?? '',
+          desc: it.descricao ?? '',
+        })
+      )
+    : fallback.timeline
+
+  // ── Diferenciais ────────────────────────────────────────────────
+  const diferenciaisBlock = blocos.find(
+    (b) => b.tipo === 'feature_grid' && (b.nome ?? '').toLowerCase().includes('diferencia')
+  )
+  const diferenciais: SobreDiferencial[] = diferenciaisBlock
+    ? ((diferenciaisBlock.dados as { items?: Array<{ icone?: string; titulo?: string; descricao?: string }> }).items ?? []).map(
+        (it) => ({
+          iconName: it.icone ?? '★',
+          title: it.titulo ?? '',
+          desc: it.descricao ?? '',
+        })
+      )
+    : fallback.diferenciais
+
+  return {
+    principles: principles.length > 0 ? principles : fallback.principles,
+    timeline: timeline.length > 0 ? timeline : fallback.timeline,
+    diferenciais: diferenciais.length > 0 ? diferenciais : fallback.diferenciais,
+    loading,
+  }
+}
+
 /**
  * Fetch contact info. Prefers the new CMS block (page `contato`, type
  * `contact_info`); falls back to legacy `conteudo_site` keys (`contato.*`)

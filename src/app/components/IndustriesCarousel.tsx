@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { ChevronLeft, ChevronRight, ArrowRight } from "lucide-react";
 import { AnimateOnScroll } from "./useScrollAnimation";
+import { useSetores } from "../hooks/useSiteData";
 
 /* ────────────────────────────────────────────────────────
    FONTS
@@ -9,50 +10,48 @@ const KNOCKOUT = "'Knockout HTF68', sans-serif";
 const BODY_FONT = "Arial, sans-serif";
 
 /* ────────────────────────────────────────────────────────
-   INDUSTRY DATA
+   FALLBACK DATA — usado quando o CMS está indisponível ou
+   ainda não tem setores cadastrados. Pedro edita pelo painel
+   ERP em /marketing/setores.
    ──────────────────────────────────────────────────────── */
-const industries = [
+type Industry = { title: string; description: string; image: string; href: string };
+
+const FALLBACK_INDUSTRIES: Industry[] = [
   {
     title: "Saneamento",
-    description:
-      "Macromedição, monitoramento de qualidade da água e controle de perdas para companhias de saneamento e autarquias municipais.",
+    description: "Macromedição, monitoramento de qualidade da água e controle de perdas para companhias de saneamento e autarquias municipais.",
     image: "/images/industries/5.4.png",
-    href: "#",
+    href: "/setores/saneamento",
   },
   {
     title: "Gás e Petróleo",
-    description:
-      "Soluções robustas para extração, refino e distribuição, garantindo segurança e eficiência em ambientes críticos e classificados.",
+    description: "Soluções robustas para extração, refino e distribuição, garantindo segurança e eficiência em ambientes críticos e classificados.",
     image: "/images/industries/5.5.png",
-    href: "#",
+    href: "/setores/gas-petroleo",
   },
   {
     title: "Biogás e Biometano",
-    description:
-      "Instrumentação, automação e biodigestores GT-BIODIGEST para toda a cadeia: da produção ao aproveitamento energético.",
+    description: "Instrumentação, automação e biodigestores GT-BIODIGEST para toda a cadeia: da produção ao aproveitamento energético.",
     image: "/images/industries/5.3.png",
-    href: "#",
+    href: "/setores/biogas-biometano",
   },
   {
     title: "Proteção Catódica",
-    description:
-      "Projeto, instalação e monitoramento de sistemas eletroquímicos para prevenção da corrosão em dutos e estruturas metálicas.",
+    description: "Projeto, instalação e monitoramento de sistemas eletroquímicos para prevenção da corrosão em dutos e estruturas metálicas.",
     image: "/images/industries/5.1.png",
-    href: "#",
+    href: "/setores/protecao-catodica",
   },
   {
     title: "Agronegócio",
-    description:
-      "Sensores e automação para agricultura de precisão, monitoramento de solo, clima e controle de processos agroindustriais.",
+    description: "Sensores e automação para agricultura de precisão, monitoramento de solo, clima e controle de processos agroindustriais.",
     image: "/images/industries/5.2.png",
-    href: "#",
+    href: "/setores/agronegocio",
   },
   {
     title: "Indústria",
-    description:
-      "Soluções transversais em instrumentação e automação para os mais diversos processos industriais, da química à metalurgia.",
+    description: "Soluções transversais em instrumentação e automação para os mais diversos processos industriais, da química à metalurgia.",
     image: "/images/industries/5.6.png",
-    href: "#",
+    href: "/setores/industria",
   },
 ];
 
@@ -62,6 +61,21 @@ const industries = [
 const SLIDE_GAP = 0; // columns are flush, divided by lines only
 
 export function IndustriesCarousel() {
+  const { setores } = useSetores();
+
+  // Setores publicados vêm do CMS (tabela `setores_site`, editáveis em
+  // /marketing/setores). Caem para FALLBACK_INDUSTRIES quando a API
+  // está fora ou nenhum setor foi marcado como publicado ainda.
+  const industries = useMemo<Industry[]>(() => {
+    if (!setores || setores.length === 0) return FALLBACK_INDUSTRIES;
+    return setores.map((s) => ({
+      title: s.titulo,
+      description: s.descricao_curta || "",
+      image: s.imagem_url || "/images/industries/5.6.png",
+      href: `/setores/${s.slug}`,
+    }));
+  }, [setores]);
+
   const [activeIndex, setActiveIndex] = useState(0);
   const [scrollIndex, setScrollIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);

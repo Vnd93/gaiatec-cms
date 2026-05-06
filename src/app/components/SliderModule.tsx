@@ -58,8 +58,9 @@ const slides = [
   },
 ];
 
-const SLIDE_GAP = 3; // px gap between slides (from JSON marginLeft: 3px)
+const SLIDE_GAP = 0; // sem gap entre slides — evita faixa preta visível
 const AUTO_INTERVAL = 7000;
+const TRANSITION_MS = 600; // duração da transição entre slides
 
 /* ────────────────────────────────────────────────────────
    SECTION 6 — HORIZONTAL SLIDER MODULE
@@ -80,8 +81,17 @@ const AUTO_INTERVAL = 7000;
                - CTA: split button (text | arrow), bg #FF6A00
              - Prev/Next nav: flex, items center, 15px
    ──────────────────────────────────────────────────────── */
+// Renderizamos um clone do primeiro slide DEPOIS do último para que a
+// animação de "voltar pro início" seja contínua (evita aquele frame
+// preto à direita quando o último slide termina). Após a transição
+// alcançar o clone, snap-resetamos para o slide 0 real sem animação.
+const TOTAL = slides.length;
+const RENDERED = [...slides, slides[0]]; // [s0, s1, ..., sN, s0clone]
+
 export function SliderModule() {
+  // current pode ser 0..TOTAL-1 (slides reais) ou TOTAL (clone do 0).
   const [current, setCurrent] = useState(0);
+  const [transitionEnabled, setTransitionEnabled] = useState(true);
   const [progress, setProgress] = useState(0);
   const [slideWidth, setSlideWidth] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
@@ -90,13 +100,19 @@ export function SliderModule() {
   const containerRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
 
+  // Index "lógico" do slide visível (0..TOTAL-1) — usado para progress
+  // bar, dots, e estado de animação. O clone TOTAL aponta visualmente
+  // para o slide 0.
+  const visibleIndex = current >= TOTAL ? 0 : current;
+
   // Calculate slide width (responsive)
   useEffect(() => {
     const updateWidth = () => {
       if (containerRef.current) {
         const containerW = containerRef.current.offsetWidth;
-        // Show ~80% of container as active slide + peek of next
-        const sw = Math.min(containerW * 0.82, 1239);
+        // Slide ocupa 100% do container — sem peek do próximo, evitando
+        // faixa preta no último slide (não há "próximo" pra peekar).
+        const sw = Math.min(containerW, 1440);
         setSlideWidth(sw);
       }
     };
@@ -105,17 +121,52 @@ export function SliderModule() {
     return () => window.removeEventListener("resize", updateWidth);
   }, []);
 
-  const goTo = useCallback(
-    (index: number) => {
-      const wrapped = ((index % slides.length) + slides.length) % slides.length;
-      setCurrent(wrapped);
-      setProgress(0);
-    },
-    []
-  );
+  // Snap-reset: quando alcançamos o clone, espera a transição
+  // terminar, desliga animação e volta pro slide 0 real (mesma posição
+  // visual). Reativa animação no próximo frame.
+  useEffect(() => {
+    if (current !== TOTAL) return;
+    const id = window.setTimeout(() => {
+      setTransitionEnabled(false);
+      setCurrent(0);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => setTransitionEnabled(true));
+      });
+    }, TRANSITION_MS + 30);
+    return () => window.clearTimeout(id);
+  }, [current]);
 
-  const next = useCallback(() => goTo(current + 1), [current, goTo]);
-  const prev = useCallback(() => goTo(current - 1), [current, goTo]);
+  const next = useCallback(() => {
+    setTransitionEnabled(true);
+    setProgress(0);
+    setCurrent((c) => (c >= TOTAL ? 1 : c + 1));
+  }, []);
+
+  const prev = useCallback(() => {
+    setProgress(0);
+    if (visibleIndex === 0) {
+      // Para animar pra trás continuamente, posicionamos no clone
+      // (mesmo visual do slide 0) sem transição, depois animamos
+      // pro último slide real.
+      setTransitionEnabled(false);
+      setCurrent(TOTAL);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          setTransitionEnabled(true);
+          setCurrent(TOTAL - 1);
+        });
+      });
+    } else {
+      setTransitionEnabled(true);
+      setCurrent((c) => c - 1);
+    }
+  }, [visibleIndex]);
+
+  const goTo = useCallback((index: number) => {
+    setTransitionEnabled(true);
+    setProgress(0);
+    setCurrent(((index % TOTAL) + TOTAL) % TOTAL);
+  }, []);
 
   // Auto-play with progress bar
   useEffect(() => {
@@ -152,8 +203,7 @@ export function SliderModule() {
     setDragOffset(0);
   };
 
-  const translateX =
-    -(current * (slideWidth + SLIDE_GAP)) + dragOffset;
+  const translateX = -(current * (slideWidth + SLIDE_GAP)) + dragOffset;
 
   return (
     <>
@@ -231,7 +281,10 @@ export function SliderModule() {
             display: "flex",
             position: "relative",
             transform: `translateX(${translateX}px)`,
-            transition: isDragging ? "none" : "transform 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+            transition:
+              isDragging || !transitionEnabled
+                ? "none"
+                : `transform ${TRANSITION_MS}ms cubic-bezier(0.25, 0.46, 0.45, 0.94)`,
             userSelect: "none",
           }}
           onMouseDown={(e) => handleDragStart(e.clientX)}
@@ -242,12 +295,12 @@ export function SliderModule() {
           onTouchMove={(e) => handleDragMove(e.touches[0].clientX)}
           onTouchEnd={handleDragEnd}
         >
-          {slides.map((slide, i) => (
+          {RENDERED.map((slide, i) => (
             <div
               key={i}
               style={{
                 flex: "0 0 auto",
-                width: slideWidth || "82vw",
+                width: slideWidth || "100vw",
                 marginLeft: i === 0 ? 0 : SLIDE_GAP,
                 minHeight: 1,
                 userSelect: "none",
@@ -418,7 +471,13 @@ export function SliderModule() {
                             fontSize: 15,
                             lineHeight: "15px",
                             marginTop: 60,
-                            opacity: current === i ? 1 : 0,
+                            // Nav só visível no slide ativo. Para o clone (i===TOTAL),
+                            // mostramos quando visibleIndex===0 (mesmo slide visualmente).
+                            opacity:
+                              i === current ||
+                              (i === TOTAL && visibleIndex === 0 && current === TOTAL)
+                                ? 1
+                                : 0,
                             transition: "opacity 0.4s",
                           }}
                         >
@@ -450,7 +509,11 @@ export function SliderModule() {
                                 top: 0,
                                 left: 0,
                                 height: "100%",
-                                width: current === i ? `${progress}%` : "0%",
+                                width:
+                                  i === current ||
+                                  (i === TOTAL && current === TOTAL)
+                                    ? `${progress}%`
+                                    : "0%",
                                 backgroundColor: "rgb(255, 106, 0)",
                                 transition:
                                   progress === 0

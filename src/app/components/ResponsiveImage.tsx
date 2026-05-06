@@ -3,7 +3,7 @@ import React from 'react'
 interface ResponsiveImageProps extends Omit<React.ImgHTMLAttributes<HTMLImageElement>, 'src' | 'srcSet'> {
   /**
    * Path da imagem original (ex: "/images/heroes/1.1.png")
-   * O componente gera automaticamente o srcset para webp/png em 480w/1024w/1920w.
+   * O componente gera automaticamente o srcset para AVIF/WebP/PNG em 480w/1024w/1920w.
    */
   src: string
   /**
@@ -21,6 +21,14 @@ interface ResponsiveImageProps extends Omit<React.ImgHTMLAttributes<HTMLImageEle
    */
   priority?: boolean
   /**
+   * Largura intrínseca da imagem (evita layout shift). Recomendado.
+   */
+  width?: number
+  /**
+   * Altura intrínseca (evita layout shift). Recomendado.
+   */
+  height?: number
+  /**
    * Classes CSS aplicadas ao <img> (não ao <picture>)
    */
   className?: string
@@ -31,26 +39,24 @@ interface ResponsiveImageProps extends Omit<React.ImgHTMLAttributes<HTMLImageEle
 }
 
 /**
- * Renderiza uma imagem responsiva com srcset + WebP fallback.
+ * Renderiza uma imagem responsiva com AVIF + WebP + PNG fallback.
  *
  * Requer que as variants tenham sido geradas via `scripts/generate-responsive-images.mjs`:
- *   - {name}.webp                (full size)
- *   - {name}-480w.webp / -480w.png
- *   - {name}-1024w.webp / -1024w.png
- *   - {name}-1920w.webp / -1920w.png
+ *   - {name}-480w.{avif|webp|png}    (mobile)
+ *   - {name}-1024w.{avif|webp|png}   (tablet)
+ *   - {name}-1920w.{avif|webp|png}   (desktop)
  *
- * @example
- * <ResponsiveImage
- *   src="/images/heroes/1.1.png"
- *   alt="Hero industrial"
- *   priority   // hero — loading eager
- * />
+ * AVIF: ~40% menor que WebP, suportado por 95%+ dos browsers (2024+)
+ * WebP: fallback para browsers que não suportam AVIF
+ * PNG:  fallback final (Safari < 14, IE)
  */
 export const ResponsiveImage: React.FC<ResponsiveImageProps> = ({
   src,
   alt,
   sizes = '(max-width: 768px) 480px, (max-width: 1280px) 1024px, 1920px',
   priority = false,
+  width,
+  height,
   className,
   style,
   ...rest
@@ -66,6 +72,9 @@ export const ResponsiveImage: React.FC<ResponsiveImageProps> = ({
         loading={priority ? 'eager' : 'lazy'}
         // @ts-expect-error fetchPriority é válido em React 18+
         fetchpriority={priority ? 'high' : undefined}
+        decoding={priority ? 'sync' : 'async'}
+        width={width}
+        height={height}
         className={className}
         style={style}
         {...rest}
@@ -81,9 +90,9 @@ export const ResponsiveImage: React.FC<ResponsiveImageProps> = ({
   const name = src.substring(lastSlash + 1, lastDot)
   const ext = src.substring(lastDot)
 
-  // Monta URLs para cada variant
-  const buildSrcSet = (format: 'webp' | 'original') => {
-    const formatExt = format === 'webp' ? '.webp' : ext
+  // Monta srcset para um formato específico
+  const buildSrcSet = (format: 'avif' | 'webp' | 'original') => {
+    const formatExt = format === 'avif' ? '.avif' : format === 'webp' ? '.webp' : ext
     return [
       `${dir}/${name}-480w${formatExt} 480w`,
       `${dir}/${name}-1024w${formatExt} 1024w`,
@@ -95,9 +104,11 @@ export const ResponsiveImage: React.FC<ResponsiveImageProps> = ({
 
   return (
     <picture>
+      {/* AVIF — mais novo, ~40% menor que WebP */}
+      <source type="image/avif" srcSet={buildSrcSet('avif')} sizes={sizes} />
       {/* WebP — moderno, ~30% menor que PNG */}
       <source type="image/webp" srcSet={buildSrcSet('webp')} sizes={sizes} />
-      {/* PNG/JPG fallback — Safari < 14, navegadores antigos */}
+      {/* PNG/JPG fallback */}
       <img
         src={fallbackSrc}
         srcSet={buildSrcSet('original')}
@@ -107,6 +118,8 @@ export const ResponsiveImage: React.FC<ResponsiveImageProps> = ({
         // @ts-expect-error fetchPriority é válido em React 18+
         fetchpriority={priority ? 'high' : undefined}
         decoding={priority ? 'sync' : 'async'}
+        width={width}
+        height={height}
         className={className}
         style={style}
         {...rest}
@@ -116,17 +129,18 @@ export const ResponsiveImage: React.FC<ResponsiveImageProps> = ({
 }
 
 /**
- * Helper que retorna o caminho da WebP otimizada de tamanho específico.
- * Útil pra `backgroundImage` em divs onde refatorar para <picture> não é prático.
- *
- * @example
- * const bgUrl = optimizedBg('/images/heroes/1.1.png', 1920)
- * <div style={{ backgroundImage: `url(${bgUrl})` }} />
+ * Helper que retorna o caminho da imagem otimizada para `backgroundImage`.
+ * Browsers modernos preferem AVIF, fallback automático via image-set().
  *
  * @param src Path original (ex: "/images/heroes/1.1.png")
  * @param width Tamanho desejado: 480 | 1024 | 1920
+ * @param format Formato: 'avif' (default) | 'webp' | 'png'
  */
-export function optimizedBg(src: string, width: 480 | 1024 | 1920 = 1920): string {
+export function optimizedBg(
+  src: string,
+  width: 480 | 1024 | 1920 = 1920,
+  format: 'avif' | 'webp' | 'png' = 'webp',
+): string {
   const isLocal = src.startsWith('/') && !src.startsWith('//')
   if (!isLocal) return src
 
@@ -136,16 +150,16 @@ export function optimizedBg(src: string, width: 480 | 1024 | 1920 = 1920): strin
 
   const dir = src.substring(0, lastSlash)
   const name = src.substring(lastSlash + 1, lastDot)
-  return `${dir}/${name}-${width}w.webp`
+  const ext = format === 'png' ? src.substring(lastDot) : `.${format}`
+  return `${dir}/${name}-${width}w${ext}`
 }
 
 /**
- * Para uso com CSS image-set() em backgrounds responsivos.
- * Gera string image-set() com 3 tamanhos. Browsers escolhem o ideal.
+ * CSS image-set() responsivo com AVIF → WebP fallback.
+ * Browser escolhe o melhor formato + resolução suportado.
  *
  * @example
- * const bg = responsiveBackgroundCss('/images/heroes/1.1.png')
- * <div style={{ backgroundImage: bg }} />
+ * <div style={{ backgroundImage: responsiveBackgroundCss('/images/heroes/1.1.png') }} />
  */
 export function responsiveBackgroundCss(src: string): string {
   const isLocal = src.startsWith('/') && !src.startsWith('//')
@@ -158,12 +172,10 @@ export function responsiveBackgroundCss(src: string): string {
   const dir = src.substring(0, lastSlash)
   const name = src.substring(lastSlash + 1, lastDot)
 
-  // image-set() é suportado por todos os navegadores modernos (2022+).
-  // Browsers escolhem a melhor versão baseado na resolução.
+  // image-set() com type-fallback: browser escolhe o primeiro formato suportado
   return `image-set(
-    url(${dir}/${name}-480w.webp) type("image/webp") 1x,
-    url(${dir}/${name}-1024w.webp) type("image/webp") 1.5x,
-    url(${dir}/${name}-1920w.webp) type("image/webp") 2x
+    url(${dir}/${name}-1920w.avif) type("image/avif") 1x,
+    url(${dir}/${name}-1920w.webp) type("image/webp") 1x
   )`
 }
 

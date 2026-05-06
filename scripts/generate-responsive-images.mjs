@@ -1,15 +1,18 @@
 #!/usr/bin/env node
 /**
- * Pipeline de imagens responsivas
- * --------------------------------
- * Para cada PNG em public/images/, gera variants em 3 tamanhos × 2 formatos:
- *   - PNG 480w / 1024w / 1920w
- *   - WebP 480w / 1024w / 1920w
+ * Pipeline de imagens responsivas — V2 (otimização agressiva)
+ * ----------------------------------------------------------
+ * Para cada PNG em public/images/, gera variants em 3 tamanhos × 3 formatos:
+ *   - AVIF 480w / 1024w / 1920w  (~40% menor que WebP, suporte 95%+ browsers)
+ *   - WebP 480w / 1024w / 1920w  (fallback universal moderno)
+ *   - PNG  480w / 1024w / 1920w  (fallback final p/ browsers antigos)
  *
  * Cache: pula imagens cuja saída já existe e é mais nova que o source.
  *
- * Uso: rodado antes do `vite build` via package.json:
- *   "build": "node scripts/generate-responsive-images.mjs && vite build"
+ * Qualidade calibrada para fotos web (não para impressão):
+ *   AVIF: 50  → ganho ~40% vs WebP, perda visual imperceptível
+ *   WebP: 65  → ganho ~25% vs WebP-75, perda visual imperceptível
+ *   PNG:  72  → fallback comprimido sem suporte AVIF/WebP
  */
 import { readdir, stat, mkdir } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
@@ -22,8 +25,11 @@ const ROOT = join(__dirname, '..')
 const SOURCE_DIR = join(ROOT, 'public', 'images')
 
 const SIZES = [480, 1024, 1920]
-const WEBP_QUALITY = 75
-const PNG_QUALITY = 80
+
+// Quality levels — calibrado para fotos industriais (não slides de infográfico)
+const AVIF_QUALITY = 50  // AVIF é mais eficiente, qualidade menor produz menos artefatos
+const WEBP_QUALITY = 65  // WebP em 65 é visualmente igual a 80
+const PNG_QUALITY = 72   // PNG fallback (raro ser usado)
 
 // Encontra recursivamente todos os arquivos no diretório
 async function walkDir(dir) {
@@ -73,37 +79,61 @@ async function processImage(filePath) {
     // Não cria variant maior do que o original
     if (targetWidth > originalWidth) continue
 
-    // PNG/JPG variant
-    const pngOut = join(dir, `${name}-${targetWidth}w${ext}`)
-    if (await shouldRegenerate(filePath, pngOut)) {
+    const sharpResize = () =>
+      sharp(filePath).resize({ width: targetWidth, withoutEnlargement: true })
+
+    // === AVIF variant (mais agressivo, melhor compressão) ===
+    const avifOut = join(dir, `${name}-${targetWidth}w.avif`)
+    if (await shouldRegenerate(filePath, avifOut)) {
       tasks.push(
-        sharp(filePath)
-          .resize({ width: targetWidth, withoutEnlargement: true })
-          .png({ quality: PNG_QUALITY, compressionLevel: 9 })
-          .toFile(pngOut)
+        sharpResize()
+          .avif({ quality: AVIF_QUALITY, effort: 4 })
+          .toFile(avifOut)
+          .then(() => generatedCount++)
+          .catch(err => console.warn(`   ⚠️  AVIF falhou para ${name}-${targetWidth}w:`, err.message))
+      )
+    }
+
+    // === WebP variant (fallback compatível) ===
+    const webpOut = join(dir, `${name}-${targetWidth}w.webp`)
+    if (await shouldRegenerate(filePath, webpOut)) {
+      tasks.push(
+        sharpResize()
+          .webp({ quality: WEBP_QUALITY, effort: 5 })
+          .toFile(webpOut)
           .then(() => generatedCount++)
       )
     }
 
-    // WebP variant
-    const webpOut = join(dir, `${name}-${targetWidth}w.webp`)
-    if (await shouldRegenerate(filePath, webpOut)) {
+    // === PNG variant (fallback raríssimo) ===
+    const pngOut = join(dir, `${name}-${targetWidth}w${ext}`)
+    if (await shouldRegenerate(filePath, pngOut)) {
       tasks.push(
-        sharp(filePath)
-          .resize({ width: targetWidth, withoutEnlargement: true })
-          .webp({ quality: WEBP_QUALITY })
-          .toFile(webpOut)
+        sharpResize()
+          .png({ quality: PNG_QUALITY, compressionLevel: 9, palette: true })
+          .toFile(pngOut)
           .then(() => generatedCount++)
       )
     }
   }
 
-  // Variant WebP do tamanho original (sem resize, só conversão)
+  // Variants do tamanho original (sem resize) — usado em image-set ou casos específicos
+  const avifOriginalOut = join(dir, `${name}.avif`)
+  if (await shouldRegenerate(filePath, avifOriginalOut)) {
+    tasks.push(
+      sharp(filePath)
+        .avif({ quality: AVIF_QUALITY, effort: 4 })
+        .toFile(avifOriginalOut)
+        .then(() => generatedCount++)
+        .catch(() => {})
+    )
+  }
+
   const webpOriginalOut = join(dir, `${name}.webp`)
   if (await shouldRegenerate(filePath, webpOriginalOut)) {
     tasks.push(
       sharp(filePath)
-        .webp({ quality: WEBP_QUALITY })
+        .webp({ quality: WEBP_QUALITY, effort: 5 })
         .toFile(webpOriginalOut)
         .then(() => generatedCount++)
     )
@@ -115,7 +145,7 @@ async function processImage(filePath) {
 }
 
 async function main() {
-  console.log('🖼️  Gerando imagens responsivas...')
+  console.log('🖼️  Gerando imagens responsivas (AVIF + WebP + PNG)...')
   const startTime = Date.now()
 
   if (!existsSync(SOURCE_DIR)) {
@@ -124,15 +154,15 @@ async function main() {
   }
 
   const files = await walkDir(SOURCE_DIR)
-  const imageFiles = files.filter(f => /\.(png|jpe?g)$/i.test(f))
+  const imageFiles = files.filter(f => /\.(png|jpe?g)$/i.test(f) && !/-(480|1024|1920)w/.test(f))
 
-  console.log(`   Encontradas ${imageFiles.length} imagens para processar`)
+  console.log(`   Encontradas ${imageFiles.length} imagens-fonte para processar`)
 
   let totalGenerated = 0
   let totalSkipped = 0
 
-  // Processa em paralelo (4 por vez para não estourar memória)
-  const batchSize = 4
+  // AVIF é CPU-intensivo — 2 em paralelo para não esgotar memória/CPU
+  const batchSize = 2
   for (let i = 0; i < imageFiles.length; i += batchSize) {
     const batch = imageFiles.slice(i, i + batchSize)
     const results = await Promise.all(batch.map(processImage))

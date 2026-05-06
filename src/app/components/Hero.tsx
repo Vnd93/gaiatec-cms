@@ -92,9 +92,31 @@ export const Hero = () => {
               opacity: { duration: 0.8, ease: 'easeInOut' },
               scale: { duration: 6, ease: 'easeOut' },
             }}
-            className="absolute inset-0 bg-cover bg-center"
-            style={{ backgroundImage: `url(${optimizedBg(slide.image, 1920)})` }}
-          />
+            className="absolute inset-0 overflow-hidden"
+          >
+            {/* picture com AVIF + WebP + srcset responsivo */}
+            <picture>
+              <source
+                type="image/avif"
+                srcSet={`${optimizedBg(slide.image, 480, 'avif')} 480w, ${optimizedBg(slide.image, 1024, 'avif')} 1024w, ${optimizedBg(slide.image, 1920, 'avif')} 1920w`}
+                sizes="100vw"
+              />
+              <source
+                type="image/webp"
+                srcSet={`${optimizedBg(slide.image, 480, 'webp')} 480w, ${optimizedBg(slide.image, 1024, 'webp')} 1024w, ${optimizedBg(slide.image, 1920, 'webp')} 1920w`}
+                sizes="100vw"
+              />
+              <img
+                src={optimizedBg(slide.image, 1024, 'webp')}
+                alt=""
+                loading={currentSlide === 0 ? 'eager' : 'lazy'}
+                decoding={currentSlide === 0 ? 'sync' : 'async'}
+                // @ts-expect-error fetchpriority é válido
+                fetchpriority={currentSlide === 0 ? 'high' : undefined}
+                className="w-full h-full object-cover object-center"
+              />
+            </picture>
+          </motion.div>
         </AnimatePresence>
 
         {/* Overlay mais sutil */}

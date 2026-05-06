@@ -296,7 +296,14 @@ export function SliderModule() {
           onTouchMove={(e) => handleDragMove(e.touches[0].clientX)}
           onTouchEnd={handleDragEnd}
         >
-          {RENDERED.map((slide, i) => (
+          {RENDERED.map((slide, i) => {
+            // === LAZY LOAD AGRESSIVO ===
+            // Só renderiza a imagem se o slide está visível ou adjacente
+            // (precisa do próximo carregado para transição suave de 600ms)
+            const isVisible = Math.abs(i - current) <= 1 ||
+                              (current === 0 && i === TOTAL) || // clone do final voltando
+                              (current === TOTAL && i === 0);
+            return (
             <div
               key={i}
               style={{
@@ -329,21 +336,44 @@ export function SliderModule() {
                     position: "relative",
                   }}
                 >
-                  {/* Background image — usa WebP 1920w (~10x menor que PNG original) */}
-                  <div
-                    style={{
-                      backgroundImage: `url(${optimizedBg(slide.image, 1920)})`,
-                      backgroundPosition: "50% 50%",
-                      backgroundRepeat: "no-repeat",
-                      backgroundSize: "cover",
-                      height: "100%",
-                      left: 0,
-                      position: "absolute",
-                      top: 0,
-                      width: "100%",
-                      opacity: 0.5,
-                    }}
-                  />
+                  {/* Background image — só carrega se visível/adjacente (lazy load) */}
+                  {isVisible && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        opacity: 0.5,
+                      }}
+                    >
+                      <picture>
+                        <source
+                          type="image/avif"
+                          srcSet={`${optimizedBg(slide.image, 480, "avif")} 480w, ${optimizedBg(slide.image, 1024, "avif")} 1024w, ${optimizedBg(slide.image, 1920, "avif")} 1920w`}
+                          sizes="100vw"
+                        />
+                        <source
+                          type="image/webp"
+                          srcSet={`${optimizedBg(slide.image, 480, "webp")} 480w, ${optimizedBg(slide.image, 1024, "webp")} 1024w, ${optimizedBg(slide.image, 1920, "webp")} 1920w`}
+                          sizes="100vw"
+                        />
+                        <img
+                          src={optimizedBg(slide.image, 1024, "webp")}
+                          alt=""
+                          loading={i === 0 ? "eager" : "lazy"}
+                          decoding={i === 0 ? "sync" : "async"}
+                          // @ts-expect-error fetchpriority é válido
+                          fetchpriority={i === 0 ? "high" : undefined}
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "cover",
+                            objectPosition: "50% 50%",
+                            display: "block",
+                          }}
+                        />
+                      </picture>
+                    </div>
+                  )}
 
                   {/* ── CONTAINER ── */}
                   <div
@@ -541,7 +571,8 @@ export function SliderModule() {
                 </div>
               </div>
             </div>
-          ))}
+          );
+          })}
         </div>
       </section>
     </>

@@ -217,11 +217,10 @@ export default function SetoresPage() {
          ═══════════════════════════════════════════════════ */}
       <section style={{ backgroundColor: "#111", padding: "60px 0" }}>
         <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px" }}>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {[
               { value: String(sectors.length), label: "Setores de Atuação" },
               { value: "+20", label: "Anos de Experiência" },
-              { value: "RBC", label: "Laboratório Acreditado" },
               { value: "BR", label: "Atendimento Nacional" },
             ].map((s, i) => (
               <AnimateOnScroll key={s.label} delay={i * 0.1}>

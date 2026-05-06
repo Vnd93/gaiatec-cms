@@ -1094,14 +1094,12 @@ export default function ProdutosPage() {
       </section>
 
       {/* ═══════════════════════════════════════════
-          6) STATS BAR — certifications as data
+          6) STATS BAR — catálogo + setores (sem selos de certificação)
          ═══════════════════════════════════════════ */}
       <section style={{ backgroundColor: "#111", padding: "60px 0" }}>
         <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px" }}>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+          <div className="grid grid-cols-2 gap-8">
             {[
-              { value: "RBC", label: "Laboratorio Acreditado" },
-              { value: "ISO", label: "Gestao de Qualidade" },
               { value: String(products.length), label: "Equipamentos no Catalogo" },
               { value: "+11", label: "Setores Atendidos" },
             ].map((s, i) => (

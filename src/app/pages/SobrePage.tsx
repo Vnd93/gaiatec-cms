@@ -46,9 +46,6 @@ const FALLBACK_TIMELINE = [
 ];
 
 const FALLBACK_DIFERENCIAIS = [
-  { iconName: "🏆", title: "Acreditação RBC", desc: "Calibrações rastreáveis e reconhecidas internacionalmente" },
-  { iconName: "🛡️", title: "Homologação INMETRO", desc: "Conformidade com normas metrológicas brasileiras" },
-  { iconName: "✓", title: "Certificação ISO", desc: "Sistema de gestão da qualidade consolidado" },
   { iconName: "💼", title: "20+ anos de experiência", desc: "Portfólio técnico amplo e credibilidade de mercado" },
   { iconName: "🎯", title: "11 Setores Atendidos", desc: "Atuação transversal na indústria brasileira" },
   { iconName: "👥", title: "Equipe especializada", desc: "Engenheiros e técnicos com expertise em campo" },

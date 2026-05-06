@@ -132,17 +132,6 @@ export function Footer() {
             <p className="text-white/50 text-[14px] leading-[1.7] mb-6">
               Soluções técnicas em instrumentação industrial desde 2004.
             </p>
-            <div className="flex gap-3 mb-6">
-              {["RBC", "INMETRO", "ISO"].map((seal) => (
-                <span
-                  key={seal}
-                  className="inline-flex items-center justify-center w-[50px] h-[50px] border border-[#FF6A00]/40 text-[#FF6A00] text-[10px]"
-                  style={{ fontWeight: 700, borderRadius: "50%" }}
-                >
-                  {seal}
-                </span>
-              ))}
-            </div>
             {/* Contact summary (CMS-driven) */}
             {(contact.telefone || contact.whatsapp || contact.email) && (
               <div className="text-white/60 text-[12px] leading-[1.8] mb-4 space-y-1">

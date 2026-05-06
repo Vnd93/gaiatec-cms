@@ -237,9 +237,8 @@ export default function ServicosPage() {
             </div>
           </AnimateOnScroll>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {[
-              { value: "RBC", label: "Laboratório Acreditado", desc: "Calibração com rastreabilidade metrológica reconhecida internacionalmente" },
               { value: "+20", label: "Anos de Experiência", desc: "Portfólio técnico consolidado em múltiplos setores industriais" },
               { value: String(services.length), label: "Serviços Especializados", desc: "Portfólio completo de serviços técnicos para a indústria" },
               { value: "BR", label: "Atendimento Nacional", desc: "Equipe técnica com atuação em todo o território brasileiro" },

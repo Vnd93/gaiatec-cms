@@ -3,6 +3,7 @@ import path from 'path'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { ViteImageOptimizer } from 'vite-plugin-image-optimizer'
+import viteCompression from 'vite-plugin-compression'
 
 export default defineConfig({
   plugins: [
@@ -10,6 +11,24 @@ export default defineConfig({
     // Tailwind is not being actively used – do not remove them
     react(),
     tailwindcss(),
+
+    // Pre-compressão Gzip — Cloudflare serve direto sem precisar comprimir runtime
+    viteCompression({
+      algorithm: 'gzip',
+      ext: '.gz',
+      threshold: 10240, // só comprime arquivos > 10 KB
+      deleteOriginFile: false, // mantém original para browsers sem suporte
+      verbose: false,
+    }),
+
+    // Pre-compressão Brotli — ~20% melhor que Gzip, suportado por todos browsers modernos
+    viteCompression({
+      algorithm: 'brotliCompress',
+      ext: '.br',
+      threshold: 10240,
+      deleteOriginFile: false,
+      verbose: false,
+    }),
 
     // Otimização automática de imagens (PNG/JPG/WebP/SVG) durante o build
     // Reduz drasticamente o tamanho dos arquivos em /public/images sem perda visual

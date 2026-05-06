@@ -1,0 +1,12 @@
+# Robots.txt — Gaiatec Sistemas
+# https://gaiatecsistemas.com.br
+
+User-agent: *
+Allow: /
+
+# Bloqueia áreas internas (caso existam)
+Disallow: /api/
+Disallow: /admin/
+
+# Sitemap
+Sitemap: https://gaiatecsistemas.com.br/sitemap.xml

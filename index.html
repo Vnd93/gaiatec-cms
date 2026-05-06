@@ -7,6 +7,34 @@
       <link rel="icon" type="image/svg+xml" href="/favicon-gaiatec.svg" />
       <link rel="alternate icon" type="image/png" href="/logo-gaiatec.png" />
       <link rel="apple-touch-icon" href="/logo-gaiatec.png" />
+
+      <!-- Preconnect Google Fonts (early DNS + TLS handshake) -->
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+      <!-- Preload Inter (fonte principal — bloqueia o FCP se baixar tarde) -->
+      <link
+        rel="preload"
+        as="style"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+      />
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+      />
+
+      <!-- Preload Knockout (fonte de logo/títulos — local) -->
+      <link
+        rel="preload"
+        as="font"
+        type="font/ttf"
+        href="/fonts/knockout-htf68.ttf"
+        crossorigin="anonymous"
+      />
+
+      <!-- Theme color para PWA / mobile -->
+      <meta name="theme-color" content="#0F172A" />
+
       <title>Gaiatec Sistemas</title>
     </head>
 

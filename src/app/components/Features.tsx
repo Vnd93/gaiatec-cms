@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  Fuel, 
-  Leaf, 
-  Factory, 
-  Shield, 
-  Sprout, 
-  Fan, 
-  Droplets, 
-  Radio 
+import {
+  Fuel,
+  Leaf,
+  Factory,
+  Shield,
+  Sprout,
+  Fan,
+  Droplets,
+  Radio
 } from 'lucide-react';
 import { SectionTitle } from '@/app/components/ui/SectionTitle';
+import { ResponsiveImage } from './ResponsiveImage';
 
 const sectors = [
   {
@@ -223,10 +224,10 @@ export const Features = () => {
             >
               {/* Background Image */}
               <div className="absolute inset-0 bg-gradient-to-t from-blue-900/90 via-blue-900/50 to-transparent z-10" />
-              <img
-                loading="lazy"
+              <ResponsiveImage
                 src={activeSector.image}
                 alt={activeSector.title}
+                sizes="(max-width: 768px) 100vw, 50vw"
                 className="w-full h-full object-cover"
               />
               

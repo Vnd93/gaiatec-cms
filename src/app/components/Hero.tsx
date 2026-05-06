@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Leaf, Fan, Settings, Thermometer } from 'lucide-react';
+import { optimizedBg } from './ResponsiveImage';
 import biodigestorImage from 'figma:asset/2cc791faa9578fb444798ba35a0133ab9b7d6591.png';
 import automacaoImage from 'figma:asset/c02efa1f274060e3e89707ed472bb202fea81155.png';
 import sistemasTermicosImage from 'figma:asset/df0961e579bc6eb45a5d75e2495871da24f5bbaf.png';
@@ -92,7 +93,7 @@ export const Hero = () => {
               scale: { duration: 6, ease: 'easeOut' },
             }}
             className="absolute inset-0 bg-cover bg-center"
-            style={{ backgroundImage: `url(${slide.image})` }}
+            style={{ backgroundImage: `url(${optimizedBg(slide.image, 1920)})` }}
           />
         </AnimatePresence>
 

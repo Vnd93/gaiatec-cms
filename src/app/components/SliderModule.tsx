@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ArrowRight } from "lucide-react";
+import { optimizedBg } from "./ResponsiveImage";
 
 /* ────────────────────────────────────────────────────────
    FONTS
@@ -328,10 +329,10 @@ export function SliderModule() {
                     position: "relative",
                   }}
                 >
-                  {/* Background image */}
+                  {/* Background image — usa WebP 1920w (~10x menor que PNG original) */}
                   <div
                     style={{
-                      backgroundImage: `url(${slide.image})`,
+                      backgroundImage: `url(${optimizedBg(slide.image, 1920)})`,
                       backgroundPosition: "50% 50%",
                       backgroundRepeat: "no-repeat",
                       backgroundSize: "cover",

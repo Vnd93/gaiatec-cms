@@ -10,3 +10,19 @@ dist/
 # Node compile/update caches
 node-compile-cache/
 update-check/
+
+# Imagens responsivas geradas (regenerated no build via scripts/generate-responsive-images.mjs)
+public/images/**/*-480w.png
+public/images/**/*-480w.webp
+public/images/**/*-480w.jpg
+public/images/**/*-480w.jpeg
+public/images/**/*-1024w.png
+public/images/**/*-1024w.webp
+public/images/**/*-1024w.jpg
+public/images/**/*-1024w.jpeg
+public/images/**/*-1920w.png
+public/images/**/*-1920w.webp
+public/images/**/*-1920w.jpg
+public/images/**/*-1920w.jpeg
+# WebP versions (gerados a partir dos PNGs originais)
+public/images/**/*.webp

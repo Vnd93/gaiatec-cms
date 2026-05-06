@@ -1,13 +1,14 @@
 import React from 'react';
 import { ArrowRight } from 'lucide-react';
+import { optimizedBg } from './ResponsiveImage';
 
 export const Careers = () => {
   return (
     <section className="relative py-24 overflow-hidden">
-      {/* Background Image with Overlay */}
-      <div 
+      {/* Background Image with Overlay — usa WebP 1920w */}
+      <div
         className="absolute inset-0 bg-cover bg-center bg-fixed"
-        style={{ backgroundImage: 'url("/images/slides/11.5.png")' }}
+        style={{ backgroundImage: `url("${optimizedBg('/images/slides/11.5.png', 1920)}")` }}
       >
         <div className="absolute inset-0 bg-gradient-to-r from-blue-900/90 to-blue-800/85"></div>
       </div>

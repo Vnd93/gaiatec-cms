@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
+import { optimizedBg } from '../components/ResponsiveImage';
 import educationalProjectImage from 'figma:asset/f60fb57ae370744590884ea438396bfe4e099802.png';
 
 const HERO_IMAGES = [
@@ -36,7 +37,7 @@ export const AboutPage = () => {
               scale: { duration: 6, ease: "easeOut" }
             }}
             className="absolute inset-0 bg-cover bg-center"
-            style={{ backgroundImage: `url(${HERO_IMAGES[currentSlide]})` }}
+            style={{ backgroundImage: `url(${optimizedBg(HERO_IMAGES[currentSlide], 1920)})` }}
           />
         </AnimatePresence>
         <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/60 to-black/20 z-[1]" />

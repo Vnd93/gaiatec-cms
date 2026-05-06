@@ -1,5 +1,9 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+/* Inter is preloaded in index.html for faster FCP — do not duplicate here */
+
+/* Fontes secundárias (não bloqueiam o FCP, podem ficar como import CSS) */
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Antonio:wght@100;200;300;400;500;600;700&display=swap');
+
 @font-face {
   font-family: 'Knockout HTF68';
   src: url('/fonts/knockout-htf68.ttf') format('truetype');
@@ -8,4 +12,3 @@
   font-display: swap;
   size-adjust: 110%;
 }
-@import url('https://fonts.googleapis.com/css2?family=Antonio:wght@100;200;300;400;500;600;700&display=swap');

@@ -2,6 +2,7 @@ import React from 'react';
 import { SectionTitle } from '@/app/components/ui/SectionTitle';
 import { Button } from '@/app/components/ui/Button';
 import { ShoppingCart, ArrowRight } from 'lucide-react';
+import { ResponsiveImage } from './ResponsiveImage';
 
 const products = [
   {
@@ -41,10 +42,10 @@ export const Products = () => {
           {products.map((product) => (
             <div key={product.id} className="group bg-white rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 border border-gray-100 overflow-hidden flex flex-col">
               <div className="relative h-64 overflow-hidden">
-                <img
-                  loading="lazy"
+                <ResponsiveImage
                   src={product.image}
                   alt={product.name}
+                  sizes="(max-width: 768px) 100vw, (max-width: 1280px) 50vw, 33vw"
                   className="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-500"
                 />
                 <div className="absolute top-4 right-4 bg-orange-500 text-white text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide">

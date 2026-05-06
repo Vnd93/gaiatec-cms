@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { ChevronLeft, ChevronRight, ArrowRight } from "lucide-react";
 import { AnimateOnScroll } from "./useScrollAnimation";
 import { useSetores } from "../hooks/useSiteData";
+import { optimizedBg } from "./ResponsiveImage";
 
 /* ────────────────────────────────────────────────────────
    FONTS
@@ -243,7 +244,7 @@ export function IndustriesCarousel() {
             style={{
               position: "absolute",
               inset: 0,
-              backgroundImage: `url(${ind.image})`,
+              backgroundImage: `url(${optimizedBg(ind.image, 1920)})`,
               backgroundSize: "cover",
               backgroundPosition: "center",
               opacity: activeIndex === i ? 1 : 0,

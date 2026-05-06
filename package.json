@@ -4,8 +4,10 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "build": "vite build",
-    "dev": "vite"
+    "build": "node scripts/generate-responsive-images.mjs && vite build",
+    "build:fast": "vite build",
+    "dev": "vite",
+    "responsive-images": "node scripts/generate-responsive-images.mjs"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "1.2.3",

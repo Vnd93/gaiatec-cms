@@ -142,7 +142,7 @@ export function HeroBanner() {
       <div className="relative h-full max-w-[1400px] mx-auto px-4 md:px-6 flex flex-col justify-end pb-28 md:pb-36">
         <div className="max-w-[700px]">
           <span
-            className="inline-block text-[#FF6A00] text-[11px] md:text-[13px] tracking-[0.2em] uppercase mb-3 opacity-0 animate-[fadeInUp_0.6s_ease_0.2s_forwards]"
+            className="inline-block text-[#0057DE] text-[11px] md:text-[13px] tracking-[0.2em] uppercase mb-3 opacity-0 animate-[fadeInUp_0.6s_ease_0.2s_forwards]"
             key={`label-${current}`}
             style={{ fontWeight: 500 }}
           >
@@ -163,7 +163,7 @@ export function HeroBanner() {
           </p>
           <a
             href={slides[current].href}
-            className="inline-flex items-center gap-2 bg-transparent border-2 border-[#FF6A00] text-[#FF6A00] px-7 py-3 text-[13px] tracking-wider hover:bg-[#FF6A00] hover:text-black transition-all duration-300 opacity-0 animate-[fadeInUp_0.6s_ease_0.8s_forwards]"
+            className="inline-flex items-center gap-2 bg-transparent border-2 border-[#0057DE] text-[#0057DE] px-7 py-3 text-[13px] tracking-wider hover:bg-[#0057DE] hover:text-black transition-all duration-300 opacity-0 animate-[fadeInUp_0.6s_ease_0.8s_forwards]"
             key={`cta-${current}`}
             style={{ fontWeight: 600 }}
           >
@@ -186,7 +186,7 @@ export function HeroBanner() {
             {/* Timer bar */}
             <div className="flex-1 max-w-[120px] h-[2px] bg-white/20 mx-2">
               <div
-                className="h-full bg-[#FF6A00] transition-[width] duration-[50ms] linear"
+                className="h-full bg-[#0057DE] transition-[width] duration-[50ms] linear"
                 style={{ width: `${progress}%` }}
               />
             </div>

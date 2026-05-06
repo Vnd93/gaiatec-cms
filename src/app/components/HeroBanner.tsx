@@ -163,7 +163,7 @@ export function HeroBanner() {
           </p>
           <a
             href={slides[current].href}
-            className="inline-flex items-center gap-2 bg-transparent border-2 border-[#0057DE] text-[#0057DE] px-7 py-3 text-[13px] tracking-wider hover:bg-[#0057DE] hover:text-black transition-all duration-300 opacity-0 animate-[fadeInUp_0.6s_ease_0.8s_forwards]"
+            className="inline-flex items-center gap-2 bg-transparent border-2 border-[#0057DE] text-white px-7 py-3 text-[13px] tracking-wider hover:bg-[#0057DE] hover:text-white transition-all duration-300 opacity-0 animate-[fadeInUp_0.6s_ease_0.8s_forwards]"
             key={`cta-${current}`}
             style={{ fontWeight: 600 }}
           >

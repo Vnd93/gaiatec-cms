@@ -231,7 +231,7 @@ export function Header() {
           animation: pulse-phone 2s infinite;
         }
         .hdr-utility-link {
-          color: rgb(255, 106, 0);
+          color: rgb(0, 87, 222);
           cursor: pointer;
           display: inline-block;
           font-size: 14px;
@@ -259,10 +259,10 @@ export function Header() {
           padding: 8px 0;
         }
         .hdr-nav-link:hover {
-          color: rgb(255, 106, 0);
+          color: rgb(0, 87, 222);
         }
         .hdr-nav-li.active .hdr-nav-link {
-          color: rgb(255, 106, 0);
+          color: rgb(0, 87, 222);
         }
         .hdr-mega-l1-link {
           color: rgb(255, 255, 255);
@@ -276,7 +276,7 @@ export function Header() {
           transition: color 0.3s;
         }
         .hdr-mega-l1-link:hover {
-          color: rgb(255, 106, 0);
+          color: rgb(0, 87, 222);
         }
         .hdr-mega-l2-link {
           color: rgba(255, 255, 255, 0.6);
@@ -290,7 +290,7 @@ export function Header() {
           transition: color 0.25s;
         }
         .hdr-mega-l2-link:hover {
-          color: rgb(255, 106, 0);
+          color: rgb(0, 87, 222);
         }
         .hdr-top-bar {
           display: flex;
@@ -331,10 +331,10 @@ export function Header() {
           color: rgb(0, 0, 0);
         }
         .hdr-light .hdr-nav-link:hover {
-          color: rgb(255, 106, 0);
+          color: rgb(0, 87, 222);
         }
         .hdr-light .hdr-nav-li.active .hdr-nav-link {
-          color: rgb(255, 106, 0);
+          color: rgb(0, 87, 222);
         }
         .hdr-light .hdr-mobile-btn button {
           color: rgb(0, 0, 0) !important;
@@ -353,13 +353,13 @@ export function Header() {
           color: rgb(15, 23, 42);
         }
         .hdr-light .hdr-mega-l1-link:hover {
-          color: rgb(255, 106, 0);
+          color: rgb(0, 87, 222);
         }
         .hdr-light .hdr-mega-l2-link {
           color: rgba(15, 23, 42, 0.65);
         }
         .hdr-light .hdr-mega-l2-link:hover {
-          color: rgb(255, 106, 0);
+          color: rgb(0, 87, 222);
         }
         /* O título de cada coluna do mega menu (usa ::before laranja
            e texto, geralmente herda) */
@@ -428,7 +428,7 @@ export function Header() {
           <span
             style={{
               display: "block",
-              backgroundColor: "rgb(255, 106, 0)",
+              backgroundColor: "rgb(0, 87, 222)",
               height: 4,
               width: `${scrollProgress}%`,
               transition: "width 100ms linear",
@@ -469,7 +469,7 @@ export function Header() {
           <div className="hdr-top-bar">
             <ul
               style={{
-                color: "rgb(255, 106, 0)",
+                color: "rgb(0, 87, 222)",
                 fontSize: 14,
                 lineHeight: "25.2px",
                 textAlign: "right",
@@ -494,7 +494,7 @@ export function Header() {
                     className="hdr-utility-link"
                     style={{ background: "none", border: "none", padding: "4px 4px 4px 0" }}
                   >
-                    <Search size={14} color="rgb(255, 106, 0)" />
+                    <Search size={14} color="rgb(0, 87, 222)" />
                   </button>
                   {searchOpen && (
                     <div
@@ -502,7 +502,7 @@ export function Header() {
                         display: "flex",
                         alignItems: "center",
                         marginLeft: 8,
-                        borderBottom: "1px solid rgb(255, 106, 0)",
+                        borderBottom: "1px solid rgb(0, 87, 222)",
                         height: 27,
                         minWidth: 280,
                         position: "relative",
@@ -575,7 +575,7 @@ export function Header() {
                         maxHeight: 420,
                         overflowY: "auto",
                         backgroundColor: "rgba(0, 0, 0, 0.95)",
-                        border: "1px solid rgba(255, 106, 0, 0.3)",
+                        border: "1px solid rgba(0, 87, 222, 0.3)",
                         borderRadius: 8,
                         zIndex: 1000,
                         boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
@@ -601,7 +601,7 @@ export function Header() {
                               borderBottom: idx < searchResults.length - 1 ? "1px solid rgba(255,255,255,0.06)" : "none",
                               transition: "background 0.15s",
                             }}
-                            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "rgba(255, 106, 0, 0.1)")}
+                            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "rgba(0, 87, 222, 0.1)")}
                             onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
                           >
                             <span
@@ -611,8 +611,8 @@ export function Header() {
                                 fontWeight: 700,
                                 letterSpacing: "0.05em",
                                 textTransform: "uppercase",
-                                color: "rgb(255, 106, 0)",
-                                backgroundColor: "rgba(255, 106, 0, 0.12)",
+                                color: "rgb(0, 87, 222)",
+                                backgroundColor: "rgba(0, 87, 222, 0.12)",
                                 padding: "2px 8px",
                                 borderRadius: 4,
                                 whiteSpace: "nowrap",
@@ -636,7 +636,7 @@ export function Header() {
                 <a href="https://wa.me/551122071986" className="hdr-utility-link">
                   <Phone
                     size={12}
-                    color="rgb(255, 106, 0)"
+                    color="rgb(0, 87, 222)"
                     style={{ marginRight: 2, display: "inline", verticalAlign: "middle", transform: "translateY(1px)" }}
                   />
                   <span style={{ verticalAlign: "middle" }}>Falar pelo WhatsApp</span>
@@ -808,7 +808,7 @@ export function Header() {
                       >
                         <ChevronRight
                           size={14}
-                          color="rgb(255, 106, 0)"
+                          color="rgb(0, 87, 222)"
                           style={{
                             display: "inline",
                             marginRight: 8,
@@ -850,7 +850,7 @@ export function Header() {
                       >
                         <ChevronRight
                           size={12}
-                          color="rgb(255, 106, 0)"
+                          color="rgb(0, 87, 222)"
                           style={{
                             display: "inline",
                             marginRight: 8,
@@ -889,7 +889,7 @@ export function Header() {
               className="hdr-utility-link"
               style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
             >
-              <Phone size={12} color="rgb(255, 106, 0)" />
+              <Phone size={12} color="rgb(0, 87, 222)" />
               Falar pelo WhatsApp
             </a>
           </div>
@@ -923,7 +923,7 @@ export function Header() {
                       {item.label}
                       <ChevronDown
                         size={16}
-                        color="rgb(255, 106, 0)"
+                        color="rgb(0, 87, 222)"
                         style={{
                           transition: "transform 0.3s",
                           transform: mobileAccordion === i ? "rotate(180deg)" : "rotate(0deg)",
@@ -955,7 +955,7 @@ export function Header() {
                                   }}
                                 >
                                   <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                    <ChevronRight size={10} color="rgb(255, 106, 0)" />
+                                    <ChevronRight size={10} color="rgb(0, 87, 222)" />
                                     {child.label}
                                   </span>
                                   <ChevronRight
@@ -982,7 +982,7 @@ export function Header() {
                                           textDecoration: "none",
                                           transition: "color 0.25s",
                                         }}
-                                        onMouseEnter={(e) => (e.currentTarget.style.color = "rgb(255, 106, 0)")}
+                                        onMouseEnter={(e) => (e.currentTarget.style.color = "rgb(0, 87, 222)")}
                                         onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.5)")}
                                       >
                                         {third.label}
@@ -1005,10 +1005,10 @@ export function Header() {
                                   textDecoration: "none",
                                   transition: "color 0.25s",
                                 }}
-                                onMouseEnter={(e) => (e.currentTarget.style.color = "rgb(255, 106, 0)")}
+                                onMouseEnter={(e) => (e.currentTarget.style.color = "rgb(0, 87, 222)")}
                                 onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}
                               >
-                                <ChevronRight size={10} color="rgb(255, 106, 0)" />
+                                <ChevronRight size={10} color="rgb(0, 87, 222)" />
                                 {child.label}
                               </a>
                             )}
@@ -1030,7 +1030,7 @@ export function Header() {
                       textDecoration: "none",
                       transition: "color 0.25s",
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.color = "rgb(255, 106, 0)")}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = "rgb(0, 87, 222)")}
                     onMouseLeave={(e) => (e.currentTarget.style.color = "#fff")}
                   >
                     {item.label}
@@ -1048,8 +1048,8 @@ export function Header() {
                 alignItems: "center",
                 justifyContent: "center",
                 gap: 8,
-                border: "1px solid rgb(255, 106, 0)",
-                color: "rgb(255, 106, 0)",
+                border: "1px solid rgb(0, 87, 222)",
+                color: "rgb(0, 87, 222)",
                 padding: "12px 0",
                 fontSize: 14,
                 fontWeight: 600,

@@ -636,12 +636,47 @@ export function Header() {
               alignItems: "center",
             }}
           >
-            {/* Logo */}
-            <a href="/" style={{ marginRight: 16, flexShrink: 0, textDecoration: "none" }}>
+            {/* Logo — troca dinâmica:
+                  topo da página / mega menu aberto (fundo escuro) → logo com texto branco
+                  rolando, header em modo light (fundo branco)     → logo com texto preto
+                Pré-carrega ambas via display:block + opacity pra cross-fade fluido. */}
+            <a
+              href="/"
+              style={{
+                marginRight: 16,
+                flexShrink: 0,
+                textDecoration: "none",
+                display: "inline-block",
+                position: "relative",
+                height: 60,
+              }}
+            >
+              <img
+                src="/logo-gaiatec-white.png"
+                alt="Gaiatec Sistemas"
+                style={{
+                  height: 60,
+                  width: "auto",
+                  display: "block",
+                  opacity: scrolled && activeMenu === null ? 0 : 1,
+                  transition: "opacity 0.4s ease",
+                }}
+              />
               <img
                 src="/logo-gaiatec.png"
-                alt="Gaiatec Sistemas"
-                style={{ height: 60, width: "auto", display: "block" }}
+                alt=""
+                aria-hidden="true"
+                style={{
+                  height: 60,
+                  width: "auto",
+                  display: "block",
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  opacity: scrolled && activeMenu === null ? 1 : 0,
+                  transition: "opacity 0.4s ease",
+                  pointerEvents: "none",
+                }}
               />
             </a>
 

@@ -321,6 +321,7 @@ export function Header() {
           .hdr-top-bar { display: none; }
           .hdr-nav-desktop { display: none !important; }
           .hdr-mega-panel { display: none !important; }
+          .hdr-whatsapp-btn { display: none !important; }
         }
         @media (min-width: 1024px) {
           .hdr-mobile-btn { display: none !important; }
@@ -629,19 +630,6 @@ export function Header() {
                   )}
                 </div>
               </li>
-              <li
-                className="hdr-phone-pulse"
-                style={{ paddingLeft: 24, display: "inline-block", verticalAlign: "top" }}
-              >
-                <a href="https://wa.me/551122071986" className="hdr-utility-link">
-                  <Phone
-                    size={12}
-                    color="rgb(0, 87, 222)"
-                    style={{ marginRight: 2, display: "inline", verticalAlign: "middle", transform: "translateY(1px)" }}
-                  />
-                  <span style={{ verticalAlign: "middle" }}>Falar pelo WhatsApp</span>
-                </a>
-              </li>
               <li style={{ paddingLeft: 24, display: "inline-block", verticalAlign: "top" }}>
                 <a href="#" className="hdr-utility-link">Localização</a>
               </li>
@@ -744,6 +732,37 @@ export function Header() {
                 ))}
               </ul>
             </nav>
+
+            {/* ── WHATSAPP BUTTON (SVG) ── visível só em desktop, alinhado com o menu */}
+            <a
+              href="https://wa.me/551122071986"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Converse com nosso WhatsApp"
+              className="hdr-whatsapp-btn"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                marginLeft: 16,
+                flexShrink: 0,
+                textDecoration: "none",
+                transition: "transform 0.2s ease, opacity 0.2s ease",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "translateY(-2px)";
+                e.currentTarget.style.opacity = "0.92";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "translateY(0)";
+                e.currentTarget.style.opacity = "1";
+              }}
+            >
+              <img
+                src="/whatsapp-button.svg"
+                alt="Converse com nosso WhatsApp"
+                style={{ height: 44, width: "auto", display: "block" }}
+              />
+            </a>
 
             {/* ── MOBILE BUTTON ── */}
             <div className="hdr-mobile-btn" style={{ marginLeft: "auto" }}>

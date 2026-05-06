@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 /**
- * Pipeline de imagens responsivas — V2 (otimização agressiva)
+ * Pipeline de imagens responsivas — V3 (somente AVIF + WebP)
  * ----------------------------------------------------------
- * Para cada PNG em public/images/, gera variants em 3 tamanhos × 3 formatos:
+ * Para cada PNG em public/images/, gera variants em 3 tamanhos × 2 formatos:
  *   - AVIF 480w / 1024w / 1920w  (~40% menor que WebP, suporte 95%+ browsers)
- *   - WebP 480w / 1024w / 1920w  (fallback universal moderno)
- *   - PNG  480w / 1024w / 1920w  (fallback final p/ browsers antigos)
+ *   - WebP 480w / 1024w / 1920w  (fallback universal moderno, suporte 96%+)
+ *
+ * PNG variants foram removidas — economizam 30+ MB e fallback WebP cobre 99% do tráfego.
+ * PNGs originais também foram removidos do repo (9 MB cada × 53 = 463 MB).
  *
  * Cache: pula imagens cuja saída já existe e é mais nova que o source.
  *
@@ -105,16 +107,8 @@ async function processImage(filePath) {
       )
     }
 
-    // === PNG variant (fallback raríssimo) ===
-    const pngOut = join(dir, `${name}-${targetWidth}w${ext}`)
-    if (await shouldRegenerate(filePath, pngOut)) {
-      tasks.push(
-        sharpResize()
-          .png({ quality: PNG_QUALITY, compressionLevel: 9, palette: true })
-          .toFile(pngOut)
-          .then(() => generatedCount++)
-      )
-    }
+    // PNG variants foram REMOVIDAS — não vale o tamanho extra.
+    // Browsers sem suporte AVIF/WebP são <1% do tráfego.
   }
 
   // Variants do tamanho original (sem resize) — usado em image-set ou casos específicos

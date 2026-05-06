@@ -8,7 +8,7 @@
 //
 // Bump CACHE_VERSION sempre que mudar a estratégia para invalidar caches antigos.
 
-const CACHE_VERSION = 'v1'
+const CACHE_VERSION = 'v2-avif'
 const STATIC_CACHE = `gaiatec-static-${CACHE_VERSION}`
 const IMAGE_CACHE = `gaiatec-images-${CACHE_VERSION}`
 const FONT_CACHE = `gaiatec-fonts-${CACHE_VERSION}`

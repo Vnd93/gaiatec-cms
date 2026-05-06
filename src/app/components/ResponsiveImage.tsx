@@ -83,16 +83,17 @@ export const ResponsiveImage: React.FC<ResponsiveImageProps> = ({
   }
 
   // Extrai diretório e nome base do arquivo
-  // "/images/heroes/1.1.png" → dir="/images/heroes", name="1.1", ext=".png"
+  // "/images/heroes/1.1.png" → dir="/images/heroes", name="1.1"
   const lastSlash = src.lastIndexOf('/')
   const lastDot = src.lastIndexOf('.')
   const dir = src.substring(0, lastSlash)
   const name = src.substring(lastSlash + 1, lastDot)
-  const ext = src.substring(lastDot)
 
   // Monta srcset para um formato específico
-  const buildSrcSet = (format: 'avif' | 'webp' | 'original') => {
-    const formatExt = format === 'avif' ? '.avif' : format === 'webp' ? '.webp' : ext
+  // NOTA: PNGs originais foram REMOVIDOS do repo (eram 9 MB cada).
+  // Sempre servimos AVIF (browsers modernos) ou WebP (fallback universal moderno).
+  const buildSrcSet = (format: 'avif' | 'webp') => {
+    const formatExt = format === 'avif' ? '.avif' : '.webp'
     return [
       `${dir}/${name}-480w${formatExt} 480w`,
       `${dir}/${name}-1024w${formatExt} 1024w`,
@@ -100,7 +101,8 @@ export const ResponsiveImage: React.FC<ResponsiveImageProps> = ({
     ].join(', ')
   }
 
-  const fallbackSrc = `${dir}/${name}-1024w${ext}` // tamanho médio como fallback
+  // Fallback: WebP 1024w (suportado por 96%+ dos browsers, 2024+)
+  const fallbackSrc = `${dir}/${name}-1024w.webp`
 
   return (
     <picture>
@@ -108,10 +110,10 @@ export const ResponsiveImage: React.FC<ResponsiveImageProps> = ({
       <source type="image/avif" srcSet={buildSrcSet('avif')} sizes={sizes} />
       {/* WebP — moderno, ~30% menor que PNG */}
       <source type="image/webp" srcSet={buildSrcSet('webp')} sizes={sizes} />
-      {/* PNG/JPG fallback */}
+      {/* WebP fallback (substituiu PNG — economizou 463 MB no repo) */}
       <img
         src={fallbackSrc}
-        srcSet={buildSrcSet('original')}
+        srcSet={buildSrcSet('webp')}
         sizes={sizes}
         alt={alt}
         loading={priority ? 'eager' : 'lazy'}

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { ChevronRight } from "lucide-react";
 import { useHeroSlides } from "../hooks/useSiteData";
+import { optimizedBg } from "./ResponsiveImage";
 
 const FALLBACK_SLIDES = [
   {
@@ -91,24 +92,51 @@ export function HeroBanner() {
 
   return (
     <section className="relative w-full overflow-hidden" style={{ height: "100vh", minHeight: "600px", maxHeight: "900px" }}>
-      {/* Background images */}
-      {slides.map((slide, i) => (
-        <div
-          key={i}
-          className="absolute inset-0 transition-opacity duration-[800ms]"
-          style={{ opacity: current === i ? 1 : 0 }}
-        >
+      {/* Background images — só renderiza atual e adjacente (lazy load) */}
+      {slides.map((slide, i) => {
+        // Lazy load: só carrega slide atual + próximo (transição suave)
+        const isVisible = i === current || i === nextIndex || i === 0;
+        return (
           <div
-            className="absolute inset-0 bg-cover bg-center"
-            style={{
-              backgroundImage: `url(${slide.image})`,
-              transform: current === i ? "scale(1.05)" : "scale(1)",
-              transition: "transform 8s ease-out",
-            }}
-          />
-          <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent" />
-        </div>
-      ))}
+            key={i}
+            className="absolute inset-0 transition-opacity duration-[800ms]"
+            style={{ opacity: current === i ? 1 : 0 }}
+          >
+            {isVisible && (
+              <div
+                className="absolute inset-0 overflow-hidden"
+                style={{
+                  transform: current === i ? "scale(1.05)" : "scale(1)",
+                  transition: "transform 8s ease-out",
+                }}
+              >
+                <picture>
+                  <source
+                    type="image/avif"
+                    srcSet={`${optimizedBg(slide.image, 480, 'avif')} 480w, ${optimizedBg(slide.image, 1024, 'avif')} 1024w, ${optimizedBg(slide.image, 1920, 'avif')} 1920w`}
+                    sizes="100vw"
+                  />
+                  <source
+                    type="image/webp"
+                    srcSet={`${optimizedBg(slide.image, 480, 'webp')} 480w, ${optimizedBg(slide.image, 1024, 'webp')} 1024w, ${optimizedBg(slide.image, 1920, 'webp')} 1920w`}
+                    sizes="100vw"
+                  />
+                  <img
+                    src={optimizedBg(slide.image, 1024, 'webp')}
+                    alt=""
+                    loading={i === 0 ? "eager" : "lazy"}
+                    decoding={i === 0 ? "sync" : "async"}
+                    // @ts-expect-error fetchpriority é válido
+                    fetchpriority={i === 0 ? "high" : undefined}
+                    className="w-full h-full object-cover object-center"
+                  />
+                </picture>
+              </div>
+            )}
+            <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent" />
+          </div>
+        );
+      })}
 
       {/* Content */}
       <div className="relative h-full max-w-[1400px] mx-auto px-4 md:px-6 flex flex-col justify-end pb-28 md:pb-36">

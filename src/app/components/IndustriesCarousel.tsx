@@ -237,22 +237,54 @@ export function IndustriesCarousel() {
         onMouseEnter={stopAuto}
         onMouseLeave={startAuto}
       >
-        {/* ── FULL-WIDTH BACKGROUND IMAGES (crossfade on hover) ── */}
-        {industries.map((ind, i) => (
-          <div
-            key={ind.title}
-            style={{
-              position: "absolute",
-              inset: 0,
-              backgroundImage: `url(${optimizedBg(ind.image, 1920)})`,
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-              opacity: activeIndex === i ? 1 : 0,
-              transition: "opacity 0.7s ease",
-              zIndex: 0,
-            }}
-          />
-        ))}
+        {/* ── FULL-WIDTH BACKGROUND IMAGES (crossfade) — só carrega atual + adjacentes ── */}
+        {industries.map((ind, i) => {
+          // Lazy load: só renderiza imagem do slide ativo + próximo + anterior
+          const isVisible =
+            i === activeIndex ||
+            i === (activeIndex + 1) % industries.length ||
+            i === (activeIndex - 1 + industries.length) % industries.length;
+          return (
+            <div
+              key={ind.title}
+              style={{
+                position: "absolute",
+                inset: 0,
+                opacity: activeIndex === i ? 1 : 0,
+                transition: "opacity 0.7s ease",
+                zIndex: 0,
+              }}
+            >
+              {isVisible && (
+                <picture>
+                  <source
+                    type="image/avif"
+                    srcSet={`${optimizedBg(ind.image, 480, 'avif')} 480w, ${optimizedBg(ind.image, 1024, 'avif')} 1024w, ${optimizedBg(ind.image, 1920, 'avif')} 1920w`}
+                    sizes="100vw"
+                  />
+                  <source
+                    type="image/webp"
+                    srcSet={`${optimizedBg(ind.image, 480, 'webp')} 480w, ${optimizedBg(ind.image, 1024, 'webp')} 1024w, ${optimizedBg(ind.image, 1920, 'webp')} 1920w`}
+                    sizes="100vw"
+                  />
+                  <img
+                    src={optimizedBg(ind.image, 1024, 'webp')}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                      objectPosition: "center",
+                      display: "block",
+                    }}
+                  />
+                </picture>
+              )}
+            </div>
+          );
+        })}
 
         {/* ── DARK OVERLAY ── */}
         <div

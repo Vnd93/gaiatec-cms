@@ -252,6 +252,7 @@ export function Header() {
           font-size: 16px;
           line-height: 24px;
           position: relative;
+          transition: color 0.4s ease;
           text-decoration: none;
           text-underline-offset: 3px;
           transition: color 0.25s;
@@ -325,29 +326,71 @@ export function Header() {
         @media (min-width: 1024px) {
           .hdr-mobile-btn { display: none !important; }
         }
+
+        /* ─── LIGHT MODE — aplicado quando header rolou e mega menu fechado ─── */
+        .hdr-light .hdr-nav-link {
+          color: rgb(0, 0, 0);
+        }
+        .hdr-light .hdr-nav-link:hover {
+          color: rgb(255, 106, 0);
+        }
+        .hdr-light .hdr-nav-li.active .hdr-nav-link {
+          color: rgb(255, 106, 0);
+        }
+        .hdr-light .hdr-mobile-btn button {
+          color: rgb(0, 0, 0) !important;
+        }
+        /* ícones inline (search, chevrons) que herdam currentColor */
+        .hdr-light svg {
+          color: inherit;
+        }
       `}</style>
 
-      {/* ── OUTER WRAPPER — fixed ── */}
+      {/* ── OUTER WRAPPER — fixed ──
+         Estados:
+         - topo da página (scrolled=false, sem mega menu aberto):
+             gradient preto → transparente, textos brancos
+         - rolando (scrolled=true): fundo branco, textos pretos,
+             borda inferior cinza clara pra separar do conteúdo
+         - mega menu aberto: força fundo escuro de novo pra
+             contrastar com o painel preto que abre embaixo
+       */}
       <div
         ref={headerRef}
+        className={scrolled && activeMenu === null ? "hdr-light" : ""}
         style={{
           position: "fixed",
           top: 0,
           left: 0,
           width: "100%",
           zIndex: 600,
-          backgroundImage: scrolled
-            ? "none"
-            : "linear-gradient(rgb(0, 0, 0) 0px, rgba(0, 0, 0, 0) 100%)",
-          backgroundColor: scrolled || activeMenu !== null ? "rgb(0, 0, 0)" : "transparent",
+          backgroundImage:
+            scrolled || activeMenu !== null
+              ? "none"
+              : "linear-gradient(rgb(0, 0, 0) 0px, rgba(0, 0, 0, 0) 100%)",
+          backgroundColor:
+            activeMenu !== null
+              ? "rgb(0, 0, 0)"
+              : scrolled
+                ? "#fff"
+                : "transparent",
+          borderBottom:
+            scrolled && activeMenu === null
+              ? "1px solid rgba(0, 0, 0, 0.08)"
+              : "none",
+          boxShadow:
+            scrolled && activeMenu === null
+              ? "0 2px 12px rgba(0, 0, 0, 0.06)"
+              : "none",
           paddingTop: scrolled ? 10 : 28,
           paddingBottom: scrolled ? 10 : 24,
-          transition: "padding 0.5s ease, background 0.5s ease, background-image 0.5s ease",
+          transition:
+            "padding 0.5s ease, background 0.5s ease, background-image 0.5s ease, border-color 0.5s ease, box-shadow 0.5s ease, color 0.5s ease",
           fontFamily: "Arial, sans-serif",
           fontSize: 16,
           fontWeight: 400,
           lineHeight: "28.8px",
-          color: "#fff",
+          color: scrolled && activeMenu === null ? "#000" : "#fff",
         }}
       >
         {/* ── SCROLL PROGRESS BAR ── */}

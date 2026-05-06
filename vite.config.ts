@@ -2,7 +2,6 @@ import { defineConfig } from 'vite'
 import path from 'path'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
-import { ViteImageOptimizer } from 'vite-plugin-image-optimizer'
 import viteCompression from 'vite-plugin-compression'
 
 export default defineConfig({
@@ -30,38 +29,12 @@ export default defineConfig({
       verbose: false,
     }),
 
-    // Otimização automática de imagens (PNG/JPG/WebP/SVG) durante o build
-    // Reduz drasticamente o tamanho dos arquivos em /public/images sem perda visual
-    ViteImageOptimizer({
-      png: {
-        quality: 80,
-        compressionLevel: 9,
-      },
-      jpeg: {
-        quality: 80,
-      },
-      jpg: {
-        quality: 80,
-      },
-      webp: {
-        quality: 80,
-        lossless: false,
-      },
-      svg: {
-        multipass: true,
-        plugins: [
-          {
-            name: 'preset-default',
-            params: {
-              overrides: {
-                cleanupNumericValues: false,
-                removeViewBox: false,
-              },
-            },
-          },
-        ],
-      },
-    }),
+    // NOTA: vite-plugin-image-optimizer FOI REMOVIDO.
+    // Imagens já são pre-otimizadas localmente via scripts/generate-responsive-images.mjs
+    // (sharp gerando AVIF + WebP em 3 tamanhos). Re-otimizar AVIF aqui:
+    //   1. Ineficiente (AVIF já é ótimo, plugin tentava +910% de tamanho)
+    //   2. Lento no CF Pages (timeout de build)
+    //   3. Requer sharp/svgo no environment de build
   ],
   resolve: {
     alias: {

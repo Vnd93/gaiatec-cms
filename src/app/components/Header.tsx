@@ -295,13 +295,12 @@ export function Header() {
         .hdr-top-bar {
           display: flex;
           margin-bottom: 18px;
-          transition: all 0.5s ease;
+          transition: margin 0.5s ease;
         }
-        .hdr-top-bar.hidden {
-          margin-bottom: 0;
-          max-height: 0;
-          overflow: hidden;
-          opacity: 0;
+        /* Quando o header está em modo light (rolado), a top bar
+           encolhe um pouco mas continua visível com os links laranjas. */
+        .hdr-light .hdr-top-bar {
+          margin-bottom: 8px;
         }
         .hdr-mega-panel {
           position: absolute;
@@ -466,8 +465,8 @@ export function Header() {
             width: "100%",
           }}
         >
-          {/* ── TOP UTILITY BAR ── */}
-          <div className={`hdr-top-bar${scrolled ? " hidden" : ""}`}>
+          {/* ── TOP UTILITY BAR ── sempre visível (busca, WhatsApp, localização, carreiras) */}
+          <div className="hdr-top-bar">
             <ul
               style={{
                 color: "rgb(255, 106, 0)",

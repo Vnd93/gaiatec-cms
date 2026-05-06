@@ -1,23 +1,44 @@
+import { lazy, Suspense } from "react";
 import { createBrowserRouter } from "react-router";
 import { Layout } from "./components/Layout";
+
+// Home page = eager load (entry point — não vale a pena lazy)
 import HomePage from "./pages/HomePage";
-import SobrePage from "./pages/SobrePage";
-import SectorPage from "./pages/SectorPage";
-import BiodigestorPage from "./pages/BiodigestorPage";
-import BiodigestorComoFunciona from "./pages/BiodigestorComoFunciona";
-import BiodigestorPortes from "./pages/BiodigestorPortes";
-import BiodigestorBeneficios from "./pages/BiodigestorBeneficios";
-import BiodigestorMonitoramento from "./pages/BiodigestorMonitoramento";
-import BiodigestorBiogasBiometano from "./pages/BiodigestorBiogasBiometano";
-import BiodigestorAutomacao from "./pages/BiodigestorAutomacao";
-import BiodigestorEscolas from "./pages/BiodigestorEscolas";
-import BlogPage from "./pages/BlogPage";
-import ContatoPage from "./pages/ContatoPage";
-import ProdutosPage from "./pages/ProdutosPage";
-import SetoresPage from "./pages/SetoresPage";
-import ServicosPage from "./pages/ServicosPage";
-import ServicoPage from "./pages/ServicoPage";
-import NotFoundPage from "./pages/NotFoundPage";
+
+// Demais páginas = lazy load (code splitting)
+const SobrePage = lazy(() => import("./pages/SobrePage"));
+const SectorPage = lazy(() => import("./pages/SectorPage"));
+const BiodigestorPage = lazy(() => import("./pages/BiodigestorPage"));
+const BiodigestorComoFunciona = lazy(() => import("./pages/BiodigestorComoFunciona"));
+const BiodigestorPortes = lazy(() => import("./pages/BiodigestorPortes"));
+const BiodigestorBeneficios = lazy(() => import("./pages/BiodigestorBeneficios"));
+const BiodigestorMonitoramento = lazy(() => import("./pages/BiodigestorMonitoramento"));
+const BiodigestorBiogasBiometano = lazy(() => import("./pages/BiodigestorBiogasBiometano"));
+const BiodigestorAutomacao = lazy(() => import("./pages/BiodigestorAutomacao"));
+const BiodigestorEscolas = lazy(() => import("./pages/BiodigestorEscolas"));
+const BlogPage = lazy(() => import("./pages/BlogPage"));
+const ContatoPage = lazy(() => import("./pages/ContatoPage"));
+const ProdutosPage = lazy(() => import("./pages/ProdutosPage"));
+const SetoresPage = lazy(() => import("./pages/SetoresPage"));
+const ServicosPage = lazy(() => import("./pages/ServicosPage"));
+const ServicoPage = lazy(() => import("./pages/ServicoPage"));
+const NotFoundPage = lazy(() => import("./pages/NotFoundPage"));
+
+// Loader minimalista — não bloqueia o paint
+function PageLoader() {
+  return (
+    <div className="min-h-[60vh] flex items-center justify-center">
+      <div className="w-8 h-8 border-2 border-orange-500/20 border-t-orange-500 rounded-full animate-spin" />
+    </div>
+  );
+}
+
+// Wrapper Suspense para rotas lazy
+const lazyWrap = (Component: React.ComponentType) => (
+  <Suspense fallback={<PageLoader />}>
+    <Component />
+  </Suspense>
+);
 
 export const router = createBrowserRouter([
   {
@@ -25,23 +46,23 @@ export const router = createBrowserRouter([
     Component: Layout,
     children: [
       { index: true, Component: HomePage },
-      { path: "sobre", Component: SobrePage },
-      { path: "setores", Component: SetoresPage },
-      { path: "setores/:slug", Component: SectorPage },
-      { path: "servicos", Component: ServicosPage },
-      { path: "servicos/:slug", Component: ServicoPage },
-      { path: "biodigestor", Component: BiodigestorPage },
-      { path: "biodigestor/como-funciona", Component: BiodigestorComoFunciona },
-      { path: "biodigestor/portes", Component: BiodigestorPortes },
-      { path: "biodigestor/beneficios", Component: BiodigestorBeneficios },
-      { path: "biodigestor/monitoramento", Component: BiodigestorMonitoramento },
-      { path: "biodigestor/biogas-biometano", Component: BiodigestorBiogasBiometano },
-      { path: "biodigestor/automacao", Component: BiodigestorAutomacao },
-      { path: "biodigestor/escolas", Component: BiodigestorEscolas },
-      { path: "blog", Component: BlogPage },
-      { path: "contato", Component: ContatoPage },
-      { path: "produtos", Component: ProdutosPage },
-      { path: "*", Component: NotFoundPage },
+      { path: "sobre", element: lazyWrap(SobrePage) },
+      { path: "setores", element: lazyWrap(SetoresPage) },
+      { path: "setores/:slug", element: lazyWrap(SectorPage) },
+      { path: "servicos", element: lazyWrap(ServicosPage) },
+      { path: "servicos/:slug", element: lazyWrap(ServicoPage) },
+      { path: "biodigestor", element: lazyWrap(BiodigestorPage) },
+      { path: "biodigestor/como-funciona", element: lazyWrap(BiodigestorComoFunciona) },
+      { path: "biodigestor/portes", element: lazyWrap(BiodigestorPortes) },
+      { path: "biodigestor/beneficios", element: lazyWrap(BiodigestorBeneficios) },
+      { path: "biodigestor/monitoramento", element: lazyWrap(BiodigestorMonitoramento) },
+      { path: "biodigestor/biogas-biometano", element: lazyWrap(BiodigestorBiogasBiometano) },
+      { path: "biodigestor/automacao", element: lazyWrap(BiodigestorAutomacao) },
+      { path: "biodigestor/escolas", element: lazyWrap(BiodigestorEscolas) },
+      { path: "blog", element: lazyWrap(BlogPage) },
+      { path: "contato", element: lazyWrap(ContatoPage) },
+      { path: "produtos", element: lazyWrap(ProdutosPage) },
+      { path: "*", element: lazyWrap(NotFoundPage) },
     ],
   },
 ]);

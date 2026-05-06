@@ -25,9 +25,10 @@ export const AutomacaoIndustrialPage = () => {
           </p>
 
           <div className="mt-8">
-            <img 
-              src={instrumentationImage} 
-              alt="Técnico realizando instrumentação em tubulação industrial" 
+            <img
+              loading="lazy"
+              src={instrumentationImage}
+              alt="Técnico realizando instrumentação em tubulação industrial"
               className="w-full h-auto rounded-lg shadow-lg"
             />
           </div>
@@ -213,9 +214,11 @@ export const AutomacaoIndustrialPage = () => {
       {/* Banner Superior */}
       <section className="relative h-[500px] overflow-hidden">
         <div className="absolute inset-0">
-          <img 
-            src={bannerImage} 
-            alt="Automação Industrial" 
+          <img
+            loading="eager"
+            fetchPriority="high"
+            src={bannerImage}
+            alt="Automação Industrial"
             className="w-full h-full object-cover"
           />
         </div>

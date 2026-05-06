@@ -1,0 +1,40 @@
+# Cloudflare Pages — Cache headers for performance
+# Documentação: https://developers.cloudflare.com/pages/platform/headers/
+
+# JS / CSS bundles do Vite (têm hash no filename → cache imutável por 1 ano)
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Imagens estáticas (sem hash, mas raramente mudam) — cache 1 mês + revalidação
+/images/*
+  Cache-Control: public, max-age=2592000, must-revalidate
+
+# Fontes — cache imutável
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Logos e favicon — cache mensal com revalidação
+/logo-gaiatec*.png
+  Cache-Control: public, max-age=2592000, must-revalidate
+
+/favicon-gaiatec.svg
+  Cache-Control: public, max-age=2592000, must-revalidate
+
+# Hero biodigestor (público root) — cache mensal
+/hero-biodigestor.png
+  Cache-Control: public, max-age=2592000, must-revalidate
+
+# HTML — sempre revalidar (usuário deve receber a versão atual)
+/*.html
+  Cache-Control: public, max-age=0, must-revalidate
+
+# Index — sempre revalidar
+/
+  Cache-Control: public, max-age=0, must-revalidate
+
+# Headers de segurança aplicados a todas as rotas
+/*
+  X-Frame-Options: SAMEORIGIN
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()

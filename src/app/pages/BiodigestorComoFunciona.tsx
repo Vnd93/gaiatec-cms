@@ -153,7 +153,7 @@ export default function BiodigestorComoFunciona() {
                 </p>
               </div>
               <div className="relative overflow-hidden" style={{ borderRadius: 4 }}>
-                <img src={INTRO_IMG} alt="Sistema Biodigestor" className="w-full h-full object-cover" style={{ aspectRatio: "16/11", display: "block" }} />
+                <img loading="lazy" src={INTRO_IMG} alt="Sistema Biodigestor" className="w-full h-full object-cover" style={{ aspectRatio: "16/11", display: "block" }} />
                 <div className="absolute bottom-0 left-0" style={{ width: 80, height: 4, backgroundColor: "#FF6A00" }} />
               </div>
             </div>

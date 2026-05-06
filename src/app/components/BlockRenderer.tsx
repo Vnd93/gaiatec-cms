@@ -390,7 +390,7 @@ function PartnersLogosBlock({ dados }: { dados: { titulo?: string; subtitulo?: s
         {(dados.items ?? []).map((it, i) => (
           <div key={i} className="flex flex-col items-center text-center min-w-[120px]">
             {it.imagem_url ? (
-              <img src={resolveImg(it.imagem_url)} alt={it.nome ?? ""} className="h-12 md:h-16 object-contain mb-2" loading="lazy" />
+              <img loading="lazy" src={resolveImg(it.imagem_url)} alt={it.nome ?? ""} className="h-12 md:h-16 object-contain mb-2" loading="lazy" />
             ) : (
               <div
                 className="text-3xl md:text-4xl font-bold text-[#FF6A00] mb-2 leading-none"

@@ -223,9 +223,10 @@ export const Features = () => {
             >
               {/* Background Image */}
               <div className="absolute inset-0 bg-gradient-to-t from-blue-900/90 via-blue-900/50 to-transparent z-10" />
-              <img 
-                src={activeSector.image} 
-                alt={activeSector.title} 
+              <img
+                loading="lazy"
+                src={activeSector.image}
+                alt={activeSector.title}
                 className="w-full h-full object-cover"
               />
               

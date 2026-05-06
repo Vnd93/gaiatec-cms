@@ -1,61 +1,45 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { motion } from 'motion/react';
-import Slider from 'react-slick';
-import 'slick-carousel/slick/slick.css';
-import 'slick-carousel/slick/slick-theme.css';
+import { AnimatePresence, motion } from 'motion/react';
 import educationalProjectImage from 'figma:asset/f60fb57ae370744590884ea438396bfe4e099802.png';
 
+const HERO_IMAGES = [
+  '/images/heroes/1.1.png',
+  '/images/heroes/1.2.png',
+  '/images/heroes/1.3.png',
+  '/images/heroes/1.4.png',
+];
+
 export const AboutPage = () => {
-  const [slideTransition, setSlideTransition] = React.useState(0);
+  const [currentSlide, setCurrentSlide] = useState(0);
 
-  const heroImages = [
-    '/images/heroes/1.1.png',
-    '/images/heroes/1.2.png',
-    '/images/heroes/1.3.png',
-    '/images/heroes/1.4.png',
-  ];
-
-  const sliderSettings = {
-    dots: false,
-    infinite: true,
-    speed: 800,
-    slidesToShow: 1,
-    slidesToScroll: 1,
-    autoplay: true,
-    autoplaySpeed: 5000,
-    pauseOnHover: false,
-    pauseOnFocus: false,
-    fade: true,
-    arrows: false,
-    beforeChange: () => {
-      setSlideTransition(prev => prev + 1);
-    },
-  };
+  // Auto-advance slides
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentSlide((c) => (c + 1) % HERO_IMAGES.length);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div className="min-h-screen bg-white">
       {/* Hero — Carousel com Ken Burns */}
       <section className="relative h-[500px] md:h-[600px] overflow-hidden">
-        <Slider {...sliderSettings}>
-          {heroImages.map((image, index) => (
-            <div key={index} className="relative h-[500px] md:h-[600px] w-full overflow-hidden">
-              <motion.div
-                key={`about-bg-${slideTransition * 10 + index}`}
-                initial={{ opacity: 0, scale: 1.15 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{
-                  opacity: { duration: 0.8, ease: "easeInOut" },
-                  scale: { duration: 6, ease: "easeOut" }
-                }}
-                className="absolute inset-0 bg-cover bg-center"
-                style={{ backgroundImage: `url(${image})` }}
-              />
-              <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/60 to-black/20" />
-            </div>
-          ))}
-        </Slider>
+        <AnimatePresence mode="sync">
+          <motion.div
+            key={`about-bg-${currentSlide}`}
+            initial={{ opacity: 0, scale: 1.15 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{
+              opacity: { duration: 0.8, ease: "easeInOut" },
+              scale: { duration: 6, ease: "easeOut" }
+            }}
+            className="absolute inset-0 bg-cover bg-center"
+            style={{ backgroundImage: `url(${HERO_IMAGES[currentSlide]})` }}
+          />
+        </AnimatePresence>
+        <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/60 to-black/20 z-[1]" />
 
         <div className="absolute inset-0 z-10 flex items-center px-6">
           <div className="container mx-auto">

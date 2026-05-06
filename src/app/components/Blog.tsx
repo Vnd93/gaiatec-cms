@@ -48,9 +48,10 @@ export const Blog = () => {
             <div key={post.id} className="bg-white rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 flex flex-col border border-gray-100 hover:border-blue-200 group">
               <div className="h-56 overflow-hidden relative">
                 <div className="absolute inset-0 bg-gradient-to-t from-blue-900/60 to-transparent z-10 opacity-0 group-hover:opacity-100 transition-opacity" />
-                <img 
-                  src={post.image} 
-                  alt={post.title} 
+                <img
+                  loading="lazy"
+                  src={post.image}
+                  alt={post.title}
                   className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
                 />
               </div>

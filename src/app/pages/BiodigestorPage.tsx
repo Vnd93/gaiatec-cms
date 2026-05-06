@@ -162,7 +162,7 @@ export default function BiodigestorPage() {
               </div>
 
               <div className="relative overflow-hidden">
-                <img src={INTRO_IMG} alt="Biodigestor" className="w-full object-cover" style={{ aspectRatio: "4/3", display: "block" }} />
+                <img loading="lazy" src={INTRO_IMG} alt="Biodigestor" className="w-full object-cover" style={{ aspectRatio: "4/3", display: "block" }} />
                 <div style={{ position: "absolute", bottom: 0, left: 0, width: "100%", height: 4, backgroundColor: "#FF6A00" }} />
               </div>
             </div>

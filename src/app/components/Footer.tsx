@@ -127,7 +127,7 @@ export function Footer() {
           {/* Logo & Institutional */}
           <div>
             <a href="/" className="inline-block mb-4">
-              <img src="/logo-gaiatec.png" alt="Gaiatec Sistemas" style={{ height: 46, width: "auto" }} />
+              <img loading="lazy" src="/logo-gaiatec.png" alt="Gaiatec Sistemas" style={{ height: 46, width: "auto" }} />
             </a>
             <p className="text-white/50 text-[14px] leading-[1.7] mb-6">
               Soluções técnicas em instrumentação industrial desde 2004.

@@ -6,3 +6,7 @@ dist/
 *.log
 
 .vercel
+
+# Node compile/update caches
+node-compile-cache/
+update-check/

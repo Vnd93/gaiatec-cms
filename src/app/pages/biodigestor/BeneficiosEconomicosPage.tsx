@@ -29,9 +29,11 @@ export const BeneficiosEconomicosPage = () => {
       {/* Header Section */}
       <section className="relative h-[500px] overflow-hidden">
         <div className="absolute inset-0 z-0">
-          <img 
-            src="/images/heroes/1.1.png" 
-            alt="Background Industrial Tech" 
+          <img
+            loading="eager"
+            fetchPriority="high"
+            src="/images/heroes/1.1.png"
+            alt="Background Industrial Tech"
             className="w-full h-full object-cover"
           />
           <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/60 to-black/20"></div>

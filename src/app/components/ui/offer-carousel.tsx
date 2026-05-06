@@ -54,7 +54,7 @@ const OfferCard = React.forwardRef<HTMLAnchorElement, OfferCardProps>(({ offer }
       {/* Footer */}
       <div className="flex items-center justify-between pt-3 border-t border-gray-100">
         <div className="flex items-center gap-2">
-          <img src={offer.brandLogoSrc} alt={`${offer.brandName} logo`} className="w-6 h-6 rounded-full bg-gray-100 object-contain p-0.5 border border-gray-100" />
+          <img loading="lazy" src={offer.brandLogoSrc} alt={`${offer.brandName} logo`} className="w-6 h-6 rounded-full bg-gray-100 object-contain p-0.5 border border-gray-100" />
           <div>
             <p className="text-[10px] font-bold text-gray-900">{offer.brandName}</p>
             {offer.promoCode && (

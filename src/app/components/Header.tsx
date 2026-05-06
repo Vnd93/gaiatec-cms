@@ -327,7 +327,7 @@ export function Header() {
           .hdr-mobile-btn { display: none !important; }
         }
 
-        /* ─── LIGHT MODE — aplicado quando header rolou e mega menu fechado ─── */
+        /* ─── LIGHT MODE — aplicado quando o header rolou ─── */
         .hdr-light .hdr-nav-link {
           color: rgb(0, 0, 0);
         }
@@ -344,44 +344,67 @@ export function Header() {
         .hdr-light svg {
           color: inherit;
         }
+        /* Mega menu painel + links em modo light */
+        .hdr-light .hdr-mega-panel {
+          background-color: rgba(255, 255, 255, 0.98) !important;
+          border-top: 1px solid rgba(0, 0, 0, 0.06);
+          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+        }
+        .hdr-light .hdr-mega-l1-link {
+          color: rgb(15, 23, 42);
+        }
+        .hdr-light .hdr-mega-l1-link:hover {
+          color: rgb(255, 106, 0);
+        }
+        .hdr-light .hdr-mega-l2-link {
+          color: rgba(15, 23, 42, 0.65);
+        }
+        .hdr-light .hdr-mega-l2-link:hover {
+          color: rgb(255, 106, 0);
+        }
+        /* O título de cada coluna do mega menu (usa ::before laranja
+           e texto, geralmente herda) */
+        .hdr-light .hdr-mega-panel h3,
+        .hdr-light .hdr-mega-panel h4,
+        .hdr-light .hdr-mega-panel span,
+        .hdr-light .hdr-mega-panel p {
+          color: rgb(15, 23, 42);
+        }
+        .hdr-light .hdr-mega-panel a {
+          color: inherit;
+        }
       `}</style>
 
       {/* ── OUTER WRAPPER — fixed ──
-         Estados:
-         - topo da página (scrolled=false, sem mega menu aberto):
-             gradient preto → transparente, textos brancos
-         - rolando (scrolled=true): fundo branco, textos pretos,
-             borda inferior cinza clara pra separar do conteúdo
-         - mega menu aberto: força fundo escuro de novo pra
-             contrastar com o painel preto que abre embaixo
+         Modo claro (light) entra pelo simples fato de ter rolado.
+         Independente do mega menu estar aberto ou não, a paleta
+         segue o estado de scroll:
+           - scrolled=false (topo da página)        → escuro (gradient preto), textos brancos
+           - scrolled=true                          → branco, textos pretos, borda + sombra suaves
+         Mega menu também segue: quando .hdr-light estiver ativa,
+         o painel que abre embaixo fica branco com textos pretos.
        */}
       <div
         ref={headerRef}
-        className={scrolled && activeMenu === null ? "hdr-light" : ""}
+        className={scrolled ? "hdr-light" : ""}
         style={{
           position: "fixed",
           top: 0,
           left: 0,
           width: "100%",
           zIndex: 600,
-          backgroundImage:
-            scrolled || activeMenu !== null
+          backgroundImage: scrolled
+            ? "none"
+            : activeMenu !== null
               ? "none"
               : "linear-gradient(rgb(0, 0, 0) 0px, rgba(0, 0, 0, 0) 100%)",
-          backgroundColor:
-            activeMenu !== null
+          backgroundColor: scrolled
+            ? "#fff"
+            : activeMenu !== null
               ? "rgb(0, 0, 0)"
-              : scrolled
-                ? "#fff"
-                : "transparent",
-          borderBottom:
-            scrolled && activeMenu === null
-              ? "1px solid rgba(0, 0, 0, 0.08)"
-              : "none",
-          boxShadow:
-            scrolled && activeMenu === null
-              ? "0 2px 12px rgba(0, 0, 0, 0.06)"
-              : "none",
+              : "transparent",
+          borderBottom: scrolled ? "1px solid rgba(0, 0, 0, 0.08)" : "none",
+          boxShadow: scrolled ? "0 2px 12px rgba(0, 0, 0, 0.06)" : "none",
           paddingTop: scrolled ? 10 : 28,
           paddingBottom: scrolled ? 10 : 24,
           transition:
@@ -390,7 +413,7 @@ export function Header() {
           fontSize: 16,
           fontWeight: 400,
           lineHeight: "28.8px",
-          color: scrolled && activeMenu === null ? "#000" : "#fff",
+          color: scrolled ? "#000" : "#fff",
         }}
       >
         {/* ── SCROLL PROGRESS BAR ── */}
@@ -658,7 +681,7 @@ export function Header() {
                   height: 60,
                   width: "auto",
                   display: "block",
-                  opacity: scrolled && activeMenu === null ? 0 : 1,
+                  opacity: scrolled ? 0 : 1,
                   transition: "opacity 0.4s ease",
                 }}
               />
@@ -673,7 +696,7 @@ export function Header() {
                   position: "absolute",
                   top: 0,
                   left: 0,
-                  opacity: scrolled && activeMenu === null ? 1 : 0,
+                  opacity: scrolled ? 1 : 0,
                   transition: "opacity 0.4s ease",
                   pointerEvents: "none",
                 }}

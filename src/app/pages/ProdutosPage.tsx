@@ -1,7 +1,9 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { Link } from "react-router";
+import { GitCompare, Check } from "lucide-react";
 import { AnimateOnScroll } from "../components/useScrollAnimation";
 import { CTABanner } from "../components/CTABanner";
+import { useComparador } from "../components/produtos/ComparadorContext";
 
 const KNOCKOUT = "'Knockout HTF68', sans-serif";
 
@@ -630,6 +632,9 @@ export default function ProdutosPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
+  // Comparador (TASK 14b) — controla botão "+ Comparar" em cada card
+  const { add: addComparador, has: hasComparador, isFull: comparadorFull } = useComparador();
+
   const toggleFilter = (arr: string[], val: string, setter: (v: string[]) => void) => {
     setter(arr.includes(val) ? arr.filter((v) => v !== val) : [...arr, val]);
   };
@@ -988,10 +993,13 @@ export default function ProdutosPage() {
                   className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-0"
                   style={{ borderTop: "1px solid #e0e0e0", borderLeft: "1px solid #e0e0e0" }}
                 >
-                  {filtered.map((product, i) => (
+                  {filtered.map((product, i) => {
+                    const isComparing = hasComparador(product.id);
+                    const compareDisabled = !isComparing && comparadorFull;
+                    return (
                     <AnimateOnScroll key={product.id} delay={i * 0.04}>
                       <div
-                        className="group"
+                        className="group relative"
                         onClick={() => setSelectedProduct(product)}
                         style={{
                           borderRight: "1px solid #e0e0e0",
@@ -1006,6 +1014,64 @@ export default function ProdutosPage() {
                         onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#fafafa"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.08)"; }}
                         onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#fff"; e.currentTarget.style.boxShadow = "none"; }}
                       >
+                        {/* Botão Comparar (TASK 14b) */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (compareDisabled) return;
+                            addComparador({
+                              id: product.id,
+                              name: product.name,
+                              category: product.category,
+                              image: product.image,
+                              spec: product.spec,
+                            });
+                          }}
+                          disabled={compareDisabled}
+                          title={
+                            isComparing
+                              ? "Remover do comparador"
+                              : compareDisabled
+                                ? "Limite de 3 produtos"
+                                : "Adicionar ao comparador"
+                          }
+                          aria-label={`${isComparing ? "Remover" : "Adicionar"} ${product.name} ${isComparing ? "do" : "ao"} comparador`}
+                          style={{
+                            position: "absolute",
+                            top: 12,
+                            right: 12,
+                            zIndex: 5,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 4,
+                            padding: "6px 10px",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            borderRadius: 999,
+                            border: isComparing ? "1px solid #0057DE" : "1px solid #e2e8f0",
+                            backgroundColor: isComparing ? "#0057DE" : "rgba(255,255,255,0.95)",
+                            color: isComparing ? "#ffffff" : compareDisabled ? "#94a3b8" : "#475569",
+                            cursor: compareDisabled ? "not-allowed" : "pointer",
+                            opacity: compareDisabled ? 0.6 : 1,
+                            backdropFilter: "blur(4px)",
+                            transition: "all 0.2s ease",
+                          }}
+                        >
+                          {isComparing ? (
+                            <>
+                              <Check size={12} strokeWidth={2.5} />
+                              Comparando
+                            </>
+                          ) : (
+                            <>
+                              <GitCompare size={12} strokeWidth={2} />
+                              Comparar
+                            </>
+                          )}
+                        </button>
+
                         {/* Image */}
                         <div style={{ position: "relative", width: "100%", height: 220, overflow: "hidden" }}>
                           <div
@@ -1085,7 +1151,8 @@ export default function ProdutosPage() {
                         </div>
                       </div>
                     </AnimateOnScroll>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

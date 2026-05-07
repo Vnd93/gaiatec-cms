@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, GitCompare, Check } from "lucide-react";
 import { AnimateOnScroll } from "./useScrollAnimation";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
+import { useComparador } from "./produtos/ComparadorContext";
 
 /* ────────────────────────────────────────────────────────
    FONTS
@@ -30,6 +31,23 @@ const products = [
    ──────────────────────────────────────────────────────── */
 function ProductCard({ product }: { product: (typeof products)[0] }) {
   const [hovered, setHovered] = useState(false);
+  const { add, has, isFull } = useComparador();
+  const isComparing = has(product.id);
+  const disabled = !isComparing && isFull;
+
+  const handleCompareClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (disabled) return;
+    add({
+      id: product.id,
+      name: product.name,
+      category: product.badge,
+      image: product.image,
+      badge: product.badge,
+      spec: product.spec,
+    });
+  };
 
   return (
     <a
@@ -49,8 +67,56 @@ function ProductCard({ product }: { product: (typeof products)[0] }) {
         color: "inherit",
         transition: "box-shadow 0.3s, transform 0.3s",
         transform: hovered ? "translateY(-4px)" : "translateY(0)",
+        position: "relative",
       }}
     >
+      {/* Botão "+ Comparar" no canto superior direito */}
+      <button
+        type="button"
+        onClick={handleCompareClick}
+        disabled={disabled}
+        title={
+          isComparing
+            ? "Remover do comparador"
+            : disabled
+              ? "Limite de 3 produtos atingido"
+              : "Adicionar ao comparador"
+        }
+        style={{
+          position: "absolute",
+          top: 12,
+          right: 12,
+          zIndex: 5,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 4,
+          padding: "6px 10px",
+          fontSize: 11,
+          fontWeight: 600,
+          borderRadius: 999,
+          border: isComparing ? "1px solid #0057DE" : "1px solid #e2e8f0",
+          backgroundColor: isComparing ? "#0057DE" : "rgba(255,255,255,0.95)",
+          color: isComparing ? "#ffffff" : disabled ? "#94a3b8" : "#475569",
+          cursor: disabled ? "not-allowed" : "pointer",
+          opacity: disabled ? 0.6 : 1,
+          backdropFilter: "blur(4px)",
+          transition: "all 0.2s ease",
+        }}
+        aria-label={isComparing ? `Remover ${product.name} do comparador` : `Adicionar ${product.name} ao comparador`}
+      >
+        {isComparing ? (
+          <>
+            <Check size={12} strokeWidth={2.5} />
+            Comparando
+          </>
+        ) : (
+          <>
+            <GitCompare size={12} strokeWidth={2} />
+            Comparar
+          </>
+        )}
+      </button>
+
       {/* Image container */}
       <div
         style={{

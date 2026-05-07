@@ -22,6 +22,9 @@ const ProdutosPage = lazy(() => import("./pages/ProdutosPage"));
 const SetoresPage = lazy(() => import("./pages/SetoresPage"));
 const ServicosPage = lazy(() => import("./pages/ServicosPage"));
 const ServicoPage = lazy(() => import("./pages/ServicoPage"));
+const AplicacoesPage = lazy(() => import("./pages/AplicacoesPage"));
+const AplicacaoPage = lazy(() => import("./pages/AplicacaoPage"));
+const ComparadorPage = lazy(() => import("./pages/ComparadorPage"));
 const NotFoundPage = lazy(() => import("./pages/NotFoundPage"));
 
 // Loader minimalista — não bloqueia o paint
@@ -62,6 +65,9 @@ export const router = createBrowserRouter([
       { path: "blog", element: lazyWrap(BlogPage) },
       { path: "contato", element: lazyWrap(ContatoPage) },
       { path: "produtos", element: lazyWrap(ProdutosPage) },
+      { path: "produtos/comparador", element: lazyWrap(ComparadorPage) },
+      { path: "aplicacoes", element: lazyWrap(AplicacoesPage) },
+      { path: "aplicacoes/:slug", element: lazyWrap(AplicacaoPage) },
       { path: "*", element: lazyWrap(NotFoundPage) },
     ],
   },

@@ -4,6 +4,8 @@ import { Header } from "./Header";
 import { Footer } from "./Footer";
 import { CookieBanner } from "./CookieBanner";
 import { BackToTop } from "./BackToTop";
+import { ComparadorProvider } from "./produtos/ComparadorContext";
+import { ComparadorFloating } from "./produtos/ComparadorFloating";
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -15,15 +17,18 @@ function ScrollToTop() {
 
 export function Layout() {
   return (
-    <div className="min-h-screen bg-white" style={{ fontFamily: "'Inter', sans-serif" }}>
-      <ScrollToTop />
-      <Header />
-      <main>
-        <Outlet />
-      </main>
-      <Footer />
-      <CookieBanner />
-      <BackToTop />
-    </div>
+    <ComparadorProvider>
+      <div className="min-h-screen bg-white" style={{ fontFamily: "'Inter', sans-serif" }}>
+        <ScrollToTop />
+        <Header />
+        <main>
+          <Outlet />
+        </main>
+        <Footer />
+        <CookieBanner />
+        <BackToTop />
+        <ComparadorFloating />
+      </div>
+    </ComparadorProvider>
   );
 }

@@ -118,6 +118,10 @@ const navItems = [
     ],
   },
   {
+    label: "Aplicações",
+    href: "/aplicacoes",
+  },
+  {
     label: "Biodigestor",
     href: "/biodigestor",
   },

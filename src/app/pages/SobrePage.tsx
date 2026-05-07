@@ -2,8 +2,8 @@ import { Link } from "react-router";
 import { AnimateOnScroll } from "../components/useScrollAnimation";
 import { ChevronRight, Award, Shield, CheckCircle, Users, Briefcase, Settings, Target } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { useRef, useEffect } from "react";
 import { useSobreContent, type SobreDiferencial } from "../hooks/useSiteData";
+import { Timeline } from "../components/sobre/Timeline";
 
 /* ────────────────────────────────────────────────────────
    IMAGES
@@ -82,54 +82,15 @@ function diferencialIcon(d: SobreDiferencial): { Icon: LucideIcon | null; emoji:
    COMPONENT
    ──────────────────────────────────────────────────────── */
 export default function SobrePage() {
-  const timelineRef = useRef<HTMLDivElement>(null);
-
-  // Princípios, timeline e diferenciais vêm do CMS quando Pedro editar
-  // pelo painel /marketing/site → tab Sobre. Caem pros fallbacks acima
-  // se a API estiver fora ou os blocos ainda não tiverem sido criados.
-  const { principles, timeline, diferenciais } = useSobreContent({
+  // Princípios e diferenciais vêm do CMS quando Pedro editar pelo painel
+  // /marketing/site → tab Sobre. Caem pros fallbacks acima se a API
+  // estiver fora ou os blocos ainda não tiverem sido criados.
+  // (Timeline agora é renderizado pelo componente <Timeline> dedicado.)
+  const { principles, diferenciais } = useSobreContent({
     principles: FALLBACK_PRINCIPLES,
     timeline: FALLBACK_TIMELINE,
     diferenciais: FALLBACK_DIFERENCIAIS,
   });
-
-  /* Horizontal scroll drag for timeline on mobile */
-  useEffect(() => {
-    const el = timelineRef.current;
-    if (!el) return;
-    let isDown = false;
-    let startX = 0;
-    let scrollLeft = 0;
-
-    const onDown = (e: MouseEvent) => {
-      isDown = true;
-      startX = e.pageX - el.offsetLeft;
-      scrollLeft = el.scrollLeft;
-      el.style.cursor = "grabbing";
-    };
-    const onUp = () => {
-      isDown = false;
-      el.style.cursor = "grab";
-    };
-    const onMove = (e: MouseEvent) => {
-      if (!isDown) return;
-      e.preventDefault();
-      const x = e.pageX - el.offsetLeft;
-      el.scrollLeft = scrollLeft - (x - startX) * 1.5;
-    };
-
-    el.addEventListener("mousedown", onDown);
-    el.addEventListener("mouseleave", onUp);
-    el.addEventListener("mouseup", onUp);
-    el.addEventListener("mousemove", onMove);
-
-    return () => {
-      el.removeEventListener("mousedown", onDown);
-      el.removeEventListener("mouseleave", onUp);
-      el.removeEventListener("mouseup", onUp);
-      el.removeEventListener("mousemove", onMove);
-    };
-  }, []);
 
   return (
     <>
@@ -320,172 +281,10 @@ export default function SobrePage() {
         </div>
       </section>
 
-      {/* ═════════════════════════════════════════════��═════
-          4) TIMELINE — horizontal, dark background
+      {/* ═══════════════════════════════════════════════════
+          4) TIMELINE — V2 vertical zigzag (TASK 19)
          ═══════════════════════════════════════════════════ */}
-      <section style={{ backgroundColor: "#1a1a1a", padding: "80px 0", overflow: "hidden" }}>
-        <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 30px" }}>
-          <AnimateOnScroll>
-            <div className="text-center" style={{ marginBottom: 48 }}>
-              <span
-                style={{
-                  display: "inline-block",
-                  fontSize: 11,
-                  fontWeight: 700,
-                  letterSpacing: "0.15em",
-                  textTransform: "uppercase",
-                  color: "#1a7f4c",
-                  marginBottom: 12,
-                }}
-              >
-                Nossa Historia
-              </span>
-              <h2
-                style={{
-                  fontFamily: "'Knockout HTF68', sans-serif",
-                  fontSize: "clamp(28px, 3vw, 36px)",
-                  fontWeight: 400,
-                  lineHeight: 1.15,
-                  textTransform: "uppercase",
-                  color: "#fff",
-                }}
-              >
-                Linha do Tempo
-              </h2>
-            </div>
-          </AnimateOnScroll>
-        </div>
-
-        {/* Horizontal scrollable timeline */}
-        <div
-          ref={timelineRef}
-          className="relative"
-          style={{
-            overflowX: "auto",
-            overflowY: "hidden",
-            cursor: "grab",
-            paddingBottom: 24,
-            WebkitOverflowScrolling: "touch",
-          }}
-        >
-          {/* Scoped scrollbar style */}
-          <style>{`
-            .timeline-scroll::-webkit-scrollbar { height: 6px; }
-            .timeline-scroll::-webkit-scrollbar-track { background: #2a2a2a; }
-            .timeline-scroll::-webkit-scrollbar-thumb { background: #1a7f4c; border-radius: 3px; }
-          `}</style>
-
-          <div
-            className="timeline-scroll"
-            style={{
-              display: "flex",
-              alignItems: "flex-start",
-              position: "relative",
-              minWidth: "max-content",
-              padding: "0 30px",
-            }}
-          >
-            {/* Connecting horizontal line */}
-            <div
-              style={{
-                position: "absolute",
-                top: 28,
-                left: 30,
-                right: 30,
-                height: 2,
-                backgroundColor: "#333",
-              }}
-            />
-            <div
-              style={{
-                position: "absolute",
-                top: 28,
-                left: 30,
-                right: 30,
-                height: 2,
-                background: "linear-gradient(90deg, #1a7f4c 0%, #1a7f4c 100%)",
-                opacity: 0.5,
-              }}
-            />
-
-            {timeline.map((item, i) => (
-              <div
-                key={item.year}
-                style={{
-                  flex: "0 0 auto",
-                  width: 220,
-                  marginRight: i < timeline.length - 1 ? 16 : 0,
-                  position: "relative",
-                  paddingTop: 50,
-                }}
-              >
-                {/* Dot */}
-                <div
-                  style={{
-                    position: "absolute",
-                    top: 20,
-                    left: "50%",
-                    transform: "translateX(-50%)",
-                    width: 16,
-                    height: 16,
-                    borderRadius: "50%",
-                    backgroundColor: "#1a7f4c",
-                    border: "3px solid #1a1a1a",
-                    boxShadow: "0 0 0 2px #1a7f4c",
-                    zIndex: 2,
-                  }}
-                />
-
-                {/* Card */}
-                <div
-                  style={{
-                    backgroundColor: "#242424",
-                    border: "1px solid #333",
-                    borderRadius: 4,
-                    padding: "24px 20px",
-                    transition: "border-color 0.3s ease, transform 0.3s ease",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = "#1a7f4c";
-                    e.currentTarget.style.transform = "translateY(-4px)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = "#333";
-                    e.currentTarget.style.transform = "translateY(0)";
-                  }}
-                >
-                  <span
-                    style={{
-                      fontFamily: "'Knockout HTF68', sans-serif",
-                      fontSize: 32,
-                      fontWeight: 400,
-                      color: "#1a7f4c",
-                      display: "block",
-                      marginBottom: 8,
-                      lineHeight: 1,
-                    }}
-                  >
-                    {item.year}
-                  </span>
-                  <h4
-                    style={{
-                      fontSize: 15,
-                      fontWeight: 700,
-                      color: "#fff",
-                      marginBottom: 8,
-                    }}
-                  >
-                    {item.title}
-                  </h4>
-                  <p style={{ fontSize: 13, lineHeight: 1.6, color: "#888" }}>
-                    {item.desc}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      <Timeline />
 
       {/* ═══════════════════════════════════════════════════
           5) DIFERENCIAIS — grid

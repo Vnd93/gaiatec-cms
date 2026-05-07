@@ -3,6 +3,10 @@ import { Search, Phone, ChevronRight, Menu, X, ChevronDown, ArrowRight } from "l
 import { searchIndex, type SearchItem } from "../data/searchIndex";
 import { useMenu } from "../hooks/useSiteData";
 import type { SiteMenuItem } from "../../lib/supabase";
+import { MegaMenuPanel } from "./header/MegaMenuPanel";
+
+/** Itens da nav que renderizam o painel V2 (IFM-style) ao invés do dropdown legado. */
+const MEGA_PANEL_ITEMS = ["Indústrias", "Produtos", "Serviços"];
 
 /* The hardcoded `navItems` below stays as fallback. When the CMS API
    returns at least one item, it overrides. This makes the menu safely
@@ -870,8 +874,18 @@ export function Header() {
           </header>
         </div>
 
-        {/* ── MEGA MENU DROPDOWN (rendered at header level, not inside li) ── */}
-        {hasChildren && activeMenu !== null && (
+        {/* ── MEGA MENU V2 (IFM-style) — Indústrias / Produtos / Serviços ── */}
+        {hasChildren && activeMenu !== null && activeItem && MEGA_PANEL_ITEMS.includes(activeItem.label) && (
+          <MegaMenuPanel
+            item={activeItem}
+            onMouseEnter={keepMenu}
+            onMouseLeave={closeMenu}
+            onClose={() => setActiveMenu(null)}
+          />
+        )}
+
+        {/* ── MEGA MENU LEGADO (rendered at header level, not inside li) — outros itens (Sobre, Blog) ── */}
+        {hasChildren && activeMenu !== null && activeItem && !MEGA_PANEL_ITEMS.includes(activeItem.label) && (
           <div
             className="hdr-mega-panel"
             onMouseEnter={keepMenu}

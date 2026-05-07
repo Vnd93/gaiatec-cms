@@ -54,6 +54,34 @@ export default function SectorPage() {
   return (
     <>
       {/* ═══════════════════════════════════════════════════
+          0) BREADCRUMB (Indústrias > [Nome])
+         ═══════════════════════════════════════════════════ */}
+      <nav
+        aria-label="Breadcrumb"
+        className="bg-slate-50 border-b border-slate-200"
+      >
+        <div className="max-w-[1440px] mx-auto px-4 md:px-8 py-3 text-sm">
+          <ol className="flex items-center gap-2 text-slate-500">
+            <li>
+              <Link to="/" className="hover:text-[#0057DE] transition-colors">
+                Início
+              </Link>
+            </li>
+            <li className="text-slate-300">/</li>
+            <li>
+              <Link to="/setores" className="hover:text-[#0057DE] transition-colors">
+                Indústrias
+              </Link>
+            </li>
+            <li className="text-slate-300">/</li>
+            <li className="text-slate-900 font-medium truncate max-w-[200px] md:max-w-none">
+              {sector.overline || sector.title}
+            </li>
+          </ol>
+        </div>
+      </nav>
+
+      {/* ═══════════════════════════════════════════════════
           1) HERO
          ═══════════════════════════════════════════════════ */}
       <PageHero
@@ -149,7 +177,7 @@ export default function SectorPage() {
                   onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#fafafa"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
                 >
-                  <span style={{ fontFamily: KNOCKOUT, fontSize: 48, fontWeight: 500, color: "rgba(255,106,0,0.15)", lineHeight: 1, display: "block", marginBottom: 20 }}>
+                  <span style={{ fontFamily: KNOCKOUT, fontSize: 48, fontWeight: 500, color: "rgba(0,87,222,0.15)", lineHeight: 1, display: "block", marginBottom: 20 }}>
                     {String(i + 1).padStart(2, "0")}
                   </span>
                   <h4 style={{ fontFamily: KNOCKOUT, fontSize: 24, fontWeight: 500, color: "#111", marginBottom: 14, textTransform: "uppercase", lineHeight: 1.1 }}>
@@ -241,7 +269,7 @@ export default function SectorPage() {
                   onMouseEnter={(e) => { e.currentTarget.style.borderBottomColor = "#0057DE"; e.currentTarget.style.transform = "translateY(-4px)"; e.currentTarget.style.boxShadow = "0 12px 40px rgba(0,0,0,0.08)"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.borderBottomColor = "transparent"; e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "none"; }}
                 >
-                  <span style={{ fontFamily: KNOCKOUT, fontSize: 42, fontWeight: 500, color: "rgba(255,106,0,0.12)", lineHeight: 1, display: "block", marginBottom: 16 }}>
+                  <span style={{ fontFamily: KNOCKOUT, fontSize: 42, fontWeight: 500, color: "rgba(0,87,222,0.12)", lineHeight: 1, display: "block", marginBottom: 16 }}>
                     {String(i + 1).padStart(2, "0")}
                   </span>
                   <h4 style={{ fontFamily: KNOCKOUT, fontSize: 22, fontWeight: 500, color: "#111", marginBottom: 12, textTransform: "uppercase", lineHeight: 1.1 }}>

@@ -70,6 +70,34 @@ export default function ServicoPage() {
   return (
     <>
       {/* ═══════════════════════════════════════════════════
+          0) BREADCRUMB (Início > Serviços > [Nome])
+         ═══════════════════════════════════════════════════ */}
+      <nav
+        aria-label="Breadcrumb"
+        className="bg-slate-50 border-b border-slate-200"
+      >
+        <div className="max-w-[1440px] mx-auto px-4 md:px-8 py-3 text-sm">
+          <ol className="flex items-center gap-2 text-slate-500">
+            <li>
+              <Link to="/" className="hover:text-[#0057DE] transition-colors">
+                Início
+              </Link>
+            </li>
+            <li className="text-slate-300">/</li>
+            <li>
+              <Link to="/servicos" className="hover:text-[#0057DE] transition-colors">
+                Serviços
+              </Link>
+            </li>
+            <li className="text-slate-300">/</li>
+            <li className="text-slate-900 font-medium truncate max-w-[200px] md:max-w-none">
+              {svc.title}
+            </li>
+          </ol>
+        </div>
+      </nav>
+
+      {/* ═══════════════════════════════════════════════════
           1) HERO
          ═══════════════════════════════════════════════════ */}
       <section className="relative w-full overflow-hidden" style={{ height: 600 }}>

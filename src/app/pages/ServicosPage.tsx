@@ -1,268 +1,248 @@
+import { useState, useMemo } from "react";
 import { Link } from "react-router";
-import { useMemo } from "react";
-import { services as FALLBACK_SERVICES, type Service } from "../data/services";
-import { useServicos } from "../hooks/useSiteData";
+import { Search } from "lucide-react";
 import { AnimateOnScroll } from "../components/useScrollAnimation";
 import { CTABanner } from "../components/CTABanner";
-import { ArrowRight } from "lucide-react";
+import { ServicoCard } from "../components/servicos/ServicoCard";
+import {
+  servicesList,
+  categoriaLabels,
+  type ServicoCategoria,
+} from "../data/servicesList";
 
 const KNOCKOUT = "'Knockout HTF68', sans-serif";
 
-const HERO_IMG =
-  "/images/heroes/1.1.png";
+const SETORES_FILTRO = [
+  "Todos",
+  "Saneamento",
+  "Gás e Petróleo",
+  "Biogás e Biometano",
+  "Proteção Catódica",
+  "HVAC",
+  "Indústria",
+  "Telemetria",
+  "Agronegócio",
+];
 
+const CATEGORIAS_LIST: (ServicoCategoria | "todas")[] = [
+  "todas",
+  "instalacao",
+  "manutencao",
+  "calibracao",
+  "consultoria",
+  "outros",
+];
+
+/**
+ * /servicos — Listagem de Serviços Especializados (TASK 16 V2).
+ *
+ * NOVO: usa servicesList.ts (16 itens oficiais) com APENAS o nome
+ * (sem prefixos descritivos como "Serviços Especializados em..." ou
+ * "Soluções Avançadas em...").
+ *
+ * Estrutura:
+ *   1. Hero claro (gradient slate-50 → brand/5)
+ *   2. Toolbar sticky: search bar + filtro setor + filtro categoria
+ *   3. Grid de ServicoCard (3 cols desktop / 2 tablet / 1 mobile)
+ *   4. CTA final
+ */
 export default function ServicosPage() {
-  const { servicos, loading } = useServicos();
+  const [busca, setBusca] = useState("");
+  const [setorAtivo, setSetorAtivo] = useState<string>("Todos");
+  const [categoriaAtiva, setCategoriaAtiva] = useState<ServicoCategoria | "todas">("todas");
 
-  // Map API data → component shape, fallback to static data
-  const services: Service[] = useMemo(() => {
-    if (servicos.length === 0) return FALLBACK_SERVICES;
-    return servicos.map((s) => ({
-      slug: s.slug,
-      title: s.titulo,
-      overline: s.overline,
-      shortDesc: s.descricao_curta,
-      image: s.imagem_url,
-      fullDesc: "",
-      includes: [],
-    }));
-  }, [servicos]);
-
-  const featured = services.filter((s, i) => {
-    // If API data has `destaque`, use it; otherwise first 3
-    const apiItem = servicos.find((a) => a.slug === s.slug);
-    return apiItem ? apiItem.destaque : i < 3;
-  }).slice(0, 3);
-
-  const featuredSlugs = new Set(featured.map((s) => s.slug));
-  const rest = services.filter((s) => !featuredSlugs.has(s.slug));
+  /** Aplica filtros + busca em tempo real */
+  const filtered = useMemo(() => {
+    const buscaLower = busca.trim().toLowerCase();
+    return servicesList.filter((s) => {
+      if (categoriaAtiva !== "todas" && s.categoria !== categoriaAtiva) return false;
+      if (
+        setorAtivo !== "Todos" &&
+        !s.setores.some((sec) => sec.toLowerCase().includes(setorAtivo.toLowerCase()))
+      )
+        return false;
+      if (buscaLower) {
+        const haystack = `${s.nome} ${s.descricaoCurta}`.toLowerCase();
+        if (!haystack.includes(buscaLower)) return false;
+      }
+      return true;
+    });
+  }, [busca, setorAtivo, categoriaAtiva]);
 
   return (
     <>
       {/* ═══════════════════════════════════════════════════
-          1) HERO
+          1) HERO CLARO
          ═══════════════════════════════════════════════════ */}
-      <section className="relative w-full overflow-hidden" style={{ height: 772 }}>
-        <div
-          className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: `url(${HERO_IMG})`, transform: "scale(1.05)", transition: "transform 8s ease-out" }}
-        />
-        <div className="absolute inset-0" style={{ background: "linear-gradient(to right, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.25) 50%, transparent 100%)" }} />
-        <div
-          className="relative z-10 flex flex-col justify-end h-full"
-          style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px 100px 30px" }}
-        >
-          <span style={{ display: "inline-block", fontSize: 13, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
-            SERVIÇOS TÉCNICOS
-          </span>
-          <h1 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(41px, 6vw, 85px)", fontWeight: 500, lineHeight: 0.95, textTransform: "uppercase", color: "#fff", maxWidth: 800, margin: 0 }}>
-            Serviços Técnicos Especializados
-          </h1>
-          <p style={{ fontSize: 18, lineHeight: 1.6, color: "rgba(255,255,255,0.7)", maxWidth: 600, marginTop: 24 }}>
-            Da calibração acreditada RBC à automação industrial completa — soluções técnicas com rastreabilidade, precisão e suporte de especialistas.
-          </p>
+      <section
+        className="relative w-full overflow-hidden"
+        style={{
+          background: "linear-gradient(135deg, #f8fafc 0%, #ffffff 50%, rgba(0, 87, 222, 0.05) 100%)",
+          paddingTop: 120,
+          paddingBottom: 60,
+        }}
+      >
+        <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px" }}>
+          <AnimateOnScroll>
+            <div className="max-w-[800px]">
+              <span
+                style={{
+                  display: "inline-block",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  letterSpacing: "0.2em",
+                  textTransform: "uppercase",
+                  color: "#0057DE",
+                  marginBottom: 16,
+                }}
+              >
+                SERVIÇOS
+              </span>
+              <h1
+                style={{
+                  fontFamily: KNOCKOUT,
+                  fontSize: "clamp(36px, 5vw, 64px)",
+                  fontWeight: 500,
+                  lineHeight: 1,
+                  textTransform: "uppercase",
+                  color: "#0f172a",
+                  marginBottom: 24,
+                }}
+              >
+                Serviços Especializados para Garantir Eficiência e Confiabilidade
+              </h1>
+              <p
+                style={{
+                  fontSize: 16,
+                  lineHeight: 1.7,
+                  color: "#475569",
+                  maxWidth: 720,
+                }}
+              >
+                Na <strong>Gaiatec Sistemas</strong>, oferecemos não apenas produtos de alta tecnologia, mas também serviços especializados para garantir a máxima performance, durabilidade e confiabilidade em cada projeto. Atendemos os setores de Saneamento, Biogás, Gás e Petróleo, Proteção Catódica, Segurança Operacional, HVAC, Telemetria, Indústrias e Agronegócio, com uma equipe técnica qualificada e soluções completas para instalação, calibração, manutenção e suporte especializado.
+              </p>
+            </div>
+          </AnimateOnScroll>
         </div>
       </section>
 
-      {/* ── Vertical line connector ── */}
-      <div style={{ position: "relative" }}>
-        <div style={{ position: "relative", height: 60, backgroundColor: "transparent", marginTop: -60, zIndex: 20 }}>
-          <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px", position: "relative", height: "100%" }}>
-            <div style={{ position: "absolute", left: 30, top: 0, width: 1, height: "100%", backgroundColor: "#fff" }} />
+      {/* ═══════════════════════════════════════════════════
+          2) TOOLBAR STICKY (search + filtros)
+         ═══════════════════════════════════════════════════ */}
+      <div className="sticky top-[100px] md:top-[80px] z-30 bg-white/95 backdrop-blur-md border-y border-slate-200 shadow-sm">
+        <div className="max-w-[1440px] mx-auto px-4 md:px-8 py-4 space-y-3">
+          {/* Linha 1: search */}
+          <div className="relative">
+            <Search
+              size={18}
+              className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+            />
+            <input
+              type="search"
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Buscar serviço..."
+              className="w-full pl-11 pr-4 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-full outline-none focus:border-[#0057DE] focus:bg-white transition-colors"
+            />
           </div>
-        </div>
-        <div style={{ position: "relative", height: 60, backgroundColor: "#fff" }}>
-          <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px", position: "relative", height: "100%" }}>
-            <div style={{ position: "absolute", left: 30, top: 0, width: 1, height: "100%", backgroundColor: "#000" }} />
+
+          {/* Linha 2: filtros (setor + categoria) */}
+          <div className="flex flex-col md:flex-row gap-3">
+            {/* Filtro setor */}
+            <div className="flex gap-2 overflow-x-auto scrollbar-hide flex-1">
+              {SETORES_FILTRO.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setSetorAtivo(s)}
+                  className={`flex-shrink-0 px-3 py-1.5 text-xs font-medium rounded-full transition-all whitespace-nowrap ${
+                    setorAtivo === s
+                      ? "bg-[#0057DE] text-white"
+                      : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                  }`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+
+            {/* Filtro categoria */}
+            <div className="flex gap-2 overflow-x-auto scrollbar-hide flex-shrink-0">
+              {CATEGORIAS_LIST.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setCategoriaAtiva(c)}
+                  className={`flex-shrink-0 px-3 py-1.5 text-xs font-medium rounded-full border transition-all whitespace-nowrap ${
+                    categoriaAtiva === c
+                      ? "border-[#0057DE] text-[#0057DE] bg-[#0057DE]/5"
+                      : "border-slate-200 text-slate-600 hover:border-slate-300"
+                  }`}
+                >
+                  {c === "todas" ? "Todas categorias" : categoriaLabels[c]}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
 
       {/* ═══════════════════════════════════════════════════
-          2) INTRO
+          3) GRID DE SERVIÇOS
          ═══════════════════════════════════════════════════ */}
-      <section style={{ backgroundColor: "#fff", paddingTop: 0, paddingBottom: 80 }}>
-        <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px" }}>
-          <AnimateOnScroll>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-24 items-start">
-              <div>
-                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 20 }}>
-                  PORTFÓLIO COMPLETO
-                </span>
-                <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 52px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", marginBottom: 28, color: "#111" }}>
-                  {services.length} Serviços Especializados
-                </h2>
-              </div>
-              <div>
-                <p style={{ fontSize: 17, lineHeight: 1.8, color: "#555", marginBottom: 24 }}>
-                  A Gaiatec Sistemas oferece um portfólio completo de serviços técnicos para a indústria — da especificação e instalação de instrumentos à automação de processos, calibração metrológica e manutenção contínua.
-                </p>
-                <p style={{ fontSize: 17, lineHeight: 1.8, color: "#555" }}>
-                  Cada serviço é executado por equipe técnica qualificada, com documentação rastreada e conformidade normativa. Mais de 20 anos de experiência em campo garantem a confiabilidade que sua operação exige.
-                </p>
-              </div>
-            </div>
-          </AnimateOnScroll>
-        </div>
-      </section>
-
-      {/* ═══════════════════════════════════════════════════
-          3) FEATURED SERVICES — large hero cards
-         ═══════════════════════════════════════════════════ */}
-      <section style={{ backgroundColor: "#000", padding: "100px 0" }}>
-        <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px" }}>
-          <AnimateOnScroll>
-            <div style={{ marginBottom: 60 }}>
-              <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
-                SERVIÇOS PRINCIPAIS
-              </span>
-              <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 48px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", color: "#fff" }}>
-                Áreas de Destaque
-              </h2>
-            </div>
-          </AnimateOnScroll>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {featured.map((s, i) => (
-              <AnimateOnScroll key={s.slug} delay={i * 0.1}>
-                <Link
-                  to={`/servicos/${s.slug}`}
-                  className="block group"
-                  style={{ position: "relative", overflow: "hidden", aspectRatio: "3/4" }}
+      <section className="bg-slate-50 py-16 md:py-20 min-h-[400px]">
+        <div className="max-w-[1440px] mx-auto px-4 md:px-8">
+          {/* Resumo de resultados */}
+          <div className="mb-8 flex items-center justify-between">
+            <p className="text-sm text-slate-600">
+              <span className="font-semibold text-slate-900">{filtered.length}</span>{" "}
+              {filtered.length === 1 ? "serviço encontrado" : "serviços encontrados"}
+              {(setorAtivo !== "Todos" || categoriaAtiva !== "todas" || busca) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBusca("");
+                    setSetorAtivo("Todos");
+                    setCategoriaAtiva("todas");
+                  }}
+                  className="ml-3 text-[#0057DE] hover:text-[#0046b3] font-medium"
                 >
-                  <div
-                    style={{ position: "absolute", inset: 0, backgroundImage: `url(${s.image})`, backgroundSize: "cover", backgroundPosition: "center", transition: "transform 0.6s ease" }}
-                    className="group-hover:scale-110"
-                  />
-                  <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.4) 40%, rgba(0,0,0,0.1) 100%)" }} />
-
-                  <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "32px" }}>
-                    <span style={{ display: "block", fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#0057DE", marginBottom: 12 }}>
-                      {s.overline}
-                    </span>
-                    <h3 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(24px, 2.5vw, 32px)", fontWeight: 500, lineHeight: 1.05, textTransform: "uppercase", color: "#fff", marginBottom: 12, transition: "color 0.3s" }} className="group-hover:text-[#0057DE]">
-                      {s.title}
-                    </h3>
-                    <p style={{ fontSize: 14, lineHeight: 1.6, color: "rgba(255,255,255,0.5)", marginBottom: 16, maxHeight: 44, overflow: "hidden" }}>
-                      {s.shortDesc}
-                    </p>
-                    <div
-                      style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 700, color: "#0057DE", textTransform: "uppercase", letterSpacing: "0.1em" }}
-                    >
-                      Ver serviço <ArrowRight size={14} />
-                    </div>
-                  </div>
-
-                  <div
-                    style={{ position: "absolute", bottom: 0, left: 0, width: "0%", height: 4, backgroundColor: "#0057DE", transition: "width 0.4s ease" }}
-                    className="group-hover:w-full"
-                  />
-                </Link>
-              </AnimateOnScroll>
-            ))}
+                  Limpar filtros
+                </button>
+              )}
+            </p>
           </div>
-        </div>
-      </section>
 
-      {/* ═══════════════════════════════════════════════════
-          4) ALL SERVICES GRID
-         ═══════════════════════════════════════════════════ */}
-      <section style={{ backgroundColor: "#fff", padding: "100px 0" }}>
-        <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px" }}>
-          <AnimateOnScroll>
-            <div style={{ marginBottom: 60 }}>
-              <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
-                TODOS OS SERVIÇOS
-              </span>
-              <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 48px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", color: "#111" }}>
-                Explore Cada Serviço
-              </h2>
+          {/* Grid */}
+          {filtered.length === 0 ? (
+            <div className="text-center py-20">
+              <p className="text-lg text-slate-500 mb-4">Nenhum serviço encontrado.</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setBusca("");
+                  setSetorAtivo("Todos");
+                  setCategoriaAtiva("todas");
+                }}
+                className="inline-flex items-center gap-2 text-[#0057DE] hover:text-[#0046b3] font-semibold"
+              >
+                Limpar filtros e ver todos
+              </button>
             </div>
-          </AnimateOnScroll>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-0" style={{ borderTop: "1px solid #e0e0e0", borderLeft: "1px solid #e0e0e0" }}>
-            {rest.map((s, i) => (
-              <AnimateOnScroll key={s.slug} delay={i * 0.06}>
-                <Link
-                  to={`/servicos/${s.slug}`}
-                  className="block group"
-                  style={{ borderRight: "1px solid #e0e0e0", borderBottom: "1px solid #e0e0e0", transition: "background-color 0.3s", textDecoration: "none" }}
-                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#fafafa"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
-                >
-                  {/* Image strip */}
-                  <div style={{ width: "100%", height: 200, overflow: "hidden", position: "relative" }}>
-                    <div
-                      style={{ position: "absolute", inset: 0, backgroundImage: `url(${s.image})`, backgroundSize: "cover", backgroundPosition: "center", transition: "transform 0.6s ease" }}
-                      className="group-hover:scale-110"
-                    />
-                    <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(0,0,0,0.4) 0%, transparent 60%)" }} />
-                  </div>
-
-                  {/* Content */}
-                  <div style={{ padding: "28px 28px 32px" }}>
-                    <span style={{ display: "block", fontSize: 10, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#0057DE", marginBottom: 10 }}>
-                      {s.overline}
-                    </span>
-                    <h4 style={{ fontFamily: KNOCKOUT, fontSize: 22, fontWeight: 500, color: "#111", textTransform: "uppercase", lineHeight: 1.1, marginBottom: 10, transition: "color 0.3s" }} className="group-hover:text-[#0057DE]">
-                      {s.title}
-                    </h4>
-                    <p style={{ fontSize: 14, lineHeight: 1.6, color: "#999", marginBottom: 16, maxHeight: 44, overflow: "hidden" }}>
-                      {s.shortDesc}
-                    </p>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "#0057DE", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                      Ver serviço <ArrowRight size={12} />
-                    </div>
-                  </div>
-                </Link>
-              </AnimateOnScroll>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ═══════════════════════════════════════════════════
-          5) DIFERENCIAIS
-         ═══════════════════════════════════════════════════ */}
-      <section style={{ backgroundColor: "#111", padding: "80px 0" }}>
-        <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px" }}>
-          <AnimateOnScroll>
-            <div style={{ marginBottom: 60, textAlign: "center" }}>
-              <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
-                DIFERENCIAIS
-              </span>
-              <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 48px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", color: "#fff" }}>
-                Por que a Gaiatec
-              </h2>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-6">
+              {filtered.map((s, i) => (
+                <AnimateOnScroll key={s.slug} delay={Math.min(i * 0.04, 0.4)}>
+                  <ServicoCard servico={s} />
+                </AnimateOnScroll>
+              ))}
             </div>
-          </AnimateOnScroll>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {[
-              { value: "+20", label: "Anos de Experiência", desc: "Portfólio técnico consolidado em múltiplos setores industriais" },
-              { value: String(services.length), label: "Serviços Especializados", desc: "Portfólio completo de serviços técnicos para a indústria" },
-              { value: "BR", label: "Atendimento Nacional", desc: "Equipe técnica com atuação em todo o território brasileiro" },
-            ].map((item, i) => (
-              <AnimateOnScroll key={item.label} delay={i * 0.1}>
-                <div style={{ textAlign: "center", padding: "24px 16px" }}>
-                  <span style={{ fontFamily: KNOCKOUT, fontSize: "clamp(40px, 5vw, 64px)", fontWeight: 500, lineHeight: 1, color: "#0057DE", display: "block", marginBottom: 12 }}>
-                    {item.value}
-                  </span>
-                  <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#fff", display: "block", marginBottom: 8 }}>
-                    {item.label}
-                  </span>
-                  <p style={{ fontSize: 13, lineHeight: 1.5, color: "rgba(255,255,255,0.4)" }}>
-                    {item.desc}
-                  </p>
-                </div>
-              </AnimateOnScroll>
-            ))}
-          </div>
+          )}
         </div>
       </section>
 
       {/* ═══════════════════════════════════════════════════
-          6) CTA
+          4) CTA FINAL
          ═══════════════════════════════════════════════════ */}
       <CTABanner
         text="Precisa de um serviço técnico especializado? Fale com nossa equipe de especialistas e receba uma análise técnica gratuita para o seu caso."

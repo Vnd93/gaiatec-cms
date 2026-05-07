@@ -406,7 +406,7 @@ export default function BiodigestorPage() {
                     minHeight: 180,
                     transition: "background-color 0.3s ease",
                   }}
-                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "rgba(255,106,0,0.06)"; }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "rgba(0,87,222,0.06)"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
                 >
                   <div>

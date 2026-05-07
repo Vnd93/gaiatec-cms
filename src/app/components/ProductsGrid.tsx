@@ -51,7 +51,7 @@ function ProductCard({ product }: { product: (typeof products)[0] }) {
 
   return (
     <a
-      href="#"
+      href="/produtos"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
@@ -428,7 +428,7 @@ export function ProductsGrid() {
 
               <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
                 <a
-                  href="#"
+                  href="/produtos"
                   className="sec3-viewall-link"
                   style={{
                     fontSize: 14,

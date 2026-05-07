@@ -19,6 +19,7 @@ const BiodigestorEscolas = lazy(() => import("./pages/BiodigestorEscolas"));
 const BlogPage = lazy(() => import("./pages/BlogPage"));
 const ContatoPage = lazy(() => import("./pages/ContatoPage"));
 const ProdutosPage = lazy(() => import("./pages/ProdutosPage"));
+const ProdutoPage = lazy(() => import("./pages/ProdutoPage"));
 const SetoresPage = lazy(() => import("./pages/SetoresPage"));
 const ServicosPage = lazy(() => import("./pages/ServicosPage"));
 const ServicoPage = lazy(() => import("./pages/ServicoPage"));
@@ -66,6 +67,7 @@ export const router = createBrowserRouter([
       { path: "contato", element: lazyWrap(ContatoPage) },
       { path: "produtos", element: lazyWrap(ProdutosPage) },
       { path: "produtos/comparador", element: lazyWrap(ComparadorPage) },
+      { path: "produtos/:slug", element: lazyWrap(ProdutoPage) },
       { path: "aplicacoes", element: lazyWrap(AplicacoesPage) },
       { path: "aplicacoes/:slug", element: lazyWrap(AplicacaoPage) },
       { path: "*", element: lazyWrap(NotFoundPage) },

@@ -11,9 +11,9 @@ const HERO_IMG =
   "/images/heroes/1.1.png";
 
 /* ────────────────────────────────────────────────────────
-   DATA
+   DATA — exportado para reuso em /produtos/[slug] (ProdutoPage)
    ──────────────────────────────────────────────────────── */
-type Product = {
+export type Product = {
   id: number;
   category: string;
   name: string;
@@ -29,7 +29,20 @@ type Product = {
   };
 };
 
-const products: Product[] = [
+/** Gera slug consistente a partir do id+name para deep-linking. */
+export const productSlug = (p: Product) =>
+  `${p.id}-${p.name
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")}`;
+
+/** Busca produto pelo slug gerado por productSlug() */
+export const productBySlug = (slug: string): Product | undefined =>
+  products.find((p) => productSlug(p) === slug);
+
+export const products: Product[] = [
   {
     id: 1,
     category: "MEDIÇÃO DE VAZÃO",
@@ -998,9 +1011,9 @@ export default function ProdutosPage() {
                     const compareDisabled = !isComparing && comparadorFull;
                     return (
                     <AnimateOnScroll key={product.id} delay={i * 0.04}>
-                      <div
-                        className="group relative"
-                        onClick={() => setSelectedProduct(product)}
+                      <Link
+                        to={`/produtos/${productSlug(product)}`}
+                        className="group relative block"
                         style={{
                           borderRight: "1px solid #e0e0e0",
                           borderBottom: "1px solid #e0e0e0",
@@ -1010,6 +1023,8 @@ export default function ProdutosPage() {
                           display: "flex",
                           flexDirection: "column",
                           cursor: "pointer",
+                          textDecoration: "none",
+                          color: "inherit",
                         }}
                         onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#fafafa"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.08)"; }}
                         onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#fff"; e.currentTarget.style.boxShadow = "none"; }}
@@ -1149,7 +1164,7 @@ export default function ProdutosPage() {
                             </span>
                           </div>
                         </div>
-                      </div>
+                      </Link>
                     </AnimateOnScroll>
                     );
                   })}

@@ -134,7 +134,7 @@ export default function SectorPage() {
       {/* ═══════════════════════════════════════════════════
           3) STATS BAR — unique per sector
          ═══════════════════════════════════════════════════ */}
-      <section style={{ backgroundColor: "#111", padding: "60px 0" }}>
+      <section style={{ backgroundColor: "#f8fafc", padding: "60px 0", borderTop: "1px solid #e2e8f0", borderBottom: "1px solid #e2e8f0" }}>
         <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px" }}>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
             {sector.stats.map((s, i) => (
@@ -143,7 +143,7 @@ export default function SectorPage() {
                   <span style={{ fontFamily: KNOCKOUT, fontSize: "clamp(40px, 5vw, 64px)", fontWeight: 500, lineHeight: 1, color: "#0057DE", display: "block" }}>
                     {s.value}
                   </span>
-                  <span style={{ fontSize: 13, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginTop: 8, display: "block" }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "#475569", marginTop: 8, display: "block" }}>
                     {s.label}
                   </span>
                 </div>
@@ -196,7 +196,7 @@ export default function SectorPage() {
       {/* ═══════════════════════════════════════════════════
           5) APLICAÇÕES — two-column sticky layout
          ═══════════════════════════════════════════════════ */}
-      <section style={{ backgroundColor: "#0a0a0a", padding: "100px 0", position: "relative", overflow: "hidden" }}>
+      <section style={{ backgroundColor: "#f8fafc", padding: "100px 0", position: "relative", overflow: "hidden" }}>
         <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px" }}>
           <AnimateOnScroll>
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.5fr] gap-16 lg:gap-24">
@@ -205,10 +205,10 @@ export default function SectorPage() {
                 <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
                   APLICAÇÕES
                 </span>
-                <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 48px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", color: "#fff", marginBottom: 24 }}>
+                <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 48px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", color: "#0f172a", marginBottom: 24 }}>
                   {`Aplicações em ${sector.overline}`}
                 </h2>
-                <p style={{ fontSize: 16, lineHeight: 1.8, color: "rgba(255,255,255,0.5)", maxWidth: 400 }}>
+                <p style={{ fontSize: 16, lineHeight: 1.8, color: "#64748b", maxWidth: 400 }}>
                   {sector.description}
                 </p>
               </div>
@@ -217,12 +217,12 @@ export default function SectorPage() {
               <div>
                 {sector.applications.map((app, i) => (
                   <AnimateOnScroll key={i} delay={i * 0.05}>
-                    <div style={{ display: "flex", gap: 24, padding: "28px 0", borderBottom: i < sector.applications.length - 1 ? "1px solid rgba(255,255,255,0.08)" : "none" }}>
+                    <div style={{ display: "flex", gap: 24, padding: "28px 0", borderBottom: i < sector.applications.length - 1 ? "1px solid #e2e8f0" : "none" }}>
                       <span style={{ fontFamily: KNOCKOUT, fontSize: 42, fontWeight: 500, color: "#0057DE", lineHeight: 1, flexShrink: 0, width: 60 }}>
                         {String(i + 1).padStart(2, "0")}
                       </span>
                       <div style={{ paddingTop: 6 }}>
-                        <span style={{ fontSize: 16, lineHeight: 1.6, color: "rgba(255,255,255,0.8)", fontWeight: 500 }}>
+                        <span style={{ fontSize: 16, lineHeight: 1.6, color: "#334155", fontWeight: 500 }}>
                           {app}
                         </span>
                       </div>
@@ -288,7 +288,7 @@ export default function SectorPage() {
       {/* ═══════════════════════════════════════════════════
           7) SERVIÇOS — horizontal strip
          ═══════════════════════════════════════════════════ */}
-      <section style={{ backgroundColor: "#111", padding: "80px 0" }}>
+      <section style={{ backgroundColor: "#ffffff", padding: "80px 0", borderTop: "1px solid #e2e8f0" }}>
         <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px" }}>
           <AnimateOnScroll>
             <div className="flex flex-col lg:flex-row lg:items-center gap-12">
@@ -296,7 +296,7 @@ export default function SectorPage() {
                 <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
                   SERVIÇOS
                 </span>
-                <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(28px, 3.5vw, 40px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", color: "#fff" }}>
+                <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(28px, 3.5vw, 40px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", color: "#0f172a" }}>
                   Serviços Aplicáveis
                 </h2>
               </div>
@@ -305,9 +305,9 @@ export default function SectorPage() {
                   <AnimateOnScroll key={srv} delay={i * 0.08}>
                     <Link
                       to="/contato"
-                      style={{ display: "inline-flex", alignItems: "center", gap: 10, border: "1px solid rgba(255,255,255,0.12)", color: "#fff", padding: "16px 24px", fontSize: 14, fontWeight: 600, textDecoration: "none", transition: "all 0.3s" }}
-                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#0057DE"; e.currentTarget.style.color = "#0057DE"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)"; e.currentTarget.style.color = "#fff"; }}
+                      style={{ display: "inline-flex", alignItems: "center", gap: 10, border: "1px solid #e2e8f0", color: "#334155", backgroundColor: "#f8fafc", padding: "16px 24px", fontSize: 14, fontWeight: 600, textDecoration: "none", transition: "all 0.3s", borderRadius: 8 }}
+                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#0057DE"; e.currentTarget.style.color = "#0057DE"; e.currentTarget.style.backgroundColor = "#ffffff"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#e2e8f0"; e.currentTarget.style.color = "#334155"; e.currentTarget.style.backgroundColor = "#f8fafc"; }}
                     >
                       <ChevronRight size={14} color="#0057DE" />
                       {srv}
@@ -323,7 +323,7 @@ export default function SectorPage() {
       {/* ═══════════════════════════════════════════════════
           8) OUTRAS INDÚSTRIAS — image cards with overlay
          ═══════════════════════════════════════════════════ */}
-      <section style={{ backgroundColor: "#000", padding: "100px 0" }}>
+      <section style={{ backgroundColor: "#f8fafc", padding: "100px 0", borderTop: "1px solid #e2e8f0" }}>
         <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px" }}>
           <AnimateOnScroll>
             <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6" style={{ marginBottom: 60 }}>
@@ -331,17 +331,17 @@ export default function SectorPage() {
                 <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
                   OUTRAS INDÚSTRIAS
                 </span>
-                <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 48px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", color: "#fff" }}>
-                  Explore Mais Setores
+                <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 48px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", color: "#0f172a" }}>
+                  Explore Mais Indústrias
                 </h2>
               </div>
               <Link
                 to="/setores"
-                style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: "#fff", textDecoration: "none", textTransform: "uppercase", letterSpacing: "0.08em", transition: "color 0.3s", flexShrink: 0 }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = "#0057DE"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = "#fff"; }}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: "#0057DE", textDecoration: "none", textTransform: "uppercase", letterSpacing: "0.08em", transition: "color 0.3s", flexShrink: 0 }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = "#0046b3"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = "#0057DE"; }}
               >
-                Ver todos os setores <ArrowRight size={14} />
+                Ver todas as indústrias <ArrowRight size={14} />
               </Link>
             </div>
           </AnimateOnScroll>

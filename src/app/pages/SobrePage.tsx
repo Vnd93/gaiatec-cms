@@ -374,7 +374,7 @@ export default function SobrePage() {
       {/* ═══════════════════════════════════════════════════
           6) CTA BANNER — dark bottom section
          ═══════════════════════════════════════════════════ */}
-      <section style={{ backgroundColor: "#111", padding: "80px 0" }}>
+      <section style={{ backgroundColor: "#f8fafc", padding: "80px 0" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 30px" }}>
           <AnimateOnScroll>
             <div className="flex flex-col lg:flex-row items-center justify-between gap-8 text-center lg:text-left">

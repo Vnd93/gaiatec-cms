@@ -129,7 +129,7 @@ export default function BiodigestorMonitoramento() {
       {/* ═══════════════════════════════════════════
           3) CHALLENGES — dark bg, 3x2 grid
          ═══════════════════════════════════════════ */}
-      <section style={{ backgroundColor: "#1a1a1a", padding: "80px 0" }}>
+      <section style={{ backgroundColor: "#f8fafc", padding: "80px 0" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 30px" }}>
           <AnimateOnScroll>
             {heading("DESAFIOS", "O que Esta em Jogo na Geracao de Biogas", true)}
@@ -194,7 +194,7 @@ export default function BiodigestorMonitoramento() {
                     <div
                       className="flex items-center justify-center"
                       style={{
-                        backgroundColor: "#1a1a1a",
+                        backgroundColor: "#f8fafc",
                         minWidth: 120,
                         minHeight: 100,
                         padding: "24px",
@@ -248,7 +248,7 @@ export default function BiodigestorMonitoramento() {
                         display: "inline-flex",
                         alignItems: "center",
                         gap: 10,
-                        backgroundColor: "#1a1a1a",
+                        backgroundColor: "#f8fafc",
                         color: "#fff",
                         padding: "12px 20px",
                         borderRadius: 50,
@@ -290,7 +290,7 @@ export default function BiodigestorMonitoramento() {
       {/* ═══════════════════════════════════════════
           6) CTA BANNER
          ═══════════════════════════════════════════ */}
-      <section style={{ backgroundColor: "#111", padding: "80px 0" }}>
+      <section style={{ backgroundColor: "#f8fafc", padding: "80px 0" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 30px" }}>
           <AnimateOnScroll>
             <div className="flex flex-col lg:flex-row items-center justify-between gap-8 text-center lg:text-left">
@@ -306,7 +306,7 @@ export default function BiodigestorMonitoramento() {
               <div className="flex flex-wrap gap-4 justify-center lg:justify-end" style={{ flexShrink: 0 }}>
                 <Link
                   to="/contato"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 8, backgroundColor: "#0057DE", color: "#000", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.5px", textDecoration: "none", borderRadius: 4, transition: "all 0.3s ease" }}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 8, backgroundColor: "#0057DE", color: "#ffffff", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.5px", textDecoration: "none", borderRadius: 4, transition: "all 0.3s ease" }}
                   onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#e5b800"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#0057DE"; }}
                 >

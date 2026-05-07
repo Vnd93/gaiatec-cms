@@ -734,7 +734,7 @@ export default function ProdutosPage() {
       {/* ═══════════════════════════════════════════
           3) CATEGORY TABS — underline style
          ═══════════════════════════════════════════ */}
-      <section style={{ backgroundColor: "#111", borderBottom: "1px solid #222" }}>
+      <section style={{ backgroundColor: "#f8fafc", borderBottom: "1px solid #222" }}>
         <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px" }}>
           <div className="flex gap-0 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
             {categoryTabs.map((cat) => {
@@ -1096,7 +1096,7 @@ export default function ProdutosPage() {
       {/* ═══════════════════════════════════════════
           6) STATS BAR — catálogo + setores (sem selos de certificação)
          ═══════════════════════════════════════════ */}
-      <section style={{ backgroundColor: "#111", padding: "60px 0" }}>
+      <section style={{ backgroundColor: "#f8fafc", padding: "60px 0" }}>
         <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px" }}>
           <div className="grid grid-cols-2 gap-8">
             {[
@@ -1155,7 +1155,7 @@ export default function ProdutosPage() {
                     to="/contato"
                     style={{
                       display: "inline-flex", alignItems: "center", gap: 12,
-                      backgroundColor: "#0057DE", color: "#000", padding: "16px 40px",
+                      backgroundColor: "#0057DE", color: "#ffffff", padding: "16px 40px",
                       fontWeight: 700, fontSize: 13, textTransform: "uppercase",
                       letterSpacing: "0.08em", textDecoration: "none", transition: "all 0.3s ease",
                     }}

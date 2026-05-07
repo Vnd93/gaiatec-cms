@@ -182,12 +182,12 @@ export const BeneficiosEconomicosPage = () => {
       </section>
 
       {/* Footer CTA - Minimalist */}
-      <section className="py-20 bg-gray-900">
+      <section className="py-20 bg-slate-50 border-t border-slate-200">
         <div className="container mx-auto px-6 max-w-4xl text-center">
-          <h2 className="text-2xl md:text-3xl font-bold text-white mb-4">
+          <h2 className="text-2xl md:text-3xl font-bold text-slate-900 mb-4">
             Construa o futuro da sua indústria conosco
           </h2>
-          <p className="text-gray-400 mb-10 max-w-xl mx-auto">
+          <p className="text-slate-600 mb-10 max-w-xl mx-auto">
             Entre em contato e descubra como a Gaiatec Sistemas pode otimizar seus processos e aumentar a eficiência operacional.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -201,7 +201,7 @@ export const BeneficiosEconomicosPage = () => {
             </a>
             <Link
               to="/servicos/instrumentacao-industrial"
-              className="inline-flex items-center justify-center border border-gray-600 hover:border-gray-400 text-gray-300 hover:text-white font-semibold px-8 py-4 transition-colors text-[14px] rounded-[7px]"
+              className="inline-flex items-center justify-center border border-slate-300 hover:border-[#0057DE] text-slate-700 hover:text-slate-900 font-semibold px-8 py-4 transition-colors text-[14px] rounded-[7px]"
             >
               Conheça Nossos Serviços
             </Link>

@@ -289,7 +289,7 @@ export default function ServicoPage() {
       {/* ═══════════════════════════════════════════════════
           5) OUTROS SERVIÇOS — cross-links
          ═══════════════════════════════════════════════════ */}
-      <section style={{ backgroundColor: "#111", padding: "100px 0" }}>
+      <section style={{ backgroundColor: "#f8fafc", padding: "100px 0" }}>
         <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px" }}>
           <AnimateOnScroll>
             <div style={{ marginBottom: 60 }}>

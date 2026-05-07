@@ -211,7 +211,7 @@ export const LocalizacaoTubulacaoPage = () => {
       </section>
 
       {/* CTA */}
-      <section className="py-20 bg-gray-900">
+      <section className="py-20 bg-slate-50 border-t border-slate-200">
         <div className="container mx-auto px-6 max-w-4xl text-center">
           <h2 className="text-2xl md:text-3xl font-bold text-white mb-4">
             Construa o futuro da sua indústria conosco

@@ -294,7 +294,7 @@ export default function BiodigestorPortes() {
       {/* ═══════════════════════════════════════════
           4) COMPARISON TABLE — dark bg
          ═══════════════════════════════════════════ */}
-      <section style={{ backgroundColor: "#1a1a1a", padding: "80px 0" }}>
+      <section style={{ backgroundColor: "#f8fafc", padding: "80px 0" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 30px" }}>
           <AnimateOnScroll>
             {heading("COMPARATIVO", "Tabela de Especificações", true)}
@@ -305,11 +305,11 @@ export default function BiodigestorPortes() {
               <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 800 }}>
                 <thead>
                   <tr>
-                    <th style={{ backgroundColor: "#0057DE", color: "#000", padding: "14px 16px", fontSize: 13, fontWeight: 700, textAlign: "left", textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: "2px solid #e5b800" }}>
+                    <th style={{ backgroundColor: "#0057DE", color: "#ffffff", padding: "14px 16px", fontSize: 13, fontWeight: 700, textAlign: "left", textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: "2px solid #e5b800" }}>
                       Especificação
                     </th>
                     {["10.0", "8.0", "5.0", "3.0", "2.0"].map((m) => (
-                      <th key={m} style={{ backgroundColor: "#0057DE", color: "#000", padding: "14px 16px", fontSize: 13, fontWeight: 700, textAlign: "center", textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: "2px solid #e5b800", borderLeft: "1px solid rgba(0,0,0,0.1)" }}>
+                      <th key={m} style={{ backgroundColor: "#0057DE", color: "#ffffff", padding: "14px 16px", fontSize: 13, fontWeight: 700, textAlign: "center", textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: "2px solid #e5b800", borderLeft: "1px solid rgba(0,0,0,0.1)" }}>
                         GT-{m}
                       </th>
                     ))}
@@ -416,7 +416,7 @@ export default function BiodigestorPortes() {
       {/* ═══════════════════════════════════════════
           6) CTA BANNER
          ═══════════════════════════════════════════ */}
-      <section style={{ backgroundColor: "#111", padding: "80px 0" }}>
+      <section style={{ backgroundColor: "#f8fafc", padding: "80px 0" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 30px" }}>
           <AnimateOnScroll>
             <div className="flex flex-col lg:flex-row items-center justify-between gap-8 text-center lg:text-left">
@@ -432,7 +432,7 @@ export default function BiodigestorPortes() {
               <div className="flex flex-wrap gap-4 justify-center lg:justify-end" style={{ flexShrink: 0 }}>
                 <Link
                   to="/contato"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 8, backgroundColor: "#0057DE", color: "#000", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.5px", textDecoration: "none", borderRadius: 4, transition: "all 0.3s ease" }}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 8, backgroundColor: "#0057DE", color: "#ffffff", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.5px", textDecoration: "none", borderRadius: 4, transition: "all 0.3s ease" }}
                   onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#e5b800"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#0057DE"; }}
                 >

@@ -219,7 +219,7 @@ export default function BiodigestorComoFunciona() {
                                 key={d}
                                 style={{
                                   display: "inline-flex", alignItems: "center", gap: 4,
-                                  backgroundColor: "#1a1a1a", color: "#fff",
+                                  backgroundColor: "#f8fafc", color: "#fff",
                                   padding: "5px 12px", borderRadius: 3, fontSize: 11, fontWeight: 600,
                                 }}
                               >
@@ -241,7 +241,7 @@ export default function BiodigestorComoFunciona() {
       {/* ═══════════════════════════════════════════
           4) DIAGRAM SECTION — dark bg, cycle infographic
          ═══════════════════════════════════════��═══ */}
-      <section style={{ backgroundColor: "#1a1a1a", padding: "80px 0" }}>
+      <section style={{ backgroundColor: "#f8fafc", padding: "80px 0" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 30px" }}>
           <AnimateOnScroll>
             {heading("CICLO DO BIODIGESTOR", "Diagrama do Processo", true)}
@@ -359,7 +359,7 @@ export default function BiodigestorComoFunciona() {
       {/* ═══════════════════════════════════════════
           6) CTA BANNER
          ═══════════════════════════════════════════ */}
-      <section style={{ backgroundColor: "#111", padding: "80px 0" }}>
+      <section style={{ backgroundColor: "#f8fafc", padding: "80px 0" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 30px" }}>
           <AnimateOnScroll>
             <div className="flex flex-col lg:flex-row items-center justify-between gap-8 text-center lg:text-left">
@@ -375,7 +375,7 @@ export default function BiodigestorComoFunciona() {
               <div className="flex flex-wrap gap-4 justify-center lg:justify-end" style={{ flexShrink: 0 }}>
                 <Link
                   to="/contato"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 8, backgroundColor: "#0057DE", color: "#000", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.5px", textDecoration: "none", borderRadius: 4, transition: "all 0.3s ease" }}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 8, backgroundColor: "#0057DE", color: "#ffffff", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.5px", textDecoration: "none", borderRadius: 4, transition: "all 0.3s ease" }}
                   onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#e5b800"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#0057DE"; }}
                 >

@@ -173,7 +173,7 @@ export default function BiodigestorPage() {
       {/* ═══════════════════════════════════════════════════
           3) STATS BAR — full-width dark strip
          ═══════════════════════════════════════════════════ */}
-      <section style={{ backgroundColor: "#111", padding: "60px 0" }}>
+      <section style={{ backgroundColor: "#f8fafc", padding: "60px 0" }}>
         <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px" }}>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
             {stats.map((s, i) => (
@@ -376,7 +376,7 @@ export default function BiodigestorPage() {
       {/* ═══════════════════════════════════════════════════
           7) EXPLORE — full-width dark navigation
          ═══════════════════════════════════════════════════ */}
-      <section style={{ backgroundColor: "#111", padding: "100px 0" }}>
+      <section style={{ backgroundColor: "#f8fafc", padding: "100px 0" }}>
         <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px" }}>
           <AnimateOnScroll>
             <div style={{ marginBottom: 60 }}>
@@ -454,7 +454,7 @@ export default function BiodigestorPage() {
                   to="/contato"
                   style={{
                     display: "inline-flex", alignItems: "center", gap: 8,
-                    backgroundColor: "#0057DE", color: "#000",
+                    backgroundColor: "#0057DE", color: "#ffffff",
                     padding: "16px 36px", fontWeight: 700, fontSize: 13,
                     textTransform: "uppercase", letterSpacing: "0.08em",
                     textDecoration: "none", transition: "all 0.3s ease",

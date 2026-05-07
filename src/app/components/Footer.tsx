@@ -121,7 +121,7 @@ export function Footer() {
   const year = new Date().getFullYear();
 
   return (
-    <footer className="bg-black text-white">
+    <footer className="bg-slate-50 text-slate-900 border-t border-slate-200">
       <div className="max-w-[1400px] mx-auto px-4 md:px-6 py-16 md:py-20">
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_2fr] gap-12 lg:gap-20">
           {/* Logo & Institutional */}
@@ -129,32 +129,32 @@ export function Footer() {
             <a href="/" className="inline-block mb-4">
               <img loading="lazy" src="/logo-gaiatec.png" alt="Gaiatec Sistemas" style={{ height: 46, width: "auto" }} />
             </a>
-            <p className="text-white/50 text-[14px] leading-[1.7] mb-6">
+            <p className="text-slate-600 text-[14px] leading-[1.7] mb-6">
               Soluções técnicas em instrumentação industrial desde 2004.
             </p>
             {/* Contact summary (CMS-driven) */}
             {(contact.telefone || contact.whatsapp || contact.email) && (
-              <div className="text-white/60 text-[12px] leading-[1.8] mb-4 space-y-1">
+              <div className="text-slate-700 text-[12px] leading-[1.8] mb-4 space-y-1">
                 {contact.telefone && (
                   <div>
-                    <span className="text-white/40">Tel:</span>{" "}
-                    <a href={`tel:+55${contact.telefone.replace(/\D/g, "")}`} className="hover:text-[#0057DE]">
+                    <span className="text-slate-500">Tel:</span>{" "}
+                    <a href={`tel:+55${contact.telefone.replace(/\D/g, "")}`} className="text-slate-700 hover:text-[#0057DE] transition-colors">
                       {contact.telefone}
                     </a>
                   </div>
                 )}
                 {contact.whatsapp && (
                   <div>
-                    <span className="text-white/40">WhatsApp:</span>{" "}
-                    <a href={`https://wa.me/55${contact.whatsapp.replace(/\D/g, "")}`} className="hover:text-[#0057DE]">
+                    <span className="text-slate-500">WhatsApp:</span>{" "}
+                    <a href={`https://wa.me/55${contact.whatsapp.replace(/\D/g, "")}`} className="text-slate-700 hover:text-[#0057DE] transition-colors">
                       {contact.whatsapp}
                     </a>
                   </div>
                 )}
                 {contact.email && (
                   <div>
-                    <span className="text-white/40">E-mail:</span>{" "}
-                    <a href={`mailto:${contact.email}`} className="hover:text-[#0057DE]">
+                    <span className="text-slate-500">E-mail:</span>{" "}
+                    <a href={`mailto:${contact.email}`} className="text-slate-700 hover:text-[#0057DE] transition-colors">
                       {contact.email}
                     </a>
                   </div>
@@ -163,7 +163,7 @@ export function Footer() {
             )}
             <a
               href="/contato"
-              className="inline-flex items-center gap-2 bg-white text-black px-6 py-3 text-[12px] tracking-wider hover:bg-[#0057DE] transition-colors"
+              className="inline-flex items-center gap-2 bg-[#0057DE] text-white px-6 py-3 text-[12px] tracking-wider hover:bg-[#0046b3] transition-colors rounded-md"
               style={{ fontWeight: 700 }}
             >
               Solicitar Orçamento
@@ -174,7 +174,7 @@ export function Footer() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
             {columns.slice(0, 4).map((col) => (
               <div key={col.title}>
-                <h6 className="text-[13px] text-white mb-4" style={{ fontWeight: 700 }}>
+                <h6 className="text-[13px] text-slate-900 mb-4" style={{ fontWeight: 700 }}>
                   {col.title}
                 </h6>
                 <ul className="space-y-2">
@@ -182,7 +182,7 @@ export function Footer() {
                     <li key={`${col.title}-${link.label}-${link.href}`}>
                       <a
                         href={link.href}
-                        className="text-white/40 text-[13px] hover:text-[#0057DE] transition-colors"
+                        className="text-slate-600 text-[13px] hover:text-[#0057DE] transition-colors"
                       >
                         {link.label}
                       </a>
@@ -196,10 +196,10 @@ export function Footer() {
       </div>
 
       {/* Bottom bar */}
-      <div className="border-t border-white/10">
+      <div className="border-t border-slate-200 bg-white">
         <div className="max-w-[1400px] mx-auto px-4 md:px-6 py-6">
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-            <div className="flex flex-col md:flex-row items-start md:items-center gap-2 md:gap-6 text-[11px] text-white/40">
+            <div className="flex flex-col md:flex-row items-start md:items-center gap-2 md:gap-6 text-[11px] text-slate-500">
               <span>&copy; {year} Gaiatec Sistemas. Todos os direitos reservados.</span>
               {contact.endereco && (
                 <span className="hidden md:inline">
@@ -210,13 +210,13 @@ export function Footer() {
             </div>
 
             <div className="flex flex-wrap gap-4 text-[11px]">
-              <a href="#" className="text-white/40 hover:text-[#0057DE] transition-colors">
+              <a href="#" className="text-slate-500 hover:text-[#0057DE] transition-colors">
                 Política de Privacidade
               </a>
-              <a href="#" className="text-white/40 hover:text-[#0057DE] transition-colors">
+              <a href="#" className="text-slate-500 hover:text-[#0057DE] transition-colors">
                 Termos de Uso
               </a>
-              <span className="text-white/30">{lgpd}</span>
+              <span className="text-slate-400">{lgpd}</span>
             </div>
           </div>
         </div>

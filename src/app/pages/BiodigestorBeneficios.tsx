@@ -181,7 +181,7 @@ export default function BiodigestorBeneficios() {
       {/* ═══════════════════════════════════════════
           4) SIMULATOR — dark bg
          ═══════════════════════════════════════════ */}
-      <section style={{ backgroundColor: "#1a1a1a", padding: "80px 0" }}>
+      <section style={{ backgroundColor: "#f8fafc", padding: "80px 0" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 30px" }}>
           <AnimateOnScroll>
             {heading("SIMULADOR", "Simulador de Economia", true, "Estime o potencial de economia com um biodigestor")}
@@ -237,7 +237,7 @@ export default function BiodigestorBeneficios() {
                       onChange={(e) => setConsumo(Number(e.target.value))}
                       style={{
                         width: "100%",
-                        backgroundColor: "#1a1a1a",
+                        backgroundColor: "#f8fafc",
                         border: "1px solid #444",
                         color: "#fff",
                         padding: "12px 16px",
@@ -260,7 +260,7 @@ export default function BiodigestorBeneficios() {
                       onChange={(e) => setCusto(Number(e.target.value))}
                       style={{
                         width: "100%",
-                        backgroundColor: "#1a1a1a",
+                        backgroundColor: "#f8fafc",
                         border: "1px solid #444",
                         color: "#fff",
                         padding: "12px 16px",
@@ -374,7 +374,7 @@ export default function BiodigestorBeneficios() {
       {/* ═══════════════════════════════════════════
           6) CTA BANNER
          ═══════════════════════════════════════════ */}
-      <section style={{ backgroundColor: "#111", padding: "80px 0" }}>
+      <section style={{ backgroundColor: "#f8fafc", padding: "80px 0" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 30px" }}>
           <AnimateOnScroll>
             <div className="flex flex-col lg:flex-row items-center justify-between gap-8 text-center lg:text-left">
@@ -390,7 +390,7 @@ export default function BiodigestorBeneficios() {
               <div className="flex flex-wrap gap-4 justify-center lg:justify-end" style={{ flexShrink: 0 }}>
                 <Link
                   to="/contato"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 8, backgroundColor: "#0057DE", color: "#000", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.5px", textDecoration: "none", borderRadius: 4, transition: "all 0.3s ease" }}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 8, backgroundColor: "#0057DE", color: "#ffffff", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.5px", textDecoration: "none", borderRadius: 4, transition: "all 0.3s ease" }}
                   onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#e5b800"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#0057DE"; }}
                 >

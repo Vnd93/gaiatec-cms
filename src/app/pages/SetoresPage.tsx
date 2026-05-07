@@ -233,9 +233,9 @@ export default function SetoresPage() {
       </section>
 
       {/* ═══════════════════════════════════════════════════
-          4) STATS BAR (preservada)
+          4) STATS BAR (V2 tema claro)
          ═══════════════════════════════════════════════════ */}
-      <section style={{ backgroundColor: "#0f172a", padding: "60px 0" }}>
+      <section style={{ backgroundColor: "#f8fafc", padding: "60px 0", borderTop: "1px solid #e2e8f0", borderBottom: "1px solid #e2e8f0" }}>
         <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px" }}>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {[
@@ -263,7 +263,7 @@ export default function SetoresPage() {
                       fontWeight: 600,
                       letterSpacing: "0.1em",
                       textTransform: "uppercase",
-                      color: "rgba(255,255,255,0.5)",
+                      color: "#475569",
                       marginTop: 8,
                       display: "block",
                     }}

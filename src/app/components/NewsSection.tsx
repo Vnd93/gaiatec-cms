@@ -67,7 +67,7 @@ export function NewsSection() {
             </div>
             <Link
               to="/blog"
-              className="hidden md:inline-flex items-center gap-2 border border-[#0057DE] text-[#0057DE] px-5 py-2 text-[12px] tracking-wider hover:bg-[#0057DE] hover:text-black transition-all"
+              className="hidden md:inline-flex items-center gap-2 border border-[#0057DE] text-[#0057DE] px-5 py-2 text-[12px] tracking-wider hover:bg-[#0057DE] hover:text-white transition-all"
               style={{ fontWeight: 600 }}
             >
               Ver Todos os Artigos <ChevronRight size={12} />
@@ -111,7 +111,7 @@ export function NewsSection() {
         <div className="md:hidden text-center">
           <Link
             to="/blog"
-            className="inline-flex items-center gap-2 border border-[#0057DE] text-[#0057DE] px-5 py-2 text-[12px] tracking-wider hover:bg-[#0057DE] hover:text-black transition-all"
+            className="inline-flex items-center gap-2 border border-[#0057DE] text-[#0057DE] px-5 py-2 text-[12px] tracking-wider hover:bg-[#0057DE] hover:text-white transition-all"
             style={{ fontWeight: 600 }}
           >
             Ver Todos os Artigos <ChevronRight size={12} />

@@ -232,41 +232,41 @@ export function ContactSection() {
             </form>
           </div>
 
-          {/* Right - Contact info */}
-          <div className="relative bg-black py-16 md:py-24 px-6 lg:px-16 overflow-visible">
-            {/* Extend black background to the right edge */}
-            <div className="absolute inset-0 bg-black" style={{ right: "-9999px" }} />
+          {/* Right - Contact info (V2: tema claro) */}
+          <div className="relative bg-white py-16 md:py-24 px-6 lg:px-16 overflow-visible border-l border-slate-100">
+            {/* Estende fundo branco até a borda direita */}
+            <div className="absolute inset-0 bg-white" style={{ right: "-9999px" }} />
             <div className="relative">
             <AnimateOnScroll>
-              <h2 className="text-white text-[28px] md:text-[36px] mb-2" style={{ fontWeight: 700 }}>Fale com um Especialista</h2>
-              <p className="text-white/60 text-[15px] mb-10">Nossa equipe técnica está pronta para ajudar com suas necessidades em instrumentação, automação e controle de processos.</p>
+              <h2 className="text-slate-900 text-[28px] md:text-[36px] mb-2" style={{ fontWeight: 700 }}>Fale com um Especialista</h2>
+              <p className="text-slate-600 text-[15px] mb-10">Nossa equipe técnica está pronta para ajudar com suas necessidades em instrumentação, automação e controle de processos.</p>
             </AnimateOnScroll>
 
-            <div className="space-y-6">
+            <div className="space-y-4">
               {contactCtas.map((cta, i) => (
                 <AnimateOnScroll key={cta.title} direction="up" delay={i * 0.1}>
                   <a
                     href={cta.href}
-                    className="flex items-start gap-4 group p-5 border border-white/10 hover:border-[#0057DE]/40 transition-all"
+                    className="flex items-start gap-4 group p-5 bg-white border border-slate-200 rounded-lg hover:border-[#0057DE] hover:shadow-md transition-all"
                   >
-                    <div className="w-12 h-12 flex items-center justify-center border border-[#0057DE] flex-shrink-0">
-                      <cta.icon size={20} className="text-[#0057DE]" />
+                    <div className="w-12 h-12 flex items-center justify-center bg-[#0057DE]/10 group-hover:bg-[#0057DE] rounded-md flex-shrink-0 transition-colors">
+                      <cta.icon size={20} className="text-[#0057DE] group-hover:text-white transition-colors" />
                     </div>
                     <div className="flex-1">
-                      <h4 className="text-white text-[18px] group-hover:text-[#0057DE] transition-colors" style={{ fontWeight: 700 }}>
+                      <h4 className="text-slate-900 text-[18px] group-hover:text-[#0057DE] transition-colors" style={{ fontWeight: 700 }}>
                         {cta.title}
                       </h4>
-                      <p className="text-white/50 text-[13px] mt-1">{cta.description}</p>
+                      <p className="text-slate-600 text-[13px] mt-1">{cta.description}</p>
                     </div>
-                    <ChevronRight size={16} className="text-[#0057DE] flex-shrink-0 mt-1" />
+                    <ChevronRight size={16} className="text-[#0057DE] flex-shrink-0 mt-1 group-hover:translate-x-1 transition-transform" />
                   </a>
                 </AnimateOnScroll>
               ))}
             </div>
 
             {/* LGPD note */}
-            <div className="mt-10 pt-6 border-t border-white/10">
-              <p className="text-white/40 text-[12px] leading-[1.6]">
+            <div className="mt-10 pt-6 border-t border-slate-200">
+              <p className="text-slate-500 text-[12px] leading-[1.6]">
                 Seus dados estão protegidos pela LGPD. Utilizamos suas informações apenas para atender sua solicitação.
               </p>
             </div>

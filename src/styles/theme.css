@@ -4,6 +4,30 @@ html {
   overflow-x: clip;
 }
 
+/* ─── A11y: focus-visible global (TASK 28) ─────────────────
+   Outline azul-brand 2px só quando navega via teclado.
+   Não polui mouse-clicks (que perdem focus em hover).
+   ─────────────────────────────────────────────────────────── */
+*:focus-visible {
+  outline: 2px solid #0057DE;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Botões e links não precisam border-radius extra (já têm o seu) */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline-offset: 2px;
+}
+
+/* Hide outline em mouse-clicks (usa :focus mas NÃO :focus-visible) */
+*:focus:not(:focus-visible) {
+  outline: none;
+}
+
 :root {
   --font-size: 16px;
   --background: #ffffff;

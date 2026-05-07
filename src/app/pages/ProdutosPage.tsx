@@ -4,6 +4,7 @@ import { GitCompare, Check } from "lucide-react";
 import { AnimateOnScroll } from "../components/useScrollAnimation";
 import { CTABanner } from "../components/CTABanner";
 import { useComparador } from "../components/produtos/ComparadorContext";
+import { SEO, buildCollectionPageSchema } from "../components/SEO";
 
 const KNOCKOUT = "'Knockout HTF68', sans-serif";
 
@@ -680,6 +681,18 @@ export default function ProdutosPage() {
 
   return (
     <>
+      <SEO
+        title="Produtos de Alta Performance"
+        description="Catálogo completo: medidores de vazão, detectores de gás, controladores, retificadores de proteção catódica, sensores e mais. Tecnologia industrial certificada."
+        path="/produtos"
+        keywords="medidores vazão, detectores gás, automação industrial, proteção catódica, instrumentação"
+        schema={buildCollectionPageSchema({
+          name: "Catálogo de Produtos — Gaiatec Sistemas",
+          description: "Produtos para medição, controle, automação e segurança industrial.",
+          itemCount: products.length,
+        })}
+      />
+
       {/* Product detail modal */}
       {selectedProduct && (
         <ProductModal product={selectedProduct} onClose={() => setSelectedProduct(null)} />

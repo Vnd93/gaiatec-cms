@@ -4,6 +4,7 @@ import { AnimateOnScroll } from "../components/useScrollAnimation";
 import { CTABanner } from "../components/CTABanner";
 import { AplicacaoCard } from "../components/aplicacoes/AplicacaoCard";
 import { aplicacoes, setoresFromAplicacoes } from "../data/aplicacoes";
+import { SEO, buildCollectionPageSchema } from "../components/SEO";
 
 const KNOCKOUT = "'Knockout HTF68', sans-serif";
 
@@ -37,6 +38,18 @@ export default function AplicacoesPage() {
 
   return (
     <>
+      <SEO
+        title="Aplicações Industriais"
+        description="Casos de uso reais onde a Gaiatec entrega soluções técnicas integradas — instrumentação, automação e serviços para macromedição, biogás, proteção catódica, HVAC e telemetria."
+        path="/aplicacoes"
+        keywords="aplicações industriais, casos de uso, macromedição, biogás, proteção catódica, automação"
+        schema={buildCollectionPageSchema({
+          name: "Aplicações Industriais — Gaiatec Sistemas",
+          description: "Catálogo de aplicações práticas com instrumentação e automação Gaiatec.",
+          itemCount: aplicacoes.length,
+        })}
+      />
+
       {/* ═══════════════════════════════════════════════════
           1) HERO
          ═══════════════════════════════════════════════════ */}

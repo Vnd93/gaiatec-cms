@@ -14,6 +14,7 @@ import { AnimateOnScroll } from "../components/useScrollAnimation";
 import { CTABanner } from "../components/CTABanner";
 import { useComparador } from "../components/produtos/ComparadorContext";
 import { products, productBySlug, productSlug, type Product } from "./ProdutosPage";
+import { SEO, buildBreadcrumb, buildProductSchema } from "../components/SEO";
 
 const KNOCKOUT = "'Knockout HTF68', sans-serif";
 
@@ -63,6 +64,30 @@ export default function ProdutoPage() {
 
   return (
     <>
+      <SEO
+        title={product.name}
+        description={product.desc}
+        path={`/produtos/${productSlug(product)}`}
+        image={product.image}
+        ogType="product"
+        keywords={[product.name, product.category, ...product.sectors, "Gaiatec"].join(", ")}
+        schema={[
+          buildProductSchema({
+            name: product.name,
+            description: product.details.fullDesc,
+            image: product.image,
+            category: product.category,
+            sku: `GTC-${String(product.id).padStart(4, "0")}`,
+          }),
+          buildBreadcrumb([
+            { label: "Início", path: "/" },
+            { label: "Produtos", path: "/produtos" },
+            { label: product.category, path: "/produtos" },
+            { label: product.name, path: `/produtos/${productSlug(product)}` },
+          ]),
+        ]}
+      />
+
       {/* ═══════════════════════════════════════════════════
           0) BREADCRUMB
          ═══════════════════════════════════════════════════ */}

@@ -4,6 +4,7 @@ import { aplicacaoBySlug, aplicacoes } from "../data/aplicacoes";
 import { servicesList } from "../data/servicesList";
 import { AnimateOnScroll } from "../components/useScrollAnimation";
 import { CTABanner } from "../components/CTABanner";
+import { SEO, buildBreadcrumb } from "../components/SEO";
 
 const KNOCKOUT = "'Knockout HTF68', sans-serif";
 
@@ -44,6 +45,38 @@ export default function AplicacaoPage() {
 
   return (
     <>
+      <SEO
+        title={aplicacao.nome}
+        description={aplicacao.descricaoCurta}
+        path={`/aplicacoes/${aplicacao.slug}`}
+        image={aplicacao.imagem}
+        ogType="article"
+        keywords={[aplicacao.nome, ...aplicacao.setores, "Gaiatec"].join(", ")}
+        schema={[
+          {
+            "@context": "https://schema.org",
+            "@type": "Article",
+            headline: aplicacao.nome,
+            description: aplicacao.descricaoCompleta,
+            image: aplicacao.imagem,
+            author: {
+              "@type": "Organization",
+              name: "Gaiatec Sistemas",
+            },
+            publisher: {
+              "@type": "Organization",
+              name: "Gaiatec Sistemas",
+              url: "https://gaiatecsistemas.com.br",
+            },
+          },
+          buildBreadcrumb([
+            { label: "Início", path: "/" },
+            { label: "Aplicações", path: "/aplicacoes" },
+            { label: aplicacao.nome, path: `/aplicacoes/${aplicacao.slug}` },
+          ]),
+        ]}
+      />
+
       {/* ═══════════════════════════════════════════════════
           0) BREADCRUMB
          ═══════════════════════════════════════════════════ */}

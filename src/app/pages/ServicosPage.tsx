@@ -9,6 +9,7 @@ import {
   categoriaLabels,
   type ServicoCategoria,
 } from "../data/servicesList";
+import { SEO, buildCollectionPageSchema } from "../components/SEO";
 
 const KNOCKOUT = "'Knockout HTF68', sans-serif";
 
@@ -71,6 +72,18 @@ export default function ServicosPage() {
 
   return (
     <>
+      <SEO
+        title="Serviços Especializados"
+        description="Serviços técnicos da Gaiatec: instalação, calibração RBC, manutenção, automação, proteção catódica e consultoria. Atendimento técnico em todo o Brasil."
+        path="/servicos"
+        keywords="serviços técnicos, calibração RBC, instalação, manutenção, automação, proteção catódica, inspeção"
+        schema={buildCollectionPageSchema({
+          name: "Serviços Especializados — Gaiatec Sistemas",
+          description: "Serviços técnicos para indústria com equipe qualificada e laboratório RBC.",
+          itemCount: servicesList.length,
+        })}
+      />
+
       {/* ═══════════════════════════════════════════════════
           1) HERO CLARO
          ═══════════════════════════════════════════════════ */}

@@ -6,6 +6,7 @@ import { PageHero } from "../components/PageHero";
 import { CTABanner } from "../components/CTABanner";
 import { AnimateOnScroll } from "../components/useScrollAnimation";
 import { ArrowRight, ChevronRight } from "lucide-react";
+import { SEO, buildBreadcrumb } from "../components/SEO";
 
 const KNOCKOUT = "'Knockout HTF68', sans-serif";
 
@@ -53,6 +54,30 @@ export default function SectorPage() {
 
   return (
     <>
+      <SEO
+        title={sector.title}
+        description={sector.description || `Soluções Gaiatec para ${sector.overline || sector.title}`}
+        path={`/setores/${sector.slug}`}
+        image={sector.image}
+        keywords={[sector.title, sector.overline, "Gaiatec", "instrumentação", "automação"].filter(Boolean).join(", ")}
+        schema={[
+          {
+            "@context": "https://schema.org",
+            "@type": "Article",
+            headline: `${sector.overline || sector.title} — Gaiatec Sistemas`,
+            description: sector.description,
+            image: sector.image,
+            author: { "@type": "Organization", name: "Gaiatec Sistemas" },
+            publisher: { "@type": "Organization", name: "Gaiatec Sistemas", url: "https://gaiatecsistemas.com.br" },
+          },
+          buildBreadcrumb([
+            { label: "Início", path: "/" },
+            { label: "Indústrias", path: "/setores" },
+            { label: sector.overline || sector.title, path: `/setores/${sector.slug}` },
+          ]),
+        ]}
+      />
+
       {/* ═══════════════════════════════════════════════════
           0) BREADCRUMB (Indústrias > [Nome])
          ═══════════════════════════════════════════════════ */}

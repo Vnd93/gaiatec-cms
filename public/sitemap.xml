@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <!-- Páginas principais -->
+  <!-- ─── Páginas principais ─── -->
   <url>
     <loc>https://gaiatecsistemas.com.br/</loc>
     <changefreq>weekly</changefreq>
@@ -27,6 +27,11 @@
     <priority>0.9</priority>
   </url>
   <url>
+    <loc>https://gaiatecsistemas.com.br/aplicacoes</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
     <loc>https://gaiatecsistemas.com.br/contato</loc>
     <changefreq>yearly</changefreq>
     <priority>0.7</priority>
@@ -37,7 +42,116 @@
     <priority>0.6</priority>
   </url>
 
-  <!-- Biodigestor (linha de produto principal) -->
+  <!-- ─── Setores / Indústrias (9) ─── -->
+  <url>
+    <loc>https://gaiatecsistemas.com.br/setores/saneamento</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://gaiatecsistemas.com.br/setores/gas-petroleo</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://gaiatecsistemas.com.br/setores/biogas-biometano</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://gaiatecsistemas.com.br/setores/protecao-catodica</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://gaiatecsistemas.com.br/setores/hvac</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://gaiatecsistemas.com.br/setores/controle-ambiental</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://gaiatecsistemas.com.br/setores/agronegocio</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://gaiatecsistemas.com.br/setores/industria</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://gaiatecsistemas.com.br/setores/telemetria</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+
+  <!-- ─── Aplicações (12) ─── -->
+  <url>
+    <loc>https://gaiatecsistemas.com.br/aplicacoes/macromedicao-redes-distribuicao</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://gaiatecsistemas.com.br/aplicacoes/producao-biogas-aterros</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://gaiatecsistemas.com.br/aplicacoes/deteccao-vazamentos-gasodutos</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://gaiatecsistemas.com.br/aplicacoes/monitoramento-h2s-refinarias</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://gaiatecsistemas.com.br/aplicacoes/calibracao-medidores-vazao</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://gaiatecsistemas.com.br/aplicacoes/protecao-catodica-dutos-subterraneos</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://gaiatecsistemas.com.br/aplicacoes/automacao-eta-ete</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://gaiatecsistemas.com.br/aplicacoes/telemetria-estacoes-remotas</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://gaiatecsistemas.com.br/aplicacoes/climatizacao-industrial-hvac</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://gaiatecsistemas.com.br/aplicacoes/analise-biogas-biodigestores</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://gaiatecsistemas.com.br/aplicacoes/controle-pressao-adutoras</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://gaiatecsistemas.com.br/aplicacoes/inspecao-revestimento-dutos</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+
+  <!-- ─── Biodigestor (linha de produto principal) ─── -->
   <url>
     <loc>https://gaiatecsistemas.com.br/biodigestor</loc>
     <changefreq>monthly</changefreq>

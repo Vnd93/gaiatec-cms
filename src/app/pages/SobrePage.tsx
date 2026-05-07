@@ -4,6 +4,7 @@ import { ChevronRight, Award, Shield, CheckCircle, Users, Briefcase, Settings, T
 import type { LucideIcon } from "lucide-react";
 import { useSobreContent, type SobreDiferencial } from "../hooks/useSiteData";
 import { Timeline } from "../components/sobre/Timeline";
+import { SEO } from "../components/SEO";
 
 /* ────────────────────────────────────────────────────────
    IMAGES
@@ -94,6 +95,30 @@ export default function SobrePage() {
 
   return (
     <>
+      <SEO
+        title="Sobre a Gaiatec Sistemas"
+        description="Há 20+ anos desenvolvendo soluções tecnológicas em instrumentação e automação para indústria brasileira. Linha do tempo com 11 marcos históricos."
+        path="/sobre"
+        keywords="Gaiatec Sistemas, sobre, história, indústria, instrumentação, automação, RBC"
+        schema={{
+          "@context": "https://schema.org",
+          "@type": "AboutPage",
+          mainEntity: {
+            "@type": "Organization",
+            name: "Gaiatec Sistemas",
+            foundingDate: "2004",
+            url: "https://gaiatecsistemas.com.br",
+            description: "Soluções tecnológicas em instrumentação industrial desde 2004.",
+            address: {
+              "@type": "PostalAddress",
+              streetAddress: "R. Herói da Força Expedicionária Brasileira, 22",
+              addressLocality: "Parque Novo Mundo, São Paulo",
+              addressCountry: "BR",
+            },
+          },
+        }}
+      />
+
       {/* ═══════════════════════════════════════════════════
           1) HERO SECTION
          ═══════════════════════════════════════════════════ */}

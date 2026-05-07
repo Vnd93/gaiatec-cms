@@ -8,6 +8,7 @@ import { InnovativeSolutions } from "../components/InnovativeSolutions";
 import { SliderModule } from "../components/SliderModule";
 import { NewsSection } from "../components/NewsSection";
 import { ContactSection } from "../components/ContactSection";
+import { SEO } from "../components/SEO";
 
 /**
  * Design original 100% preservado. Cada componente é responsável por
@@ -38,6 +39,28 @@ import { ContactSection } from "../components/ContactSection";
 export default function HomePage() {
   return (
     <>
+      <SEO
+        title="Soluções Tecnológicas para Indústria"
+        description="Há 20+ anos a Gaiatec entrega soluções em instrumentação, automação, biodigestores e medição para saneamento, gás, biogás, agronegócio e indústria."
+        path="/"
+        keywords="instrumentação industrial, automação, biodigestor, biogás, medição vazão, proteção catódica, saneamento, Gaiatec"
+        schema={{
+          "@context": "https://schema.org",
+          "@type": "Organization",
+          name: "Gaiatec Sistemas",
+          url: "https://gaiatecsistemas.com.br",
+          logo: "https://gaiatecsistemas.com.br/logo-gaiatec.png",
+          description: "Soluções tecnológicas para indústria — automação, instrumentação, biodigestores e medição.",
+          foundingDate: "2004",
+          contactPoint: {
+            "@type": "ContactPoint",
+            telephone: "+55-11-2207-1986",
+            contactType: "sales",
+            availableLanguage: ["Portuguese"],
+          },
+        }}
+      />
+
       <HeroBanner />
       <DiagonalLine topColor="white" bottomColor="black" />
       <ContentSection />

@@ -5,6 +5,7 @@ import { useServico, useServicos } from "../hooks/useSiteData";
 import { AnimateOnScroll } from "../components/useScrollAnimation";
 import { CTABanner } from "../components/CTABanner";
 import { ArrowRight } from "lucide-react";
+import { SEO, buildBreadcrumb, buildServiceSchema } from "../components/SEO";
 
 const KNOCKOUT = "'Knockout HTF68', sans-serif";
 
@@ -69,6 +70,26 @@ export default function ServicoPage() {
 
   return (
     <>
+      <SEO
+        title={svc.title}
+        description={svc.shortDesc}
+        path={`/servicos/${svc.slug}`}
+        image={svc.image}
+        keywords={[svc.title, svc.overline, "Gaiatec", "serviços técnicos"].filter(Boolean).join(", ")}
+        schema={[
+          buildServiceSchema({
+            name: svc.title,
+            description: svc.fullDesc || svc.shortDesc,
+            image: svc.image,
+          }),
+          buildBreadcrumb([
+            { label: "Início", path: "/" },
+            { label: "Serviços", path: "/servicos" },
+            { label: svc.title, path: `/servicos/${svc.slug}` },
+          ]),
+        ]}
+      />
+
       {/* ═══════════════════════════════════════════════════
           0) BREADCRUMB (Início > Serviços > [Nome])
          ═══════════════════════════════════════════════════ */}

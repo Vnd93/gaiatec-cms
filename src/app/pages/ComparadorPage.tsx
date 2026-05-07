@@ -2,6 +2,7 @@ import { Link } from "react-router";
 import { X, GitCompare, ArrowLeft, Check } from "lucide-react";
 import { useComparador } from "../components/produtos/ComparadorContext";
 import { CTABanner } from "../components/CTABanner";
+import { SEO } from "../components/SEO";
 
 const KNOCKOUT = "'Knockout HTF68', sans-serif";
 
@@ -42,6 +43,13 @@ export default function ComparadorPage() {
 
   return (
     <>
+      <SEO
+        title="Comparador de Produtos"
+        description="Compare até 3 produtos lado a lado por especificações técnicas. Identifique o equipamento ideal para sua aplicação industrial."
+        path="/produtos/comparador"
+        noindex
+      />
+
       {/* ═══════════════════════════════════════════════════
           0) BREADCRUMB
          ═══════════════════════════════════════════════════ */}

@@ -6,6 +6,7 @@ import { AnimateOnScroll } from "../components/useScrollAnimation";
 import { CTABanner } from "../components/CTABanner";
 import { SetoresFilterBar } from "../components/setores/SetoresFilterBar";
 import { ArrowRight } from "lucide-react";
+import { SEO, buildCollectionPageSchema } from "../components/SEO";
 
 const KNOCKOUT = "'Knockout HTF68', sans-serif";
 
@@ -53,6 +54,18 @@ export default function SetoresPage() {
 
   return (
     <>
+      <SEO
+        title="Indústrias Atendidas"
+        description="Conheça as indústrias atendidas pela Gaiatec — saneamento, gás e petróleo, biogás, proteção catódica, agronegócio, HVAC e mais. Soluções técnicas em instrumentação e automação."
+        path="/setores"
+        keywords="indústrias atendidas, saneamento, biogás, gás e petróleo, proteção catódica, agronegócio, HVAC"
+        schema={buildCollectionPageSchema({
+          name: "Indústrias Atendidas — Gaiatec Sistemas",
+          description: "Setores industriais atendidos com soluções de instrumentação e automação.",
+          itemCount: sectors.length,
+        })}
+      />
+
       {/* ═══════════════════════════════════════════════════
           1) HERO claro com mosaico
          ═══════════════════════════════════════════════════ */}

@@ -12,7 +12,7 @@ const bgMap = {
   white: "#FFFFFF",
   black: "#000000",
   gray: "#f7f7f7",
-  yellow: "#FF6A00",
+  yellow: "#0057DE",
 };
 
 export function SectionBlock({ children, bg = "white", id, className = "" }: SectionBlockProps) {
@@ -49,7 +49,7 @@ export function SectionTitle({ overline, title, description, light }: SectionTit
       <div className="mb-12 max-w-[700px]">
         {overline && (
           <span
-            className="text-[#FF6A00] text-[11px] tracking-[0.2em] uppercase block mb-3"
+            className="text-[#0057DE] text-[11px] tracking-[0.2em] uppercase block mb-3"
             style={{ fontWeight: 500 }}
           >
             {overline}

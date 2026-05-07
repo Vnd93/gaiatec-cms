@@ -52,7 +52,7 @@ export default function ServicosPage() {
           className="relative z-10 flex flex-col justify-end h-full"
           style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px 100px 30px" }}
         >
-          <span style={{ display: "inline-block", fontSize: 13, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
+          <span style={{ display: "inline-block", fontSize: 13, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
             SERVIÇOS TÉCNICOS
           </span>
           <h1 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(41px, 6vw, 85px)", fontWeight: 500, lineHeight: 0.95, textTransform: "uppercase", color: "#fff", maxWidth: 800, margin: 0 }}>
@@ -86,7 +86,7 @@ export default function ServicosPage() {
           <AnimateOnScroll>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-24 items-start">
               <div>
-                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 20 }}>
+                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 20 }}>
                   PORTFÓLIO COMPLETO
                 </span>
                 <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 52px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", marginBottom: 28, color: "#111" }}>
@@ -113,7 +113,7 @@ export default function ServicosPage() {
         <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px" }}>
           <AnimateOnScroll>
             <div style={{ marginBottom: 60 }}>
-              <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
+              <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
                 SERVIÇOS PRINCIPAIS
               </span>
               <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 48px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", color: "#fff" }}>
@@ -137,24 +137,24 @@ export default function ServicosPage() {
                   <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.4) 40%, rgba(0,0,0,0.1) 100%)" }} />
 
                   <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "32px" }}>
-                    <span style={{ display: "block", fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 12 }}>
+                    <span style={{ display: "block", fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#0057DE", marginBottom: 12 }}>
                       {s.overline}
                     </span>
-                    <h3 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(24px, 2.5vw, 32px)", fontWeight: 500, lineHeight: 1.05, textTransform: "uppercase", color: "#fff", marginBottom: 12, transition: "color 0.3s" }} className="group-hover:text-[#FF6A00]">
+                    <h3 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(24px, 2.5vw, 32px)", fontWeight: 500, lineHeight: 1.05, textTransform: "uppercase", color: "#fff", marginBottom: 12, transition: "color 0.3s" }} className="group-hover:text-[#0057DE]">
                       {s.title}
                     </h3>
                     <p style={{ fontSize: 14, lineHeight: 1.6, color: "rgba(255,255,255,0.5)", marginBottom: 16, maxHeight: 44, overflow: "hidden" }}>
                       {s.shortDesc}
                     </p>
                     <div
-                      style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 700, color: "#FF6A00", textTransform: "uppercase", letterSpacing: "0.1em" }}
+                      style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 700, color: "#0057DE", textTransform: "uppercase", letterSpacing: "0.1em" }}
                     >
                       Ver serviço <ArrowRight size={14} />
                     </div>
                   </div>
 
                   <div
-                    style={{ position: "absolute", bottom: 0, left: 0, width: "0%", height: 4, backgroundColor: "#FF6A00", transition: "width 0.4s ease" }}
+                    style={{ position: "absolute", bottom: 0, left: 0, width: "0%", height: 4, backgroundColor: "#0057DE", transition: "width 0.4s ease" }}
                     className="group-hover:w-full"
                   />
                 </Link>
@@ -171,7 +171,7 @@ export default function ServicosPage() {
         <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px" }}>
           <AnimateOnScroll>
             <div style={{ marginBottom: 60 }}>
-              <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
+              <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
                 TODOS OS SERVIÇOS
               </span>
               <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 48px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", color: "#111" }}>
@@ -201,16 +201,16 @@ export default function ServicosPage() {
 
                   {/* Content */}
                   <div style={{ padding: "28px 28px 32px" }}>
-                    <span style={{ display: "block", fontSize: 10, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 10 }}>
+                    <span style={{ display: "block", fontSize: 10, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#0057DE", marginBottom: 10 }}>
                       {s.overline}
                     </span>
-                    <h4 style={{ fontFamily: KNOCKOUT, fontSize: 22, fontWeight: 500, color: "#111", textTransform: "uppercase", lineHeight: 1.1, marginBottom: 10, transition: "color 0.3s" }} className="group-hover:text-[#FF6A00]">
+                    <h4 style={{ fontFamily: KNOCKOUT, fontSize: 22, fontWeight: 500, color: "#111", textTransform: "uppercase", lineHeight: 1.1, marginBottom: 10, transition: "color 0.3s" }} className="group-hover:text-[#0057DE]">
                       {s.title}
                     </h4>
                     <p style={{ fontSize: 14, lineHeight: 1.6, color: "#999", marginBottom: 16, maxHeight: 44, overflow: "hidden" }}>
                       {s.shortDesc}
                     </p>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "#FF6A00", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "#0057DE", textTransform: "uppercase", letterSpacing: "0.08em" }}>
                       Ver serviço <ArrowRight size={12} />
                     </div>
                   </div>
@@ -228,7 +228,7 @@ export default function ServicosPage() {
         <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px" }}>
           <AnimateOnScroll>
             <div style={{ marginBottom: 60, textAlign: "center" }}>
-              <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
+              <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
                 DIFERENCIAIS
               </span>
               <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 48px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", color: "#fff" }}>
@@ -245,7 +245,7 @@ export default function ServicosPage() {
             ].map((item, i) => (
               <AnimateOnScroll key={item.label} delay={i * 0.1}>
                 <div style={{ textAlign: "center", padding: "24px 16px" }}>
-                  <span style={{ fontFamily: KNOCKOUT, fontSize: "clamp(40px, 5vw, 64px)", fontWeight: 500, lineHeight: 1, color: "#FF6A00", display: "block", marginBottom: 12 }}>
+                  <span style={{ fontFamily: KNOCKOUT, fontSize: "clamp(40px, 5vw, 64px)", fontWeight: 500, lineHeight: 1, color: "#0057DE", display: "block", marginBottom: 12 }}>
                     {item.value}
                   </span>
                   <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#fff", display: "block", marginBottom: 8 }}>

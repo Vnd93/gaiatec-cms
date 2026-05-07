@@ -17,7 +17,7 @@ export function ScrollProgress() {
     <div className="fixed top-0 left-0 w-full z-[9999]" style={{ height: "3px" }}>
       <div
         className="h-full transition-[width] duration-100"
-        style={{ width: `${progress}%`, backgroundColor: "#FF6A00" }}
+        style={{ width: `${progress}%`, backgroundColor: "#0057DE" }}
       />
     </div>
   );

@@ -120,7 +120,7 @@ function ProductCard({ product }: { product: (typeof products)[0] }) {
         <span
           style={{
             display: "inline-block",
-            backgroundColor: "#FF6A00",
+            backgroundColor: "#0057DE",
             color: "#000",
             fontFamily: BODY_FONT,
             fontSize: 10,
@@ -153,7 +153,7 @@ function ProductCard({ product }: { product: (typeof products)[0] }) {
           onClick={(e) => e.preventDefault()}
           className="sec3-btn-price"
           style={{
-            backgroundColor: "rgb(255, 106, 0)",
+            backgroundColor: "rgb(0, 87, 222)",
             borderRadius: 8,
             fontSize: 12,
             fontWeight: 700,
@@ -264,7 +264,7 @@ export function ProductsGrid() {
     <>
       <style>{`
         .sec3-btn-price:hover {
-          background-color: rgb(230, 85, 0) !important;
+          background-color: rgb(0, 70, 179) !important;
         }
         .sec3-btn-view:hover {
           background-color: rgb(51, 51, 51) !important;

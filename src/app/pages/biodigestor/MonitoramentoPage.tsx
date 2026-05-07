@@ -46,7 +46,7 @@ export const MonitoramentoPage = () => {
         
         <div className="container mx-auto px-6 h-full flex items-center relative z-10">
           <div className="max-w-3xl mx-[25px] my-[0px]">
-            <div className="text-orange-500 font-bold uppercase tracking-wider mb-4 text-[12px]">
+            <div className="text-[#0057DE] font-bold uppercase tracking-wider mb-4 text-[12px]">
               Biodigestor / Tecnologia & Operação
             </div>
             <h1 className="text-3xl md:text-4xl font-bold text-white mb-6 leading-tight">
@@ -67,7 +67,7 @@ export const MonitoramentoPage = () => {
               <h2 className="text-2xl md:text-3xl font-bold text-gray-900 leading-tight">
                 Sobre a geração de biogás
               </h2>
-              <div className="w-12 h-1 bg-orange-500 mt-5"></div>
+              <div className="w-12 h-1 bg-[#0057DE] mt-5"></div>
             </div>
 
             <div className="md:col-span-7 text-gray-700 leading-relaxed space-y-5">
@@ -93,7 +93,7 @@ export const MonitoramentoPage = () => {
               <h2 className="text-2xl md:text-3xl font-bold text-gray-900 leading-tight">
                 O que está em jogo na geração de biogás
               </h2>
-              <div className="w-12 h-1 bg-orange-500 mt-5"></div>
+              <div className="w-12 h-1 bg-[#0057DE] mt-5"></div>
               <p className="text-gray-600 mt-6 leading-relaxed">
                 Cada uma dessas variáveis afeta diretamente o resultado operacional e econômico do sistema. Sem controle técnico, o biodigestor produz menos, de forma instável e com maior risco.
               </p>
@@ -220,8 +220,8 @@ export const MonitoramentoPage = () => {
             </div>
 
             {/* Etapa 3 */}
-            <div className="bg-white p-6 border-t-4 border-orange-500">
-              <div className="text-sm font-bold uppercase tracking-wider mb-3 text-orange-600">
+            <div className="bg-white p-6 border-t-4 border-[#0057DE]">
+              <div className="text-sm font-bold uppercase tracking-wider mb-3 text-[#0046b3]">
                 03
               </div>
               <h3 className="font-bold text-gray-900 text-lg mb-3">
@@ -233,8 +233,8 @@ export const MonitoramentoPage = () => {
             </div>
 
             {/* Etapa 4 */}
-            <div className="bg-white p-6 border-t-4 border-orange-500">
-              <div className="text-sm font-bold uppercase tracking-wider mb-3 text-orange-600">
+            <div className="bg-white p-6 border-t-4 border-[#0057DE]">
+              <div className="text-sm font-bold uppercase tracking-wider mb-3 text-[#0046b3]">
                 04
               </div>
               <h3 className="font-bold text-gray-900 text-lg mb-3">
@@ -246,8 +246,8 @@ export const MonitoramentoPage = () => {
             </div>
 
             {/* Etapa 5 */}
-            <div className="bg-white p-6 border-t-4 border-orange-500">
-              <div className="text-sm font-bold uppercase tracking-wider mb-3 text-orange-600">
+            <div className="bg-white p-6 border-t-4 border-[#0057DE]">
+              <div className="text-sm font-bold uppercase tracking-wider mb-3 text-[#0046b3]">
                 05
               </div>
               <h3 className="font-bold text-gray-900 text-lg mb-3">
@@ -315,7 +315,7 @@ export const MonitoramentoPage = () => {
               href="https://wa.me/551122071986"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center justify-center bg-orange-500 hover:bg-orange-600 text-white font-semibold px-8 py-4 transition-colors text-[14px] rounded-[7px]"
+              className="inline-flex items-center justify-center bg-[#0057DE] hover:bg-[#0046b3] text-white font-semibold px-8 py-4 transition-colors text-[14px] rounded-[7px]"
             >
               Falar com Especialista
             </a>

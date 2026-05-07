@@ -40,7 +40,7 @@ export const InspecaoRevestimentoPage = () => {
         
         <div className="container mx-auto px-6 h-full flex items-center relative z-10">
           <div className="max-w-3xl mx-[25px] my-[0px]">
-            <div className="text-orange-500 font-bold uppercase tracking-wider mb-4 text-[12px]">
+            <div className="text-[#0057DE] font-bold uppercase tracking-wider mb-4 text-[12px]">
               Serviços / Integridade, Segurança & Monitoramento
             </div>
             <h1 className="text-3xl md:text-4xl font-bold text-white mb-6 leading-tight">
@@ -196,7 +196,7 @@ export const InspecaoRevestimentoPage = () => {
           <div className="grid md:grid-cols-2 gap-8">
             {/* Metodologia 1 */}
             <div className="bg-white p-8 shadow-sm">
-              <div className="w-12 h-1 bg-orange-500 mb-4"></div>
+              <div className="w-12 h-1 bg-[#0057DE] mb-4"></div>
               <h3 className="text-xl font-bold text-gray-900 mb-4">
                 Avaliação do tipo de revestimento
               </h3>
@@ -207,7 +207,7 @@ export const InspecaoRevestimentoPage = () => {
 
             {/* Metodologia 2 */}
             <div className="bg-white p-8 shadow-sm">
-              <div className="w-12 h-1 bg-orange-500 mb-4"></div>
+              <div className="w-12 h-1 bg-[#0057DE] mb-4"></div>
               <h3 className="text-xl font-bold text-gray-900 mb-4">
                 Aplicação de métodos e instrumentos adequados
               </h3>
@@ -218,7 +218,7 @@ export const InspecaoRevestimentoPage = () => {
 
             {/* Metodologia 3 */}
             <div className="bg-white p-8 shadow-sm">
-              <div className="w-12 h-1 bg-orange-500 mb-4"></div>
+              <div className="w-12 h-1 bg-[#0057DE] mb-4"></div>
               <h3 className="text-xl font-bold text-gray-900 mb-4">
                 Diagnóstico técnico
               </h3>
@@ -229,7 +229,7 @@ export const InspecaoRevestimentoPage = () => {
 
             {/* Metodologia 4 */}
             <div className="bg-white p-8 shadow-sm">
-              <div className="w-12 h-1 bg-orange-500 mb-4"></div>
+              <div className="w-12 h-1 bg-[#0057DE] mb-4"></div>
               <h3 className="text-xl font-bold text-gray-900 mb-4">
                 Orientação para manutenção preventiva
               </h3>
@@ -423,7 +423,7 @@ export const InspecaoRevestimentoPage = () => {
               href="https://wa.me/551122071986"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center justify-center bg-orange-500 hover:bg-orange-600 text-white font-semibold px-8 py-4 transition-colors text-[14px] rounded-[7px]"
+              className="inline-flex items-center justify-center bg-[#0057DE] hover:bg-[#0046b3] text-white font-semibold px-8 py-4 transition-colors text-[14px] rounded-[7px]"
             >
               Falar com Especialista
             </a>

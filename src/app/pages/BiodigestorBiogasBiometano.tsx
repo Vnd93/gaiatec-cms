@@ -49,7 +49,7 @@ const gaiatecFeatures = [
    ──────────────────────────────────────────────────────── */
 const heading = (overline: string, title: string, light = false, subtitle?: string) => (
   <div className="text-center" style={{ marginBottom: 48 }}>
-    <span style={{ display: "inline-block", fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 12 }}>
+    <span style={{ display: "inline-block", fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#0057DE", marginBottom: 12 }}>
       {overline}
     </span>
     <h2 style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: "clamp(28px, 3vw, 36px)", fontWeight: 400, lineHeight: 1.15, textTransform: "uppercase", color: light ? "#fff" : "#1a1a1a", marginBottom: subtitle ? 14 : 0 }}>
@@ -82,8 +82,8 @@ export default function BiodigestorBiogasBiometano() {
           className="relative z-10 flex flex-col justify-end h-full"
           style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px 100px 30px" }}
         >
-          <span style={{ display: "inline-block", fontSize: 13, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
-            BIOGAS X BIOMETANO
+          <span style={{ display: "inline-block", fontSize: 13, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
+            BIOGÁS X BIOMETANO
           </span>
           <h1 style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: "clamp(41px, 6vw, 85px)", fontWeight: 500, lineHeight: 0.95, textTransform: "uppercase", color: "#fff", maxWidth: 800, margin: 0 }}>
             Biogas x Biometano
@@ -130,10 +130,10 @@ export default function BiodigestorBiogasBiometano() {
                 onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "0 8px 28px rgba(0,0,0,0.1)"; e.currentTarget.style.transform = "translateY(-4px)"; }}
                 onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "0 2px 12px rgba(0,0,0,0.06)"; e.currentTarget.style.transform = "translateY(0)"; }}
               >
-                <div style={{ height: 4, backgroundColor: "#FF6A00" }} />
+                <div style={{ height: 4, backgroundColor: "#0057DE" }} />
                 <div style={{ padding: "32px 28px" }}>
                   <div className="flex items-center gap-3" style={{ marginBottom: 20 }}>
-                    <Flame size={28} style={{ color: "#FF6A00" }} />
+                    <Flame size={28} style={{ color: "#0057DE" }} />
                     <h3 style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: 26, fontWeight: 400, color: "#1a1a1a", textTransform: "uppercase" }}>
                       O que e o Biogas?
                     </h3>
@@ -147,7 +147,7 @@ export default function BiodigestorBiogasBiometano() {
                   <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
                     {biogasUses.map((u) => (
                       <li key={u} className="flex items-center gap-3" style={{ marginBottom: 10 }}>
-                        <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "#FF6A00", flexShrink: 0 }} />
+                        <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "#0057DE", flexShrink: 0 }} />
                         <span style={{ fontSize: 14, color: "#666", lineHeight: 1.5 }}>{u}</span>
                       </li>
                     ))}
@@ -207,7 +207,7 @@ export default function BiodigestorBiogasBiometano() {
         <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 30px" }}>
           <AnimateOnScroll>
             <div className="text-center" style={{ marginBottom: 48 }}>
-              <span style={{ display: "inline-block", fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 12 }}>
+              <span style={{ display: "inline-block", fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#0057DE", marginBottom: 12 }}>
                 RELACAO
               </span>
               <h2 style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: "clamp(28px, 3vw, 36px)", fontWeight: 400, lineHeight: 1.15, textTransform: "uppercase", color: "#fff", marginBottom: 16 }}>
@@ -225,7 +225,7 @@ export default function BiodigestorBiogasBiometano() {
                 <div
                   style={{
                     backgroundColor: "#222",
-                    borderLeft: "4px solid #FF6A00",
+                    borderLeft: "4px solid #0057DE",
                     borderRadius: 4,
                     padding: "24px 20px",
                     height: "100%",
@@ -277,13 +277,13 @@ export default function BiodigestorBiogasBiometano() {
                           alignItems: "center",
                           justifyContent: "center",
                           marginBottom: 14,
-                          border: step.highlight ? "3px solid #FF6A00" : "3px solid #e0e0e0",
+                          border: step.highlight ? "3px solid #0057DE" : "3px solid #e0e0e0",
                           transition: "transform 0.3s ease",
                         }}
                         onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.1)"; }}
                         onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
                       >
-                        <Icon size={28} style={{ color: step.highlight ? "#FF6A00" : "#999" }} />
+                        <Icon size={28} style={{ color: step.highlight ? "#0057DE" : "#999" }} />
                       </div>
                       <span style={{ fontSize: 13, fontWeight: 700, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.03em", maxWidth: 120, lineHeight: 1.3 }}>
                         {step.label}
@@ -296,11 +296,11 @@ export default function BiodigestorBiogasBiometano() {
                         {/* Desktop arrow */}
                         <div className="hidden md:flex items-center" style={{ padding: "0 8px" }}>
                           <div style={{ width: 40, height: 2, backgroundColor: "#ddd" }} />
-                          <ChevronRight size={16} style={{ color: "#FF6A00", marginLeft: -4 }} />
+                          <ChevronRight size={16} style={{ color: "#0057DE", marginLeft: -4 }} />
                         </div>
                         {/* Mobile arrow */}
                         <div className="md:hidden flex justify-center" style={{ padding: "8px 0" }}>
-                          <ChevronRight size={16} style={{ color: "#FF6A00", transform: "rotate(90deg)" }} />
+                          <ChevronRight size={16} style={{ color: "#0057DE", transform: "rotate(90deg)" }} />
                         </div>
                       </>
                     )}
@@ -387,16 +387,16 @@ export default function BiodigestorBiogasBiometano() {
               <div className="flex flex-wrap gap-4 justify-center lg:justify-end" style={{ flexShrink: 0 }}>
                 <Link
                   to="/contato"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 8, backgroundColor: "#FF6A00", color: "#000", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.5px", textDecoration: "none", borderRadius: 4, transition: "all 0.3s ease" }}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 8, backgroundColor: "#0057DE", color: "#000", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.5px", textDecoration: "none", borderRadius: 4, transition: "all 0.3s ease" }}
                   onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#e5b800"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#FF6A00"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#0057DE"; }}
                 >
                   Fale com um Especialista <ChevronRight size={14} />
                 </Link>
                 <Link
                   to="/contato"
                   style={{ display: "inline-flex", alignItems: "center", gap: 8, backgroundColor: "transparent", color: "#fff", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.5px", textDecoration: "none", borderRadius: 4, border: "2px solid #444", transition: "all 0.3s ease" }}
-                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#FF6A00"; e.currentTarget.style.color = "#FF6A00"; }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#0057DE"; e.currentTarget.style.color = "#0057DE"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#444"; e.currentTarget.style.color = "#fff"; }}
                 >
                   Solicitar Proposta <ChevronRight size={14} />

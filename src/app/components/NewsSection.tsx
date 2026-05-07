@@ -55,7 +55,7 @@ export function NewsSection() {
         <AnimateOnScroll>
           <div className="flex items-end justify-between mb-10">
             <div>
-              <span className="text-[#FF6A00] text-[12px] tracking-[0.15em] uppercase mb-2 block" style={{ fontWeight: 600 }}>
+              <span className="text-[#0057DE] text-[12px] tracking-[0.15em] uppercase mb-2 block" style={{ fontWeight: 600 }}>
                 BLOG TÉCNICO
               </span>
               <h2 className="text-[28px] md:text-[40px] text-black" style={{ fontWeight: 700, fontFamily: "'Knockout HTF68', sans-serif", textTransform: "uppercase", lineHeight: "1.1" }}>
@@ -67,7 +67,7 @@ export function NewsSection() {
             </div>
             <Link
               to="/blog"
-              className="hidden md:inline-flex items-center gap-2 border border-[#FF6A00] text-[#FF6A00] px-5 py-2 text-[12px] tracking-wider hover:bg-[#FF6A00] hover:text-black transition-all"
+              className="hidden md:inline-flex items-center gap-2 border border-[#0057DE] text-[#0057DE] px-5 py-2 text-[12px] tracking-wider hover:bg-[#0057DE] hover:text-black transition-all"
               style={{ fontWeight: 600 }}
             >
               Ver Todos os Artigos <ChevronRight size={12} />
@@ -89,7 +89,7 @@ export function NewsSection() {
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
                 </div>
                 <div className="relative h-full flex flex-col justify-end p-6" style={{ minHeight: "400px" }}>
-                  <span className="text-[#FF6A00] text-[11px] tracking-[0.15em] uppercase mb-2" style={{ fontWeight: 500 }}>
+                  <span className="text-[#0057DE] text-[11px] tracking-[0.15em] uppercase mb-2" style={{ fontWeight: 500 }}>
                     {news.category}
                   </span>
                   <h3 className="text-white text-[20px] md:text-[24px] leading-[1.2] mb-3" style={{ fontWeight: 700 }}>
@@ -98,7 +98,7 @@ export function NewsSection() {
                   <p className="text-white/60 text-[13px] mb-4 line-clamp-2">
                     {news.description}
                   </p>
-                  <div className="flex items-center gap-2 text-[#FF6A00] text-[13px]" style={{ fontWeight: 600 }}>
+                  <div className="flex items-center gap-2 text-[#0057DE] text-[13px]" style={{ fontWeight: 600 }}>
                     Ler artigo <ChevronRight size={14} />
                   </div>
                 </div>
@@ -111,7 +111,7 @@ export function NewsSection() {
         <div className="md:hidden text-center">
           <Link
             to="/blog"
-            className="inline-flex items-center gap-2 border border-[#FF6A00] text-[#FF6A00] px-5 py-2 text-[12px] tracking-wider hover:bg-[#FF6A00] hover:text-black transition-all"
+            className="inline-flex items-center gap-2 border border-[#0057DE] text-[#0057DE] px-5 py-2 text-[12px] tracking-wider hover:bg-[#0057DE] hover:text-black transition-all"
             style={{ fontWeight: 600 }}
           >
             Ver Todos os Artigos <ChevronRight size={12} />

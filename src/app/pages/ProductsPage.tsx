@@ -48,7 +48,7 @@ export const ProductsPage = () => {
 
         <div className="container mx-auto px-6 h-full flex items-center relative z-10">
           <div className="max-w-3xl mx-[25px] my-[0px]">
-            <div className="text-orange-500 font-bold uppercase tracking-wider mb-4 text-[12px]">
+            <div className="text-[#0057DE] font-bold uppercase tracking-wider mb-4 text-[12px]">
               Portfólio / Instrumentação & Automação
             </div>
             <h1 className="text-3xl md:text-4xl font-bold text-white mb-6 leading-tight">
@@ -143,7 +143,7 @@ export const ProductsPage = () => {
                     }`}
                   >
                     {selectedCategory === category && (
-                      <span className="inline-block w-3 h-px bg-orange-500 mr-2 align-middle" />
+                      <span className="inline-block w-3 h-px bg-[#0057DE] mr-2 align-middle" />
                     )}
                     {category}
                   </button>
@@ -248,7 +248,7 @@ export const ProductsPage = () => {
               href="https://wa.me/551122071986"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center justify-center bg-orange-500 hover:bg-orange-600 text-white font-semibold px-8 py-4 transition-colors text-[14px] rounded-[7px]"
+              className="inline-flex items-center justify-center bg-[#0057DE] hover:bg-[#0046b3] text-white font-semibold px-8 py-4 transition-colors text-[14px] rounded-[7px]"
             >
               Falar com Especialista
             </a>

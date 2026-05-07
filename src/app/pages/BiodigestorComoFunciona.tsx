@@ -68,11 +68,11 @@ const benefits = [
 
 /* Diagram data for the cycle infographic */
 const diagramSteps = [
-  { label: "Residuos Organicos", sub: "Entrada controlada", color: "#FF6A00" },
+  { label: "Residuos Organicos", sub: "Entrada controlada", color: "#0057DE" },
   { label: "Biodigestor", sub: "Digestao anaerobia", color: "#1a7f4c" },
-  { label: "Biogas (CH4)", sub: "Captacao e tratamento", color: "#FF6A00" },
+  { label: "Biogas (CH4)", sub: "Captacao e tratamento", color: "#0057DE" },
   { label: "Energia", sub: "Eletrica / Termica", color: "#1a7f4c" },
-  { label: "Biofertilizante", sub: "Aplicacao agricola", color: "#FF6A00" },
+  { label: "Biofertilizante", sub: "Aplicacao agricola", color: "#0057DE" },
 ];
 
 /* ────────────────────────────────────────────────────────
@@ -80,7 +80,7 @@ const diagramSteps = [
    ──────────────────────────────────────────────────────── */
 const heading = (overline: string, title: string, light = false) => (
   <div className="text-center" style={{ marginBottom: 48 }}>
-    <span style={{ display: "inline-block", fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: light ? "#1a7f4c" : "#FF6A00", marginBottom: 12 }}>
+    <span style={{ display: "inline-block", fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: light ? "#1a7f4c" : "#0057DE", marginBottom: 12 }}>
       {overline}
     </span>
     <h2 style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: "clamp(28px, 3vw, 36px)", fontWeight: 400, lineHeight: 1.15, textTransform: "uppercase", color: light ? "#fff" : "#1a1a1a" }}>
@@ -108,7 +108,7 @@ export default function BiodigestorComoFunciona() {
           className="relative z-10 flex flex-col justify-end h-full"
           style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px 100px 30px" }}
         >
-          <span style={{ display: "inline-block", fontSize: 13, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
+          <span style={{ display: "inline-block", fontSize: 13, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
             COMO FUNCIONA
           </span>
           <h1 style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: "clamp(41px, 6vw, 85px)", fontWeight: 500, lineHeight: 0.95, textTransform: "uppercase", color: "#fff", maxWidth: 800, margin: 0 }}>
@@ -139,7 +139,7 @@ export default function BiodigestorComoFunciona() {
           <AnimateOnScroll>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-center">
               <div>
-                <span style={{ display: "inline-block", fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
+                <span style={{ display: "inline-block", fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
                   Processo de Operacao
                 </span>
                 <h2 style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: "clamp(28px, 3vw, 36px)", fontWeight: 400, lineHeight: 1.15, textTransform: "uppercase", marginBottom: 24, color: "#1a1a1a" }}>
@@ -154,7 +154,7 @@ export default function BiodigestorComoFunciona() {
               </div>
               <div className="relative overflow-hidden" style={{ borderRadius: 4 }}>
                 <img loading="lazy" src={INTRO_IMG} alt="Sistema Biodigestor" className="w-full h-full object-cover" style={{ aspectRatio: "16/11", display: "block" }} />
-                <div className="absolute bottom-0 left-0" style={{ width: 80, height: 4, backgroundColor: "#FF6A00" }} />
+                <div className="absolute bottom-0 left-0" style={{ width: 80, height: 4, backgroundColor: "#0057DE" }} />
               </div>
             </div>
           </AnimateOnScroll>
@@ -172,7 +172,7 @@ export default function BiodigestorComoFunciona() {
 
           <div className="relative max-w-[800px] mx-auto">
             {/* Vertical accent line */}
-            <div className="absolute left-[23px] md:left-[23px] top-0 bottom-0" style={{ width: 3, backgroundColor: "#FF6A00", opacity: 0.3 }} />
+            <div className="absolute left-[23px] md:left-[23px] top-0 bottom-0" style={{ width: 3, backgroundColor: "#0057DE", opacity: 0.3 }} />
 
             <div className="space-y-0">
               {steps.map((step, i) => {
@@ -202,7 +202,7 @@ export default function BiodigestorComoFunciona() {
                         onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.06)"; e.currentTarget.style.transform = "translateY(0)"; }}
                       >
                         <div className="flex items-center gap-3" style={{ marginBottom: 12 }}>
-                          <span style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: 28, fontWeight: 400, color: "#FF6A00", lineHeight: 1 }}>
+                          <span style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: 28, fontWeight: 400, color: "#0057DE", lineHeight: 1 }}>
                             {step.num}
                           </span>
                           <h3 style={{ fontSize: 18, fontWeight: 700, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.02em" }}>
@@ -223,7 +223,7 @@ export default function BiodigestorComoFunciona() {
                                   padding: "5px 12px", borderRadius: 3, fontSize: 11, fontWeight: 600,
                                 }}
                               >
-                                <ChevronRight size={10} style={{ color: "#FF6A00" }} /> {d}
+                                <ChevronRight size={10} style={{ color: "#0057DE" }} /> {d}
                               </span>
                             ))}
                           </div>
@@ -268,7 +268,7 @@ export default function BiodigestorComoFunciona() {
                       onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
                     >
                       <div style={{ width: 48, height: 48, borderRadius: "50%", backgroundColor: ds.color, margin: "0 auto 12px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        <span style={{ color: ds.color === "#FF6A00" ? "#000" : "#fff", fontFamily: "'Knockout HTF68', sans-serif", fontSize: 18, fontWeight: 400 }}>
+                        <span style={{ color: ds.color === "#0057DE" ? "#000" : "#fff", fontFamily: "'Knockout HTF68', sans-serif", fontSize: 18, fontWeight: 400 }}>
                           {String(i + 1).padStart(2, "0")}
                         </span>
                       </div>
@@ -284,7 +284,7 @@ export default function BiodigestorComoFunciona() {
                     {i < diagramSteps.length - 1 && (
                       <div style={{ width: 40, display: "flex", alignItems: "center", justifyContent: "center" }}>
                         <div style={{ position: "relative", width: 40, height: 2, backgroundColor: "#444" }}>
-                          <div style={{ position: "absolute", right: -1, top: -4, width: 0, height: 0, borderTop: "5px solid transparent", borderBottom: "5px solid transparent", borderLeft: "8px solid #FF6A00" }} />
+                          <div style={{ position: "absolute", right: -1, top: -4, width: 0, height: 0, borderTop: "5px solid transparent", borderBottom: "5px solid transparent", borderLeft: "8px solid #0057DE" }} />
                         </div>
                       </div>
                     )}
@@ -338,9 +338,9 @@ export default function BiodigestorComoFunciona() {
                     onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,0.12)"; e.currentTarget.style.transform = "translateY(-4px)"; }}
                     onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.08)"; e.currentTarget.style.transform = "translateY(0)"; }}
                   >
-                    <div style={{ height: 4, backgroundColor: "#FF6A00" }} />
+                    <div style={{ height: 4, backgroundColor: "#0057DE" }} />
                     <div style={{ padding: "32px 28px" }}>
-                      <Icon size={32} style={{ color: "#FF6A00", marginBottom: 20 }} />
+                      <Icon size={32} style={{ color: "#0057DE", marginBottom: 20 }} />
                       <h3 style={{ fontSize: 20, fontWeight: 700, color: "#1a1a1a", marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.02em" }}>
                         {b.title}
                       </h3>
@@ -375,16 +375,16 @@ export default function BiodigestorComoFunciona() {
               <div className="flex flex-wrap gap-4 justify-center lg:justify-end" style={{ flexShrink: 0 }}>
                 <Link
                   to="/contato"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 8, backgroundColor: "#FF6A00", color: "#000", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.5px", textDecoration: "none", borderRadius: 4, transition: "all 0.3s ease" }}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 8, backgroundColor: "#0057DE", color: "#000", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.5px", textDecoration: "none", borderRadius: 4, transition: "all 0.3s ease" }}
                   onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#e5b800"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#FF6A00"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#0057DE"; }}
                 >
                   Fale com um Especialista <ChevronRight size={14} />
                 </Link>
                 <Link
                   to="/biodigestor/portes"
                   style={{ display: "inline-flex", alignItems: "center", gap: 8, backgroundColor: "transparent", color: "#fff", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.5px", textDecoration: "none", borderRadius: 4, border: "2px solid #444", transition: "all 0.3s ease" }}
-                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#FF6A00"; e.currentTarget.style.color = "#FF6A00"; }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#0057DE"; e.currentTarget.style.color = "#0057DE"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#444"; e.currentTarget.style.color = "#fff"; }}
                 >
                   Ver Modelos GT-BIODIGEST <ChevronRight size={14} />

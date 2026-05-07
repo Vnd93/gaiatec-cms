@@ -86,7 +86,7 @@ export default function BiodigestorPage() {
               fontWeight: 700,
               letterSpacing: "0.2em",
               textTransform: "uppercase",
-              color: "#FF6A00",
+              color: "#0057DE",
               marginBottom: 16,
             }}
           >
@@ -133,7 +133,7 @@ export default function BiodigestorPage() {
           <AnimateOnScroll>
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.1fr] gap-16 lg:gap-24 items-center">
               <div>
-                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 20 }}>
+                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 20 }}>
                   Biodigestão Anaeróbia
                 </span>
                 <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 52px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", marginBottom: 28, color: "#111" }}>
@@ -149,13 +149,13 @@ export default function BiodigestorPage() {
                   to="/contato"
                   style={{
                     display: "inline-flex", alignItems: "center", gap: 8,
-                    border: "2px solid #FF6A00", color: "#FF6A00",
+                    border: "2px solid #0057DE", color: "#0057DE",
                     padding: "14px 32px", fontWeight: 700, fontSize: 13,
                     textTransform: "uppercase", letterSpacing: "0.08em",
                     textDecoration: "none", transition: "all 0.3s ease",
                   }}
-                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#FF6A00"; e.currentTarget.style.color = "#000"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "#FF6A00"; }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#0057DE"; e.currentTarget.style.color = "#000"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "#0057DE"; }}
                 >
                   Solicitar Orçamento <ArrowRight size={14} />
                 </Link>
@@ -163,7 +163,7 @@ export default function BiodigestorPage() {
 
               <div className="relative overflow-hidden">
                 <img loading="lazy" src={INTRO_IMG} alt="Biodigestor" className="w-full object-cover" style={{ aspectRatio: "4/3", display: "block" }} />
-                <div style={{ position: "absolute", bottom: 0, left: 0, width: "100%", height: 4, backgroundColor: "#FF6A00" }} />
+                <div style={{ position: "absolute", bottom: 0, left: 0, width: "100%", height: 4, backgroundColor: "#0057DE" }} />
               </div>
             </div>
           </AnimateOnScroll>
@@ -179,7 +179,7 @@ export default function BiodigestorPage() {
             {stats.map((s, i) => (
               <AnimateOnScroll key={s.label} delay={i * 0.1}>
                 <div style={{ textAlign: "center" }}>
-                  <span style={{ fontFamily: KNOCKOUT, fontSize: "clamp(40px, 5vw, 64px)", fontWeight: 500, lineHeight: 1, color: "#FF6A00", display: "block" }}>
+                  <span style={{ fontFamily: KNOCKOUT, fontSize: "clamp(40px, 5vw, 64px)", fontWeight: 500, lineHeight: 1, color: "#0057DE", display: "block" }}>
                     {s.value}
                   </span>
                   <span style={{ fontSize: 13, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginTop: 8, display: "block" }}>
@@ -199,7 +199,7 @@ export default function BiodigestorPage() {
         <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px" }}>
           <AnimateOnScroll>
             <div style={{ maxWidth: 600, marginBottom: 60 }}>
-              <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
+              <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
                 COMPONENTES
               </span>
               <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 48px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", color: "#111" }}>
@@ -223,7 +223,7 @@ export default function BiodigestorPage() {
                   onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#fafafa"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
                 >
-                  <span style={{ fontFamily: KNOCKOUT, fontSize: 48, fontWeight: 500, color: "rgba(255, 106, 0, 0.15)", lineHeight: 1, display: "block", marginBottom: 16 }}>
+                  <span style={{ fontFamily: KNOCKOUT, fontSize: 48, fontWeight: 500, color: "rgba(0, 87, 222, 0.15)", lineHeight: 1, display: "block", marginBottom: 16 }}>
                     {c.num}
                   </span>
                   <h4 style={{ fontFamily: KNOCKOUT, fontSize: 22, fontWeight: 500, color: "#111", marginBottom: 12, textTransform: "uppercase", lineHeight: 1.1 }}>
@@ -248,7 +248,7 @@ export default function BiodigestorPage() {
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.5fr] gap-16 lg:gap-24">
               {/* Left — title */}
               <div style={{ position: "sticky", top: 120, alignSelf: "start" }}>
-                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
+                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
                   PROCESSO BIOLÓGICO
                 </span>
                 <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 48px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", color: "#fff", marginBottom: 24 }}>
@@ -271,7 +271,7 @@ export default function BiodigestorPage() {
                         borderBottom: i < stages.length - 1 ? "1px solid rgba(255,255,255,0.08)" : "none",
                       }}
                     >
-                      <span style={{ fontFamily: KNOCKOUT, fontSize: 56, fontWeight: 500, color: "#FF6A00", lineHeight: 1, flexShrink: 0, width: 70 }}>
+                      <span style={{ fontFamily: KNOCKOUT, fontSize: 56, fontWeight: 500, color: "#0057DE", lineHeight: 1, flexShrink: 0, width: 70 }}>
                         {s.num}
                       </span>
                       <div>
@@ -299,7 +299,7 @@ export default function BiodigestorPage() {
           <AnimateOnScroll>
             <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6" style={{ marginBottom: 60 }}>
               <div>
-                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
+                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
                   PRODUTOS
                 </span>
                 <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 48px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", color: "#111" }}>
@@ -315,7 +315,7 @@ export default function BiodigestorPage() {
                   letterSpacing: "0.08em", transition: "color 0.3s",
                   flexShrink: 0,
                 }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = "#FF6A00"; }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = "#0057DE"; }}
                 onMouseLeave={(e) => { e.currentTarget.style.color = "#111"; }}
               >
                 Ver todos os modelos <ArrowRight size={14} />
@@ -358,7 +358,7 @@ export default function BiodigestorPage() {
                       to="/biodigestor/portes"
                       style={{
                         display: "inline-flex", alignItems: "center", gap: 6,
-                        fontSize: 12, fontWeight: 700, color: "#FF6A00",
+                        fontSize: 12, fontWeight: 700, color: "#0057DE",
                         textDecoration: "none", textTransform: "uppercase",
                         letterSpacing: "0.08em", transition: "gap 0.3s ease",
                       }}
@@ -380,7 +380,7 @@ export default function BiodigestorPage() {
         <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px" }}>
           <AnimateOnScroll>
             <div style={{ marginBottom: 60 }}>
-              <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
+              <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
                 EXPLORE
               </span>
               <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 48px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", color: "#fff" }}>
@@ -417,7 +417,7 @@ export default function BiodigestorPage() {
                       {page.desc}
                     </p>
                   </div>
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "#FF6A00", textTransform: "uppercase", letterSpacing: "0.08em", marginTop: 20 }}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "#0057DE", textTransform: "uppercase", letterSpacing: "0.08em", marginTop: 20 }}>
                     Saiba mais <ArrowRight size={12} />
                   </span>
                 </Link>
@@ -438,7 +438,7 @@ export default function BiodigestorPage() {
           <AnimateOnScroll>
             <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-12">
               <div style={{ maxWidth: 650 }}>
-                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
+                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
                   PRÓXIMO PASSO
                 </span>
                 <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(28px, 4vw, 48px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", color: "#fff", marginBottom: 16 }}>
@@ -454,13 +454,13 @@ export default function BiodigestorPage() {
                   to="/contato"
                   style={{
                     display: "inline-flex", alignItems: "center", gap: 8,
-                    backgroundColor: "#FF6A00", color: "#000",
+                    backgroundColor: "#0057DE", color: "#000",
                     padding: "16px 36px", fontWeight: 700, fontSize: 13,
                     textTransform: "uppercase", letterSpacing: "0.08em",
                     textDecoration: "none", transition: "all 0.3s ease",
                   }}
                   onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#fff"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#FF6A00"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#0057DE"; }}
                 >
                   Solicitar Orçamento <ArrowRight size={14} />
                 </Link>
@@ -474,7 +474,7 @@ export default function BiodigestorPage() {
                     textDecoration: "none",
                     border: "2px solid rgba(255,255,255,0.3)", transition: "all 0.3s ease",
                   }}
-                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#FF6A00"; e.currentTarget.style.color = "#FF6A00"; }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#0057DE"; e.currentTarget.style.color = "#0057DE"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.3)"; e.currentTarget.style.color = "#fff"; }}
                 >
                   Fale Conosco <ArrowRight size={14} />

@@ -59,7 +59,7 @@ export const Blog = () => {
               <div className="p-7 flex flex-col flex-grow">
                 <div className="flex items-center gap-4 text-xs text-gray-500 mb-4 font-medium">
                   <div className="flex items-center gap-1.5">
-                    <Calendar className="w-4 h-4 text-orange-500" />
+                    <Calendar className="w-4 h-4 text-[#0057DE]" />
                     {post.date}
                   </div>
                   <div className="flex items-center gap-1.5">
@@ -73,7 +73,7 @@ export const Blog = () => {
                 <p className="text-gray-600 text-sm mb-6 flex-grow leading-relaxed">
                   {post.excerpt}
                 </p>
-                <a href="#" className="text-orange-500 font-bold text-sm hover:text-orange-600 mt-auto inline-flex items-center group-hover:gap-2 transition-all">
+                <a href="#" className="text-[#0057DE] font-bold text-sm hover:text-[#0046b3] mt-auto inline-flex items-center group-hover:gap-2 transition-all">
                   Ler mais <ArrowRight className="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform" />
                 </a>
               </div>

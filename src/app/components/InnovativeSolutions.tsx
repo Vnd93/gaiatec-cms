@@ -239,7 +239,7 @@ export function InnovativeSolutions() {
                         marginBottom: 24,
                         textTransform: "uppercase",
                       }}
-                      baseColor="rgb(255, 106, 0)"
+                      baseColor="rgb(0, 87, 222)"
                       fillColor="rgb(0, 0, 0)"
                     />
                   </div>

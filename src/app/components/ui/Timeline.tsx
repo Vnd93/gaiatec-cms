@@ -95,7 +95,7 @@ export const Timeline = ({ data }: { data: TimelineEntry[] }) => {
                 duration: 0.3,
                 ease: "easeOut",
               }}
-              className="absolute inset-x-0 top-0 w-[2px] bg-orange-500 rounded-full shadow-[0_0_10px_rgba(249,115,22,0.5)]"
+              className="absolute inset-x-0 top-0 w-[2px] bg-[#0057DE] rounded-full shadow-[0_0_10px_rgba(249,115,22,0.5)]"
             />
           </div>
         </div>

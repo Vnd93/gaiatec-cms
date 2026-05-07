@@ -20,7 +20,7 @@ export const AutomacaoControlePage = () => {
 
         <div className="container mx-auto px-6 h-full flex items-center relative z-10">
           <div className="max-w-3xl mx-[25px] my-[0px]">
-            <div className="text-orange-500 font-bold uppercase tracking-wider mb-4 text-[12px]">
+            <div className="text-[#0057DE] font-bold uppercase tracking-wider mb-4 text-[12px]">
               Biodigestor / GT-BIODIGEST
             </div>
             <h1 className="text-3xl md:text-4xl font-bold text-white mb-6 leading-tight">
@@ -41,7 +41,7 @@ export const AutomacaoControlePage = () => {
               <h2 className="text-2xl md:text-3xl font-bold text-gray-900 leading-tight">
                 O que significa controle no GT-BIODIGEST
               </h2>
-              <div className="w-12 h-1 bg-orange-500 mt-5"></div>
+              <div className="w-12 h-1 bg-[#0057DE] mt-5"></div>
             </div>
 
             <div className="md:col-span-7 text-gray-700 leading-relaxed space-y-5">
@@ -66,7 +66,7 @@ export const AutomacaoControlePage = () => {
               <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-4">
                 Produção controlada
               </h2>
-              <div className="w-12 h-1 bg-orange-500 mb-8"></div>
+              <div className="w-12 h-1 bg-[#0057DE] mb-8"></div>
 
               <p className="text-gray-700 leading-relaxed mb-6">
                 A entrada dos resíduos é feita de forma adequada, a digestão anaeróbia ocorre em ambiente fechado e a pressão interna é naturalmente regulada. Não há geração descontrolada de gás — a estabilidade do processo biológico é mantida por projeto, não por intervenção constante.
@@ -124,7 +124,7 @@ export const AutomacaoControlePage = () => {
               <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-4">
                 Tratamento do biogás
               </h2>
-              <div className="w-12 h-1 bg-orange-500 mb-8"></div>
+              <div className="w-12 h-1 bg-[#0057DE] mb-8"></div>
 
               <p className="text-gray-700 leading-relaxed mb-6">
                 Antes de ser utilizado, o biogás passa por elementos físicos de controle: desidratadores, filtros de impurezas e filtros de carvão ativado para remoção de compostos indesejados. Isso garante maior eficiência de queima e proteção dos equipamentos de uso final.
@@ -160,7 +160,7 @@ export const AutomacaoControlePage = () => {
               <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-4">
                 O fogareiro como elemento de controle
               </h2>
-              <div className="w-12 h-1 bg-orange-500 mb-8"></div>
+              <div className="w-12 h-1 bg-[#0057DE] mb-8"></div>
 
               <p className="text-gray-700 leading-relaxed mb-6">
                 O fogareiro não é apenas um acessório de consumo. Ele funciona como ponto de validação do sistema inteiro: ao utilizá-lo, é possível confirmar a qualidade do biogás, avaliar a estabilidade da produção, verificar a eficiência do processo e demonstrar o funcionamento real do sistema.
@@ -179,7 +179,7 @@ export const AutomacaoControlePage = () => {
           <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-4">
             Segurança e simplicidade integradas
           </h2>
-          <div className="w-12 h-1 bg-orange-500 mb-12"></div>
+          <div className="w-12 h-1 bg-[#0057DE] mb-12"></div>
 
           <div className="md:grid md:grid-cols-2 md:gap-16">
             {/* Segurança */}
@@ -285,7 +285,7 @@ export const AutomacaoControlePage = () => {
               href="https://wa.me/551122071986"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center justify-center bg-orange-500 hover:bg-orange-600 text-white font-semibold px-8 py-4 transition-colors text-[14px] rounded-[7px]"
+              className="inline-flex items-center justify-center bg-[#0057DE] hover:bg-[#0046b3] text-white font-semibold px-8 py-4 transition-colors text-[14px] rounded-[7px]"
             >
               Falar com Especialista
             </a>

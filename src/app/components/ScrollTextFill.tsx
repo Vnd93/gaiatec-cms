@@ -13,7 +13,7 @@ export function ScrollTextFill({
   text,
   className = "",
   style,
-  baseColor = "rgb(255, 106, 0)",
+  baseColor = "rgb(0, 87, 222)",
   fillColor = "rgb(0, 0, 0)",
   as: Tag = "h2",
 }: ScrollTextFillProps) {

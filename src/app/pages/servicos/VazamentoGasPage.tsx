@@ -20,7 +20,7 @@ export const VazamentoGasPage = () => {
         
         <div className="container mx-auto px-6 h-full flex items-center relative z-10">
           <div className="max-w-3xl mx-[25px] my-[0px]">
-            <div className="text-orange-500 font-bold uppercase tracking-wider mb-4 text-[12px]">
+            <div className="text-[#0057DE] font-bold uppercase tracking-wider mb-4 text-[12px]">
               Serviços / Integridade, Segurança & Monitoramento
             </div>
             <h1 className="text-3xl md:text-4xl font-bold text-white mb-6 leading-tight">
@@ -41,7 +41,7 @@ export const VazamentoGasPage = () => {
               <h2 className="text-2xl md:text-3xl font-bold text-gray-900 leading-tight">
                 O que é a Pesquisa de Vazamento de Gás
               </h2>
-              <div className="w-12 h-1 bg-orange-500 mt-5"></div>
+              <div className="w-12 h-1 bg-[#0057DE] mt-5"></div>
             </div>
 
             <div className="md:col-span-7 text-gray-700 leading-relaxed text-lg space-y-5">
@@ -175,7 +175,7 @@ export const VazamentoGasPage = () => {
           <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-3">
             Principais Soluções Oferecidas
           </h2>
-          <div className="w-16 h-1 bg-orange-500 mb-12"></div>
+          <div className="w-16 h-1 bg-[#0057DE] mb-12"></div>
 
           <div className="grid md:grid-cols-2 gap-x-16 gap-y-10">
             <div>
@@ -227,7 +227,7 @@ export const VazamentoGasPage = () => {
               <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-4">
                 Medidor Ultrassônico para Gás (U-GR)
               </h2>
-              <div className="w-12 h-1 bg-orange-500 mb-8"></div>
+              <div className="w-12 h-1 bg-[#0057DE] mb-8"></div>
 
               <div className="text-gray-700 leading-relaxed space-y-5">
                 <p>
@@ -288,7 +288,7 @@ export const VazamentoGasPage = () => {
               <h2 className="text-2xl md:text-3xl font-bold text-gray-900 leading-tight">
                 Como a Gaiatec atua na prática
               </h2>
-              <div className="w-12 h-1 bg-orange-500 mt-5"></div>
+              <div className="w-12 h-1 bg-[#0057DE] mt-5"></div>
               <p className="text-gray-600 leading-relaxed mt-5">
                 Etapas do serviço de pesquisa de vazamento — da análise inicial ao acompanhamento pós-diagnóstico.
               </p>
@@ -390,7 +390,7 @@ export const VazamentoGasPage = () => {
               href="https://wa.me/551122071986"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center justify-center bg-orange-500 hover:bg-orange-600 text-white font-semibold px-8 py-4 transition-colors text-[14px] rounded-[7px]"
+              className="inline-flex items-center justify-center bg-[#0057DE] hover:bg-[#0046b3] text-white font-semibold px-8 py-4 transition-colors text-[14px] rounded-[7px]"
             >
               Falar com Especialista
             </a>

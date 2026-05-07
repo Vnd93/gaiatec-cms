@@ -19,7 +19,7 @@ type Industry = { title: string; description: string; image: string; href: strin
 
 const FALLBACK_INDUSTRIES: Industry[] = [
   {
-    title: "Saneamento",
+    title: "Saneamento / Líquido",
     description: "Macromedição, monitoramento de qualidade da água e controle de perdas para companhias de saneamento e autarquias municipais.",
     image: "/images/industries/5.4.png",
     href: "/setores/saneamento",
@@ -166,13 +166,13 @@ export function IndustriesCarousel() {
           justify-content: center;
           width: 33px;
           height: 33px;
-          background: rgb(255, 106, 0);
-          border: 1px solid rgb(255, 106, 0);
+          background: rgb(0, 87, 222);
+          border: 1px solid rgb(0, 87, 222);
           cursor: pointer;
           transition: background 0.4s;
         }
         .sec4-arrow-box:hover {
-          background: rgb(230, 85, 0);
+          background: rgb(0, 70, 179);
         }
         .sec4-nav-btn {
           display: flex;
@@ -191,8 +191,8 @@ export function IndustriesCarousel() {
           z-index: 10;
         }
         .sec4-nav-btn:hover {
-          border-color: rgb(255, 106, 0);
-          color: rgb(255, 106, 0);
+          border-color: rgb(0, 87, 222);
+          color: rgb(0, 87, 222);
         }
         .sec4-viewall-btn {
           display: inline-flex;
@@ -208,8 +208,8 @@ export function IndustriesCarousel() {
           cursor: pointer;
         }
         .sec4-viewall-btn:hover {
-          border-color: rgb(255, 106, 0);
-          color: rgb(255, 106, 0);
+          border-color: rgb(0, 87, 222);
+          color: rgb(0, 87, 222);
         }
         @media (max-width: 767px) {
           .sec4-section-title {
@@ -323,7 +323,7 @@ export function IndustriesCarousel() {
                   marginBottom: 16,
                 }}
               >
-                Setores de Atuação
+                Indústrias de Atuação
               </h2>
               <a href="#" className="sec4-viewall-btn">
                 Ver todos os 11 setores <ArrowRight size={14} />

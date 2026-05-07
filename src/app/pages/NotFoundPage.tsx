@@ -5,7 +5,7 @@ export default function NotFoundPage() {
   return (
     <section className="min-h-[80vh] flex items-center justify-center bg-black">
       <div className="text-center px-6">
-        <span className="text-[#FF6A00] text-[120px] md:text-[180px] block" style={{ fontFamily: "'Knockout HTF68', sans-serif", fontWeight: 400, lineHeight: 1 }}>
+        <span className="text-[#0057DE] text-[120px] md:text-[180px] block" style={{ fontFamily: "'Knockout HTF68', sans-serif", fontWeight: 400, lineHeight: 1 }}>
           404
         </span>
         <h1 className="text-white text-[24px] md:text-[32px] mb-4" style={{ fontWeight: 700 }}>
@@ -16,7 +16,7 @@ export default function NotFoundPage() {
         </p>
         <Link
           to="/"
-          className="inline-flex items-center gap-2 bg-[#FF6A00] text-black px-7 py-3 text-[13px] tracking-wider hover:bg-white transition-colors"
+          className="inline-flex items-center gap-2 bg-[#0057DE] text-black px-7 py-3 text-[13px] tracking-wider hover:bg-white transition-colors"
           style={{ fontWeight: 700 }}
         >
           Voltar ao Início <ChevronRight size={14} />

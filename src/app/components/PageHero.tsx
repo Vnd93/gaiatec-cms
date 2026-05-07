@@ -48,7 +48,7 @@ export function PageHero({ overline, title, image }: PageHeroProps) {
               fontWeight: 700,
               letterSpacing: "0.2em",
               textTransform: "uppercase",
-              color: "#FF6A00",
+              color: "#0057DE",
               marginBottom: 16,
             }}
           >

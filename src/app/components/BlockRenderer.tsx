@@ -60,7 +60,7 @@ function HeroBlock({ dados }: { dados: { slides: HeroSlide[] } }) {
       <div className="relative max-w-[1400px] mx-auto px-4 md:px-6 py-20 md:py-32 flex items-end min-h-[55vh]">
         <div className="max-w-2xl">
           {slide.label && (
-            <div className="text-xs font-bold uppercase tracking-widest text-[#FF6A00] mb-3">
+            <div className="text-xs font-bold uppercase tracking-widest text-[#0057DE] mb-3">
               {slide.label}
             </div>
           )}
@@ -71,7 +71,7 @@ function HeroBlock({ dados }: { dados: { slides: HeroSlide[] } }) {
           {slide.cta_texto && slide.cta_link && (
             <a
               href={slide.cta_link}
-              className="inline-flex items-center gap-2 bg-[#FF6A00] text-white px-6 py-3 text-sm font-semibold hover:bg-[#e55d00] transition-colors"
+              className="inline-flex items-center gap-2 bg-[#0057DE] text-white px-6 py-3 text-sm font-semibold hover:bg-[#0046b3] transition-colors"
             >
               {slide.cta_texto}
               <ChevronRight size={16} />
@@ -97,7 +97,7 @@ function StatsBlock({ dados }: { dados: { titulo?: string; subtitulo?: string; i
       <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
         {(dados.items ?? []).map((it, i) => (
           <div key={i} className="text-center p-6 bg-[#f7f7f7] border border-[#e0e0e0]">
-            <div className="text-3xl md:text-5xl font-bold text-[#FF6A00] leading-none">
+            <div className="text-3xl md:text-5xl font-bold text-[#0057DE] leading-none">
               {it.valor || "—"}
             </div>
             <div className="text-sm text-[#666] mt-2 uppercase tracking-wide">{it.label}</div>
@@ -117,7 +117,7 @@ function CtaBlock({ dados }: { dados: { titulo?: string; subtitulo?: string; des
       style={{
         backgroundImage: dados.imagem_fundo
           ? `linear-gradient(rgba(0,0,0,0.6), rgba(0,0,0,0.6)), url(${resolveImg(dados.imagem_fundo)})`
-          : "linear-gradient(135deg, #FF6A00, #e55d00)",
+          : "linear-gradient(135deg, #0057DE, #0046b3)",
         backgroundSize: "cover",
         backgroundPosition: "center",
       }}
@@ -306,8 +306,8 @@ function TimelineBlock({ dados }: { dados: { titulo?: string; subtitulo?: string
         <div className="absolute left-3 md:left-4 top-2 bottom-2 w-px bg-[#e0e0e0]" />
         {(dados.items ?? []).map((it, i) => (
           <div key={i} className="relative mb-10 last:mb-0">
-            <div className="absolute -left-7 md:-left-9 top-1 w-4 h-4 rounded-full bg-[#FF6A00] border-4 border-white shadow-[0_0_0_1px_#FF6A00]" />
-            <div className="text-sm font-bold text-[#FF6A00] uppercase tracking-wide">{it.ano}</div>
+            <div className="absolute -left-7 md:-left-9 top-1 w-4 h-4 rounded-full bg-[#0057DE] border-4 border-white shadow-[0_0_0_1px_#0057DE]" />
+            <div className="text-sm font-bold text-[#0057DE] uppercase tracking-wide">{it.ano}</div>
             {it.titulo && <h3 className="text-lg md:text-xl font-bold text-black mt-1">{it.titulo}</h3>}
             {it.descricao && <p className="text-[#666] mt-2 leading-relaxed">{it.descricao}</p>}
           </div>
@@ -337,7 +337,7 @@ function NewsGridBlock({ dados }: { dados: { titulo?: string; subtitulo?: string
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {items.map((it, i) => {
           const card = (
-            <article className="group flex flex-col bg-white border border-[#e0e0e0] hover:border-[#FF6A00] transition-colors h-full">
+            <article className="group flex flex-col bg-white border border-[#e0e0e0] hover:border-[#0057DE] transition-colors h-full">
               {it.imagem_url && (
                 <div className="aspect-[16/9] overflow-hidden">
                   <img
@@ -350,12 +350,12 @@ function NewsGridBlock({ dados }: { dados: { titulo?: string; subtitulo?: string
               )}
               <div className="p-6 flex-1 flex flex-col">
                 {it.categoria && (
-                  <div className="text-xs font-semibold uppercase tracking-wide text-[#FF6A00] mb-2">{it.categoria}</div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-[#0057DE] mb-2">{it.categoria}</div>
                 )}
                 {it.titulo && <h3 className="text-lg font-bold text-black mb-2 leading-tight">{it.titulo}</h3>}
                 {it.resumo && <p className="text-sm text-[#666] leading-relaxed">{it.resumo}</p>}
                 {it.link && (
-                  <span className="mt-auto pt-4 inline-flex items-center gap-1 text-sm font-semibold text-[#FF6A00]">
+                  <span className="mt-auto pt-4 inline-flex items-center gap-1 text-sm font-semibold text-[#0057DE]">
                     Ler mais <ChevronRight size={14} />
                   </span>
                 )}
@@ -393,7 +393,7 @@ function PartnersLogosBlock({ dados }: { dados: { titulo?: string; subtitulo?: s
               <img loading="lazy" src={resolveImg(it.imagem_url)} alt={it.nome ?? ""} className="h-12 md:h-16 object-contain mb-2" loading="lazy" />
             ) : (
               <div
-                className="text-3xl md:text-4xl font-bold text-[#FF6A00] mb-2 leading-none"
+                className="text-3xl md:text-4xl font-bold text-[#0057DE] mb-2 leading-none"
                 style={{ fontFamily: "'Knockout HTF68', 'Barlow Condensed', sans-serif" }}
               >
                 {it.nome}
@@ -416,7 +416,7 @@ function TextBlockBlock({ dados }: { dados: { titulo?: string; subtitulo?: strin
     <Wrapper className="bg-white">
       <div className={`max-w-4xl mx-auto ${align}`}>
         {dados.subtitulo && (
-          <div className="text-sm font-semibold uppercase tracking-widest text-[#FF6A00] mb-3">
+          <div className="text-sm font-semibold uppercase tracking-widest text-[#0057DE] mb-3">
             {dados.subtitulo}
           </div>
         )}

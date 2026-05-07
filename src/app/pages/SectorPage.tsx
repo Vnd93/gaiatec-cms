@@ -70,7 +70,7 @@ export default function SectorPage() {
           <AnimateOnScroll>
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.1fr] gap-16 lg:gap-24 items-center">
               <div>
-                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 20 }}>
+                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 20 }}>
                   SOBRE O SETOR
                 </span>
                 <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 52px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", marginBottom: 28, color: "#111" }}>
@@ -87,16 +87,16 @@ export default function SectorPage() {
                 {!sector.aboutExtra && <div style={{ marginBottom: 36 }} />}
                 <Link
                   to="/contato"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 8, border: "2px solid #FF6A00", color: "#FF6A00", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.08em", textDecoration: "none", transition: "all 0.3s ease" }}
-                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#FF6A00"; e.currentTarget.style.color = "#000"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "#FF6A00"; }}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 8, border: "2px solid #0057DE", color: "#0057DE", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.08em", textDecoration: "none", transition: "all 0.3s ease" }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#0057DE"; e.currentTarget.style.color = "#000"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "#0057DE"; }}
                 >
                   Fale com um Especialista <ArrowRight size={14} />
                 </Link>
               </div>
               <div className="relative overflow-hidden">
                 <img loading="lazy" src={sector.image} alt={sector.overline} className="w-full object-cover" style={{ aspectRatio: "4/3", display: "block" }} />
-                <div style={{ position: "absolute", bottom: 0, left: 0, width: "100%", height: 4, backgroundColor: "#FF6A00" }} />
+                <div style={{ position: "absolute", bottom: 0, left: 0, width: "100%", height: 4, backgroundColor: "#0057DE" }} />
               </div>
             </div>
           </AnimateOnScroll>
@@ -112,7 +112,7 @@ export default function SectorPage() {
             {sector.stats.map((s, i) => (
               <AnimateOnScroll key={s.label} delay={i * 0.1}>
                 <div style={{ textAlign: "center" }}>
-                  <span style={{ fontFamily: KNOCKOUT, fontSize: "clamp(40px, 5vw, 64px)", fontWeight: 500, lineHeight: 1, color: "#FF6A00", display: "block" }}>
+                  <span style={{ fontFamily: KNOCKOUT, fontSize: "clamp(40px, 5vw, 64px)", fontWeight: 500, lineHeight: 1, color: "#0057DE", display: "block" }}>
                     {s.value}
                   </span>
                   <span style={{ fontSize: 13, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginTop: 8, display: "block" }}>
@@ -132,7 +132,7 @@ export default function SectorPage() {
         <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px" }}>
           <AnimateOnScroll>
             <div style={{ maxWidth: 600, marginBottom: 60 }}>
-              <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
+              <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
                 DIFERENCIAIS
               </span>
               <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 48px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", color: "#111" }}>
@@ -174,7 +174,7 @@ export default function SectorPage() {
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.5fr] gap-16 lg:gap-24">
               {/* Left — sticky title */}
               <div style={{ position: "sticky", top: 120, alignSelf: "start" }}>
-                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
+                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
                   APLICAÇÕES
                 </span>
                 <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 48px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", color: "#fff", marginBottom: 24 }}>
@@ -190,7 +190,7 @@ export default function SectorPage() {
                 {sector.applications.map((app, i) => (
                   <AnimateOnScroll key={i} delay={i * 0.05}>
                     <div style={{ display: "flex", gap: 24, padding: "28px 0", borderBottom: i < sector.applications.length - 1 ? "1px solid rgba(255,255,255,0.08)" : "none" }}>
-                      <span style={{ fontFamily: KNOCKOUT, fontSize: 42, fontWeight: 500, color: "#FF6A00", lineHeight: 1, flexShrink: 0, width: 60 }}>
+                      <span style={{ fontFamily: KNOCKOUT, fontSize: 42, fontWeight: 500, color: "#0057DE", lineHeight: 1, flexShrink: 0, width: 60 }}>
                         {String(i + 1).padStart(2, "0")}
                       </span>
                       <div style={{ paddingTop: 6 }}>
@@ -215,7 +215,7 @@ export default function SectorPage() {
           <AnimateOnScroll>
             <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6" style={{ marginBottom: 60 }}>
               <div>
-                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
+                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
                   PRODUTOS
                 </span>
                 <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 48px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", color: "#111" }}>
@@ -225,7 +225,7 @@ export default function SectorPage() {
               <Link
                 to="/produtos"
                 style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: "#111", textDecoration: "none", textTransform: "uppercase", letterSpacing: "0.08em", transition: "color 0.3s", flexShrink: 0 }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = "#FF6A00"; }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = "#0057DE"; }}
                 onMouseLeave={(e) => { e.currentTarget.style.color = "#111"; }}
               >
                 Ver catálogo completo <ArrowRight size={14} />
@@ -238,7 +238,7 @@ export default function SectorPage() {
               <AnimateOnScroll key={prod.category} delay={i * 0.08}>
                 <div
                   style={{ backgroundColor: "#f7f7f7", padding: "36px 28px", height: "100%", transition: "all 0.3s", cursor: "default", borderBottom: "3px solid transparent", position: "relative" }}
-                  onMouseEnter={(e) => { e.currentTarget.style.borderBottomColor = "#FF6A00"; e.currentTarget.style.transform = "translateY(-4px)"; e.currentTarget.style.boxShadow = "0 12px 40px rgba(0,0,0,0.08)"; }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderBottomColor = "#0057DE"; e.currentTarget.style.transform = "translateY(-4px)"; e.currentTarget.style.boxShadow = "0 12px 40px rgba(0,0,0,0.08)"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.borderBottomColor = "transparent"; e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "none"; }}
                 >
                   <span style={{ fontFamily: KNOCKOUT, fontSize: 42, fontWeight: 500, color: "rgba(255,106,0,0.12)", lineHeight: 1, display: "block", marginBottom: 16 }}>
@@ -265,7 +265,7 @@ export default function SectorPage() {
           <AnimateOnScroll>
             <div className="flex flex-col lg:flex-row lg:items-center gap-12">
               <div style={{ flexShrink: 0, maxWidth: 360 }}>
-                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
+                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
                   SERVIÇOS
                 </span>
                 <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(28px, 3.5vw, 40px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", color: "#fff" }}>
@@ -278,10 +278,10 @@ export default function SectorPage() {
                     <Link
                       to="/contato"
                       style={{ display: "inline-flex", alignItems: "center", gap: 10, border: "1px solid rgba(255,255,255,0.12)", color: "#fff", padding: "16px 24px", fontSize: 14, fontWeight: 600, textDecoration: "none", transition: "all 0.3s" }}
-                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#FF6A00"; e.currentTarget.style.color = "#FF6A00"; }}
+                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#0057DE"; e.currentTarget.style.color = "#0057DE"; }}
                       onMouseLeave={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)"; e.currentTarget.style.color = "#fff"; }}
                     >
-                      <ChevronRight size={14} color="#FF6A00" />
+                      <ChevronRight size={14} color="#0057DE" />
                       {srv}
                     </Link>
                   </AnimateOnScroll>
@@ -293,15 +293,15 @@ export default function SectorPage() {
       </section>
 
       {/* ═══════════════════════════════════════════════════
-          8) OUTROS SETORES — image cards with overlay
+          8) OUTRAS INDÚSTRIAS — image cards with overlay
          ═══════════════════════════════════════════════════ */}
       <section style={{ backgroundColor: "#000", padding: "100px 0" }}>
         <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px" }}>
           <AnimateOnScroll>
             <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6" style={{ marginBottom: 60 }}>
               <div>
-                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
-                  OUTROS SETORES
+                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
+                  OUTRAS INDÚSTRIAS
                 </span>
                 <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 48px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", color: "#fff" }}>
                   Explore Mais Setores
@@ -310,7 +310,7 @@ export default function SectorPage() {
               <Link
                 to="/setores"
                 style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: "#fff", textDecoration: "none", textTransform: "uppercase", letterSpacing: "0.08em", transition: "color 0.3s", flexShrink: 0 }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = "#FF6A00"; }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = "#0057DE"; }}
                 onMouseLeave={(e) => { e.currentTarget.style.color = "#fff"; }}
               >
                 Ver todos os setores <ArrowRight size={14} />
@@ -331,21 +331,21 @@ export default function SectorPage() {
                     />
                     <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.3) 50%, rgba(0,0,0,0.1) 100%)" }} />
                     <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: 24 }}>
-                      <span style={{ display: "block", fontSize: 10, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 8 }}>
+                      <span style={{ display: "block", fontSize: 10, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#0057DE", marginBottom: 8 }}>
                         {s.overline}
                       </span>
-                      <span style={{ display: "block", fontSize: 16, fontWeight: 600, color: "#fff", lineHeight: 1.3, transition: "color 0.3s" }} className="group-hover:text-[#FF6A00]">
+                      <span style={{ display: "block", fontSize: 16, fontWeight: 600, color: "#fff", lineHeight: 1.3, transition: "color 0.3s" }} className="group-hover:text-[#0057DE]">
                         {s.title.length > 60 ? s.title.substring(0, 60) + "..." : s.title}
                       </span>
                       <div
-                        style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 12, fontSize: 11, fontWeight: 700, color: "#FF6A00", textTransform: "uppercase", letterSpacing: "0.1em", opacity: 0, transform: "translateY(8px)", transition: "all 0.3s ease" }}
+                        style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 12, fontSize: 11, fontWeight: 700, color: "#0057DE", textTransform: "uppercase", letterSpacing: "0.1em", opacity: 0, transform: "translateY(8px)", transition: "all 0.3s ease" }}
                         className="group-hover:opacity-100 group-hover:translate-y-0"
                       >
                         Ver setor <ArrowRight size={12} />
                       </div>
                     </div>
                     <div
-                      style={{ position: "absolute", bottom: 0, left: 0, width: "0%", height: 3, backgroundColor: "#FF6A00", transition: "width 0.4s ease" }}
+                      style={{ position: "absolute", bottom: 0, left: 0, width: "0%", height: 3, backgroundColor: "#0057DE", transition: "width 0.4s ease" }}
                       className="group-hover:w-full"
                     />
                   </Link>

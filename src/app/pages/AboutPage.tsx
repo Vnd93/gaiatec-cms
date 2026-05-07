@@ -45,7 +45,7 @@ export const AboutPage = () => {
         <div className="absolute inset-0 z-10 flex items-center px-6">
           <div className="container mx-auto">
             <div className="max-w-3xl mx-[25px] my-[0px]">
-              <div className="text-orange-500 font-bold uppercase tracking-wider mb-4 text-[12px]">
+              <div className="text-[#0057DE] font-bold uppercase tracking-wider mb-4 text-[12px]">
                 Institucional
               </div>
               <h1 className="text-3xl md:text-4xl font-bold text-white mb-6 leading-tight">
@@ -67,7 +67,7 @@ export const AboutPage = () => {
               <h2 className="text-2xl md:text-3xl font-bold text-gray-900 leading-tight">
                 A empresa
               </h2>
-              <div className="w-12 h-1 bg-orange-500 mt-5"></div>
+              <div className="w-12 h-1 bg-[#0057DE] mt-5"></div>
             </div>
 
             <div className="md:col-span-7 space-y-5">
@@ -93,7 +93,7 @@ export const AboutPage = () => {
               <h2 className="text-2xl md:text-3xl font-bold text-gray-900 leading-tight">
                 Princípios
               </h2>
-              <div className="w-12 h-1 bg-orange-500 mt-5"></div>
+              <div className="w-12 h-1 bg-[#0057DE] mt-5"></div>
             </div>
 
             <div className="md:col-span-8">
@@ -165,7 +165,7 @@ export const AboutPage = () => {
               <h2 className="text-2xl md:text-3xl font-bold text-gray-900 leading-tight mb-5">
                 Engenharia aplicada à educação
               </h2>
-              <div className="w-12 h-1 bg-orange-500 mb-6"></div>
+              <div className="w-12 h-1 bg-[#0057DE] mb-6"></div>
 
               <p className="text-gray-700 leading-relaxed mb-5">
                 A Gaiatec Sistemas atua em projetos educacionais que levam tecnologia aplicada para dentro de ambientes escolares, transformando conceitos técnicos em experiências de aprendizado práticas.
@@ -237,7 +237,7 @@ export const AboutPage = () => {
               href="https://wa.me/551122071986"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center justify-center bg-orange-500 hover:bg-orange-600 text-white font-semibold px-8 py-4 transition-colors text-[14px] rounded-[7px]"
+              className="inline-flex items-center justify-center bg-[#0057DE] hover:bg-[#0046b3] text-white font-semibold px-8 py-4 transition-colors text-[14px] rounded-[7px]"
             >
               Falar com Especialista
             </a>

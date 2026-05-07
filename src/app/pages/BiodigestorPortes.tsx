@@ -129,7 +129,7 @@ const accessories = [
    ──────────────────────────────────────────────────────── */
 const heading = (overline: string, title: string, light = false) => (
   <div className="text-center" style={{ marginBottom: 48 }}>
-    <span style={{ display: "inline-block", fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: light ? "#1a7f4c" : "#FF6A00", marginBottom: 12 }}>
+    <span style={{ display: "inline-block", fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: light ? "#1a7f4c" : "#0057DE", marginBottom: 12 }}>
       {overline}
     </span>
     <h2 style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: "clamp(28px, 3vw, 36px)", fontWeight: 400, lineHeight: 1.15, textTransform: "uppercase", color: light ? "#fff" : "#1a1a1a" }}>
@@ -157,7 +157,7 @@ export default function BiodigestorPortes() {
           className="relative z-10 flex flex-col justify-end h-full"
           style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px 100px 30px" }}
         >
-          <span style={{ display: "inline-block", fontSize: 13, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
+          <span style={{ display: "inline-block", fontSize: 13, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
             PORTES GT-BIODIGEST
           </span>
           <h1 style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: "clamp(41px, 6vw, 85px)", fontWeight: 500, lineHeight: 0.95, textTransform: "uppercase", color: "#fff", maxWidth: 800, margin: 0 }}>
@@ -188,7 +188,7 @@ export default function BiodigestorPortes() {
           <AnimateOnScroll>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-center">
               <div>
-                <span style={{ display: "inline-block", fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
+                <span style={{ display: "inline-block", fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
                   Linha de Produtos
                 </span>
                 <h2 style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: "clamp(28px, 3vw, 36px)", fontWeight: 400, lineHeight: 1.15, textTransform: "uppercase", marginBottom: 24, color: "#1a1a1a" }}>
@@ -203,7 +203,7 @@ export default function BiodigestorPortes() {
               </div>
               <div className="relative overflow-hidden" style={{ borderRadius: 4 }}>
                 <img loading="lazy" src={INTRO_IMG} alt="Biodigestor GT-BIODIGEST" className="w-full h-full object-cover" style={{ aspectRatio: "16/11", display: "block" }} />
-                <div className="absolute bottom-0 left-0" style={{ width: 80, height: 4, backgroundColor: "#FF6A00" }} />
+                <div className="absolute bottom-0 left-0" style={{ width: 80, height: 4, backgroundColor: "#0057DE" }} />
               </div>
             </div>
           </AnimateOnScroll>
@@ -236,15 +236,15 @@ export default function BiodigestorPortes() {
                   <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-0">
                     {/* Left — model identity */}
                     <div style={{ backgroundColor: "#0a0a0a", padding: "32px 28px", display: "flex", flexDirection: "column", justifyContent: "center", position: "relative", overflow: "hidden" }}>
-                      <div style={{ position: "absolute", top: 0, left: 0, width: 4, height: "100%", backgroundColor: "#FF6A00" }} />
-                      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 8, display: "block" }}>
+                      <div style={{ position: "absolute", top: 0, left: 0, width: 4, height: "100%", backgroundColor: "#0057DE" }} />
+                      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#0057DE", marginBottom: 8, display: "block" }}>
                         {m.porte}
                       </span>
                       <h4 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(24px, 2.5vw, 32px)", fontWeight: 500, color: "#fff", textTransform: "uppercase", lineHeight: 1.05, marginBottom: 16 }}>
                         {m.name}
                       </h4>
                       <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 12 }}>
-                        <span style={{ fontFamily: KNOCKOUT, fontSize: 42, fontWeight: 500, color: "#FF6A00", lineHeight: 1 }}>
+                        <span style={{ fontFamily: KNOCKOUT, fontSize: 42, fontWeight: 500, color: "#0057DE", lineHeight: 1 }}>
                           {m.highlight}
                         </span>
                         <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
@@ -275,9 +275,9 @@ export default function BiodigestorPortes() {
                         <Link
                           to="/contato"
                           className="group"
-                          style={{ display: "inline-flex", alignItems: "center", gap: 8, border: "2px solid #FF6A00", color: "#FF6A00", padding: "10px 24px", fontWeight: 700, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.08em", textDecoration: "none", transition: "all 0.3s ease" }}
-                          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#FF6A00"; e.currentTarget.style.color = "#000"; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "#FF6A00"; }}
+                          style={{ display: "inline-flex", alignItems: "center", gap: 8, border: "2px solid #0057DE", color: "#0057DE", padding: "10px 24px", fontWeight: 700, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.08em", textDecoration: "none", transition: "all 0.3s ease" }}
+                          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#0057DE"; e.currentTarget.style.color = "#000"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "#0057DE"; }}
                         >
                           Solicitar Orçamento <ArrowRight size={12} />
                         </Link>
@@ -305,11 +305,11 @@ export default function BiodigestorPortes() {
               <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 800 }}>
                 <thead>
                   <tr>
-                    <th style={{ backgroundColor: "#FF6A00", color: "#000", padding: "14px 16px", fontSize: 13, fontWeight: 700, textAlign: "left", textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: "2px solid #e5b800" }}>
+                    <th style={{ backgroundColor: "#0057DE", color: "#000", padding: "14px 16px", fontSize: 13, fontWeight: 700, textAlign: "left", textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: "2px solid #e5b800" }}>
                       Especificação
                     </th>
                     {["10.0", "8.0", "5.0", "3.0", "2.0"].map((m) => (
-                      <th key={m} style={{ backgroundColor: "#FF6A00", color: "#000", padding: "14px 16px", fontSize: 13, fontWeight: 700, textAlign: "center", textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: "2px solid #e5b800", borderLeft: "1px solid rgba(0,0,0,0.1)" }}>
+                      <th key={m} style={{ backgroundColor: "#0057DE", color: "#000", padding: "14px 16px", fontSize: 13, fontWeight: 700, textAlign: "center", textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: "2px solid #e5b800", borderLeft: "1px solid rgba(0,0,0,0.1)" }}>
                         GT-{m}
                       </th>
                     ))}
@@ -333,7 +333,7 @@ export default function BiodigestorPortes() {
             </div>
 
             {/* Technical note */}
-            <div style={{ marginTop: 24, borderLeft: "3px solid #FF6A00", paddingLeft: 16 }}>
+            <div style={{ marginTop: 24, borderLeft: "3px solid #0057DE", paddingLeft: 16 }}>
               <p style={{ fontSize: 13, color: "#888", lineHeight: 1.6 }}>
                 <strong style={{ color: "#ccc" }}>Observação técnica:</strong> Os valores apresentados representam capacidades máximas de referência. O desempenho real do sistema depende de: tipo e composição do resíduo orgânico, frequência e regularidade da alimentação, condições operacionais e climáticas, controle do processo e instrumentação instalada.
               </p>
@@ -373,12 +373,12 @@ export default function BiodigestorPortes() {
                       alt={acc.name}
                       style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", objectFit: "cover" }}
                     />
-                    <div className="absolute bottom-0 left-0" style={{ width: 60, height: 4, backgroundColor: "#FF6A00" }} />
+                    <div className="absolute bottom-0 left-0" style={{ width: 60, height: 4, backgroundColor: "#0057DE" }} />
                   </div>
 
                   {/* Specs — right */}
                   <div style={{ padding: "32px 28px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-                    <span style={{ display: "inline-block", fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 8 }}>
+                    <span style={{ display: "inline-block", fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#0057DE", marginBottom: 8 }}>
                       Acessório
                     </span>
                     <h3 style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: 24, fontWeight: 400, color: "#1a1a1a", marginBottom: 12, textTransform: "uppercase" }}>
@@ -400,7 +400,7 @@ export default function BiodigestorPortes() {
                     <Link
                       to="/contato"
                       style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, color: "#1a1a1a", textDecoration: "none", textTransform: "uppercase", letterSpacing: "0.5px", transition: "color 0.3s ease" }}
-                      onMouseEnter={(e) => { e.currentTarget.style.color = "#FF6A00"; }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = "#0057DE"; }}
                       onMouseLeave={(e) => { e.currentTarget.style.color = "#1a1a1a"; }}
                     >
                       Solicitar Informações <ArrowRight size={12} />
@@ -432,16 +432,16 @@ export default function BiodigestorPortes() {
               <div className="flex flex-wrap gap-4 justify-center lg:justify-end" style={{ flexShrink: 0 }}>
                 <Link
                   to="/contato"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 8, backgroundColor: "#FF6A00", color: "#000", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.5px", textDecoration: "none", borderRadius: 4, transition: "all 0.3s ease" }}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 8, backgroundColor: "#0057DE", color: "#000", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.5px", textDecoration: "none", borderRadius: 4, transition: "all 0.3s ease" }}
                   onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#e5b800"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#FF6A00"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#0057DE"; }}
                 >
                   Solicitar Orçamento <ChevronRight size={14} />
                 </Link>
                 <Link
                   to="/contato"
                   style={{ display: "inline-flex", alignItems: "center", gap: 8, backgroundColor: "transparent", color: "#fff", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.5px", textDecoration: "none", borderRadius: 4, border: "2px solid #444", transition: "all 0.3s ease" }}
-                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#FF6A00"; e.currentTarget.style.color = "#FF6A00"; }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#0057DE"; e.currentTarget.style.color = "#0057DE"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#444"; e.currentTarget.style.color = "#fff"; }}
                 >
                   Fale com um Especialista <ChevronRight size={14} />

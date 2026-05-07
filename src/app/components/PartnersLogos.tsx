@@ -36,7 +36,7 @@ export function PartnersLogos() {
             <AnimateOnScroll key={`${cert.name}-${i}`} direction="up" delay={i * 0.1}>
               <div className="flex flex-col items-center gap-3 group cursor-default">
                 <div
-                  className="w-[90px] h-[90px] md:w-[110px] md:h-[110px] border-2 border-[#FF6A00] flex items-center justify-center transition-all duration-300 group-hover:bg-[#FF6A00] overflow-hidden"
+                  className="w-[90px] h-[90px] md:w-[110px] md:h-[110px] border-2 border-[#0057DE] flex items-center justify-center transition-all duration-300 group-hover:bg-[#0057DE] overflow-hidden"
                   style={{ borderRadius: "50%" }}
                 >
                   {cert.image ? (
@@ -47,7 +47,7 @@ export function PartnersLogos() {
                     />
                   ) : (
                     <span
-                      className="text-[#FF6A00] group-hover:text-black transition-colors duration-300"
+                      className="text-[#0057DE] group-hover:text-black transition-colors duration-300"
                       style={{ fontSize: 18, fontWeight: 800, letterSpacing: "0.5px", fontFamily: "Arial, sans-serif" }}
                     >
                       {cert.name}
@@ -69,7 +69,7 @@ export function PartnersLogos() {
             { value: "INMETRO", label: "Homologado" },
             { value: "ISO", label: "Certificado" },
             { value: "+20", label: "Anos de Experiência" },
-            { value: "11", label: "Setores Atendidos" },
+            { value: "11", label: "Indústrias Atendidas" },
           ].map((item) => (
             <AnimateOnScroll key={item.label} direction="up">
               <div className="py-4">

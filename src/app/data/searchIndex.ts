@@ -12,7 +12,7 @@ export interface SearchItem {
 
 export const searchIndex: SearchItem[] = [
   // ── SETORES ──
-  { label: "Saneamento", category: "Setor", href: "/setores/saneamento", keywords: "água esgoto tratamento distribuição macromedição ultrassônico vazão" },
+  { label: "Saneamento / Líquido", category: "Indústria", href: "/setores/saneamento", keywords: "água esgoto tratamento distribuição macromedição ultrassônico vazão" },
   { label: "Gás e Petróleo", category: "Setor", href: "/setores/gas-petroleo", keywords: "refinaria petroquímica exploração gás natural gasoduto" },
   { label: "Biogás e Biometano", category: "Setor", href: "/setores/biogas-biometano", keywords: "biodigestor energia renovável metano biomassa" },
   { label: "Proteção Catódica", category: "Setor", href: "/setores/protecao-catodica", keywords: "corrosão tubulação pipeline dutos revestimento" },

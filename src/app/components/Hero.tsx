@@ -173,7 +173,7 @@ export const Hero = () => {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 1 }}
             >
-              <button className="inline-flex items-center justify-center bg-orange-500 hover:bg-orange-600 text-white font-semibold px-5 py-2 text-sm rounded-md shadow transition-all">
+              <button className="inline-flex items-center justify-center bg-[#0057DE] hover:bg-[#0046b3] text-white font-semibold px-5 py-2 text-sm rounded-md shadow transition-all">
                 Solicitar Orçamento
               </button>
               <button className="inline-flex items-center justify-center bg-transparent border border-white text-white hover:bg-white hover:text-gray-900 font-semibold px-5 py-2 text-sm rounded-md transition-all">

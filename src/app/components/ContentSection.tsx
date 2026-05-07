@@ -122,7 +122,7 @@ export function ContentSection() {
     for (let i = 0; i < lettersRef.current.length; i++) {
       const el = lettersRef.current[i];
       if (!el) continue;
-      const target = i < filledCount ? "#000000" : "#FF6A00";
+      const target = i < filledCount ? "#000000" : "#0057DE";
       if (el.style.color !== target) el.style.color = target;
     }
   }, []);
@@ -201,7 +201,7 @@ export function ContentSection() {
               lineHeight: "80px",
               textTransform: "uppercase",
               transitionDuration: "0.2s",
-              color: "#FF6A00",
+              color: "#0057DE",
             }}
           >
             {char}
@@ -382,8 +382,8 @@ export function ContentSection() {
                     <h2
                       className="sec2-h2-title"
                       style={{
-                        borderColor: "rgb(255, 106, 0)",
-                        color: "rgb(255, 106, 0)",
+                        borderColor: "rgb(0, 87, 222)",
+                        color: "rgb(0, 87, 222)",
                         fontFamily: KNOCKOUT,
                         fontSize: 160,
                         fontWeight: 500,

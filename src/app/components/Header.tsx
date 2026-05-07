@@ -30,10 +30,10 @@ function adaptApiMenu(items: SiteMenuItem[]): NavItem[] {
    ──────────────────────────────────────────────────────── */
 const navItems = [
   {
-    label: "Setores",
+    label: "Indústrias",
     href: "/setores",
     children: [
-      { label: "Saneamento", href: "/setores/saneamento" },
+      { label: "Saneamento / Líquido", href: "/setores/saneamento" },
       { label: "Gás e Petróleo", href: "/setores/gas-petroleo" },
       { label: "Biogás e Biometano", href: "/setores/biogas-biometano" },
       { label: "Proteção Catódica", href: "/setores/protecao-catodica" },

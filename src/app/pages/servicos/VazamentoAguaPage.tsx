@@ -19,7 +19,7 @@ export const VazamentoAguaPage = () => {
 
         <div className="container mx-auto px-6 h-full flex items-center relative z-10">
           <div className="max-w-3xl mx-[25px] my-[0px]">
-            <div className="text-orange-500 font-bold uppercase tracking-wider mb-4 text-[12px]">
+            <div className="text-[#0057DE] font-bold uppercase tracking-wider mb-4 text-[12px]">
               Serviços / Integridade, Segurança & Monitoramento
             </div>
             <h1 className="text-3xl md:text-4xl font-bold text-white mb-6 leading-tight">
@@ -40,7 +40,7 @@ export const VazamentoAguaPage = () => {
               <h2 className="text-2xl md:text-3xl font-bold text-gray-900 leading-tight">
                 O que é a pesquisa de vazamento de água
               </h2>
-              <div className="w-12 h-1 bg-orange-500 mt-5"></div>
+              <div className="w-12 h-1 bg-[#0057DE] mt-5"></div>
             </div>
 
             <div className="md:col-span-7 text-gray-700 leading-relaxed space-y-5">
@@ -172,7 +172,7 @@ export const VazamentoAguaPage = () => {
               <h2 className="text-2xl md:text-3xl font-bold text-gray-900 leading-tight">
                 Principais soluções oferecidas
               </h2>
-              <div className="w-12 h-1 bg-orange-500 mt-5"></div>
+              <div className="w-12 h-1 bg-[#0057DE] mt-5"></div>
             </div>
 
             <div className="md:col-span-7">
@@ -219,7 +219,7 @@ export const VazamentoAguaPage = () => {
               <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-4">
                 Medidor Ultrassônico para Água
               </h2>
-              <div className="w-12 h-1 bg-orange-500 mb-8"></div>
+              <div className="w-12 h-1 bg-[#0057DE] mb-8"></div>
 
               <div className="text-gray-700 leading-relaxed space-y-5">
                 <p>
@@ -283,7 +283,7 @@ export const VazamentoAguaPage = () => {
               <h2 className="text-2xl md:text-3xl font-bold text-gray-900 leading-tight">
                 Como a Gaiatec atua na prática
               </h2>
-              <div className="w-12 h-1 bg-orange-500 mt-5"></div>
+              <div className="w-12 h-1 bg-[#0057DE] mt-5"></div>
               <p className="text-gray-600 leading-relaxed mt-5">
                 Metodologia técnica para identificação precisa de vazamentos — do levantamento inicial ao laudo final.
               </p>
@@ -385,7 +385,7 @@ export const VazamentoAguaPage = () => {
               href="https://wa.me/551122071986"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center justify-center bg-orange-500 hover:bg-orange-600 text-white font-semibold px-8 py-4 transition-colors text-[14px] rounded-[7px]"
+              className="inline-flex items-center justify-center bg-[#0057DE] hover:bg-[#0046b3] text-white font-semibold px-8 py-4 transition-colors text-[14px] rounded-[7px]"
             >
               Falar com Especialista
             </a>

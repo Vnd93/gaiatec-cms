@@ -138,7 +138,7 @@ export default function ContatoPage() {
           className="relative z-10 flex flex-col justify-end h-full"
           style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px 100px 30px" }}
         >
-          <span style={{ display: "inline-block", fontSize: 13, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
+          <span style={{ display: "inline-block", fontSize: 13, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
             CONTATO
           </span>
           <h1 style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: "clamp(41px, 6vw, 85px)", fontWeight: 500, lineHeight: 0.95, textTransform: "uppercase", color: "#fff", maxWidth: 800, margin: 0 }}>
@@ -209,7 +209,7 @@ export default function ContatoPage() {
                     onChange={(e) => set("firstName", e.target.value)}
                     style={inputBase}
                     onFocus={(e) => {
-                      e.currentTarget.style.borderColor = "#FF6A00";
+                      e.currentTarget.style.borderColor = "#0057DE";
                     }}
                     onBlur={(e) => {
                       e.currentTarget.style.borderColor = "#e5e5e5";
@@ -223,7 +223,7 @@ export default function ContatoPage() {
                     onChange={(e) => set("lastName", e.target.value)}
                     style={inputBase}
                     onFocus={(e) => {
-                      e.currentTarget.style.borderColor = "#FF6A00";
+                      e.currentTarget.style.borderColor = "#0057DE";
                     }}
                     onBlur={(e) => {
                       e.currentTarget.style.borderColor = "#e5e5e5";
@@ -241,7 +241,7 @@ export default function ContatoPage() {
                     onChange={(e) => set("email", e.target.value)}
                     style={inputBase}
                     onFocus={(e) => {
-                      e.currentTarget.style.borderColor = "#FF6A00";
+                      e.currentTarget.style.borderColor = "#0057DE";
                     }}
                     onBlur={(e) => {
                       e.currentTarget.style.borderColor = "#e5e5e5";
@@ -262,7 +262,7 @@ export default function ContatoPage() {
                     onChange={(e) => set("phone", e.target.value)}
                     style={inputBase}
                     onFocus={(e) => {
-                      e.currentTarget.style.borderColor = "#FF6A00";
+                      e.currentTarget.style.borderColor = "#0057DE";
                     }}
                     onBlur={(e) => {
                       e.currentTarget.style.borderColor = "#e5e5e5";
@@ -275,7 +275,7 @@ export default function ContatoPage() {
                     onChange={(e) => set("company", e.target.value)}
                     style={inputBase}
                     onFocus={(e) => {
-                      e.currentTarget.style.borderColor = "#FF6A00";
+                      e.currentTarget.style.borderColor = "#0057DE";
                     }}
                     onBlur={(e) => {
                       e.currentTarget.style.borderColor = "#e5e5e5";
@@ -297,7 +297,7 @@ export default function ContatoPage() {
                       backgroundPosition: "right 16px center",
                     }}
                     onFocus={(e) => {
-                      e.currentTarget.style.borderColor = "#FF6A00";
+                      e.currentTarget.style.borderColor = "#0057DE";
                     }}
                     onBlur={(e) => {
                       e.currentTarget.style.borderColor = "#e5e5e5";
@@ -322,7 +322,7 @@ export default function ContatoPage() {
                     onChange={(e) => set("message", e.target.value)}
                     style={{ ...inputBase, resize: "none" as const }}
                     onFocus={(e) => {
-                      e.currentTarget.style.borderColor = "#FF6A00";
+                      e.currentTarget.style.borderColor = "#0057DE";
                     }}
                     onBlur={(e) => {
                       e.currentTarget.style.borderColor = "#e5e5e5";
@@ -342,7 +342,7 @@ export default function ContatoPage() {
                       onChange={(e) => set("consent", e.target.checked)}
                       style={{
                         marginTop: 3,
-                        accentColor: "#FF6A00",
+                        accentColor: "#0057DE",
                         width: 16,
                         height: 16,
                         flexShrink: 0,
@@ -370,7 +370,7 @@ export default function ContatoPage() {
                   type="submit"
                   style={{
                     width: "100%",
-                    backgroundColor: "#FF6A00",
+                    backgroundColor: "#0057DE",
                     color: "#fff",
                     padding: "16px 24px",
                     fontWeight: 700,
@@ -386,7 +386,7 @@ export default function ContatoPage() {
                     e.currentTarget.style.backgroundColor = "#e5960e";
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = "#FF6A00";
+                    e.currentTarget.style.backgroundColor = "#0057DE";
                   }}
                 >
                   Enviar Mensagem
@@ -461,12 +461,12 @@ export default function ContatoPage() {
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
-                            border: "1px solid #FF6A00",
+                            border: "1px solid #0057DE",
                             borderRadius: 4,
                             flexShrink: 0,
                           }}
                         >
-                          <Icon size={20} style={{ color: "#FF6A00" }} />
+                          <Icon size={20} style={{ color: "#0057DE" }} />
                         </div>
                         <div style={{ flex: 1 }}>
                           <h4
@@ -536,7 +536,7 @@ export default function ContatoPage() {
             style={{ maxWidth: 1200, margin: "0 auto" }}
             className="flex items-center gap-3"
           >
-            <MapPin size={16} style={{ color: "#FF6A00", flexShrink: 0 }} />
+            <MapPin size={16} style={{ color: "#0057DE", flexShrink: 0 }} />
             <span style={{ fontSize: 14, color: "#fff", fontWeight: 600 }}>
               Rua Heroi da Forca Expedicionaria Brasileira, 22 — Parque Novo Mundo, Sao Paulo/SP — CEP: 02188-040
             </span>
@@ -579,7 +579,7 @@ export default function ContatoPage() {
                   fontWeight: 700,
                   letterSpacing: "0.15em",
                   textTransform: "uppercase",
-                  color: "#FF6A00",
+                  color: "#0057DE",
                   marginBottom: 12,
                 }}
               >
@@ -625,11 +625,11 @@ export default function ContatoPage() {
                     }}
                   >
                     {/* Yellow top accent */}
-                    <div style={{ height: 4, backgroundColor: "#FF6A00" }} />
+                    <div style={{ height: 4, backgroundColor: "#0057DE" }} />
                     <div style={{ padding: "28px 22px" }}>
                       <Icon
                         size={28}
-                        style={{ color: "#FF6A00", marginBottom: 16 }}
+                        style={{ color: "#0057DE", marginBottom: 16 }}
                       />
                       <h4
                         style={{
@@ -666,7 +666,7 @@ export default function ContatoPage() {
             >
               <Shield
                 size={40}
-                style={{ color: "#FF6A00", margin: "0 auto 20px" }}
+                style={{ color: "#0057DE", margin: "0 auto 20px" }}
               />
               <h3
                 style={{
@@ -691,7 +691,7 @@ export default function ContatoPage() {
                 style={{
                   width: 60,
                   height: 3,
-                  backgroundColor: "#FF6A00",
+                  backgroundColor: "#0057DE",
                   margin: "28px auto 0",
                 }}
               />
@@ -737,7 +737,7 @@ export default function ContatoPage() {
                     display: "inline-flex",
                     alignItems: "center",
                     gap: 8,
-                    backgroundColor: "#FF6A00",
+                    backgroundColor: "#0057DE",
                     color: "#000",
                     padding: "14px 32px",
                     fontWeight: 700,
@@ -752,7 +752,7 @@ export default function ContatoPage() {
                     e.currentTarget.style.backgroundColor = "#e5b800";
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = "#FF6A00";
+                    e.currentTarget.style.backgroundColor = "#0057DE";
                   }}
                 >
                   Fale com um Especialista <ChevronRight size={14} />
@@ -776,8 +776,8 @@ export default function ContatoPage() {
                     transition: "all 0.3s ease",
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = "#FF6A00";
-                    e.currentTarget.style.color = "#FF6A00";
+                    e.currentTarget.style.borderColor = "#0057DE";
+                    e.currentTarget.style.color = "#0057DE";
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.borderColor = "#444";

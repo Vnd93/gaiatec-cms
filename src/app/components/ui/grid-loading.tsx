@@ -28,7 +28,7 @@ export default function UniqueLoading({
           {Array.from({ length: 9 }).map((_, i) => (
             <div
               key={i}
-              className="bg-orange-500 animate-pulse"
+              className="bg-[#0057DE] animate-pulse"
               style={{
                 animationDelay: `${i * 0.1}s`,
                 animationDuration: "1.5s",

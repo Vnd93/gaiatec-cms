@@ -47,7 +47,7 @@ const FALLBACK_TIMELINE = [
 
 const FALLBACK_DIFERENCIAIS = [
   { iconName: "💼", title: "20+ anos de experiência", desc: "Portfólio técnico amplo e credibilidade de mercado" },
-  { iconName: "🎯", title: "11 Setores Atendidos", desc: "Atuação transversal na indústria brasileira" },
+  { iconName: "🎯", title: "11 Indústrias Atendidas", desc: "Atuação transversal na indústria brasileira" },
   { iconName: "👥", title: "Equipe especializada", desc: "Engenheiros e técnicos com expertise em campo" },
   { iconName: "⚙️", title: "Projetos sob medida", desc: "Cada solução dimensionada para a realidade do cliente" },
 ];
@@ -146,7 +146,7 @@ export default function SobrePage() {
           className="relative z-10 flex flex-col justify-end h-full"
           style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px 100px 30px" }}
         >
-          <span style={{ display: "inline-block", fontSize: 13, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
+          <span style={{ display: "inline-block", fontSize: 13, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
             SOBRE
           </span>
           <h1 style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: "clamp(41px, 6vw, 85px)", fontWeight: 500, lineHeight: 0.95, textTransform: "uppercase", color: "#fff", maxWidth: 800, margin: 0 }}>
@@ -185,7 +185,7 @@ export default function SobrePage() {
                     fontWeight: 700,
                     letterSpacing: "0.15em",
                     textTransform: "uppercase",
-                    color: "#FF6A00",
+                    color: "#0057DE",
                     marginBottom: 16,
                   }}
                 >
@@ -223,7 +223,7 @@ export default function SobrePage() {
                 {/* Yellow accent bar */}
                 <div
                   className="absolute bottom-0 left-0"
-                  style={{ width: 80, height: 4, backgroundColor: "#FF6A00" }}
+                  style={{ width: 80, height: 4, backgroundColor: "#0057DE" }}
                 />
               </div>
             </div>
@@ -245,7 +245,7 @@ export default function SobrePage() {
                   fontWeight: 700,
                   letterSpacing: "0.15em",
                   textTransform: "uppercase",
-                  color: "#FF6A00",
+                  color: "#0057DE",
                   marginBottom: 12,
                 }}
               >
@@ -282,14 +282,14 @@ export default function SobrePage() {
                   }}
                 >
                   {/* Yellow accent top bar */}
-                  <div style={{ height: 4, backgroundColor: "#FF6A00" }} />
+                  <div style={{ height: 4, backgroundColor: "#0057DE" }} />
                   <div style={{ padding: "32px 28px" }}>
                     <span
                       style={{
                         fontFamily: "'Knockout HTF68', sans-serif",
                         fontSize: 48,
                         fontWeight: 400,
-                        color: "#FF6A00",
+                        color: "#0057DE",
                         lineHeight: 1,
                         display: "block",
                         marginBottom: 12,
@@ -501,7 +501,7 @@ export default function SobrePage() {
                   fontWeight: 700,
                   letterSpacing: "0.15em",
                   textTransform: "uppercase",
-                  color: "#FF6A00",
+                  color: "#0057DE",
                   marginBottom: 12,
                 }}
               >
@@ -547,9 +547,9 @@ export default function SobrePage() {
                   }}
                 >
                   {Icon ? (
-                    <Icon size={28} style={{ color: "#FF6A00", marginBottom: 16 }} />
+                    <Icon size={28} style={{ color: "#0057DE", marginBottom: 16 }} />
                   ) : (
-                    <span style={{ fontSize: 28, color: "#FF6A00", marginBottom: 16, display: "block" }}>{emoji}</span>
+                    <span style={{ fontSize: 28, color: "#0057DE", marginBottom: 16, display: "block" }}>{emoji}</span>
                   )}
                   <h4
                     style={{
@@ -605,7 +605,7 @@ export default function SobrePage() {
                     display: "inline-flex",
                     alignItems: "center",
                     gap: 8,
-                    backgroundColor: "#FF6A00",
+                    backgroundColor: "#0057DE",
                     color: "#000",
                     padding: "14px 32px",
                     fontWeight: 700,
@@ -620,7 +620,7 @@ export default function SobrePage() {
                     e.currentTarget.style.backgroundColor = "#e5b800";
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = "#FF6A00";
+                    e.currentTarget.style.backgroundColor = "#0057DE";
                   }}
                 >
                   Solicitar Orcamento <ChevronRight size={14} />
@@ -644,8 +644,8 @@ export default function SobrePage() {
                     transition: "all 0.3s ease",
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = "#FF6A00";
-                    e.currentTarget.style.color = "#FF6A00";
+                    e.currentTarget.style.borderColor = "#0057DE";
+                    e.currentTarget.style.color = "#0057DE";
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.borderColor = "#444";

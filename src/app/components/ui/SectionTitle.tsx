@@ -25,7 +25,7 @@ export const SectionTitle: React.FC<SectionTitleProps> = ({
         {title}
       </h2>
       <div className={cn(
-        "h-1 w-20 bg-orange-500 mt-4 rounded-full",
+        "h-1 w-20 bg-[#0057DE] mt-4 rounded-full",
         align === 'center' ? 'mx-auto' : ''
       )} />
     </div>

@@ -228,7 +228,7 @@ export const EconomicSimulator: React.FC<EconomicSimulatorProps> = ({
                           <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">
                             Payback
                           </div>
-                          <div className="text-2xl font-bold text-orange-600">
+                          <div className="text-2xl font-bold text-[#0046b3]">
                             {payback} {payback === 1 ? 'mês' : 'meses'}
                           </div>
                         </div>

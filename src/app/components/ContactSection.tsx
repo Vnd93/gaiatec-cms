@@ -60,13 +60,13 @@ export function ContactSection() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <input
                   type="text" placeholder="Nome" required
-                  className="w-full bg-white border border-[#e0e0e0] px-4 py-3 text-[14px] text-black placeholder:text-[#999] outline-none focus:border-[#FF6A00] transition-colors"
+                  className="w-full bg-white border border-[#e0e0e0] px-4 py-3 text-[14px] text-black placeholder:text-[#999] outline-none focus:border-[#0057DE] transition-colors"
                   value={formData.firstName}
                   onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
                 />
                 <input
                   type="text" placeholder="Sobrenome" required
-                  className="w-full bg-white border border-[#e0e0e0] px-4 py-3 text-[14px] text-black placeholder:text-[#999] outline-none focus:border-[#FF6A00] transition-colors"
+                  className="w-full bg-white border border-[#e0e0e0] px-4 py-3 text-[14px] text-black placeholder:text-[#999] outline-none focus:border-[#0057DE] transition-colors"
                   value={formData.lastName}
                   onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
                 />
@@ -74,25 +74,25 @@ export function ContactSection() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <input
                   type="email" placeholder="E-mail" required
-                  className="w-full bg-white border border-[#e0e0e0] px-4 py-3 text-[14px] text-black placeholder:text-[#999] outline-none focus:border-[#FF6A00] transition-colors"
+                  className="w-full bg-white border border-[#e0e0e0] px-4 py-3 text-[14px] text-black placeholder:text-[#999] outline-none focus:border-[#0057DE] transition-colors"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 />
                 <input
                   type="tel" placeholder="Telefone / WhatsApp" required
-                  className="w-full bg-white border border-[#e0e0e0] px-4 py-3 text-[14px] text-black placeholder:text-[#999] outline-none focus:border-[#FF6A00] transition-colors"
+                  className="w-full bg-white border border-[#e0e0e0] px-4 py-3 text-[14px] text-black placeholder:text-[#999] outline-none focus:border-[#0057DE] transition-colors"
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                 />
               </div>
               <input
                 type="text" placeholder="Empresa"
-                className="w-full bg-white border border-[#e0e0e0] px-4 py-3 text-[14px] text-black placeholder:text-[#999] outline-none focus:border-[#FF6A00] transition-colors"
+                className="w-full bg-white border border-[#e0e0e0] px-4 py-3 text-[14px] text-black placeholder:text-[#999] outline-none focus:border-[#0057DE] transition-colors"
                 value={formData.company}
                 onChange={(e) => setFormData({ ...formData, company: e.target.value })}
               />
               <select
-                className="w-full bg-white border border-[#e0e0e0] px-4 py-3 text-[14px] text-black outline-none focus:border-[#FF6A00] transition-colors appearance-none"
+                className="w-full bg-white border border-[#e0e0e0] px-4 py-3 text-[14px] text-black outline-none focus:border-[#0057DE] transition-colors appearance-none"
                 value={formData.enquiryType}
                 onChange={(e) => setFormData({ ...formData, enquiryType: e.target.value })}
                 style={{ color: formData.enquiryType ? "#000" : "#999" }}
@@ -102,7 +102,7 @@ export function ContactSection() {
               </select>
               <textarea
                 placeholder="Sua Mensagem" required rows={5}
-                className="w-full bg-white border border-[#e0e0e0] px-4 py-3 text-[14px] text-black placeholder:text-[#999] outline-none focus:border-[#FF6A00] transition-colors resize-none"
+                className="w-full bg-white border border-[#e0e0e0] px-4 py-3 text-[14px] text-black placeholder:text-[#999] outline-none focus:border-[#0057DE] transition-colors resize-none"
                 value={formData.message}
                 onChange={(e) => setFormData({ ...formData, message: e.target.value })}
               />
@@ -115,7 +115,7 @@ export function ContactSection() {
                 <label className="flex items-start gap-2 cursor-pointer">
                   <input
                     type="checkbox"
-                    className="mt-1 accent-[#FF6A00]"
+                    className="mt-1 accent-[#0057DE]"
                     checked={formData.consent}
                     onChange={(e) => setFormData({ ...formData, consent: e.target.checked })}
                   />
@@ -126,7 +126,7 @@ export function ContactSection() {
               </div>
               <button
                 type="submit"
-                className="bg-[#FF6A00] text-black px-10 py-3 text-[13px] tracking-wider hover:bg-[#e6b800] transition-colors"
+                className="bg-[#0057DE] text-black px-10 py-3 text-[13px] tracking-wider hover:bg-[#0046b3] transition-colors"
                 style={{ fontWeight: 700 }}
               >
                 Enviar
@@ -149,18 +149,18 @@ export function ContactSection() {
                 <AnimateOnScroll key={cta.title} direction="up" delay={i * 0.1}>
                   <a
                     href={cta.href}
-                    className="flex items-start gap-4 group p-5 border border-white/10 hover:border-[#FF6A00]/40 transition-all"
+                    className="flex items-start gap-4 group p-5 border border-white/10 hover:border-[#0057DE]/40 transition-all"
                   >
-                    <div className="w-12 h-12 flex items-center justify-center border border-[#FF6A00] flex-shrink-0">
-                      <cta.icon size={20} className="text-[#FF6A00]" />
+                    <div className="w-12 h-12 flex items-center justify-center border border-[#0057DE] flex-shrink-0">
+                      <cta.icon size={20} className="text-[#0057DE]" />
                     </div>
                     <div className="flex-1">
-                      <h4 className="text-white text-[18px] group-hover:text-[#FF6A00] transition-colors" style={{ fontWeight: 700 }}>
+                      <h4 className="text-white text-[18px] group-hover:text-[#0057DE] transition-colors" style={{ fontWeight: 700 }}>
                         {cta.title}
                       </h4>
                       <p className="text-white/50 text-[13px] mt-1">{cta.description}</p>
                     </div>
-                    <ChevronRight size={16} className="text-[#FF6A00] flex-shrink-0 mt-1" />
+                    <ChevronRight size={16} className="text-[#0057DE] flex-shrink-0 mt-1" />
                   </a>
                 </AnimateOnScroll>
               ))}

@@ -27,7 +27,7 @@ export interface SectorData {
 export const sectors: SectorData[] = [
   {
     slug: "saneamento",
-    overline: "SANEAMENTO",
+    overline: "SANEAMENTO / LÍQUIDO",
     title: "Macromedição Ultrassônica para Redes de Distribuição",
     description: "Tecnologia não-invasiva para monitoramento preciso de vazão em grandes diâmetros.",
     image: "/images/pages/2.1.png",

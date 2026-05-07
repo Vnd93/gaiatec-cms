@@ -62,7 +62,7 @@ const advancedTags = [
    ──────────────────────────────────────────────────────── */
 const heading = (overline: string, title: string, light = false, subtitle?: string) => (
   <div className="text-center" style={{ marginBottom: 48 }}>
-    <span style={{ display: "inline-block", fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 12 }}>
+    <span style={{ display: "inline-block", fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#0057DE", marginBottom: 12 }}>
       {overline}
     </span>
     <h2 style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: "clamp(28px, 3vw, 36px)", fontWeight: 400, lineHeight: 1.15, textTransform: "uppercase", color: light ? "#fff" : "#1a1a1a", marginBottom: subtitle ? 14 : 0 }}>
@@ -95,8 +95,8 @@ export default function BiodigestorAutomacao() {
           className="relative z-10 flex flex-col justify-end h-full"
           style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px 100px 30px" }}
         >
-          <span style={{ display: "inline-block", fontSize: 13, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
-            AUTOMACAO E CONTROLE
+          <span style={{ display: "inline-block", fontSize: 13, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
+            AUTOMAÇÃO E CONTROLE
           </span>
           <h1 style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: "clamp(41px, 6vw, 85px)", fontWeight: 500, lineHeight: 0.95, textTransform: "uppercase", color: "#fff", maxWidth: 800, margin: 0 }}>
             Automacao e Controle do Processo
@@ -126,7 +126,7 @@ export default function BiodigestorAutomacao() {
           <AnimateOnScroll>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-center">
               <div>
-                <span style={{ display: "inline-block", fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
+                <span style={{ display: "inline-block", fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
                   GT-BIODIGEST
                 </span>
                 <h2 style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: "clamp(28px, 3vw, 36px)", fontWeight: 400, lineHeight: 1.15, textTransform: "uppercase", marginBottom: 24, color: "#1a1a1a" }}>
@@ -141,7 +141,7 @@ export default function BiodigestorAutomacao() {
               </div>
               <div className="relative overflow-hidden" style={{ borderRadius: 4 }}>
                 <img loading="lazy" src={INTRO_IMG} alt="Controle de Biodigestor" className="w-full h-full object-cover" style={{ aspectRatio: "16/11", display: "block" }} />
-                <div className="absolute bottom-0 left-0" style={{ width: 80, height: 4, backgroundColor: "#FF6A00" }} />
+                <div className="absolute bottom-0 left-0" style={{ width: 80, height: 4, backgroundColor: "#0057DE" }} />
               </div>
             </div>
           </AnimateOnScroll>
@@ -175,16 +175,16 @@ export default function BiodigestorAutomacao() {
                     onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-4px)"; e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,0.3)"; }}
                     onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "none"; }}
                   >
-                    <div style={{ height: 4, backgroundColor: "#FF6A00" }} />
+                    <div style={{ height: 4, backgroundColor: "#0057DE" }} />
                     <div style={{ padding: "28px 24px", flex: 1 }}>
-                      <Icon size={28} style={{ color: "#FF6A00", marginBottom: 16 }} />
+                      <Icon size={28} style={{ color: "#0057DE", marginBottom: 16 }} />
                       <h4 style={{ fontSize: 18, fontWeight: 700, color: "#fff", marginBottom: 16, textTransform: "uppercase" }}>
                         {card.title}
                       </h4>
                       <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
                         {card.bullets.map((b) => (
                           <li key={b} className="flex items-start gap-3" style={{ marginBottom: 10 }}>
-                            <div style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: "#FF6A00", flexShrink: 0, marginTop: 6 }} />
+                            <div style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: "#0057DE", flexShrink: 0, marginTop: 6 }} />
                             <span style={{ fontSize: 14, color: "#aaa", lineHeight: 1.55 }}>{b}</span>
                           </li>
                         ))}
@@ -210,7 +210,7 @@ export default function BiodigestorAutomacao() {
           <div style={{ maxWidth: 720, margin: "0 auto" }}>
             <div
               style={{
-                borderLeft: "4px solid #FF6A00",
+                borderLeft: "4px solid #0057DE",
                 paddingLeft: 0,
               }}
             >
@@ -232,7 +232,7 @@ export default function BiodigestorAutomacao() {
                         width: 32,
                         height: 32,
                         borderRadius: "50%",
-                        backgroundColor: "#FF6A00",
+                        backgroundColor: "#0057DE",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
@@ -275,7 +275,7 @@ export default function BiodigestorAutomacao() {
                     display: "inline-flex",
                     alignItems: "center",
                     gap: 8,
-                    backgroundColor: "#FF6A00",
+                    backgroundColor: "#0057DE",
                     color: "#000",
                     padding: "12px 24px",
                     borderRadius: 50,
@@ -286,8 +286,8 @@ export default function BiodigestorAutomacao() {
                     transition: "all 0.3s ease",
                     cursor: "default",
                   }}
-                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#1a1a1a"; e.currentTarget.style.color = "#FF6A00"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#FF6A00"; e.currentTarget.style.color = "#000"; }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#1a1a1a"; e.currentTarget.style.color = "#0057DE"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#0057DE"; e.currentTarget.style.color = "#000"; }}
                 >
                   {tag}
                 </span>
@@ -316,16 +316,16 @@ export default function BiodigestorAutomacao() {
               <div className="flex flex-wrap gap-4 justify-center lg:justify-end" style={{ flexShrink: 0 }}>
                 <Link
                   to="/contato"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 8, backgroundColor: "#FF6A00", color: "#000", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.5px", textDecoration: "none", borderRadius: 4, transition: "all 0.3s ease" }}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 8, backgroundColor: "#0057DE", color: "#000", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.5px", textDecoration: "none", borderRadius: 4, transition: "all 0.3s ease" }}
                   onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#e5b800"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#FF6A00"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#0057DE"; }}
                 >
                   Fale com um Especialista <ChevronRight size={14} />
                 </Link>
                 <Link
                   to="/contato"
                   style={{ display: "inline-flex", alignItems: "center", gap: 8, backgroundColor: "transparent", color: "#fff", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.5px", textDecoration: "none", borderRadius: 4, border: "2px solid #444", transition: "all 0.3s ease" }}
-                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#FF6A00"; e.currentTarget.style.color = "#FF6A00"; }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#0057DE"; e.currentTarget.style.color = "#0057DE"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#444"; e.currentTarget.style.color = "#fff"; }}
                 >
                   Solicitar Orcamento <ChevronRight size={14} />

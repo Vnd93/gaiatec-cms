@@ -76,10 +76,10 @@ const TRANSITION_MS = 600; // duração da transição entre slides
          - container: maxW 1440, mx auto, px 30
            - content: pb 40, relative
              - text-col: flex column, maxW 570, justify center, z-2
-               - label: yellow #FF6A00, 14px bold uppercase, ls 0.7px
+               - label: yellow #0057DE, 14px bold uppercase, ls 0.7px
                - h2: Knockout 70px, w500, lh 59.5px, uppercase, white
                - desc: 20px, lh 30px, white, mb 24
-               - CTA: split button (text | arrow), bg #FF6A00
+               - CTA: split button (text | arrow), bg #0057DE
              - Prev/Next nav: flex, items center, 15px
    ──────────────────────────────────────────────────────── */
 // Renderizamos um clone do primeiro slide DEPOIS do último para que a
@@ -220,7 +220,7 @@ export function SliderModule() {
         }
         .sec6-cta-btn:hover .sec6-cta-text {
           background-color: #000;
-          color: #FF6A00;
+          color: #0057DE;
           border-color: #000;
         }
         .sec6-cta-btn:hover .sec6-cta-arrow {
@@ -228,7 +228,7 @@ export function SliderModule() {
           border-color: #000;
         }
         .sec6-cta-btn:hover .sec6-cta-arrow svg {
-          color: #FF6A00;
+          color: #0057DE;
         }
         .sec6-nav-link {
           cursor: pointer;
@@ -412,7 +412,7 @@ export function SliderModule() {
                         {/* Label */}
                         <span
                           style={{
-                            color: "rgb(255, 106, 0)",
+                            color: "rgb(0, 87, 222)",
                             fontSize: 14,
                             fontWeight: 700,
                             letterSpacing: "0.7px",
@@ -460,8 +460,8 @@ export function SliderModule() {
                           <span
                             className="sec6-cta-text"
                             style={{
-                              backgroundColor: "rgb(255, 106, 0)",
-                              border: "1px solid rgb(255, 106, 0)",
+                              backgroundColor: "rgb(0, 87, 222)",
+                              border: "1px solid rgb(0, 87, 222)",
                               display: "inline-flex",
                               alignItems: "center",
                               fontSize: 15,
@@ -482,8 +482,8 @@ export function SliderModule() {
                             className="sec6-cta-arrow"
                             style={{
                               alignItems: "center",
-                              backgroundColor: "rgb(255, 106, 0)",
-                              border: "1px solid rgb(255, 106, 0)",
+                              backgroundColor: "rgb(0, 87, 222)",
+                              border: "1px solid rgb(0, 87, 222)",
                               display: "flex",
                               justifyContent: "center",
                               width: 33,
@@ -545,7 +545,7 @@ export function SliderModule() {
                                   (i === TOTAL && current === TOTAL)
                                     ? `${progress}%`
                                     : "0%",
-                                backgroundColor: "rgb(255, 106, 0)",
+                                backgroundColor: "rgb(0, 87, 222)",
                                 transition:
                                   progress === 0
                                     ? "none"

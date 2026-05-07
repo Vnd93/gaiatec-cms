@@ -16,7 +16,7 @@ export const OQueEPage = () => {
 
         <div className="container mx-auto px-6 h-full flex items-center relative z-10">
           <div className="max-w-3xl mx-[25px] my-[0px]">
-            <div className="text-orange-500 font-bold uppercase tracking-wider mb-4 text-[12px]">
+            <div className="text-[#0057DE] font-bold uppercase tracking-wider mb-4 text-[12px]">
               Biodigestor / Conceito Técnico
             </div>
             <h1 className="text-3xl md:text-4xl font-bold text-white mb-6 leading-tight">
@@ -37,7 +37,7 @@ export const OQueEPage = () => {
               <h2 className="text-2xl md:text-3xl font-bold text-gray-900 leading-tight">
                 Conceito técnico
               </h2>
-              <div className="w-12 h-1 bg-orange-500 mt-5"></div>
+              <div className="w-12 h-1 bg-[#0057DE] mt-5"></div>
             </div>
 
             <div className="md:col-span-7 text-gray-700 leading-relaxed space-y-5">
@@ -77,7 +77,7 @@ export const OQueEPage = () => {
               <h2 className="text-2xl md:text-3xl font-bold text-gray-900 leading-tight">
                 O biodigestor como sistema
               </h2>
-              <div className="w-12 h-1 bg-orange-500 mt-5"></div>
+              <div className="w-12 h-1 bg-[#0057DE] mt-5"></div>
               <p className="text-gray-600 mt-6 leading-relaxed">
                 Diferente de estruturas rudimentares, um biodigestor moderno é um conjunto técnico integrado. Cada componente desempenha uma função específica e deve estar dimensionado em conjunto.
               </p>
@@ -115,7 +115,7 @@ export const OQueEPage = () => {
           <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-4">
             O que acontece dentro do biodigestor
           </h2>
-          <div className="w-12 h-1 bg-orange-500 mb-6"></div>
+          <div className="w-12 h-1 bg-[#0057DE] mb-6"></div>
           <p className="text-gray-600 mb-12 max-w-3xl">
             A digestão anaeróbia ocorre em etapas biológicas sequenciais, cada uma conduzida por diferentes grupos de microrganismos.
           </p>
@@ -190,7 +190,7 @@ export const OQueEPage = () => {
               <h2 className="text-2xl md:text-3xl font-bold text-gray-900 leading-tight">
                 Por que é uma solução tecnológica
               </h2>
-              <div className="w-12 h-1 bg-orange-500 mt-5"></div>
+              <div className="w-12 h-1 bg-[#0057DE] mt-5"></div>
               <p className="text-gray-600 mt-6 leading-relaxed">
                 Um biodigestor não é apenas uma solução ambiental — ele é uma solução de engenharia que exige dimensionamento, controle e conformidade técnica.
               </p>
@@ -229,7 +229,7 @@ export const OQueEPage = () => {
               <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-4">
                 Diferencial técnico Gaiatec Sistemas
               </h2>
-              <div className="w-12 h-1 bg-orange-500 mb-8"></div>
+              <div className="w-12 h-1 bg-[#0057DE] mb-8"></div>
 
               <p className="text-gray-700 leading-relaxed mb-6">
                 A Gaiatec Sistemas não fornece biodigestores genéricos. Cada sistema é dimensionado especificamente para as condições do cliente — considerando tipo de resíduo, volume, clima, objetivo final e restrições do local.
@@ -304,7 +304,7 @@ export const OQueEPage = () => {
               href="https://wa.me/551122071986"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center justify-center bg-orange-500 hover:bg-orange-600 text-white font-semibold px-8 py-4 transition-colors text-[14px] rounded-[7px]"
+              className="inline-flex items-center justify-center bg-[#0057DE] hover:bg-[#0046b3] text-white font-semibold px-8 py-4 transition-colors text-[14px] rounded-[7px]"
             >
               Falar com Especialista
             </a>

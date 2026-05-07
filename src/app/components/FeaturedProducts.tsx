@@ -131,7 +131,7 @@ export const FeaturedProducts = () => {
         <div className="text-center mb-16">
           <span className="inline-block text-sm font-bold text-blue-600 uppercase tracking-widest mb-3">NOSSO PORTFÓLIO</span>
           <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-4 leading-tight">Produtos em Destaque</h2>
-          <div className="w-24 h-1 bg-gradient-to-r from-transparent via-orange-500 to-transparent mx-auto rounded-full mb-6"></div>
+          <div className="w-24 h-1 bg-gradient-to-r from-transparent via-[#0057DE] to-transparent mx-auto rounded-full mb-6"></div>
           <p className="mt-4 text-gray-600 text-base max-w-3xl mx-auto leading-relaxed">
             Soluções tecnológicas de alta performance para otimizar seus processos industriais com precisão, confiabilidade e eficiência.
           </p>

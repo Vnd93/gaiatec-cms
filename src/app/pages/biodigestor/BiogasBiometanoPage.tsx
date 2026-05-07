@@ -18,7 +18,7 @@ export const BiogasBiometanoPage = () => {
 
         <div className="container mx-auto px-6 h-full flex items-center relative z-10">
           <div className="max-w-3xl mx-[25px] my-[0px]">
-            <div className="text-orange-500 font-bold uppercase tracking-wider mb-4 text-[12px]">
+            <div className="text-[#0057DE] font-bold uppercase tracking-wider mb-4 text-[12px]">
               Biodigestor / Energia
             </div>
             <h1 className="text-3xl md:text-4xl font-bold text-white mb-6 leading-tight">
@@ -105,7 +105,7 @@ export const BiogasBiometanoPage = () => {
               O biometano é o biogás que passou por um processo de purificação, no qual impurezas e o CO₂ são removidos, elevando a concentração de metano.
             </p>
 
-            <p className="bg-orange-50 border-l-4 border-orange-500 p-6">
+            <p className="bg-[#0057DE]/5 border-l-4 border-[#0057DE] p-6">
               Após esse tratamento, o biometano possui características semelhantes ao gás natural.
             </p>
           </div>
@@ -120,16 +120,16 @@ export const BiogasBiometanoPage = () => {
           </h2>
           
           <div className="space-y-4">
-            <div className="bg-white border-l-4 border-orange-500 p-6">
+            <div className="bg-white border-l-4 border-[#0057DE] p-6">
               <p className="text-gray-700 text-lg">Combustível veicular</p>
             </div>
-            <div className="bg-white border-l-4 border-orange-500 p-6">
+            <div className="bg-white border-l-4 border-[#0057DE] p-6">
               <p className="text-gray-700 text-lg">Injeção em redes de gás</p>
             </div>
-            <div className="bg-white border-l-4 border-orange-500 p-6">
+            <div className="bg-white border-l-4 border-[#0057DE] p-6">
               <p className="text-gray-700 text-lg">Uso industrial de maior exigência técnica</p>
             </div>
-            <div className="bg-white border-l-4 border-orange-500 p-6">
+            <div className="bg-white border-l-4 border-[#0057DE] p-6">
               <p className="text-gray-700 text-lg">Substituição direta de combustíveis fósseis</p>
             </div>
           </div>
@@ -273,16 +273,16 @@ export const BiogasBiometanoPage = () => {
             <div className="bg-white border-l-4 border-blue-600 p-6">
               <p className="text-gray-700 text-lg">Queima controlada para aproveitamento energético</p>
             </div>
-            <div className="bg-white border-l-4 border-orange-500 p-6">
+            <div className="bg-white border-l-4 border-[#0057DE] p-6">
               <p className="text-gray-700 text-lg">Combustível veicular</p>
             </div>
-            <div className="bg-white border-l-4 border-orange-500 p-6">
+            <div className="bg-white border-l-4 border-[#0057DE] p-6">
               <p className="text-gray-700 text-lg">Injeção em redes de gás</p>
             </div>
-            <div className="bg-white border-l-4 border-orange-500 p-6">
+            <div className="bg-white border-l-4 border-[#0057DE] p-6">
               <p className="text-gray-700 text-lg">Uso industrial de maior exigência técnica</p>
             </div>
-            <div className="bg-white border-l-4 border-orange-500 p-6">
+            <div className="bg-white border-l-4 border-[#0057DE] p-6">
               <p className="text-gray-700 text-lg">Substituição direta de combustíveis fósseis</p>
             </div>
           </div>
@@ -351,7 +351,7 @@ export const BiogasBiometanoPage = () => {
               href="https://wa.me/551122071986"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center justify-center bg-orange-500 hover:bg-orange-600 text-white font-semibold px-8 py-4 transition-colors text-[14px] rounded-[7px]"
+              className="inline-flex items-center justify-center bg-[#0057DE] hover:bg-[#0046b3] text-white font-semibold px-8 py-4 transition-colors text-[14px] rounded-[7px]"
             >
               Falar com Especialista
             </a>

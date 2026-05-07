@@ -40,7 +40,7 @@ const workflow = [
    ──────────────────────────────────────────────────────── */
 const heading = (overline: string, title: string, light = false, subtitle?: string) => (
   <div className="text-center" style={{ marginBottom: 48 }}>
-    <span style={{ display: "inline-block", fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: light ? "#FF6A00" : "#FF6A00", marginBottom: 12 }}>
+    <span style={{ display: "inline-block", fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: light ? "#0057DE" : "#0057DE", marginBottom: 12 }}>
       {overline}
     </span>
     <h2 style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: "clamp(28px, 3vw, 36px)", fontWeight: 400, lineHeight: 1.15, textTransform: "uppercase", color: light ? "#fff" : "#1a1a1a", marginBottom: subtitle ? 12 : 0 }}>
@@ -73,7 +73,7 @@ export default function BiodigestorMonitoramento() {
           className="relative z-10 flex flex-col justify-end h-full"
           style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px 100px 30px" }}
         >
-          <span style={{ display: "inline-block", fontSize: 13, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
+          <span style={{ display: "inline-block", fontSize: 13, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
             MONITORAMENTO
           </span>
           <h1 style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: "clamp(41px, 6vw, 85px)", fontWeight: 500, lineHeight: 0.95, textTransform: "uppercase", color: "#fff", maxWidth: 800, margin: 0 }}>
@@ -104,7 +104,7 @@ export default function BiodigestorMonitoramento() {
           <AnimateOnScroll>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-center">
               <div>
-                <span style={{ display: "inline-block", fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
+                <span style={{ display: "inline-block", fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
                   Tecnologia & Operacao
                 </span>
                 <h2 style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: "clamp(28px, 3vw, 36px)", fontWeight: 400, lineHeight: 1.15, textTransform: "uppercase", marginBottom: 24, color: "#1a1a1a" }}>
@@ -119,7 +119,7 @@ export default function BiodigestorMonitoramento() {
               </div>
               <div className="relative overflow-hidden" style={{ borderRadius: 4 }}>
                 <img loading="lazy" src={INTRO_IMG} alt="Monitoramento de Biogas" className="w-full h-full object-cover" style={{ aspectRatio: "16/11", display: "block" }} />
-                <div className="absolute bottom-0 left-0" style={{ width: 80, height: 4, backgroundColor: "#FF6A00" }} />
+                <div className="absolute bottom-0 left-0" style={{ width: 80, height: 4, backgroundColor: "#0057DE" }} />
               </div>
             </div>
           </AnimateOnScroll>
@@ -141,7 +141,7 @@ export default function BiodigestorMonitoramento() {
                 <div
                   style={{
                     backgroundColor: "#222",
-                    borderLeft: "4px solid #FF6A00",
+                    borderLeft: "4px solid #0057DE",
                     borderRadius: 4,
                     padding: "24px 20px",
                     height: "100%",
@@ -150,7 +150,7 @@ export default function BiodigestorMonitoramento() {
                   onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-4px)"; e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,0.3)"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "none"; }}
                 >
-                  <AlertTriangle size={20} style={{ color: "#FF6A00", marginBottom: 12 }} />
+                  <AlertTriangle size={20} style={{ color: "#0057DE", marginBottom: 12 }} />
                   <h4 style={{ fontSize: 16, fontWeight: 700, color: "#fff", marginBottom: 8 }}>
                     {c.title}
                   </h4>
@@ -200,7 +200,7 @@ export default function BiodigestorMonitoramento() {
                         padding: "24px",
                       }}
                     >
-                      <span style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: 56, fontWeight: 400, color: "#FF6A00", lineHeight: 1 }}>
+                      <span style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: 56, fontWeight: 400, color: "#0057DE", lineHeight: 1 }}>
                         {s.num}
                       </span>
                     </div>
@@ -258,10 +258,10 @@ export default function BiodigestorMonitoramento() {
                         cursor: "default",
                         whiteSpace: "nowrap",
                       }}
-                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#FF6A00"; e.currentTarget.style.transform = "scale(1.05)"; }}
+                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#0057DE"; e.currentTarget.style.transform = "scale(1.05)"; }}
                       onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#333"; e.currentTarget.style.transform = "scale(1)"; }}
                     >
-                      <span style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: 18, fontWeight: 400, color: "#FF6A00", lineHeight: 1 }}>
+                      <span style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: 18, fontWeight: 400, color: "#0057DE", lineHeight: 1 }}>
                         {step.num}
                       </span>
                       <span style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
@@ -306,16 +306,16 @@ export default function BiodigestorMonitoramento() {
               <div className="flex flex-wrap gap-4 justify-center lg:justify-end" style={{ flexShrink: 0 }}>
                 <Link
                   to="/contato"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 8, backgroundColor: "#FF6A00", color: "#000", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.5px", textDecoration: "none", borderRadius: 4, transition: "all 0.3s ease" }}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 8, backgroundColor: "#0057DE", color: "#000", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.5px", textDecoration: "none", borderRadius: 4, transition: "all 0.3s ease" }}
                   onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#e5b800"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#FF6A00"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#0057DE"; }}
                 >
                   Fale com um Especialista <ChevronRight size={14} />
                 </Link>
                 <Link
                   to="/contato"
                   style={{ display: "inline-flex", alignItems: "center", gap: 8, backgroundColor: "transparent", color: "#fff", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.5px", textDecoration: "none", borderRadius: 4, border: "2px solid #444", transition: "all 0.3s ease" }}
-                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#FF6A00"; e.currentTarget.style.color = "#FF6A00"; }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#0057DE"; e.currentTarget.style.color = "#0057DE"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#444"; e.currentTarget.style.color = "#fff"; }}
                 >
                   Solicitar Orcamento <ChevronRight size={14} />

@@ -48,7 +48,7 @@ export const Products = () => {
                   sizes="(max-width: 768px) 100vw, (max-width: 1280px) 50vw, 33vw"
                   className="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-500"
                 />
-                <div className="absolute top-4 right-4 bg-orange-500 text-white text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide">
+                <div className="absolute top-4 right-4 bg-[#0057DE] text-white text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide">
                   {product.category}
                 </div>
               </div>

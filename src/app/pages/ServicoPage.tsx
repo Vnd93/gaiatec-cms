@@ -82,7 +82,7 @@ export default function ServicoPage() {
           className="relative z-10 flex flex-col justify-end h-full"
           style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px 80px 30px" }}
         >
-          <span style={{ display: "inline-block", fontSize: 13, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
+          <span style={{ display: "inline-block", fontSize: 13, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
             {svc.overline}
           </span>
           <h1 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(36px, 5vw, 72px)", fontWeight: 500, lineHeight: 0.95, textTransform: "uppercase", color: "#fff", maxWidth: 700, margin: 0 }}>
@@ -113,7 +113,7 @@ export default function ServicoPage() {
           <AnimateOnScroll>
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.1fr] gap-16 lg:gap-24 items-center">
               <div>
-                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 20 }}>
+                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 20 }}>
                   SOBRE O SERVIÇO
                 </span>
                 <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 52px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", marginBottom: 28, color: "#111" }}>
@@ -126,16 +126,16 @@ export default function ServicoPage() {
                 ))}
                 <Link
                   to="/contato"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 8, border: "2px solid #FF6A00", color: "#FF6A00", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.08em", textDecoration: "none", transition: "all 0.3s ease" }}
-                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#FF6A00"; e.currentTarget.style.color = "#000"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "#FF6A00"; }}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 8, border: "2px solid #0057DE", color: "#0057DE", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.08em", textDecoration: "none", transition: "all 0.3s ease" }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#0057DE"; e.currentTarget.style.color = "#000"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "#0057DE"; }}
                 >
                   Solicitar Orçamento <ArrowRight size={14} />
                 </Link>
               </div>
               <div className="relative overflow-hidden">
                 <img loading="lazy" src={svc.image} alt={svc.title} className="w-full object-cover" style={{ aspectRatio: "4/3", display: "block" }} />
-                <div style={{ position: "absolute", bottom: 0, left: 0, width: "100%", height: 4, backgroundColor: "#FF6A00" }} />
+                <div style={{ position: "absolute", bottom: 0, left: 0, width: "100%", height: 4, backgroundColor: "#0057DE" }} />
               </div>
             </div>
           </AnimateOnScroll>
@@ -151,7 +151,7 @@ export default function ServicoPage() {
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.5fr] gap-16 lg:gap-24">
               {/* Left — sticky title */}
               <div style={{ position: "sticky", top: 120, alignSelf: "start" }}>
-                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
+                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
                   ESCOPO DO SERVIÇO
                 </span>
                 <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 48px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", color: "#fff", marginBottom: 24 }}>
@@ -167,7 +167,7 @@ export default function ServicoPage() {
                 {svc.includes.map((item, i) => (
                   <AnimateOnScroll key={i} delay={i * 0.05}>
                     <div style={{ display: "flex", gap: 24, padding: "28px 0", borderBottom: i < svc.includes.length - 1 ? "1px solid rgba(255,255,255,0.08)" : "none" }}>
-                      <span style={{ fontFamily: KNOCKOUT, fontSize: 42, fontWeight: 500, color: "#FF6A00", lineHeight: 1, flexShrink: 0, width: 60 }}>
+                      <span style={{ fontFamily: KNOCKOUT, fontSize: 42, fontWeight: 500, color: "#0057DE", lineHeight: 1, flexShrink: 0, width: 60 }}>
                         {String(i + 1).padStart(2, "0")}
                       </span>
                       <div style={{ paddingTop: 6 }}>
@@ -195,13 +195,13 @@ export default function ServicoPage() {
               {svc.extra && (
                 <AnimateOnScroll>
                   <div>
-                    <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
+                    <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
                       {svc.extra.label.toUpperCase()}
                     </span>
                     <div style={{ borderTop: "1px solid #e0e0e0" }}>
                       {svc.extra.items.map((item, i) => (
                         <div key={i} style={{ padding: "16px 0", borderBottom: "1px solid #e0e0e0", display: "flex", gap: 16, alignItems: "flex-start" }}>
-                          <span style={{ fontFamily: KNOCKOUT, fontSize: 20, fontWeight: 500, color: "#FF6A00", flexShrink: 0, width: 28, lineHeight: 1.4 }}>
+                          <span style={{ fontFamily: KNOCKOUT, fontSize: 20, fontWeight: 500, color: "#0057DE", flexShrink: 0, width: 28, lineHeight: 1.4 }}>
                             {String(i + 1).padStart(2, "0")}
                           </span>
                           <span style={{ fontSize: 15, lineHeight: 1.6, color: "#555" }}>
@@ -218,7 +218,7 @@ export default function ServicoPage() {
               {svc.norms && (
                 <AnimateOnScroll delay={0.1}>
                   <div>
-                    <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
+                    <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
                       NORMAS E REFERÊNCIAS
                     </span>
                     <div style={{ borderTop: "1px solid #e0e0e0" }}>
@@ -238,8 +238,8 @@ export default function ServicoPage() {
               {svc.sectors && (
                 <AnimateOnScroll delay={0.2}>
                   <div>
-                    <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
-                      SETORES ATENDIDOS
+                    <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
+                      INDÚSTRIAS ATENDIDAS
                     </span>
                     <div style={{ borderTop: "1px solid #e0e0e0" }}>
                       {svc.sectors.map((sector, i) => (
@@ -265,7 +265,7 @@ export default function ServicoPage() {
         <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px" }}>
           <AnimateOnScroll>
             <div style={{ marginBottom: 60 }}>
-              <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
+              <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
                 EXPLORE TAMBÉM
               </span>
               <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 48px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", color: "#fff" }}>
@@ -289,19 +289,19 @@ export default function ServicoPage() {
                   <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.3) 50%, rgba(0,0,0,0.1) 100%)" }} />
 
                   <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "28px" }}>
-                    <span style={{ display: "block", fontSize: 10, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 8 }}>
+                    <span style={{ display: "block", fontSize: 10, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#0057DE", marginBottom: 8 }}>
                       {s.overline}
                     </span>
-                    <h3 style={{ fontFamily: KNOCKOUT, fontSize: 24, fontWeight: 500, lineHeight: 1.05, textTransform: "uppercase", color: "#fff", marginBottom: 8, transition: "color 0.3s" }} className="group-hover:text-[#FF6A00]">
+                    <h3 style={{ fontFamily: KNOCKOUT, fontSize: 24, fontWeight: 500, lineHeight: 1.05, textTransform: "uppercase", color: "#fff", marginBottom: 8, transition: "color 0.3s" }} className="group-hover:text-[#0057DE]">
                       {s.title}
                     </h3>
-                    <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: "#FF6A00", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                    <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: "#0057DE", textTransform: "uppercase", letterSpacing: "0.1em" }}>
                       Ver serviço <ArrowRight size={12} />
                     </div>
                   </div>
 
                   <div
-                    style={{ position: "absolute", bottom: 0, left: 0, width: "0%", height: 3, backgroundColor: "#FF6A00", transition: "width 0.4s ease" }}
+                    style={{ position: "absolute", bottom: 0, left: 0, width: "0%", height: 3, backgroundColor: "#0057DE", transition: "width 0.4s ease" }}
                     className="group-hover:w-full"
                   />
                 </Link>
@@ -313,9 +313,9 @@ export default function ServicoPage() {
             <div style={{ textAlign: "center", marginTop: 48 }}>
               <Link
                 to="/servicos"
-                style={{ display: "inline-flex", alignItems: "center", gap: 8, border: "2px solid #FF6A00", color: "#FF6A00", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.08em", textDecoration: "none", transition: "all 0.3s ease" }}
-                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#FF6A00"; e.currentTarget.style.color = "#000"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "#FF6A00"; }}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8, border: "2px solid #0057DE", color: "#0057DE", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.08em", textDecoration: "none", transition: "all 0.3s ease" }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#0057DE"; e.currentTarget.style.color = "#000"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "#0057DE"; }}
               >
                 Ver Todos os Serviços <ArrowRight size={14} />
               </Link>

@@ -38,7 +38,7 @@ const FALLBACK_POSTS = [
   },
   {
     category: "ARTIGOS TECNICOS",
-    title: "Protecao Catodica: Fundamentos e Boas Praticas",
+    title: "Proteção Catódica: Fundamentos e Boas Praticas",
     excerpt: "Guia tecnico sobre os principios da protecao catodica e como garantir a integridade de estruturas metalicas.",
     date: "20 Fev 2026",
     image: "/images/heroes/1.5.png",
@@ -106,7 +106,7 @@ export default function BlogPage() {
           className="relative z-10 flex flex-col justify-end h-full"
           style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px 100px 30px" }}
         >
-          <span style={{ display: "inline-block", fontSize: 13, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
+          <span style={{ display: "inline-block", fontSize: 13, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
             BLOG
           </span>
           <h1 style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: "clamp(41px, 6vw, 85px)", fontWeight: 500, lineHeight: 0.95, textTransform: "uppercase", color: "#fff", maxWidth: 800, margin: 0 }}>
@@ -148,8 +148,8 @@ export default function BlogPage() {
                     fontWeight: 700,
                     textTransform: "uppercase",
                     letterSpacing: "0.04em",
-                    border: isActive ? "1px solid #FF6A00" : "1px solid #e5e5e5",
-                    backgroundColor: isActive ? "#FF6A00" : "transparent",
+                    border: isActive ? "1px solid #0057DE" : "1px solid #e5e5e5",
+                    backgroundColor: isActive ? "#0057DE" : "transparent",
                     color: isActive ? "#000" : "#666",
                     cursor: "pointer",
                     transition: "all 0.3s ease",
@@ -194,7 +194,7 @@ export default function BlogPage() {
 
                 {/* Content */}
                 <div style={{ padding: "36px 32px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-                  <span style={{ display: "inline-block", fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#000", backgroundColor: "#FF6A00", padding: "4px 14px", borderRadius: 3, marginBottom: 16, width: "fit-content" }}>
+                  <span style={{ display: "inline-block", fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#000", backgroundColor: "#0057DE", padding: "4px 14px", borderRadius: 3, marginBottom: 16, width: "fit-content" }}>
                     {featured.category}
                   </span>
                   <h2 style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: "clamp(22px, 2.5vw, 28px)", fontWeight: 400, lineHeight: 1.2, textTransform: "uppercase", color: "#1a1a1a", marginBottom: 14 }}>
@@ -209,7 +209,7 @@ export default function BlogPage() {
                   <Link
                     to="#"
                     style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, color: "#32373c", textDecoration: "none", textTransform: "uppercase", letterSpacing: "0.04em", transition: "color 0.3s" }}
-                    onMouseEnter={(e) => { e.currentTarget.style.color = "#FF6A00"; }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = "#0057DE"; }}
                     onMouseLeave={(e) => { e.currentTarget.style.color = "#32373c"; }}
                   >
                     Ler Artigo Completo <ArrowRight size={14} />
@@ -255,7 +255,7 @@ export default function BlogPage() {
                         onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.05)"; }}
                         onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
                       />
-                      <span style={{ position: "absolute", top: 12, left: 12, fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#000", backgroundColor: "#FF6A00", padding: "4px 12px", borderRadius: 3 }}>
+                      <span style={{ position: "absolute", top: 12, left: 12, fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#000", backgroundColor: "#0057DE", padding: "4px 12px", borderRadius: 3 }}>
                         {post.category}
                       </span>
                     </div>
@@ -287,7 +287,7 @@ export default function BlogPage() {
         <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 30px" }}>
           <AnimateOnScroll>
             <div className="text-center" style={{ maxWidth: 600, margin: "0 auto" }}>
-              <Mail size={36} style={{ color: "#FF6A00", margin: "0 auto 20px" }} />
+              <Mail size={36} style={{ color: "#0057DE", margin: "0 auto 20px" }} />
               <h2 style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: "clamp(28px, 3vw, 36px)", fontWeight: 400, lineHeight: 1.15, textTransform: "uppercase", color: "#fff", marginBottom: 12 }}>
                 Receba Nosso Conteudo
               </h2>
@@ -312,12 +312,12 @@ export default function BlogPage() {
                     outline: "none",
                     transition: "border-color 0.3s",
                   }}
-                  onFocus={(e) => { e.currentTarget.style.borderColor = "#FF6A00"; }}
+                  onFocus={(e) => { e.currentTarget.style.borderColor = "#0057DE"; }}
                   onBlur={(e) => { e.currentTarget.style.borderColor = "#444"; }}
                 />
                 <button
                   style={{
-                    backgroundColor: "#FF6A00",
+                    backgroundColor: "#0057DE",
                     color: "#000",
                     padding: "14px 28px",
                     fontWeight: 700,
@@ -331,7 +331,7 @@ export default function BlogPage() {
                     whiteSpace: "nowrap",
                   }}
                   onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#e5b800"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#FF6A00"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#0057DE"; }}
                 >
                   Inscrever-se
                 </button>
@@ -360,16 +360,16 @@ export default function BlogPage() {
               <div className="flex flex-wrap gap-4 justify-center lg:justify-end" style={{ flexShrink: 0 }}>
                 <Link
                   to="/contato"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 8, backgroundColor: "#FF6A00", color: "#000", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.5px", textDecoration: "none", borderRadius: 4, transition: "all 0.3s ease" }}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 8, backgroundColor: "#0057DE", color: "#000", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.5px", textDecoration: "none", borderRadius: 4, transition: "all 0.3s ease" }}
                   onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#e5b800"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#FF6A00"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#0057DE"; }}
                 >
                   Fale com um Especialista <ChevronRight size={14} />
                 </Link>
                 <Link
                   to="/contato"
                   style={{ display: "inline-flex", alignItems: "center", gap: 8, backgroundColor: "transparent", color: "#fff", padding: "14px 32px", fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.5px", textDecoration: "none", borderRadius: 4, border: "2px solid #444", transition: "all 0.3s ease" }}
-                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#FF6A00"; e.currentTarget.style.color = "#FF6A00"; }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#0057DE"; e.currentTarget.style.color = "#0057DE"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#444"; e.currentTarget.style.color = "#fff"; }}
                 >
                   Solicitar Proposta <ChevronRight size={14} />

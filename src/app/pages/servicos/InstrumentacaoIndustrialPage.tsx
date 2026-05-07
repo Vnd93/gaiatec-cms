@@ -19,7 +19,7 @@ export const InstrumentacaoIndustrialPage = () => {
 
         <div className="container mx-auto px-6 h-full flex items-center relative z-10">
           <div className="max-w-3xl mx-[25px] my-[0px]">
-            <div className="text-orange-500 font-bold uppercase tracking-wider mb-4 text-[12px]">
+            <div className="text-[#0057DE] font-bold uppercase tracking-wider mb-4 text-[12px]">
               Serviços / Engenharia & Automação
             </div>
             <h1 className="text-3xl md:text-4xl font-bold text-white mb-6 leading-tight">
@@ -40,7 +40,7 @@ export const InstrumentacaoIndustrialPage = () => {
               <h2 className="text-2xl md:text-3xl font-bold text-gray-900 leading-tight">
                 O que é instrumentação industrial
               </h2>
-              <div className="w-12 h-1 bg-orange-500 mt-5"></div>
+              <div className="w-12 h-1 bg-[#0057DE] mt-5"></div>
             </div>
 
             <div className="md:col-span-7 text-gray-700 leading-relaxed space-y-5">
@@ -142,7 +142,7 @@ export const InstrumentacaoIndustrialPage = () => {
               <h2 className="text-2xl md:text-3xl font-bold text-gray-900 leading-tight">
                 Onde aplicamos
               </h2>
-              <div className="w-12 h-1 bg-orange-500 mt-5"></div>
+              <div className="w-12 h-1 bg-[#0057DE] mt-5"></div>
             </div>
 
             <div className="md:col-span-7">
@@ -222,19 +222,19 @@ export const InstrumentacaoIndustrialPage = () => {
                   Com instrumentação Gaiatec
                 </h3>
                 <ul className="space-y-4">
-                  <li className="text-gray-800 border-l-2 border-orange-500 pl-4">
+                  <li className="text-gray-800 border-l-2 border-[#0057DE] pl-4">
                     Medições precisas e confiáveis
                   </li>
-                  <li className="text-gray-800 border-l-2 border-orange-500 pl-4">
+                  <li className="text-gray-800 border-l-2 border-[#0057DE] pl-4">
                     Controle contínuo do processo
                   </li>
-                  <li className="text-gray-800 border-l-2 border-orange-500 pl-4">
+                  <li className="text-gray-800 border-l-2 border-[#0057DE] pl-4">
                     Redução de falhas e paradas
                   </li>
-                  <li className="text-gray-800 border-l-2 border-orange-500 pl-4">
+                  <li className="text-gray-800 border-l-2 border-[#0057DE] pl-4">
                     Diagnóstico técnico rápido
                   </li>
-                  <li className="text-gray-800 border-l-2 border-orange-500 pl-4">
+                  <li className="text-gray-800 border-l-2 border-[#0057DE] pl-4">
                     Operação segura e previsível
                   </li>
                 </ul>
@@ -255,7 +255,7 @@ export const InstrumentacaoIndustrialPage = () => {
               <h2 className="text-2xl md:text-3xl font-bold text-gray-900 leading-tight">
                 O que entregamos na prática
               </h2>
-              <div className="w-12 h-1 bg-orange-500 mt-5"></div>
+              <div className="w-12 h-1 bg-[#0057DE] mt-5"></div>
             </div>
 
             <div className="md:col-span-7 text-gray-700 leading-relaxed space-y-5">
@@ -314,7 +314,7 @@ export const InstrumentacaoIndustrialPage = () => {
               href="https://wa.me/551122071986"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center justify-center bg-orange-500 hover:bg-orange-600 text-white font-semibold px-8 py-4 transition-colors text-[14px] rounded-[7px]"
+              className="inline-flex items-center justify-center bg-[#0057DE] hover:bg-[#0046b3] text-white font-semibold px-8 py-4 transition-colors text-[14px] rounded-[7px]"
             >
               Falar com Especialista
             </a>

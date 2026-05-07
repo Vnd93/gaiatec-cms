@@ -8,9 +8,9 @@ type FooterColumn = { title: string; links: { label: string; href: string }[] };
 
 const FALLBACK_COLUMNS: FooterColumn[] = [
   {
-    title: "SETORES",
+    title: "INDÚSTRIAS",
     links: [
-      { label: "Saneamento", href: "/setores/saneamento" },
+      { label: "Saneamento / Líquido", href: "/setores/saneamento" },
       { label: "Gás e Petróleo", href: "/setores/gas-petroleo" },
       { label: "Biogás e Biometano", href: "/setores/biogas-biometano" },
       { label: "Proteção Catódica", href: "/setores/protecao-catodica" },
@@ -138,7 +138,7 @@ export function Footer() {
                 {contact.telefone && (
                   <div>
                     <span className="text-white/40">Tel:</span>{" "}
-                    <a href={`tel:+55${contact.telefone.replace(/\D/g, "")}`} className="hover:text-[#FF6A00]">
+                    <a href={`tel:+55${contact.telefone.replace(/\D/g, "")}`} className="hover:text-[#0057DE]">
                       {contact.telefone}
                     </a>
                   </div>
@@ -146,7 +146,7 @@ export function Footer() {
                 {contact.whatsapp && (
                   <div>
                     <span className="text-white/40">WhatsApp:</span>{" "}
-                    <a href={`https://wa.me/55${contact.whatsapp.replace(/\D/g, "")}`} className="hover:text-[#FF6A00]">
+                    <a href={`https://wa.me/55${contact.whatsapp.replace(/\D/g, "")}`} className="hover:text-[#0057DE]">
                       {contact.whatsapp}
                     </a>
                   </div>
@@ -154,7 +154,7 @@ export function Footer() {
                 {contact.email && (
                   <div>
                     <span className="text-white/40">E-mail:</span>{" "}
-                    <a href={`mailto:${contact.email}`} className="hover:text-[#FF6A00]">
+                    <a href={`mailto:${contact.email}`} className="hover:text-[#0057DE]">
                       {contact.email}
                     </a>
                   </div>
@@ -163,7 +163,7 @@ export function Footer() {
             )}
             <a
               href="/contato"
-              className="inline-flex items-center gap-2 bg-white text-black px-6 py-3 text-[12px] tracking-wider hover:bg-[#FF6A00] transition-colors"
+              className="inline-flex items-center gap-2 bg-white text-black px-6 py-3 text-[12px] tracking-wider hover:bg-[#0057DE] transition-colors"
               style={{ fontWeight: 700 }}
             >
               Solicitar Orçamento
@@ -182,7 +182,7 @@ export function Footer() {
                     <li key={`${col.title}-${link.label}-${link.href}`}>
                       <a
                         href={link.href}
-                        className="text-white/40 text-[13px] hover:text-[#FF6A00] transition-colors"
+                        className="text-white/40 text-[13px] hover:text-[#0057DE] transition-colors"
                       >
                         {link.label}
                       </a>
@@ -210,10 +210,10 @@ export function Footer() {
             </div>
 
             <div className="flex flex-wrap gap-4 text-[11px]">
-              <a href="#" className="text-white/40 hover:text-[#FF6A00] transition-colors">
+              <a href="#" className="text-white/40 hover:text-[#0057DE] transition-colors">
                 Política de Privacidade
               </a>
-              <a href="#" className="text-white/40 hover:text-[#FF6A00] transition-colors">
+              <a href="#" className="text-white/40 hover:text-[#0057DE] transition-colors">
                 Termos de Uso
               </a>
               <span className="text-white/30">{lgpd}</span>

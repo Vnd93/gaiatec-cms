@@ -30,7 +30,7 @@ type Product = {
 const products: Product[] = [
   {
     id: 1,
-    category: "MEDICAO DE VAZAO",
+    category: "MEDIÇÃO DE VAZÃO",
     name: "Medidor Eletromagnetico Flangeado",
     desc: "Medicao de vazao precisa para liquidos condutivos em tubulacoes industriais.",
     spec: "Faixa: DN15 - DN3000",
@@ -52,7 +52,7 @@ const products: Product[] = [
   },
   {
     id: 2,
-    category: "MEDICAO DE VAZAO",
+    category: "MEDIÇÃO DE VAZÃO",
     name: "Macromedidor Ultrasonico Clamp-On",
     desc: "Solucao portatil e nao intrusiva para medicao de grandes vazoes em tubulacoes.",
     spec: "Faixa: DN50 - DN6000",
@@ -74,7 +74,7 @@ const products: Product[] = [
   },
   {
     id: 3,
-    category: "MEDICAO DE VAZAO",
+    category: "MEDIÇÃO DE VAZÃO",
     name: "Medidor Ultrasonico Clamp-On para Gas",
     desc: "Medicao nao intrusiva e precisa de vazao de gases em tubulacoes.",
     spec: "Faixa: DN50 - DN3000",
@@ -96,7 +96,7 @@ const products: Product[] = [
   },
   {
     id: 4,
-    category: "MEDICAO DE NIVEL",
+    category: "MEDIÇÃO DE NÍVEL",
     name: "Sensor de Nivel Radar para Efluentes",
     desc: "Medicao continua de nivel em tanques e reservatorios de efluentes com alta precisao.",
     spec: "Alcance: ate 30m",
@@ -118,7 +118,7 @@ const products: Product[] = [
   },
   {
     id: 5,
-    category: "MEDICAO DE PRESSAO",
+    category: "MEDIÇÃO DE PRESSÃO",
     name: "Transmissor de Pressao Serie GP",
     desc: "Medicao precisa de pressao para processos industriais e saneamento.",
     spec: "Faixa: 0-100 bar",
@@ -162,7 +162,7 @@ const products: Product[] = [
   },
   {
     id: 7,
-    category: "DETECCAO DE GAS",
+    category: "DETECÇÃO DE GÁS",
     name: "Detector Portatil de Vazamento de Gas",
     desc: "Seguranca em campo com deteccao portatil de vazamentos de gas.",
     spec: "Sensibilidade: 1 ppm",
@@ -184,12 +184,12 @@ const products: Product[] = [
   },
   {
     id: 8,
-    category: "PROTECAO CATODICA",
+    category: "PROTEÇÃO CATÓDICA",
     name: "Junta Isolante Flangeada",
     desc: "Protecao contra corrosao em redes metalicas de gas e liquidos.",
     spec: "Diametro: DN25 - DN600",
     image: "/images/pages/2.4.png",
-    sectors: ["Gas e Petroleo", "Protecao Catodica"],
+    sectors: ["Gas e Petroleo", "Proteção Catódica"],
     measureType: [],
     details: {
       fullDesc: "Junta isolante flangeada para seccionamento eletrico de tubulacoes metalicas. Impede a propagacao de correntes parasitas e garante a eficiencia dos sistemas de protecao catodica. Fabricada com materiais dieletricos de alta resistencia.",
@@ -206,12 +206,12 @@ const products: Product[] = [
   },
   {
     id: 9,
-    category: "BIOGAS E BIOMETANO",
+    category: "BIOGÁS E BIOMETANO",
     name: "Biodigestor Industrial Modular (BIOGAIA M)",
     desc: "Solucao modular de alta eficiencia para geracao de biogas em escala industrial.",
     spec: "Capacidade: ate 500m3/dia",
     image: "/images/pages/2.5.png",
-    sectors: ["Biogas e Biometano", "Agronegocio"],
+    sectors: ["Biogás e Biometano", "Agronegocio"],
     measureType: [],
     details: {
       fullDesc: "Sistema modular de biodigestao anaerobica para producao de biogas em escala industrial. Estrutura pre-fabricada com montagem rapida, automacao integrada e monitoramento remoto. Ideal para agroindustrias, frigorificos e aterros sanitarios.",
@@ -228,12 +228,12 @@ const products: Product[] = [
   },
   {
     id: 10,
-    category: "BIOGAS E BIOMETANO",
+    category: "BIOGÁS E BIOMETANO",
     name: "Biodigestor Compacto Rural (BIOGAIA R)",
     desc: "Sistema compacto para producao de biogas em propriedades rurais.",
     spec: "Capacidade: ate 50m3/dia",
     image: "/images/pages/2.6.png",
-    sectors: ["Biogas e Biometano", "Agronegocio"],
+    sectors: ["Biogás e Biometano", "Agronegocio"],
     measureType: [],
     details: {
       fullDesc: "Biodigestor compacto projetado para pequenas e medias propriedades rurais. Producao de biogas para cozimento, aquecimento e geracao de energia eletrica. Biofertilizante como subproduto para uso na lavoura.",
@@ -255,7 +255,7 @@ const products: Product[] = [
     desc: "Monitoramento continuo e em tempo real da composicao do biogas.",
     spec: "Gases: CH4, CO2, H2S, O2",
     image: "/images/pages/2.7.png",
-    sectors: ["Biogas e Biometano"],
+    sectors: ["Biogás e Biometano"],
     measureType: ["Analise de Gas"],
     details: {
       fullDesc: "Sistema fixo de analise continua de biogas para monitoramento em tempo real da composicao gasosa. Mede metano, dioxido de carbono, acido sulfidrico e oxigenio simultaneamente. Fundamental para otimizacao do processo de biodigestao e seguranca operacional.",
@@ -277,7 +277,7 @@ const products: Product[] = [
     desc: "Equipamento portatil para analise de biogas em campo.",
     spec: "Gases: CH4, CO2, H2S",
     image: "/images/pages/2.8.png",
-    sectors: ["Biogas e Biometano"],
+    sectors: ["Biogás e Biometano"],
     measureType: ["Analise de Gas"],
     details: {
       fullDesc: "Analisador portatil para medicao em campo da composicao do biogas. Equipamento leve e compacto com display integrado e datalogger. Ideal para comissionamento, manutencao e auditorias em plantas de biogas.",
@@ -294,12 +294,12 @@ const products: Product[] = [
   },
   {
     id: 13,
-    category: "AUTOMACAO",
+    category: "AUTOMAÇÃO",
     name: "Controlador Logico Programavel (CLP)",
     desc: "Automacao avancada para processos industriais complexos com conectividade IoT.",
     spec: "Multi-protocolo · IoT ready · Modular",
     image: "/images/pages/2.9.png",
-    sectors: ["Industria", "Biogas e Biometano", "Saneamento"],
+    sectors: ["Industria", "Biogás e Biometano", "Saneamento"],
     measureType: [],
     details: {
       fullDesc: "Controlador logico programavel modular para automacao de processos industriais complexos. Suporta multiplos protocolos de comunicacao e conectividade IoT para integracao com sistemas SCADA e plataformas em nuvem.",
@@ -316,12 +316,12 @@ const products: Product[] = [
   },
   {
     id: 14,
-    category: "PROTECAO CATODICA",
-    name: "Retificador de Protecao Catodica",
+    category: "PROTEÇÃO CATÓDICA",
+    name: "Retificador de Proteção Catódica",
     desc: "Protecao contra corrosao para dutos e estruturas metalicas enterradas.",
     spec: "Corrente impressa · Monitoramento integrado · IP65",
     image: "/images/pages/2.10.png",
-    sectors: ["Gas e Petroleo", "Protecao Catodica"],
+    sectors: ["Gas e Petroleo", "Proteção Catódica"],
     measureType: [],
     details: {
       fullDesc: "Retificador de corrente impressa para sistemas de protecao catodica de dutos, tanques e estruturas metalicas enterradas ou submersas. Monitoramento integrado com telemetria e ajuste automatico de corrente.",
@@ -382,7 +382,7 @@ const products: Product[] = [
   },
   {
     id: 17,
-    category: "AUTOMACAO",
+    category: "AUTOMAÇÃO",
     name: "Valvula de Controle Automatica",
     desc: "Controle preciso de fluxo com atuadores eletricos ou pneumaticos.",
     spec: "Atuadores eletricos/pneumaticos · Controle de fluxo preciso",
@@ -406,41 +406,41 @@ const products: Product[] = [
 
 const categoryTabs = [
   "Todos",
-  "Medicao de Vazao",
-  "Medicao de Nivel",
-  "Medicao de Pressao",
+  "Medição de Vazão",
+  "Medição de Nível",
+  "Medição de Pressão",
   "Analise de Gas",
-  "Biogas e Biometano",
-  "Protecao Catodica",
+  "Biogás e Biometano",
+  "Proteção Catódica",
   "Automacao",
   "HVAC",
   "Agronegocio",
   "Telemetria",
-  "Deteccao de Gas",
+  "Detecção de Gás",
 ];
 
 const catMap: Record<string, string> = {
-  "Medicao de Vazao": "MEDICAO DE VAZAO",
-  "Medicao de Nivel": "MEDICAO DE NIVEL",
-  "Medicao de Pressao": "MEDICAO DE PRESSAO",
+  "Medição de Vazão": "MEDIÇÃO DE VAZÃO",
+  "Medição de Nível": "MEDIÇÃO DE NÍVEL",
+  "Medição de Pressão": "MEDIÇÃO DE PRESSÃO",
   "Analise de Gas": "ANALISE DE GAS",
-  "Biogas e Biometano": "BIOGAS E BIOMETANO",
-  "Protecao Catodica": "PROTECAO CATODICA",
-  Automacao: "AUTOMACAO",
+  "Biogás e Biometano": "BIOGÁS E BIOMETANO",
+  "Proteção Catódica": "PROTEÇÃO CATÓDICA",
+  Automacao: "AUTOMAÇÃO",
   HVAC: "HVAC",
   Agronegocio: "AGRONEGOCIO",
   Telemetria: "TELEMETRIA",
-  "Deteccao de Gas": "DETECCAO DE GAS",
+  "Detecção de Gás": "DETECÇÃO DE GÁS",
 };
 
 const sidebarSectors = [
   "Saneamento",
   "Gas e Petroleo",
-  "Biogas e Biometano",
+  "Biogás e Biometano",
   "HVAC",
   "Industria",
   "Agronegocio",
-  "Protecao Catodica",
+  "Proteção Catódica",
   "Telemetria",
 ];
 
@@ -493,7 +493,7 @@ function ProductModal({ product, onClose }: { product: Product; onClose: () => v
             fontSize: 18, color: "#333", display: "flex",
             alignItems: "center", justifyContent: "center",
           }}
-          onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#FF6A00"; e.currentTarget.style.color = "#FF6A00"; }}
+          onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#0057DE"; e.currentTarget.style.color = "#0057DE"; }}
           onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#ddd"; e.currentTarget.style.color = "#333"; }}
         >
           ✕
@@ -509,7 +509,7 @@ function ProductModal({ product, onClose }: { product: Product; onClose: () => v
             }} />
             <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(0,0,0,0.5) 0%, transparent 60%)" }} />
             <div style={{ position: "absolute", bottom: 24, left: 24 }}>
-              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#FF6A00" }}>
+              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#0057DE" }}>
                 {product.category}
               </span>
             </div>
@@ -537,7 +537,7 @@ function ProductModal({ product, onClose }: { product: Product; onClose: () => v
         {/* Specs table */}
         <div style={{ padding: "0 32px 40px" }}>
           <div style={{ borderTop: "2px solid #111", paddingTop: 32, marginTop: 8 }}>
-            <span style={{ display: "inline-block", fontSize: 10, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 20 }}>
+            <span style={{ display: "inline-block", fontSize: 10, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#0057DE", marginBottom: 20 }}>
               ESPECIFICACOES TECNICAS
             </span>
             <div style={{ borderTop: "1px solid #eee" }}>
@@ -561,13 +561,13 @@ function ProductModal({ product, onClose }: { product: Product; onClose: () => v
 
         {/* Applications */}
         <div style={{ padding: "0 32px 40px" }}>
-          <span style={{ display: "inline-block", fontSize: 10, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 20 }}>
+          <span style={{ display: "inline-block", fontSize: 10, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "#0057DE", marginBottom: 20 }}>
             APLICACOES
           </span>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-0" style={{ borderTop: "1px solid #eee", borderLeft: "1px solid #eee" }}>
             {product.details.applications.map((app, i) => (
               <div key={i} style={{ borderRight: "1px solid #eee", borderBottom: "1px solid #eee", padding: "16px 20px", display: "flex", alignItems: "baseline", gap: 12 }}>
-                <span style={{ fontFamily: KNOCKOUT, fontSize: 16, color: "#FF6A00", fontWeight: 500, flexShrink: 0 }}>
+                <span style={{ fontFamily: KNOCKOUT, fontSize: 16, color: "#0057DE", fontWeight: 500, flexShrink: 0 }}>
                   {String(i + 1).padStart(2, "0")}
                 </span>
                 <span style={{ fontSize: 13, color: "#555", lineHeight: 1.5 }}>{app}</span>
@@ -586,11 +586,11 @@ function ProductModal({ product, onClose }: { product: Product; onClose: () => v
                 display: "flex", alignItems: "center", justifyContent: "center",
                 padding: "16px 32px", fontSize: 12, fontWeight: 700,
                 textTransform: "uppercase", letterSpacing: "0.1em",
-                color: "#000", backgroundColor: "#FF6A00", flex: 1,
+                color: "#000", backgroundColor: "#0057DE", flex: 1,
                 textDecoration: "none", transition: "all 0.3s ease",
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#000"; e.currentTarget.style.color = "#FF6A00"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#FF6A00"; e.currentTarget.style.color = "#000"; }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#000"; e.currentTarget.style.color = "#0057DE"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#0057DE"; e.currentTarget.style.color = "#000"; }}
             >
               Solicitar Orcamento
             </Link>
@@ -604,7 +604,7 @@ function ProductModal({ product, onClose }: { product: Product; onClose: () => v
                 color: "#555", border: "1px solid #ddd", flex: 1,
                 textDecoration: "none", transition: "all 0.3s ease",
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#FF6A00"; e.currentTarget.style.color = "#FF6A00"; }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#0057DE"; e.currentTarget.style.color = "#0057DE"; }}
               onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#ddd"; e.currentTarget.style.color = "#555"; }}
             >
               Falar com Especialista
@@ -680,7 +680,7 @@ export default function ProdutosPage() {
           className="relative z-10 flex flex-col justify-end h-full"
           style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px 100px 30px" }}
         >
-          <span style={{ display: "inline-block", fontSize: 13, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 16 }}>
+          <span style={{ display: "inline-block", fontSize: 13, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
             PRODUTOS
           </span>
           <h1 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(41px, 6vw, 85px)", fontWeight: 500, lineHeight: 0.95, textTransform: "uppercase", color: "#fff", maxWidth: 800, margin: 0 }}>
@@ -711,7 +711,7 @@ export default function ProdutosPage() {
           <AnimateOnScroll>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-24 items-start">
               <div>
-                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 20 }}>
+                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 20 }}>
                   CATALOGO TECNICO
                 </span>
                 <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 52px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", marginBottom: 28, color: "#111" }}>
@@ -750,9 +750,9 @@ export default function ProdutosPage() {
                     textTransform: "uppercase",
                     letterSpacing: "0.08em",
                     border: "none",
-                    borderBottom: isActive ? "2px solid #FF6A00" : "2px solid transparent",
+                    borderBottom: isActive ? "2px solid #0057DE" : "2px solid transparent",
                     backgroundColor: "transparent",
-                    color: isActive ? "#FF6A00" : "#666",
+                    color: isActive ? "#0057DE" : "#666",
                     cursor: "pointer",
                     transition: "all 0.3s ease",
                     whiteSpace: "nowrap",
@@ -777,7 +777,7 @@ export default function ProdutosPage() {
           <div className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-center justify-between">
             <div className="flex items-center gap-6">
               <p style={{ fontSize: 13, color: "#888", fontFamily: "monospace" }}>
-                <span style={{ color: "#FF6A00", fontWeight: 700 }}>{filtered.length}</span>
+                <span style={{ color: "#0057DE", fontWeight: 700 }}>{filtered.length}</span>
                 {" "}resultado{filtered.length !== 1 ? "s" : ""}
               </p>
               <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
@@ -818,7 +818,7 @@ export default function ProdutosPage() {
                   fontWeight: 700,
                   textTransform: "uppercase",
                   letterSpacing: "0.1em",
-                  color: sidebarOpen ? "#FF6A00" : "#666",
+                  color: sidebarOpen ? "#0057DE" : "#666",
                   cursor: "pointer",
                   backgroundColor: "#fff",
                 }}
@@ -842,7 +842,7 @@ export default function ProdutosPage() {
                     outline: "none",
                     transition: "border-color 0.3s",
                   }}
-                  onFocus={(e) => { e.currentTarget.style.borderColor = "#FF6A00"; }}
+                  onFocus={(e) => { e.currentTarget.style.borderColor = "#0057DE"; }}
                   onBlur={(e) => { e.currentTarget.style.borderColor = "#ddd"; }}
                 />
               </div>
@@ -870,7 +870,7 @@ export default function ProdutosPage() {
                     className="flex items-center justify-between w-full"
                     style={{
                       fontSize: 10, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase",
-                      color: "#FF6A00", border: "none", background: "none", cursor: "pointer",
+                      color: "#0057DE", border: "none", background: "none", cursor: "pointer",
                       padding: "0 0 10px", borderBottom: "1px solid #ddd", marginBottom: 16, textAlign: "left",
                     }}
                   >
@@ -894,8 +894,8 @@ export default function ProdutosPage() {
                             onMouseLeave={(e) => { if (!isChecked) e.currentTarget.style.color = "#888"; }}
                           >
                             <span style={{
-                              width: 14, height: 14, border: isChecked ? "1px solid #FF6A00" : "1px solid #ccc",
-                              backgroundColor: isChecked ? "#FF6A00" : "#fff", display: "flex",
+                              width: 14, height: 14, border: isChecked ? "1px solid #0057DE" : "1px solid #ccc",
+                              backgroundColor: isChecked ? "#0057DE" : "#fff", display: "flex",
                               alignItems: "center", justifyContent: "center", fontSize: 10, color: "#fff",
                               flexShrink: 0,
                             }}>
@@ -909,14 +909,14 @@ export default function ProdutosPage() {
                   )}
                 </div>
 
-                {/* TIPO DE MEDICAO */}
+                {/* TIPO DE MEDIÇÃO */}
                 <div style={{ marginBottom: 32 }}>
                   <button
                     onClick={() => setMeasureOpen(!measureOpen)}
                     className="flex items-center justify-between w-full"
                     style={{
                       fontSize: 10, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase",
-                      color: "#FF6A00", border: "none", background: "none", cursor: "pointer",
+                      color: "#0057DE", border: "none", background: "none", cursor: "pointer",
                       padding: "0 0 10px", borderBottom: "1px solid #ddd", marginBottom: 16, textAlign: "left",
                     }}
                   >
@@ -940,8 +940,8 @@ export default function ProdutosPage() {
                             onMouseLeave={(e) => { if (!isChecked) e.currentTarget.style.color = "#888"; }}
                           >
                             <span style={{
-                              width: 14, height: 14, border: isChecked ? "1px solid #FF6A00" : "1px solid #ccc",
-                              backgroundColor: isChecked ? "#FF6A00" : "#fff", display: "flex",
+                              width: 14, height: 14, border: isChecked ? "1px solid #0057DE" : "1px solid #ccc",
+                              backgroundColor: isChecked ? "#0057DE" : "#fff", display: "flex",
                               alignItems: "center", justifyContent: "center", fontSize: 10, color: "#fff",
                               flexShrink: 0,
                             }}>
@@ -960,9 +960,9 @@ export default function ProdutosPage() {
                   <button
                     onClick={() => { setSectorFilters([]); setMeasureFilters([]); }}
                     style={{
-                      fontSize: 11, fontWeight: 700, color: "#FF6A00", background: "none",
+                      fontSize: 11, fontWeight: 700, color: "#0057DE", background: "none",
                       border: "none", cursor: "pointer", padding: 0, textTransform: "uppercase",
-                      letterSpacing: "0.1em", borderBottom: "1px solid #FF6A00",
+                      letterSpacing: "0.1em", borderBottom: "1px solid #0057DE",
                     }}
                   >
                     Limpar filtros
@@ -978,7 +978,7 @@ export default function ProdutosPage() {
                   <p style={{ fontSize: 15, color: "#888", marginBottom: 16 }}>Nenhum produto encontrado para os filtros selecionados.</p>
                   <button
                     onClick={() => { setActiveTab("Todos"); setSearch(""); setSectorFilters([]); setMeasureFilters([]); }}
-                    style={{ fontSize: 12, fontWeight: 700, color: "#FF6A00", background: "none", border: "none", cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.1em", borderBottom: "1px solid #FF6A00" }}
+                    style={{ fontSize: 12, fontWeight: 700, color: "#0057DE", background: "none", border: "none", cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.1em", borderBottom: "1px solid #0057DE" }}
                   >
                     Limpar todos os filtros
                   </button>
@@ -1022,7 +1022,7 @@ export default function ProdutosPage() {
                           <div style={{ position: "absolute", bottom: 16, left: 20 }}>
                             <span style={{
                               fontSize: 9, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase",
-                              color: "#FF6A00",
+                              color: "#0057DE",
                             }}>
                               {product.category}
                             </span>
@@ -1035,7 +1035,7 @@ export default function ProdutosPage() {
                             fontFamily: KNOCKOUT, fontSize: 20, fontWeight: 500, color: "#111",
                             textTransform: "uppercase", lineHeight: 1.1, marginBottom: 10,
                             transition: "color 0.3s",
-                          }} className="group-hover:text-[#FF6A00]">
+                          }} className="group-hover:text-[#0057DE]">
                             {product.name}
                           </h3>
                           <p style={{ fontSize: 13, lineHeight: 1.6, color: "#888", marginBottom: 16, flex: 1 }}>
@@ -1074,11 +1074,11 @@ export default function ProdutosPage() {
                           }}>
                             <span style={{
                               fontSize: 10, fontWeight: 700, textTransform: "uppercase",
-                              letterSpacing: "0.1em", color: "#FF6A00", transition: "letter-spacing 0.3s",
+                              letterSpacing: "0.1em", color: "#0057DE", transition: "letter-spacing 0.3s",
                             }} className="group-hover:tracking-widest">
                               Ver detalhes
                             </span>
-                            <span style={{ fontSize: 16, color: "#FF6A00", transition: "transform 0.3s" }} className="group-hover:translate-x-1">
+                            <span style={{ fontSize: 16, color: "#0057DE", transition: "transform 0.3s" }} className="group-hover:translate-x-1">
                               →
                             </span>
                           </div>
@@ -1101,11 +1101,11 @@ export default function ProdutosPage() {
           <div className="grid grid-cols-2 gap-8">
             {[
               { value: String(products.length), label: "Equipamentos no Catalogo" },
-              { value: "+11", label: "Setores Atendidos" },
+              { value: "+11", label: "Indústrias Atendidas" },
             ].map((s, i) => (
               <AnimateOnScroll key={s.label} delay={i * 0.1}>
                 <div style={{ textAlign: "center" }}>
-                  <span style={{ fontFamily: KNOCKOUT, fontSize: "clamp(40px, 5vw, 64px)", fontWeight: 500, lineHeight: 1, color: "#FF6A00", display: "block" }}>
+                  <span style={{ fontFamily: KNOCKOUT, fontSize: "clamp(40px, 5vw, 64px)", fontWeight: 500, lineHeight: 1, color: "#0057DE", display: "block" }}>
                     {s.value}
                   </span>
                   <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "rgba(255,255,255,0.4)", marginTop: 8, display: "block" }}>
@@ -1126,7 +1126,7 @@ export default function ProdutosPage() {
           <AnimateOnScroll>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
               <div>
-                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#FF6A00", marginBottom: 20 }}>
+                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 20 }}>
                   CATALOGO TECNICO
                 </span>
                 <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 52px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", color: "#fff", marginBottom: 24 }}>
@@ -1138,7 +1138,7 @@ export default function ProdutosPage() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                   {["Datasheets completos de cada equipamento", "Tabelas de selecao por aplicacao", "Certificados e documentacao tecnica"].map((item, idx) => (
                     <div key={idx} style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-                      <span style={{ fontFamily: KNOCKOUT, fontSize: 18, color: "#FF6A00", fontWeight: 500, flexShrink: 0 }}>
+                      <span style={{ fontFamily: KNOCKOUT, fontSize: 18, color: "#0057DE", fontWeight: 500, flexShrink: 0 }}>
                         {String(idx + 1).padStart(2, "0")}
                       </span>
                       <span style={{ fontSize: 14, color: "#888" }}>{item}</span>
@@ -1155,12 +1155,12 @@ export default function ProdutosPage() {
                     to="/contato"
                     style={{
                       display: "inline-flex", alignItems: "center", gap: 12,
-                      backgroundColor: "#FF6A00", color: "#000", padding: "16px 40px",
+                      backgroundColor: "#0057DE", color: "#000", padding: "16px 40px",
                       fontWeight: 700, fontSize: 13, textTransform: "uppercase",
                       letterSpacing: "0.08em", textDecoration: "none", transition: "all 0.3s ease",
                     }}
                     onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#fff"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#FF6A00"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#0057DE"; }}
                   >
                     Solicitar Catalogo
                   </Link>

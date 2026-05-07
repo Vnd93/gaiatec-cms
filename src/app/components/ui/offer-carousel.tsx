@@ -43,8 +43,8 @@ const OfferCard = React.forwardRef<HTMLAnchorElement, OfferCardProps>(({ offer }
       <div className="space-y-1.5">
         {/* Tag */}
         <div className="flex items-center text-xs text-gray-500">
-          <Tag className="w-3 h-3 mr-1.5 text-orange-500" />
-          <span className="font-medium text-orange-500 uppercase tracking-wider text-[10px]">{offer.tag}</span>
+          <Tag className="w-3 h-3 mr-1.5 text-[#0057DE]" />
+          <span className="font-medium text-[#0057DE] uppercase tracking-wider text-[10px]">{offer.tag}</span>
         </div>
         {/* Title & Description */}
         <h3 className="text-sm font-bold text-gray-900 leading-tight line-clamp-2">{offer.title}</h3>
@@ -62,7 +62,7 @@ const OfferCard = React.forwardRef<HTMLAnchorElement, OfferCardProps>(({ offer }
             )}
           </div>
         </div>
-        <div className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 transform transition-transform duration-300 group-hover:rotate-[-45deg] group-hover:bg-orange-500 group-hover:text-white">
+        <div className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 transform transition-transform duration-300 group-hover:rotate-[-45deg] group-hover:bg-[#0057DE] group-hover:text-white">
           <ArrowRight className="w-3 h-3" />
         </div>
       </div>
@@ -97,7 +97,7 @@ const OfferCarousel = React.forwardRef<HTMLDivElement, OfferCarouselProps>(
         {/* Left Scroll Button */}
         <button
           onClick={() => scroll("left")}
-          className="absolute top-1/2 -translate-y-1/2 left-0 z-10 w-10 h-10 rounded-full bg-white/80 backdrop-blur-sm border border-gray-200 shadow-md flex items-center justify-center text-gray-700 opacity-0 hover-container:hover:opacity-100 hover:opacity-100 transition-opacity duration-300 hover:bg-white hover:text-orange-500 disabled:opacity-0"
+          className="absolute top-1/2 -translate-y-1/2 left-0 z-10 w-10 h-10 rounded-full bg-white/80 backdrop-blur-sm border border-gray-200 shadow-md flex items-center justify-center text-gray-700 opacity-0 hover-container:hover:opacity-100 hover:opacity-100 transition-opacity duration-300 hover:bg-white hover:text-[#0057DE] disabled:opacity-0"
           aria-label="Scroll Left"
         >
           <ChevronLeft className="w-6 h-6" />
@@ -117,7 +117,7 @@ const OfferCarousel = React.forwardRef<HTMLDivElement, OfferCarouselProps>(
         {/* Right Scroll Button */}
         <button
           onClick={() => scroll("right")}
-          className="absolute top-1/2 -translate-y-1/2 right-0 z-10 w-10 h-10 rounded-full bg-white/80 backdrop-blur-sm border border-gray-200 shadow-md flex items-center justify-center text-gray-700 opacity-0 hover-container:hover:opacity-100 hover:opacity-100 transition-opacity duration-300 hover:bg-white hover:text-orange-500 disabled:opacity-0"
+          className="absolute top-1/2 -translate-y-1/2 right-0 z-10 w-10 h-10 rounded-full bg-white/80 backdrop-blur-sm border border-gray-200 shadow-md flex items-center justify-center text-gray-700 opacity-0 hover-container:hover:opacity-100 hover:opacity-100 transition-opacity duration-300 hover:bg-white hover:text-[#0057DE] disabled:opacity-0"
           aria-label="Scroll Right"
         >
           <ChevronRight className="w-6 h-6" />

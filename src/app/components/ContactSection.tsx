@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Phone, MessageSquare, MapPin, ChevronRight } from "lucide-react";
+import { Phone, MessageSquare, MapPin, ChevronRight, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { AnimateOnScroll } from "./useScrollAnimation";
 import { useContactInfo } from "../hooks/useSiteData";
 
@@ -11,11 +11,18 @@ const FALLBACK_CTAS = [
 
 const enquiryTypes = ["Orçamento", "Suporte Técnico", "Calibração", "Instrumentação", "Automação", "Proteção Catódica", "Outros"];
 
+const SUPABASE_URL = "https://pbmyttjnqijdbscrjayk.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBibXl0dGpucWlqZGJzY3JqYXlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIwNTM3MTIsImV4cCI6MjA4NzYyOTcxMn0.YtCaZCoKHJTGEHxaCRl3yaf0Aol86oXWjKoD0xgXcok";
+
+type FormStatus = "idle" | "submitting" | "success" | "error";
+
 export function ContactSection() {
   const { contact } = useContactInfo();
   const [formData, setFormData] = useState({
     firstName: "", lastName: "", email: "", phone: "", company: "", enquiryType: "", message: "", consent: false,
   });
+  const [status, setStatus] = useState<FormStatus>("idle");
+  const [errorMsg, setErrorMsg] = useState("");
 
   const contactCtas = contact.telefone
     ? [
@@ -40,10 +47,60 @@ export function ContactSection() {
       ]
     : FALLBACK_CTAS;
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    alert("Obrigado pelo contato! Retornaremos em breve.");
+  const resetForm = () => {
+    setFormData({
+      firstName: "", lastName: "", email: "", phone: "", company: "", enquiryType: "", message: "", consent: false,
+    });
   };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!formData.consent) {
+      setStatus("error");
+      setErrorMsg("Você precisa concordar com a Política de Privacidade.");
+      return;
+    }
+
+    setStatus("submitting");
+    setErrorMsg("");
+
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/submit-contact`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          ...formData,
+          origem: typeof window !== "undefined" ? window.location.pathname : "/",
+        }),
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(data?.error || `Erro ${res.status}`);
+      }
+
+      setStatus("success");
+      resetForm();
+
+      // Volta ao estado idle após 6s pra permitir novo envio sem reload
+      setTimeout(() => setStatus("idle"), 6000);
+    } catch (err) {
+      setStatus("error");
+      setErrorMsg(
+        err instanceof Error
+          ? err.message
+          : "Não foi possível enviar. Tente novamente em alguns instantes."
+      );
+    }
+  };
+
+  const isSubmitting = status === "submitting";
 
   return (
     <section className="bg-[#f7f7f7]" id="contact">
@@ -56,17 +113,43 @@ export function ContactSection() {
               <p className="text-[#666] text-[15px] mb-8">Preencha o formulário e retornaremos o mais breve possível.</p>
             </AnimateOnScroll>
 
+            {/* Mensagem de sucesso */}
+            {status === "success" && (
+              <div className="mb-6 flex items-start gap-3 p-4 bg-green-50 border border-green-200 rounded-md">
+                <CheckCircle2 size={20} className="text-green-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-green-900 font-semibold text-sm">Mensagem enviada com sucesso!</p>
+                  <p className="text-green-800 text-sm mt-1">
+                    Recebemos sua solicitação. Nossa equipe técnica retornará em breve no e-mail informado.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Mensagem de erro */}
+            {status === "error" && errorMsg && (
+              <div className="mb-6 flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-md">
+                <AlertCircle size={20} className="text-red-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-red-900 font-semibold text-sm">Erro ao enviar</p>
+                  <p className="text-red-800 text-sm mt-1">{errorMsg}</p>
+                </div>
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <input
                   type="text" placeholder="Nome" required
-                  className="w-full bg-white border border-[#e0e0e0] px-4 py-3 text-[14px] text-black placeholder:text-[#999] outline-none focus:border-[#0057DE] transition-colors"
+                  disabled={isSubmitting}
+                  className="w-full bg-white border border-[#e0e0e0] px-4 py-3 text-[14px] text-black placeholder:text-[#999] outline-none focus:border-[#0057DE] transition-colors disabled:opacity-50"
                   value={formData.firstName}
                   onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
                 />
                 <input
-                  type="text" placeholder="Sobrenome" required
-                  className="w-full bg-white border border-[#e0e0e0] px-4 py-3 text-[14px] text-black placeholder:text-[#999] outline-none focus:border-[#0057DE] transition-colors"
+                  type="text" placeholder="Sobrenome"
+                  disabled={isSubmitting}
+                  className="w-full bg-white border border-[#e0e0e0] px-4 py-3 text-[14px] text-black placeholder:text-[#999] outline-none focus:border-[#0057DE] transition-colors disabled:opacity-50"
                   value={formData.lastName}
                   onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
                 />
@@ -74,25 +157,29 @@ export function ContactSection() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <input
                   type="email" placeholder="E-mail" required
-                  className="w-full bg-white border border-[#e0e0e0] px-4 py-3 text-[14px] text-black placeholder:text-[#999] outline-none focus:border-[#0057DE] transition-colors"
+                  disabled={isSubmitting}
+                  className="w-full bg-white border border-[#e0e0e0] px-4 py-3 text-[14px] text-black placeholder:text-[#999] outline-none focus:border-[#0057DE] transition-colors disabled:opacity-50"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 />
                 <input
-                  type="tel" placeholder="Telefone / WhatsApp" required
-                  className="w-full bg-white border border-[#e0e0e0] px-4 py-3 text-[14px] text-black placeholder:text-[#999] outline-none focus:border-[#0057DE] transition-colors"
+                  type="tel" placeholder="Telefone / WhatsApp"
+                  disabled={isSubmitting}
+                  className="w-full bg-white border border-[#e0e0e0] px-4 py-3 text-[14px] text-black placeholder:text-[#999] outline-none focus:border-[#0057DE] transition-colors disabled:opacity-50"
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                 />
               </div>
               <input
                 type="text" placeholder="Empresa"
-                className="w-full bg-white border border-[#e0e0e0] px-4 py-3 text-[14px] text-black placeholder:text-[#999] outline-none focus:border-[#0057DE] transition-colors"
+                disabled={isSubmitting}
+                className="w-full bg-white border border-[#e0e0e0] px-4 py-3 text-[14px] text-black placeholder:text-[#999] outline-none focus:border-[#0057DE] transition-colors disabled:opacity-50"
                 value={formData.company}
                 onChange={(e) => setFormData({ ...formData, company: e.target.value })}
               />
               <select
-                className="w-full bg-white border border-[#e0e0e0] px-4 py-3 text-[14px] text-black outline-none focus:border-[#0057DE] transition-colors appearance-none"
+                disabled={isSubmitting}
+                className="w-full bg-white border border-[#e0e0e0] px-4 py-3 text-[14px] text-black outline-none focus:border-[#0057DE] transition-colors appearance-none disabled:opacity-50"
                 value={formData.enquiryType}
                 onChange={(e) => setFormData({ ...formData, enquiryType: e.target.value })}
                 style={{ color: formData.enquiryType ? "#000" : "#999" }}
@@ -102,7 +189,8 @@ export function ContactSection() {
               </select>
               <textarea
                 placeholder="Sua Mensagem" required rows={5}
-                className="w-full bg-white border border-[#e0e0e0] px-4 py-3 text-[14px] text-black placeholder:text-[#999] outline-none focus:border-[#0057DE] transition-colors resize-none"
+                disabled={isSubmitting}
+                className="w-full bg-white border border-[#e0e0e0] px-4 py-3 text-[14px] text-black placeholder:text-[#999] outline-none focus:border-[#0057DE] transition-colors resize-none disabled:opacity-50"
                 value={formData.message}
                 onChange={(e) => setFormData({ ...formData, message: e.target.value })}
               />
@@ -115,21 +203,31 @@ export function ContactSection() {
                 <label className="flex items-start gap-2 cursor-pointer">
                   <input
                     type="checkbox"
+                    required
+                    disabled={isSubmitting}
                     className="mt-1 accent-[#0057DE]"
                     checked={formData.consent}
                     onChange={(e) => setFormData({ ...formData, consent: e.target.checked })}
                   />
                   <span className="text-[12px] text-[#999]">
-                    Concordo em receber comunicações da Gaiatec Sistemas.
+                    Concordo com a Política de Privacidade e em receber comunicações da Gaiatec Sistemas.
                   </span>
                 </label>
               </div>
               <button
                 type="submit"
-                className="bg-[#0057DE] text-black px-10 py-3 text-[13px] tracking-wider hover:bg-[#0046b3] transition-colors"
+                disabled={isSubmitting}
+                className="bg-[#0057DE] text-white px-10 py-3 text-[13px] tracking-wider hover:bg-[#0046b3] transition-colors inline-flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
                 style={{ fontWeight: 700 }}
               >
-                Enviar
+                {isSubmitting ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    Enviando...
+                  </>
+                ) : (
+                  "Enviar"
+                )}
               </button>
             </form>
           </div>

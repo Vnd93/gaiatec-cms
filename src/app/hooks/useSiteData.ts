@@ -281,6 +281,28 @@ export function useAplicacao(slug: string): {
   return { aplicacao: data, loading }
 }
 
+/* ─────────────────────────────────────────────────────────
+   TIMELINE (TASK 24)
+   ───────────────────────────────────────────────────────── */
+export interface TimelineItemAPI {
+  ano: number
+  titulo: string
+  texto: string | null
+  icone: string | null
+  ordem: number
+}
+
+/** Linha do tempo da Gaiatec (renderizado em /sobre).
+ *  Editável pelo painel ERP em /marketing/site → tab Linha do Tempo. */
+export function useTimeline(): { timeline: TimelineItemAPI[]; loading: boolean } {
+  const { data, loading } = useCachedFetch<TimelineItemAPI[]>(
+    'timeline',
+    () => fetchSiteContent<TimelineItemAPI[]>({ type: 'timeline' }),
+    [],
+  )
+  return { timeline: data, loading }
+}
+
 /** Fetch blog posts */
 export function useBlogPosts(): { posts: BlogPost[]; loading: boolean } {
   const { data, loading } = useCachedFetch<BlogPost[]>(

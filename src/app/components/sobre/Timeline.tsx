@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   Building2,
   Cog,
@@ -12,7 +12,8 @@ import {
   Sprout,
   Star,
 } from "lucide-react";
-import { timeline, type TimelineEntry } from "../../data/timeline";
+import { timeline as FALLBACK_TIMELINE, type TimelineEntry } from "../../data/timeline";
+import { useTimeline } from "../../hooks/useSiteData";
 
 const ICONS: Record<string, React.ComponentType<{ size?: number; strokeWidth?: number; className?: string }>> = {
   Building2,
@@ -43,6 +44,20 @@ const KNOCKOUT = "'Knockout HTF68', sans-serif";
 export function Timeline() {
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // CMS-driven (TASK 24): busca da API com fallback ao array hardcoded
+  const { timeline: apiTimeline } = useTimeline();
+  const items = useMemo<TimelineEntry[]>(() => {
+    if (apiTimeline && apiTimeline.length > 0) {
+      return apiTimeline.map((t) => ({
+        ano: t.ano,
+        titulo: t.titulo,
+        texto: t.texto || "",
+        icone: t.icone || "Star",
+      }));
+    }
+    return FALLBACK_TIMELINE;
+  }, [apiTimeline]);
+
   // Anima cards com IntersectionObserver
   useEffect(() => {
     const cards = document.querySelectorAll(".gtl-card");
@@ -59,7 +74,7 @@ export function Timeline() {
 
     cards.forEach((c) => observer.observe(c));
     return () => observer.disconnect();
-  }, []);
+  }, [items]);
 
   return (
     <section ref={containerRef} className="bg-white py-20 md:py-28 relative overflow-hidden">
@@ -262,7 +277,7 @@ export function Timeline() {
         <div className="gtl-track">
           <div className="gtl-line" aria-hidden="true" />
 
-          {timeline.map((entry: TimelineEntry, i) => {
+          {items.map((entry: TimelineEntry, i) => {
             const Icon = ICONS[entry.icone] ?? Star;
             const side = i % 2 === 0 ? "gtl-left" : "gtl-right";
             return (

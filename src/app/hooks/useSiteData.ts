@@ -224,6 +224,63 @@ export function useSetor(slug: string): { setor: SetorDetail | null; loading: bo
   return { setor: data, loading }
 }
 
+/* ─────────────────────────────────────────────────────────
+   APLICAÇÕES (TASK 26a)
+   ───────────────────────────────────────────────────────── */
+export interface AplicacaoListAPI {
+  slug: string
+  nome: string
+  descricao_curta: string | null
+  imagem_url: string | null
+  icone: string | null
+  setores: string[]
+  destaque: boolean
+  ordem: number
+}
+
+export interface AplicacaoDetailAPI extends AplicacaoListAPI {
+  descricao_completa: string | null
+  beneficios: string[]
+  casos_uso: string[]
+  produtos_relacionados: string[]
+  servicos_relacionados: string[]
+  seo_title: string | null
+  seo_description: string | null
+}
+
+/** Lista todas as aplicações publicadas (CMS-driven, fallback no caller). */
+export function useAplicacoes(filtros?: { setor?: string; busca?: string; destaque?: boolean }): {
+  aplicacoes: AplicacaoListAPI[]
+  loading: boolean
+} {
+  const cacheKey = `aplicacoes:${filtros?.setor ?? 'all'}:${filtros?.busca ?? ''}:${filtros?.destaque ? 'destaque' : 'all'}`
+  const { data, loading } = useCachedFetch<AplicacaoListAPI[]>(
+    cacheKey,
+    () =>
+      fetchSiteContent<AplicacaoListAPI[]>({
+        type: 'aplicacoes',
+        ...(filtros?.setor ? { setor: filtros.setor } : {}),
+        ...(filtros?.busca ? { q: filtros.busca } : {}),
+        ...(filtros?.destaque ? { destaque: 'true' } : {}),
+      }),
+    [],
+  )
+  return { aplicacoes: data, loading }
+}
+
+/** Detalhe de uma aplicação por slug. */
+export function useAplicacao(slug: string): {
+  aplicacao: AplicacaoDetailAPI | null
+  loading: boolean
+} {
+  const { data, loading } = useCachedFetch<AplicacaoDetailAPI | null>(
+    `aplicacao:${slug}`,
+    () => fetchSiteContent<AplicacaoDetailAPI>({ type: 'aplicacao', slug }),
+    null,
+  )
+  return { aplicacao: data, loading }
+}
+
 /** Fetch blog posts */
 export function useBlogPosts(): { posts: BlogPost[]; loading: boolean } {
   const { data, loading } = useCachedFetch<BlogPost[]>(

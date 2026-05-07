@@ -3,7 +3,8 @@ import { Search, Lightbulb } from "lucide-react";
 import { AnimateOnScroll } from "../components/useScrollAnimation";
 import { CTABanner } from "../components/CTABanner";
 import { AplicacaoCard } from "../components/aplicacoes/AplicacaoCard";
-import { aplicacoes, setoresFromAplicacoes } from "../data/aplicacoes";
+import { aplicacoes as FALLBACK_APLICACOES, setoresFromAplicacoes } from "../data/aplicacoes";
+import { useAplicacoes } from "../hooks/useSiteData";
 import { SEO, buildCollectionPageSchema } from "../components/SEO";
 
 const KNOCKOUT = "'Knockout HTF68', sans-serif";
@@ -22,7 +23,36 @@ export default function AplicacoesPage() {
   const [busca, setBusca] = useState("");
   const [setorAtivo, setSetorAtivo] = useState<string>("Todos");
 
-  const setoresList = useMemo(() => ["Todos", ...setoresFromAplicacoes], []);
+  // CMS-driven (TASK 26a) — busca via Edge Function, fallback no array hardcoded
+  const { aplicacoes: apiAplicacoes, loading } = useAplicacoes();
+
+  // Adapter: mapeia API (snake_case) → shape do componente (camelCase)
+  // Quando API não retorna nada (loading ou erro), usa fallback
+  const aplicacoes = useMemo(() => {
+    if (apiAplicacoes && apiAplicacoes.length > 0) {
+      return apiAplicacoes.map((a) => ({
+        slug: a.slug,
+        nome: a.nome,
+        descricaoCurta: a.descricao_curta || "",
+        descricaoCompleta: "", // fetched only in detail page
+        imagem: a.imagem_url || "/images/industries/5.1.png",
+        icone: a.icone || "Wrench",
+        setores: a.setores,
+        produtosRelacionados: [],
+        servicosRelacionados: [],
+        beneficios: [],
+        casosUso: [],
+        destaque: a.destaque,
+      }));
+    }
+    return FALLBACK_APLICACOES;
+  }, [apiAplicacoes]);
+
+  // Setores únicos (vem da API ou do fallback)
+  const setoresList = useMemo(() => {
+    const fromApi = Array.from(new Set(aplicacoes.flatMap((a) => a.setores))).sort();
+    return ["Todos", ...(fromApi.length > 0 ? fromApi : setoresFromAplicacoes)];
+  }, [aplicacoes]);
 
   const filtered = useMemo(() => {
     const buscaLower = busca.trim().toLowerCase();
@@ -34,7 +64,10 @@ export default function AplicacoesPage() {
       }
       return true;
     });
-  }, [busca, setorAtivo]);
+  }, [busca, setorAtivo, aplicacoes]);
+
+  // loading aviso silencioso — fallback hardcoded já carrega instantâneo
+  void loading;
 
   return (
     <>

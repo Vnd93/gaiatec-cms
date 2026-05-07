@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { GitCompare, Check } from "lucide-react";
 import { AnimateOnScroll } from "../components/useScrollAnimation";
 import { CTABanner } from "../components/CTABanner";
@@ -7,9 +7,6 @@ import { useComparador } from "../components/produtos/ComparadorContext";
 import { SEO, buildCollectionPageSchema } from "../components/SEO";
 
 const KNOCKOUT = "'Knockout HTF68', sans-serif";
-
-const HERO_IMG =
-  "/images/heroes/1.1.png";
 
 /* ────────────────────────────────────────────────────────
    DATA — exportado para reuso em /produtos/[slug] (ProdutoPage)
@@ -636,22 +633,73 @@ function ProductModal({ product, onClose }: { product: Product; onClose: () => v
    COMPONENT
    ──────────────────────────────────────────────────────── */
 export default function ProdutosPage() {
-  const [activeTab, setActiveTab] = useState("Todos");
-  const [search, setSearch] = useState("");
-  const [sort, setSort] = useState("Relevancia");
-  const [sectorFilters, setSectorFilters] = useState<string[]>([]);
-  const [measureFilters, setMeasureFilters] = useState<string[]>([]);
+  // URL params bookmarkable — TASK 12
+  // Permite compartilhar links como /produtos?categoria=Vazao&setor=Saneamento&q=ultrassonico
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const activeTab = searchParams.get("categoria") || "Todos";
+  const search = searchParams.get("q") || "";
+  const sort = searchParams.get("ordem") || "Relevancia";
+  const sectorFilters = searchParams.getAll("setor");
+  const measureFilters = searchParams.getAll("medicao");
+
   const [sectorOpen, setSectorOpen] = useState(true);
   const [measureOpen, setMeasureOpen] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
+  // Helper pra atualizar params imutavelmente (preserva os outros)
+  const updateParams = (mutator: (params: URLSearchParams) => void) => {
+    const next = new URLSearchParams(searchParams);
+    mutator(next);
+    setSearchParams(next, { replace: true });
+  };
+
+  const setActiveTab = (cat: string) => {
+    updateParams((p) => {
+      if (cat === "Todos") p.delete("categoria");
+      else p.set("categoria", cat);
+    });
+  };
+
+  const setSearch = (q: string) => {
+    updateParams((p) => {
+      if (!q) p.delete("q");
+      else p.set("q", q);
+    });
+  };
+
+  const setSort = (s: string) => {
+    updateParams((p) => {
+      if (s === "Relevancia") p.delete("ordem");
+      else p.set("ordem", s);
+    });
+  };
+
+  const toggleSectorFilter = (val: string) => {
+    updateParams((p) => {
+      const current = p.getAll("setor");
+      p.delete("setor");
+      const next = current.includes(val) ? current.filter((v) => v !== val) : [...current, val];
+      next.forEach((v) => p.append("setor", v));
+    });
+  };
+
+  const toggleMeasureFilter = (val: string) => {
+    updateParams((p) => {
+      const current = p.getAll("medicao");
+      p.delete("medicao");
+      const next = current.includes(val) ? current.filter((v) => v !== val) : [...current, val];
+      next.forEach((v) => p.append("medicao", v));
+    });
+  };
+
+  const clearFilters = () => {
+    setSearchParams(new URLSearchParams(), { replace: true });
+  };
+
   // Comparador (TASK 14b) — controla botão "+ Comparar" em cada card
   const { add: addComparador, has: hasComparador, isFull: comparadorFull } = useComparador();
-
-  const toggleFilter = (arr: string[], val: string, setter: (v: string[]) => void) => {
-    setter(arr.includes(val) ? arr.filter((v) => v !== val) : [...arr, val]);
-  };
 
   const filtered = useMemo(() => {
     let list = [...products];
@@ -699,66 +747,62 @@ export default function ProdutosPage() {
       )}
 
       {/* ═══════════════════════════════════════════
-          1) HERO
+          1) HERO CLARO (consistente com /setores, /servicos, /aplicacoes)
          ═══════════════════════════════════════════ */}
-      <section className="relative w-full overflow-hidden" style={{ height: 772 }}>
-        <div
-          className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: `url(${HERO_IMG})`, transform: "scale(1.05)", transition: "transform 8s ease-out" }}
-        />
-        <div className="absolute inset-0" style={{ background: "linear-gradient(to right, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.2) 50%, transparent 100%)" }} />
-        <div
-          className="relative z-10 flex flex-col justify-end h-full"
-          style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px 100px 30px" }}
-        >
-          <span style={{ display: "inline-block", fontSize: 13, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
-            PRODUTOS
-          </span>
-          <h1 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(41px, 6vw, 85px)", fontWeight: 500, lineHeight: 0.95, textTransform: "uppercase", color: "#fff", maxWidth: 800, margin: 0 }}>
-            Solucoes em Instrumentacao e Automacao
-          </h1>
-        </div>
-      </section>
-
-      {/* ── Vertical line connector ── */}
-      <div style={{ position: "relative" }}>
-        <div style={{ position: "relative", height: 60, backgroundColor: "transparent", marginTop: -60, zIndex: 20 }}>
-          <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px", position: "relative", height: "100%" }}>
-            <div style={{ position: "absolute", left: 30, top: 0, width: 1, height: "100%", backgroundColor: "#fff" }} />
-          </div>
-        </div>
-        <div style={{ position: "relative", height: 60, backgroundColor: "#fff" }}>
-          <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px", position: "relative", height: "100%" }}>
-            <div style={{ position: "absolute", left: 30, top: 0, width: 1, height: "100%", backgroundColor: "#000" }} />
-          </div>
-        </div>
-      </div>
-
-      {/* ═══════════════════════════════════════════
-          2) INTRO
-         ═══════════════════════════════════════════ */}
-      <section style={{ backgroundColor: "#fff", paddingTop: 0, paddingBottom: 80 }}>
+      <section
+        className="relative w-full overflow-hidden"
+        style={{
+          background: "linear-gradient(135deg, #f8fafc 0%, #ffffff 50%, rgba(0, 87, 222, 0.05) 100%)",
+          paddingTop: 120,
+          paddingBottom: 80,
+        }}
+      >
         <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px" }}>
-          <AnimateOnScroll>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-24 items-start">
-              <div>
-                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 20 }}>
-                  CATALOGO TECNICO
+          <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-12 items-center">
+            <div>
+              <AnimateOnScroll>
+                <span style={{ display: "inline-block", fontSize: 13, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
+                  PRODUTOS
                 </span>
-                <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 52px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", marginBottom: 28, color: "#111" }}>
-                  {products.length} Equipamentos Disponíveis
-                </h2>
-              </div>
-              <div>
-                <p style={{ fontSize: 17, lineHeight: 1.8, color: "#555", marginBottom: 24 }}>
-                  Instrumentos de medicao, sistemas de automacao, equipamentos de protecao catodica e solucoes completas para processos industriais. Cada produto e dimensionado para atender as exigencias tecnicas e normativas do seu setor.
+                <h1 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(36px, 5vw, 64px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", color: "#0f172a", marginBottom: 24 }}>
+                  Produtos de Alta Performance para Medição, Controle e Segurança
+                </h1>
+                <p style={{ fontSize: 17, lineHeight: 1.7, color: "#475569", maxWidth: 640, marginBottom: 24 }}>
+                  Instrumentos de medição, sistemas de automação, equipamentos de proteção catódica e soluções completas para processos industriais. Cada produto é dimensionado para atender às exigências técnicas e normativas do seu setor.
                 </p>
-                <p style={{ fontSize: 17, lineHeight: 1.8, color: "#555" }}>
-                  Da selecao tecnica a calibracao e comissionamento — a Gaiatec Sistemas oferece suporte integral em toda a cadeia de fornecimento.
-                </p>
-              </div>
+                <div className="flex flex-wrap gap-3">
+                  <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-full text-xs font-semibold text-slate-700">
+                    <span className="w-2 h-2 bg-[#0057DE] rounded-full" />
+                    {products.length} produtos no catálogo
+                  </span>
+                  <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-full text-xs font-semibold text-slate-700">
+                    <span className="w-2 h-2 bg-emerald-500 rounded-full" />
+                    Calibração RBC
+                  </span>
+                </div>
+              </AnimateOnScroll>
             </div>
-          </AnimateOnScroll>
+
+            {/* Mosaico decorativo de produtos */}
+            <AnimateOnScroll direction="left">
+              <div className="grid grid-cols-3 gap-2 max-w-[360px] mx-auto lg:mx-0">
+                {products.slice(0, 9).map((p, i) => (
+                  <div
+                    key={p.id}
+                    className="aspect-square overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm"
+                    style={{ transform: i % 2 === 0 ? "translateY(8px)" : "" }}
+                  >
+                    <img
+                      src={p.image}
+                      alt=""
+                      loading="lazy"
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                ))}
+              </div>
+            </AnimateOnScroll>
+          </div>
         </div>
       </section>
 
@@ -914,7 +958,7 @@ export default function ProdutosPage() {
                         return (
                           <button
                             key={s}
-                            onClick={() => toggleFilter(sectorFilters, s, setSectorFilters)}
+                            onClick={() => toggleSectorFilter(s)}
                             style={{
                               display: "flex", alignItems: "center", gap: 10, fontSize: 12,
                               color: isChecked ? "#111" : "#888", background: "none", border: "none",
@@ -960,7 +1004,7 @@ export default function ProdutosPage() {
                         return (
                           <button
                             key={m}
-                            onClick={() => toggleFilter(measureFilters, m, setMeasureFilters)}
+                            onClick={() => toggleMeasureFilter(m)}
                             style={{
                               display: "flex", alignItems: "center", gap: 10, fontSize: 12,
                               color: isChecked ? "#111" : "#888", background: "none", border: "none",
@@ -989,7 +1033,7 @@ export default function ProdutosPage() {
                 {/* Clear */}
                 {(sectorFilters.length > 0 || measureFilters.length > 0) && (
                   <button
-                    onClick={() => { setSectorFilters([]); setMeasureFilters([]); }}
+                    onClick={() => { clearFilters(); }}
                     style={{
                       fontSize: 11, fontWeight: 700, color: "#0057DE", background: "none",
                       border: "none", cursor: "pointer", padding: 0, textTransform: "uppercase",
@@ -1008,7 +1052,7 @@ export default function ProdutosPage() {
                 <div style={{ padding: "80px 40px", textAlign: "center" }}>
                   <p style={{ fontSize: 15, color: "#888", marginBottom: 16 }}>Nenhum produto encontrado para os filtros selecionados.</p>
                   <button
-                    onClick={() => { setActiveTab("Todos"); setSearch(""); setSectorFilters([]); setMeasureFilters([]); }}
+                    onClick={() => { setActiveTab("Todos"); setSearch(""); clearFilters(); }}
                     style={{ fontSize: 12, fontWeight: 700, color: "#0057DE", background: "none", border: "none", cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.1em", borderBottom: "1px solid #0057DE" }}
                   >
                     Limpar todos os filtros

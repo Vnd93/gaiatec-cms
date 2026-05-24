@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- ===== ÍCONES ===== -->
+    <link rel="icon" type="image/svg+xml" href="/favicon-gaiatec.svg" />
+    <link rel="alternate icon" type="image/png" href="/logo-gaiatec.png" />
+    <link rel="apple-touch-icon" href="/logo-gaiatec.png" />
+
+    <!-- ===== PWA / Web App Manifest ===== -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#0F172A" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Gaiatec" />
+
+    <!-- ===== PERFORMANCE: Preconnect + Preload ===== -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+    <!-- Inter — fonte principal (preload bloqueia o FCP se baixar tarde) -->
+    <link
+      rel="preload"
+      as="style"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+    />
+
+    <!-- Knockout HTF68 — fonte da logo/títulos (local) -->
+    <link
+      rel="preload"
+      as="font"
+      type="font/ttf"
+      href="/fonts/knockout-htf68.ttf"
+      crossorigin="anonymous"
+    />
+
+    <!-- Preload da PRIMEIRA imagem da home (HeroBanner above-the-fold) — AVIF responsivo -->
+    <link
+      rel="preload"
+      as="image"
+      href="/images/heroes/1.1-1024w.avif"
+      type="image/avif"
+      imagesrcset="/images/heroes/1.1-480w.avif 480w, /images/heroes/1.1-1024w.avif 1024w, /images/heroes/1.1-1920w.avif 1920w"
+      imagesizes="100vw"
+      fetchpriority="high"
+    />
+
+    <!-- ===== SEO PRIMÁRIO ===== -->
+    <title>Gaiatec Sistemas — Soluções Tecnológicas para Indústria</title>
+    <meta
+      name="description"
+      content="Soluções em automação industrial, instrumentação, biodigestores, medição de vazão e proteção catódica. Tecnologia brasileira para gás, petróleo, mineração, agronegócio e saneamento desde 2004."
+    />
+    <meta name="keywords" content="automação industrial, biodigestor, biogás, biometano, instrumentação, medição de vazão, proteção catódica, indústria, Gaiatec" />
+    <meta name="author" content="Gaiatec Sistemas" />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://gaiatecsistemas.com.br/" />
+
+    <!-- ===== OPEN GRAPH (Facebook, LinkedIn, WhatsApp) ===== -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Gaiatec Sistemas" />
+    <meta property="og:title" content="Gaiatec Sistemas — Soluções Tecnológicas para Indústria" />
+    <meta
+      property="og:description"
+      content="Automação industrial, biodigestores, instrumentação e medição. Tecnologia brasileira desde 2004."
+    />
+    <meta property="og:url" content="https://gaiatecsistemas.com.br/" />
+    <meta property="og:image" content="https://gaiatecsistemas.com.br/hero-biodigestor.png" />
+    <meta property="og:image:width" content="1920" />
+    <meta property="og:image:height" content="1080" />
+    <meta property="og:locale" content="pt_BR" />
+
+    <!-- ===== TWITTER CARDS ===== -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Gaiatec Sistemas — Soluções Tecnológicas para Indústria" />
+    <meta
+      name="twitter:description"
+      content="Automação industrial, biodigestores, instrumentação e medição. Tecnologia brasileira desde 2004."
+    />
+    <meta name="twitter:image" content="https://gaiatecsistemas.com.br/hero-biodigestor.png" />
+
+    <!-- ===== STRUCTURED DATA (Schema.org) ===== -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": "Gaiatec Sistemas",
+        "url": "https://gaiatecsistemas.com.br",
+        "logo": "https://gaiatecsistemas.com.br/logo-gaiatec.png",
+        "description": "Soluções tecnológicas para indústria — automação, instrumentação, biodigestores e medição.",
+        "foundingDate": "2004",
+        "sameAs": [
+          "https://www.linkedin.com/company/gaiatec-sistemas"
+        ],
+        "contactPoint": {
+          "@type": "ContactPoint",
+          "telephone": "+55-11-2207-1986",
+          "contactType": "sales",
+          "availableLanguage": ["Portuguese"]
+        }
+      }
+    </script>
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

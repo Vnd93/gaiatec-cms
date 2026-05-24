@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(start cmd:*)",
+      "Read(//c/Users/Pedro Nishida/Downloads/knockout-htf68-fullfeatherwt-1-maisfontes.5c42/**)",
+      "Bash(grep -r \"Anton\\\\|font-anton\" 'c:\\\\Users\\\\Pedro Nishida\\\\Downloads\\\\Websitegaiatecsistemas-main\\\\Websitegaiatecsistemas-main\\\\src' --include=*.tsx --include=*.ts --include=*.css -n)",
+      "WebFetch(domain:www.energypower.com.au)",
+      "WebFetch(domain:fonts.googleapis.com)",
+      "WebSearch",
+      "Bash(powershell -Command \"Get-ChildItem -Path src -Recurse -Include *.tsx,*.ts,*.css | ForEach-Object { \\(Get-Content $_FullName\\) -replace \"\"''Anton''\"\", \"\"''Knockout HTF68''\"\" | Set-Content $_FullName }\")",
+      "Bash(powershell -ExecutionPolicy Bypass -File \"c:\\\\Users\\\\Pedro Nishida\\\\Downloads\\\\replace-font.ps1\")",
+      "Bash(grep -r ''Anton'' 'c:\\\\Users\\\\Pedro Nishida\\\\Downloads\\\\Websitegaiatecsistemas-main\\\\Websitegaiatecsistemas-main\\\\src' --include=*.tsx --include=*.ts --include=*.css)",
+      "Bash(grep -rn \"REFERÊNCIA\\\\|TECNOLÓGICAS\\\\|lineHeight\\\\|leading-\" 'c:\\\\Users\\\\Pedro Nishida\\\\Downloads\\\\Websitegaiatecsistemas-main\\\\Websitegaiatecsistemas-main\\\\src' --include=*.tsx)",
+      "Bash(grep -rn \"section.*3\\\\|Section 3\\\\|sec-3\\\\|section-3\\\\|section3\" 'c:\\\\Users\\\\Pedro Nishida\\\\Downloads\\\\Websitegaiatecsistemas-main\\\\Websitegaiatecsistemas-main\\\\src' --include=*.tsx)",
+      "Bash(powershell -ExecutionPolicy Bypass -File \"c:\\\\Users\\\\Pedro Nishida\\\\Downloads\\\\replace-colors.ps1\")",
+      "Bash(node -e \":*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx vite:*)",
+      "Read(//c/Users/Pedro Nishida/**)",
+      "Bash(find '/c/Users/Pedro Nishida' -maxdepth 5 -name *Gaiatec* -o -name *gaiatec*)",
+      "Bash(npx vercel:*)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\Pedro Nishida\\Downloads\\knockout-htf68-fullfeatherwt-1-maisfontes.5c42",
+      "c:\\Users\\Pedro Nishida\\Downloads"
+    ]
+  }
+}

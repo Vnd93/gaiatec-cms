@@ -1,0 +1,1252 @@
+{
+  "geradoEm": "2026-05-22",
+  "categorias": [
+    {
+      "slug": "deteccao-movel",
+      "nome": "Detecção Móvel",
+      "produtos": [
+        {
+          "modelo": "S-Series",
+          "categoria": "Detecção Móvel",
+          "nome": "Veículo de Inspeção de Gás de Alta Precisão (Varredura Lateral + Topo + Bomba)",
+          "descricao": "Veículo de inspeção patenteado que combina três métodos de detecção a laser: sensoriamento remoto pelo topo, varredura lateral cega e amostragem por bomba para metano e etano. Indicado para varredura rápida e em larga escala de redes de tubulação de gás enterradas, distinguindo gás natural de biogás em nível ppb.",
+          "specs": [
+            { "label": "Princípio de detecção", "valor": "Espectroscopia a laser (infravermelho médio)" },
+            { "label": "Gases detectados", "valor": "Metano e etano" },
+            { "label": "Nível de detecção", "valor": "Nível ppb" },
+            { "label": "Alcance de detecção (topo)", "valor": "100 m" },
+            { "label": "Alcance de detecção (lateral)", "valor": "200 m" },
+            { "label": "Varredura", "valor": "Rotação horizontal contínua 360°, vertical ±90°" }
+          ],
+          "features": [
+            "Tecnologia patenteada de varredura lateral cega a laser",
+            "Laser de infravermelho médio com absorção superior (metano e etano)",
+            "Integração com plataforma GIS",
+            "Algoritmos de IA com análise em nuvem",
+            "Modelagem por big data e ampla base instalada",
+            "Servidores de dados locais para maior segurança da informação"
+          ],
+          "aplicacoes": [
+            "Redes de tubulação de gás enterradas",
+            "Levantamento e inspeção de vazamentos",
+            "Diferenciação entre gás natural e biogás"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20260106/1-26010611164VJ.jpg",
+          "specsIncompletas": true
+        },
+        {
+          "modelo": "S800",
+          "categoria": "Detecção Móvel",
+          "nome": "Sistema Veicular de Detecção a Laser de Metano e Etano de Alta Precisão (ppb)",
+          "descricao": "Sistema veicular de alta precisão que utiliza espectroscopia a laser para monitoramento ambiental, atingindo sensibilidade de 0,1 ppb. Detecta simultaneamente metano e etano, identifica a fonte do gás e distingue gás natural de biogás. O software exibe a concentração em tempo real, emite alertas de voz, gera relatórios e classifica a gravidade do vazamento.",
+          "specs": [
+            { "label": "Princípio de detecção", "valor": "Espectroscopia a laser" },
+            { "label": "Gases detectados", "valor": "Metano e etano" },
+            { "label": "Precisão", "valor": "0,1 ppb (nível ppb)" },
+            { "label": "Posicionamento", "valor": "Posicionamento por satélite com precisão centimétrica" },
+            { "label": "Anemômetro", "valor": "Ultrassônico, para localização precisa do vazamento" }
+          ],
+          "features": [
+            "Sensibilidade até 1000x superior aos métodos tradicionais (nível ppb)",
+            "Detecção simultânea de metano e etano",
+            "Posicionamento por satélite de precisão centimétrica",
+            "Anemômetro ultrassônico para localização do vazamento",
+            "Aviso de voz dos valores medidos em tempo real",
+            "Análise em tempo real com exibição gráfica e classificação automática de risco",
+            "Integração com software de terceiros"
+          ],
+          "aplicacoes": [
+            "Segurança de gás urbano",
+            "Detecção de vazamentos em tubulações",
+            "Gestão de infraestrutura de gás"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20260106/1-260106111A0614.jpg",
+          "specsIncompletas": true
+        },
+        {
+          "modelo": "S800",
+          "categoria": "Detecção Móvel",
+          "nome": "Sistema Veicular de Detecção a Laser de Metano e Etano por Bomba (ppm)",
+          "descricao": "Sistema veicular que detecta diretamente o teor de metano e etano no gás por meio de amostragem por bomba, distinguindo gás natural de biogás de forma instantânea. Emprega laser interno que emite feixes em comprimentos de onda específicos absorvidos apenas por metano e etano, com resposta rápida e alta sensibilidade.",
+          "specs": [
+            { "label": "Princípio de detecção", "valor": "Espectroscopia a laser" },
+            { "label": "Gases detectados", "valor": "Metano e etano" },
+            { "label": "Nível de detecção", "valor": "Nível ppm" },
+            { "label": "Método de amostragem", "valor": "Bomba de sucção automática" }
+          ],
+          "features": [
+            "Resposta rápida que aumenta a eficiência da inspeção",
+            "Unidade de detecção integrada e compacta",
+            "Amostragem automática por bomba",
+            "Diferenciação instantânea entre gás natural e biogás",
+            "Exibição em tempo real com aviso de voz",
+            "Conexão com aplicativo de inspeção",
+            "Boa seletividade, reagindo apenas a metano e etano",
+            "Inicialização rápida, sem necessidade de pré-aquecimento",
+            "Instalável em diversos tipos de veículos, com montagem e desmontagem rápidas"
+          ],
+          "aplicacoes": [
+            "Monitoramento de segurança de gás urbano",
+            "Detecção de vazamentos em tubulações durante inspeção veicular"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20231115/1-231115135HT60.png",
+          "specsIncompletas": true
+        },
+        {
+          "modelo": "S600",
+          "categoria": "Detecção Móvel",
+          "nome": "Sistema de Detecção a Laser de Metano por Varredura Lateral Cega",
+          "descricao": "Sistema de varredura lateral a laser baseado em tecnologia óptica avançada e patenteada, com alta sensibilidade, resposta rápida, boa estabilidade e instalação simples. Emite um laser de varredura horizontal e detecta a absorção característica do metano em comprimento de onda específico, com resultado expresso em ppm·m.",
+          "specs": [
+            { "label": "Princípio de detecção", "valor": "Espectroscopia a laser (varredura horizontal)" },
+            { "label": "Gás detectado", "valor": "Metano" },
+            { "label": "Unidade de medição", "valor": "ppm·m" }
+          ],
+          "features": [
+            "Resposta rápida baseada em laser",
+            "Altura de instalação ajustável",
+            "Detecção cega sem necessidade de conhecer a posição da tubulação",
+            "Direção e ângulo do laser personalizáveis conforme o local",
+            "Integração com aplicativo de inspeção e geração de relatórios",
+            "Inicialização rápida com autoteste automático",
+            "Alertas sonoros com exibição da concentração em tempo real",
+            "Estrutura robusta de fácil instalação",
+            "Detecção seletiva de metano, evitando interferências",
+            "Compatível com vários veículos e montagem rápida"
+          ],
+          "aplicacoes": [
+            "Monitoramento de segurança de gás",
+            "Inspeção de tubulações",
+            "Gestão de segurança de gás urbano"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20231115/1-231115135515352.jpg",
+          "specsIncompletas": true
+        },
+        {
+          "modelo": "S700",
+          "categoria": "Detecção Móvel",
+          "nome": "Sistema de Detecção a Laser de Metano por Sensoriamento Remoto Superior",
+          "descricao": "Sistema com laser instalado no topo do veículo que utiliza tecnologia óptica avançada, com alta sensibilidade, resposta rápida e estabilidade. Emite laser em frequência específica e mede a absorção pelo metano presente na nuvem de gás, calculando o resultado em ppm·m. Conta com sistema de controle por plataforma giroestabilizada (pan-tilt).",
+          "specs": [
+            { "label": "Princípio de detecção", "valor": "Espectroscopia a laser (sensoriamento remoto superior)" },
+            { "label": "Gás detectado", "valor": "Metano" },
+            { "label": "Unidade de medição", "valor": "ppm·m" }
+          ],
+          "features": [
+            "Resistente a poeira, chuva e vibração",
+            "Varredura a laser pelo topo com controle da posição do feixe por aplicativo em tempo real",
+            "Sistema de controle por plataforma giroestabilizada (pan-tilt)",
+            "Posicionamento por satélite com integração a mapas",
+            "Armazenamento de banco de dados de grande capacidade",
+            "Captura de imagem em tempo real nos pontos de alarme",
+            "Conexão com software de inspeção e registro de trajetória",
+            "Inicialização rápida, sem pré-aquecimento",
+            "Montagem e desmontagem rápidas",
+            "Detecção seletiva apenas de metano"
+          ],
+          "aplicacoes": [
+            "Monitoramento de segurança de gás urbano",
+            "Inspeção de redes de tubulação de gás"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20251204/1-251204100002164.png",
+          "specsIncompletas": true
+        },
+        {
+          "modelo": "KS100",
+          "categoria": "Detecção Móvel",
+          "nome": "Veículo Elétrico de Inspeção de Vazamentos de Gás (ppb)",
+          "descricao": "Veículo elétrico de inspeção profissional, desenvolvido para detecção rápida em vias estreitas como pátios, calçadas e ciclovias. Oferece detecção veloz, fixação firme e leitura conveniente, aumentando a eficiência do trabalho e reduzindo o esforço da equipe de inspeção.",
+          "specs": [
+            { "label": "Princípio de detecção", "valor": "Espectroscopia a laser" },
+            { "label": "Nível de detecção", "valor": "Nível ppb" }
+          ],
+          "features": [
+            "Detecção rápida para redes de gás enterradas",
+            "Levantamento ágil em espaços estreitos (pátios, calçadas, ciclovias)",
+            "Detecção de vazamentos em tempo real",
+            "Aviso de voz e exibição instantânea dos resultados",
+            "Compatível com aplicativo de inspeção, exibindo trajetória e alertas",
+            "Instalável em diversos modelos de veículos elétricos, com montagem rápida",
+            "Estrutura profissional resistente a danos"
+          ],
+          "aplicacoes": [
+            "Inspeção de superfície de redes de gás enterradas urbanas",
+            "Monitoramento de tubulações em vias estreitas"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20251108/1-25110QF01c37.png",
+          "specsIncompletas": true
+        },
+        {
+          "modelo": "Veículo Autônomo",
+          "categoria": "Detecção Móvel",
+          "nome": "Sistema de Veículo Autônomo de Inspeção de Gás",
+          "descricao": "Solução inteligente que utiliza veículo autônomo equipado com instrumentos de inspeção de gás de alta precisão (nível ppb) para detecção de vazamentos, inspeção de instalações e coleta de dados de forma autônoma, eficiente e em alta frequência. Emprega tecnologia MIR-TDLAS com célula de absorção de longo caminho óptico, detectando metano e etano com precisão de 0,1 ppb — cerca de 1000x superior aos equipamentos convencionais.",
+          "specs": [
+            { "label": "Princípio de detecção", "valor": "MIR-TDLAS com célula de longo caminho óptico" },
+            { "label": "Gases detectados", "valor": "Metano e etano" },
+            { "label": "Precisão", "valor": "0,1 ppb (nível ppb)" },
+            { "label": "Operação", "valor": "Autônoma, 24 horas por dia" }
+          ],
+          "features": [
+            "Varredura de vazamentos de gás em tempo real",
+            "Tecnologia de detecção MIR-TDLAS",
+            "Detecção em nível ppb",
+            "Operação autônoma",
+            "Inspeção automatizada 24/7"
+          ],
+          "aplicacoes": [
+            "Redes de tubulação de gás subterrâneas urbanas",
+            "Estações e instalações de gás",
+            "Parques industriais e grandes empresas",
+            "Operações de resposta a emergências",
+            "Monitoramento de obras de terceiros"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20260403/1-2604031I450141.jpg",
+          "specsIncompletas": true
+        },
+        {
+          "modelo": "M10",
+          "categoria": "Detecção Móvel",
+          "nome": "Detector de Gás Portátil tipo Mochila (ppb)",
+          "descricao": "Detector portátil a laser por bomba de sucção (nível ppb) que mede simultaneamente o teor de metano e etano, distinguindo instantaneamente gás natural de biogás. O laser interno emite dois feixes em comprimentos de onda específicos, absorvidos apenas por metano e etano, permitindo calcular suas concentrações com alta seletividade.",
+          "specs": [
+            { "label": "Princípio de detecção", "valor": "Espectroscopia a laser por bomba de sucção" },
+            { "label": "Gases detectados", "valor": "Metano e etano" },
+            { "label": "Nível de detecção", "valor": "Nível ppb" }
+          ],
+          "features": [
+            "Resposta rápida e alta eficiência de inspeção",
+            "Modos de sonda de amostragem para diversas situações",
+            "Posicionamento por satélite com integração a mapas e registro de trajetória",
+            "Conexão sem fio com aplicativo para registro de pontos de vazamento, fotos e upload de dados",
+            "Inicialização rápida, sem pré-aquecimento, com autoteste imediato",
+            "Boa seletividade, reagindo apenas a metano e etano"
+          ],
+          "aplicacoes": [
+            "Detecção de vazamentos de gás",
+            "Operações de inspeção em campo"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20250705/1-250F51435421T.png",
+          "specsIncompletas": true
+        },
+        {
+          "modelo": "C200mini",
+          "categoria": "Detecção Móvel",
+          "nome": "Detector Portátil a Laser de Metano e Etano",
+          "descricao": "Detector portátil a laser de metano e etano que diferencia instantaneamente biogás de gás natural em campo, medindo simultaneamente o teor de ambos os gases. Conta com amostragem por bomba e resposta de 0,1 segundo, com operação automática e relatórios via aplicativo.",
+          "specs": [
+            { "label": "Gases detectados", "valor": "Metano (CH4) e etano (C2H6)" },
+            { "label": "Princípio de detecção", "valor": "Espectroscopia a laser" },
+            { "label": "Método de amostragem", "valor": "Bomba de sucção" },
+            { "label": "Tempo de resposta", "valor": "0,1 segundo" }
+          ],
+          "features": [
+            "Diferenciação instantânea de gases com medição simultânea dos componentes",
+            "Detecção rápida de vazamentos com operação automática",
+            "Amostragem inteligente que evita interferência de outros gases",
+            "Aviso de voz e display LCD colorido",
+            "Sem necessidade de pré-aquecimento",
+            "Conectividade Bluetooth com aplicativo e geração de relatórios",
+            "Compatível com diversas sondas externas"
+          ],
+          "aplicacoes": [
+            "Detecção de vazamentos de gás",
+            "Inspeção de tubulações",
+            "Monitoramento de segurança"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20231115/1-231115140512M7.jpg",
+          "specsIncompletas": true
+        },
+        {
+          "modelo": "UF100",
+          "categoria": "Detecção Móvel",
+          "nome": "Inspetor a Laser de Metano Embarcado em Drone",
+          "descricao": "Instrumento de inspeção a laser de metano embarcado em drone que, integrado a um aplicativo móvel, detecta rapidamente a concentração de metano com alta eficiência e precisão. Oferece solução inteligente e confiável para ambientes complexos e perigosos como estações, dutos de longa distância e edificações.",
+          "specs": [
+            { "label": "Princípio de detecção", "valor": "Espectroscopia a laser" },
+            { "label": "Gás detectado", "valor": "Metano" },
+            { "label": "Plataforma", "valor": "Embarcado em drone (VANT)" }
+          ],
+          "features": [
+            "Inspeção de tubulações com rota de voo automática e localização precisa de vazamentos",
+            "Documentação automática de dados e fotos",
+            "Inspeção de estações com mira a laser remota a partir do alto",
+            "Aplicável a aterros sanitários e triagem de metano em navios de GNL",
+            "Inspeção de edificações com varredura automática por vidros de cozinha, sem necessidade de ocupação"
+          ],
+          "aplicacoes": [
+            "Inspeção de dutos de transmissão de longa distância",
+            "Estações e instalações de gás",
+            "Aterros sanitários",
+            "Triagem de metano em navios de GNL",
+            "Inspeção de edificações residenciais"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20260115/1-260115135Q1247.png",
+          "specsIncompletas": true
+        },
+        {
+          "modelo": "WS100mini",
+          "categoria": "Detecção Móvel",
+          "nome": "Sensor Remoto a Laser de Metano Compacto",
+          "descricao": "Sensor remoto a laser de metano em versão compacta, com sensibilidade e precisão superiores aos métodos tradicionais. Leve e de baixo consumo, suporta tarefas de detecção contínua de longa duração e permite inspecionar tubulações de gás a 15, 30 e 60 metros por meio de detecção a laser sem contato.",
+          "specs": [
+            { "label": "Princípio de detecção", "valor": "Sensoriamento remoto a laser sem contato" },
+            { "label": "Gás detectado", "valor": "Metano" },
+            { "label": "Alcance de detecção", "valor": "15 m, 30 m e 60 m" }
+          ],
+          "features": [
+            "Alta sensibilidade e precisão em comparação aos métodos tradicionais",
+            "Design compacto e portátil (cabe no bolso)",
+            "Baixo consumo de energia",
+            "Suporta detecção contínua de longa duração",
+            "Autoteste automático na inicialização, sem necessidade de calibração periódica",
+            "Maior distância de detecção, aumentando a eficiência do trabalho"
+          ],
+          "aplicacoes": [
+            "Detecção e inspeção de tubulações de gás",
+            "Monitoramento de segurança de gás urbano",
+            "Detecção de vazamentos de metano"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20250515/1-2505151HH4257.png",
+          "specsIncompletas": true
+        },
+        {
+          "modelo": "H10",
+          "categoria": "Detecção Móvel",
+          "nome": "Sensor Remoto a Laser de Metano",
+          "descricao": "Sensor remoto que emprega espectroscopia a laser sintonizável para detectar vazamentos de metano à distância. Permite inspecionar com segurança áreas de difícil acesso — como vias movimentadas, fachadas de edifícios, tubulações aéreas e dutos de longa distância — a partir de pontos seguros.",
+          "specs": [
+            { "label": "Princípio de detecção", "valor": "Espectroscopia a laser sintonizável" },
+            { "label": "Comprimento de onda do laser", "valor": "~1,65 μm" },
+            { "label": "Gás detectado", "valor": "Metano" },
+            { "label": "Unidade de medição", "valor": "ppm·m" },
+            { "label": "Display", "valor": "Tela colorida TFT de 2,4 polegadas" },
+            { "label": "Conectividade", "valor": "Bluetooth (transmissão de dados)" }
+          ],
+          "features": [
+            "Interface e menu simples e intuitivos",
+            "Autoteste e autocalibração na inicialização, sem manutenção",
+            "Aplicativo de detecção com transferência de dados por Bluetooth",
+            "Alta seletividade e precisão, sem influência das condições ambientais",
+            "Display de alto brilho adequado para uso externo sob luz solar intensa"
+          ],
+          "aplicacoes": [
+            "Vias movimentadas",
+            "Tubulações verticais em fachadas de edifícios",
+            "Tubulações aéreas",
+            "Dutos de transmissão de longa distância",
+            "Inspeção interna de edifícios altos"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20231115/1-231115140S91G.jpg",
+          "specsIncompletas": false
+        },
+        {
+          "modelo": "WS100",
+          "categoria": "Detecção Móvel",
+          "nome": "Sensor Remoto a Laser de Metano",
+          "descricao": "Sensor remoto que utiliza espectroscopia de absorção por laser semicondutor sintonizável (TDLAS) para detectar de forma rápida e precisa vazamentos de gás (CH4) a longa distância. Permite que a equipe inspecione, de uma área segura, locais de difícil acesso como vias movimentadas, tubulações verticais de fachadas, tubulações aéreas e dutos de longa distância, aumentando a eficiência da inspeção a pé.",
+          "specs": [
+            { "label": "Princípio de detecção", "valor": "TDLAS (espectroscopia de absorção por laser sintonizável)" },
+            { "label": "Gás detectado", "valor": "Metano (CH4)" },
+            { "label": "Alcance de detecção", "valor": "0 a 200 m" },
+            { "label": "Tempo de detecção", "valor": "0,1 segundo" },
+            { "label": "Display", "valor": "Tela de alta resolução e alto brilho" }
+          ],
+          "features": [
+            "Detecção a longa distância: metano e gases contendo metano de 0 a 200 m",
+            "Detecção rápida em apenas 0,1 segundo",
+            "Alta precisão, específico para metano, sem influência ambiental",
+            "Operação simples com autodetecção, sem necessidade de calibração",
+            "Excelente visibilidade do display sob luz externa intensa",
+            "Design portátil, leve e conveniente"
+          ],
+          "aplicacoes": [
+            "Detecção de vazamentos em tubulações de gás",
+            "Monitoramento de segurança de gás urbano",
+            "Inspeção de áreas de difícil acesso"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20251204/1-251204095454601.png",
+          "specsIncompletas": false
+        }
+      ]
+    },
+    {
+      "slug": "monitoramento-online",
+      "nome": "Monitoramento Online",
+      "produtos": [
+        {
+          "modelo": "SZ100",
+          "categoria": "Monitoramento Online",
+          "nome": "Detector a Laser de Metano com Plataforma de Varredura (Pan-Tilt)",
+          "descricao": "Detector de gás com plataforma giroestabilizada de varredura que emprega tecnologia TDLAS. Comparado aos produtos tradicionais, oferece alta sensibilidade, resposta rápida e ampla cobertura de área. Amplamente utilizado em estações de gás natural, petroquímica, metalurgia e geração de energia, onde podem ocorrer vazamentos.",
+          "specs": [
+            { "label": "Princípio de detecção", "valor": "TDLAS (espectroscopia de absorção por laser sintonizável)" },
+            { "label": "Gás detectado", "valor": "Metano" },
+            { "label": "Tipo", "valor": "Monitoramento online com plataforma de varredura (pan-tilt)" }
+          ],
+          "features": [
+            "Reage apenas ao metano, sem interferência de outros gases ou vapor de água",
+            "Resposta rápida, alta sensibilidade e boa repetibilidade com monitoramento em tempo real",
+            "Armazenamento de dados com capacidade de exportação",
+            "Ampla cobertura, substituindo vários detectores pontuais sem zonas cegas",
+            "Funciona em condições climáticas severas",
+            "Calibração automática na inicialização, sem necessidade de calibração manual"
+          ],
+          "aplicacoes": [
+            "Estações de gás natural",
+            "Indústria petroquímica",
+            "Metalurgia",
+            "Geração de energia",
+            "Instalações sujeitas a vazamentos de gases combustíveis"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20260106/1-260106135H6400.jpg",
+          "specsIncompletas": true
+        },
+        {
+          "modelo": "Poste IA",
+          "categoria": "Monitoramento Online",
+          "nome": "Detector Inteligente tipo Poste com IA",
+          "descricao": "Dispositivo de detecção terminal que combina posicionamento por satélite, IoT, big data, imagem por IA, sensoriamento de vibração, computação de borda e gestão de concentração. Voltado para redes de gás urbano de alta, média e baixa pressão, abrange cenários como áreas verdes, calçadas, espaços confinados, estações e detecção de vibração de obras de terceiros, formando uma solução sistematizada e inteligente.",
+          "specs": [
+            { "label": "Tecnologias", "valor": "Posicionamento por satélite, IoT, big data, IA de imagem, sensoriamento de vibração, computação de borda" },
+            { "label": "Sistema de alarme", "valor": "Três níveis (I/II/III) com código de cores" },
+            { "label": "Monitoramento", "valor": "Concentração de gás, vibração, vibração + imagem por IA, imersão em água" }
+          ],
+          "features": [
+            "Alertas de concentração de gás, vibração, vibração + imagem por IA e imersão em água",
+            "Sistema de alarme em três níveis (I/II/III) com código de cores",
+            "Monitoramento em mapa com visualização do status dos dispositivos",
+            "Imagem e vídeo panorâmico 360° em tempo real",
+            "Rastreamento de dados de concentração e análise de tendências",
+            "Distribuição de informações de alerta em múltiplos níveis",
+            "Relatórios estatísticos e gestão de dispositivos",
+            "Suporte a aplicativo móvel com conectividade Bluetooth"
+          ],
+          "aplicacoes": [
+            "Redes de gás urbano (alta, média e baixa pressão)",
+            "Áreas verdes e calçadas",
+            "Espaços confinados",
+            "Estações e instalações industriais",
+            "Zonas de obras de terceiros"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20260305/1-26030515591D31.jpg",
+          "specsIncompletas": true
+        },
+        {
+          "modelo": "GQ-TX100",
+          "categoria": "Monitoramento Online",
+          "nome": "Detector Online de Tetra-Hidrotiofeno (THT)",
+          "descricao": "Sistema de monitoramento online de odorizante que detecta o teor de tetra-hidrotiofeno (THT) nas redes de tubulação de gás. Como o gás natural é incolor, inodoro e inflamável, sendo difícil de perceber em caso de vazamento, o sistema garante a conformidade do odorizante, reduz custos, otimiza os pontos de injeção e assegura o uso seguro do gás.",
+          "specs": [
+            { "label": "Substância detectada", "valor": "Tetra-hidrotiofeno (THT)" },
+            { "label": "Posicionamento", "valor": "Duplo (satélite/GPS)" },
+            { "label": "Proteção", "valor": "Design à prova de explosão" }
+          ],
+          "features": [
+            "Design de consumo de energia ultrabaixo",
+            "Suporte a posicionamento duplo (satélite/GPS)",
+            "Rastreamento de rota e função antifurto",
+            "Design à prova de explosão para múltiplos cenários",
+            "Alarmes em tempo real com limites configuráveis pelo usuário",
+            "Múltiplos métodos de transmissão, com rede estável e rápida",
+            "Suporte a computador e aplicativo móvel com alertas por SMS",
+            "Consulta rápida e exportação de dados históricos (relatórios e gráficos)"
+          ],
+          "aplicacoes": [
+            "Redes de tubulação de gás",
+            "Monitoramento de segurança de gás municipal",
+            "Verificação da concentração de odorizante"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20260106/1-260106143AJ26.jpg",
+          "specsIncompletas": true
+        },
+        {
+          "modelo": "Z983",
+          "categoria": "Monitoramento Online",
+          "nome": "Válvula de Segurança Inteligente",
+          "descricao": "Equipamento de medição e controle para uso seguro de gás que pode ser instalado de forma independente na tubulação, controlando automaticamente a abertura e o fechamento da válvula. Combina detecção de estanqueidade da tubulação e alarme de vazamento, unindo monitoramento preventivo e resposta em tempo real para elevar a segurança no uso do gás.",
+          "specs": [
+            { "label": "Função principal", "valor": "Controle automático de abertura/fechamento da válvula" },
+            { "label": "Recursos de segurança", "valor": "Bloqueio, corte por vazamento e corte por anomalia de pressão" },
+            { "label": "Instalação", "valor": "Tubulações de gás aéreas e verticais" }
+          ],
+          "features": [
+            "Controle automático de abertura e fechamento da válvula",
+            "Compatibilidade com medidor de vazão para funções integradas de medição e controle",
+            "Funções de bloqueio, corte por vazamento de gás e corte por anomalia de pressão",
+            "Coleta de dados, relatórios e monitoramento de estanqueidade remoto e local",
+            "Interconexão com equipamentos de cozinha e sistemas de alerta de segurança",
+            "Adequada para instalação em tubulações de gás aéreas e verticais"
+          ],
+          "aplicacoes": [
+            "Sistemas residenciais de tubulação de gás",
+            "Infraestrutura de segurança de gás urbano"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20251108/1-25110Q63Q5294.png",
+          "specsIncompletas": true
+        },
+        {
+          "modelo": "GTQ-WX200",
+          "categoria": "Monitoramento Online",
+          "nome": "Terminal de Monitoramento Remoto de Gás",
+          "descricao": "Terminal com transmissão remota sem fio para monitoramento de concentração de gás, pressão e temperatura da rede em espaços confinados. Emprega sensor a laser e design de consumo ultrabaixo, transmitindo dados pela rede celular existente com alertas em tempo real quando a concentração ultrapassa o limite.",
+          "specs": [
+            { "label": "Gás detectado", "valor": "Metano (CH4)" },
+            { "label": "Faixa de medição", "valor": "0 a 20% VOL" },
+            { "label": "Precisão", "valor": "±2% F.S" },
+            { "label": "Método de amostragem", "valor": "Difusão" },
+            { "label": "Tipo de sensor", "valor": "Sensor a laser" },
+            { "label": "Grau de proteção", "valor": "IP68" },
+            { "label": "Temperatura de operação", "valor": "-40 °C a 70 °C" },
+            { "label": "Umidade de operação", "valor": "0 a 99% UR" },
+            { "label": "Classificação à prova de explosão", "valor": "Ex ia IIB T4 Ga" },
+            { "label": "Precisão de posicionamento", "valor": "10 metros" },
+            { "label": "Vida útil da bateria", "valor": "Mínimo de 5 anos" },
+            { "label": "Frequência de coleta", "valor": "≥ 5 min/ciclo (ajustável)" },
+            { "label": "Frequência de transmissão", "valor": "≥ 5 min/ciclo (ajustável)" }
+          ],
+          "features": [
+            "Design de consumo ultrabaixo com bateria de lítio interna (vida útil acima de 3 anos)",
+            "Transmissão por rede NB-IoT/4G/5G",
+            "Mecanismo duplo de envio de dados (programado + por alarme)",
+            "Configuração remota de parâmetros",
+            "Configuração de alarme em múltiplos níveis",
+            "Segurança intrínseca para áreas perigosas",
+            "Posicionamento por satélite/GPS",
+            "Detecção de imersão em água",
+            "Alertas por SMS"
+          ],
+          "aplicacoes": [
+            "Monitoramento de gases combustíveis em poços de válvulas",
+            "Espaços adjacentes a redes de gás",
+            "Redes de tubulação de gás enterradas"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20251108/1-25110QGG33Y.png",
+          "specsIncompletas": false
+        },
+        {
+          "modelo": "GTQ-WX200mini",
+          "categoria": "Monitoramento Online",
+          "nome": "Terminal de Monitoramento Remoto de Gás Compacto",
+          "descricao": "Terminal compacto com transmissão remota sem fio para monitoramento de concentração de gás e pressão de tubulação em espaços confinados, caixas reguladoras e armários. Utiliza sensor a laser e consumo ultrabaixo, oferecendo eficiência energética, boa repetibilidade, longa vida útil, instalação fácil e manutenção simples, com upload programado e por alarme.",
+          "specs": [
+            { "label": "Tipo de sensor", "valor": "Sensor a laser" },
+            { "label": "Grandezas monitoradas", "valor": "Concentração de gás e pressão de tubulação" },
+            { "label": "Transmissão", "valor": "Rede 4G/NB-IoT" }
+          ],
+          "features": [
+            "Design de consumo ultrabaixo",
+            "Transmissão por rede 4G/NB-IoT",
+            "Mecanismo duplo de envio de dados (programado + por alarme)",
+            "Configuração remota de parâmetros sem visita ao local",
+            "Configuração de alarme em dois níveis",
+            "Equipamento de segurança intrínseca para zonas à prova de explosão"
+          ],
+          "aplicacoes": [
+            "Monitoramento de espaços confinados",
+            "Caixas reguladoras e armários de pressão",
+            "Detecção de concentração de gás",
+            "Monitoramento de pressão de tubulação"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20251108/1-25110QH02QT.jpg",
+          "specsIncompletas": true
+        },
+        {
+          "modelo": "GQ-PM100",
+          "categoria": "Monitoramento Online",
+          "nome": "Sistema de Monitoramento de Pressão por Transmissão Remota sem Fio",
+          "descricao": "Sistema de monitoramento de pressão por transmissão remota sem fio baseado em tecnologia MEMS, com características de miniaturização, baixo consumo e alta precisão. Coleta, registra e transmite em tempo real os valores de pressão internos da tubulação, sendo aplicável a redes de gás urbano, saneamento, aquecimento urbano e poços de petróleo.",
+          "specs": [
+            { "label": "Tecnologia", "valor": "MEMS (microeletromecânica)" },
+            { "label": "Grandeza monitorada", "valor": "Pressão interna da tubulação" },
+            { "label": "Posicionamento", "valor": "Duplo (satélite/GPS)" },
+            { "label": "Autonomia", "valor": "Até 3 anos em modo padrão" }
+          ],
+          "features": [
+            "Rastreamento de rota e função antifurto",
+            "Suporte a posicionamento duplo (satélite/GPS)",
+            "Design à prova de explosão para múltiplos cenários",
+            "Múltiplos métodos de transmissão, com rede estável e rápida",
+            "Suporte a computador e aplicativo móvel com alertas por SMS",
+            "Consumo ultrabaixo, com até 3 anos de operação em modo padrão",
+            "Consulta rápida e exportação de dados históricos",
+            "Alarmes de sobrepressão e subpressão em tempo real, com limites configuráveis"
+          ],
+          "aplicacoes": [
+            "Redes de tubulação de gás urbano",
+            "Tubulações de abastecimento e drenagem de água",
+            "Linhas de aquecimento urbano",
+            "Poços e campos de petróleo"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20231026/1-231026120U0557.png",
+          "specsIncompletas": true
+        },
+        {
+          "modelo": "GQ-PM200",
+          "categoria": "Monitoramento Online",
+          "nome": "Sistema de Monitoramento de Pressão por Transmissão Remota sem Fio",
+          "descricao": "Sistema da série PM baseado em tecnologia MEMS, com miniaturização, baixo consumo e alta precisão, para coleta de dados de pressão em tempo real em tubulações de gás, sistemas de água, redes de aquecimento e campos de petróleo.",
+          "specs": [
+            { "label": "Tecnologia", "valor": "MEMS (microeletromecânica)" },
+            { "label": "Grandeza monitorada", "valor": "Pressão interna da tubulação" },
+            { "label": "Posicionamento", "valor": "Duplo (satélite/GPS)" },
+            { "label": "Autonomia", "valor": "Até 3 anos em modo padrão" }
+          ],
+          "features": [
+            "Rastreamento de rota e função antifurto",
+            "Posicionamento duplo via satélite e GPS",
+            "Design à prova de explosão para ambientes variados",
+            "Múltiplos métodos de transmissão, com rede estável e rápida",
+            "Operação por computador e dispositivo móvel com alertas por SMS",
+            "Consumo ultrabaixo, com até 3 anos de operação contínua em modo padrão",
+            "Consulta rápida e exportação de dados históricos (relatórios e gráficos)",
+            "Alarmes de sobrepressão e subpressão em tempo real, com limites configuráveis"
+          ],
+          "aplicacoes": [
+            "Redes de tubulação de gás urbano",
+            "Sistemas de abastecimento e drenagem de água",
+            "Linhas de aquecimento urbano",
+            "Monitoramento de poços e campos de petróleo"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20241217/1-24121G14ZWG.jpg",
+          "specsIncompletas": true
+        },
+        {
+          "modelo": "Bomba/Poço de Válvula",
+          "categoria": "Monitoramento Online",
+          "nome": "Monitor a Laser de Gás para Poço de Válvula por Bomba de Sucção",
+          "descricao": "Instrumento avançado para monitorar a concentração de gás em espaços confinados subterrâneos urbanos. Baseado em espectroscopia de absorção por laser semicondutor sintonizável (TDLAS), oferece desempenho seguro e confiável, longa vida útil e consumo ultrabaixo, com economia de energia, boa repetibilidade, instalação fácil e manutenção simples.",
+          "specs": [
+            { "label": "Gás detectado", "valor": "Metano (CH4)" },
+            { "label": "Faixa de medição", "valor": "0 a 20% VOL" },
+            { "label": "Precisão", "valor": "±2% F.S" },
+            { "label": "Método de amostragem", "valor": "Bomba de sucção" },
+            { "label": "Tipo de sensor", "valor": "Sensor a laser" },
+            { "label": "Display", "valor": "Aplicativo móvel via Bluetooth" },
+            { "label": "Modo de alarme", "valor": "Alertas de plataforma em múltiplos níveis" },
+            { "label": "Vida útil da bateria", "valor": "Mínimo de 5 anos" },
+            { "label": "Grau de proteção", "valor": "IP68" },
+            { "label": "Temperatura de operação", "valor": "-30 °C a 70 °C" },
+            { "label": "Umidade de operação", "valor": "0 a 99% UR" },
+            { "label": "Classificação à prova de explosão", "valor": "Ex ia IIB T4 Ga" },
+            { "label": "Frequência de coleta", "valor": "≥ 5 min/ciclo (ajustável)" },
+            { "label": "Frequência de transmissão", "valor": "≥ 5 min/ciclo (ajustável)" }
+          ],
+          "features": [
+            "Design integrado em peça única",
+            "Bateria de lítio interna",
+            "Transmissão por rede NB-IoT/4G",
+            "Mecanismo duplo de envio de dados",
+            "Configuração remota de parâmetros",
+            "Certificação de segurança intrínseca",
+            "Alarmes em múltiplos níveis e detecção de anomalias",
+            "Registro de dados e sincronização de relógio",
+            "Sensor seletivo de metano"
+          ],
+          "aplicacoes": [
+            "Poços de válvulas",
+            "Sistemas de drenagem",
+            "Câmaras elétricas e de telecomunicações",
+            "Espaços confinados subterrâneos"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20250609/1-2506091519213Q.jpg",
+          "specsIncompletas": false
+        },
+        {
+          "modelo": "DT-KNY-WX300",
+          "categoria": "Monitoramento Online",
+          "nome": "Terminal Inteligente de Monitoramento de Vazamento em Poço de Válvula",
+          "descricao": "Detector pontual de gases combustíveis para uso industrial e comercial, com transmissão remota sem fio para monitoramento da concentração de gás em espaços confinados. Conta com sensor a laser e consumo ultrabaixo, enviando os dados de concentração por rede celular (NB-IoT/4G/5G) a um centro de dados.",
+          "specs": [
+            { "label": "Tipo de sensor", "valor": "Sensor a laser" },
+            { "label": "Transmissão", "valor": "Rede NB-IoT/4G/5G" },
+            { "label": "Tipo", "valor": "Detector pontual de gases combustíveis" }
+          ],
+          "features": [
+            "Design de consumo ultrabaixo",
+            "Bateria de lítio interna para operação prolongada",
+            "Transmissão por rede NB-IoT/4G/5G",
+            "Mecanismo duplo de envio de dados (programado + por alarme)",
+            "Configuração remota de parâmetros sem visita ao local",
+            "Configuração de alarme em dois níveis",
+            "Segurança intrínseca para áreas perigosas"
+          ],
+          "aplicacoes": [
+            "Detecção de gás industrial e comercial",
+            "Monitoramento de vazamentos em poços de válvulas",
+            "Monitoramento de concentração de gás em espaços confinados",
+            "Zonas perigosas e à prova de explosão"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20251108/1-25110QG053L3.png",
+          "specsIncompletas": true
+        },
+        {
+          "modelo": "DM10",
+          "categoria": "Monitoramento Online",
+          "nome": "Sistema de Monitoramento de Redes de Gás Enterradas",
+          "descricao": "Sistema para monitoramento em tempo real de vazamentos em redes de gás enterradas, baseado em espectroscopia a laser. Oferece monitoramento remoto, ampla cobertura, forte resistência a interferências, alta sensibilidade, resposta rápida e alta precisão, reagindo apenas ao metano e sem interferência de outros gases.",
+          "specs": [
+            { "label": "Princípio de detecção", "valor": "Espectroscopia a laser" },
+            { "label": "Gás detectado", "valor": "Metano" },
+            { "label": "Autonomia", "valor": "Acima de 3 anos (consumo ultrabaixo)" }
+          ],
+          "features": [
+            "Função de ativação manual (wake-up)",
+            "Alarme antifurto",
+            "Suporte a configuração remota de parâmetros",
+            "Calibração automática na inicialização",
+            "Consumo ultrabaixo, com vida útil superior a 3 anos",
+            "Posicionamento automático com exibição em mapa",
+            "Compatível com computador e aplicativo móvel, com alertas por SMS",
+            "Reage exclusivamente ao metano, sem influência de outros gases e umidade",
+            "Resposta rápida, alta sensibilidade e boa repetibilidade com monitoramento online",
+            "Armazenamento de dados com exportação (relatórios e gráficos)"
+          ],
+          "aplicacoes": [
+            "Redes primárias de tubulação de gás urbano",
+            "Monitoramento de tubulações enterradas"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20241217/1-24121G3004E42.jpg",
+          "specsIncompletas": true
+        },
+        {
+          "modelo": "C10",
+          "categoria": "Monitoramento Online",
+          "nome": "Poste Inteligente de Teste de Proteção Catódica",
+          "descricao": "Poste de teste de proteção catódica inteligente, aplicado a projetos de dutos de óleo, gás e gás urbano como unidade básica do sistema de proteção catódica. Mede parâmetros como potencial de proteção catódica (ligado, desligado e natural), tensão de interferência CA, corrente parasita CA, densidade de corrente CC, potencial de circuito aberto e corrente de saída do anodo de sacrifício, temperatura e umidade, emitindo alerta automático em caso de anomalia.",
+          "specs": [
+            { "label": "Aplicação", "valor": "Unidade básica de sistema de proteção catódica" },
+            { "label": "Transmissão", "valor": "Rede NB-IoT/4G/5G" },
+            { "label": "Armazenamento", "valor": "Acima de 6 meses durante falha de comunicação" },
+            { "label": "Posicionamento", "valor": "GPS integrado com exibição em plataforma GIS" }
+          ],
+          "features": [
+            "Coleta remota de dados via NB-IoT/4G/5G",
+            "Interface de API padrão compatível com sistemas de gestão de dutos existentes",
+            "Armazenamento de dados por mais de 6 meses durante falhas de comunicação",
+            "Design compacto com PCB multicamadas de alta integração, compatível com mais de 95% dos postes de teste de aço",
+            "Posicionamento GPS integrado para exibição em plataforma GIS"
+          ],
+          "aplicacoes": [
+            "Construção de novos dutos",
+            "Reforma de dutos antigos",
+            "Instalações de armazenamento de óleo",
+            "Estações de transmissão intermediárias",
+            "Proteção eletromagnética de dutos"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20251108/1-25110Q6415ML.png",
+          "specsIncompletas": true
+        },
+        {
+          "modelo": "Vibração/Acústico",
+          "categoria": "Monitoramento Online",
+          "nome": "Sistema de Monitoramento de Vazamento de Gás e Vibração de Obras de Terceiros",
+          "descricao": "Sistema que utiliza tecnologia de reconhecimento de assinatura acústica e algoritmo de fusão ponderada para validação multidimensional cruzada entre dispositivos. Instalado na tubulação, na parede do tubo ou na saída de descarga de gás, monitora o volume de vazamento e detecta vazamentos causados por obras de terceiros, emitindo alarme de vibração.",
+          "specs": [
+            { "label": "Princípio de detecção", "valor": "Reconhecimento de assinatura acústica (vibração)" },
+            { "label": "Transmissão", "valor": "Rede NB/4G" },
+            { "label": "Análise", "valor": "Coleta de áudio e análise espectral em plataforma de nuvem" }
+          ],
+          "features": [
+            "Tecnologia de reconhecimento de assinatura acústica",
+            "Validação multidimensional cruzada entre dispositivos de sensoriamento",
+            "Detecção de vazamentos de gás em tempo real",
+            "Detecção de danos causados por obras de terceiros",
+            "Função de alarme de vibração",
+            "Transmissão por rede NB/4G",
+            "Análise de dados em plataforma de nuvem"
+          ],
+          "aplicacoes": [
+            "Monitoramento de tubulações de gás",
+            "Gestão de segurança de redes de gás",
+            "Prevenção contra danos por obras de terceiros"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20251108/1-25110Q64620H0.png",
+          "specsIncompletas": true
+        },
+        {
+          "modelo": "Poste de Solo",
+          "categoria": "Monitoramento Online",
+          "nome": "Detector de Gás tipo Poste de Solo",
+          "descricao": "Detector de gás em formato de poste de solo, voltado para monitoramento online no contexto de segurança de gás urbano e de redes de tubulação subterrâneas. As especificações técnicas detalhadas não estão disponíveis na fonte e deverão ser confirmadas.",
+          "specs": [
+            { "label": "Tipo", "valor": "Monitoramento online tipo poste de solo" }
+          ],
+          "features": [
+            "Monitoramento de segurança de gás urbano"
+          ],
+          "aplicacoes": [
+            "Segurança de gás urbano",
+            "Monitoramento de redes de gás subterrâneas"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20250313/1-250313230620623.jpg",
+          "specsIncompletas": true
+        },
+        {
+          "modelo": "Enterrado",
+          "categoria": "Monitoramento Online",
+          "nome": "Monitor de Gás Combustível Enterrado / Detector de Vazamento de Tubulação Enterrada",
+          "descricao": "Monitor de gases combustíveis para instalação enterrada, atuando como guardião de segurança de redes de gás subterrâneas e detector de vazamentos de tubulações enterradas. As especificações técnicas detalhadas não estão disponíveis na fonte e deverão ser confirmadas.",
+          "specs": [
+            { "label": "Tipo", "valor": "Monitor de gás combustível enterrado" }
+          ],
+          "features": [
+            "Monitoramento de redes de gás subterrâneas"
+          ],
+          "aplicacoes": [
+            "Monitoramento de segurança de gás municipal",
+            "Detecção de vazamentos em tubulações enterradas"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20250313/1-2503132305195R.jpg",
+          "specsIncompletas": true
+        },
+        {
+          "modelo": "Pressão sem Fio",
+          "categoria": "Monitoramento Online",
+          "nome": "Monitor de Pressão por Transmissão Remota sem Fio",
+          "descricao": "Monitor inteligente de pressão por transmissão remota sem fio para infraestrutura de redes de gás. As especificações técnicas detalhadas não estão disponíveis na fonte e deverão ser confirmadas.",
+          "specs": [
+            { "label": "Tipo", "valor": "Monitor de pressão sem fio com transmissão remota" }
+          ],
+          "features": [
+            "Monitoramento remoto de pressão de gás"
+          ],
+          "aplicacoes": [
+            "Infraestrutura de gás municipal",
+            "Monitoramento de segurança de redes de gás"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20250313/1-250313230345H2.jpg",
+          "specsIncompletas": true
+        },
+        {
+          "modelo": "Poço de Válvula",
+          "categoria": "Monitoramento Online",
+          "nome": "Monitor de Gás para Poço de Válvula / Alarme de Gás Combustível",
+          "descricao": "Monitor de gás para poço de válvula e detector de gases combustíveis em câmaras subterrâneas, voltado à detecção de vazamentos em linha de vida urbana. As especificações técnicas detalhadas não estão disponíveis na fonte e deverão ser confirmadas.",
+          "specs": [
+            { "label": "Tipo", "valor": "Monitor de gás combustível para poço de válvula" }
+          ],
+          "features": [
+            "Monitoramento de poços e câmaras de válvulas",
+            "Detecção de vazamentos em infraestrutura subterrânea"
+          ],
+          "aplicacoes": [
+            "Monitoramento de segurança de gás urbano",
+            "Monitoramento de poços e câmaras de válvulas",
+            "Detecção de vazamentos em infraestrutura subterrânea"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20250313/1-250313225RC58.jpg",
+          "specsIncompletas": true
+        }
+      ]
+    },
+    {
+      "slug": "localizacao-tubulacao-pe",
+      "nome": "Localização de Tubulação PE",
+      "produtos": [
+        {
+          "modelo": "A200",
+          "categoria": "Localização de Tubulação PE",
+          "nome": "Localizador de Tubulação PE",
+          "descricao": "Localizador de tubulações PE que conecta uma câmara de ressonância de sinal acústico à tubulação de gás, usando o próprio gás como meio para transmitir o sinal sonoro. O sinal atravessa o tubo de PE e chega à superfície, onde um receptor portátil identifica o ponto de sinal mais forte, diretamente acima da linha. Com algoritmo exclusivo voltado apenas para a tubulação PE alvo, não sofre interferência de outras linhas e localiza com precisão a posição e o traçado do tubo.",
+          "specs": [
+            { "label": "Alvo de detecção", "valor": "Tubulações de PE" },
+            { "label": "Princípio de detecção", "valor": "Localização por sinal acústico" }
+          ],
+          "features": [
+            "Tecnologia acústica avançada para localização precisa de tubos PE",
+            "Função de identificação por áudio",
+            "Sensores de alta sensibilidade com algoritmos profissionais",
+            "Potência de saída ajustável em múltiplos níveis para ambientes complexos",
+            "Múltiplos modos de alimentação com economia inteligente de energia",
+            "Design ergonômico para conveniência do usuário",
+            "Análise de sinal em tempo real com resultados instantâneos",
+            "Seleção de frequência ótima e eliminação de interferências",
+            "Controle remoto sem fio do transmissor",
+            "Interface totalmente em português (configurável)"
+          ],
+          "aplicacoes": [
+            "Detecção de infraestrutura de segurança de gás urbano",
+            "Localização de traçado de tubulações de PE"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20231115/1-231115133I2555.jpg",
+          "specsIncompletas": true
+        }
+      ]
+    },
+    {
+      "slug": "deteccao-rede-enterrada-gas",
+      "nome": "Detecção de Rede Enterrada de Gás",
+      "produtos": [
+        {
+          "modelo": "ST100",
+          "categoria": "Detecção de Rede Enterrada de Gás",
+          "nome": "Detector de Redes de Gás Enterradas tipo Carrinho",
+          "descricao": "Equipamento de inspeção profissional em formato de carrinho de mão, desenvolvido para varredura rápida de redes de gás enterradas. Concentra todos os componentes de detecção em um único carrinho, com caminho de amostragem curto, maior potência de sucção da bomba e resposta mais rápida, reduzindo a fadiga do operador. Oferece melhor manobrabilidade do que veículos maiores de detecção de gás.",
+          "specs": [
+            { "label": "Formato", "valor": "Carrinho de mão (push-cart)" },
+            { "label": "Amostragem", "valor": "Caminho curto com bomba de alta potência" },
+            { "label": "Interface", "valor": "Menu em tela com autoteste" }
+          ],
+          "features": [
+            "Indicado para inspeção de superfície de redes de gás enterradas, especialmente pátios, calçadas e ciclovias",
+            "Componentes de detecção centralizados que reduzem a fadiga do operador",
+            "Caminho de amostragem curto com alta potência de bomba e resposta rápida",
+            "Interface de menu com função de autoteste",
+            "Alarmes sonoros e visuais",
+            "Integração opcional com software de inspeção via Bluetooth",
+            "Haste telescópica com unidade principal destacável"
+          ],
+          "aplicacoes": [
+            "Redes municipais de gás enterradas",
+            "Inspeção em pátios",
+            "Calçadas",
+            "Ciclovias e vias para veículos não motorizados"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20231116/1-231116135Q2421.jpg",
+          "specsIncompletas": true
+        }
+      ]
+    },
+    {
+      "slug": "detectores-portateis",
+      "nome": "Detectores Portáteis",
+      "produtos": [
+        {
+          "modelo": "DG100",
+          "categoria": "Detectores Portáteis",
+          "nome": "Detector Multifuncional Série DG100",
+          "descricao": "Detector portátil multifuncional que atende às necessidades de detecção de gás (faixa completa), medição do teor de oxigênio, detecção de odorizante e medição de pressão. Exibe as medições em campo e armazena os dados de detecção.",
+          "specs": [
+            { "label": "Método de amostragem", "valor": "Bomba de sucção" },
+            { "label": "Faixa de medição de CH4", "valor": "0 a 100% VOL, resolução 0,1% VOL" },
+            { "label": "Faixa de medição de O2", "valor": "0 a 30% VOL, resolução 0,1% VOL" },
+            { "label": "Faixa de medição de THT (odorizante)", "valor": "0 a 100 mg/m³, resolução 0,1 mg/m³" },
+            { "label": "Faixa de medição de pressão", "valor": "0,0 a 100,0 mbar (0 a 10 kPa), resolução 0,5 mbar" },
+            { "label": "Ponto de alarme", "valor": "Configurável pelo usuário" },
+            { "label": "Tempo de operação", "valor": "Acima de 10 horas" },
+            { "label": "Alimentação", "valor": "Bateria de lítio recarregável interna" },
+            { "label": "Grau de proteção", "valor": "IP54" },
+            { "label": "Classificação à prova de explosão", "valor": "Ex ib IIC T4 Gb" },
+            { "label": "Temperatura de operação", "valor": "-30 °C a +70 °C" },
+            { "label": "Umidade", "valor": "0 a 95% UR" },
+            { "label": "Dimensões", "valor": "135 × 245 × 45 mm (L × A × P)" },
+            { "label": "Peso", "valor": "500 g" }
+          ],
+          "features": [
+            "Detecta simultaneamente 3 gases (CH4, THT, O2) e pressão, com personalização flexível",
+            "Registro e comparação de dados",
+            "Pré-aquecimento rápido com opção de desligamento automático",
+            "Menu com exibição gráfica e operação simples"
+          ],
+          "aplicacoes": [
+            "Detecção de vazamento de CH4 em tubulações e instalações",
+            "Medição de oxigênio para purga de tubulações e entrada em espaços confinados",
+            "Verificação da concentração de odorizante (THT) em pontos de distribuição",
+            "Monitoramento de pressão de rede"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20231019/1-2310191224462L.jpg",
+          "specsIncompletas": false
+        },
+        {
+          "modelo": "DG100 (THT)",
+          "categoria": "Detectores Portáteis",
+          "nome": "Detector de Tetra-Hidrotiofeno (THT)",
+          "descricao": "Detector portátil do teor de tetra-hidrotiofeno (THT) em redes de gás. Basta conectar um tubo fino à saída de descarga da tubulação para exibir, em campo, a concentração do odorizante THT. Garante níveis adequados de odorizante, reduz custos com produtos químicos e otimiza o posicionamento dos pontos de odorização para maior segurança.",
+          "specs": [
+            { "label": "Substância detectada", "valor": "Tetra-hidrotiofeno (THT)" },
+            { "label": "Método de amostragem", "valor": "Bomba de sucção" },
+            { "label": "Display", "valor": "Tela LCD" },
+            { "label": "Alimentação", "valor": "Bateria de lítio recarregável interna" },
+            { "label": "Tempo de operação", "valor": "Acima de 10 horas" },
+            { "label": "Grau de proteção", "valor": "IP54" },
+            { "label": "Classificação à prova de explosão", "valor": "Ex ib IIC T4 Gb" },
+            { "label": "Temperatura de operação", "valor": "-30 °C a 70 °C" },
+            { "label": "Umidade", "valor": "0 a 95% UR" },
+            { "label": "Posicionamento (opcional)", "valor": "Duplo satélite/GPS com coordenadas" },
+            { "label": "Armazenamento de dados", "valor": "Até 10.000 registros" },
+            { "label": "Dimensões", "valor": "135 × 245 × 45 mm (L × A × P)" },
+            { "label": "Peso", "valor": "750 g" }
+          ],
+          "features": [
+            "Detecção automática após o fluxo de gás",
+            "Módulo de controle de vazão integrado",
+            "Inicialização com autoteste e pré-aquecimento rápido",
+            "Menu com exibição gráfica",
+            "Operação portátil e intuitiva"
+          ],
+          "aplicacoes": [
+            "Verificação da concentração de odorizante em redes de gás",
+            "Otimização de pontos de odorização",
+            "Controle de segurança no uso do gás"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20231019/1-231019120641959.jpg",
+          "specsIncompletas": false
+        },
+        {
+          "modelo": "DX300",
+          "categoria": "Detectores Portáteis",
+          "nome": "Detector de Gás",
+          "descricao": "Detector concebido para identificação de gás em alta concentração durante a substituição de tubulações, detecção quantitativa de vazamentos em campo e localização precisa de pontos de vazamento em redes de gás enterradas. Conta com três unidades de exibição (ppm, LEL, VOL) com troca automática de faixa, sensores responsivos e baixo custo de manutenção.",
+          "specs": [
+            { "label": "Unidades de exibição", "valor": "ppm, LEL, VOL (troca automática de faixa)" },
+            { "label": "Conectividade", "valor": "Bluetooth com aplicativo" }
+          ],
+          "features": [
+            "Detecção de gás em faixa completa",
+            "Pré-aquecimento rápido com operação imediata",
+            "Troca automática de unidade de concentração",
+            "Haste de inserção rápida ou sonda telescópica portátil (opcional)",
+            "Conectividade Bluetooth com aplicativo para registro de inspeção e relatórios",
+            "Menu com alarmes sonoros e visuais",
+            "Design leve e portátil"
+          ],
+          "aplicacoes": [
+            "Substituição de tubulações de gás",
+            "Detecção e localização de vazamentos",
+            "Avaliação de tubulações de gás enterradas",
+            "Manutenção de instalações de gás"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20231019/1-231019115309408.jpg",
+          "specsIncompletas": true
+        },
+        {
+          "modelo": "DX200",
+          "categoria": "Detectores Portáteis",
+          "nome": "Detector de Gás",
+          "descricao": "Detector projetado para manutenção de redes de gás, detecção de vazamentos em tubulações internas e demais situações que exijam identificação de vazamentos. Oferece resposta sensível e portabilidade para inspeção de tubulações, reguladores e instalações relacionadas.",
+          "specs": [
+            { "label": "Gás detectado", "valor": "Gás natural (CH4)" },
+            { "label": "Método de amostragem", "valor": "Difusão" },
+            { "label": "Tempo de operação", "valor": "Acima de 10 horas" },
+            { "label": "Display", "valor": "Tela LCD" },
+            { "label": "Alarme", "valor": "Sonoro e visual" },
+            { "label": "Alimentação", "valor": "Bateria de lítio recarregável interna" },
+            { "label": "Grau de proteção", "valor": "IP65" },
+            { "label": "Classificação à prova de explosão", "valor": "Ex ib IIC T3 Gb" },
+            { "label": "Temperatura de operação", "valor": "-30 °C a +70 °C" },
+            { "label": "Umidade", "valor": "0 a 95% UR" },
+            { "label": "Dimensões", "valor": "60 × 130 × 28 mm (L × A × P)" },
+            { "label": "Peso", "valor": "180 g" }
+          ],
+          "features": [
+            "Múltiplos modos de detecção (instalações expostas, espaços confinados, alta precisão, à prova de explosão)",
+            "Design compacto, leve e durável",
+            "Inicialização rápida com desligamento automático",
+            "Limite de alarme ajustável com alerta sonoro silenciável",
+            "Sonda flexível tipo pescoço de cisne para espaços apertados",
+            "Menu intuitivo"
+          ],
+          "aplicacoes": [
+            "Manutenção de tubulações de gás",
+            "Detecção de vazamentos em tubulações internas",
+            "Inspeção de segurança de instalações de gás"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20231019/1-231019113G43Q.jpg",
+          "specsIncompletas": false
+        },
+        {
+          "modelo": "CL01",
+          "categoria": "Detectores Portáteis",
+          "nome": "Detector de Gás",
+          "descricao": "Detector voltado à manutenção de tubulações de gás e detecção de vazamentos internos. Identifica vazamentos em tubulações, reguladores de pressão e outras instalações de gás, localizando até pequenos vazamentos. Oferece múltiplos modos de trabalho e medição de pressão opcional.",
+          "specs": [
+            { "label": "Unidades de pressão (opcional)", "valor": "mbar/bar e kPa" },
+            { "label": "Modos de trabalho", "valor": "Instalações expostas, espaços confinados, alta precisão, à prova de explosão" }
+          ],
+          "features": [
+            "Detecção e localização precisa de vazamentos em instalações de gás",
+            "Múltiplos modos: instalações expostas, espaços confinados, alta precisão e à prova de explosão",
+            "Medição de pressão opcional para tubulações de média ou baixa pressão",
+            "Exibição em unidade dupla (mbar/bar e kPa)",
+            "Capacidade de teste de estanqueidade de redes de gás",
+            "Função de registro e comparação de dados",
+            "Pré-aquecimento rápido e design portátil",
+            "Menu com exibição gráfica",
+            "Sonda flexível tipo pescoço de cisne para espaços apertados"
+          ],
+          "aplicacoes": [
+            "Redes de tubulação de gás",
+            "Reguladores de pressão",
+            "Inspeção de tubulações de gás internas",
+            "Testes de aceitação de tubulações"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20231019/1-231019112IX41.jpg",
+          "specsIncompletas": true
+        },
+        {
+          "modelo": "DX100",
+          "categoria": "Detectores Portáteis",
+          "nome": "Detector de Gás",
+          "descricao": "Detector projetado para manutenção de redes de gás e localização de pequenos vazamentos em instalações como tubulações e reguladores. Conta com resposta sensível, portabilidade e funcionalidade completa, adequado para distribuição a equipes de campo de distribuidoras.",
+          "specs": [
+            { "label": "Display", "valor": "Indicador LED para ambientes escuros" },
+            { "label": "Resolução de medição", "valor": "Ajustável" },
+            { "label": "Alarme", "valor": "Sonoro e visual, com volume ajustável" }
+          ],
+          "features": [
+            "Sonda flexível tipo pescoço de cisne para espaços estreitos",
+            "Design compacto e leve",
+            "Indicador LED para ambientes de trabalho escuros",
+            "Resolução de medição e limite de alarme ajustáveis",
+            "Autoteste e pré-aquecimento rápidos",
+            "Alarme sonoro e visual com volume ajustável",
+            "Formato portátil de mão",
+            "Inicialização rápida"
+          ],
+          "aplicacoes": [
+            "Detecção de vazamentos em tubulações de gás",
+            "Inspeção de reguladores de pressão",
+            "Localização de vazamentos em instalações de gás",
+            "Detecção de vazamentos em tubulações internas"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20231025/1-231025163424L2.jpg",
+          "specsIncompletas": true
+        },
+        {
+          "modelo": "CP",
+          "categoria": "Detectores Portáteis",
+          "nome": "Manômetro Digital Série CP (Baixa e Média Pressão)",
+          "descricao": "Manômetro digital de medição rápida desenvolvido para o setor de distribuição de gás, para obtenção da pressão operacional da tubulação. Permite detecção simultânea com dois valores de pressão exibidos em uma única interface e conta com registro automático de dados para monitoramento prolongado.",
+          "specs": [
+            { "label": "Objeto de medição", "valor": "Pressão interna de gás na tubulação" },
+            { "label": "Faixa de baixa pressão", "valor": "0 a 100 mbar (0 a 10 kPa)" },
+            { "label": "Resolução de baixa pressão", "valor": "0,1 mbar (10 Pa)" },
+            { "label": "Faixa de média pressão", "valor": "0 a 5 bar (0 a 500 kPa)" },
+            { "label": "Resolução de média pressão", "valor": "0,001 bar (0,1 kPa)" },
+            { "label": "Tempo de operação", "valor": "Acima de 10 horas" },
+            { "label": "Alimentação", "valor": "Bateria de lítio recarregável interna" },
+            { "label": "Grau de proteção", "valor": "IP54" },
+            { "label": "Ponto de alarme", "valor": "Configurável pelo usuário" },
+            { "label": "Temperatura de operação", "valor": "-30 °C a 70 °C" },
+            { "label": "Umidade", "valor": "0 a 95% UR" },
+            { "label": "Dimensões", "valor": "80 × 190 × 30 mm" },
+            { "label": "Peso líquido", "valor": "260 g" }
+          ],
+          "features": [
+            "Exibição em unidade dupla (mbar/bar e kPa)",
+            "Sem necessidade de pré-aquecimento, com leitura imediata",
+            "Registro e comparação de múltiplos dados",
+            "Suporte a teste de estanqueidade de tubulações de gás",
+            "Menu com exibição gráfica"
+          ],
+          "aplicacoes": [
+            "Medição de pressão em tubulações de gás de média e baixa pressão"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20231115/1-23111513551G92.jpg",
+          "specsIncompletas": false
+        },
+        {
+          "modelo": "DX200",
+          "categoria": "Detectores Portáteis",
+          "nome": "Medidor Portátil de Pressão (Baixa e Média Pressão)",
+          "descricao": "Medidor portátil para aferição rápida da pressão interna de gás na tubulação, atendendo aos requisitos de teste de estanqueidade de redes de gás e às necessidades de testes integrados em campo. Permite seleção de faixa para média ou baixa pressão com exibição em unidade dupla.",
+          "specs": [
+            { "label": "Objeto de medição", "valor": "Pressão interna de gás na tubulação" },
+            { "label": "Faixa de pressão", "valor": "Selecionável para média ou baixa pressão" },
+            { "label": "Unidades de exibição", "valor": "mbar/bar e kPa" }
+          ],
+          "features": [
+            "Faixa de pressão selecionável para tubulações de média ou baixa pressão",
+            "Exibição em unidade dupla (mbar/bar e kPa)",
+            "Adequado para testes de aceitação de tubulações de gás natural e verificação de estanqueidade"
+          ],
+          "aplicacoes": [
+            "Medição de pressão em tubulações de gás combustível",
+            "Teste de estanqueidade de redes de gás",
+            "Aceitação e verificação de tubulações de gás natural",
+            "Testes integrados em campo"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20231014/1-231014155514924.jpg",
+          "specsIncompletas": true
+        },
+        {
+          "modelo": "F40",
+          "categoria": "Detectores Portáteis",
+          "nome": "Detector de Gás Quatro-em-Um",
+          "descricao": "Detector que integra a medição de oxigênio, sulfeto de hidrogênio, monóxido de carbono e gases combustíveis. Adapta-se a múltiplos cenários, como teste de concentração de oxigênio em túneis subterrâneos, detecção de vazamentos em tubulações de gás, monitoramento de equipamentos de produção e aplicações de segurança contra incêndio.",
+          "specs": [
+            { "label": "Gases detectados", "valor": "Oxigênio, sulfeto de hidrogênio, monóxido de carbono e gases combustíveis" },
+            { "label": "Alarmes", "valor": "Sonoro, visual e por vibração" },
+            { "label": "Conectividade", "valor": "Bluetooth para transmissão de dados" }
+          ],
+          "features": [
+            "Compatível com segurança contra incêndio, agricultura, química, construção, elétrica e inspeção de redes subterrâneas",
+            "Menu com exibição gráfica e operação fácil",
+            "Leve e portátil com clipe traseiro",
+            "Alertas sonoros, visuais e por vibração",
+            "Função de armazenamento de dados registrando concentrações em tempo real",
+            "Desligamento automático para economia de bateria",
+            "Conectividade Bluetooth para transmissão de dados",
+            "Exportação de dados e configuração de funções"
+          ],
+          "aplicacoes": [
+            "Segurança contra incêndio",
+            "Agricultura",
+            "Química",
+            "Construção civil",
+            "Obras elétricas",
+            "Inspeção de redes subterrâneas"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20231115/1-23111513551CP.jpg",
+          "specsIncompletas": true
+        }
+      ]
+    },
+    {
+      "slug": "monitoramento-meteorologico",
+      "nome": "Monitoramento Meteorológico",
+      "produtos": [
+        {
+          "modelo": "Estação Portátil",
+          "categoria": "Monitoramento Meteorológico",
+          "nome": "Estação Meteorológica Portátil Ultrassônica",
+          "descricao": "Estação meteorológica portátil ultrassônica que une design compacto e desempenho profissional para monitoramento meteorológico móvel. Resolve as limitações das estações tradicionais — volumosas e de instalação complexa — e dos dispositivos portáteis comuns, restritos em precisão e funcionalidade, fornecendo dados meteorológicos precisos em tempo real para operações de campo, exploração científica e resposta a emergências.",
+          "specs": [
+            { "label": "Tecnologia", "valor": "Sensor ultrassônico (sem partes móveis)" },
+            { "label": "Tipo", "valor": "Estação meteorológica portátil" }
+          ],
+          "features": [
+            "Sem desgaste mecânico, com alta durabilidade",
+            "Suporta múltiplos métodos de transmissão e é fácil de transportar",
+            "Resposta mais rápida e maior praticidade",
+            "Boa autonomia de bateria, com troca rápida de baterias de alta capacidade"
+          ],
+          "aplicacoes": [
+            "Operações de campo",
+            "Exploração científica",
+            "Resposta a emergências"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20260428/1-26042Q54052247.png",
+          "specsIncompletas": true
+        },
+        {
+          "modelo": "Estação Móvel",
+          "categoria": "Monitoramento Meteorológico",
+          "nome": "Estação Meteorológica Móvel (Automática)",
+          "descricao": "Estação meteorológica automática (móvel) capaz de medir com precisão, em campo e em qualquer condição climática, parâmetros como direção e velocidade do vento, precipitação, temperatura, umidade, intensidade luminosa, pressão atmosférica e radiação. Possui grande capacidade de armazenamento — guardando ao menos um ano de dados — e múltiplos métodos de comunicação (cabeada, rádio de transmissão de dados e celular) para enviar os dados a um banco de dados meteorológico central.",
+          "specs": [
+            { "label": "Parâmetros medidos", "valor": "Direção e velocidade do vento, precipitação, temperatura, umidade, intensidade luminosa, pressão atmosférica e radiação" },
+            { "label": "Armazenamento de dados", "valor": "Mínimo de 1 ano" },
+            { "label": "Comunicação", "valor": "Cabeada, rádio de transmissão de dados e celular" }
+          ],
+          "features": [
+            "Medição precisa de múltiplos parâmetros meteorológicos em qualquer condição climática",
+            "Armazenamento de dados de no mínimo um ano",
+            "Múltiplos métodos de comunicação (cabeada, rádio e celular)",
+            "Fácil de transportar e operar"
+          ],
+          "aplicacoes": [
+            "Meteorologia",
+            "Proteção ambiental",
+            "Aeroportos",
+            "Silvicultura e agricultura",
+            "Pesquisa científica"
+          ],
+          "imagemUrlOrigem": "/uploads/allimg/20260428/1-26042Q53P5416.png",
+          "specsIncompletas": true
+        }
+      ]
+    }
+  ]
+}

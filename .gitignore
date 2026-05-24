@@ -1,0 +1,20 @@
+node_modules/
+dist/
+.env
+.env.local
+.env*
+.dev.vars
+.wrangler/
+.vite/
+*.log
+
+.vercel
+
+# Node compile/update caches
+node-compile-cache/
+update-check/
+
+# Variants AVIF/WebP responsivas SÃO COMMITADAS no repo
+# (build do Cloudflare Pages não tem sharp confiável, então pre-geramos local
+#  e versionamos para garantir que estão online).
+# Para regenerar: `npm run responsive-images`

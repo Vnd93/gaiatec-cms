@@ -10,6 +10,7 @@
  */
 import catalogData from "./deteccao-gas-catalog.draft.json";
 import { DG_IMAGENS } from "./dgImagens";
+import { DG_TEXTOS } from "./dgTextos";
 
 export interface DgSpec {
   label: string;
@@ -160,10 +161,10 @@ export const dgProdutos: DgProduto[] = rawCatalog.categorias.flatMap((cat) => {
       slug,
       modelo: p.modelo,
       nome: p.nome,
-      descricao: p.descricao,
+      descricao: DG_TEXTOS[slug]?.descricao ?? p.descricao,
       categoriaSlug: cat.slug,
       specs: p.specs ?? [],
-      features: p.features ?? [],
+      features: DG_TEXTOS[slug]?.features ?? p.features ?? [],
       aplicacoes: p.aplicacoes ?? [],
       specsIncompletas: Boolean(p.specsIncompletas),
       imagem: DG_IMAGENS[slug],

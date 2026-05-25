@@ -105,4 +105,68 @@ export const DG_TEXTOS: Record<string, DgTexto> = {
       'Tela TFT colorida de 2,4", legível sob forte luz solar',
     ],
   },
+  "ks100": {
+    descricao:
+      "Veículo elétrico de inspeção de vazamento de gás (nível ppb), desenvolvido para detecção rápida em redes subterrâneas de vias estreitas — pátios, calçadas e ruas para não-motorizados. Mais ágil que os grandes veículos de detecção e mais rápido que a inspeção a pé, com fixação robusta e operação simples.",
+    features: [
+      "Alta velocidade de patrulha em vias urbanas com rede subterrânea",
+      "Inspeção rápida em pátios, calçadas e vias estreitas",
+      "Identifica rapidamente se há vazamento na rede",
+      "Alertas por voz e exibição em tempo real dos resultados",
+      "App de inspeção: trajeto, alarmes e relatórios",
+      "Instalável em diversos veículos elétricos, montagem/desmontagem rápida",
+      "Estrutura profissional e resistente",
+    ],
+  },
+  "veiculo-autonomo": {
+    descricao:
+      "Solução inteligente que usa veículos de condução autônoma equipados com detecção a laser nível ppb para realizar, de forma automática e em alta frequência, detecção de vazamentos, inspeção de instalações e coleta de dados em redes subterrâneas urbanas, estações e parques industriais. Faz varredura em tempo real por MIR-TDLAS (laser sintonizável no infravermelho médio) com célula de caminho óptico longo, atingindo precisão de 0,1 ppb — mil vezes mais preciso que equipamentos tradicionais — e localizando rapidamente o ponto de vazamento, viabilizando inspeção 24/7 totalmente automatizada.",
+    features: [
+      "Redes subterrâneas urbanas: inspeção periódica das tubulações",
+      "Estações de gás e portarias: verificação diária de segurança",
+      "Parques industriais: inspeção dedicada de tubulações internas",
+      "Resposta a emergências: deslocamento rápido sem expor pessoas",
+      "Monitoramento preventivo no entorno de obras de terceiros",
+    ],
+  },
+  "m10": {
+    descricao:
+      "Detector portátil tipo mochila de metano e etano por bomba de sucção a laser (nível ppb). Mede os dois gases simultaneamente, distinguindo instantaneamente gás natural de biogás: um laser interno emite dois feixes em comprimentos de onda específicos, absorvidos apenas por metano e etano, e a taxa de absorção (proporcional à concentração) permite calcular os valores exatos.",
+    features: [
+      "Resposta rápida, alta eficiência na inspeção",
+      "Sondas de amostragem para todos os ambientes de aplicação",
+      "Posicionamento por satélite com registro da trajetória",
+      "App de celular sem fio: registra localização, fotos e envia dados",
+      "Inicialização rápida, sem pré-aquecimento",
+      "Excelente seletividade — reage apenas a metano e etano",
+    ],
+  },
+  "c200mini": {
+    descricao:
+      "Detector portátil de metano e etano a laser que distingue biogás de gás natural instantaneamente em campo, medindo os dois gases ao mesmo tempo. Diferentemente da cromatografia gasosa tradicional, não exige longos tempos de análise, não consome insumos nem peças de desgaste e não tem concentração mínima para a análise de etano. Disponível em diversos modelos.",
+    features: [
+      "Distinção instantânea entre gás natural e biogás, com leitura simultânea de metano e etano",
+      "Identificação automática de vazamentos, sem operação manual",
+      "Amostragem e análise inteligentes — reage apenas a metano e etano",
+      "Alertas por voz; tela LCD colorida grande",
+      "Inicialização rápida, sem pré-aquecimento",
+      "Bluetooth com app de inspeção: trajetos, relatórios e integração com terceiros",
+      "Operação simples, detecção rápida e ótimo custo-benefício",
+      "Compatível com diversas sondas externas",
+    ],
+  },
+  "uf100": {
+    descricao:
+      "Inspetor de metano a laser embarcado em drone (VANT), para detecção aérea de vazamentos na rede de gás. Cobre áreas extensas, de difícil acesso ou perigosas, fazendo a leitura remota a partir de uma zona segura.",
+  },
+  "ws100mini": {
+    descricao:
+      "Telêmetro a laser de metano em versão compacta, com sensibilidade e precisão superiores aos métodos tradicionais. Pequeno, de baixo consumo e apto a longas tarefas contínuas, verifica tubulações de gás a 15, 30 e 60 m por detecção sem contato: emite um feixe laser estreito que, refletido pela superfície-alvo, retorna ao receptor e é convertido em sinal para o cálculo da concentração.",
+    features: [
+      "Compacto e portátil — cabe no bolso",
+      "Autoteste na inicialização, sem calibração periódica",
+      "Detecção contínua de longa duração",
+      "Inspeção a distância, elevando produtividade e segurança",
+    ],
+  },
 };

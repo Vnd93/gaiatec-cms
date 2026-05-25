@@ -18,3 +18,6 @@ update-check/
 # (build do Cloudflare Pages não tem sharp confiável, então pre-geramos local
 #  e versionamos para garantir que estão online).
 # Para regenerar: `npm run responsive-images`
+
+# Originais pesados dos banners — só as variantes geradas (webp/avif) vão pro repo
+scripts/banners-src/

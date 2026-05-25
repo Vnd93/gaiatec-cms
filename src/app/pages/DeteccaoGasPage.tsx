@@ -15,8 +15,8 @@ import {
 const KNOCKOUT = "'Knockout HTF68', sans-serif";
 const BRAND = "#0057DE";
 
-const HERO_IMG = "/images/pages/2.2.webp";
-const CTA_IMG = "/images/pages/2.2.webp";
+const HERO_IMG = "/images/pages/dg-hero.webp";
+const CTA_IMG = "/images/pages/dg-cta.webp";
 
 /* Slides do hero-carrossel do hub (mesmo padrão da home). */
 const heroSlides: HeroSlide[] = [
@@ -34,7 +34,7 @@ const heroSlides: HeroSlide[] = [
     description: "Veículos e drones inspecionam quilômetros de rede de gás — enterrada e aérea — em alta velocidade.",
     cta: "Ver detecção móvel",
     href: "/deteccao-de-gas/deteccao-movel",
-    image: "/images/pages/2.7.webp",
+    image: "/images/pages/dg-movel.webp",
   },
   {
     label: "Monitoramento Online",
@@ -42,7 +42,7 @@ const heroSlides: HeroSlide[] = [
     description: "Sistemas fixos monitoram metano, pressão e válvulas em tempo real, com transmissão remota.",
     cta: "Ver monitoramento online",
     href: "/deteccao-de-gas/monitoramento-online",
-    image: "/images/pages/2.3.webp",
+    image: "/images/pages/dg-online.webp",
   },
 ];
 

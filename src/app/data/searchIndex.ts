@@ -66,6 +66,15 @@ export const searchIndex: SearchItem[] = [
   { label: "Automação de Biodigestores", category: "Biodigestor", href: "/biodigestor/automacao", keywords: "automação controle CLP biodigestor processo" },
   { label: "Biodigestor para Escolas", category: "Biodigestor", href: "/biodigestor/escolas", keywords: "escola educação didático ensino sustentabilidade" },
 
+  // ── DETECÇÃO DE GÁS ──
+  { label: "Detecção e Monitoramento de Gás", category: "Detecção de Gás", href: "/deteccao-de-gas", keywords: "detecção monitoramento gás metano etano laser tdlas ppb vazamento fuga gaiatec" },
+  { label: "Detecção Móvel", category: "Detecção de Gás", href: "/deteccao-de-gas/deteccao-movel", keywords: "veículo veicular drone vant mochila laser varredura móvel s-series s800 s600 s700 ks100 m10 c200mini uf100 ws100 h10 autônomo" },
+  { label: "Monitoramento Online", category: "Detecção de Gás", href: "/deteccao-de-gas/monitoramento-online", keywords: "fixo online 24/7 metano pressão válvula poste sz100 gq-tx100 gtq-wx200 gq-pm100 gq-pm200 dm10 c10 dt-kny-wx300 tht odorante poço transmissor vibração" },
+  { label: "Localização de Tubulação PE", category: "Detecção de Gás", href: "/deteccao-de-gas/localizacao-tubulacao-pe", keywords: "polietileno pe tubo tubulação enterrada localizador acústico a200" },
+  { label: "Detecção de Rede Enterrada", category: "Detecção de Gás", href: "/deteccao-de-gas/deteccao-rede-enterrada-gas", keywords: "subterrânea rede enterrada carrinho st100 vazamento duto inspeção" },
+  { label: "Detectores Portáteis", category: "Detecção de Gás", href: "/deteccao-de-gas/detectores-portateis", keywords: "portátil handheld dg100 dx300 dx200 dx100 cl01 cp f40 manômetro tht multigás 4-em-1 oxigênio monóxido sulfeto" },
+  { label: "Monitoramento Meteorológico", category: "Detecção de Gás", href: "/deteccao-de-gas/monitoramento-meteorologico", keywords: "estação meteorológica vento temperatura umidade ultrassônica portátil móvel dispersão clima" },
+
   // ── BLOG ──
   { label: "Blog — Artigos Técnicos", category: "Blog", href: "/blog", keywords: "artigo técnico publicação notícia informação" },
   { label: "Estudos de Caso", category: "Blog", href: "/blog", keywords: "case estudo projeto resultado cliente" },

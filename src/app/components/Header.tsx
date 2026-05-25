@@ -254,6 +254,22 @@ export function Header() {
         .hdr-utility-link:hover {
           opacity: 0.8;
         }
+        /* Campo de busca — texto/placeholder seguem o tema do header
+           (claro no topo escuro, preto quando rolado/branco). */
+        .hdr-search-input {
+          color: #fff;
+          caret-color: #fff;
+        }
+        .hdr-search-input::placeholder {
+          color: rgba(255, 255, 255, 0.6);
+        }
+        .hdr-light .hdr-search-input {
+          color: #000;
+          caret-color: #000;
+        }
+        .hdr-light .hdr-search-input::placeholder {
+          color: rgba(0, 0, 0, 0.45);
+        }
         .hdr-nav-link {
           color: rgb(255, 255, 255);
           cursor: pointer;
@@ -623,6 +639,7 @@ export function Header() {
                       >
                         <input
                           type="text"
+                          className="hdr-search-input"
                           placeholder="Buscar setores, produtos, serviços..."
                           autoFocus
                           value={searchQuery}
@@ -631,7 +648,6 @@ export function Header() {
                             background: "transparent",
                             border: "none",
                             outline: "none",
-                            color: "#fff",
                             fontSize: 14,
                             lineHeight: "25.2px",
                             width: "100%",
@@ -647,13 +663,13 @@ export function Header() {
                             background: "transparent",
                             border: "none",
                             cursor: "pointer",
-                            color: "#fff",
+                            color: scrolled ? "#000" : "#fff",
                             padding: "4px 0",
                             display: "flex",
                             alignItems: "center",
                           }}
                         >
-                          <ArrowRight size={10} color="#fff" />
+                          <ArrowRight size={10} color={scrolled ? "#000" : "#fff"} />
                         </button>
                       </form>
                     </div>

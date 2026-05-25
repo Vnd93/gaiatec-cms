@@ -4,6 +4,7 @@ import { useParams, Navigate, Link, useNavigate, useLocation } from "react-route
 import { X, ArrowRight, Check, Share2, CheckCircle2 } from "lucide-react";
 import { SEO, buildBreadcrumb } from "../components/SEO";
 import { DgProdutoMidia } from "../components/deteccao-gas/DgProdutoMidia";
+import { DG_GALERIA } from "../data/dgGaleria";
 import {
   getDgCategoria,
   getDgProduto,
@@ -32,6 +33,7 @@ export default function DeteccaoGasProdutoPage() {
   const [tab, setTab] = useState<"descricao" | "recursos" | "aplicacoes">("descricao");
   const [showAllSpecs, setShowAllSpecs] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [activeImg, setActiveImg] = useState(0);
   const overlayRef = useRef<HTMLDivElement>(null);
 
   const close = useCallback(() => {
@@ -57,6 +59,7 @@ export default function DeteccaoGasProdutoPage() {
   useEffect(() => {
     setTab("descricao");
     setShowAllSpecs(false);
+    setActiveImg(0);
     overlayRef.current?.scrollTo({ top: 0 });
   }, [produto]);
 
@@ -71,6 +74,8 @@ export default function DeteccaoGasProdutoPage() {
 
   const destaque = dgProdutosDestaque.some((d) => d.slug === prod.slug && d.categoriaSlug === cat.slug);
   const visibleSpecs = showAllSpecs ? prod.specs : prod.specs.slice(0, 3);
+  const imgs = DG_GALERIA[prod.slug] ?? (prod.imagem ? [prod.imagem] : []);
+  const mainImg = imgs[Math.min(activeImg, imgs.length - 1)];
 
   const share = async () => {
     try {
@@ -129,11 +134,31 @@ export default function DeteccaoGasProdutoPage() {
             {/* ─── Topo: galeria + info ─── */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 p-6 md:p-10 lg:p-12">
               {/* Galeria */}
-              <div className="bg-slate-50 flex items-center justify-center p-6 md:p-10" style={{ minHeight: 340 }}>
-                {prod.imagem ? (
-                  <img src={prod.imagem} alt={prod.nome} className="max-h-[300px] md:max-h-[420px] w-auto object-contain" />
-                ) : (
-                  <div className="w-full"><DgProdutoMidia modelo={prod.modelo} imagem={prod.imagem} aspect="100%" modeloSize={48} /></div>
+              <div className="flex flex-col gap-4">
+                <div className="bg-slate-50 flex items-center justify-center p-6 md:p-10" style={{ minHeight: 340 }}>
+                  {mainImg ? (
+                    <img src={mainImg} alt={prod.nome} className="max-h-[300px] md:max-h-[420px] w-auto object-contain" />
+                  ) : (
+                    <div className="w-full"><DgProdutoMidia modelo={prod.modelo} aspect="100%" modeloSize={48} /></div>
+                  )}
+                </div>
+                {imgs.length > 1 && (
+                  <div className="flex flex-wrap gap-3">
+                    {imgs.map((src, i) => {
+                      const on = i === Math.min(activeImg, imgs.length - 1);
+                      return (
+                        <button
+                          key={src}
+                          type="button"
+                          onClick={() => setActiveImg(i)}
+                          aria-label={`Imagem ${i + 1}`}
+                          className={`w-16 h-16 md:w-[72px] md:h-[72px] flex items-center justify-center bg-slate-50 p-1.5 border transition-colors ${on ? "border-[#0057DE]" : "border-slate-200 hover:border-slate-400"}`}
+                        >
+                          <img src={src} alt="" loading="lazy" className="max-w-full max-h-full object-contain" />
+                        </button>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
 

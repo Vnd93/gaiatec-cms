@@ -23,6 +23,8 @@ const SRC_DIR = path.resolve(__dirname, "banners-src");
 const OUT_DIR = path.resolve(__dirname, "..", "public/images/pages");
 
 const NAMES = ["dg-hero", "dg-movel", "dg-online", "dg-cta"];
+/* Imagens de categoria (painel "Seis Frentes" 4:3 + card do carrossel): webp único. */
+const CAT_NAMES = ["dg-cat-movel", "dg-cat-online", "dg-cat-pe", "dg-cat-enterrada", "dg-cat-portateis", "dg-cat-meteo"];
 const WIDTHS = [480, 1024, 1920];
 const EXTS = [".png", ".jpg", ".jpeg", ".webp"];
 
@@ -56,7 +58,20 @@ async function main() {
     }
   }
 
-  console.log(`\n✓ ${ok}/${NAMES.length} banners processados em public/images/pages/.`);
+  // Imagens de categoria — webp único (usado direto via <img src>, 4:3 object-cover).
+  for (const name of CAT_NAMES) {
+    const src = EXTS.map((e) => path.join(SRC_DIR, name + e)).find((p) => fs.existsSync(p));
+    if (!src) { fail.push(`${name}: fonte não encontrada em scripts/banners-src/`); continue; }
+    try {
+      await sharp(fs.readFileSync(src)).resize({ width: 1440, withoutEnlargement: true }).webp({ quality: 82 }).toFile(path.join(OUT_DIR, `${name}.webp`));
+      ok++;
+      console.log(`✓ ${name}  →  webp único (4:3)`);
+    } catch (e) {
+      fail.push(`${name}: ${e.message}`);
+    }
+  }
+
+  console.log(`\n✓ ${ok} arquivos processados em public/images/pages/.`);
   if (fail.length) console.log("✗ " + fail.join("\n✗ "));
 }
 

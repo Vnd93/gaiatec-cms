@@ -20,12 +20,12 @@ const AUTOPLAY_MS = 3800;
    Móvel/online usam os banners da página; as demais usam o render do produto-âncora.
    Trocar para os banners dedicados dg-cat-* quando existirem. */
 const CAT_IMG: Record<string, string> = {
-  "deteccao-movel": "/images/pages/dg-movel.webp",
-  "monitoramento-online": "/images/pages/dg-online.webp",
-  "localizacao-tubulacao-pe": "/images/deteccao-gas/a200.webp",
-  "deteccao-rede-enterrada-gas": "/images/deteccao-gas/st100.webp",
-  "detectores-portateis": "/images/deteccao-gas/dx300.webp",
-  "monitoramento-meteorologico": "/images/deteccao-gas/estacao-portatil.webp",
+  "deteccao-movel": "/images/pages/dg-cat-movel.webp",
+  "monitoramento-online": "/images/pages/dg-cat-online.webp",
+  "localizacao-tubulacao-pe": "/images/pages/dg-cat-pe.webp",
+  "deteccao-rede-enterrada-gas": "/images/pages/dg-cat-enterrada.webp",
+  "detectores-portateis": "/images/pages/dg-cat-portateis.webp",
+  "monitoramento-meteorologico": "/images/pages/dg-cat-meteo.webp",
 };
 
 /* Card de produto — imagem (ou placeholder de marca) com overlay inferior. */

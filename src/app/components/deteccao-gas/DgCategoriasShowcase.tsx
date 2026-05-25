@@ -10,12 +10,12 @@ const BRAND = "#0057DE";
 
 /** Imagem + subtítulo curto por categoria (chaveado por slug). */
 const META: Record<string, { imagem: string; subtitulo: string }> = {
-  "deteccao-movel": { imagem: "/images/pages/2.7.webp", subtitulo: "Veículos · drones · laser em movimento" },
-  "monitoramento-online": { imagem: "/images/pages/2.3.webp", subtitulo: "Vigilância 24/7 em tempo real" },
-  "localizacao-tubulacao-pe": { imagem: "/images/pages/2.5.webp", subtitulo: "Tubos de polietileno enterrados" },
-  "deteccao-rede-enterrada-gas": { imagem: "/images/pages/2.9.webp", subtitulo: "Inspeção de redes subterrâneas" },
-  "detectores-portateis": { imagem: "/images/pages/2.11.webp", subtitulo: "Handhelds para o trabalho de campo" },
-  "monitoramento-meteorologico": { imagem: "/images/pages/2.14.webp", subtitulo: "Vento, temperatura e dispersão" },
+  "deteccao-movel": { imagem: "/images/pages/dg-cat-movel.webp", subtitulo: "Veículos · drones · laser em movimento" },
+  "monitoramento-online": { imagem: "/images/pages/dg-cat-online.webp", subtitulo: "Vigilância 24/7 em tempo real" },
+  "localizacao-tubulacao-pe": { imagem: "/images/pages/dg-cat-pe.webp", subtitulo: "Tubos de polietileno enterrados" },
+  "deteccao-rede-enterrada-gas": { imagem: "/images/pages/dg-cat-enterrada.webp", subtitulo: "Inspeção de redes subterrâneas" },
+  "detectores-portateis": { imagem: "/images/pages/dg-cat-portateis.webp", subtitulo: "Handhelds para o trabalho de campo" },
+  "monitoramento-meteorologico": { imagem: "/images/pages/dg-cat-meteo.webp", subtitulo: "Vento, temperatura e dispersão" },
 };
 
 const CATS = dgCategorias.map((c) => ({

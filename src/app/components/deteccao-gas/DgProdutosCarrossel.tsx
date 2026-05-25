@@ -16,6 +16,18 @@ const BRAND = "#0057DE";
 const BRAND_GRADIENT = "linear-gradient(135deg, #0057DE 0%, #0a2540 70%, #050b18 100%)";
 const AUTOPLAY_MS = 3800;
 
+/* Imagem representativa por categoria (card "Explorar …" no fim do carrossel).
+   Móvel/online usam os banners da página; as demais usam o render do produto-âncora.
+   Trocar para os banners dedicados dg-cat-* quando existirem. */
+const CAT_IMG: Record<string, string> = {
+  "deteccao-movel": "/images/pages/dg-movel.webp",
+  "monitoramento-online": "/images/pages/dg-online.webp",
+  "localizacao-tubulacao-pe": "/images/deteccao-gas/a200.webp",
+  "deteccao-rede-enterrada-gas": "/images/deteccao-gas/st100.webp",
+  "detectores-portateis": "/images/deteccao-gas/dx300.webp",
+  "monitoramento-meteorologico": "/images/deteccao-gas/estacao-portatil.webp",
+};
+
 /* Card de produto — imagem (ou placeholder de marca) com overlay inferior. */
 function ProdutoSlide({ p, basis }: { p: DgProduto; basis: string }) {
   return (
@@ -50,25 +62,30 @@ function ProdutoSlide({ p, basis }: { p: DgProduto; basis: string }) {
   );
 }
 
-/* Card final — atalho para a categoria completa. */
+/* Card final — atalho para a categoria completa (imagem + overlay, como os de produto). */
 function CategoriaCtaSlide({ cat, count, basis }: { cat: DgCategoria; count: number; basis: string }) {
+  const img = CAT_IMG[cat.slug];
   return (
     <div className={`flex-[0_0_86%] sm:flex-[0_0_48.5%] ${basis}`}>
       <Link
         to={`${HUB_BASE}/${cat.slug}`}
-        className="group relative flex flex-col justify-between overflow-hidden h-[440px] sm:h-[480px] lg:h-[520px] border border-[#0057DE]/30 hover:border-[#0057DE] transition-colors"
-        style={{ backgroundColor: "#fff" }}
+        className="group relative block overflow-hidden h-[440px] sm:h-[480px] lg:h-[520px] border border-[#0057DE]/30 hover:border-[#0057DE] transition-colors"
       >
-        <div className="p-6 md:p-7">
-          <span style={{ display: "block", fontSize: 11, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: BRAND }}>
-            Categoria
-          </span>
+        <div className="absolute inset-0 transition-transform duration-[800ms] ease-out group-hover:scale-105" style={{ background: BRAND_GRADIENT }}>
+          {img && <img src={img} alt={cat.nome} loading="lazy" className="w-full h-full object-cover" />}
         </div>
-        <div className="p-6 md:p-7">
-          <h3 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(20px, 1.9vw, 27px)", fontWeight: 500, lineHeight: 1.05, textTransform: "uppercase", color: "#0f172a", marginBottom: 16 }}>
+        <div className="absolute inset-0" style={{ background: "linear-gradient(to top, rgba(5,11,24,0.94) 0%, rgba(5,11,24,0.5) 50%, rgba(5,11,24,0.12) 100%)" }} />
+        <span className="absolute top-5 left-5" style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: "#9ec1ff" }}>
+          Categoria
+        </span>
+        <div className="absolute inset-x-0 bottom-0 p-6 md:p-7">
+          <h3 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(20px, 1.9vw, 27px)", fontWeight: 500, lineHeight: 1.05, textTransform: "uppercase", color: "#fff", marginBottom: 16 }}>
             Explorar {cat.nome}
           </h3>
-          <span className="inline-flex items-center gap-2 text-[#0057DE] text-[11px] uppercase tracking-[0.08em] transition-all group-hover:gap-3" style={{ fontWeight: 700 }}>
+          <span
+            className="inline-flex items-center gap-2 bg-white text-[#0057DE] px-5 py-2.5 text-[11px] uppercase tracking-[0.08em] transition-colors group-hover:bg-[#0057DE] group-hover:text-white"
+            style={{ fontWeight: 700 }}
+          >
             Ver {count} {count === 1 ? "produto" : "produtos"} <ArrowRight size={13} />
           </span>
         </div>

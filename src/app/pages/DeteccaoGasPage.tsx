@@ -7,7 +7,6 @@ import { DgCategoriasShowcase } from "../components/deteccao-gas/DgCategoriasSho
 import { DgProdutosCatalogo } from "../components/deteccao-gas/DgProdutosCatalogo";
 import { SEO } from "../components/SEO";
 import {
-  dgDiferenciais,
   dgSetores,
   HUB_BASE,
 } from "../data/deteccaoGas";
@@ -81,46 +80,7 @@ export default function DeteccaoGasPage() {
       {/* ═══════════════════ 4) CATÁLOGO — todos os produtos ═══════════════════ */}
       <DgProdutosCatalogo />
 
-      {/* ═══════════════════ 5) DIFERENCIAIS (dark) ═══════════════════ */}
-      <section style={{ backgroundColor: "#0a0a0a", padding: "100px 0", position: "relative", overflow: "hidden" }}>
-        <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px" }}>
-          <AnimateOnScroll>
-            <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.5fr] gap-16 lg:gap-24">
-              <div style={{ position: "sticky", top: 120, alignSelf: "start" }}>
-                <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: BRAND, marginBottom: 16 }}>
-                  Por que essa tecnologia
-                </span>
-                <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 48px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", color: "#fff", marginBottom: 24 }}>
-                  Precisão que muda a operação
-                </h2>
-                <p style={{ fontSize: 16, lineHeight: 1.8, color: "rgba(255,255,255,0.5)", maxWidth: 400 }}>
-                  Detecção a laser elimina os falsos positivos dos métodos tradicionais e enxerga
-                  vazamentos onde antes era impossível chegar — com cada leitura georreferenciada.
-                </p>
-              </div>
-              <div>
-                {dgDiferenciais.map((d, i) => (
-                  <AnimateOnScroll key={i} delay={i * 0.12}>
-                    <div style={{ display: "flex", gap: 24, padding: "36px 0", borderBottom: i < dgDiferenciais.length - 1 ? "1px solid rgba(255,255,255,0.08)" : "none" }}>
-                      <span style={{ fontFamily: KNOCKOUT, fontSize: 56, fontWeight: 500, color: BRAND, lineHeight: 1, flexShrink: 0, width: 70 }}>
-                        {String(i + 1).padStart(2, "0")}
-                      </span>
-                      <div>
-                        <h4 style={{ fontFamily: KNOCKOUT, fontSize: 26, fontWeight: 500, color: "#fff", marginBottom: 10, textTransform: "uppercase", lineHeight: 1.1 }}>
-                          {d.titulo}
-                        </h4>
-                        <p style={{ fontSize: 15, lineHeight: 1.7, color: "rgba(255,255,255,0.45)" }}>{d.descricao}</p>
-                      </div>
-                    </div>
-                  </AnimateOnScroll>
-                ))}
-              </div>
-            </div>
-          </AnimateOnScroll>
-        </div>
-      </section>
-
-      {/* ═══════════════════ 6) SETORES ═══════════════════ */}
+      {/* ═══════════════════ 5) SETORES ═══════════════════ */}
       <section style={{ backgroundColor: "#f8fafc", padding: "90px 0" }}>
         <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px" }}>
           <AnimateOnScroll>

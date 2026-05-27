@@ -10,7 +10,7 @@ import {
 } from "@react-pdf/renderer";
 import type { Relatorio } from "./types";
 import { STATUS_LABEL } from "./types";
-import { formatDateTime, formatEmitido, slugifyFilename } from "./format";
+import { formatDate, slugifyFilename } from "./format";
 
 /* ── Fontes Montserrat (TTF estáticos em /public/fonts) ─────────────── */
 let fontsRegistered = false;
@@ -65,18 +65,21 @@ const s = StyleSheet.create({
     backgroundColor: C.orangeSoft,
     paddingVertical: 3,
     paddingHorizontal: 9,
+    borderRadius: 5,
     fontSize: 8,
     fontWeight: 700,
     letterSpacing: 0.5,
     textTransform: "uppercase",
   },
   rule: { height: 2, backgroundColor: C.orange, marginTop: 14, marginBottom: 18 },
-  // Cards (cantos retos — identidade Gaiatec)
-  card: { borderWidth: 1, borderColor: C.line, marginBottom: 12 },
+  // Cards (cantos levemente arredondados)
+  card: { borderWidth: 1, borderColor: C.line, borderRadius: 6, marginBottom: 12 },
   cardHead: {
     backgroundColor: C.cardHead,
     borderBottomWidth: 1,
     borderBottomColor: C.line,
+    borderTopLeftRadius: 6,
+    borderTopRightRadius: 6,
     paddingVertical: 8,
     paddingHorizontal: 14,
   },
@@ -90,7 +93,7 @@ const s = StyleSheet.create({
   // Fotos
   fotoGrid: { flexDirection: "row", flexWrap: "wrap" },
   fotoWrap: { width: "50%", padding: 4 },
-  foto: { width: "100%", height: 150, objectFit: "cover", borderWidth: 1, borderColor: C.line },
+  foto: { width: "100%", height: 150, objectFit: "cover", borderRadius: 4, borderWidth: 1, borderColor: C.line },
   // Assinaturas
   signRow: { flexDirection: "row", marginTop: 26 },
   signCol: { width: "50%", alignItems: "center", paddingHorizontal: 16 },
@@ -141,16 +144,13 @@ export function RdoDocument({
   emitido: string;
   logoSrc?: string;
 }) {
-  const local =
-    r.local_endereco?.trim() ||
-    (r.local_lat != null && r.local_lng != null
-      ? `${r.local_lat.toFixed(6)}, ${r.local_lng.toFixed(6)}`
-      : "");
+  const endereco = [r.local_endereco?.trim(), r.local_numero?.trim()].filter(Boolean).join(", ");
   const temCoords = r.local_lat != null && r.local_lng != null;
+  const local = endereco || (temCoords ? `${r.local_lat!.toFixed(6)}, ${r.local_lng!.toFixed(6)}` : "");
   const fotos = (r.fotos ?? []).filter((f) => f.url);
 
   return (
-    <Document title={`RDO ${r.cliente || ""}`.trim()} author="Gaiatec">
+    <Document title={`RDO ${r.cliente || ""}`.trim()} author="Gaiatec Sistemas">
       <Page size="A4" style={s.page}>
         {/* Cabeçalho */}
         <View style={s.headerRow} fixed>
@@ -174,7 +174,7 @@ export function RdoDocument({
         {/* Engenheiros */}
         <Card title="ENGENHEIROS RESPONSÁVEIS">
           <View style={s.grid2}>
-            <Field label="ENGENHEIRO GAIATEC" value={r.eng_gaiatec} />
+            <Field label="ENGENHEIRO GAIATEC SISTEMAS" value={r.eng_gaiatec} />
             <Field label="ENGENHEIRO DO CLIENTE" value={r.eng_cliente} />
           </View>
         </Card>
@@ -182,8 +182,8 @@ export function RdoDocument({
         {/* Período */}
         <Card title="PERÍODO DOS TRABALHOS">
           <View style={s.grid2}>
-            <Field label="INÍCIO" value={r.periodo_inicio ? formatDateTime(r.periodo_inicio) : ""} />
-            <Field label="TÉRMINO" value={r.periodo_fim ? formatDateTime(r.periodo_fim) : ""} />
+            <Field label="INÍCIO" value={r.periodo_inicio ? formatDate(r.periodo_inicio) : ""} />
+            <Field label="TÉRMINO" value={r.periodo_fim ? formatDate(r.periodo_fim) : ""} />
           </View>
         </Card>
 
@@ -191,7 +191,7 @@ export function RdoDocument({
         {local && (
           <Card title="LOCALIZAÇÃO DA OBRA">
             <Text style={s.value}>{local}</Text>
-            {temCoords && r.local_endereco?.trim() && (
+            {temCoords && endereco && (
               <Text style={[s.label, { marginTop: 6 }]}>
                 GPS: {r.local_lat!.toFixed(6)}, {r.local_lng!.toFixed(6)}
               </Text>
@@ -226,8 +226,8 @@ export function RdoDocument({
         <View style={s.signRow} wrap={false}>
           <View style={s.signCol}>
             <View style={s.signLine} />
-            <Text style={s.signName}>{r.eng_gaiatec?.trim() || "Engenheiro Gaiatec"}</Text>
-            <Text style={s.signRole}>Responsável Gaiatec</Text>
+            <Text style={s.signName}>{r.eng_gaiatec?.trim() || "Engenheiro Gaiatec Sistemas"}</Text>
+            <Text style={s.signRole}>Responsável Gaiatec Sistemas</Text>
           </View>
           <View style={s.signCol}>
             <View style={s.signLine} />
@@ -238,7 +238,7 @@ export function RdoDocument({
 
         {/* Rodapé */}
         <View style={s.footer} fixed>
-          <Text style={s.footerText}>GAIATEC — Relatório Diário de Obra</Text>
+          <Text style={s.footerText}>GAIATEC SISTEMAS — Relatório Diário de Obra</Text>
           <Text style={s.footerText}>
             Contrato: {r.contrato || "—"} | {emitido}
           </Text>
@@ -251,7 +251,7 @@ export function RdoDocument({
 /** Gera o Blob do PDF de um relatório. */
 export async function generateRelatorioPdf(r: Relatorio): Promise<Blob> {
   ensureFonts();
-  const emitido = formatEmitido(new Date().toISOString());
+  const emitido = formatDate(new Date().toISOString());
   return pdf(<RdoDocument r={r} emitido={emitido} />).toBlob();
 }
 

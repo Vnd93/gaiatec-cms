@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
+import { Loader2 } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { AppShell } from "../AppShell";
 import { EmptyState } from "../components/EmptyState";
 import { RelatorioCard } from "../components/RelatorioCard";
+import { RelatorioPreview } from "../components/RelatorioPreview";
 import { SearchInput } from "../components/SearchInput";
 import { deleteRelatorio, getRelatorio, listRelatorios, setStatus } from "../lib/relatorios";
 import { filtrarTexto } from "../lib/filter";
@@ -23,6 +25,7 @@ export default function ArquivoPage() {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [periodo, setPeriodo] = useState<Periodo>("todos");
+  const [previewId, setPreviewId] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   async function load() {
@@ -39,10 +42,7 @@ export default function ArquivoPage() {
   async function handleDownload(r: Relatorio) {
     setDownloadingId(r.id);
     try {
-      const [{ downloadRelatorioPdf }, full] = await Promise.all([
-        import("../lib/pdf"),
-        getRelatorio(r.id),
-      ]);
+      const [{ downloadRelatorioPdf }, full] = await Promise.all([import("../lib/pdf"), getRelatorio(r.id)]);
       await downloadRelatorioPdf(full ?? r);
     } catch {
       toast.error("Não foi possível gerar o PDF.");
@@ -75,25 +75,32 @@ export default function ArquivoPage() {
   return (
     <AppShell>
       <Toaster position="top-center" />
+      <RelatorioPreview
+        id={previewId}
+        busyDownload={!!previewId && downloadingId === previewId}
+        onClose={() => setPreviewId(null)}
+        onEdit={(id) => navigate(`/relatorio-de-obra/relatorio/${id}`)}
+        onDownload={handleDownload}
+      />
 
       <div>
         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--rdo-ink-3)]">
           {items.length} {items.length === 1 ? "arquivado" : "arquivados"}
         </p>
-        <h1 className="mt-2 text-[32px] font-semibold leading-none tracking-[-0.035em] text-[var(--rdo-ink)] sm:text-[38px]">
+        <h1 className="mt-1.5 text-[28px] font-semibold leading-none tracking-[-0.035em] text-[var(--rdo-ink)] sm:text-[32px]">
           Arquivo de Relatórios
         </h1>
       </div>
 
-      <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-end">
-        <div className="flex-1">
+      <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="max-w-md flex-1">
           <SearchInput value={q} onChange={setQ} placeholder="Buscar cliente ou contrato" />
         </div>
         <div className="relative">
           <select
             value={periodo}
             onChange={(e) => setPeriodo(e.target.value as Periodo)}
-            className="w-full appearance-none border border-[var(--rdo-line)] bg-white py-2.5 pl-3.5 pr-9 text-[13px] font-medium text-[var(--rdo-ink)] outline-none transition-colors focus:border-[var(--rdo-orange)] sm:w-auto"
+            className="w-full appearance-none rounded-md border border-[var(--rdo-line)] bg-white py-2 pl-3 pr-9 text-[13px] font-medium text-[var(--rdo-ink)] outline-none transition-colors focus:border-[var(--rdo-blue)] sm:w-auto"
           >
             {PERIODOS.map((p) => (
               <option key={p.value} value={p.value}>
@@ -101,16 +108,14 @@ export default function ArquivoPage() {
               </option>
             ))}
           </select>
-          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-[var(--rdo-ink-3)]">
-            ▾
-          </span>
+          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-[var(--rdo-ink-3)]">▾</span>
         </div>
       </div>
 
-      <div className="mt-2">
+      <div className="mt-6">
         {loading ? (
-          <div className="flex justify-center border-t border-[var(--rdo-line)] py-20">
-            <span className="rdo-spin h-6 w-6 rounded-full border-2 border-[var(--rdo-line-strong)] border-t-[var(--rdo-orange)]" />
+          <div className="flex justify-center py-20">
+            <Loader2 size={26} className="rdo-spin text-[var(--rdo-blue)]" />
           </div>
         ) : filtered.length === 0 ? (
           <EmptyState
@@ -118,13 +123,13 @@ export default function ArquivoPage() {
             subtitle={items.length === 0 ? "Relatórios arquivados aparecem aqui." : "Tente ajustar os filtros."}
           />
         ) : (
-          <div className="border-t border-[var(--rdo-line)]">
+          <div className="overflow-hidden rounded-xl border border-[var(--rdo-line)] bg-white">
             {filtered.map((r) => (
               <RelatorioCard
                 key={r.id}
                 relatorio={r}
                 busyDownload={downloadingId === r.id}
-                onOpen={() => navigate(`/relatorio-de-obra/relatorio/${r.id}`)}
+                onOpen={() => setPreviewId(r.id)}
                 onDownload={() => handleDownload(r)}
                 onRestore={() => handleRestore(r)}
                 onDelete={() => handleDelete(r)}

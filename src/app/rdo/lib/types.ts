@@ -21,6 +21,7 @@ export interface Relatorio {
   periodo_inicio: string | null;
   periodo_fim: string | null;
   local_endereco: string | null;
+  local_numero: string | null;
   local_lat: number | null;
   local_lng: number | null;
   comentarios: string | null;
@@ -31,16 +32,16 @@ export interface Relatorio {
   fotos?: Foto[];
 }
 
-/** Campos editáveis no formulário. */
+/** Campos editáveis no formulário (contrato é gerado automaticamente no banco). */
 export type RelatorioInput = Pick<
   Relatorio,
   | "cliente"
-  | "contrato"
   | "eng_gaiatec"
   | "eng_cliente"
   | "periodo_inicio"
   | "periodo_fim"
   | "local_endereco"
+  | "local_numero"
   | "local_lat"
   | "local_lng"
   | "comentarios"

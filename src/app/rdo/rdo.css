@@ -1,36 +1,43 @@
 /* ───────────────────────────────────────────────────────────────
-   RDO — App interno "Acompanhamento de Obra" (Gaiatec)
-   Escopo isolado em .rdo-root. Identidade Gaiatec: CANTOS RETOS
-   (theme.css zera todos os border-radius globalmente — não reativamos).
-   Tipografia Montserrat, neutros zinc, laranja como acento parcimonioso.
+   RDO — App interno "Acompanhamento de Obra" (Gaiatec Sistemas)
+   Escopo isolado em .rdo-root. Visual próprio do app (distinto do site):
+   Montserrat, neutros zinc, AZUL como ação primária, laranja como acento
+   de marca/status, cantos LEVEMENTE arredondados. Só carrega em /relatorio-de-obra.
    ─────────────────────────────────────────────────────────────── */
 @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap');
 @import 'react-day-picker/dist/style.css';
 
 .rdo-root {
+  /* Ação primária (azul da marca) */
+  --rdo-blue: #0057de;
+  --rdo-blue-strong: #0048b8;
+  --rdo-blue-soft: #eef3fe;
+  /* Acento de marca / status */
   --rdo-orange: #f87010;
   --rdo-orange-strong: #d9600a;
-  --rdo-blue: #0057de;
+  --rdo-orange-soft: #fff2e8;
 
+  /* Neutros (zinc) */
   --rdo-ink: #09090b;
-  --rdo-ink-2: #52525b;
+  --rdo-ink-2: #3f3f46;
   --rdo-ink-3: #71717a;
   --rdo-ghost: #a1a1aa;
-  --rdo-line: #e4e4e7;
-  --rdo-line-soft: #f0f0f1;
+  --rdo-line: #e7e7ea;
+  --rdo-line-soft: #f1f1f3;
   --rdo-line-strong: #d4d4d8;
   --rdo-surface: #ffffff;
   --rdo-bg: #fafafa;
   --rdo-bg-2: #f4f4f5;
-  --rdo-shadow: 0 10px 30px -10px rgba(9, 9, 11, 0.16), 0 2px 6px -2px rgba(9, 9, 11, 0.08);
+  --rdo-shadow: 0 10px 30px -12px rgba(9, 9, 11, 0.18), 0 2px 6px -2px rgba(9, 9, 11, 0.06);
+  --rdo-shadow-sm: 0 1px 2px rgba(9, 9, 11, 0.05), 0 1px 3px rgba(9, 9, 11, 0.04);
 
   font-family: 'Montserrat', system-ui, -apple-system, 'Segoe UI', sans-serif;
   color: var(--rdo-ink);
-  background: var(--rdo-surface);
+  background: var(--rdo-bg);
   min-height: 100dvh;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.011em;
 }
 
 .rdo-root :is(input, button, textarea, select) {
@@ -38,51 +45,47 @@
   letter-spacing: inherit;
 }
 
+/* ── Cantos levemente arredondados (sobrepõe o reset global do site) ── */
+.rdo-root :is(.rounded-sm) { border-radius: 4px !important; }
+.rdo-root :is(.rounded, .rounded-md) { border-radius: 6px !important; }
+.rdo-root :is(.rounded-lg) { border-radius: 8px !important; }
+.rdo-root :is(.rounded-xl) { border-radius: 10px !important; }
+.rdo-root :is(.rounded-2xl) { border-radius: 14px !important; }
+/* .rounded-full permanece (círculos) */
+
 @keyframes rdo-spin { to { transform: rotate(360deg); } }
 .rdo-spin { animation: rdo-spin 0.7s linear infinite; }
 
-.rdo-root ::selection { background: color-mix(in srgb, var(--rdo-orange) 22%, transparent); }
+.rdo-root ::selection { background: color-mix(in srgb, var(--rdo-blue) 20%, transparent); }
 
-/* ── Popover (Radix) — sharp, hairline, sombra sutil ─────────────── */
+/* Scrollbar discreta (kanban) */
+.rdo-scroll::-webkit-scrollbar { height: 8px; width: 8px; }
+.rdo-scroll::-webkit-scrollbar-thumb { background: var(--rdo-line-strong); border-radius: 999px; }
+.rdo-scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* ── Popover / Dialog (Radix) ─────────────────────────────────────── */
 .rdo-pop {
   background: var(--rdo-surface);
   border: 1px solid var(--rdo-line);
   box-shadow: var(--rdo-shadow);
-  transform-origin: var(--radix-popover-content-transform-origin);
+  border-radius: 10px;
 }
 .rdo-pop[data-state='open'] { animation: rdo-pop-in 140ms cubic-bezier(0.16, 1, 0.3, 1); }
-.rdo-pop[data-state='closed'] { animation: rdo-pop-out 100ms ease-in; }
-@keyframes rdo-pop-in { from { opacity: 0; transform: translateY(-4px) scale(0.98); } to { opacity: 1; transform: none; } }
-@keyframes rdo-pop-out { to { opacity: 0; transform: translateY(-4px) scale(0.98); } }
+@keyframes rdo-pop-in { from { opacity: 0; transform: translateY(-4px) scale(0.985); } to { opacity: 1; transform: none; } }
 
-/* ── react-day-picker — minimal Linear-like (cantos retos herdados) ── */
+/* ── react-day-picker — minimal, acento azul ──────────────────────── */
 .rdo-daypicker.rdp {
-  --rdp-cell-size: 38px;
-  --rdp-accent-color: var(--rdo-orange);
-  --rdp-background-color: var(--rdo-bg-2);
-  --rdp-outline: 2px solid var(--rdo-orange);
-  --rdp-outline-selected: 2px solid var(--rdo-orange);
+  --rdp-cell-size: 36px;
+  --rdp-accent-color: var(--rdo-blue);
+  --rdp-background-color: var(--rdo-blue-soft);
   margin: 0;
   font-size: 13px;
 }
-.rdo-daypicker .rdp-caption_label {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  text-transform: capitalize;
-  color: var(--rdo-ink);
-}
-.rdo-daypicker .rdp-head_cell {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--rdo-ghost);
-}
-.rdo-daypicker .rdp-day { font-weight: 500; color: var(--rdo-ink-2); }
-.rdo-daypicker .rdp-day_today:not(.rdp-day_selected) { color: var(--rdo-orange-strong); font-weight: 700; }
+.rdo-daypicker .rdp-caption_label { font-size: 13px; font-weight: 600; text-transform: capitalize; color: var(--rdo-ink); }
+.rdo-daypicker .rdp-head_cell { font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--rdo-ghost); }
+.rdo-daypicker .rdp-day { font-weight: 500; color: var(--rdo-ink-2); border-radius: 6px; }
+.rdo-daypicker .rdp-day_today:not(.rdp-day_selected) { color: var(--rdo-blue); font-weight: 700; }
 .rdo-daypicker .rdp-button:hover:not([disabled]):not(.rdp-day_selected) { background: var(--rdo-bg-2); }
-.rdo-daypicker .rdp-day_selected,
-.rdo-daypicker .rdp-day_selected:hover { background: var(--rdo-orange); color: #fff; font-weight: 600; }
-.rdo-daypicker .rdp-nav_button { color: var(--rdo-ink-3); }
+.rdo-daypicker .rdp-day_selected, .rdo-daypicker .rdp-day_selected:hover { background: var(--rdo-blue); color: #fff; font-weight: 600; }
+.rdo-daypicker .rdp-nav_button { color: var(--rdo-ink-3); border-radius: 6px; }
 .rdo-daypicker .rdp-nav_button:hover { background: var(--rdo-bg-2); color: var(--rdo-ink); }

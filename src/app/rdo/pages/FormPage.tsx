@@ -1,17 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { AnimatePresence, motion } from "motion/react";
+import { Camera, Check, Image as ImageIcon, Loader2, MapPin, X } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { AppShell } from "../AppShell";
 import { FormSection, Labeled, inputClass } from "../components/FormSection";
-import { DateTimeField } from "../components/DateTimeField";
-import {
-  createRelatorio,
-  deleteFoto,
-  getRelatorio,
-  updateRelatorio,
-  uploadFotos,
-} from "../lib/relatorios";
+import { DateField } from "../components/DateField";
+import { reverseGeocode } from "../lib/geo";
+import { createRelatorio, deleteFoto, getRelatorio, updateRelatorio, uploadFotos } from "../lib/relatorios";
 import type { Foto, RdoStatus } from "../lib/types";
 
 interface NovaFoto {
@@ -19,15 +15,30 @@ interface NovaFoto {
   preview: string;
 }
 
-const ghostBtn =
-  "border border-[var(--rdo-line)] bg-white px-6 py-2.5 text-[13px] font-medium text-[var(--rdo-ink)] transition-colors hover:border-[var(--rdo-ink-3)] disabled:opacity-55";
 const primaryBtn =
-  "bg-[var(--rdo-orange)] px-6 py-2.5 text-[13px] font-semibold text-white transition-colors hover:bg-[var(--rdo-orange-strong)] disabled:opacity-55";
+  "inline-flex items-center justify-center gap-2 rounded-md bg-[var(--rdo-blue)] px-5 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-[var(--rdo-blue-strong)] disabled:opacity-55";
+const ghostBtn =
+  "inline-flex items-center justify-center gap-2 rounded-md border border-[var(--rdo-line)] bg-white px-4 py-2 text-[13px] font-medium text-[var(--rdo-ink)] transition-colors hover:border-[var(--rdo-ink-3)] disabled:opacity-55";
 
 const STEPS = [
   { n: 1, label: "Contrato e período" },
   { n: 2, label: "Localização e registros" },
 ];
+
+function combine(dateYMD: string, timeHM: string): string | null {
+  if (!dateYMD) return null;
+  const [y, m, d] = dateYMD.split("-").map(Number);
+  const [hh, mm] = (timeHM || "00:00").split(":").map(Number);
+  const dt = new Date(y, (m || 1) - 1, d || 1, hh || 0, mm || 0, 0, 0);
+  return isNaN(dt.getTime()) ? null : dt.toISOString();
+}
+function splitISO(iso: string | null): [string, string] {
+  if (!iso) return ["", ""];
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return ["", ""];
+  const p = (n: number) => String(n).padStart(2, "0");
+  return [`${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`, `${p(d.getHours())}:${p(d.getMinutes())}`];
+}
 
 export default function FormPage() {
   const { id } = useParams();
@@ -38,14 +49,17 @@ export default function FormPage() {
   const [saving, setSaving] = useState<RdoStatus | null>(null);
   const [origStatus, setOrigStatus] = useState<RdoStatus>("rascunho");
   const [step, setStep] = useState(1);
+  const [contratoExibe, setContratoExibe] = useState("");
 
   const [cliente, setCliente] = useState("");
-  const [contrato, setContrato] = useState("");
   const [engGaiatec, setEngGaiatec] = useState("");
   const [engCliente, setEngCliente] = useState("");
-  const [inicio, setInicio] = useState("");
-  const [fim, setFim] = useState("");
+  const [inicioData, setInicioData] = useState("");
+  const [inicioHora, setInicioHora] = useState("");
+  const [fimData, setFimData] = useState("");
+  const [fimHora, setFimHora] = useState("");
   const [endereco, setEndereco] = useState("");
+  const [numero, setNumero] = useState("");
   const [lat, setLat] = useState<number | null>(null);
   const [lng, setLng] = useState<number | null>(null);
   const [comentarios, setComentarios] = useState("");
@@ -65,12 +79,17 @@ export default function FormPage() {
       const r = await getRelatorio(id);
       if (r) {
         setCliente(r.cliente || "");
-        setContrato(r.contrato || "");
+        setContratoExibe(r.contrato || "");
         setEngGaiatec(r.eng_gaiatec || "");
         setEngCliente(r.eng_cliente || "");
-        setInicio(r.periodo_inicio || "");
-        setFim(r.periodo_fim || "");
+        const [iData, iHora] = splitISO(r.periodo_inicio);
+        const [fData, fHora] = splitISO(r.periodo_fim);
+        setInicioData(iData);
+        setInicioHora(iHora);
+        setFimData(fData);
+        setFimHora(fHora);
         setEndereco(r.local_endereco || "");
+        setNumero(r.local_numero || "");
         setLat(r.local_lat);
         setLng(r.local_lng);
         setComentarios(r.comentarios || "");
@@ -84,22 +103,27 @@ export default function FormPage() {
     })();
   }, [id, navigate]);
 
-  useEffect(() => {
-    return () => novasRef.current.forEach((n) => URL.revokeObjectURL(n.preview));
-  }, []);
+  useEffect(() => () => novasRef.current.forEach((n) => URL.revokeObjectURL(n.preview)), []);
 
-  function capturarGps() {
-    if (!navigator.geolocation) {
-      toast.error("GPS não disponível neste dispositivo.");
-      return;
-    }
+  async function capturarGps() {
+    if (!navigator.geolocation) return toast.error("GPS não disponível neste dispositivo.");
     setGpsBusy(true);
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLat(pos.coords.latitude);
-        setLng(pos.coords.longitude);
-        setGpsBusy(false);
-        toast.success("Localização capturada.");
+      async (pos) => {
+        const la = pos.coords.latitude;
+        const lo = pos.coords.longitude;
+        setLat(la);
+        setLng(lo);
+        try {
+          const { endereco: end, numero: num } = await reverseGeocode(la, lo);
+          if (end) setEndereco(end);
+          if (num && !numero) setNumero(num);
+          toast.success("Localização e endereço capturados.");
+        } catch {
+          toast.success("Localização capturada (endereço indisponível).");
+        } finally {
+          setGpsBusy(false);
+        }
       },
       () => {
         setGpsBusy(false);
@@ -114,14 +138,12 @@ export default function FormPage() {
     const imgs = Array.from(files).filter((f) => f.type.startsWith("image/"));
     setNovasFotos((prev) => [...prev, ...imgs.map((file) => ({ file, preview: URL.createObjectURL(file) }))]);
   }
-
   function removerNova(i: number) {
     setNovasFotos((prev) => {
       URL.revokeObjectURL(prev[i].preview);
       return prev.filter((_, idx) => idx !== i);
     });
   }
-
   async function removerExistente(foto: Foto) {
     try {
       await deleteFoto(foto);
@@ -132,25 +154,17 @@ export default function FormPage() {
   }
 
   function continuar() {
-    if (!cliente.trim() || !contrato.trim()) {
-      toast.error("Preencha o cliente e o nº do contrato para continuar.");
+    if (!cliente.trim()) {
+      toast.error("Informe o nome do cliente para continuar.");
       return;
     }
     setStep(2);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function irParaEtapa(n: number) {
-    if (n === 2 && (!cliente.trim() || !contrato.trim())) {
-      toast.error("Preencha o cliente e o nº do contrato primeiro.");
-      return;
-    }
-    setStep(n);
-  }
-
   async function salvar(status: RdoStatus) {
-    if (status === "finalizado" && (!cliente.trim() || !contrato.trim())) {
-      toast.error("Preencha o cliente e o nº do contrato para finalizar.");
+    if (status === "finalizado" && !cliente.trim()) {
+      toast.error("Informe o nome do cliente para finalizar.");
       setStep(1);
       return;
     }
@@ -158,12 +172,12 @@ export default function FormPage() {
     try {
       const input = {
         cliente: cliente.trim(),
-        contrato: contrato.trim(),
         eng_gaiatec: engGaiatec.trim() || null,
         eng_cliente: engCliente.trim() || null,
-        periodo_inicio: inicio || null,
-        periodo_fim: fim || null,
+        periodo_inicio: combine(inicioData, inicioHora),
+        periodo_fim: combine(fimData, fimHora),
         local_endereco: endereco.trim() || null,
+        local_numero: numero.trim() || null,
         local_lat: lat,
         local_lng: lng,
         comentarios: comentarios.trim() || null,
@@ -188,16 +202,18 @@ export default function FormPage() {
 
   if (loading) {
     return (
-      <AppShell showNav={false}>
+      <AppShell>
         <div className="flex justify-center py-24">
-          <span className="rdo-spin h-6 w-6 rounded-full border-2 border-[var(--rdo-line-strong)] border-t-[var(--rdo-orange)]" />
+          <Loader2 size={26} className="rdo-spin text-[var(--rdo-blue)]" />
         </div>
       </AppShell>
     );
   }
 
+  const timeInput = `${inputClass} w-[108px]`;
+
   return (
-    <AppShell showNav={false}>
+    <AppShell>
       <Toaster position="top-center" />
 
       <button
@@ -207,36 +223,32 @@ export default function FormPage() {
         ← Relatórios
       </button>
 
-      <div className="mt-5">
+      <div className="mt-4">
         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--rdo-ink-3)]">
           Relatório Diário de Obra
         </p>
-        <h1 className="mt-2 text-[30px] font-semibold leading-none tracking-[-0.035em] text-[var(--rdo-ink)]">
+        <h1 className="mt-1.5 text-[26px] font-semibold leading-none tracking-[-0.035em] text-[var(--rdo-ink)]">
           {isEdit ? "Editar Relatório" : "Novo Relatório"}
         </h1>
       </div>
 
       {/* Stepper */}
-      <div className="mt-7 flex max-w-3xl items-center gap-4">
+      <div className="mt-6 flex max-w-2xl items-center gap-3">
         {STEPS.map((s, i) => (
-          <div key={s.n} className="flex flex-1 items-center gap-4">
-            <button onClick={() => irParaEtapa(s.n)} className="flex items-center gap-2.5">
+          <div key={s.n} className="flex flex-1 items-center gap-3">
+            <button onClick={() => (s.n === 1 ? setStep(1) : continuar())} className="flex items-center gap-2.5">
               <span
-                className={`flex h-6 w-6 items-center justify-center text-[11px] font-semibold transition-colors ${
+                className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold transition-colors ${
                   step === s.n
-                    ? "bg-[var(--rdo-orange)] text-white"
+                    ? "bg-[var(--rdo-blue)] text-white"
                     : step > s.n
-                      ? "bg-[var(--rdo-ink)] text-white"
+                      ? "bg-[var(--rdo-blue-soft)] text-[var(--rdo-blue)]"
                       : "border border-[var(--rdo-line-strong)] text-[var(--rdo-ink-3)]"
                 }`}
               >
-                {String(s.n).padStart(2, "0")}
+                {step > s.n ? <Check size={13} strokeWidth={3} /> : s.n}
               </span>
-              <span
-                className={`text-[13px] transition-colors ${
-                  step === s.n ? "font-semibold text-[var(--rdo-ink)]" : "font-medium text-[var(--rdo-ink-3)]"
-                }`}
-              >
+              <span className={`text-[13px] ${step === s.n ? "font-semibold text-[var(--rdo-ink)]" : "font-medium text-[var(--rdo-ink-3)]"}`}>
                 {s.label}
               </span>
             </button>
@@ -245,138 +257,146 @@ export default function FormPage() {
         ))}
       </div>
 
-      <div className="mt-2 max-w-3xl overflow-hidden">
+      {/* Card do formulário */}
+      <div className="mt-5 max-w-2xl overflow-hidden rounded-xl border border-[var(--rdo-line)] bg-white">
         <AnimatePresence mode="wait">
           {step === 1 ? (
             <motion.div
-              key="step1"
-              initial={{ opacity: 0, x: 12 }}
+              key="s1"
+              initial={{ opacity: 0, x: 10 }}
               animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -12 }}
-              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+              exit={{ opacity: 0, x: -10 }}
+              transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+              className="space-y-6 p-5 sm:p-6"
             >
               <FormSection title="Dados do Contrato">
-                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                  <Labeled label="Nome do Cliente" required>
-                    <input className={inputClass} value={cliente} onChange={(e) => setCliente(e.target.value)} placeholder="Ex: Empresa ABC" />
+                <Labeled label="Nome do Cliente" required>
+                  <input className={inputClass} value={cliente} onChange={(e) => setCliente(e.target.value)} placeholder="Ex: Construtora ABC" />
+                </Labeled>
+                <p className="mt-2 text-[11px] text-[var(--rdo-ghost)]">
+                  Nº do contrato:{" "}
+                  {isEdit ? (
+                    <span className="font-semibold text-[var(--rdo-ink-3)]">{contratoExibe || "—"}</span>
+                  ) : (
+                    "gerado automaticamente ao salvar (RDO-####)"
+                  )}
+                </p>
+              </FormSection>
+
+              <div className="border-t border-[var(--rdo-line)]" />
+
+              <FormSection title="Engenheiros Responsáveis">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Labeled label="Eng. Gaiatec Sistemas">
+                    <input className={inputClass} value={engGaiatec} onChange={(e) => setEngGaiatec(e.target.value)} placeholder="Nome do engenheiro" />
                   </Labeled>
-                  <Labeled label="Nº do Contrato" required>
-                    <input className={inputClass} value={contrato} onChange={(e) => setContrato(e.target.value)} placeholder="Ex: CT-2026-001" />
+                  <Labeled label="Eng. Cliente">
+                    <input className={inputClass} value={engCliente} onChange={(e) => setEngCliente(e.target.value)} placeholder="Nome do engenheiro" />
                   </Labeled>
                 </div>
               </FormSection>
 
-              <div className="mt-8">
-                <FormSection title="Engenheiros Responsáveis">
-                  <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                    <Labeled label="Eng. Gaiatec">
-                      <input className={inputClass} value={engGaiatec} onChange={(e) => setEngGaiatec(e.target.value)} placeholder="Nome do engenheiro" />
-                    </Labeled>
-                    <Labeled label="Eng. Cliente">
-                      <input className={inputClass} value={engCliente} onChange={(e) => setEngCliente(e.target.value)} placeholder="Nome do engenheiro" />
-                    </Labeled>
-                  </div>
-                </FormSection>
-              </div>
+              <div className="border-t border-[var(--rdo-line)]" />
 
-              <div className="mt-8">
-                <FormSection title="Período dos Trabalhos">
-                  <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                    <Labeled label="Início">
-                      <DateTimeField value={inicio} onChange={setInicio} placeholder="Data e hora de início" />
-                    </Labeled>
-                    <Labeled label="Término">
-                      <DateTimeField value={fim} onChange={setFim} placeholder="Data e hora de término" />
-                    </Labeled>
-                  </div>
-                </FormSection>
-              </div>
+              <FormSection title="Período dos Trabalhos">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Labeled label="Início">
+                    <div className="flex gap-2">
+                      <div className="flex-1">
+                        <DateField value={inicioData} onChange={setInicioData} placeholder="Data" />
+                      </div>
+                      <input type="time" className={timeInput} value={inicioHora} onChange={(e) => setInicioHora(e.target.value)} />
+                    </div>
+                  </Labeled>
+                  <Labeled label="Término">
+                    <div className="flex gap-2">
+                      <div className="flex-1">
+                        <DateField value={fimData} onChange={setFimData} placeholder="Data" />
+                      </div>
+                      <input type="time" className={timeInput} value={fimHora} onChange={(e) => setFimHora(e.target.value)} />
+                    </div>
+                  </Labeled>
+                </div>
+              </FormSection>
             </motion.div>
           ) : (
             <motion.div
-              key="step2"
-              initial={{ opacity: 0, x: 12 }}
+              key="s2"
+              initial={{ opacity: 0, x: 10 }}
               animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -12 }}
-              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+              exit={{ opacity: 0, x: -10 }}
+              transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+              className="space-y-6 p-5 sm:p-6"
             >
               <FormSection title="Localização da Obra">
                 <button type="button" onClick={capturarGps} disabled={gpsBusy} className={`w-full ${ghostBtn}`}>
+                  {gpsBusy ? <Loader2 size={15} className="rdo-spin" /> : <MapPin size={15} className="text-[var(--rdo-blue)]" />}
                   {gpsBusy ? "Capturando…" : "Capturar localização (GPS)"}
                 </button>
                 {lat != null && lng != null && (
-                  <div className="mt-3 flex items-center justify-between border-l-2 border-[var(--rdo-blue)] bg-[var(--rdo-bg-2)] py-2 pl-3 pr-3 text-[13px]">
-                    <span className="font-medium text-[var(--rdo-ink-2)]">
-                      {lat.toFixed(6)}, {lng.toFixed(6)}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => { setLat(null); setLng(null); }}
-                      className="text-[12px] font-medium text-[var(--rdo-ink-3)] transition-colors hover:text-[var(--rdo-ink)]"
-                    >
+                  <div className="mt-2 flex items-center justify-between rounded-md bg-[var(--rdo-blue-soft)] px-3 py-1.5 text-[12px] text-[var(--rdo-blue)]">
+                    <span className="font-medium">GPS {lat.toFixed(5)}, {lng.toFixed(5)}</span>
+                    <button type="button" onClick={() => { setLat(null); setLng(null); }} className="text-[var(--rdo-ink-3)] hover:text-[var(--rdo-ink)]">
                       remover
                     </button>
                   </div>
                 )}
-                <input
-                  className={`${inputClass} mt-3`}
-                  value={endereco}
-                  onChange={(e) => setEndereco(e.target.value)}
-                  placeholder="Ou digite o endereço manualmente"
-                />
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_120px]">
+                  <Labeled label="Endereço">
+                    <input className={inputClass} value={endereco} onChange={(e) => setEndereco(e.target.value)} placeholder="Rua, bairro, cidade" />
+                  </Labeled>
+                  <Labeled label="Número" hint="(opcional)">
+                    <input className={inputClass} value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="Ex: 1000" />
+                  </Labeled>
+                </div>
               </FormSection>
 
-              <div className="mt-8">
-                <FormSection title="Registro Fotográfico">
-                  <div className="grid grid-cols-2 gap-3">
-                    <button type="button" onClick={() => cameraRef.current?.click()} className={ghostBtn.replace("px-6 ", "")}>
-                      Câmera
-                    </button>
-                    <button type="button" onClick={() => galeriaRef.current?.click()} className={ghostBtn.replace("px-6 ", "")}>
-                      Galeria
-                    </button>
+              <div className="border-t border-[var(--rdo-line)]" />
+
+              <FormSection title="Registro Fotográfico">
+                <div className="grid grid-cols-2 gap-3">
+                  <button type="button" onClick={() => cameraRef.current?.click()} className={ghostBtn}>
+                    <Camera size={15} /> Câmera
+                  </button>
+                  <button type="button" onClick={() => galeriaRef.current?.click()} className={ghostBtn}>
+                    <ImageIcon size={15} /> Galeria
+                  </button>
+                </div>
+                <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { onPick(e.target.files); e.target.value = ""; }} />
+                <input ref={galeriaRef} type="file" accept="image/*" multiple hidden onChange={(e) => { onPick(e.target.files); e.target.value = ""; }} />
+                {(fotosExistentes.length > 0 || novasFotos.length > 0) && (
+                  <div className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-6">
+                    {fotosExistentes.map((f) => (
+                      <Thumb key={f.id} src={f.url!} onRemove={() => removerExistente(f)} />
+                    ))}
+                    {novasFotos.map((n, i) => (
+                      <Thumb key={n.preview} src={n.preview} badge onRemove={() => removerNova(i)} />
+                    ))}
                   </div>
-                  <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { onPick(e.target.files); e.target.value = ""; }} />
-                  <input ref={galeriaRef} type="file" accept="image/*" multiple hidden onChange={(e) => { onPick(e.target.files); e.target.value = ""; }} />
+                )}
+              </FormSection>
 
-                  {(fotosExistentes.length > 0 || novasFotos.length > 0) && (
-                    <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-5">
-                      {fotosExistentes.map((f) => (
-                        <Thumb key={f.id} src={f.url!} onRemove={() => removerExistente(f)} />
-                      ))}
-                      {novasFotos.map((n, i) => (
-                        <Thumb key={n.preview} src={n.preview} badge="Nova" onRemove={() => removerNova(i)} />
-                      ))}
-                    </div>
-                  )}
-                </FormSection>
-              </div>
+              <div className="border-t border-[var(--rdo-line)]" />
 
-              <div className="mt-8">
-                <FormSection title="Comentários e Observações">
-                  <textarea
-                    value={comentarios}
-                    onChange={(e) => setComentarios(e.target.value)}
-                    rows={4}
-                    className={`${inputClass} resize-y`}
-                    placeholder="Descreva as atividades realizadas, condições climáticas, ocorrências…"
-                  />
-                </FormSection>
-              </div>
+              <FormSection title="Comentários e Observações">
+                <textarea
+                  value={comentarios}
+                  onChange={(e) => setComentarios(e.target.value)}
+                  rows={4}
+                  className={`${inputClass} resize-y`}
+                  placeholder="Atividades realizadas, condições climáticas, ocorrências…"
+                />
+              </FormSection>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
 
       {/* Ações */}
-      <div className="mt-8 flex max-w-3xl flex-col gap-3 border-t border-[var(--rdo-line)] pt-8 sm:flex-row sm:items-center">
-        <button
-          type="button"
-          onClick={() => salvar("rascunho")}
-          disabled={saving !== null}
-          className={ghostBtn}
-        >
-          {saving === "rascunho" ? "Salvando…" : "Salvar rascunho"}
+      <div className="mt-5 flex max-w-2xl flex-col gap-3 sm:flex-row sm:items-center">
+        <button type="button" onClick={() => salvar("rascunho")} disabled={saving !== null} className={ghostBtn}>
+          {saving === "rascunho" ? <Loader2 size={15} className="rdo-spin" /> : null}
+          Salvar rascunho
         </button>
         <div className="flex-1" />
         {step === 1 ? (
@@ -388,13 +408,9 @@ export default function FormPage() {
             <button type="button" onClick={() => setStep(1)} className={ghostBtn}>
               ← Voltar
             </button>
-            <button
-              type="button"
-              onClick={() => salvar("finalizado")}
-              disabled={saving !== null}
-              className={primaryBtn}
-            >
-              {saving === "finalizado" ? "Finalizando…" : "Finalizar"}
+            <button type="button" onClick={() => salvar("finalizado")} disabled={saving !== null} className={primaryBtn}>
+              {saving === "finalizado" ? <Loader2 size={15} className="rdo-spin" /> : <Check size={15} />}
+              Finalizar
             </button>
           </div>
         )}
@@ -403,22 +419,22 @@ export default function FormPage() {
   );
 }
 
-function Thumb({ src, onRemove, badge }: { src: string; onRemove: () => void; badge?: string }) {
+function Thumb({ src, onRemove, badge }: { src: string; onRemove: () => void; badge?: boolean }) {
   return (
-    <div className="group relative aspect-square overflow-hidden border border-[var(--rdo-line)] bg-[var(--rdo-bg-2)]">
+    <div className="group relative aspect-square overflow-hidden rounded-md border border-[var(--rdo-line)] bg-[var(--rdo-bg-2)]">
       <img src={src} alt="" className="h-full w-full object-cover" />
       {badge && (
-        <span className="absolute left-0 top-0 bg-[var(--rdo-orange)] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white">
-          {badge}
+        <span className="absolute left-0 top-0 rounded-br-md bg-[var(--rdo-blue)] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white">
+          Nova
         </span>
       )}
       <button
         type="button"
         onClick={onRemove}
         aria-label="Remover foto"
-        className="absolute right-0 top-0 flex h-6 w-6 items-center justify-center bg-black/55 text-[14px] leading-none text-white opacity-0 transition-opacity group-hover:opacity-100"
+        className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100"
       >
-        ×
+        <X size={12} />
       </button>
     </div>
   );

@@ -59,7 +59,7 @@ export default function LoginPage() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="voce@gaiatec.com.br"
+              placeholder="voce@gaiatecsistemas.com.br"
               className="w-full border border-[var(--rdo-line)] bg-white px-3.5 py-3 text-sm text-[var(--rdo-ink)] outline-none transition-colors placeholder:text-[var(--rdo-ghost)] focus:border-[var(--rdo-orange)]"
             />
           </div>
@@ -103,7 +103,7 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="mt-10 text-[12px] text-[var(--rdo-ink-3)]">Acesso restrito à equipe Gaiatec.</p>
+        <p className="mt-10 text-[12px] text-[var(--rdo-ink-3)]">Acesso restrito à equipe Gaiatec Sistemas.</p>
       </motion.div>
     </div>
   );

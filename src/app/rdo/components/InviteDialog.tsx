@@ -1,5 +1,6 @@
 import { useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { inviteUser } from "../lib/invite";
 
@@ -28,18 +29,19 @@ export function InviteDialog() {
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Trigger asChild>
-        <button className="text-[13px] font-medium text-[var(--rdo-orange-strong)] transition-colors hover:text-[var(--rdo-orange)]">
-          Convidar
+        <button className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-[13.5px] font-medium text-[var(--rdo-blue)] transition-colors hover:bg-[var(--rdo-blue-soft)]">
+          <UserPlus size={18} strokeWidth={1.8} />
+          Convidar acesso
         </button>
       </Dialog.Trigger>
 
-      <Dialog.Overlay className="fixed inset-0 z-40 bg-black/40" />
-      <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 border border-[var(--rdo-line)] bg-white p-6 shadow-[var(--rdo-shadow)] outline-none">
+      <Dialog.Overlay className="fixed inset-0 z-[60] bg-black/40" />
+      <Dialog.Content className="fixed left-1/2 top-1/2 z-[61] w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border border-[var(--rdo-line)] bg-white p-6 shadow-[var(--rdo-shadow)] outline-none">
         <Dialog.Title className="text-lg font-semibold tracking-[-0.02em] text-[var(--rdo-ink)]">
           Convidar acesso
         </Dialog.Title>
         <Dialog.Description className="mt-1.5 text-sm text-[var(--rdo-ink-2)]">
-          A pessoa recebe um e-mail para criar a senha e acessar o app.
+          A pessoa recebe um e-mail para criar a senha e acessar o sistema.
         </Dialog.Description>
 
         <form onSubmit={submit} className="mt-5">
@@ -52,14 +54,14 @@ export function InviteDialog() {
             autoFocus
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="pessoa@gaiatec.com.br"
-            className="w-full border border-[var(--rdo-line)] bg-white px-3.5 py-2.5 text-sm text-[var(--rdo-ink)] outline-none transition-colors placeholder:text-[var(--rdo-ghost)] focus:border-[var(--rdo-orange)]"
+            placeholder="pessoa@gaiatecsistemas.com.br"
+            className="w-full rounded-md border border-[var(--rdo-line)] bg-white px-3 py-2 text-sm text-[var(--rdo-ink)] outline-none transition-colors placeholder:text-[var(--rdo-ghost)] focus:border-[var(--rdo-blue)] focus:ring-2 focus:ring-[var(--rdo-blue-soft)]"
           />
           <div className="mt-5 flex justify-end gap-2">
             <Dialog.Close asChild>
               <button
                 type="button"
-                className="px-4 py-2.5 text-[13px] font-medium text-[var(--rdo-ink-3)] transition-colors hover:text-[var(--rdo-ink)]"
+                className="rounded-md px-4 py-2 text-[13px] font-medium text-[var(--rdo-ink-3)] transition-colors hover:text-[var(--rdo-ink)]"
               >
                 Cancelar
               </button>
@@ -67,7 +69,7 @@ export function InviteDialog() {
             <button
               type="submit"
               disabled={busy}
-              className="bg-[var(--rdo-orange)] px-5 py-2.5 text-[13px] font-semibold text-white transition-colors hover:bg-[var(--rdo-orange-strong)] disabled:opacity-55"
+              className="rounded-md bg-[var(--rdo-blue)] px-5 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-[var(--rdo-blue-strong)] disabled:opacity-55"
             >
               {busy ? "Enviando…" : "Enviar convite"}
             </button>

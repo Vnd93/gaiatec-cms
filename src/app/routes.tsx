@@ -39,6 +39,7 @@ const RdoLoginPage = lazy(() => import("./rdo/pages/LoginPage"));
 const RdoRelatoriosPage = lazy(() => import("./rdo/pages/RelatoriosPage"));
 const RdoArquivoPage = lazy(() => import("./rdo/pages/ArquivoPage"));
 const RdoFormPage = lazy(() => import("./rdo/pages/FormPage"));
+const RdoDefinirSenhaPage = lazy(() => import("./rdo/pages/DefinirSenhaPage"));
 
 // Loader minimalista — não bloqueia o paint
 function PageLoader() {
@@ -97,6 +98,7 @@ export const router = createBrowserRouter([
     ),
     children: [
       { path: "login", element: lazyWrap(RdoLoginPage) },
+      { path: "definir-senha", element: lazyWrap(RdoDefinirSenhaPage) },
       { index: true, element: <RequireAuth>{lazyWrap(RdoRelatoriosPage)}</RequireAuth> },
       { path: "arquivo", element: <RequireAuth>{lazyWrap(RdoArquivoPage)}</RequireAuth> },
       { path: "novo", element: <RequireAuth>{lazyWrap(RdoFormPage)}</RequireAuth> },

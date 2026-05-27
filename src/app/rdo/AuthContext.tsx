@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 interface AuthState {
   session: Session | null;
   user: User | null;
+  isAdmin: boolean;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
@@ -39,8 +40,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
   }
 
+  const user = session?.user ?? null;
+  const isAdmin = (user?.app_metadata as Record<string, unknown> | undefined)?.role === "admin";
+
   return (
-    <AuthCtx.Provider value={{ session, user: session?.user ?? null, loading, signIn, signOut }}>
+    <AuthCtx.Provider value={{ session, user, isAdmin, loading, signIn, signOut }}>
       {children}
     </AuthCtx.Provider>
   );

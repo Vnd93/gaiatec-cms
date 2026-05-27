@@ -1,5 +1,6 @@
 import { Link, NavLink, useNavigate } from "react-router";
 import { useAuth } from "./AuthContext";
+import { InviteDialog } from "./components/InviteDialog";
 import "./rdo.css";
 
 export function AppShell({
@@ -10,7 +11,7 @@ export function AppShell({
   showNav?: boolean;
 }) {
   const navigate = useNavigate();
-  const { signOut } = useAuth();
+  const { signOut, isAdmin } = useAuth();
 
   async function handleSignOut() {
     await signOut();
@@ -38,12 +39,15 @@ export function AppShell({
             </nav>
           )}
 
-          <button
-            onClick={handleSignOut}
-            className="text-[13px] font-medium text-[var(--rdo-ink-3)] transition-colors hover:text-[var(--rdo-ink)] lg:ml-3"
-          >
-            Sair
-          </button>
+          <div className="flex items-center gap-4 lg:ml-3">
+            {isAdmin && <InviteDialog />}
+            <button
+              onClick={handleSignOut}
+              className="text-[13px] font-medium text-[var(--rdo-ink-3)] transition-colors hover:text-[var(--rdo-ink)]"
+            >
+              Sair
+            </button>
+          </div>
         </div>
       </header>
 

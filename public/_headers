@@ -47,8 +47,11 @@
   Cache-Control: public, max-age=0, must-revalidate
 
 # Headers de segurança aplicados a todas as rotas
+# geolocation + camera liberados p/ a própria origem (self): usados pelo app
+# interno /app (Capturar GPS e Registro Fotográfico). O site institucional não
+# os utiliza, então não há exposição adicional.
 /*
   X-Frame-Options: SAMEORIGIN
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
-  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  Permissions-Policy: camera=(self), microphone=(), geolocation=(self)

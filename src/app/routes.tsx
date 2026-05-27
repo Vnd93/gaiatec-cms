@@ -1,6 +1,8 @@
 import { lazy, Suspense } from "react";
-import { createBrowserRouter } from "react-router";
+import { createBrowserRouter, Outlet } from "react-router";
 import { Layout } from "./components/Layout";
+import { AuthProvider } from "./rdo/AuthContext";
+import { RequireAuth } from "./rdo/RequireAuth";
 
 // Home page = eager load (entry point — não vale a pena lazy)
 import HomePage from "./pages/HomePage";
@@ -30,6 +32,13 @@ const DeteccaoGasPage = lazy(() => import("./pages/DeteccaoGasPage"));
 const DeteccaoGasCategoriaPage = lazy(() => import("./pages/DeteccaoGasCategoriaPage"));
 const DeteccaoGasProdutoPage = lazy(() => import("./pages/DeteccaoGasProdutoPage"));
 const NotFoundPage = lazy(() => import("./pages/NotFoundPage"));
+
+// ─── App interno: Relatório Diário de Obra (/relatorio-de-obra) ───
+// Vive fora do Layout de marketing — shell/CSS próprios (Montserrat, cantos arredondados).
+const RdoLoginPage = lazy(() => import("./rdo/pages/LoginPage"));
+const RdoRelatoriosPage = lazy(() => import("./rdo/pages/RelatoriosPage"));
+const RdoArquivoPage = lazy(() => import("./rdo/pages/ArquivoPage"));
+const RdoFormPage = lazy(() => import("./rdo/pages/FormPage"));
 
 // Loader minimalista — não bloqueia o paint
 function PageLoader() {
@@ -77,6 +86,21 @@ export const router = createBrowserRouter([
       { path: "deteccao-de-gas/:categoria", element: lazyWrap(DeteccaoGasCategoriaPage) },
       { path: "deteccao-de-gas/:categoria/:produto", element: lazyWrap(DeteccaoGasProdutoPage) },
       { path: "*", element: lazyWrap(NotFoundPage) },
+    ],
+  },
+  {
+    path: "/relatorio-de-obra",
+    element: (
+      <AuthProvider>
+        <Outlet />
+      </AuthProvider>
+    ),
+    children: [
+      { path: "login", element: lazyWrap(RdoLoginPage) },
+      { index: true, element: <RequireAuth>{lazyWrap(RdoRelatoriosPage)}</RequireAuth> },
+      { path: "arquivo", element: <RequireAuth>{lazyWrap(RdoArquivoPage)}</RequireAuth> },
+      { path: "novo", element: <RequireAuth>{lazyWrap(RdoFormPage)}</RequireAuth> },
+      { path: "relatorio/:id", element: <RequireAuth>{lazyWrap(RdoFormPage)}</RequireAuth> },
     ],
   },
 ]);

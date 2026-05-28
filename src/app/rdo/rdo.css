@@ -45,6 +45,15 @@
   letter-spacing: inherit;
 }
 
+/* Evita o zoom automático do iOS ao focar campos: o Safari só dá zoom quando
+   a fonte é < 16px. No mobile forçamos 16px nos campos (desktop mantém compacto).
+   Especificidade (.rdo-root :is(input…)) vence as classes text-[13px] do Tailwind. */
+@media (max-width: 640px) {
+  .rdo-root :is(input, textarea, select) {
+    font-size: 16px;
+  }
+}
+
 /* ── Cantos levemente arredondados (sobrepõe o reset global do site) ── */
 .rdo-root :is(.rounded-sm) { border-radius: 4px !important; }
 .rdo-root :is(.rounded, .rounded-md) { border-radius: 6px !important; }

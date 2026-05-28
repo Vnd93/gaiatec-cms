@@ -5,6 +5,7 @@
 // a página de definir senha. O service_role nunca sai do servidor.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { inviteEmail, sendEmail } from "../_shared/email.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -57,20 +58,29 @@ Deno.serve(async (req) => {
     return json({ error: "Informe um e-mail válido." }, 400);
   }
 
-  // 4) Envia o convite com service_role
+  // 4) Gera o link de convite (cria o usuário) e envia o e-mail branded via Resend
   const admin = createClient(url, serviceRole, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
-  const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
-    redirectTo: REDIRECT_TO,
+  const { data, error } = await admin.auth.admin.generateLink({
+    type: "invite",
+    email,
+    options: { redirectTo: REDIRECT_TO },
   });
-
   if (error) {
     const msg = /already|exist|registered/i.test(error.message)
       ? "Esse e-mail já tem acesso (ou já foi convidado)."
       : error.message;
     return json({ error: msg }, 400);
   }
+  const link = data.properties?.action_link;
+  if (!link) return json({ error: "Não foi possível gerar o link de convite." }, 500);
 
-  return json({ ok: true, email: data.user?.email ?? email });
+  try {
+    await sendEmail(Deno.env.get("RESEND_API_KEY")!, email, inviteEmail(link));
+  } catch (e) {
+    return json({ error: "Convite criado, mas falhou ao enviar o e-mail: " + (e instanceof Error ? e.message : String(e)) }, 500);
+  }
+
+  return json({ ok: true, email });
 });

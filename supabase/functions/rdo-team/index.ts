@@ -6,6 +6,7 @@
 //  - POST action=resend  { email }           -> gera novo link de convite
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { recoveryEmail, sendEmail } from "../_shared/email.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -74,7 +75,15 @@ Deno.serve(async (req) => {
       options: { redirectTo: REDIRECT_TO },
     });
     if (error) return json({ error: error.message }, 400);
-    return json({ ok: true, link: data.properties?.action_link ?? null });
+    const link = data.properties?.action_link ?? null;
+    if (link) {
+      try {
+        await sendEmail(Deno.env.get("RESEND_API_KEY")!, email, recoveryEmail(link));
+      } catch (_) {
+        /* e-mail falhou, mas o link ainda volta para copiar/enviar manualmente */
+      }
+    }
+    return json({ ok: true, link });
   }
 
   // ── Padrão: listar ───────────────────────────────────────────────

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { motion } from "motion/react";
 import { LayoutGrid, List as ListIcon, Loader2, Plus } from "lucide-react";
 import { Toaster, toast } from "sonner";
@@ -31,6 +31,9 @@ export default function RelatoriosPage() {
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<RdoStatus | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const autor = searchParams.get("autor");
+  const autorEmail = searchParams.get("e");
 
   async function load() {
     setLoading(true);
@@ -46,7 +49,10 @@ export default function RelatoriosPage() {
     localStorage.setItem("rdo_view", v);
   }
 
-  const filtered = useMemo(() => filtrarTexto(items, q), [items, q]);
+  const filtered = useMemo(() => {
+    const base = autor ? items.filter((r) => r.created_by === autor) : items;
+    return filtrarTexto(base, q);
+  }, [items, q, autor]);
 
   async function handleDownload(r: Relatorio) {
     setDownloadingId(r.id);
@@ -118,6 +124,15 @@ export default function RelatoriosPage() {
       <div className="mt-6 max-w-md">
         <SearchInput value={q} onChange={setQ} placeholder="Buscar por cliente, contrato ou engenheiro" />
       </div>
+
+      {autor && (
+        <div className="mt-3 inline-flex items-center gap-2 rounded-md bg-[var(--rdo-blue-soft)] px-3 py-1.5 text-[12px] font-medium text-[var(--rdo-blue)]">
+          <span>Relatórios de {autorEmail || "usuário selecionado"}</span>
+          <button onClick={() => setSearchParams({})} className="text-[var(--rdo-blue-strong)] hover:underline">
+            limpar ✕
+          </button>
+        </div>
+      )}
 
       <div className="mt-6">
         {loading ? (

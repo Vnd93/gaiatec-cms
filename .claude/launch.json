@@ -4,9 +4,9 @@
     {
       "name": "gaiatec-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "port": 5173,
-      "autoPort": true
+      "runtimeArgs": ["run", "dev", "--", "--port", "5174", "--strictPort"],
+      "port": 5174,
+      "autoPort": false
     }
   ]
 }

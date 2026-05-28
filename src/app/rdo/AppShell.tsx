@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router";
-import { Archive, FileText, LogOut, Menu, X } from "lucide-react";
+import { Archive, FileText, LogOut, Menu, Users, X } from "lucide-react";
 import { useAuth } from "./AuthContext";
-import { InviteDialog } from "./components/InviteDialog";
 import "./rdo.css";
 
 function Brand({ compact = false }: { compact?: boolean }) {
@@ -82,17 +81,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <nav className="space-y-1">
             <NavItem to="/relatorio-de-obra" end icon={<FileText size={18} strokeWidth={1.8} />} label="Relatórios" onClick={close} />
             <NavItem to="/relatorio-de-obra/arquivo" icon={<Archive size={18} strokeWidth={1.8} />} label="Arquivo" onClick={close} />
+            {isAdmin && (
+              <NavItem to="/relatorio-de-obra/equipe" icon={<Users size={18} strokeWidth={1.8} />} label="Equipe" onClick={close} />
+            )}
           </nav>
         </div>
 
         <div className="flex-1" />
 
         <div className="border-t border-[var(--rdo-line)] p-3">
-          {isAdmin && (
-            <div className="mb-1">
-              <InviteDialog />
-            </div>
-          )}
           <button
             onClick={handleSignOut}
             className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-[13.5px] font-medium text-[var(--rdo-ink-2)] transition-colors hover:bg-[var(--rdo-bg-2)]"

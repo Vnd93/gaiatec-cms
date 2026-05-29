@@ -210,7 +210,9 @@ export default function FormPage() {
     );
   }
 
-  const timeInput = `${inputClass} w-[108px]`;
+  // Horário mais estreito (e padding menor) → o campo de data (flex-1) fica mais largo.
+  const timeInput =
+    "w-[92px] shrink-0 rounded-md border border-[var(--rdo-line)] bg-white px-2 py-2 text-[13px] text-[var(--rdo-ink)] outline-none transition-colors focus:border-[var(--rdo-blue)] focus:ring-2 focus:ring-[var(--rdo-blue-soft)]";
 
   return (
     <AppShell>

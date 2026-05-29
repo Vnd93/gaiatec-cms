@@ -9,6 +9,7 @@ import { RelatorioCard } from "../components/RelatorioCard";
 import { RelatorioPreview } from "../components/RelatorioPreview";
 import { SearchInput } from "../components/SearchInput";
 import { StatusBadge } from "../components/StatusBadge";
+import { AssinaturaBadge, shouldShowAssinatura } from "../components/AssinaturaBadge";
 import { getRelatorio, listRelatorios, setStatus } from "../lib/relatorios";
 import { filtrarTexto } from "../lib/filter";
 import { formatDate } from "../lib/format";
@@ -274,6 +275,11 @@ function KanbanCard({
       <span className="text-[10.5px] font-semibold tracking-wide text-[var(--rdo-ink-3)]">{r.contrato || "—"}</span>
       <p className="mt-0.5 truncate text-[14px] font-semibold text-[var(--rdo-ink)]">{r.cliente || "Sem cliente"}</p>
       {eng && <p className="mt-0.5 truncate text-[12px] text-[var(--rdo-ink-3)]">{eng}</p>}
+      {shouldShowAssinatura(r.status, r.assinatura_status) && (
+        <div className="mt-2">
+          <AssinaturaBadge status={r.assinatura_status} />
+        </div>
+      )}
       <div className="mt-2.5 flex items-center justify-between">
         <span className="text-[11px] text-[var(--rdo-ghost)]">{formatDate(r.updated_at)}</span>
         {onDownload && (

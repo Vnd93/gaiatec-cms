@@ -1,5 +1,6 @@
 import type { Relatorio } from "../lib/types";
 import { StatusBadge } from "./StatusBadge";
+import { AssinaturaBadge, shouldShowAssinatura } from "./AssinaturaBadge";
 import { formatDateTime } from "../lib/format";
 
 export function RelatorioCard({
@@ -33,6 +34,7 @@ export function RelatorioCard({
         </div>
         <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12px] text-[var(--rdo-ink-3)]">
           <StatusBadge status={r.status} />
+          {shouldShowAssinatura(r.status, r.assinatura_status) && <AssinaturaBadge status={r.assinatura_status} />}
           <span className="text-[var(--rdo-line-strong)]">·</span>
           <span>{formatDateTime(r.updated_at)}</span>
           {eng && (

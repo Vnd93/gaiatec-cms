@@ -1,11 +1,18 @@
 // supabase/functions/rdo-notify/index.ts
-// Notifica os ADMINs por e-mail quando um relatório é finalizado.
-// O cliente gera o PDF e envia (base64) + um resumo; aqui validamos o usuário
-// autenticado, listamos os admins (service_role) e enviamos o e-mail branded
-// com o PDF anexado via Resend.
+// Notificações (lado autenticado = membro da equipe) ao finalizar um relatório.
+//  - Envia aos ADMINs o resumo + PDF anexado.
+//  - Se `signLink` (cliente vai assinar remoto): envia ao cliente o link de assinatura.
+//  - Se presencial (já 100% assinado): envia ao cliente o PDF assinado.
+//  - `apenasCliente`: só reenvia o link ao cliente (sem PDF, sem admins).
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { relatorioFinalizadoEmail, sendEmail, type ResumoRelatorio } from "../_shared/email.ts";
+import {
+  assinarClienteEmail,
+  relatorioAssinadoEmail,
+  relatorioFinalizadoEmail,
+  sendEmail,
+  type ResumoRelatorio,
+} from "../_shared/email.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -15,7 +22,6 @@ const corsHeaders = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
-// Limite defensivo de anexo (~14MB binário ≈ 19MB em base64).
 const MAX_PDF_B64 = 19_000_000;
 const FALLBACK_ADMIN = "marcelo@gaiatecsistemas.com.br";
 
@@ -31,7 +37,6 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get("Authorization") ?? "";
   if (!authHeader) return json({ error: "Não autenticado." }, 401);
 
-  // 1) Valida o chamador (qualquer usuário autenticado pode finalizar/notificar)
   const caller = createClient(url, anonKey, {
     global: { headers: { Authorization: authHeader } },
     auth: { autoRefreshToken: false, persistSession: false },
@@ -39,44 +44,79 @@ Deno.serve(async (req) => {
   const { data: u, error: uErr } = await caller.auth.getUser();
   if (uErr || !u?.user) return json({ error: "Sessão inválida." }, 401);
 
-  // 2) Lê o corpo
   let resumo: ResumoRelatorio;
   let pdfBase64 = "";
   let filename = "relatorio.pdf";
+  let clienteEmail = "";
+  let signLink = "";
+  let apenasCliente = false;
   try {
     const body = await req.json();
     resumo = (body?.resumo ?? {}) as ResumoRelatorio;
     pdfBase64 = String(body?.pdfBase64 ?? "");
     if (body?.filename) filename = String(body.filename);
+    clienteEmail = String(body?.clienteEmail ?? "").trim().toLowerCase();
+    signLink = String(body?.signLink ?? "").trim();
+    apenasCliente = Boolean(body?.apenasCliente);
   } catch {
     return json({ error: "Corpo inválido." }, 400);
   }
   if (!resumo.finalizadoPor) resumo.finalizadoPor = u.user.email ?? "";
 
-  // 3) Lista os admins (service_role); fallback para o admin padrão
+  const attachment =
+    pdfBase64 && pdfBase64.length <= MAX_PDF_B64 ? [{ filename, content: pdfBase64 }] : undefined;
+  const validEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+
+  // ── Reenviar apenas o link ao cliente ────────────────────────────
+  if (apenasCliente) {
+    if (!validEmail(clienteEmail) || !signLink) return json({ error: "E-mail do cliente ou link ausente." }, 400);
+    try {
+      await sendEmail(resendKey, clienteEmail, assinarClienteEmail(signLink, resumo));
+    } catch (e) {
+      return json({ error: "Falha ao enviar: " + (e instanceof Error ? e.message : String(e)) }, 502);
+    }
+    return json({ ok: true, clienteNotificado: true });
+  }
+
+  // ── Admins ───────────────────────────────────────────────────────
   const admin = createClient(url, serviceRole, { auth: { autoRefreshToken: false, persistSession: false } });
-  let recipients: string[] = [];
+  let admins: string[] = [];
   try {
     const { data } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-    recipients = (data?.users ?? [])
+    admins = (data?.users ?? [])
       .filter((x) => (x.app_metadata as Record<string, unknown> | null)?.role === "admin")
       .map((x) => x.email ?? "")
       .filter(Boolean);
   } catch {
-    /* usa fallback abaixo */
+    /* fallback abaixo */
   }
-  if (recipients.length === 0) recipients = [FALLBACK_ADMIN];
+  if (admins.length === 0) admins = [FALLBACK_ADMIN];
 
-  // 4) Monta e envia o e-mail (PDF anexado quando dentro do limite)
-  const { subject, html } = relatorioFinalizadoEmail(resumo);
-  const attachments =
-    pdfBase64 && pdfBase64.length <= MAX_PDF_B64 ? [{ filename, content: pdfBase64 }] : undefined;
+  const totalmenteAssinado = !signLink; // sem link de assinatura pendente => presencial / completo
+  const msgAdmin = totalmenteAssinado ? relatorioAssinadoEmail(resumo) : relatorioFinalizadoEmail(resumo);
 
   try {
-    await sendEmail(resendKey, recipients, { subject, html, attachments });
+    await sendEmail(resendKey, admins, { ...msgAdmin, attachments: attachment });
   } catch (e) {
-    return json({ error: "Falha ao enviar o e-mail: " + (e instanceof Error ? e.message : String(e)) }, 502);
+    return json({ error: "Falha ao enviar aos admins: " + (e instanceof Error ? e.message : String(e)) }, 502);
   }
 
-  return json({ ok: true, sent: recipients.length, anexo: Boolean(attachments) });
+  // ── Cliente ──────────────────────────────────────────────────────
+  let clienteNotificado = false;
+  if (validEmail(clienteEmail)) {
+    try {
+      if (signLink) {
+        // aguardando assinatura remota → manda o link
+        await sendEmail(resendKey, clienteEmail, assinarClienteEmail(signLink, resumo));
+      } else {
+        // já assinado presencialmente → manda o PDF assinado
+        await sendEmail(resendKey, clienteEmail, { ...relatorioAssinadoEmail(resumo), attachments: attachment });
+      }
+      clienteNotificado = true;
+    } catch (_) {
+      /* não bloqueia: admins já foram notificados */
+    }
+  }
+
+  return json({ ok: true, admins: admins.length, clienteNotificado });
 });

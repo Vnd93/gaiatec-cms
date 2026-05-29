@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { AnimatePresence, motion } from "motion/react";
-import { Camera, Check, Image as ImageIcon, Loader2, MapPin, Search, X } from "lucide-react";
+import { Camera, Check, Image as ImageIcon, Loader2, MapPin, PenLine, Search, X } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { AppShell } from "../AppShell";
 import { FormSection, Labeled, inputClass } from "../components/FormSection";
@@ -10,8 +10,10 @@ import { LocationMaps } from "../components/LocationMaps";
 import { reverseGeocode } from "../lib/geo";
 import { fetchCnpj, isValidCnpj, maskCnpj, onlyDigits } from "../lib/cnpj";
 import { notifyRelatorioFinalizado } from "../lib/notify";
+import { finalizarComAssinatura, signLinkUrl, type AssinaturaPayload } from "../lib/assinatura";
+import { FinalizarAssinaturaModal } from "../components/FinalizarAssinaturaModal";
 import { createRelatorio, deleteFoto, getRelatorio, updateRelatorio, uploadFotos } from "../lib/relatorios";
-import type { Foto, RdoStatus } from "../lib/types";
+import type { AssinaturaStatus, Foto, RdoStatus } from "../lib/types";
 
 interface NovaFoto {
   file: File;
@@ -65,6 +67,10 @@ export default function FormPage() {
   const [engGaiatec, setEngGaiatec] = useState("");
   const [crea, setCrea] = useState("");
   const [engCliente, setEngCliente] = useState("");
+  const [creaCliente, setCreaCliente] = useState("");
+  const [emailCliente, setEmailCliente] = useState("");
+  const [origAssinatura, setOrigAssinatura] = useState<AssinaturaStatus>("nao_assinado");
+  const [modalOpen, setModalOpen] = useState(false);
   const [inicioData, setInicioData] = useState("");
   const [inicioHora, setInicioHora] = useState("");
   const [fimData, setFimData] = useState("");
@@ -100,6 +106,9 @@ export default function FormPage() {
         setEngGaiatec(r.eng_gaiatec || "");
         setCrea(r.crea || "");
         setEngCliente(r.eng_cliente || "");
+        setCreaCliente(r.crea_cliente || "");
+        setEmailCliente(r.email_cliente || "");
+        setOrigAssinatura(r.assinatura_status || "nao_assinado");
         const [iData, iHora] = splitISO(r.periodo_inicio);
         const [fData, fHora] = splitISO(r.periodo_fim);
         setInicioData(iData);
@@ -224,57 +233,102 @@ export default function FormPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  async function salvar(status: RdoStatus) {
-    if (status === "finalizado" && !cliente.trim()) {
-      toast.error("Informe o nome do cliente para finalizar.");
-      setStep(1);
-      return;
+  const jaAssinado = origAssinatura !== "nao_assinado";
+
+  function buildInput() {
+    return {
+      cliente: cliente.trim(),
+      cnpj: cnpj.trim() || null,
+      razao_social: razaoSocial.trim() || null,
+      nome_fantasia: nomeFantasia.trim() || null,
+      endereco_cliente: enderecoCliente.trim() || null,
+      eng_gaiatec: engGaiatec.trim() || null,
+      crea: crea.trim() || null,
+      eng_cliente: engCliente.trim() || null,
+      crea_cliente: creaCliente.trim() || null,
+      email_cliente: emailCliente.trim().toLowerCase() || null,
+      periodo_inicio: combine(inicioData, inicioHora),
+      periodo_fim: combine(fimData, fimHora),
+      local_endereco: endereco.trim() || null,
+      local_numero: numero.trim() || null,
+      local_lat: lat,
+      local_lng: lng,
+      comentarios: comentarios.trim() || null,
+    };
+  }
+
+  async function persist(status: RdoStatus): Promise<string> {
+    const input = buildInput();
+    let rid = id;
+    if (rid) await updateRelatorio(rid, input, status, origStatus === "finalizado");
+    else rid = (await createRelatorio(input, status)).id;
+    if (novasFotos.length) {
+      await uploadFotos(rid, novasFotos.map((n) => n.file), fotosExistentes.length);
+      novasFotos.forEach((n) => URL.revokeObjectURL(n.preview));
+      setNovasFotos([]);
     }
-    setSaving(status);
+    return rid;
+  }
+
+  async function salvarRascunho() {
+    setSaving("rascunho");
     try {
-      const input = {
-        cliente: cliente.trim(),
-        cnpj: cnpj.trim() || null,
-        razao_social: razaoSocial.trim() || null,
-        nome_fantasia: nomeFantasia.trim() || null,
-        endereco_cliente: enderecoCliente.trim() || null,
-        eng_gaiatec: engGaiatec.trim() || null,
-        crea: crea.trim() || null,
-        eng_cliente: engCliente.trim() || null,
-        periodo_inicio: combine(inicioData, inicioHora),
-        periodo_fim: combine(fimData, fimHora),
-        local_endereco: endereco.trim() || null,
-        local_numero: numero.trim() || null,
-        local_lat: lat,
-        local_lng: lng,
-        comentarios: comentarios.trim() || null,
-      };
-      let rid = id;
-      if (rid) await updateRelatorio(rid, input, status, origStatus === "finalizado");
-      else rid = (await createRelatorio(input, status)).id;
-
-      if (novasFotos.length) {
-        await uploadFotos(rid, novasFotos.map((n) => n.file), fotosExistentes.length);
-        novasFotos.forEach((n) => URL.revokeObjectURL(n.preview));
-      }
-
-      if (status === "finalizado") {
-        try {
-          const full = await getRelatorio(rid);
-          if (full) await notifyRelatorioFinalizado(full);
-          toast.success("Relatório finalizado e enviado ao admin por e-mail.");
-        } catch (err) {
-          console.error("[rdo] falha ao notificar admin:", err);
-          toast.success("Relatório finalizado.");
-          toast.error("Relatório salvo, mas o e-mail ao admin falhou.");
-        }
-      } else {
-        toast.success("Rascunho salvo.");
-      }
+      await persist("rascunho");
+      toast.success("Rascunho salvo.");
       navigate("/relatorio-de-obra");
     } catch (e) {
       console.error(e);
       toast.error("Não foi possível salvar. Tente novamente.");
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  // Edição de um relatório já assinado: salva os campos sem reabrir a assinatura.
+  async function salvarAlteracoes() {
+    setSaving("finalizado");
+    try {
+      await persist("finalizado");
+      toast.success("Alterações salvas.");
+      navigate("/relatorio-de-obra");
+    } catch (e) {
+      console.error(e);
+      toast.error("Não foi possível salvar. Tente novamente.");
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  function abrirFinalizacao() {
+    if (!cliente.trim()) {
+      toast.error("Informe o nome do cliente para finalizar.");
+      setStep(1);
+      return;
+    }
+    setModalOpen(true);
+  }
+
+  async function confirmarFinalizacao(p: AssinaturaPayload) {
+    setSaving("finalizado");
+    try {
+      const rid = await persist("finalizado");
+      const assinado = await finalizarComAssinatura(rid, p);
+      const signLink = assinado.assinatura_token ? signLinkUrl(assinado.assinatura_token) : null;
+      try {
+        const full = await getRelatorio(rid);
+        if (full) await notifyRelatorioFinalizado(full, { signLink });
+      } catch (err) {
+        console.error("[rdo] falha ao notificar:", err);
+        toast.error("Assinado, mas o envio de e-mail falhou.");
+      }
+      setModalOpen(false);
+      toast.success(
+        p.modo === "presencial" ? "Relatório assinado e finalizado." : "Finalizado — link de assinatura enviado ao cliente.",
+      );
+      navigate("/relatorio-de-obra");
+    } catch (e) {
+      console.error(e);
+      toast.error("Não foi possível finalizar. Tente novamente.");
     } finally {
       setSaving(null);
     }
@@ -430,11 +484,26 @@ export default function FormPage() {
                   <Labeled label="Eng. Gaiatec Sistemas">
                     <input className={inputClass} value={engGaiatec} onChange={(e) => setEngGaiatec(e.target.value)} placeholder="Nome do engenheiro" />
                   </Labeled>
-                  <Labeled label="CREA" hint="(opcional)">
+                  <Labeled label="CREA (Gaiatec)" hint="(opcional)">
                     <input className={inputClass} value={crea} onChange={(e) => setCrea(e.target.value)} placeholder="Ex: SP-0123456789" />
                   </Labeled>
                   <Labeled label="Eng. Cliente">
                     <input className={inputClass} value={engCliente} onChange={(e) => setEngCliente(e.target.value)} placeholder="Nome do engenheiro" />
+                  </Labeled>
+                  <Labeled label="CREA (Cliente)" hint="(opcional)">
+                    <input className={inputClass} value={creaCliente} onChange={(e) => setCreaCliente(e.target.value)} placeholder="Ex: SP-0123456789" />
+                  </Labeled>
+                </div>
+                <div className="mt-4">
+                  <Labeled label="E-mail do responsável do cliente" hint="(para envio do relatório / assinatura)">
+                    <input
+                      type="email"
+                      inputMode="email"
+                      className={inputClass}
+                      value={emailCliente}
+                      onChange={(e) => setEmailCliente(e.target.value)}
+                      placeholder="cliente@empresa.com.br"
+                    />
                   </Labeled>
                 </div>
               </FormSection>
@@ -536,9 +605,17 @@ export default function FormPage() {
         </AnimatePresence>
       </div>
 
+      {/* Aviso de relatório já assinado (edição livre, mas sem atualizar assinaturas) */}
+      {jaAssinado && (
+        <div className="mt-4 max-w-2xl rounded-md border border-[var(--rdo-line)] bg-[var(--rdo-bg-2)] px-3.5 py-2.5 text-[12px] leading-snug text-[var(--rdo-ink-3)]">
+          Este relatório já foi assinado. Alterações no conteúdo <strong>não atualizam</strong> as assinaturas já
+          coletadas — para reassinar, use “Reabrir assinatura” na visualização.
+        </div>
+      )}
+
       {/* Ações */}
       <div className="mt-5 flex max-w-2xl flex-col gap-3 sm:flex-row sm:items-center">
-        <button type="button" onClick={() => salvar("rascunho")} disabled={saving !== null} className={ghostBtn}>
+        <button type="button" onClick={salvarRascunho} disabled={saving !== null} className={ghostBtn}>
           {saving === "rascunho" ? <Loader2 size={15} className="rdo-spin" /> : null}
           Salvar rascunho
         </button>
@@ -552,13 +629,32 @@ export default function FormPage() {
             <button type="button" onClick={() => setStep(1)} className={ghostBtn}>
               ← Voltar
             </button>
-            <button type="button" onClick={() => salvar("finalizado")} disabled={saving !== null} className={primaryBtn}>
-              {saving === "finalizado" ? <Loader2 size={15} className="rdo-spin" /> : <Check size={15} />}
-              Finalizar
-            </button>
+            {jaAssinado ? (
+              <button type="button" onClick={salvarAlteracoes} disabled={saving !== null} className={primaryBtn}>
+                {saving === "finalizado" ? <Loader2 size={15} className="rdo-spin" /> : <Check size={15} />}
+                Salvar alterações
+              </button>
+            ) : (
+              <button type="button" onClick={abrirFinalizacao} disabled={saving !== null} className={primaryBtn}>
+                <PenLine size={15} />
+                Finalizar e assinar
+              </button>
+            )}
           </div>
         )}
       </div>
+
+      <FinalizarAssinaturaModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onConfirm={confirmarFinalizacao}
+        busy={saving === "finalizado"}
+        cliente={cliente}
+        contrato={contratoExibe}
+        defaultGaiatecNome={engGaiatec}
+        defaultClienteNome={engCliente}
+        defaultClienteEmail={emailCliente}
+      />
     </AppShell>
   );
 }

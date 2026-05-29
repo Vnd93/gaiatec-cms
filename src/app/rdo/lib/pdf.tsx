@@ -100,6 +100,10 @@ const s = StyleSheet.create({
   signLine: { borderTopWidth: 1, borderTopColor: "#c9ccd3", width: "100%", marginBottom: 6 },
   signName: { fontSize: 10, fontWeight: 700, color: C.ink },
   signRole: { fontSize: 8, color: C.inkSoft, marginTop: 2 },
+  signImg: { height: 44, marginBottom: 3, objectFit: "contain" },
+  signPlaceholder: { height: 44, marginBottom: 3 },
+  signMeta: { fontSize: 6.5, color: C.muted, marginTop: 3, textAlign: "center" },
+  termsNote: { marginTop: 14, fontSize: 7, color: C.muted, textAlign: "center", lineHeight: 1.4 },
   // Footer
   footer: {
     position: "absolute",
@@ -120,6 +124,34 @@ function Field({ label, value }: { label: string; value?: string | null }) {
     <View style={s.col}>
       <Text style={s.label}>{label}</Text>
       <Text style={s.value}>{value && value.trim() ? value : "—"}</Text>
+    </View>
+  );
+}
+
+function SignSlot({
+  img,
+  nome,
+  role,
+  em,
+  aguardando,
+}: {
+  img?: string | null;
+  nome: string;
+  role: string;
+  em?: string | null;
+  aguardando?: boolean;
+}) {
+  return (
+    <View style={s.signCol}>
+      {img ? <Image style={s.signImg} src={img} /> : <View style={s.signPlaceholder} />}
+      <View style={s.signLine} />
+      <Text style={s.signName}>{nome}</Text>
+      <Text style={s.signRole}>{role}</Text>
+      {img && em ? (
+        <Text style={s.signMeta}>Assinado eletronicamente em {formatDate(em)}</Text>
+      ) : aguardando ? (
+        <Text style={s.signMeta}>Aguardando assinatura</Text>
+      ) : null}
     </View>
   );
 }
@@ -189,9 +221,15 @@ export function RdoDocument({
             <Field label="ENGENHEIRO GAIATEC SISTEMAS" value={r.eng_gaiatec} />
             <Field label="ENGENHEIRO DO CLIENTE" value={r.eng_cliente} />
           </View>
-          {r.crea?.trim() && (
+          {(r.crea?.trim() || r.crea_cliente?.trim()) && (
             <View style={[s.grid2, { marginTop: 10 }]}>
               <Field label="CREA (ENG. GAIATEC SISTEMAS)" value={r.crea} />
+              <Field label="CREA (ENG. CLIENTE)" value={r.crea_cliente} />
+            </View>
+          )}
+          {r.email_cliente?.trim() && (
+            <View style={[s.grid2, { marginTop: 10 }]}>
+              <Field label="E-MAIL DO CLIENTE" value={r.email_cliente} />
               <View style={s.col} />
             </View>
           )}
@@ -242,17 +280,26 @@ export function RdoDocument({
 
         {/* Assinaturas */}
         <View style={s.signRow} wrap={false}>
-          <View style={s.signCol}>
-            <View style={s.signLine} />
-            <Text style={s.signName}>{r.eng_gaiatec?.trim() || "Engenheiro Gaiatec Sistemas"}</Text>
-            <Text style={s.signRole}>Responsável Gaiatec Sistemas</Text>
-          </View>
-          <View style={s.signCol}>
-            <View style={s.signLine} />
-            <Text style={s.signName}>{r.eng_cliente?.trim() || "Engenheiro do Cliente"}</Text>
-            <Text style={s.signRole}>Responsável do Cliente</Text>
-          </View>
+          <SignSlot
+            img={r.assinatura_gaiatec}
+            nome={r.assinatura_gaiatec_nome?.trim() || r.eng_gaiatec?.trim() || "Engenheiro Gaiatec Sistemas"}
+            role="Responsável Gaiatec Sistemas"
+            em={r.assinatura_gaiatec_em}
+          />
+          <SignSlot
+            img={r.assinatura_cliente}
+            nome={r.assinatura_cliente_nome?.trim() || r.eng_cliente?.trim() || "Responsável do Cliente"}
+            role="Responsável do Cliente"
+            em={r.assinatura_cliente_em}
+            aguardando={r.assinatura_status === "aguardando_cliente"}
+          />
         </View>
+        {r.termos_aceitos && (
+          <Text style={s.termsNote}>
+            Documento assinado eletronicamente{r.termos_versao ? ` (termos ${r.termos_versao})` : ""}. As assinaturas
+            registram nome, data e identificação do signatário. Validade conforme MP nº 2.200-2/2001.
+          </Text>
+        )}
 
         {/* Rodapé */}
         <View style={s.footer} fixed>

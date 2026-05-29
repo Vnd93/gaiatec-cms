@@ -51,12 +51,87 @@ export function recoveryEmail(link: string) {
   };
 }
 
-/** Envia um e-mail via Resend. Lança em caso de falha. */
-export async function sendEmail(resendKey: string, to: string, msg: { subject: string; html: string }): Promise<void> {
+export interface ResumoRelatorio {
+  id?: string;
+  contrato: string;
+  cliente: string;
+  cnpj?: string;
+  razaoSocial?: string;
+  nomeFantasia?: string;
+  engGaiatec?: string;
+  crea?: string;
+  engCliente?: string;
+  inicio?: string;
+  fim?: string;
+  local?: string;
+  fotos?: number;
+  finalizadoPor?: string;
+  finalizadoEm?: string;
+}
+
+/** E-mail enviado ao admin quando um relatório é finalizado (PDF vai anexado). */
+export function relatorioFinalizadoEmail(r: ResumoRelatorio) {
+  const link = "https://gaiatecsistemas.com.br/relatorio-de-obra";
+  const row = (label: string, value?: string) =>
+    value && String(value).trim()
+      ? `<tr><td style="padding:8px 0;border-bottom:1px solid #f0f0f1;font-size:10.5px;color:#a1a1aa;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;width:44%;vertical-align:top;">${label}</td><td style="padding:8px 0;border-bottom:1px solid #f0f0f1;font-size:13px;color:#27272a;line-height:1.5;">${value}</td></tr>`
+      : "";
+  const rows = [
+    row("Contrato", r.contrato),
+    row("Cliente", r.cliente),
+    row("CNPJ", r.cnpj),
+    row("Razão social", r.razaoSocial),
+    row("Nome fantasia", r.nomeFantasia),
+    row("Eng. Gaiatec Sistemas", r.engGaiatec),
+    row("CREA", r.crea),
+    row("Eng. do cliente", r.engCliente),
+    row("Início", r.inicio),
+    row("Término", r.fim),
+    row("Localização", r.local),
+    row("Fotos", r.fotos != null ? String(r.fotos) : ""),
+    row("Finalizado por", r.finalizadoPor),
+    row("Finalizado em", r.finalizadoEm),
+  ].join("");
+
+  const html = `<!doctype html><html lang="pt-BR"><body style="margin:0;padding:0;background:#f4f4f5;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 12px;"><tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid #e7e7ea;border-radius:14px;overflow:hidden;font-family:Montserrat,Arial,Helvetica,sans-serif;">
+<tr><td style="padding:30px 34px 0 34px;">
+<img src="${LOGO}" alt="Gaiatec Sistemas" width="195" style="display:block;border:0;height:auto;outline:none;text-decoration:none;" />
+<div style="margin-top:16px;font-size:10px;letter-spacing:3px;text-transform:uppercase;color:#71717a;font-weight:600;">Relatório Diário de Obra</div>
+<div style="height:1px;background:#e7e7ea;margin-top:22px;"></div></td></tr>
+<tr><td style="padding:24px 34px 0 34px;">
+<span style="display:inline-block;background:#fff1e6;color:#e2640b;border:1px solid #f87010;font-size:10px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;padding:3px 10px;border-radius:6px;">Finalizado</span>
+<h1 style="margin:14px 0 0 0;font-size:21px;font-weight:600;color:#09090b;letter-spacing:-0.4px;">Relatório finalizado</h1>
+<p style="margin:12px 0 0 0;font-size:14px;line-height:1.65;color:#3f3f46;">Um relatório foi finalizado no sistema. O <strong>PDF completo está anexado</strong> a este e-mail. Resumo abaixo.</p></td></tr>
+<tr><td style="padding:18px 34px 0 34px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table></td></tr>
+<tr><td style="padding:22px 34px 4px 34px;">
+<a href="${link}" style="display:inline-block;background:#0057de;color:#ffffff;text-decoration:none;font-weight:600;font-size:14px;padding:12px 28px;border-radius:8px;font-family:Montserrat,Arial,Helvetica,sans-serif;">Abrir no sistema</a></td></tr>
+<tr><td style="padding:18px 34px;background:#fafafa;border-top:1px solid #e7e7ea;margin-top:18px;">
+<p style="margin:0;font-size:11px;line-height:1.6;color:#a1a1aa;">Gaiatec Sistemas — Acompanhamento de Obra · Notificação automática de relatório finalizado.</p></td></tr>
+</table></td></tr></table></body></html>`;
+
+  return { subject: `RDO finalizado — ${r.contrato || "sem contrato"} · ${r.cliente || "sem cliente"}`, html };
+}
+
+/** Envia um e-mail via Resend (1+ destinatários, com anexos opcionais). Lança em caso de falha. */
+export async function sendEmail(
+  resendKey: string,
+  to: string | string[],
+  msg: { subject: string; html: string; attachments?: { filename: string; content: string }[] },
+): Promise<void> {
+  const payload: Record<string, unknown> = {
+    from: FROM,
+    to: Array.isArray(to) ? to : [to],
+    subject: msg.subject,
+    html: msg.html,
+  };
+  if (msg.attachments?.length) payload.attachments = msg.attachments;
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from: FROM, to: [to], subject: msg.subject, html: msg.html }),
+    body: JSON.stringify(payload),
   });
   if (!res.ok) {
     const t = await res.text();

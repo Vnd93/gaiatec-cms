@@ -169,6 +169,18 @@ export function RdoDocument({
             <Field label="CLIENTE" value={r.cliente} />
             <Field label="Nº DO CONTRATO" value={r.contrato} />
           </View>
+          {(r.cnpj || r.razao_social) && (
+            <View style={[s.grid2, { marginTop: 10 }]}>
+              <Field label="CNPJ" value={r.cnpj} />
+              <Field label="RAZÃO SOCIAL" value={r.razao_social} />
+            </View>
+          )}
+          {(r.nome_fantasia || r.endereco_cliente) && (
+            <View style={[s.grid2, { marginTop: 10 }]}>
+              <Field label="NOME FANTASIA" value={r.nome_fantasia} />
+              <Field label="ENDEREÇO DO CLIENTE" value={r.endereco_cliente} />
+            </View>
+          )}
         </Card>
 
         {/* Engenheiros */}
@@ -177,6 +189,12 @@ export function RdoDocument({
             <Field label="ENGENHEIRO GAIATEC SISTEMAS" value={r.eng_gaiatec} />
             <Field label="ENGENHEIRO DO CLIENTE" value={r.eng_cliente} />
           </View>
+          {r.crea?.trim() && (
+            <View style={[s.grid2, { marginTop: 10 }]}>
+              <Field label="CREA (ENG. GAIATEC SISTEMAS)" value={r.crea} />
+              <View style={s.col} />
+            </View>
+          )}
         </Card>
 
         {/* Período */}

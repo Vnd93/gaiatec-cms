@@ -16,7 +16,12 @@ export interface Relatorio {
   created_by: string | null;
   cliente: string;
   contrato: string;
+  cnpj: string | null;
+  razao_social: string | null;
+  nome_fantasia: string | null;
+  endereco_cliente: string | null;
   eng_gaiatec: string | null;
+  crea: string | null;
   eng_cliente: string | null;
   periodo_inicio: string | null;
   periodo_fim: string | null;
@@ -36,7 +41,12 @@ export interface Relatorio {
 export type RelatorioInput = Pick<
   Relatorio,
   | "cliente"
+  | "cnpj"
+  | "razao_social"
+  | "nome_fantasia"
+  | "endereco_cliente"
   | "eng_gaiatec"
+  | "crea"
   | "eng_cliente"
   | "periodo_inicio"
   | "periodo_fim"

@@ -6,6 +6,7 @@ import type { Relatorio } from "../lib/types";
 import { STATUS_LABEL } from "../lib/types";
 import { formatDateTime } from "../lib/format";
 import { StatusBadge } from "./StatusBadge";
+import { LocationMaps } from "./LocationMaps";
 
 export function RelatorioPreview({
   id,
@@ -81,8 +82,18 @@ export function RelatorioPreview({
                 {r.cliente || "Sem cliente"}
               </h2>
 
+              {(r.cnpj || r.razao_social || r.nome_fantasia || r.endereco_cliente) && (
+                <div className="mt-6 grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2">
+                  {r.cnpj && <Field label="CNPJ" value={r.cnpj} />}
+                  {r.razao_social && <Field label="Razão Social" value={r.razao_social} />}
+                  {r.nome_fantasia && <Field label="Nome Fantasia" value={r.nome_fantasia} />}
+                  {r.endereco_cliente && <Field label="Endereço do Cliente" value={r.endereco_cliente} />}
+                </div>
+              )}
+
               <div className="mt-6 grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2">
                 <Field label="Engenheiro Gaiatec Sistemas" value={r.eng_gaiatec} />
+                {r.crea && <Field label="CREA" value={r.crea} />}
                 <Field label="Engenheiro do Cliente" value={r.eng_cliente} />
                 <Field label="Início" value={r.periodo_inicio ? formatDateTime(r.periodo_inicio) : null} />
                 <Field label="Término" value={r.periodo_fim ? formatDateTime(r.periodo_fim) : null} />
@@ -99,6 +110,7 @@ export function RelatorioPreview({
                       GPS: {r.local_lat.toFixed(6)}, {r.local_lng.toFixed(6)}
                     </p>
                   )}
+                  <LocationMaps endereco={r.local_endereco} numero={r.local_numero} lat={r.local_lat} lng={r.local_lng} />
                 </div>
               )}
 

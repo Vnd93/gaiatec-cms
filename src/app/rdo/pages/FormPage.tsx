@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { AnimatePresence, motion } from "motion/react";
-import { Camera, Check, Image as ImageIcon, Loader2, MapPin, X } from "lucide-react";
+import { Camera, Check, Image as ImageIcon, Loader2, MapPin, Search, X } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { AppShell } from "../AppShell";
 import { FormSection, Labeled, inputClass } from "../components/FormSection";
 import { DateField } from "../components/DateField";
+import { LocationMaps } from "../components/LocationMaps";
 import { reverseGeocode } from "../lib/geo";
+import { fetchCnpj, isValidCnpj, maskCnpj, onlyDigits } from "../lib/cnpj";
+import { notifyRelatorioFinalizado } from "../lib/notify";
 import { createRelatorio, deleteFoto, getRelatorio, updateRelatorio, uploadFotos } from "../lib/relatorios";
 import type { Foto, RdoStatus } from "../lib/types";
 
@@ -52,7 +55,15 @@ export default function FormPage() {
   const [contratoExibe, setContratoExibe] = useState("");
 
   const [cliente, setCliente] = useState("");
+  const [cnpj, setCnpj] = useState("");
+  const [razaoSocial, setRazaoSocial] = useState("");
+  const [nomeFantasia, setNomeFantasia] = useState("");
+  const [enderecoCliente, setEnderecoCliente] = useState("");
+  const [situacao, setSituacao] = useState("");
+  const [cnpjBusy, setCnpjBusy] = useState(false);
+  const [cnpjErro, setCnpjErro] = useState("");
   const [engGaiatec, setEngGaiatec] = useState("");
+  const [crea, setCrea] = useState("");
   const [engCliente, setEngCliente] = useState("");
   const [inicioData, setInicioData] = useState("");
   const [inicioHora, setInicioHora] = useState("");
@@ -72,6 +83,7 @@ export default function FormPage() {
   const galeriaRef = useRef<HTMLInputElement>(null);
   const novasRef = useRef<NovaFoto[]>([]);
   novasRef.current = novasFotos;
+  const cnpjAutoRef = useRef("");
 
   useEffect(() => {
     if (!id) return;
@@ -80,7 +92,13 @@ export default function FormPage() {
       if (r) {
         setCliente(r.cliente || "");
         setContratoExibe(r.contrato || "");
+        setCnpj(r.cnpj || "");
+        setRazaoSocial(r.razao_social || "");
+        setNomeFantasia(r.nome_fantasia || "");
+        setEnderecoCliente(r.endereco_cliente || "");
+        cnpjAutoRef.current = onlyDigits(r.cnpj || "");
         setEngGaiatec(r.eng_gaiatec || "");
+        setCrea(r.crea || "");
         setEngCliente(r.eng_cliente || "");
         const [iData, iHora] = splitISO(r.periodo_inicio);
         const [fData, fHora] = splitISO(r.periodo_fim);
@@ -133,6 +151,50 @@ export default function FormPage() {
     );
   }
 
+  async function buscarCnpj(raw?: string) {
+    const digits = onlyDigits(raw ?? cnpj);
+    if (digits.length !== 14) return setCnpjErro("Informe os 14 dígitos do CNPJ.");
+    if (!isValidCnpj(digits)) return setCnpjErro("CNPJ inválido. Confira os números.");
+    cnpjAutoRef.current = digits;
+    setCnpjBusy(true);
+    setCnpjErro("");
+    try {
+      const info = await fetchCnpj(digits);
+      setCnpj(info.cnpj);
+      setRazaoSocial(info.razaoSocial);
+      setNomeFantasia(info.nomeFantasia);
+      setEnderecoCliente(info.endereco);
+      setSituacao(info.situacao);
+      if (!cliente.trim()) setCliente(info.nomeFantasia || info.razaoSocial);
+      if (info.ativa) toast.success("Dados do CNPJ preenchidos.");
+      else toast.warning(`CNPJ encontrado — situação: ${info.situacao || "indefinida"}.`);
+    } catch (e) {
+      setCnpjErro(e instanceof Error ? e.message : "Falha ao consultar o CNPJ.");
+    } finally {
+      setCnpjBusy(false);
+    }
+  }
+
+  function onCnpjChange(value: string) {
+    const masked = maskCnpj(value);
+    setCnpj(masked);
+    setCnpjErro("");
+    const digits = onlyDigits(masked);
+    if (digits.length === 14 && isValidCnpj(digits) && cnpjAutoRef.current !== digits) {
+      buscarCnpj(digits);
+    }
+  }
+
+  function limparCnpj() {
+    setCnpj("");
+    setRazaoSocial("");
+    setNomeFantasia("");
+    setEnderecoCliente("");
+    setSituacao("");
+    setCnpjErro("");
+    cnpjAutoRef.current = "";
+  }
+
   function onPick(files: FileList | null) {
     if (!files) return;
     const imgs = Array.from(files).filter((f) => f.type.startsWith("image/"));
@@ -172,7 +234,12 @@ export default function FormPage() {
     try {
       const input = {
         cliente: cliente.trim(),
+        cnpj: cnpj.trim() || null,
+        razao_social: razaoSocial.trim() || null,
+        nome_fantasia: nomeFantasia.trim() || null,
+        endereco_cliente: enderecoCliente.trim() || null,
         eng_gaiatec: engGaiatec.trim() || null,
+        crea: crea.trim() || null,
         eng_cliente: engCliente.trim() || null,
         periodo_inicio: combine(inicioData, inicioHora),
         periodo_fim: combine(fimData, fimHora),
@@ -190,7 +257,20 @@ export default function FormPage() {
         await uploadFotos(rid, novasFotos.map((n) => n.file), fotosExistentes.length);
         novasFotos.forEach((n) => URL.revokeObjectURL(n.preview));
       }
-      toast.success(status === "finalizado" ? "Relatório finalizado." : "Rascunho salvo.");
+
+      if (status === "finalizado") {
+        try {
+          const full = await getRelatorio(rid);
+          if (full) await notifyRelatorioFinalizado(full);
+          toast.success("Relatório finalizado e enviado ao admin por e-mail.");
+        } catch (err) {
+          console.error("[rdo] falha ao notificar admin:", err);
+          toast.success("Relatório finalizado.");
+          toast.error("Relatório salvo, mas o e-mail ao admin falhou.");
+        }
+      } else {
+        toast.success("Rascunho salvo.");
+      }
       navigate("/relatorio-de-obra");
     } catch (e) {
       console.error(e);
@@ -272,17 +352,75 @@ export default function FormPage() {
               className="space-y-6 p-5 sm:p-6"
             >
               <FormSection title="Dados do Contrato">
-                <Labeled label="Nome do Cliente" required>
-                  <input className={inputClass} value={cliente} onChange={(e) => setCliente(e.target.value)} placeholder="Ex: Construtora ABC" />
+                <Labeled label="CNPJ do Cliente" hint="(preenche os dados automaticamente)">
+                  <div className="flex gap-2">
+                    <input
+                      className={`${inputClass} flex-1`}
+                      value={cnpj}
+                      onChange={(e) => onCnpjChange(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          buscarCnpj();
+                        }
+                      }}
+                      inputMode="numeric"
+                      placeholder="00.000.000/0000-00"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => buscarCnpj()}
+                      disabled={cnpjBusy}
+                      className={`${ghostBtn} shrink-0`}
+                    >
+                      {cnpjBusy ? <Loader2 size={15} className="rdo-spin" /> : <Search size={15} className="text-[var(--rdo-blue)]" />}
+                      Buscar
+                    </button>
+                  </div>
                 </Labeled>
-                <p className="mt-2 text-[11px] text-[var(--rdo-ghost)]">
-                  Nº do contrato:{" "}
-                  {isEdit ? (
-                    <span className="font-semibold text-[var(--rdo-ink-3)]">{contratoExibe || "—"}</span>
-                  ) : (
-                    "gerado automaticamente ao salvar (RDO-####)"
-                  )}
-                </p>
+                {cnpjErro && <p className="mt-1.5 text-[12px] font-medium text-[#d4453e]">{cnpjErro}</p>}
+
+                {(razaoSocial || nomeFantasia || enderecoCliente) && (
+                  <div className="mt-3 rounded-md border border-[var(--rdo-line)] bg-[var(--rdo-bg-2)] p-3.5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 space-y-1.5">
+                        {situacao && (
+                          <span
+                            className={`mb-1 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                              situacao.toUpperCase() === "ATIVA" ? "bg-[#e8f5ee] text-[#1a7f43]" : "bg-[#fdecea] text-[#b4231d]"
+                            }`}
+                          >
+                            {situacao}
+                          </span>
+                        )}
+                        <CnpjLinha label="Razão social" value={razaoSocial} />
+                        <CnpjLinha label="Nome fantasia" value={nomeFantasia} />
+                        <CnpjLinha label="Endereço" value={enderecoCliente} />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={limparCnpj}
+                        className="shrink-0 text-[12px] font-medium text-[var(--rdo-ink-3)] transition-colors hover:text-[var(--rdo-ink)]"
+                      >
+                        limpar
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-4">
+                  <Labeled label="Nome do Cliente" required>
+                    <input className={inputClass} value={cliente} onChange={(e) => setCliente(e.target.value)} placeholder="Ex: Construtora ABC" />
+                  </Labeled>
+                  <p className="mt-2 text-[11px] text-[var(--rdo-ghost)]">
+                    Nº do contrato:{" "}
+                    {isEdit ? (
+                      <span className="font-semibold text-[var(--rdo-ink-3)]">{contratoExibe || "—"}</span>
+                    ) : (
+                      "gerado automaticamente ao salvar (RDO-####)"
+                    )}
+                  </p>
+                </div>
               </FormSection>
 
               <div className="border-t border-[var(--rdo-line)]" />
@@ -291,6 +429,9 @@ export default function FormPage() {
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Labeled label="Eng. Gaiatec Sistemas">
                     <input className={inputClass} value={engGaiatec} onChange={(e) => setEngGaiatec(e.target.value)} placeholder="Nome do engenheiro" />
+                  </Labeled>
+                  <Labeled label="CREA" hint="(opcional)">
+                    <input className={inputClass} value={crea} onChange={(e) => setCrea(e.target.value)} placeholder="Ex: SP-0123456789" />
                   </Labeled>
                   <Labeled label="Eng. Cliente">
                     <input className={inputClass} value={engCliente} onChange={(e) => setEngCliente(e.target.value)} placeholder="Nome do engenheiro" />
@@ -351,6 +492,7 @@ export default function FormPage() {
                     <input className={inputClass} value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="Ex: 1000" />
                   </Labeled>
                 </div>
+                <LocationMaps endereco={endereco} numero={numero} lat={lat} lng={lng} />
               </FormSection>
 
               <div className="border-t border-[var(--rdo-line)]" />
@@ -418,6 +560,16 @@ export default function FormPage() {
         )}
       </div>
     </AppShell>
+  );
+}
+
+function CnpjLinha({ label, value }: { label: string; value?: string }) {
+  if (!value) return null;
+  return (
+    <p className="text-[12px] leading-snug text-[var(--rdo-ink-2)]">
+      <span className="font-semibold text-[var(--rdo-ink-3)]">{label}: </span>
+      {value}
+    </p>
   );
 }
 

@@ -164,6 +164,30 @@ export function assinarClienteEmail(link: string, r: ResumoRelatorio) {
   };
 }
 
+/** E-mail com o código de acesso (OTP de 6 dígitos). */
+export function otpEmail(code: string) {
+  const html = `<!doctype html><html lang="pt-BR"><body style="margin:0;padding:0;background:#f4f4f5;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 12px;"><tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border:1px solid #e7e7ea;border-radius:14px;overflow:hidden;font-family:Montserrat,Arial,Helvetica,sans-serif;">
+<tr><td style="padding:30px 34px 0 34px;">
+<img src="${LOGO}" alt="Gaiatec Sistemas" width="195" style="display:block;border:0;height:auto;outline:none;text-decoration:none;" />
+<div style="margin-top:16px;font-size:10px;letter-spacing:3px;text-transform:uppercase;color:#71717a;font-weight:600;">Relatório Diário de Obra</div>
+<div style="height:1px;background:#e7e7ea;margin-top:22px;"></div></td></tr>
+<tr><td style="padding:26px 34px 0 34px;">
+<h1 style="margin:0;font-size:21px;font-weight:600;color:#09090b;letter-spacing:-0.4px;">Seu código de acesso</h1>
+<p style="margin:14px 0 0 0;font-size:14px;line-height:1.65;color:#3f3f46;">Use o código abaixo para entrar no sistema de Relatório Diário de Obra:</p></td></tr>
+<tr><td style="padding:20px 34px 4px 34px;">
+<div style="background:#f4f6fb;border:1px solid #dbe3f5;border-radius:10px;padding:18px 0;text-align:center;">
+<span style="font-size:34px;font-weight:700;letter-spacing:10px;color:#0057de;font-family:Montserrat,Arial,Helvetica,sans-serif;">${code}</span>
+</div></td></tr>
+<tr><td style="padding:14px 34px 30px 34px;">
+<p style="margin:0;font-size:12px;line-height:1.6;color:#a1a1aa;">O código expira em 1 hora. Se você não solicitou este acesso, pode ignorar este e-mail.</p></td></tr>
+<tr><td style="padding:18px 34px;background:#fafafa;border-top:1px solid #e7e7ea;">
+<p style="margin:0;font-size:11px;line-height:1.6;color:#a1a1aa;">Gaiatec Sistemas — Acompanhamento de Obra</p></td></tr>
+</table></td></tr></table></body></html>`;
+  return { subject: `${code} é o seu código de acesso — Relatório Diário de Obra`, html };
+}
+
 /** Envia um e-mail via Resend (1+ destinatários, com anexos opcionais). Lança em caso de falha. */
 export async function sendEmail(
   resendKey: string,

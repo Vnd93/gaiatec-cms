@@ -4,9 +4,12 @@ import { TERMOS_VERSAO } from "./terms";
 
 const TABLE = "rdo_relatorios";
 const TOKEN_TTL_DIAS = 30;
+const BUCKET_ASSINADOS = "rdo-assinados";
 
 export interface AssinaturaPayload {
-  gaiatecAssinatura: string; // data URL (PNG)
+  gaiatecMetodo: "desenho" | "importado";
+  gaiatecAssinatura?: string | null; // PNG (data URL) quando desenho
+  gaiatecPdf?: File | null; // PDF assinado quando importado
   gaiatecNome: string;
   modo: "presencial" | "remoto";
   clienteAssinatura?: string | null; // presencial
@@ -31,13 +34,29 @@ export function signLinkUrl(token: string): string {
 export async function finalizarComAssinatura(id: string, p: AssinaturaPayload): Promise<Relatorio> {
   const now = new Date().toISOString();
   const patch: Record<string, unknown> = {
-    assinatura_gaiatec: p.gaiatecAssinatura,
     assinatura_gaiatec_nome: p.gaiatecNome.trim() || null,
     assinatura_gaiatec_em: now,
+    assinatura_gaiatec_metodo: p.gaiatecMetodo,
     termos_aceitos: true,
     termos_versao: TERMOS_VERSAO,
     termos_aceito_em: now,
   };
+
+  if (p.gaiatecMetodo === "importado" && p.gaiatecPdf) {
+    const path = `assinados/${id}/gaiatec-${crypto.randomUUID()}.pdf`;
+    const up = await supabase.storage.from(BUCKET_ASSINADOS).upload(path, p.gaiatecPdf, {
+      contentType: "application/pdf",
+      upsert: false,
+    });
+    if (up.error) throw up.error;
+    patch.assinatura_gaiatec_pdf_path = path;
+    patch.assinatura_gaiatec_arquivo = p.gaiatecPdf.name;
+    patch.assinatura_gaiatec = null;
+  } else {
+    patch.assinatura_gaiatec = p.gaiatecAssinatura ?? null;
+    patch.assinatura_gaiatec_pdf_path = null;
+    patch.assinatura_gaiatec_arquivo = null;
+  }
 
   if (p.modo === "presencial") {
     patch.assinatura_cliente = p.clienteAssinatura ?? null;
@@ -87,8 +106,6 @@ export async function reabrirAssinatura(id: string): Promise<Relatorio> {
   if (error) throw error;
   return data as Relatorio;
 }
-
-const BUCKET_ASSINADOS = "rdo-assinados";
 
 /** Equipe anexa manualmente um PDF assinado (caso o cliente devolva por e-mail/WhatsApp). */
 export async function anexarPdfAssinadoEquipe(id: string, file: File): Promise<Relatorio> {

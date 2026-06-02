@@ -72,7 +72,15 @@ Deno.serve(async (req) => {
   // ── GET: devolve os dados p/ renderizar e assinar ────────────────
   if (action === "get") {
     const { assinatura_token: _t, assinatura_token_expira: _e, created_by: _c, ...safe } = row as Record<string, unknown>;
-    return json({ relatorio: { ...safe, fotos } });
+    // Se a Gaiatec assinou por fora, devolve URL assinada do PDF p/ o cliente baixar e assinar por cima.
+    let gaiatecPdfUrl: string | null = null;
+    if (row.assinatura_gaiatec_pdf_path) {
+      const { data: signed } = await admin.storage
+        .from("rdo-assinados")
+        .createSignedUrl(String(row.assinatura_gaiatec_pdf_path), 3600);
+      gaiatecPdfUrl = signed?.signedUrl ?? null;
+    }
+    return json({ relatorio: { ...safe, fotos }, gaiatecPdfUrl });
   }
 
   // ── SIGN: grava a assinatura do cliente e conclui ────────────────

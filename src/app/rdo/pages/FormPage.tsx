@@ -314,9 +314,10 @@ export default function FormPage() {
       const rid = await persist("finalizado");
       const assinado = await finalizarComAssinatura(rid, p);
       const signLink = assinado.assinatura_token ? signLinkUrl(assinado.assinatura_token) : null;
+      const officialPdf = p.gaiatecMetodo === "importado" ? p.gaiatecPdf ?? null : null;
       try {
         const full = await getRelatorio(rid);
-        if (full) await notifyRelatorioFinalizado(full, { signLink });
+        if (full) await notifyRelatorioFinalizado(full, { signLink, officialPdf });
       } catch (err) {
         console.error("[rdo] falha ao notificar:", err);
         toast.error("Assinado, mas o envio de e-mail falhou.");

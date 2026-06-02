@@ -26,6 +26,7 @@ export default function AssinarPage() {
   const [estado, setEstado] = useState<Estado>("checking");
   const [erro, setErro] = useState("");
   const [r, setR] = useState<Relatorio | null>(null);
+  const [gaiatecPdfUrl, setGaiatecPdfUrl] = useState<string | null>(null);
 
   const [metodo, setMetodo] = useState<"desenho" | "externo">("desenho");
   const [nome, setNome] = useState("");
@@ -65,6 +66,7 @@ export default function AssinarPage() {
       }
       const rel = data.relatorio as Relatorio;
       setR(rel);
+      setGaiatecPdfUrl(data.gaiatecPdfUrl ?? null);
       setNome(rel.eng_cliente || "");
       setEstado("ready");
     })();
@@ -111,6 +113,12 @@ export default function AssinarPage() {
 
   // Método "por fora": baixa o PDF do relatório para o cliente assinar em qualquer assinador.
   async function baixarPdf() {
+    // Se a Gaiatec assinou por fora, baixa o PDF dela (para o cliente assinar por cima).
+    if (gaiatecPdfUrl) {
+      window.open(gaiatecPdfUrl, "_blank", "noreferrer");
+      setBaixouPdf(true);
+      return;
+    }
     if (!r) return;
     try {
       const { downloadRelatorioPdf } = await import("../lib/pdf");

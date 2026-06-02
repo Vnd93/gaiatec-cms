@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Checkbox from "@radix-ui/react-checkbox";
-import { Check, ChevronDown, Loader2, PenLine, X } from "lucide-react";
+import { Check, ChevronDown, FileCheck2, Loader2, PenLine, Upload, X } from "lucide-react";
 import { SignaturePad } from "./SignaturePad";
 import { TERMOS_TEXTO, TERMOS_TITULO, TERMOS_VERSAO } from "../lib/terms";
 import type { AssinaturaPayload } from "../lib/assinatura";
@@ -29,7 +29,9 @@ export function FinalizarAssinaturaModal({
   defaultClienteNome?: string;
   defaultClienteEmail?: string;
 }) {
+  const [gaiatecMetodo, setGaiatecMetodo] = useState<"desenho" | "importado">("desenho");
   const [gaiatecAssinatura, setGaiatecAssinatura] = useState<string | null>(null);
+  const [gaiatecPdf, setGaiatecPdf] = useState<File | null>(null);
   const [gaiatecNome, setGaiatecNome] = useState("");
   const [aceite, setAceite] = useState(false);
   const [verTermos, setVerTermos] = useState(false);
@@ -42,7 +44,9 @@ export function FinalizarAssinaturaModal({
   // Reseta ao abrir
   useEffect(() => {
     if (open) {
+      setGaiatecMetodo("desenho");
       setGaiatecAssinatura(null);
+      setGaiatecPdf(null);
       setGaiatecNome(defaultGaiatecNome || "");
       setAceite(false);
       setVerTermos(false);
@@ -56,28 +60,26 @@ export function FinalizarAssinaturaModal({
 
   function confirmar() {
     setErro("");
-    if (!gaiatecAssinatura) return setErro("A assinatura do responsável Gaiatec é obrigatória.");
     if (!gaiatecNome.trim()) return setErro("Informe o nome do responsável Gaiatec.");
+    if (gaiatecMetodo === "desenho" && !gaiatecAssinatura) return setErro("A assinatura do responsável Gaiatec é obrigatória.");
+    if (gaiatecMetodo === "importado" && !gaiatecPdf) return setErro("Envie o PDF assinado da Gaiatec.");
     if (!aceite) return setErro("É necessário aceitar os termos e condições.");
     if (presente === null) return setErro("Informe se o cliente vai assinar agora.");
+
+    const gaiatecPart = {
+      gaiatecMetodo,
+      gaiatecNome: gaiatecNome.trim(),
+      gaiatecAssinatura: gaiatecMetodo === "desenho" ? gaiatecAssinatura : null,
+      gaiatecPdf: gaiatecMetodo === "importado" ? gaiatecPdf : null,
+    };
+
     if (presente) {
       if (!clienteAssinatura) return setErro("A assinatura do cliente é obrigatória.");
       if (!clienteNome.trim()) return setErro("Informe o nome de quem assina pelo cliente.");
-      onConfirm({
-        modo: "presencial",
-        gaiatecAssinatura,
-        gaiatecNome: gaiatecNome.trim(),
-        clienteAssinatura,
-        clienteNome: clienteNome.trim(),
-      });
+      onConfirm({ ...gaiatecPart, modo: "presencial", clienteAssinatura, clienteNome: clienteNome.trim() });
     } else {
       if (!isEmail(clienteEmail)) return setErro("Informe um e-mail válido para enviar o link ao cliente.");
-      onConfirm({
-        modo: "remoto",
-        gaiatecAssinatura,
-        gaiatecNome: gaiatecNome.trim(),
-        clienteEmail: clienteEmail.trim().toLowerCase(),
-      });
+      onConfirm({ ...gaiatecPart, modo: "remoto", clienteEmail: clienteEmail.trim().toLowerCase() });
     }
   }
 
@@ -127,9 +129,58 @@ export function FinalizarAssinaturaModal({
               onChange={(e) => setGaiatecNome(e.target.value)}
               placeholder="Nome do responsável"
             />
-            <div className="mt-3">
-              <SignaturePad onChange={setGaiatecAssinatura} disabled={busy} />
+
+            {/* Método da Gaiatec */}
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {[
+                { v: "desenho" as const, icon: <PenLine size={15} />, label: "Assinar aqui" },
+                { v: "importado" as const, icon: <Upload size={15} />, label: "Enviar PDF assinado" },
+              ].map((o) => (
+                <button
+                  key={o.v}
+                  type="button"
+                  onClick={() => {
+                    setGaiatecMetodo(o.v);
+                    setErro("");
+                  }}
+                  className={`inline-flex items-center justify-center gap-1.5 rounded-md border px-3 py-2 text-[12.5px] font-medium transition-colors ${
+                    gaiatecMetodo === o.v
+                      ? "border-[var(--rdo-blue)] bg-[var(--rdo-blue-soft)] text-[var(--rdo-blue)]"
+                      : "border-[var(--rdo-line)] bg-white text-[var(--rdo-ink-2)] hover:border-[var(--rdo-ink-3)]"
+                  }`}
+                >
+                  {o.icon}
+                  {o.label}
+                </button>
+              ))}
             </div>
+
+            {gaiatecMetodo === "desenho" ? (
+              <div className="mt-3">
+                <SignaturePad onChange={setGaiatecAssinatura} disabled={busy} />
+              </div>
+            ) : (
+              <div className="mt-3">
+                <label className="block cursor-pointer">
+                  <input
+                    type="file"
+                    accept="application/pdf"
+                    className="hidden"
+                    onChange={(e) => {
+                      setGaiatecPdf(e.target.files?.[0] ?? null);
+                      setErro("");
+                    }}
+                  />
+                  <span className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-[var(--rdo-line-strong)] bg-[var(--rdo-bg-2)] px-3 py-2.5 text-[12.5px] font-medium text-[var(--rdo-ink-2)] transition-colors hover:border-[var(--rdo-blue)]">
+                    {gaiatecPdf ? <FileCheck2 size={14} className="text-[#1a7f43]" /> : <Upload size={14} />}
+                    {gaiatecPdf ? gaiatecPdf.name : "Escolher PDF assinado"}
+                  </span>
+                </label>
+                <p className="mt-1.5 text-[11.5px] text-[var(--rdo-ghost)]">
+                  Envie o PDF que você assinou no gov.br, certificado digital ou outro assinador.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Termos */}

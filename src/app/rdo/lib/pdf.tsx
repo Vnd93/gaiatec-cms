@@ -134,12 +134,14 @@ function SignSlot({
   role,
   em,
   aguardando,
+  externo,
 }: {
   img?: string | null;
   nome: string;
   role: string;
   em?: string | null;
   aguardando?: boolean;
+  externo?: boolean;
 }) {
   return (
     <View style={s.signCol}>
@@ -149,6 +151,8 @@ function SignSlot({
       <Text style={s.signRole}>{role}</Text>
       {img && em ? (
         <Text style={s.signMeta}>Assinado eletronicamente em {formatDate(em)}</Text>
+      ) : externo ? (
+        <Text style={s.signMeta}>Assinado em documento externo{em ? ` em ${formatDate(em)}` : ""}</Text>
       ) : aguardando ? (
         <Text style={s.signMeta}>Aguardando assinatura</Text>
       ) : null}
@@ -285,6 +289,7 @@ export function RdoDocument({
             nome={r.assinatura_gaiatec_nome?.trim() || r.eng_gaiatec?.trim() || "Engenheiro Gaiatec Sistemas"}
             role="Responsável Gaiatec Sistemas"
             em={r.assinatura_gaiatec_em}
+            externo={r.assinatura_gaiatec_metodo === "importado"}
           />
           <SignSlot
             img={r.assinatura_cliente}
@@ -292,6 +297,7 @@ export function RdoDocument({
             role="Responsável do Cliente"
             em={r.assinatura_cliente_em}
             aguardando={r.assinatura_status === "aguardando_cliente"}
+            externo={r.assinatura_cliente_metodo === "importado"}
           />
         </View>
         {r.termos_aceitos && (

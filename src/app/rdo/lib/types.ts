@@ -40,6 +40,9 @@ export interface Relatorio {
   assinatura_gaiatec: string | null;
   assinatura_gaiatec_nome: string | null;
   assinatura_gaiatec_em: string | null;
+  assinatura_gaiatec_metodo: "desenho" | "importado" | null;
+  assinatura_gaiatec_pdf_path: string | null;
+  assinatura_gaiatec_arquivo: string | null;
   assinatura_cliente: string | null;
   assinatura_cliente_nome: string | null;
   assinatura_cliente_em: string | null;

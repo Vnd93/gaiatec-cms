@@ -51,7 +51,8 @@ export function RelatorioPreview({
 
   const fotos = (r?.fotos ?? []).filter((f) => f.url);
   const local = [r?.local_endereco, r?.local_numero].filter(Boolean).join(", ");
-  const temAssinaturas = !!r && (r.assinatura_status !== "nao_assinado" || !!r.assinatura_gaiatec);
+  const temAssinaturas =
+    !!r && (r.assinatura_status !== "nao_assinado" || !!r.assinatura_gaiatec || !!r.assinatura_gaiatec_pdf_path);
 
   async function copiarLink() {
     if (!r) return;
@@ -97,9 +98,9 @@ export function RelatorioPreview({
     }
   }
 
-  async function baixarOficial() {
-    if (!r?.assinatura_cliente_pdf_path) return;
-    const url = await signedPdfUrl(r.assinatura_cliente_pdf_path);
+  async function baixarOficial(path?: string | null) {
+    if (!path) return;
+    const url = await signedPdfUrl(path);
     if (url) window.open(url, "_blank", "noreferrer");
     else toast.error("Não foi possível abrir o PDF assinado.");
   }
@@ -214,6 +215,8 @@ export function RelatorioPreview({
                       nome={r.assinatura_gaiatec_nome || r.eng_gaiatec}
                       papel="Responsável Gaiatec Sistemas"
                       em={r.assinatura_gaiatec_em}
+                      metodo={r.assinatura_gaiatec_metodo}
+                      onDownloadOficial={r.assinatura_gaiatec_pdf_path ? () => baixarOficial(r.assinatura_gaiatec_pdf_path) : undefined}
                     />
                     <AssinaturaView
                       img={r.assinatura_cliente}
@@ -222,7 +225,7 @@ export function RelatorioPreview({
                       em={r.assinatura_cliente_em}
                       aguardando={r.assinatura_status === "aguardando_cliente"}
                       metodo={r.assinatura_cliente_metodo}
-                      onDownloadOficial={r.assinatura_cliente_pdf_path ? baixarOficial : undefined}
+                      onDownloadOficial={r.assinatura_cliente_pdf_path ? () => baixarOficial(r.assinatura_cliente_pdf_path) : undefined}
                     />
                   </div>
                 </div>

@@ -45,8 +45,12 @@ function montarResumo(r: Relatorio, finalizadoPor: string) {
  * o link de assinatura; se já estiver 100% assinado, o cliente recebe o PDF.
  * Best-effort — quem chama deve tratar erro sem bloquear a finalização.
  */
-export async function notifyRelatorioFinalizado(r: Relatorio, opts?: { signLink?: string | null }): Promise<void> {
-  const blob = await generateRelatorioPdf(r);
+export async function notifyRelatorioFinalizado(
+  r: Relatorio,
+  opts?: { signLink?: string | null; officialPdf?: Blob | null },
+): Promise<void> {
+  // Se a Gaiatec assinou por fora, o PDF oficial é o arquivo enviado (não o gerado).
+  const blob = opts?.officialPdf ?? (await generateRelatorioPdf(r));
   const pdfBase64 = await blobToBase64(blob);
   const dataStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
   const filename = `RDO_${slugifyFilename(r.cliente)}_${dataStr}.pdf`;

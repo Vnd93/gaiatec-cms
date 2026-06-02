@@ -43,6 +43,7 @@ export async function finalizarComAssinatura(id: string, p: AssinaturaPayload): 
     patch.assinatura_cliente = p.clienteAssinatura ?? null;
     patch.assinatura_cliente_nome = (p.clienteNome ?? "").trim() || null;
     patch.assinatura_cliente_em = now;
+    patch.assinatura_cliente_metodo = "desenho";
     patch.cliente_assina_na_hora = true;
     patch.assinatura_status = "assinado";
     patch.assinatura_token = null;
@@ -85,6 +86,41 @@ export async function reabrirAssinatura(id: string): Promise<Relatorio> {
   const { data, error } = await supabase.from(TABLE).update(patch).eq("id", id).select("*").single();
   if (error) throw error;
   return data as Relatorio;
+}
+
+const BUCKET_ASSINADOS = "rdo-assinados";
+
+/** Equipe anexa manualmente um PDF assinado (caso o cliente devolva por e-mail/WhatsApp). */
+export async function anexarPdfAssinadoEquipe(id: string, file: File): Promise<Relatorio> {
+  const path = `assinados/${id}/${crypto.randomUUID()}.pdf`;
+  const up = await supabase.storage.from(BUCKET_ASSINADOS).upload(path, file, {
+    contentType: "application/pdf",
+    upsert: false,
+  });
+  if (up.error) throw up.error;
+  const { data, error } = await supabase
+    .from(TABLE)
+    .update({
+      assinatura_cliente_metodo: "importado",
+      assinatura_cliente_pdf_path: path,
+      assinatura_cliente_arquivo: file.name,
+      assinatura_cliente_em: new Date().toISOString(),
+      assinatura_status: "assinado",
+      assinatura_token: null,
+      assinatura_token_expira: null,
+    })
+    .eq("id", id)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data as Relatorio;
+}
+
+/** URL assinada (temporária) para baixar um PDF assinado do bucket privado. */
+export async function signedPdfUrl(path: string, expiraSeg = 3600): Promise<string | null> {
+  const { data, error } = await supabase.storage.from(BUCKET_ASSINADOS).createSignedUrl(path, expiraSeg);
+  if (error) return null;
+  return data?.signedUrl ?? null;
 }
 
 /** Garante um token ativo p/ assinatura remota (regenera se faltar). */

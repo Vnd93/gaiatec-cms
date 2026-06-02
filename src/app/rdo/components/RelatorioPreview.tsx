@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { Copy, Download, Loader2, PenLine, Send, X } from "lucide-react";
+import { Copy, Download, FileCheck2, Loader2, PenLine, Send, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { getRelatorio } from "../lib/relatorios";
-import { garantirToken, signLinkUrl } from "../lib/assinatura";
+import { anexarPdfAssinadoEquipe, garantirToken, signedPdfUrl, signLinkUrl } from "../lib/assinatura";
 import { enviarLinkAssinaturaCliente } from "../lib/notify";
 import type { Relatorio } from "../lib/types";
 import { STATUS_LABEL } from "../lib/types";
@@ -28,6 +28,8 @@ export function RelatorioPreview({
   const [r, setR] = useState<Relatorio | null>(null);
   const [loading, setLoading] = useState(false);
   const [linkBusy, setLinkBusy] = useState(false);
+  const [anexando, setAnexando] = useState(false);
+  const anexoRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!id) {
@@ -77,6 +79,29 @@ export function RelatorioPreview({
     } finally {
       setLinkBusy(false);
     }
+  }
+
+  async function anexarAssinado(file: File) {
+    if (!r) return;
+    if (file.type && file.type !== "application/pdf") return toast.error("O arquivo precisa ser um PDF.");
+    if (file.size > 14_000_000) return toast.error("PDF muito grande (máx. 14MB).");
+    setAnexando(true);
+    try {
+      const atualizado = await anexarPdfAssinadoEquipe(r.id, file);
+      setR((prev) => (prev ? { ...prev, ...atualizado, fotos: prev.fotos } : atualizado));
+      toast.success("PDF assinado anexado.");
+    } catch {
+      toast.error("Não foi possível anexar o PDF.");
+    } finally {
+      setAnexando(false);
+    }
+  }
+
+  async function baixarOficial() {
+    if (!r?.assinatura_cliente_pdf_path) return;
+    const url = await signedPdfUrl(r.assinatura_cliente_pdf_path);
+    if (url) window.open(url, "_blank", "noreferrer");
+    else toast.error("Não foi possível abrir o PDF assinado.");
   }
 
   return (
@@ -196,6 +221,8 @@ export function RelatorioPreview({
                       papel="Responsável do Cliente"
                       em={r.assinatura_cliente_em}
                       aguardando={r.assinatura_status === "aguardando_cliente"}
+                      metodo={r.assinatura_cliente_metodo}
+                      onDownloadOficial={r.assinatura_cliente_pdf_path ? baixarOficial : undefined}
                     />
                   </div>
                 </div>
@@ -238,6 +265,29 @@ export function RelatorioPreview({
                   <PenLine size={14} /> Assinar
                 </button>
               )}
+              {/* Equipe anexa um PDF assinado por fora (gov.br, certificado, etc.) */}
+              {r.status !== "arquivado" && (
+                <>
+                  <input
+                    ref={anexoRef}
+                    type="file"
+                    accept="application/pdf"
+                    hidden
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) anexarAssinado(f);
+                      e.target.value = "";
+                    }}
+                  />
+                  <button
+                    onClick={() => anexoRef.current?.click()}
+                    disabled={anexando}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-[var(--rdo-line)] bg-white px-3 py-2 text-[12.5px] font-medium text-[var(--rdo-ink)] transition-colors hover:border-[var(--rdo-ink-3)] disabled:opacity-55"
+                  >
+                    {anexando ? <Loader2 size={14} className="rdo-spin" /> : <Upload size={14} />} Anexar PDF assinado
+                  </button>
+                </>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -277,17 +327,27 @@ function AssinaturaView({
   papel,
   em,
   aguardando,
+  metodo,
+  onDownloadOficial,
 }: {
   img?: string | null;
   nome?: string | null;
   papel: string;
   em?: string | null;
   aguardando?: boolean;
+  metodo?: "desenho" | "importado" | null;
+  onDownloadOficial?: () => void;
 }) {
+  const importado = metodo === "importado";
   return (
     <div className="rounded-md border border-[var(--rdo-line)] bg-[var(--rdo-bg-2)] p-3">
       <div className="flex h-16 items-center justify-center overflow-hidden rounded bg-white">
-        {img ? (
+        {importado ? (
+          <div className="flex flex-col items-center gap-1 text-[#1a7f43]">
+            <FileCheck2 size={20} />
+            <span className="text-[10.5px] font-medium">Documento assinado externamente</span>
+          </div>
+        ) : img ? (
           <img src={img} alt={`Assinatura ${papel}`} className="max-h-full max-w-full object-contain" />
         ) : (
           <span className="text-[11.5px] text-[var(--rdo-ghost)]">{aguardando ? "Aguardando assinatura" : "—"}</span>
@@ -295,7 +355,19 @@ function AssinaturaView({
       </div>
       <p className="mt-2 text-[13px] font-semibold text-[var(--rdo-ink)]">{nome || "—"}</p>
       <p className="text-[11px] text-[var(--rdo-ink-3)]">{papel}</p>
-      {img && em && <p className="mt-0.5 text-[11px] text-[var(--rdo-ghost)]">Assinado em {formatDateTime(em)}</p>}
+      {(img || importado) && em && <p className="mt-0.5 text-[11px] text-[var(--rdo-ghost)]">Assinado em {formatDateTime(em)}</p>}
+      {importado && (
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+          {onDownloadOficial && (
+            <button onClick={onDownloadOficial} className="inline-flex items-center gap-1 text-[11.5px] font-medium text-[var(--rdo-blue)] hover:text-[var(--rdo-blue-strong)]">
+              <Download size={12} /> Baixar PDF assinado
+            </button>
+          )}
+          <a href="https://validar.iti.br" target="_blank" rel="noreferrer" className="text-[11px] text-[var(--rdo-ghost)] underline">
+            validar.iti.br
+          </a>
+        </div>
+      )}
     </div>
   );
 }

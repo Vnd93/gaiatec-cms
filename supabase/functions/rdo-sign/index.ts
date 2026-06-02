@@ -94,6 +94,7 @@ Deno.serve(async (req) => {
         assinatura_cliente: assinatura,
         assinatura_cliente_nome: nome,
         assinatura_cliente_em: now,
+        assinatura_cliente_metodo: "desenho",
         assinatura_status: "assinado",
         assinatura_token: null,
         assinatura_token_expira: null,
@@ -140,6 +141,87 @@ Deno.serve(async (req) => {
       await sendEmail(resendKey, dest, { ...relatorioAssinadoEmail(resumo), attachments: attachment });
     } catch (_) {
       /* assinatura já registrada; e-mail é best-effort */
+    }
+    return json({ ok: true });
+  }
+
+  // ── UPLOAD-SIGNED: cliente assinou por fora e envia o PDF assinado ─
+  if (action === "upload-signed") {
+    let b64 = String(body.pdfBase64 ?? "");
+    const comma = b64.indexOf(",");
+    if (b64.startsWith("data:") && comma > -1) b64 = b64.slice(comma + 1);
+    const filename = String(body.filename ?? "relatorio-assinado.pdf");
+    const nome = String(body.nome ?? "").trim();
+    if (!b64) return json({ error: "Envie o PDF assinado." }, 400);
+
+    let bytes: Uint8Array;
+    try {
+      bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    } catch {
+      return json({ error: "Arquivo inválido." }, 400);
+    }
+    if (bytes.length > 14_000_000) return json({ error: "PDF muito grande (máx. 14MB)." }, 400);
+    if (!(bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46))
+      return json({ error: "O arquivo precisa ser um PDF." }, 400);
+
+    const path = `assinados/${row.id}/${crypto.randomUUID()}.pdf`;
+    const up = await admin.storage.from("rdo-assinados").upload(path, bytes, {
+      contentType: "application/pdf",
+      upsert: false,
+    });
+    if (up.error) return json({ error: "Falha ao salvar o PDF." }, 500);
+
+    const now = new Date().toISOString();
+    const { error: upErr } = await admin
+      .from("rdo_relatorios")
+      .update({
+        assinatura_cliente_metodo: "importado",
+        assinatura_cliente_pdf_path: path,
+        assinatura_cliente_arquivo: filename,
+        assinatura_cliente_nome: nome || row.assinatura_cliente_nome || row.eng_cliente,
+        assinatura_cliente_em: now,
+        assinatura_status: "assinado",
+        assinatura_token: null,
+        assinatura_token_expira: null,
+      })
+      .eq("id", row.id)
+      .eq("assinatura_token", token);
+    if (upErr) return json({ error: "Não foi possível concluir." }, 500);
+
+    const localBase = [row.local_endereco, row.local_numero].filter(Boolean).join(", ");
+    const resumo: ResumoRelatorio = {
+      contrato: row.contrato ?? "",
+      cliente: row.cliente ?? "",
+      cnpj: row.cnpj ?? "",
+      razaoSocial: row.razao_social ?? "",
+      engGaiatec: row.eng_gaiatec ?? "",
+      crea: row.crea ?? "",
+      engCliente: nome || row.eng_cliente || "",
+      creaCliente: row.crea_cliente ?? "",
+      emailCliente: row.email_cliente ?? "",
+      inicio: fmtDate(row.periodo_inicio),
+      fim: fmtDate(row.periodo_fim),
+      local: localBase,
+      fotos: fotos.length,
+      assinatura: "Assinado (documento externo)",
+      finalizadoEm: new Date().toLocaleString("pt-BR"),
+    };
+    let admins: string[] = [];
+    try {
+      const { data } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+      admins = (data?.users ?? [])
+        .filter((x) => (x.app_metadata as Record<string, unknown> | null)?.role === "admin")
+        .map((x) => x.email ?? "")
+        .filter(Boolean);
+    } catch {
+      /* fallback */
+    }
+    if (admins.length === 0) admins = [FALLBACK_ADMIN];
+    const dest = [...new Set([...admins, ...(row.email_cliente ? [String(row.email_cliente)] : [])])];
+    try {
+      await sendEmail(resendKey, dest, { ...relatorioAssinadoEmail(resumo), attachments: [{ filename, content: b64 }] });
+    } catch (_) {
+      /* best-effort */
     }
     return json({ ok: true });
   }

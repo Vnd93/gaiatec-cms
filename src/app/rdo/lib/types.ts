@@ -43,6 +43,9 @@ export interface Relatorio {
   assinatura_cliente: string | null;
   assinatura_cliente_nome: string | null;
   assinatura_cliente_em: string | null;
+  assinatura_cliente_metodo: "desenho" | "importado" | null;
+  assinatura_cliente_pdf_path: string | null;
+  assinatura_cliente_arquivo: string | null;
   termos_aceitos: boolean;
   termos_versao: string | null;
   termos_aceito_em: string | null;

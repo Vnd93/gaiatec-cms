@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router";
 import { motion } from "motion/react";
 import * as Checkbox from "@radix-ui/react-checkbox";
-import { Check, ChevronDown, Loader2, ShieldCheck } from "lucide-react";
+import { Check, ChevronDown, Download, FileCheck2, Loader2, PenLine, ShieldCheck, Upload } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { SignaturePad } from "../components/SignaturePad";
 import { TERMOS_TEXTO, TERMOS_TITULO, TERMOS_VERSAO } from "../lib/terms";
@@ -27,10 +27,13 @@ export default function AssinarPage() {
   const [erro, setErro] = useState("");
   const [r, setR] = useState<Relatorio | null>(null);
 
+  const [metodo, setMetodo] = useState<"desenho" | "externo">("desenho");
   const [nome, setNome] = useState("");
   const [assinatura, setAssinatura] = useState<string | null>(null);
   const [aceite, setAceite] = useState(false);
   const [verTermos, setVerTermos] = useState(false);
+  const [arquivo, setArquivo] = useState<File | null>(null);
+  const [baixouPdf, setBaixouPdf] = useState(false);
   const [busy, setBusy] = useState(false);
   const [formErro, setFormErro] = useState("");
 
@@ -101,6 +104,39 @@ export default function AssinarPage() {
       setEstado("done");
     } catch (e) {
       setFormErro(e instanceof Error ? e.message : "Não foi possível assinar. Tente novamente.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Método "por fora": baixa o PDF do relatório para o cliente assinar em qualquer assinador.
+  async function baixarPdf() {
+    if (!r) return;
+    try {
+      const { downloadRelatorioPdf } = await import("../lib/pdf");
+      await downloadRelatorioPdf(r);
+      setBaixouPdf(true);
+    } catch {
+      setFormErro("Não foi possível gerar o PDF. Tente novamente.");
+    }
+  }
+
+  // Método "por fora": envia o PDF já assinado externamente.
+  async function enviarAssinado() {
+    setFormErro("");
+    if (!arquivo) return setFormErro("Selecione o PDF assinado para enviar.");
+    if (arquivo.type && arquivo.type !== "application/pdf") return setFormErro("O arquivo precisa ser um PDF.");
+    if (arquivo.size > 14_000_000) return setFormErro("PDF muito grande (máx. 14MB).");
+    setBusy(true);
+    try {
+      const pdfBase64 = await blobToBase64(arquivo);
+      const { data, error } = await supabase.functions.invoke("rdo-sign", {
+        body: { action: "upload-signed", token, pdfBase64, filename: arquivo.name, nome: nome.trim() },
+      });
+      if (error || !data?.ok) throw new Error("Falha ao enviar o PDF assinado.");
+      setEstado("done");
+    } catch (e) {
+      setFormErro(e instanceof Error ? e.message : "Não foi possível enviar. Tente novamente.");
     } finally {
       setBusy(false);
     }
@@ -218,59 +254,157 @@ export default function AssinarPage() {
             <div className="rounded-xl border border-[var(--rdo-line)] bg-white p-5">
               <h2 className="text-[14px] font-semibold tracking-[-0.01em] text-[var(--rdo-ink)]">Sua assinatura</h2>
 
-              <label className="mt-3 mb-1.5 block text-[12px] font-medium text-[var(--rdo-ink-2)]">Seu nome completo</label>
-              <input className={inputCls} value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome de quem assina" />
-
-              <div className="mt-3">
-                <SignaturePad onChange={setAssinatura} disabled={busy} />
-              </div>
-
-              <div className="mt-3 rounded-md border border-[var(--rdo-line)] bg-[var(--rdo-bg-2)] p-3">
-                <label className="flex cursor-pointer items-start gap-2.5">
-                  <Checkbox.Root
-                    checked={aceite}
-                    onCheckedChange={(c) => setAceite(c === true)}
-                    className="mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] border border-[var(--rdo-line-strong)] bg-white data-[state=checked]:border-[var(--rdo-blue)] data-[state=checked]:bg-[var(--rdo-blue)]"
+              {/* Seletor de método */}
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                {[
+                  { v: "desenho" as const, icon: <PenLine size={15} />, label: "Assinar aqui" },
+                  { v: "externo" as const, icon: <ShieldCheck size={15} />, label: "Assinar por fora" },
+                ].map((o) => (
+                  <button
+                    key={o.v}
+                    type="button"
+                    onClick={() => {
+                      setMetodo(o.v);
+                      setFormErro("");
+                    }}
+                    className={`inline-flex items-center justify-center gap-1.5 rounded-md border px-3 py-2 text-[13px] font-medium transition-colors ${
+                      metodo === o.v
+                        ? "border-[var(--rdo-blue)] bg-[var(--rdo-blue-soft)] text-[var(--rdo-blue)]"
+                        : "border-[var(--rdo-line)] bg-white text-[var(--rdo-ink-2)] hover:border-[var(--rdo-ink-3)]"
+                    }`}
                   >
-                    <Checkbox.Indicator>
-                      <Check size={13} strokeWidth={3} className="text-white" />
-                    </Checkbox.Indicator>
-                  </Checkbox.Root>
-                  <span className="text-[12.5px] leading-snug text-[var(--rdo-ink-2)]">
-                    Li e aceito os <strong>termos e condições</strong> de assinatura eletrônica.
-                  </span>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setVerTermos((v) => !v)}
-                  className="mt-2 inline-flex items-center gap-1 pl-7 text-[12px] font-medium text-[var(--rdo-blue)] transition-colors hover:text-[var(--rdo-blue-strong)]"
-                >
-                  <ChevronDown size={13} className={`transition-transform ${verTermos ? "rotate-180" : ""}`} />
-                  {verTermos ? "Ocultar termos" : "Ler os termos"}
-                </button>
-                {verTermos && (
-                  <div className="rdo-scroll mt-2 max-h-44 overflow-y-auto rounded-md border border-[var(--rdo-line)] bg-white p-3">
-                    <p className="mb-1.5 text-[11px] font-semibold text-[var(--rdo-ink-2)]">
-                      {TERMOS_TITULO} <span className="font-normal text-[var(--rdo-ghost)]">({TERMOS_VERSAO})</span>
-                    </p>
-                    <p className="whitespace-pre-wrap text-[11.5px] leading-relaxed text-[var(--rdo-ink-3)]">{TERMOS_TEXTO}</p>
-                  </div>
-                )}
+                    {o.icon}
+                    {o.label}
+                  </button>
+                ))}
               </div>
-
-              {formErro && <p className="mt-3 text-[12.5px] font-medium text-[#d4453e]">{formErro}</p>}
-
-              <button
-                onClick={assinar}
-                disabled={busy}
-                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md bg-[var(--rdo-blue)] px-5 py-3 text-[14px] font-semibold text-white transition-colors hover:bg-[var(--rdo-blue-strong)] disabled:opacity-55"
-              >
-                {busy ? <Loader2 size={16} className="rdo-spin" /> : <ShieldCheck size={16} />}
-                {busy ? "Registrando…" : "Assinar relatório"}
-              </button>
-              <p className="mt-2.5 text-center text-[11px] text-[var(--rdo-ghost)]">
-                Assinatura eletrônica · registra nome, data e hora · MP 2.200-2/2001
+              <p className="mt-2 text-[11.5px] leading-snug text-[var(--rdo-ghost)]">
+                {metodo === "desenho"
+                  ? "Assine com o dedo ou mouse, direto aqui."
+                  : "Baixe o PDF, assine no app que preferir (gov.br, certificado digital, etc.) e envie o PDF assinado de volta."}
               </p>
+
+              {metodo === "desenho" ? (
+                <>
+                  <label className="mt-4 mb-1.5 block text-[12px] font-medium text-[var(--rdo-ink-2)]">Seu nome completo</label>
+                  <input className={inputCls} value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome de quem assina" />
+
+                  <div className="mt-3">
+                    <SignaturePad onChange={setAssinatura} disabled={busy} />
+                  </div>
+
+                  <div className="mt-3 rounded-md border border-[var(--rdo-line)] bg-[var(--rdo-bg-2)] p-3">
+                    <label className="flex cursor-pointer items-start gap-2.5">
+                      <Checkbox.Root
+                        checked={aceite}
+                        onCheckedChange={(c) => setAceite(c === true)}
+                        className="mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] border border-[var(--rdo-line-strong)] bg-white data-[state=checked]:border-[var(--rdo-blue)] data-[state=checked]:bg-[var(--rdo-blue)]"
+                      >
+                        <Checkbox.Indicator>
+                          <Check size={13} strokeWidth={3} className="text-white" />
+                        </Checkbox.Indicator>
+                      </Checkbox.Root>
+                      <span className="text-[12.5px] leading-snug text-[var(--rdo-ink-2)]">
+                        Li e aceito os <strong>termos e condições</strong> de assinatura eletrônica.
+                      </span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setVerTermos((v) => !v)}
+                      className="mt-2 inline-flex items-center gap-1 pl-7 text-[12px] font-medium text-[var(--rdo-blue)] transition-colors hover:text-[var(--rdo-blue-strong)]"
+                    >
+                      <ChevronDown size={13} className={`transition-transform ${verTermos ? "rotate-180" : ""}`} />
+                      {verTermos ? "Ocultar termos" : "Ler os termos"}
+                    </button>
+                    {verTermos && (
+                      <div className="rdo-scroll mt-2 max-h-44 overflow-y-auto rounded-md border border-[var(--rdo-line)] bg-white p-3">
+                        <p className="mb-1.5 text-[11px] font-semibold text-[var(--rdo-ink-2)]">
+                          {TERMOS_TITULO} <span className="font-normal text-[var(--rdo-ghost)]">({TERMOS_VERSAO})</span>
+                        </p>
+                        <p className="whitespace-pre-wrap text-[11.5px] leading-relaxed text-[var(--rdo-ink-3)]">{TERMOS_TEXTO}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {formErro && <p className="mt-3 text-[12.5px] font-medium text-[#d4453e]">{formErro}</p>}
+
+                  <button
+                    onClick={assinar}
+                    disabled={busy}
+                    className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md bg-[var(--rdo-blue)] px-5 py-3 text-[14px] font-semibold text-white transition-colors hover:bg-[var(--rdo-blue-strong)] disabled:opacity-55"
+                  >
+                    {busy ? <Loader2 size={16} className="rdo-spin" /> : <ShieldCheck size={16} />}
+                    {busy ? "Registrando…" : "Assinar relatório"}
+                  </button>
+                  <p className="mt-2.5 text-center text-[11px] text-[var(--rdo-ghost)]">
+                    Assinatura eletrônica · registra nome, data e hora · MP 2.200-2/2001
+                  </p>
+                </>
+              ) : (
+                <>
+                  {/* Passo 1: baixar */}
+                  <div className="mt-4 flex items-start gap-3 rounded-md border border-[var(--rdo-line)] p-3">
+                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--rdo-blue-soft)] text-[11px] font-bold text-[var(--rdo-blue)]">1</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-medium text-[var(--rdo-ink)]">Baixe o PDF do relatório</p>
+                      <p className="mt-0.5 text-[11.5px] text-[var(--rdo-ghost)]">Assine no gov.br, certificado digital ou no assinador que preferir.</p>
+                      <button
+                        type="button"
+                        onClick={baixarPdf}
+                        className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-[var(--rdo-line)] bg-white px-3 py-2 text-[12.5px] font-medium text-[var(--rdo-ink)] transition-colors hover:border-[var(--rdo-ink-3)]"
+                      >
+                        {baixouPdf ? <FileCheck2 size={14} className="text-[#1a7f43]" /> : <Download size={14} />}
+                        {baixouPdf ? "PDF baixado — baixar de novo" : "Baixar PDF"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Passo 2: enviar */}
+                  <div className="mt-2 flex items-start gap-3 rounded-md border border-[var(--rdo-line)] p-3">
+                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--rdo-blue-soft)] text-[11px] font-bold text-[var(--rdo-blue)]">2</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-medium text-[var(--rdo-ink)]">Envie o PDF assinado</p>
+                      <label className="mt-2 block cursor-pointer">
+                        <input
+                          type="file"
+                          accept="application/pdf"
+                          className="hidden"
+                          onChange={(e) => {
+                            setArquivo(e.target.files?.[0] ?? null);
+                            setFormErro("");
+                          }}
+                        />
+                        <span className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-[var(--rdo-line-strong)] bg-[var(--rdo-bg-2)] px-3 py-2 text-[12.5px] font-medium text-[var(--rdo-ink-2)] transition-colors hover:border-[var(--rdo-blue)]">
+                          {arquivo ? <FileCheck2 size={14} className="text-[#1a7f43]" /> : <Upload size={14} />}
+                          {arquivo ? arquivo.name : "Escolher PDF assinado"}
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <label className="mt-3 mb-1.5 block text-[12px] font-medium text-[var(--rdo-ink-2)]">
+                    Seu nome <span className="text-[var(--rdo-ghost)]">(opcional)</span>
+                  </label>
+                  <input className={inputCls} value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome de quem assinou" />
+
+                  {formErro && <p className="mt-3 text-[12.5px] font-medium text-[#d4453e]">{formErro}</p>}
+
+                  <button
+                    onClick={enviarAssinado}
+                    disabled={busy || !arquivo}
+                    className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md bg-[var(--rdo-blue)] px-5 py-3 text-[14px] font-semibold text-white transition-colors hover:bg-[var(--rdo-blue-strong)] disabled:opacity-55"
+                  >
+                    {busy ? <Loader2 size={16} className="rdo-spin" /> : <Upload size={16} />}
+                    {busy ? "Enviando…" : "Enviar relatório assinado"}
+                  </button>
+                  <p className="mt-2.5 text-center text-[11px] text-[var(--rdo-ghost)]">
+                    Após assinar, valide em{" "}
+                    <a href="https://validar.iti.br" target="_blank" rel="noreferrer" className="text-[var(--rdo-blue)] underline">
+                      validar.iti.br
+                    </a>
+                  </p>
+                </>
+              )}
             </div>
           </motion.div>
         )}

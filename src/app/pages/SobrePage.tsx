@@ -41,7 +41,7 @@ const FALLBACK_TIMELINE = [
   { year: "2010", title: "Proteção Catódica", desc: "Estruturação da área de proteção catódica com equipe técnica especializada." },
   { year: "2013", title: "Automação Industrial", desc: "Implantação de projetos de automação industrial e sistemas supervisórios." },
   { year: "2016", title: "Biodigestores", desc: "Início da linha GT-BIODIGEST para biodigestores e aproveitamento de biogás." },
-  { year: "2019", title: "Certificações", desc: "Obtenção de acreditações e homologações: RBC Acreditado, INMETRO Homologado, ISO." },
+  { year: "2019", title: "Metrologia", desc: "Estruturação da calibração com rastreabilidade metrológica ao INMETRO e boas práticas ISO." },
   { year: "2022", title: "Telemetria e IoT", desc: "Expansão para soluções de telemetria remota, monitoramento IoT e sistemas conectados." },
   { year: "2025", title: "20+ Anos de Mercado", desc: "Mais de 20 anos consolidando expertise técnica em 11 setores industriais no Brasil." },
 ];
@@ -99,7 +99,7 @@ export default function SobrePage() {
         title="Sobre a Gaiatec Sistemas"
         description="Há 20+ anos desenvolvendo soluções tecnológicas em instrumentação e automação para indústria brasileira. Linha do tempo com 11 marcos históricos."
         path="/sobre"
-        keywords="Gaiatec Sistemas, sobre, história, indústria, instrumentação, automação, RBC"
+        keywords="Gaiatec Sistemas, sobre, história, indústria, instrumentação, automação, rastreabilidade"
         schema={{
           "@context": "https://schema.org",
           "@type": "AboutPage",

@@ -22,7 +22,7 @@ const FALLBACK_BLOCKS = [
   {
     title: "Nossas Capacidades",
     description:
-      "RBC Acreditado · INMETRO Homologado · ISO · Equipe técnica com engenheiros e especialistas em campo · +20 anos de experiência · 11 setores industriais atendidos.",
+      "Rastreabilidade metrológica ao INMETRO · Equipe técnica com engenheiros e especialistas em campo · +20 anos de experiência · 11 setores industriais atendidos.",
   },
   {
     title: "Serviço e Suporte Técnico",

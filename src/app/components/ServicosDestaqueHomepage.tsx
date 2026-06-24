@@ -11,7 +11,7 @@ const BRAND = "#0057DE";
 const META: Record<string, { imagem: string; subtitulo: string }> = {
   "instalacoes-comissionamentos": { imagem: "/images/services/4.7.webp", subtitulo: "Instalação e startup técnico em campo" },
   "medicoes-em-campo": { imagem: "/images/services/4.9.webp", subtitulo: "Vazão, pressão, nível e gases" },
-  "calibracao-rbc-laboratorio": { imagem: "/images/services/4.5.webp", subtitulo: "Laboratório acreditado RBC / INMETRO" },
+  "calibracao-rastreavel-laboratorio": { imagem: "/images/services/4.5.webp", subtitulo: "Calibração rastreável ao INMETRO" },
   "manutencoes": { imagem: "/images/services/4.6.webp", subtitulo: "Preventiva e corretiva, com SLA" },
   "automacoes": { imagem: "/images/services/4.1.webp", subtitulo: "CLP · SCADA · integração de campo" },
   "protecao-catodica": { imagem: "/images/services/4.3.webp", subtitulo: "Prevenção e controle da corrosão" },

@@ -468,7 +468,7 @@ export default function ProdutoPage() {
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-[900px] mx-auto">
             {[
-              { icon: Award, label: "INMETRO", desc: "Homologado" },
+              { icon: Award, label: "INMETRO", desc: "Rastreável" },
               { icon: Shield, label: "ISO 9001", desc: "Qualidade" },
               { icon: CheckCircle2, label: "OIML", desc: "Metrologia" },
               { icon: Award, label: "ABNT", desc: "Normas Técnicas" },

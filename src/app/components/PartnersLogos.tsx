@@ -7,9 +7,9 @@ import { usePartnersLogos } from "../hooks/useSiteData";
    Página Inicial → "Certificações".
    ──────────────────────────────────────────────────────── */
 const FALLBACK_CERTIFICATIONS: Array<{ name: string; label: string; image?: string | null }> = [
-  { name: "RBC", label: "Rede Brasileira de Calibração" },
-  { name: "INMETRO", label: "Homologação INMETRO" },
-  { name: "ISO", label: "Certificação ISO" },
+  { name: "INMETRO", label: "Rastreabilidade ao INMETRO" },
+  { name: "SI", label: "Rastreável ao SI" },
+  { name: "ISO", label: "Boas Práticas ISO" },
 ];
 
 export function PartnersLogos() {
@@ -26,7 +26,7 @@ export function PartnersLogos() {
               Certificações e Parceiros
             </h3>
             <p className="text-[#666] text-[15px] leading-[1.7] max-w-[700px] mx-auto">
-              Trabalhamos com equipamentos de fabricantes líderes e contamos com credenciais reconhecidas pelos principais órgãos metrológicos do Brasil.
+              Trabalhamos com equipamentos de fabricantes líderes e oferecemos calibração com rastreabilidade aos padrões metrológicos do INMETRO.
             </p>
           </div>
         </AnimateOnScroll>
@@ -65,9 +65,9 @@ export function PartnersLogos() {
         {/* Credibility bar */}
         <div className="mt-16 grid grid-cols-2 md:grid-cols-5 gap-6 text-center">
           {[
-            { value: "RBC", label: "Acreditado" },
-            { value: "INMETRO", label: "Homologado" },
-            { value: "ISO", label: "Certificado" },
+            { value: "INMETRO", label: "Rastreável" },
+            { value: "SI", label: "Metrologia" },
+            { value: "ISO", label: "Boas Práticas" },
             { value: "+20", label: "Anos de Experiência" },
             { value: "11", label: "Indústrias Atendidas" },
           ].map((item) => (

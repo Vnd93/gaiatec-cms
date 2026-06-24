@@ -51,7 +51,7 @@ export const aplicacoes: AplicacaoListItem[] = [
     beneficios: [
       "Redução de perdas hídricas em até 35%",
       "Instalação sem interrupção do processo",
-      "Rastreabilidade RBC para conformidade ARSAE/INMETRO",
+      "Rastreabilidade metrológica ao INMETRO para conformidade ARSAE",
       "Monitoramento remoto via plataforma web/mobile",
     ],
     casosUso: [
@@ -135,7 +135,7 @@ export const aplicacoes: AplicacaoListItem[] = [
     descricaoCurta:
       "Detecção contínua de gás sulfídrico em áreas críticas com sensores eletroquímicos e infravermelho.",
     descricaoCompleta:
-      "H2S é altamente tóxico e corrosivo. Em refinarias e plantas petroquímicas, monitoramento contínuo é obrigatório. A Gaiatec especifica e instala sistemas multipontos com detectores fixos eletroquímicos ou IR, integrados a CLPs/SCADA com alarmes audiovisuais e shutdown automático. Calibração RBC anual incluída.",
+      "H2S é altamente tóxico e corrosivo. Em refinarias e plantas petroquímicas, monitoramento contínuo é obrigatório. A Gaiatec especifica e instala sistemas multipontos com detectores fixos eletroquímicos ou IR, integrados a CLPs/SCADA com alarmes audiovisuais e shutdown automático. Calibração rastreável anual incluída.",
     imagem: "/images/services/4.7.webp",
     icone: "Shield",
     setores: ["Gás e Petróleo", "Indústria"],
@@ -147,7 +147,7 @@ export const aplicacoes: AplicacaoListItem[] = [
     servicosRelacionados: [
       "instalacoes-comissionamentos",
       "manutencoes",
-      "calibracao-rbc-laboratorio",
+      "calibracao-rastreavel-laboratorio",
     ],
     beneficios: [
       "Conformidade com NR-13, NR-15 e API RP 14C",
@@ -165,11 +165,11 @@ export const aplicacoes: AplicacaoListItem[] = [
   },
   {
     slug: "calibracao-medidores-vazao",
-    nome: "Calibração de Medidores de Vazão (RBC)",
+    nome: "Calibração de Medidores de Vazão (Rastreável)",
     descricaoCurta:
-      "Calibração rastreável em laboratório acreditado RBC ou em campo com padrões certificados internacionalmente.",
+      "Calibração rastreável em laboratório ou em campo, com padrões rastreáveis ao INMETRO.",
     descricaoCompleta:
-      "Calibração é exigência legal e técnica para medidores fiscais e operacionais. Nosso laboratório RBC (ABNT NBR ISO/IEC 17025) emite certificados aceitos em todo o Brasil e exterior. Para casos onde a retirada do medidor é inviável, oferecemos calibração in-loco com padrões portáteis rastreáveis ao SI.",
+      "Calibração é exigência legal e técnica para medidores fiscais e operacionais. Nossa calibração emite certificados com rastreabilidade metrológica ao INMETRO (Sistema Internacional de Unidades). Para casos onde a retirada do medidor é inviável, oferecemos calibração in-loco com padrões portáteis rastreáveis ao SI.",
     imagem: "/images/services/4.5.webp",
     icone: "Award",
     setores: ["Saneamento", "Gás e Petróleo", "Indústria"],
@@ -178,11 +178,11 @@ export const aplicacoes: AplicacaoListItem[] = [
       "Medidor Padrão",
     ],
     servicosRelacionados: [
-      "calibracao-rbc-laboratorio",
+      "calibracao-rastreavel-laboratorio",
       "calibracao-rastreavel-campo",
     ],
     beneficios: [
-      "Acreditação RBC reconhecida internacionalmente",
+      "Rastreabilidade metrológica ao INMETRO",
       "Rastreabilidade ao SI via INMETRO",
       "Incerteza expandida ≤ 0.2%",
       "Certificado válido para auditorias fiscais",

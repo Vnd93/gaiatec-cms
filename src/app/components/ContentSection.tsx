@@ -40,9 +40,9 @@ const FALLBACK_SERVICES = [
     ctaHref: "#",
   },
   {
-    title: "Calibração RBC Acreditada",
+    title: "Calibração Rastreável",
     href: "#",
-    desc: "Calibração de instrumentos com rastreabilidade metrológica reconhecida internacionalmente, conforme normas ABNT e ISO. Laboratório acreditado pela RBC e homologado pelo INMETRO.",
+    desc: "Calibração de instrumentos com rastreabilidade metrológica ao INMETRO, conforme boas práticas e normas ABNT/ISO.",
     cta: "Ver Serviço →",
     ctaHref: "#",
   },

@@ -77,10 +77,10 @@ export const servicesList: ServicoListItem[] = [
     ordem: 4,
   },
   {
-    slug: "calibracao-rbc-laboratorio",
-    nome: "Calibração RBC / Rastreável em Laboratório",
+    slug: "calibracao-rastreavel-laboratorio",
+    nome: "Calibração Rastreável em Laboratório",
     descricaoCurta:
-      "Laboratório acreditado RBC e homologado pelo INMETRO para calibração de medidores com rastreabilidade internacional.",
+      "Calibração de medidores em laboratório com padrões rastreáveis ao INMETRO e rastreabilidade metrológica comprovada.",
     icone: "Award",
     categoria: "calibracao",
     setores: ["Saneamento", "Gás e Petróleo", "Indústria"],

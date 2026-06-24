@@ -52,7 +52,7 @@ export const searchIndex: SearchItem[] = [
   { label: "Manutenções", category: "Serviço", href: "/servicos/manutencoes", keywords: "manutenção preventiva corretiva reparo assistência técnica" },
   { label: "Proteção Catódica", category: "Serviço", href: "/servicos/protecao-catodica", keywords: "catódica corrosão proteção pipeline dutos" },
   { label: "Inspeção de Revestimentos", category: "Serviço", href: "/servicos/inspecao-revestimentos", keywords: "inspeção revestimento coating holiday detector" },
-  { label: "Calibração RBC / Laboratório", category: "Serviço", href: "/servicos/calibracao-rbc-laboratorio", keywords: "calibração RBC Inmetro metrologia rastreabilidade certificado" },
+  { label: "Calibração Rastreável em Laboratório", category: "Serviço", href: "/servicos/calibracao-rastreavel-laboratorio", keywords: "calibração rastreável Inmetro metrologia rastreabilidade certificado laboratório" },
   { label: "Consultoria e Inspeções Técnicas", category: "Serviço", href: "/servicos/consultoria-inspecoes-tecnicas", keywords: "consultoria projeto engenharia especificação técnica" },
   { label: "Medições em Campo", category: "Serviço", href: "/servicos/medicoes-em-campo", keywords: "medição especializada campanha campo vazão pressão" },
 

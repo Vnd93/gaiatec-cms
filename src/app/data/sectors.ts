@@ -61,7 +61,7 @@ export const sectors: SectorData[] = [
       { category: "Qualidade", items: "Analisadores de pH, turbidez, cloro e condutividade" },
       { category: "Telemetria", items: "Sistemas de monitoramento remoto e gestão de rede" },
     ],
-    services: ["Instrumentação Industrial", "Calibração RBC", "Manutenção de Instrumentos", "Telemetria e Monitoramento Remoto"],
+    services: ["Instrumentação Industrial", "Calibração Rastreável", "Manutenção de Instrumentos", "Telemetria e Monitoramento Remoto"],
     ctaText: "Pronto para elevar a eficiência do seu sistema de saneamento?",
   },
   {
@@ -100,7 +100,7 @@ export const sectors: SectorData[] = [
       { category: "Temperatura", items: "Termopares, RTDs e transmissores para ambientes classificados" },
       { category: "Proteção Catódica", items: "Retificadores, ânodos e sistemas de monitoramento" },
     ],
-    services: ["Instrumentação Industrial", "Proteção Catódica", "Inspeção de Revestimento", "Calibração RBC", "Automação Industrial"],
+    services: ["Instrumentação Industrial", "Proteção Catódica", "Inspeção de Revestimento", "Calibração Rastreável", "Automação Industrial"],
     ctaText: "Pronto para elevar a segurança e eficiência do seu sistema de gás e petróleo?",
   },
   {
@@ -214,7 +214,7 @@ export const sectors: SectorData[] = [
       { category: "Qualidade do Ar", items: "Sensores de CO2, detectores de partículas" },
       { category: "Controles", items: "Controladores para UTAs, válvulas de controle modulantes" },
     ],
-    services: ["Instrumentação Industrial", "Automação Industrial", "Calibração RBC", "Consultoria Técnica"],
+    services: ["Instrumentação Industrial", "Automação Industrial", "Calibração Rastreável", "Consultoria Técnica"],
     ctaText: "Pronto para elevar a eficiência do seu sistema HVAC?",
   },
   {
@@ -252,7 +252,7 @@ export const sectors: SectorData[] = [
       { category: "Partículas", items: "Opacímetros, medidores de material particulado" },
       { category: "Temperatura/Umidade", items: "Sondas para monitoramento em campo" },
     ],
-    services: ["Instrumentação Industrial", "Calibração RBC", "Consultoria Técnica", "Medições Especializadas"],
+    services: ["Instrumentação Industrial", "Calibração Rastreável", "Consultoria Técnica", "Medições Especializadas"],
     ctaText: "Pronto para garantir a conformidade ambiental da sua operação?",
   },
   {
@@ -285,12 +285,12 @@ export const sectors: SectorData[] = [
       "Painéis de controle e alarme para segurança de processo",
     ],
     products: [
-      { category: "Detecção Fixa", items: "Detectores fixos de gases inflamáveis, tóxicos e oxigênio certificados ATEX/INMETRO" },
+      { category: "Detecção Fixa", items: "Detectores fixos de gases inflamáveis, tóxicos e oxigênio para áreas classificadas (certificação Ex)" },
       { category: "Detecção Portátil", items: "Detectores portáteis multigás para entrada em espaços confinados" },
       { category: "Sistemas de Alarme", items: "Controladores de detecção, sirenes, balizas luminosas, módulos de intertravamento" },
       { category: "Chama/Fumaça", items: "Detectores UV/IR de chama, detectores de fumaça industrial" },
     ],
-    services: ["Instrumentação Industrial", "Automação Industrial", "Calibração RBC", "Manutenção de Sistemas"],
+    services: ["Instrumentação Industrial", "Automação Industrial", "Calibração Rastreável", "Manutenção de Sistemas"],
     ctaText: "Pronto para elevar a segurança operacional da sua planta?",
   },
   {
@@ -365,7 +365,7 @@ export const sectors: SectorData[] = [
       { category: "Atuação", items: "Válvulas de controle, atuadores elétricos e pneumáticos" },
       { category: "Supervisão", items: "IHMs, sistemas SCADA, painéis de controle" },
     ],
-    services: ["Automação Industrial", "Instrumentação Industrial", "Calibração RBC", "Manutenção Industrial"],
+    services: ["Automação Industrial", "Instrumentação Industrial", "Calibração Rastreável", "Manutenção Industrial"],
     ctaText: "Pronto para elevar a eficiência da sua planta industrial?",
   },
   {
@@ -374,16 +374,16 @@ export const sectors: SectorData[] = [
     title: "Medição Confiável como Base do Controle de Processo",
     description: "Fornecimento, instalação e calibração de instrumentos de medição para qualquer processo industrial.",
     image: "/images/pages/2.10.png",
-    about: "A Gaiatec Sistemas é especializada em instrumentação industrial — o conjunto de sensores, transmissores, analisadores e sistemas de medição que capturam variáveis físicas e químicas de um processo. Atendemos desde a especificação técnica até o fornecimento, instalação e calibração, com laboratório de calibração acreditado pelo RBC (Rede Brasileira de Calibração).",
+    about: "A Gaiatec Sistemas é especializada em instrumentação industrial — o conjunto de sensores, transmissores, analisadores e sistemas de medição que capturam variáveis físicas e químicas de um processo. Atendemos desde a especificação técnica até o fornecimento, instalação e calibração, com rastreabilidade metrológica ao INMETRO.",
     aboutExtra: "Instrumentação de qualidade é a base de qualquer sistema de controle confiável.",
     stats: [
-      { value: "RBC", label: "Laboratório Acreditado" },
+      { value: "SI", label: "Rastreável ao SI" },
       { value: "5+", label: "Variáveis de Processo" },
-      { value: "INMETRO", label: "Certificação" },
+      { value: "INMETRO", label: "Rastreabilidade" },
       { value: "+20", label: "Anos de Experiência" },
     ],
     highlights: [
-      { title: "Laboratório RBC", desc: "Calibração acreditada pela Rede Brasileira de Calibração com rastreabilidade metrológica ao INMETRO." },
+      { title: "Calibração Rastreável", desc: "Calibração com rastreabilidade metrológica ao INMETRO, garantindo medições confiáveis e comprováveis." },
       { title: "Multivariável", desc: "Fornecimento de instrumentos para todas as variáveis de processo: vazão, pressão, temperatura, nível e análise." },
       { title: "Suporte Pós-Venda", desc: "Manutenção preventiva e corretiva, recalibração periódica e assistência técnica especializada em campo." },
     ],
@@ -400,7 +400,7 @@ export const sectors: SectorData[] = [
     products: [
       { category: "Instrumentação Completa", items: "Todos os tipos de instrumentos de medição para variáveis de processo: vazão, pressão, temperatura, nível, análise de gases e líquidos" },
     ],
-    services: ["Instrumentação Industrial", "Calibração RBC", "Manutenção de Instrumentos", "Consultoria Técnica"],
+    services: ["Instrumentação Industrial", "Calibração Rastreável", "Manutenção de Instrumentos", "Consultoria Técnica"],
     ctaText: "Precisa de instrumentação confiável para o seu processo?",
   },
   {

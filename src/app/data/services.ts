@@ -106,10 +106,10 @@ const RICH_DETAILS: Record<string, RichDetail> = {
       ],
     },
   },
-  "calibracao-rbc-laboratorio": {
-    overline: "CALIBRAÇÃO RBC",
+  "calibracao-rastreavel-laboratorio": {
+    overline: "CALIBRAÇÃO RASTREÁVEL",
     fullDesc:
-      "A Gaiatec Sistemas possui laboratório de calibração acreditado pela Rede Brasileira de Calibração (RBC), vinculada ao INMETRO. Isso significa que nossos certificados de calibração possuem validade nacional e internacional, com rastreabilidade comprovada ao Sistema Internacional de Unidades (SI).\n\nA calibração rastreada é exigida por sistemas de gestão da qualidade (ISO 9001, ISO/IEC 17025), normas regulatórias e boas práticas de manutenção. Com um laboratório acreditado, você garante que seus instrumentos estão medindo corretamente — e tem o documento técnico que comprova isso.",
+      "A Gaiatec Sistemas realiza calibração de instrumentos com rastreabilidade metrológica ao INMETRO, comprovada ao Sistema Internacional de Unidades (SI). Nossos certificados de calibração demonstram que as medições são rastreáveis aos padrões nacionais, com padrões de referência periodicamente calibrados.\n\nA calibração rastreável é exigida por sistemas de gestão da qualidade (ISO 9001), normas regulatórias e boas práticas de manutenção. Assim, você garante que seus instrumentos estão medindo corretamente — e tem o documento técnico que comprova isso.",
     image: "/images/services/4.5.png",
     includes: [
       "Calibração de pressão (transmissores, manômetros, pressostatos)",

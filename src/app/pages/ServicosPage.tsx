@@ -188,12 +188,12 @@ export default function ServicosPage() {
     <>
       <SEO
         title="Serviços Especializados"
-        description="Serviços técnicos da Gaiatec: instalação, calibração RBC, manutenção, automação, proteção catódica e consultoria. Atendimento técnico em todo o Brasil."
+        description="Serviços técnicos da Gaiatec: instalação, calibração rastreável, manutenção, automação, proteção catódica e consultoria. Atendimento técnico em todo o Brasil."
         path="/servicos"
-        keywords="serviços técnicos, calibração RBC, instalação, manutenção, automação, proteção catódica, inspeção"
+        keywords="serviços técnicos, calibração rastreável, instalação, manutenção, automação, proteção catódica, inspeção"
         schema={buildCollectionPageSchema({
           name: "Serviços Especializados — Gaiatec Sistemas",
-          description: "Serviços técnicos para indústria com equipe qualificada e laboratório RBC.",
+          description: "Serviços técnicos para indústria com equipe qualificada e calibração rastreável ao INMETRO.",
           itemCount: servicesList.length,
         })}
       />

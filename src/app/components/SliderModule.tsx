@@ -31,10 +31,10 @@ const slides = [
       "/images/slides/11.2.png",
   },
   {
-    label: "SERVIÇO CERTIFICADO",
-    title: "Calibração com Acreditação RBC — Rastreabilidade Metrológica Internacional",
+    label: "CALIBRAÇÃO RASTREÁVEL",
+    title: "Calibração com Rastreabilidade Metrológica ao INMETRO",
     description:
-      "Nosso laboratório de calibração é acreditado pela RBC e homologado pelo INMETRO, garantindo rastreabilidade total para suas medições.",
+      "Nosso serviço de calibração utiliza padrões rastreáveis ao INMETRO, garantindo rastreabilidade total para as suas medições.",
     cta: "Solicitar Calibração",
     image:
       "/images/slides/11.3.png",

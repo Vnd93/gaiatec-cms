@@ -111,9 +111,9 @@ const navItems = [
       },
       {
         label: "Calibração e Certificação",
-        href: "/servicos/calibracao-rbc-laboratorio",
+        href: "/servicos/calibracao-rastreavel-laboratorio",
         children: [
-          { label: "Calibração RBC em Laboratório", href: "/servicos/calibracao-rbc-laboratorio" },
+          { label: "Calibração Rastreável em Laboratório", href: "/servicos/calibracao-rastreavel-laboratorio" },
           { label: "Calibração Rastreável em Campo", href: "/servicos/calibracao-rastreavel-campo" },
         ],
       },

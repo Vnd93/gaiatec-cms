@@ -44,7 +44,7 @@ const FALLBACK_COLUMNS: FooterColumn[] = [
     links: [
       { label: "Automações", href: "/servicos/automacoes" },
       { label: "Instalações e Comissionamentos", href: "/servicos/instalacoes-comissionamentos" },
-      { label: "Calibração RBC", href: "/servicos/calibracao-rbc-laboratorio" },
+      { label: "Calibração Rastreável", href: "/servicos/calibracao-rastreavel-laboratorio" },
       { label: "Manutenções", href: "/servicos/manutencoes" },
       { label: "Consultoria e Inspeções Técnicas", href: "/servicos/consultoria-inspecoes-tecnicas" },
     ],

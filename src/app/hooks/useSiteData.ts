@@ -1,6 +1,5 @@
 'use client'
 
-import { useState, useEffect } from 'react'
 import {
   fetchSiteContent,
   fetchConteudo,
@@ -69,50 +68,18 @@ export interface BlogPost {
 }
 
 // ---------------------------------------------------------------------------
-// Module-level cache — survives across renders, cleared on page reload
-// ---------------------------------------------------------------------------
-
-const cache = new Map<string, unknown>()
-
-// ---------------------------------------------------------------------------
-// Generic fetcher helper
+// CMS/painel DESCONTINUADO (2026-05-29): o site não usa mais o painel de
+// conteúdo. O conteúdo passa a vir SEMPRE do código (fallback hardcoded),
+// sem nenhuma requisição ao Supabase — zero erros de console e menos rede.
+// A assinatura é mantida para não alterar os hooks/chamadas existentes.
 // ---------------------------------------------------------------------------
 
 function useCachedFetch<T>(
-  cacheKey: string,
-  fetcher: () => Promise<T>,
+  _cacheKey: string,
+  _fetcher: () => Promise<T>,
   fallback: T,
 ): { data: T; loading: boolean } {
-  const cached = cache.get(cacheKey) as T | undefined
-  const [data, setData] = useState<T>(cached ?? fallback)
-  const [loading, setLoading] = useState(!cached)
-
-  useEffect(() => {
-    if (cache.has(cacheKey)) return
-
-    let cancelled = false
-    setLoading(true)
-
-    fetcher()
-      .then((result) => {
-        if (cancelled) return
-        cache.set(cacheKey, result)
-        setData(result)
-      })
-      .catch((err) => {
-        if (cancelled) return
-        console.error(`[useSiteData] ${cacheKey}:`, err)
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [cacheKey]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  return { data, loading }
+  return { data: fallback, loading: false }
 }
 
 // ---------------------------------------------------------------------------

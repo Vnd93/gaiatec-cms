@@ -257,14 +257,16 @@ export function IndustriesCarousel() {
             >
               {isVisible && (
                 <picture>
+                  {/* As variantes 1920w destas imagens não foram geradas; usar até 1024w
+                      (o navegador escolhe a maior disponível em telas largas). */}
                   <source
                     type="image/avif"
-                    srcSet={`${optimizedBg(ind.image, 480, 'avif')} 480w, ${optimizedBg(ind.image, 1024, 'avif')} 1024w, ${optimizedBg(ind.image, 1920, 'avif')} 1920w`}
+                    srcSet={`${optimizedBg(ind.image, 480, 'avif')} 480w, ${optimizedBg(ind.image, 1024, 'avif')} 1024w`}
                     sizes="100vw"
                   />
                   <source
                     type="image/webp"
-                    srcSet={`${optimizedBg(ind.image, 480, 'webp')} 480w, ${optimizedBg(ind.image, 1024, 'webp')} 1024w, ${optimizedBg(ind.image, 1920, 'webp')} 1920w`}
+                    srcSet={`${optimizedBg(ind.image, 480, 'webp')} 480w, ${optimizedBg(ind.image, 1024, 'webp')} 1024w`}
                     sizes="100vw"
                   />
                   <img

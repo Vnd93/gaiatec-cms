@@ -1,6 +1,7 @@
 import { Link } from "react-router";
 import { AnimateOnScroll } from "../components/useScrollAnimation";
 import { ChevronRight, Settings, Shield, Flame, CheckCircle } from "lucide-react";
+import { ResponsiveImage, optimizedBg } from "../components/ResponsiveImage";
 
 /* ────────────────────────────────────────────────────────
    IMAGES
@@ -88,7 +89,7 @@ export default function BiodigestorAutomacao() {
       <section className="relative w-full overflow-hidden" style={{ height: 772 }}>
         <div
           className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: `url(${HERO_IMG})`, transform: "scale(1.05)", transition: "transform 8s ease-out" }}
+          style={{ backgroundImage: `url(${optimizedBg(HERO_IMG, 1920, "webp")})`, transform: "scale(1.05)", transition: "transform 8s ease-out" }}
         />
         <div className="absolute inset-0" style={{ background: "linear-gradient(to right, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.2) 50%, transparent 100%)" }} />
         <div
@@ -140,7 +141,7 @@ export default function BiodigestorAutomacao() {
                 </p>
               </div>
               <div className="relative overflow-hidden" style={{ borderRadius: 4 }}>
-                <img loading="lazy" src={INTRO_IMG} alt="Controle de Biodigestor" className="w-full h-full object-cover" style={{ aspectRatio: "16/11", display: "block" }} />
+                <ResponsiveImage src={INTRO_IMG} alt="Controle de Biodigestor" sizes="(max-width: 1024px) 100vw, 720px" className="w-full h-full object-cover" style={{ aspectRatio: "16/11", display: "block" }} />
                 <div className="absolute bottom-0 left-0" style={{ width: 80, height: 4, backgroundColor: "#0057DE" }} />
               </div>
             </div>

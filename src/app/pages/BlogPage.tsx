@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { AnimateOnScroll } from "../components/useScrollAnimation";
 import { useBlogPosts } from "../hooks/useSiteData";
 import { ChevronRight, Calendar, ArrowRight, Mail } from "lucide-react";
+import { optimizedBg } from "../components/ResponsiveImage";
 
 /* ────────────────────────────────────────────────────────
    IMAGES
@@ -20,42 +21,42 @@ const FALLBACK_POSTS = [
     title: "Medicao Ultrassonica Clamp-On: Quando e Por Que Utilizar",
     excerpt: "Entenda as vantagens da medicao nao-invasiva de vazao e em quais aplicacoes ela e a melhor escolha tecnica.",
     date: "10 Mar 2026",
-    image: "/images/heroes/1.2.png",
+    image: "/images/heroes/1.2.webp",
   },
   {
     category: "ESTUDOS DE CASO",
     title: "Companhia de Saneamento Reduz Perdas em 22% com Telemetria",
     excerpt: "Case de implantacao de sistema de monitoramento remoto em rede de distribuicao de agua.",
     date: "05 Mar 2026",
-    image: "/images/heroes/1.3.png",
+    image: "/images/heroes/1.3.webp",
   },
   {
     category: "NOVIDADES DO SETOR",
     title: "Biogas no Brasil: Regulamentacao e Oportunidades em 2026",
     excerpt: "Panorama do mercado de biogas e biometano no Brasil, incluindo novas regulamentacoes e incentivos.",
     date: "28 Fev 2026",
-    image: "/images/heroes/1.4.png",
+    image: "/images/heroes/1.4.webp",
   },
   {
     category: "ARTIGOS TECNICOS",
     title: "Proteção Catódica: Fundamentos e Boas Praticas",
     excerpt: "Guia tecnico sobre os principios da protecao catodica e como garantir a integridade de estruturas metalicas.",
     date: "20 Fev 2026",
-    image: "/images/heroes/1.5.png",
+    image: "/images/heroes/1.5.webp",
   },
   {
     category: "WHITEPAPERS",
     title: "Automacao de Estacoes Elevatorias: Eficiencia e Reducao de Custos",
     excerpt: "White paper tecnico sobre a automacao de estacoes elevatorias de agua e esgoto.",
     date: "15 Fev 2026",
-    image: "/images/pages/2.1.png",
+    image: "/images/pages/2.1.webp",
   },
   {
     category: "EVENTOS",
     title: "Gaiatec Sistemas na Feira Internacional de Saneamento 2026",
     excerpt: "Visite nosso estande e conheca as ultimas novidades em instrumentacao e automacao.",
     date: "10 Fev 2026",
-    image: "/images/pages/2.2.png",
+    image: "/images/pages/2.2.webp",
   },
 ];
 
@@ -83,7 +84,7 @@ export default function BlogPage() {
       title: p.titulo,
       excerpt: p.resumo || "",
       date: p.publicado_em ? new Date(p.publicado_em).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }) : "",
-      image: p.imagem_url || "/images/heroes/1.2.png",
+      image: p.imagem_url || "/images/heroes/1.2.webp",
     }));
   }, [apiPosts]);
 
@@ -99,7 +100,7 @@ export default function BlogPage() {
       <section className="relative w-full overflow-hidden" style={{ height: 772 }}>
         <div
           className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: `url(${HERO_IMG})`, transform: "scale(1.05)", transition: "transform 8s ease-out" }}
+          style={{ backgroundImage: `url(${optimizedBg(HERO_IMG, 1920, "webp")})`, transform: "scale(1.05)", transition: "transform 8s ease-out" }}
         />
         <div className="absolute inset-0" style={{ background: "linear-gradient(to right, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.2) 50%, transparent 100%)" }} />
         <div

@@ -1,6 +1,7 @@
 import { Link } from "react-router";
 import { AnimateOnScroll } from "../components/useScrollAnimation";
 import { ChevronRight, Flame, Zap, Trash2, Factory, Beaker, Fuel, Wind, ClipboardCheck, Settings, Users } from "lucide-react";
+import { optimizedBg } from "../components/ResponsiveImage";
 
 /* ────────────────────────────────────────────────────────
    IMAGE
@@ -75,7 +76,7 @@ export default function BiodigestorBiogasBiometano() {
       <section className="relative w-full overflow-hidden" style={{ height: 772 }}>
         <div
           className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: `url(${HERO_IMG})`, transform: "scale(1.05)", transition: "transform 8s ease-out" }}
+          style={{ backgroundImage: `url(${optimizedBg(HERO_IMG, 1920, "webp")})`, transform: "scale(1.05)", transition: "transform 8s ease-out" }}
         />
         <div className="absolute inset-0" style={{ background: "linear-gradient(to right, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.2) 50%, transparent 100%)" }} />
         <div

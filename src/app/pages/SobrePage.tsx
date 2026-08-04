@@ -5,6 +5,7 @@ import type { LucideIcon } from "lucide-react";
 import { useSobreContent, type SobreDiferencial } from "../hooks/useSiteData";
 import { Timeline } from "../components/sobre/Timeline";
 import { SEO } from "../components/SEO";
+import { ResponsiveImage, optimizedBg } from "../components/ResponsiveImage";
 
 /* ────────────────────────────────────────────────────────
    IMAGES
@@ -125,7 +126,7 @@ export default function SobrePage() {
       <section className="relative w-full overflow-hidden" style={{ height: 772 }}>
         <div
           className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: `url(${HERO_IMAGE})`, transform: "scale(1.05)", transition: "transform 8s ease-out" }}
+          style={{ backgroundImage: `url(${optimizedBg(HERO_IMAGE, 1920, "webp")})`, transform: "scale(1.05)", transition: "transform 8s ease-out" }}
         />
         <div className="absolute inset-0" style={{ background: "linear-gradient(to right, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.2) 50%, transparent 100%)" }} />
         <div
@@ -200,9 +201,10 @@ export default function SobrePage() {
 
               {/* Right — Image */}
               <div className="relative overflow-hidden" style={{ borderRadius: 4 }}>
-                <img
+                <ResponsiveImage
                   src={TEAM_IMAGE}
                   alt="Equipe Gaiatec Sistemas"
+                  sizes="(max-width: 1024px) 100vw, 720px"
                   className="w-full h-full object-cover"
                   style={{ aspectRatio: "16/11", display: "block" }}
                 />

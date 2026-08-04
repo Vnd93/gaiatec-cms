@@ -2,6 +2,7 @@ import { Link } from "react-router";
 import { AnimateOnScroll } from "../components/useScrollAnimation";
 import { ChevronRight, ArrowRight } from "lucide-react";
 import { DynamicBlocks } from "../components/BlockRenderer";
+import { ResponsiveImage, optimizedBg } from "../components/ResponsiveImage";
 
 const KNOCKOUT = "'Knockout HTF68', sans-serif";
 
@@ -162,7 +163,13 @@ export default function BiodigestorPage() {
               </div>
 
               <div className="relative overflow-hidden">
-                <img loading="lazy" src={INTRO_IMG} alt="Biodigestor" className="w-full object-cover" style={{ aspectRatio: "4/3", display: "block" }} />
+                <ResponsiveImage
+                  src={INTRO_IMG}
+                  alt="Biodigestor"
+                  sizes="(max-width: 1024px) 100vw, 720px"
+                  className="w-full object-cover"
+                  style={{ aspectRatio: "4/3", display: "block" }}
+                />
                 <div style={{ position: "absolute", bottom: 0, left: 0, width: "100%", height: 4, backgroundColor: "#0057DE" }} />
               </div>
             </div>
@@ -339,9 +346,10 @@ export default function BiodigestorPage() {
                   onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; }}
                 >
                   <div style={{ position: "relative", paddingTop: "65%", overflow: "hidden", backgroundColor: "#eee" }}>
-                    <img
+                    <ResponsiveImage
                       src={p.img}
                       alt={p.model}
+                      sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 440px"
                       style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", objectFit: "cover", transition: "transform 0.6s ease" }}
                       onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.06)"; }}
                       onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
@@ -431,7 +439,7 @@ export default function BiodigestorPage() {
           8) CTA — full-width with background image
          ═══════════════════════════════════════════════════ */}
       <section className="relative overflow-hidden" style={{ padding: "100px 0" }}>
-        <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${PROD_IMG_1})` }} />
+        <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${optimizedBg(PROD_IMG_1, 1920, "webp")})` }} />
         <div className="absolute inset-0" style={{ backgroundColor: "rgba(0,0,0,0.8)" }} />
 
         <div className="relative z-10" style={{ maxWidth: 1440, margin: "0 auto", padding: "0 30px" }}>

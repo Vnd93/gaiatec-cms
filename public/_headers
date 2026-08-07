@@ -1,31 +1,51 @@
 # Cloudflare Pages — Cache headers for performance
 # Documentação: https://developers.cloudflare.com/pages/platform/headers/
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# POR QUE NÃO USAMOS `immutable` NAS REGRAS DE CACHE LONGO
+#
+# Estas regras casam por caminho de URL e não sabem se o arquivo existe. O
+# _redirects tem um catch-all `/* /index.html 200`, então um asset ausente
+# responde 200 + HTML do SPA — e recebe o mesmo carimbo de cache de um asset
+# real. Foi o que aconteceu duas vezes: URLs de .js fixadas servindo HTML.
+#
+# Tentamos eliminar na origem, fazendo /assets, /images e /fonts responderem
+# 404. Não é possível no Cloudflare Pages:
+#   - `_redirects` só aceita status 200, 301, 302, 303, 307 e 308 — 404 não;
+#   - adicionar um 404.html faz o Pages dar precedência a ele sobre o
+#     catch-all, e TODAS as rotas do SPA passam a responder 404.
+# As duas coisas são mutuamente exclusivas. Verificado com `wrangler pages dev`.
+#
+# Resta limitar o dano: `immutable` manda o navegador não revalidar nem em
+# recarga forçada, ou seja, prende uma resposta errada até o max-age expirar.
+# Sem ele, um Ctrl+F5 corrige. Como os filenames têm hash de conteúdo, a URL
+# muda a cada alteração e o ganho real de `immutable` é quase nulo — remover
+# custa quase nada e evita que um erro fique preso por um ano.
+#
+# O cache de borda ainda segue o max-age; se acontecer de novo, purgar. E não
+# sondar URLs novas em produção logo após o deploy: verifique primeiro em
+# <projeto>.pages.dev, que não passa pelo cache do domínio custom.
+# ─────────────────────────────────────────────────────────────────────────────
 
-# JS / CSS bundles do Vite (têm hash no filename → cache imutável por 1 ano)
+# JS / CSS bundles do Vite (têm hash no filename → cache de 1 ano)
 /assets/*
-  Cache-Control: public, max-age=31536000, immutable
+  Cache-Control: public, max-age=31536000
 
-# Imagens estáticas (sem hash, mas raramente mudam) — cache 1 mês + revalidação
+# Imagens — cache 1 mês + revalidação.
+#
+# Regra única de propósito: o Pages CONCATENA os headers de todas as regras que
+# casam, em vez de deixar a mais específica vencer. Havia aqui uma regra geral
+# `/images/*` mais seis para as variantes -480w/-1024w/-1920w, e o resultado era
+# um header malformado com dois valores contraditórios:
+#   Cache-Control: public, max-age=2592000, must-revalidate, public, max-age=31536000
+# O cache longo pretendido para as variantes nunca valeu. Uma regra só é
+# previsível, e 1 mês com revalidação é adequado para imagem.
 /images/*
   Cache-Control: public, max-age=2592000, must-revalidate
 
-# AVIF/WebP variants — cache imutável (filename inclui tamanho, não mudam)
-/images/*-480w.avif
-  Cache-Control: public, max-age=31536000, immutable
-/images/*-1024w.avif
-  Cache-Control: public, max-age=31536000, immutable
-/images/*-1920w.avif
-  Cache-Control: public, max-age=31536000, immutable
-/images/*-480w.webp
-  Cache-Control: public, max-age=31536000, immutable
-/images/*-1024w.webp
-  Cache-Control: public, max-age=31536000, immutable
-/images/*-1920w.webp
-  Cache-Control: public, max-age=31536000, immutable
-
-# Fontes — cache imutável
+# Fontes — cache longo
 /fonts/*
-  Cache-Control: public, max-age=31536000, immutable
+  Cache-Control: public, max-age=31536000
 
 # Logos e favicon — cache mensal com revalidação
 /logo-gaiatec*.png

@@ -7,6 +7,13 @@
       "runtimeArgs": ["run", "dev", "--", "--port", "5174", "--strictPort"],
       "port": 5174,
       "autoPort": false
+    },
+    {
+      "name": "gaiatec-preview",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "preview", "--port", "4174", "--strictPort"],
+      "port": 4174,
+      "autoPort": false
     }
   ]
 }

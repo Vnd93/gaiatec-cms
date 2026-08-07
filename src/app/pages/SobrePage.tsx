@@ -413,13 +413,13 @@ export default function SobrePage() {
                     fontWeight: 400,
                     lineHeight: 1.2,
                     textTransform: "uppercase",
-                    color: "#fff",
+                    color: "#1a1a1a",
                     marginBottom: 8,
                   }}
                 >
                   Pronto para transformar sua operacao?
                 </h2>
-                <p style={{ fontSize: 15, color: "#888", lineHeight: 1.6 }}>
+                <p style={{ fontSize: 15, color: "#666", lineHeight: 1.6 }}>
                   Conte com mais de 20 anos de expertise tecnica em solucoes industriais.
                 </p>
               </div>

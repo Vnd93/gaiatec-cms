@@ -11,10 +11,15 @@ const KNOCKOUT = "'Knockout HTF68', sans-serif";
    ──────────────────────────────────────────────────────── */
 const HERO_IMG = "/hero-biodigestor.png";
 const INTRO_IMG = "/images/heroes/1.1.png";
-const PROD_IMG_1 = "/images/heroes/1.2.png";
-const PROD_IMG_2 = "/images/heroes/1.3.png";
-const PROD_IMG_3 = "/images/heroes/1.4.png";
-const PROD_IMG_4 = "/images/heroes/1.5.png";
+const PROD_IMG_1 = "/images/heroes/1.2.png"; // usada só como fundo do CTA
+
+/* Imagens de produto (fundo de estúdio, proporção 1.54:1 = paddingTop 65% dos cards) */
+const IMG_BIOSTORAGE = "/images/produtos/gt-biostorage.jpg";
+const IMG_MCA100 = "/images/produtos/mca100-bio.jpg";
+const IMG_GT_COMPACTO = "/images/produtos/gt-biodigest-compacto.jpg"; // unidade baixa e alongada
+const IMG_GT_FRONTAL = "/images/produtos/gt-biodigest-frontal.jpg";   // vista frontal
+const IMG_GT_LATERAL = "/images/produtos/gt-biodigest-lateral.jpg";   // lateral, unidade maior
+const IMG_GT_GRANDE = "/images/produtos/gt-biodigest-grande.jpg";     // lateral panorâmica, a maior
 
 /* ────────────────────────────────────────────────────────
    DATA
@@ -43,12 +48,12 @@ const stages = [
 ];
 
 const products = [
-  { model: "GT-BIODIGEST 10.0", desc: "Biodigestor de grande porte para plantas industriais e agroindustriais de alta capacidade.", img: PROD_IMG_1 },
-  { model: "GT-BIODIGEST 8.0", desc: "Modelo intermediário-avançado para operações de médio a grande porte.", img: PROD_IMG_1 },
-  { model: "GT-BIODIGEST 5.0", desc: "Solução de médio porte para propriedades rurais e agroindústrias.", img: PROD_IMG_1 },
-  { model: "GT-BIODIGEST 3.0", desc: "Modelo compacto para pequenas e médias operações agropecuárias.", img: PROD_IMG_4 },
-  { model: "Gasômetro Bag GT-BIOSTORAGE", desc: "Sistema de armazenamento flexível para biogás produzido em biodigestores.", img: PROD_IMG_2 },
-  { model: "Analisador MCA 100 BIO", desc: "Analisador portátil para medição da composição do biogás em campo.", img: PROD_IMG_3 },
+  { model: "GT-BIODIGEST 10.0", desc: "Biodigestor de grande porte para plantas industriais e agroindustriais de alta capacidade.", img: IMG_GT_GRANDE },
+  { model: "GT-BIODIGEST 8.0", desc: "Modelo intermediário-avançado para operações de médio a grande porte.", img: IMG_GT_LATERAL },
+  { model: "GT-BIODIGEST 5.0", desc: "Solução de médio porte para propriedades rurais e agroindústrias.", img: IMG_GT_FRONTAL },
+  { model: "GT-BIODIGEST 3.0", desc: "Modelo compacto para pequenas e médias operações agropecuárias.", img: IMG_GT_COMPACTO },
+  { model: "Gasômetro Bag GT-BIOSTORAGE", desc: "Sistema de armazenamento flexível para biogás produzido em biodigestores.", img: IMG_BIOSTORAGE },
+  { model: "Analisador MCA 100 BIO", desc: "Analisador portátil para medição da composição do biogás em campo.", img: IMG_MCA100 },
 ];
 
 const subpages = [
@@ -189,7 +194,7 @@ export default function BiodigestorPage() {
                   <span style={{ fontFamily: KNOCKOUT, fontSize: "clamp(40px, 5vw, 64px)", fontWeight: 500, lineHeight: 1, color: "#0057DE", display: "block" }}>
                     {s.value}
                   </span>
-                  <span style={{ fontSize: 13, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginTop: 8, display: "block" }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "#555", marginTop: 8, display: "block" }}>
                     {s.label}
                   </span>
                 </div>
@@ -391,13 +396,13 @@ export default function BiodigestorPage() {
               <span style={{ display: "inline-block", fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "#0057DE", marginBottom: 16 }}>
                 EXPLORE
               </span>
-              <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 48px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", color: "#fff" }}>
+              <h2 style={{ fontFamily: KNOCKOUT, fontSize: "clamp(32px, 4vw, 48px)", fontWeight: 500, lineHeight: 1, textTransform: "uppercase", color: "#111" }}>
                 Conheça Mais sobre Biodigestores
               </h2>
             </div>
           </AnimateOnScroll>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-0" style={{ borderTop: "1px solid rgba(255,255,255,0.1)", borderLeft: "1px solid rgba(255,255,255,0.1)" }}>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-0" style={{ borderTop: "1px solid #e0e0e0", borderLeft: "1px solid #e0e0e0" }}>
             {subpages.map((page, i) => (
               <AnimateOnScroll key={page.href} delay={i * 0.06}>
                 <Link
@@ -408,8 +413,8 @@ export default function BiodigestorPage() {
                     justifyContent: "space-between",
                     padding: "36px 32px",
                     textDecoration: "none",
-                    borderRight: "1px solid rgba(255,255,255,0.1)",
-                    borderBottom: "1px solid rgba(255,255,255,0.1)",
+                    borderRight: "1px solid #e0e0e0",
+                    borderBottom: "1px solid #e0e0e0",
                     height: "100%",
                     minHeight: 180,
                     transition: "background-color 0.3s ease",
@@ -418,10 +423,10 @@ export default function BiodigestorPage() {
                   onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
                 >
                   <div>
-                    <h4 style={{ fontFamily: KNOCKOUT, fontSize: 24, fontWeight: 500, color: "#fff", marginBottom: 10, textTransform: "uppercase", lineHeight: 1.1 }}>
+                    <h4 style={{ fontFamily: KNOCKOUT, fontSize: 24, fontWeight: 500, color: "#111", marginBottom: 10, textTransform: "uppercase", lineHeight: 1.1 }}>
                       {page.title}
                     </h4>
-                    <p style={{ fontSize: 14, lineHeight: 1.6, color: "rgba(255,255,255,0.4)" }}>
+                    <p style={{ fontSize: 14, lineHeight: 1.6, color: "#777" }}>
                       {page.desc}
                     </p>
                   </div>

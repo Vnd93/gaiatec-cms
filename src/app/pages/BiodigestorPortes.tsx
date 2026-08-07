@@ -1,17 +1,21 @@
 import { Link } from "react-router";
 import { AnimateOnScroll } from "../components/useScrollAnimation";
 import { ChevronRight, ArrowRight } from "lucide-react";
-import { ResponsiveImage, optimizedBg } from "../components/ResponsiveImage";
+import { ResponsiveImage } from "../components/ResponsiveImage";
 
 const KNOCKOUT = "'Knockout HTF68', sans-serif";
 
 /* ────────────────────────────────────────────────────────
    IMAGES
    ──────────────────────────────────────────────────────── */
-const HERO_IMG = "/images/heroes/1.1.png";
+/* Foto real: GT-BIODIGEST instalado em escola.
+   A origem tem 1672px, então o script não gera variante -1920w.
+   Por isso usamos o .webp em tamanho nativo, e não optimizedBg(…, 1920). */
+const HERO_IMG = "/images/heroes/gt-biodigest-instalacao.webp";
 const INTRO_IMG = "/images/heroes/1.2.png";
-const ACC_IMG_1 = "/images/heroes/1.3.png";
-const ACC_IMG_2 = "/images/heroes/1.4.png";
+/* Fotos reais dos acessórios — mesmas usadas nos cards de /biodigestor */
+const ACC_IMG_1 = "/images/produtos/gt-biostorage.jpg";
+const ACC_IMG_2 = "/images/produtos/mca100-bio.jpg";
 
 /* ────────────────────────────────────────────────────────
    DATA
@@ -151,7 +155,7 @@ export default function BiodigestorPortes() {
       <section className="relative w-full overflow-hidden" style={{ height: 772 }}>
         <div
           className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: `url(${optimizedBg(HERO_IMG, 1920, "webp")})`, transform: "scale(1.05)", transition: "transform 8s ease-out" }}
+          style={{ backgroundImage: `url(${HERO_IMG})`, transform: "scale(1.05)", transition: "transform 8s ease-out" }}
         />
         <div className="absolute inset-0" style={{ background: "linear-gradient(to right, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.2) 50%, transparent 100%)" }} />
         <div
@@ -262,7 +266,7 @@ export default function BiodigestorPortes() {
                       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-4" style={{ marginBottom: 20 }}>
                         {m.specs.map((s) => (
                           <div key={s.label}>
-                            <span style={{ display: "block", fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#999", marginBottom: 4 }}>
+                            <span style={{ display: "block", fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#666", marginBottom: 4 }}>
                               {s.label}
                             </span>
                             <span style={{ fontSize: 18, fontWeight: 700, color: "#1a1a1a", fontFamily: KNOCKOUT }}>
@@ -298,7 +302,7 @@ export default function BiodigestorPortes() {
       <section style={{ backgroundColor: "#f8fafc", padding: "80px 0" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 30px" }}>
           <AnimateOnScroll>
-            {heading("COMPARATIVO", "Tabela de Especificações", true)}
+            {heading("COMPARATIVO", "Tabela de Especificações")}
           </AnimateOnScroll>
 
           <AnimateOnScroll delay={0.1}>
@@ -423,10 +427,10 @@ export default function BiodigestorPortes() {
           <AnimateOnScroll>
             <div className="flex flex-col lg:flex-row items-center justify-between gap-8 text-center lg:text-left">
               <div>
-                <h2 style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: "clamp(24px, 3vw, 36px)", fontWeight: 400, lineHeight: 1.2, textTransform: "uppercase", color: "#fff", marginBottom: 8 }}>
+                <h2 style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: "clamp(24px, 3vw, 36px)", fontWeight: 400, lineHeight: 1.2, textTransform: "uppercase", color: "#1a1a1a", marginBottom: 8 }}>
                   Encontre o modelo ideal para sua operação
                 </h2>
-                <p style={{ fontSize: 15, color: "#888", lineHeight: 1.6 }}>
+                <p style={{ fontSize: 15, color: "#666", lineHeight: 1.6 }}>
                   Cada sistema é dimensionado conforme a capacidade de processamento e o tipo de resíduo. O correto dimensionamento garante eficiência, segurança e maior aproveitamento energético.
                 </p>
               </div>

@@ -204,7 +204,7 @@ export default function BlogPage() {
                   <p style={{ fontSize: 15, lineHeight: 1.7, color: "#666", marginBottom: 16 }}>
                     {featured.excerpt}
                   </p>
-                  <div className="flex items-center gap-2" style={{ fontSize: 12, color: "#999", marginBottom: 20 }}>
+                  <div className="flex items-center gap-2" style={{ fontSize: 12, color: "#666", marginBottom: 20 }}>
                     <Calendar size={13} /> {featured.date}
                   </div>
                   <Link
@@ -289,10 +289,10 @@ export default function BlogPage() {
           <AnimateOnScroll>
             <div className="text-center" style={{ maxWidth: 600, margin: "0 auto" }}>
               <Mail size={36} style={{ color: "#0057DE", margin: "0 auto 20px" }} />
-              <h2 style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: "clamp(28px, 3vw, 36px)", fontWeight: 400, lineHeight: 1.15, textTransform: "uppercase", color: "#fff", marginBottom: 12 }}>
+              <h2 style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: "clamp(28px, 3vw, 36px)", fontWeight: 400, lineHeight: 1.15, textTransform: "uppercase", color: "#1a1a1a", marginBottom: 12 }}>
                 Receba Nosso Conteudo
               </h2>
-              <p style={{ fontSize: 15, color: "#999", lineHeight: 1.6, marginBottom: 32 }}>
+              <p style={{ fontSize: 15, color: "#666", lineHeight: 1.6, marginBottom: 32 }}>
                 Cadastre-se para receber artigos tecnicos, estudos de caso e novidades do setor diretamente no seu email.
               </p>
 
@@ -350,10 +350,10 @@ export default function BlogPage() {
           <AnimateOnScroll>
             <div className="flex flex-col lg:flex-row items-center justify-between gap-8 text-center lg:text-left">
               <div style={{ maxWidth: 640 }}>
-                <h2 style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: "clamp(24px, 3vw, 36px)", fontWeight: 400, lineHeight: 1.2, textTransform: "uppercase", color: "#fff", marginBottom: 8 }}>
+                <h2 style={{ fontFamily: "'Knockout HTF68', sans-serif", fontSize: "clamp(24px, 3vw, 36px)", fontWeight: 400, lineHeight: 1.2, textTransform: "uppercase", color: "#1a1a1a", marginBottom: 8 }}>
                   Suporte tecnico e solucoes especializadas
                 </h2>
-                <p style={{ fontSize: 15, color: "#888", lineHeight: 1.6 }}>
+                <p style={{ fontSize: 15, color: "#666", lineHeight: 1.6 }}>
                   Precisa de suporte tecnico ou quer saber mais sobre nossas solucoes? Fale com a equipe Gaiatec.
                 </p>
               </div>

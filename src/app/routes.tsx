@@ -32,6 +32,7 @@ const DeteccaoGasPage = lazy(() => import("./pages/DeteccaoGasPage"));
 const DeteccaoGasCategoriaPage = lazy(() => import("./pages/DeteccaoGasCategoriaPage"));
 const DeteccaoGasProdutoPage = lazy(() => import("./pages/DeteccaoGasProdutoPage"));
 const NotFoundPage = lazy(() => import("./pages/NotFoundPage"));
+const PoliticaPrivacidadePage = lazy(() => import("./pages/PoliticaPrivacidadePage"));
 
 // ─── App interno: Relatório Diário de Obra (/relatorio-de-obra) ───
 // Vive fora do Layout de marketing — shell/CSS próprios (Montserrat, cantos arredondados).
@@ -88,6 +89,7 @@ export const router = createBrowserRouter([
       { path: "deteccao-de-gas", element: lazyWrap(DeteccaoGasPage) },
       { path: "deteccao-de-gas/:categoria", element: lazyWrap(DeteccaoGasCategoriaPage) },
       { path: "deteccao-de-gas/:categoria/:produto", element: lazyWrap(DeteccaoGasProdutoPage) },
+      { path: "politica-de-privacidade", element: lazyWrap(PoliticaPrivacidadePage) },
       { path: "*", element: lazyWrap(NotFoundPage) },
     ],
   },

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router";
 import { Phone, MessageSquare, Mail, ArrowRight, Loader2, CheckCircle2, Linkedin, Instagram, Facebook, Youtube } from "lucide-react";
 import { useMenu, useContactInfo } from "../hooks/useSiteData";
 import type { SiteMenuItem } from "../../lib/supabase";
@@ -313,9 +314,9 @@ export function Footer() {
             </div>
 
             <div className="flex flex-wrap items-center gap-x-7 gap-y-2 text-[12px]">
-              <a href="#" className="text-slate-400 hover:text-white transition-colors">
+              <Link to="/politica-de-privacidade" className="text-slate-400 hover:text-white transition-colors">
                 Política de Privacidade
-              </a>
+              </Link>
               <a href="#" className="text-slate-400 hover:text-white transition-colors">
                 Termos de Uso
               </a>

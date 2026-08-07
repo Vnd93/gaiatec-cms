@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router";
 import { Phone, MessageSquare, MapPin, ArrowRight, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { AnimateOnScroll } from "./useScrollAnimation";
 import { useContactInfo } from "../hooks/useSiteData";
@@ -165,7 +166,18 @@ export function ContactSection({ variant = "brand" }: { variant?: "brand" | "lig
                 <label className="flex items-start gap-2 cursor-pointer">
                   <input type="checkbox" required disabled={isSubmitting} className="mt-1 accent-black" checked={formData.consent} onChange={(e) => setFormData({ ...formData, consent: e.target.checked })} />
                   <span className="text-[12px] text-black/70">
-                    Concordo com a <a href="#" className="underline">Política de Privacidade</a> e em receber comunicações da Gaiatec Sistemas.
+                    Concordo com a{" "}
+                    <Link
+                      to="/politica-de-privacidade"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline"
+                      /* dentro de <label>: impede que abrir a política marque o checkbox */
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      Política de Privacidade
+                    </Link>{" "}
+                    e em receber comunicações da Gaiatec Sistemas.
                   </span>
                 </label>
               </div>

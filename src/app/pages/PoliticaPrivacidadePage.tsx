@@ -100,7 +100,7 @@ export default function PoliticaPrivacidadePage() {
 
       <section style={{ backgroundColor: "#fff", padding: "80px 0 100px" }}>
         <div style={{ maxWidth: 860, margin: "0 auto", padding: "0 30px" }}>
-          <p style={{ fontSize: 13, color: "#888", marginBottom: 40, letterSpacing: "0.04em" }}>
+          <p style={{ fontSize: 13, color: "#666", marginBottom: 40, letterSpacing: "0.04em" }}>
             Última atualização: {ATUALIZADO_EM}
           </p>
 

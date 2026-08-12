@@ -317,9 +317,9 @@ export function Footer() {
               <Link to="/politica-de-privacidade" className="text-slate-400 hover:text-white transition-colors">
                 Política de Privacidade
               </Link>
-              <a href="#" className="text-slate-400 hover:text-white transition-colors">
+              <Link to="/termos-de-uso" className="text-slate-400 hover:text-white transition-colors">
                 Termos de Uso
-              </a>
+              </Link>
             </div>
           </div>
         </div>

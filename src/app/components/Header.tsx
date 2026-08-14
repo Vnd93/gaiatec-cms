@@ -18,6 +18,18 @@ type NavItem = {
   children?: NavItem[];
 };
 
+/**
+ * Props de link externo. O menu aceita itens apontando para fora do site
+ * (ex.: o catálogo em ruyang.gaiatecsistemas.com, que é outro domínio).
+ * Abre em nova aba e usa noopener para a página de destino não conseguir
+ * manipular window.opener. Retorna {} para link interno, que segue normal.
+ */
+function externalLinkProps(href?: string) {
+  return href && /^https?:\/\//i.test(href)
+    ? { target: "_blank" as const, rel: "noopener noreferrer" }
+    : {};
+}
+
 function adaptApiMenu(items: SiteMenuItem[]): NavItem[] {
   return items.map((it) => ({
     label: it.label,
@@ -137,6 +149,8 @@ const navItems = [
       { label: "Detecção de Rede Enterrada", href: "/deteccao-de-gas/deteccao-rede-enterrada-gas" },
       { label: "Detectores Portáteis", href: "/deteccao-de-gas/detectores-portateis" },
       { label: "Monitoramento Meteorológico", href: "/deteccao-de-gas/monitoramento-meteorologico" },
+      /* Catálogo fica em domínio próprio — abre em nova aba (ver externalLinkProps) */
+      { label: "Catálogo de Produtos", href: "https://ruyang.gaiatecsistemas.com/" },
     ],
   },
   {
@@ -942,6 +956,7 @@ export function Header() {
                     <div style={{ marginBottom: 20 }}>
                       <a
                         href={col.href || "#"}
+                        {...externalLinkProps(col.href)}
                         className="hdr-mega-l1-link"
                         style={{ fontWeight: 500 }}
                       >
@@ -953,7 +968,7 @@ export function Header() {
                       <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
                         {col.children.map((sub: any) => (
                           <li key={sub.label} style={{ marginBottom: 8 }}>
-                            <a href={sub.href || "#"} className="hdr-mega-l2-link">
+                            <a href={sub.href || "#"} {...externalLinkProps(sub.href)} className="hdr-mega-l2-link">
                               {sub.label}
                             </a>
                           </li>
@@ -976,6 +991,7 @@ export function Header() {
                       <a
                         key={child.label}
                         href={child.href || "#"}
+                        {...externalLinkProps(child.href)}
                         className="hdr-mega-l1-link"
                         style={{ marginBottom: 12 }}
                       >
@@ -1097,6 +1113,7 @@ export function Header() {
                                       <a
                                         key={third.label}
                                         href={third.href || "#"}
+                                        {...externalLinkProps(third.href)}
                                         style={{
                                           display: "block",
                                           padding: "6px 0",
@@ -1117,6 +1134,7 @@ export function Header() {
                             ) : (
                               <a
                                 href={child.href || "#"}
+                                {...externalLinkProps(child.href)}
                                 style={{
                                   display: "flex",
                                   alignItems: "center",

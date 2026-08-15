@@ -14,16 +14,16 @@ const BODY_FONT = "Arial, sans-serif";
    PRODUCT DATA (expanded for carousel)
    ──────────────────────────────────────────────────────── */
 const products = [
-  { id: 1, name: "Medidor de Gás Ultrassônico", badge: "Medição", spec: "Alta precisão · Não intrusivo · Gás natural e biogás", image: "/images/pages/2.3.png", hoverImage: "/images/pages/2.10.png" },
-  { id: 2, name: "Analisador de Biogás Portátil", badge: "Biogás", spec: "CH4, CO2, O2, H2S · Portátil · Tempo real", image: "/images/pages/2.4.png", hoverImage: "/images/pages/2.11.png" },
-  { id: 3, name: "Controlador Lógico Programável (CLP)", badge: "Automação", spec: "Multi-protocolo · IoT ready · Modular", image: "/images/pages/2.5.png", hoverImage: "/images/pages/2.12.png" },
-  { id: 4, name: "Retificador de Proteção Catódica", badge: "Proteção", spec: "Corrente impressa · Monitoramento · IP65", image: "/images/pages/2.6.png", hoverImage: "/images/pages/2.13.png" },
-  { id: 5, name: "Sensores Agrícolas Inteligentes", badge: "Agronegócio", spec: "Solo, umidade, clima · IoT · Precisão", image: "/images/pages/2.7.png", hoverImage: "/images/pages/2.14.png" },
-  { id: 6, name: "Unidade de Tratamento de Ar", badge: "HVAC", spec: "Temperatura · Umidade · Ambientes críticos", image: "/images/pages/2.8.png", hoverImage: "/images/pages/2.15.png" },
-  { id: 7, name: "Medidor de Vazão Eletromagnético", badge: "Fluidos", spec: "Líquidos condutivos · Alta acurácia", image: "/images/pages/2.9.png", hoverImage: "/images/pages/2.16.png" },
-  { id: 8, name: "Sistema de Telemetria Remota", badge: "IoT / Telemetria", spec: "Rádio ou celular · 24/7 · Multi-ponto", image: "/images/pages/2.3.png", hoverImage: "/images/pages/2.10.png" },
-  { id: 9, name: "Transmissor de Pressão", badge: "Sensores", spec: "4-20 mA · HART · Diversas faixas", image: "/images/pages/2.4.png", hoverImage: "/images/pages/2.11.png" },
-  { id: 10, name: "Válvula de Controle Automática", badge: "Válvulas", spec: "Elétricos/Pneumáticos · Fluxo preciso", image: "/images/pages/2.5.png", hoverImage: "/images/pages/2.12.png" },
+  { id: 1, name: "Medidor de Gás Ultrassônico", badge: "Medição", spec: "Alta precisão · Não intrusivo · Gás natural e biogás", image: "/images/home/products/medidor-gas-ultrassonico.webp", hoverImage: "/images/home/products/medidor-gas-ultrassonico.webp" },
+  { id: 2, name: "Analisador de Biogás Portátil", badge: "Biogás", spec: "CH4, CO2, O2, H2S · Portátil · Tempo real", image: "/images/home/products/analisador-biogas-portatil.webp", hoverImage: "/images/home/products/analisador-biogas-portatil.webp" },
+  { id: 3, name: "Controlador Lógico Programável (CLP)", badge: "Automação", spec: "Multi-protocolo · IoT ready · Modular", image: "/images/home/products/clp.webp", hoverImage: "/images/home/products/clp.webp" },
+  { id: 4, name: "Retificador de Proteção Catódica", badge: "Proteção", spec: "Corrente impressa · Monitoramento · IP65", image: "/images/home/products/retificador-protecao-catodica.webp", hoverImage: "/images/home/products/retificador-protecao-catodica.webp" },
+  { id: 5, name: "Sensores Agrícolas Inteligentes", badge: "Agronegócio", spec: "Solo, umidade, clima · IoT · Precisão", image: "/images/home/products/sensores-agricolas.webp", hoverImage: "/images/home/products/sensores-agricolas.webp" },
+  { id: 6, name: "Unidade de Tratamento de Ar", badge: "HVAC", spec: "Temperatura · Umidade · Ambientes críticos", image: "/images/home/products/unidade-tratamento-ar.webp", hoverImage: "/images/home/products/unidade-tratamento-ar.webp" },
+  { id: 7, name: "Medidor de Vazão Eletromagnético", badge: "Fluidos", spec: "Líquidos condutivos · Alta acurácia", image: "/images/home/products/medidor-vazao-eletromagnetico.webp", hoverImage: "/images/home/products/medidor-vazao-eletromagnetico.webp" },
+  { id: 8, name: "Sistema de Telemetria Remota", badge: "IoT / Telemetria", spec: "Rádio ou celular · 24/7 · Multi-ponto", image: "/images/home/products/sistema-telemetria-remota.webp", hoverImage: "/images/home/products/sistema-telemetria-remota.webp" },
+  { id: 9, name: "Transmissor de Pressão", badge: "Sensores", spec: "4-20 mA · HART · Diversas faixas", image: "/images/home/products/transmissor-pressao.webp", hoverImage: "/images/home/products/transmissor-pressao.webp" },
+  { id: 10, name: "Válvula de Controle Automática", badge: "Válvulas", spec: "Elétricos/Pneumáticos · Fluxo preciso", image: "/images/home/products/valvula-controle-automatica.webp", hoverImage: "/images/home/products/valvula-controle-automatica.webp" },
 ];
 
 /* ────────────────────────────────────────────────────────
@@ -135,7 +135,8 @@ function ProductCard({ product }: { product: (typeof products)[0] }) {
             left: 0,
             width: "100%",
             height: "100%",
-            objectFit: "contain",
+            objectFit: "cover",
+            borderRadius: 10,
             transition: "opacity 0.3s, transform 0.3s",
             opacity: hovered ? 0 : 1,
             transform: hovered ? "scale(1.05)" : "scale(1)",
@@ -150,7 +151,8 @@ function ProductCard({ product }: { product: (typeof products)[0] }) {
             left: 0,
             width: "100%",
             height: "100%",
-            objectFit: "contain",
+            objectFit: "cover",
+            borderRadius: 10,
             transition: "opacity 0.3s, transform 0.3s",
             opacity: hovered ? 1 : 0,
             transform: hovered ? "scale(1.05)" : "scale(1)",

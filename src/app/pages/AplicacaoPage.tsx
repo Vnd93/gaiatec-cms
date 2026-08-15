@@ -4,6 +4,7 @@ import { aplicacaoBySlug, aplicacoes } from "../data/aplicacoes";
 import { servicesList } from "../data/servicesList";
 import { AnimateOnScroll } from "../components/useScrollAnimation";
 import { PageHero } from "../components/PageHero";
+import { ResponsiveApplicationImage } from "../components/aplicacoes/ResponsiveApplicationImage";
 import { CTABanner } from "../components/CTABanner";
 import { SEO, buildBreadcrumb } from "../components/SEO";
 
@@ -288,10 +289,11 @@ export default function AplicacaoPage() {
                 <AnimateOnScroll key={sim.slug} delay={i * 0.06}>
                   <Link to={`/aplicacoes/${sim.slug}`} className="group block">
                     <div className="overflow-hidden" style={{ aspectRatio: "4 / 3" }}>
-                      <img
+                      <ResponsiveApplicationImage
                         src={sim.imagem}
                         alt={sim.nome}
                         loading="lazy"
+                        sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                         className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
                       />
                     </div>

@@ -8,7 +8,7 @@ const FALLBACK_SLIDES: HeroSlide[] = [
     description: "Instrumentação e automação para maximizar a produção, qualidade e aproveitamento do biogás.",
     cta: "Conhecer Soluções em Biogás",
     href: "/setores/biogas-biometano",
-    image: "/images/heroes/1.1.png",
+    image: "/images/home/heroes/hero-biogas-biometano.webp",
   },
   {
     label: "SANEAMENTO",
@@ -16,7 +16,7 @@ const FALLBACK_SLIDES: HeroSlide[] = [
     description: "Tecnologia não-invasiva para monitoramento preciso de vazão em grandes diâmetros.",
     cta: "Conhecer Soluções em Saneamento",
     href: "/setores/saneamento",
-    image: "/images/heroes/1.2.png",
+    image: "/images/home/heroes/hero-macromedicao-saneamento.webp",
   },
   {
     label: "AUTOMAÇÃO INDUSTRIAL",
@@ -24,7 +24,7 @@ const FALLBACK_SLIDES: HeroSlide[] = [
     description: "Controle, monitoramento e automação industrial integrados para aumentar a competitividade da sua planta.",
     cta: "Ver Soluções em Automação",
     href: "/setores/industria",
-    image: "/images/heroes/1.3.png",
+    image: "/images/home/heroes/hero-automacao-industrial.webp",
   },
   {
     label: "PROTEÇÃO CATÓDICA",
@@ -32,7 +32,7 @@ const FALLBACK_SLIDES: HeroSlide[] = [
     description: "Sistemas eletroquímicos para prevenção e controle da corrosão em estruturas enterradas e submersas.",
     cta: "Conhecer Sistemas de Proteção Catódica",
     href: "/setores/protecao-catodica",
-    image: "/images/heroes/1.4.png",
+    image: "/images/home/heroes/hero-protecao-catodica.webp",
   },
   {
     label: "GÁS E PETRÓLEO",
@@ -40,7 +40,7 @@ const FALLBACK_SLIDES: HeroSlide[] = [
     description: "Soluções robustas para extração, refino e distribuição, garantindo segurança e eficiência em ambientes críticos.",
     cta: "Ver Soluções para Gás e Petróleo",
     href: "/setores/gas-petroleo",
-    image: "/images/heroes/1.5.png",
+    image: "/images/home/heroes/hero-gas-petroleo.webp",
   },
 ];
 

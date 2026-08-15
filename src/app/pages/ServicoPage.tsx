@@ -23,7 +23,7 @@ export default function ServicoPage() {
       overline: servico.overline,
       shortDesc: servico.descricao_curta,
       fullDesc: servico.descricao_completa ?? "",
-      image: servico.imagem_hero_url || servico.imagem_url,
+      image: getServiceBySlug(servico.slug)?.image ?? "",
       includes: servico.inclui ?? [],
       sectors: (servico as Record<string, unknown>).setores_relacionados as string[] | undefined,
       norms: (servico as Record<string, unknown>).normas as string[] | undefined,
@@ -60,7 +60,7 @@ export default function ServicoPage() {
           title: s.titulo,
           overline: s.overline,
           shortDesc: s.descricao_curta,
-          image: s.imagem_url,
+          image: getServiceBySlug(s.slug)?.image ?? "",
           fullDesc: "",
           includes: [],
         }));

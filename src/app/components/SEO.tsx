@@ -24,7 +24,7 @@ import { useEffect } from "react";
 
 const BASE_URL = "https://gaiatecsistemas.com.br";
 const SITE_NAME = "Gaiatec Sistemas";
-const DEFAULT_IMAGE = `${BASE_URL}/hero-biodigestor.png`;
+const DEFAULT_IMAGE = `${BASE_URL}/images/social/gaiatec-institucional.jpg`;
 
 interface SEOProps {
   /** Título da página (será concatenado com " — Gaiatec Sistemas" automaticamente) */
@@ -33,7 +33,7 @@ interface SEOProps {
   description: string;
   /** Path da página (ex: "/produtos/1-medidor-vazao") — usado em canonical e OG URL */
   path: string;
-  /** URL absoluta da imagem para OG/Twitter Card. Default: hero-biodigestor.png */
+  /** URL absoluta da imagem para OG/Twitter Card. Default: imagem social institucional da Gaiatec. */
   image?: string;
   /** Tipo OG (default "website" — pra páginas use "article" ou "product") */
   ogType?: "website" | "article" | "product";
@@ -95,7 +95,11 @@ export function SEO({
   useEffect(() => {
     const fullTitle = title.includes(SITE_NAME) ? title : `${title} — ${SITE_NAME}`;
     const url = path.startsWith("http") ? path : `${BASE_URL}${path}`;
-    const imageUrl = image.startsWith("http") ? image : `${BASE_URL}${image}`;
+    const imageUrl = image
+      ? image.startsWith("http")
+        ? image
+        : `${BASE_URL}${image}`
+      : DEFAULT_IMAGE;
 
     // Title
     document.title = fullTitle;

@@ -7,6 +7,7 @@ import { CTABanner } from "../components/CTABanner";
 import { SetoresFilterBar } from "../components/setores/SetoresFilterBar";
 import { ArrowRight } from "lucide-react";
 import { SEO, buildCollectionPageSchema } from "../components/SEO";
+import { ResponsiveImage } from "../components/ResponsiveImage";
 
 const KNOCKOUT = "'Knockout HTF68', sans-serif";
 
@@ -31,7 +32,7 @@ export default function SetoresPage() {
       title: s.titulo,
       overline: s.overline || "",
       description: s.descricao_curta || "",
-      image: s.imagem_url || "/images/industries/5.1.png",
+      image: s.imagem_url || "/images/setores/industria.webp",
       about: "",
       aboutExtra: "",
       stats: [],
@@ -147,13 +148,14 @@ export default function SetoresPage() {
                 {mosaicImages.map((img, i) => (
                   <div
                     key={i}
-                    className="overflow-hidden rounded-md group"
+                    className="overflow-hidden rounded-md group [&>picture]:block [&>picture]:h-full"
                     style={{ aspectRatio: "1/1" }}
                   >
-                    <img
+                    <ResponsiveImage
                       src={img}
                       alt=""
-                      loading={i < 3 ? "eager" : "lazy"}
+                      priority={i < 3}
+                      sizes="(max-width: 1024px) 33vw, 15vw"
                       className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                     />
                   </div>
@@ -198,13 +200,13 @@ export default function SetoresPage() {
                   {/* Imagem */}
                   <Link
                     to={`/setores/${s.slug}`}
-                    className="block overflow-hidden rounded-2xl shadow-lg"
+                    className="block overflow-hidden rounded-2xl shadow-lg [&>picture]:block [&>picture]:h-full"
                     style={{ aspectRatio: "4/3" }}
                   >
-                    <img
+                    <ResponsiveImage
                       src={s.image}
                       alt={s.title}
-                      loading="lazy"
+                      sizes="(max-width: 1024px) 100vw, 50vw"
                       className="w-full h-full object-cover transition-transform duration-700 hover:scale-105"
                     />
                   </Link>

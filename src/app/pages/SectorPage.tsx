@@ -7,6 +7,7 @@ import { CTABanner } from "../components/CTABanner";
 import { AnimateOnScroll } from "../components/useScrollAnimation";
 import { ArrowRight, ChevronRight } from "lucide-react";
 import { SEO, buildBreadcrumb } from "../components/SEO";
+import { ResponsiveImage } from "../components/ResponsiveImage";
 
 const KNOCKOUT = "'Knockout HTF68', sans-serif";
 
@@ -23,7 +24,7 @@ export default function SectorPage() {
         title: apiSetor.titulo,
         overline: apiSetor.overline || "",
         description: apiSetor.descricao_curta || "",
-        image: apiSetor.imagem_url || "/images/industries/5.1.png",
+        image: apiSetor.imagem_url || "/images/setores/industria.webp",
         about: apiSetor.descricao_sobre || "",
         aboutExtra: apiSetor.descricao_extra || undefined,
         stats: (apiSetor.stats as Array<{ value: string; label: string }>) || [],
@@ -43,7 +44,7 @@ export default function SectorPage() {
       return apiSetores.map(s => ({
         slug: s.slug, title: s.titulo, overline: s.overline || "",
         description: s.descricao_curta || "",
-        image: s.imagem_url || "/images/industries/5.1.png",
+        image: s.imagem_url || "/images/setores/industria.webp",
       }));
     }
     return sectors.map(s => ({ slug: s.slug, title: s.title, overline: s.overline, description: s.description, image: s.image }));
@@ -123,8 +124,8 @@ export default function SectorPage() {
                   Fale com um Especialista <ArrowRight size={14} />
                 </Link>
               </div>
-              <div className="relative overflow-hidden">
-                <img loading="lazy" src={sector.image} alt={sector.overline} className="w-full object-cover" style={{ aspectRatio: "4/3", display: "block" }} />
+              <div className="relative overflow-hidden [&>picture]:block">
+                <ResponsiveImage src={sector.image} alt={sector.overline} sizes="(max-width: 1024px) 100vw, 55vw" className="w-full object-cover" style={{ aspectRatio: "4/3", display: "block" }} />
                 <div style={{ position: "absolute", bottom: 0, left: 0, width: "100%", height: 4, backgroundColor: "#0057DE" }} />
               </div>
             </div>
@@ -353,10 +354,12 @@ export default function SectorPage() {
               .slice(0, 8)
               .map((s, i) => (
                 <AnimateOnScroll key={s.slug} delay={i * 0.06}>
-                  <Link to={`/setores/${s.slug}`} className="block group" style={{ position: "relative", overflow: "hidden", aspectRatio: "3/4" }}>
-                    <div
-                      style={{ position: "absolute", inset: 0, backgroundImage: `url(${s.image})`, backgroundSize: "cover", backgroundPosition: "center", transition: "transform 0.6s ease" }}
-                      className="group-hover:scale-110"
+                  <Link to={`/setores/${s.slug}`} className="block group [&>picture]:block" style={{ position: "relative", overflow: "hidden", aspectRatio: "3/4" }}>
+                    <ResponsiveImage
+                      src={s.image}
+                      alt=""
+                      sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
+                      className="absolute inset-0 w-full h-full object-cover transition-transform duration-[600ms] group-hover:scale-110"
                     />
                     <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.3) 50%, rgba(0,0,0,0.1) 100%)" }} />
                     <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: 24 }}>

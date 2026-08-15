@@ -1,7 +1,7 @@
 import { PageHero } from "../components/PageHero";
 import { ContactSection } from "../components/ContactSection";
 
-const HERO_IMG = "/images/heroes/1.1.webp";
+const HERO_IMG = "/images/contato/atendimento-consultivo.webp";
 
 /**
  * Página de Contato — hero padrão (PageHero/biodigestor), seção de contato

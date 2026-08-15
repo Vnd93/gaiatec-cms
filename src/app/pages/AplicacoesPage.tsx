@@ -6,6 +6,7 @@ import { AnimateOnScroll } from "../components/useScrollAnimation";
 import { CTABanner } from "../components/CTABanner";
 import { PageHero } from "../components/PageHero";
 import { AplicacaoCard } from "../components/aplicacoes/AplicacaoCard";
+import { ResponsiveApplicationImage } from "../components/aplicacoes/ResponsiveApplicationImage";
 import { aplicacoes as FALLBACK_APLICACOES, setoresFromAplicacoes } from "../data/aplicacoes";
 import { useAplicacoes } from "../hooks/useSiteData";
 import { SEO, buildCollectionPageSchema } from "../components/SEO";
@@ -75,7 +76,14 @@ function DestaquesAplicacoes({ items }: { items: AplicacaoView[] }) {
             <div key={a.slug} className="flex-[0_0_86%] sm:flex-[0_0_48%] lg:flex-[0_0_31.5%]">
               <Link to={`/aplicacoes/${a.slug}`} className="group block h-full overflow-hidden bg-white border border-slate-200" style={{ textDecoration: "none" }}>
                 <div style={{ position: "relative", paddingTop: "60%", overflow: "hidden", background: "#eef2f7" }}>
-                  <img src={a.imagem} alt={a.nome} loading="lazy" className="group-hover:scale-105" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", transition: "transform 0.6s ease" }} />
+                  <ResponsiveApplicationImage
+                    src={a.imagem}
+                    alt={a.nome}
+                    loading="lazy"
+                    sizes="(max-width: 640px) 86vw, (max-width: 1024px) 48vw, 32vw"
+                    className="group-hover:scale-105"
+                    style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", transition: "transform 0.6s ease" }}
+                  />
                   <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(5,11,24,0.55) 0%, rgba(5,11,24,0) 55%)" }} />
                   <ArrowUpRight size={20} className="opacity-0 group-hover:opacity-100 transition-opacity duration-300" style={{ position: "absolute", top: 16, right: 16, color: "#fff" }} />
                 </div>
@@ -127,7 +135,7 @@ export default function AplicacoesPage() {
         nome: a.nome,
         descricaoCurta: a.descricao_curta || "",
         descricaoCompleta: "", // fetched only in detail page
-        imagem: a.imagem_url || "/images/industries/5.1.webp",
+        imagem: a.imagem_url || "/images/aplicacoes/hero-aplicacoes-industriais.webp",
         icone: a.icone || "Wrench",
         setores: a.setores,
         produtosRelacionados: [],
@@ -189,7 +197,7 @@ export default function AplicacoesPage() {
       {/* ═══════════════════════════════════════════════════
           1) HERO
          ═══════════════════════════════════════════════════ */}
-      <PageHero overline="Aplicações" title="Aplicações Industriais" image="/images/industries/5.1.webp" />
+      <PageHero overline="Aplicações" title="Aplicações Industriais" image="/images/aplicacoes/hero-aplicacoes-industriais.webp" />
 
       {/* ═══════════════════════════════════════════════════
           1.5) CARROSSEL DE DESTAQUES

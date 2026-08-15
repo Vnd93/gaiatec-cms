@@ -57,7 +57,7 @@ const RICH_DETAILS: Record<string, RichDetail> = {
     overline: "AUTOMAÇÃO",
     fullDesc:
       "A Gaiatec Sistemas desenvolve projetos de automação industrial de ponta a ponta — desde o levantamento de campo e especificação dos instrumentos até a programação de CLPs, configuração de sistemas SCADA/HMI e comissionamento final. Atuamos em plantas industriais, estações de tratamento, redes de distribuição de gás, sistemas de proteção catódica e muito mais.\n\nNossa equipe combina expertise em instrumentação de campo com conhecimento aprofundado em protocolos de comunicação industrial (HART, MODBUS, PROFIBUS, 4–20 mA), garantindo integração confiável entre todos os pontos da malha de controle.",
-    image: "/images/services/4.1.png",
+    image: "/images/servicos/automacoes/hero.webp",
     includes: [
       "Levantamento e especificação de instrumentação",
       "Programação e configuração de CLPs (Allen-Bradley, Siemens, Schneider, Rockwell)",
@@ -72,7 +72,7 @@ const RICH_DETAILS: Record<string, RichDetail> = {
     overline: "PROTEÇÃO CATÓDICA",
     fullDesc:
       "A corrosão é uma das principais causas de falhas em infraestruturas metálicas. A Gaiatec Sistemas projeta, instala e monitora sistemas de proteção catódica que protegem ativos críticos — dutos de gás e petróleo, redes de distribuição, tanques de armazenamento e estruturas metálicas — contra a degradação corrosiva.\n\nAtuamos tanto com sistemas de corrente impressa (ICCP) quanto com ânodos de sacrifício (galvânicos), selecionando a melhor solução conforme as características do solo, o tipo de estrutura e os requisitos normativos (ABNT NBR 6502, ABNT NBR 12979, entre outras).",
-    image: "/images/services/4.3.png",
+    image: "/images/servicos/protecao-catodica/hero.webp",
     includes: [
       "Levantamento de potencial eletroquímico em campo",
       "Projeto de sistema de proteção catódica",
@@ -89,7 +89,7 @@ const RICH_DETAILS: Record<string, RichDetail> = {
     overline: "INSPEÇÃO",
     fullDesc:
       "O revestimento anticorrosivo é a primeira linha de defesa contra a corrosão em estruturas enterradas. Quando o revestimento apresenta falhas, a estrutura fica vulnerável à corrosão localizada — o que pode resultar em vazamentos, paradas não planejadas e riscos à segurança.\n\nA Gaiatec Sistemas realiza inspeções de revestimento com metodologias consagradas internacionalmente, identificando defeitos, avaliando a eficiência do sistema de proteção catódica e gerando relatórios técnicos detalhados para subsidiar decisões de manutenção.",
-    image: "/images/services/4.4.png",
+    image: "/images/servicos/inspecao-revestimentos/hero.webp",
     includes: [
       "Mobilização de equipe técnica especializada",
       "Execução das medições em campo",
@@ -110,7 +110,7 @@ const RICH_DETAILS: Record<string, RichDetail> = {
     overline: "CALIBRAÇÃO RASTREÁVEL",
     fullDesc:
       "A Gaiatec Sistemas realiza calibração de instrumentos com rastreabilidade metrológica ao INMETRO, comprovada ao Sistema Internacional de Unidades (SI). Nossos certificados de calibração demonstram que as medições são rastreáveis aos padrões nacionais, com padrões de referência periodicamente calibrados.\n\nA calibração rastreável é exigida por sistemas de gestão da qualidade (ISO 9001), normas regulatórias e boas práticas de manutenção. Assim, você garante que seus instrumentos estão medindo corretamente — e tem o documento técnico que comprova isso.",
-    image: "/images/services/4.5.png",
+    image: "/images/servicos/calibracao-rastreavel-laboratorio/hero.webp",
     includes: [
       "Calibração de pressão (transmissores, manômetros, pressostatos)",
       "Calibração de temperatura (termopares, PT100, transmissores)",
@@ -132,7 +132,7 @@ const RICH_DETAILS: Record<string, RichDetail> = {
     overline: "MANUTENÇÃO",
     fullDesc:
       "A parada não planejada de um instrumento ou sistema de controle pode comprometer a produção, a segurança e a conformidade regulatória de uma planta industrial. A Gaiatec Sistemas oferece contratos de manutenção industrial com atendimento técnico qualificado, tempo de resposta definido por SLA e planos preventivos baseados nas recomendações do fabricante e nas melhores práticas da norma NBR 5462.\n\nNossa equipe realiza tanto manutenção preventiva (inspeções programadas, ajustes, limpeza, verificações) quanto manutenção corretiva (diagnóstico e reparo de falhas) em instrumentos de campo, painéis de controle e sistemas de automação.",
-    image: "/images/services/4.6.png",
+    image: "/images/servicos/manutencoes/hero.webp",
     includes: [
       "Inspeções periódicas programadas",
       "Verificação e ajuste de instrumentos de campo",
@@ -157,7 +157,7 @@ const RICH_DETAILS: Record<string, RichDetail> = {
     overline: "INSTALAÇÃO",
     fullDesc:
       "Uma instalação bem executada é condição fundamental para que um instrumento opere dentro das especificações do fabricante. A Gaiatec Sistemas realiza a instalação e o comissionamento de instrumentos e sistemas de automação com equipe técnica treinada pelos fabricantes e profundo conhecimento das normas aplicáveis.\n\nO processo de comissionamento inclui verificação de instalação mecânica e elétrica, configuração do instrumento, testes de loop, verificação de comunicação e geração de toda a documentação técnica necessária para operação e manutenção futura.",
-    image: "/images/services/4.7.png",
+    image: "/images/servicos/instalacoes-comissionamentos/hero.webp",
     includes: [
       "Recebimento e inspeção dos equipamentos (pre-commissioning check)",
       "Instalação mecânica conforme normas e recomendações do fabricante",
@@ -174,7 +174,7 @@ const RICH_DETAILS: Record<string, RichDetail> = {
     overline: "CONSULTORIA",
     fullDesc:
       "Quando o desafio é complexo e exige conhecimento especializado, a Gaiatec Sistemas oferece consultoria técnica independente para apoiar engenheiros, gestores e equipes de projetos nas melhores decisões sobre instrumentação, automação e metrologia industrial.\n\nCom mais de 20 anos de experiência e presença em múltiplos setores — saneamento, gás, petróleo, indústria, proteção catódica, biogás — nossa equipe traz visão prática e técnica para diagnosticar problemas, especificar soluções e orientar projetos com segurança.",
-    image: "/images/services/4.8.png",
+    image: "/images/servicos/consultoria-inspecoes-tecnicas/hero.webp",
     includes: [
       "Especificação técnica de instrumentação para projetos",
       "Análise de falhas em sistemas de medição e controle",
@@ -199,7 +199,7 @@ const RICH_DETAILS: Record<string, RichDetail> = {
     overline: "MEDIÇÕES",
     fullDesc:
       "Algumas aplicações exigem medições temporárias de alta precisão — para caracterização de processo, verificação de medidores instalados, laudos periciais, testes de eficiência ou conformidade regulatória. A Gaiatec Sistemas realiza campanhas de medição especializada com equipamentos portáteis calibrados e equipe técnica experiente.",
-    image: "/images/services/4.9.png",
+    image: "/images/servicos/medicoes-em-campo/hero.webp",
     includes: [
       "Medição portátil ultrassônica clamp-on (sem corte de tubulação)",
       "Verificação de medidores instalados (meter verification)",

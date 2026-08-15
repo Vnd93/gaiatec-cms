@@ -3,7 +3,7 @@ import { PageHero } from "../components/PageHero";
 import { SEO } from "../components/SEO";
 
 const KNOCKOUT = "'Knockout HTF68', sans-serif";
-const HERO_IMG = "/images/heroes/1.1.webp";
+const HERO_IMG = "/images/legal/governanca-e-responsabilidade.webp";
 
 /* ────────────────────────────────────────────────────────
    DADOS LEGAIS DO CONTROLADOR

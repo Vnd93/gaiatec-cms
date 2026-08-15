@@ -30,7 +30,7 @@ export const sectors: SectorData[] = [
     overline: "SANEAMENTO / LÍQUIDO",
     title: "Macromedição Ultrassônica para Redes de Distribuição",
     description: "Tecnologia não-invasiva para monitoramento preciso de vazão em grandes diâmetros.",
-    image: "/images/pages/2.1.png",
+    image: "/images/setores/saneamento.webp",
     about: "O setor de saneamento exige precisão, rastreabilidade e segurança na medição e controle de água e efluentes. A Gaiatec Sistemas fornece instrumentação e soluções técnicas para companhias de saneamento, autarquias municipais e empresas de tratamento de água e esgoto, garantindo conformidade com normas e eficiência operacional.",
     aboutExtra: "A instrumentação adequada permite controle de perdas na distribuição, monitoramento de qualidade da água tratada e gestão eficiente da rede — com dados confiáveis para tomada de decisão técnica e regulatória.",
     stats: [
@@ -69,7 +69,7 @@ export const sectors: SectorData[] = [
     overline: "GÁS E PETRÓLEO",
     title: "Instrumentação de Alta Confiabilidade para Ambientes Críticos",
     description: "Soluções robustas para extração, refino e distribuição, garantindo segurança e eficiência em ambientes críticos.",
-    image: "/images/pages/2.2.png",
+    image: "/images/setores/gas-petroleo.webp",
     about: "O setor de gás e petróleo opera em ambientes de alta exigência técnica, com requisitos rigorosos de segurança, confiabilidade e conformidade normativa. A Gaiatec Sistemas fornece instrumentação e automação para exploração, produção, refino e distribuição de gás e petróleo, com foco em segurança operacional e precisão de medição.",
     aboutExtra: "Nossas soluções atendem tanto a ambientes onshore quanto áreas classificadas (Ex), com equipamentos certificados e integração a sistemas de controle e segurança de processo.",
     stats: [
@@ -108,7 +108,7 @@ export const sectors: SectorData[] = [
     overline: "BIOGÁS E BIOMETANO",
     title: "Do Resíduo à Energia — Controle Técnico do Processo",
     description: "Instrumentação e automação para maximizar a produção, qualidade e aproveitamento do biogás.",
-    image: "/images/pages/2.3.png",
+    image: "/images/setores/biogas-biometano.webp",
     about: "O setor de biogás e biometano é um dos mais promissores da transição energética brasileira. A Gaiatec Sistemas atua com instrumentação, automação e biodigestores (linha GT-BIODIGEST) para toda a cadeia: desde a produção no biodigestor até o tratamento, purificação e aproveitamento do gás como energia ou biometano injetável em redes.",
     aboutExtra: "Tratamos a geração de biogás como processo industrial controlado — não como experimento. Cada variável é monitorada para garantir eficiência, segurança e máximo aproveitamento energético.",
     stats: [
@@ -147,7 +147,7 @@ export const sectors: SectorData[] = [
     overline: "PROTEÇÃO CATÓDICA",
     title: "Integridade Metálica ao Longo do Tempo",
     description: "Sistemas eletroquímicos para prevenção e controle da corrosão em estruturas enterradas e submersas.",
-    image: "/images/pages/2.4.png",
+    image: "/images/setores/protecao-catodica.webp",
     about: "A corrosão de estruturas metálicas enterradas e submersas representa um dos maiores riscos à integridade de dutos, tanques e infraestrutura industrial. A Gaiatec Sistemas projeta, instala e monitora sistemas de proteção catódica, protegendo ativos de alto valor com soluções técnicas que garantem vida útil prolongada e conformidade com normas nacionais e internacionais.",
     aboutExtra: "Tratamos proteção catódica como um sistema de engenharia — não como uma instalação pontual.",
     stats: [
@@ -184,7 +184,7 @@ export const sectors: SectorData[] = [
     overline: "HVAC",
     title: "Climatização Industrial com Controle e Eficiência",
     description: "Soluções completas em controle de temperatura, umidade e qualidade do ar para ambientes industriais críticos.",
-    image: "/images/pages/2.5.png",
+    image: "/images/setores/hvac.webp",
     about: "O controle de condições ambientais internas — temperatura, umidade, pressão e qualidade do ar — é fundamental para a integridade de processos, equipamentos e produtos em ambientes industriais e comerciais. A Gaiatec Sistemas fornece instrumentação e automação para sistemas HVAC (Heating, Ventilation and Air Conditioning), garantindo controle preciso e eficiência energética.",
     stats: [
       { value: "±0.1°C", label: "Precisão Térmica" },
@@ -222,7 +222,7 @@ export const sectors: SectorData[] = [
     overline: "CONTROLE AMBIENTAL",
     title: "Monitoramento de Emissões e Qualidade Ambiental",
     description: "Instrumentação para conformidade ambiental, monitoramento de emissões e controle de poluentes.",
-    image: "/images/pages/2.6.png",
+    image: "/images/setores/controle-ambiental.webp",
     about: "A gestão ambiental industrial exige monitoramento contínuo e confiável de emissões atmosféricas, qualidade da água, efluentes e parâmetros de solo. A Gaiatec Sistemas fornece instrumentação para programas de monitoramento ambiental, relatórios regulatórios e conformidade com legislação ambiental brasileira e internacional.",
     aboutExtra: "Dados ambientais confiáveis protegem a operação, reduzem passivos regulatórios e demonstram responsabilidade corporativa.",
     stats: [
@@ -260,7 +260,7 @@ export const sectors: SectorData[] = [
     overline: "SEGURANÇA OPERACIONAL",
     title: "Detecção de Gases e Proteção da Operação",
     description: "Sistemas de detecção, alarme e intertravamento para ambientes com risco de gases tóxicos e inflamáveis.",
-    image: "/images/pages/2.7.png",
+    image: "/images/setores/seguranca-operacional.webp",
     about: "A segurança operacional em ambientes industriais começa pela detecção confiável de situações de risco. A Gaiatec Sistemas fornece sistemas de detecção de gases, alarme e intertravamento de segurança para plantas industriais, garantindo proteção a operadores, equipamentos e meio ambiente.",
     aboutExtra: "Nossas soluções integram sensores, controladores e sistemas de alarme para atender requisitos de normas de segurança de processo (NR-10, NR-13, ATEX, SIL).",
     stats: [
@@ -298,7 +298,7 @@ export const sectors: SectorData[] = [
     overline: "AGRONEGÓCIO",
     title: "Instrumentação para Agricultura de Precisão e Agroindústria",
     description: "Sensores e automação para controle preciso em produção agrícola, processamento e armazenamento.",
-    image: "/images/pages/2.8.png",
+    image: "/images/setores/agronegocio.webp",
     about: "O agronegócio brasileiro demanda cada vez mais tecnologia de precisão — desde o monitoramento de solo e clima até o controle automatizado de processos de armazenagem, irrigação e beneficiamento. A Gaiatec Sistemas fornece instrumentação e soluções de automação para produtores, cooperativas e agroindústrias que buscam eficiência, rastreabilidade e redução de perdas.",
     stats: [
       { value: "IoT", label: "Conectividade Rural" },
@@ -335,7 +335,7 @@ export const sectors: SectorData[] = [
     overline: "INDÚSTRIA",
     title: "Automação e Instrumentação para Processos Industriais",
     description: "Soluções completas para controle, monitoramento e eficiência em plantas industriais de qualquer porte.",
-    image: "/images/pages/2.9.png",
+    image: "/images/setores/industria.webp",
     about: "A indústria de processo e manufatura exige instrumentação confiável, automação robusta e integração entre sistemas para operar com máxima eficiência. A Gaiatec Sistemas atua em plantas industriais de diferentes segmentos — química, petroquímica, papel e celulose, alimentos e bebidas, têxtil e metalurgia — fornecendo instrumentação, automação e soluções de controle de processo.",
     aboutExtra: "Cada projeto industrial é único. Dimensionamos nossas soluções para a realidade operacional do cliente, respeitando normas técnicas e requisitos específicos de cada processo.",
     stats: [
@@ -373,7 +373,7 @@ export const sectors: SectorData[] = [
     overline: "INSTRUMENTAÇÃO EM GERAL",
     title: "Medição Confiável como Base do Controle de Processo",
     description: "Fornecimento, instalação e calibração de instrumentos de medição para qualquer processo industrial.",
-    image: "/images/pages/2.10.png",
+    image: "/images/setores/instrumentacao.webp",
     about: "A Gaiatec Sistemas é especializada em instrumentação industrial — o conjunto de sensores, transmissores, analisadores e sistemas de medição que capturam variáveis físicas e químicas de um processo. Atendemos desde a especificação técnica até o fornecimento, instalação e calibração, com rastreabilidade metrológica ao INMETRO.",
     aboutExtra: "Instrumentação de qualidade é a base de qualquer sistema de controle confiável.",
     stats: [
@@ -408,7 +408,7 @@ export const sectors: SectorData[] = [
     overline: "TELEMETRIA",
     title: "Monitoramento Remoto de Ativos em Qualquer Lugar",
     description: "Sistemas de telemetria industrial para supervisão, controle e gestão de ativos à distância.",
-    image: "/images/pages/2.11.png",
+    image: "/images/setores/telemetria.webp",
     about: "A telemetria industrial permite monitorar e controlar ativos distribuídos geograficamente a partir de um centro de supervisão, eliminando a necessidade de deslocamentos e possibilitando respostas rápidas a eventos operacionais. A Gaiatec Sistemas projeta e implanta sistemas de telemetria para utilities, saneamento, agronegócio, petróleo e gás, e qualquer operação que demande supervisão remota.",
     aboutExtra: "Nossas soluções utilizam comunicação via rádio, celular (2G/4G), satélite ou redes industriais, integradas a sistemas SCADA e plataformas de gestão.",
     stats: [

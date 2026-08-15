@@ -35,7 +35,7 @@ export const aplicacoes: AplicacaoListItem[] = [
       "Medição não-invasiva de grandes diâmetros em redes de água tratada com tecnologia ultrassônica clamp-on.",
     descricaoCompleta:
       "Macromedição é o coração da gestão de perdas em saneamento. Com medidores ultrassônicos clamp-on, instalamos sem interrupção do abastecimento, sem corte de tubulação e sem perda de carga. A solução Gaiatec inclui especificação técnica, instalação certificada, calibração rastreável e plataforma de telemetria para monitoramento remoto 24/7.",
-    imagem: "/images/industries/5.4.webp",
+    imagem: "/images/aplicacoes/macromedicao-redes-distribuicao.webp",
     icone: "Gauge",
     setores: ["Saneamento"],
     produtosRelacionados: [
@@ -69,7 +69,7 @@ export const aplicacoes: AplicacaoListItem[] = [
       "Captação, análise e aproveitamento do biogás gerado em aterros para geração de energia ou queima controlada.",
     descricaoCompleta:
       "Aterros sanitários são fontes naturais de biogás (metano + CO2). A Gaiatec projeta e implanta sistemas completos de captação, drenagem, análise da composição (CH4, CO2, O2, H2S) e aproveitamento energético — seja para geração elétrica ou queima em flares de alta eficiência. Solução integrada com instrumentação, automação e plataforma de monitoramento.",
-    imagem: "/images/industries/5.3.webp",
+    imagem: "/images/aplicacoes/producao-biogas-aterros.webp",
     icone: "Leaf",
     setores: ["Biogás e Biometano"],
     produtosRelacionados: [
@@ -102,7 +102,7 @@ export const aplicacoes: AplicacaoListItem[] = [
       "Inspeções periódicas em gasodutos urbanos e industriais com equipamentos certificados ABNT NBR 15526.",
     descricaoCompleta:
       "Vazamentos em gasodutos representam risco de explosão, perdas econômicas e impacto ambiental. A Gaiatec realiza inspeções com detectores TVA, FID e laser remoto, gerando relatórios técnicos completos com georreferenciamento de pontos críticos. Atendemos distribuidoras, condomínios industriais e plantas químicas.",
-    imagem: "/images/industries/5.5.webp",
+    imagem: "/images/aplicacoes/deteccao-vazamentos-gasodutos.webp",
     icone: "Flame",
     setores: ["Gás e Petróleo", "Indústria"],
     produtosRelacionados: [
@@ -136,7 +136,7 @@ export const aplicacoes: AplicacaoListItem[] = [
       "Detecção contínua de gás sulfídrico em áreas críticas com sensores eletroquímicos e infravermelho.",
     descricaoCompleta:
       "H2S é altamente tóxico e corrosivo. Em refinarias e plantas petroquímicas, monitoramento contínuo é obrigatório. A Gaiatec especifica e instala sistemas multipontos com detectores fixos eletroquímicos ou IR, integrados a CLPs/SCADA com alarmes audiovisuais e shutdown automático. Calibração rastreável anual incluída.",
-    imagem: "/images/services/4.7.webp",
+    imagem: "/images/aplicacoes/monitoramento-h2s-refinarias.webp",
     icone: "Shield",
     setores: ["Gás e Petróleo", "Indústria"],
     produtosRelacionados: [
@@ -170,7 +170,7 @@ export const aplicacoes: AplicacaoListItem[] = [
       "Calibração rastreável em laboratório ou em campo, com padrões rastreáveis ao INMETRO.",
     descricaoCompleta:
       "Calibração é exigência legal e técnica para medidores fiscais e operacionais. Nossa calibração emite certificados com rastreabilidade metrológica ao INMETRO (Sistema Internacional de Unidades). Para casos onde a retirada do medidor é inviável, oferecemos calibração in-loco com padrões portáteis rastreáveis ao SI.",
-    imagem: "/images/services/4.5.webp",
+    imagem: "/images/aplicacoes/calibracao-medidores-vazao.webp",
     icone: "Award",
     setores: ["Saneamento", "Gás e Petróleo", "Indústria"],
     produtosRelacionados: [
@@ -202,7 +202,7 @@ export const aplicacoes: AplicacaoListItem[] = [
       "Sistemas de corrente impressa e anodos galvânicos para prevenção de corrosão em dutos enterrados.",
     descricaoCompleta:
       "Corrosão é a principal causa de falhas em dutos enterrados (gasodutos, oleodutos, adutoras). Proteção Catódica é um sistema eletroquímico que impede a oxidação. A Gaiatec projeta, instala e monitora sistemas completos com retificadores, leitos de anodos, eletrodos de referência permanentes e telemetria 24/7 para acompanhamento remoto.",
-    imagem: "/images/industries/5.1.webp",
+    imagem: "/images/aplicacoes/protecao-catodica-dutos-subterraneos.webp",
     icone: "Shield",
     setores: ["Gás e Petróleo", "Proteção Catódica", "Saneamento"],
     produtosRelacionados: [
@@ -236,7 +236,7 @@ export const aplicacoes: AplicacaoListItem[] = [
       "Automação completa de Estações de Tratamento de Água e Esgoto com CLPs, SCADA e supervisão remota.",
     descricaoCompleta:
       "ETAs e ETEs modernas demandam automação avançada para garantir qualidade do tratamento, eficiência energética e conformidade com normas ambientais. A Gaiatec integra instrumentação de campo (vazão, pressão, pH, turbidez, OD) com CLPs e SCADA, gerando relatórios automáticos e alertas em tempo real.",
-    imagem: "/images/services/4.1.webp",
+    imagem: "/images/aplicacoes/automacao-eta-ete.webp",
     icone: "Cpu",
     setores: ["Saneamento"],
     produtosRelacionados: [
@@ -270,7 +270,7 @@ export const aplicacoes: AplicacaoListItem[] = [
       "Monitoramento 24/7 de ativos distribuídos via rádio, celular ou satélite para operação centralizada.",
     descricaoCompleta:
       "Operações com pontos geograficamente distribuídos (estações de bombeamento, biodigestores, redes de gás, RTUs) demandam telemetria para evitar deslocamentos e responder rapidamente a eventos. A Gaiatec entrega solução end-to-end: aquisição (CLP/RTU), comunicação (4G, LoRaWAN, satélite), gateway, plataforma cloud e app mobile.",
-    imagem: "/images/services/4.4.webp",
+    imagem: "/images/aplicacoes/telemetria-estacoes-remotas.webp",
     icone: "Antenna",
     setores: ["Telemetria", "Saneamento", "Biogás e Biometano", "Gás e Petróleo"],
     produtosRelacionados: [
@@ -304,7 +304,7 @@ export const aplicacoes: AplicacaoListItem[] = [
       "Soluções de climatização e ventilação para ambientes críticos com controle preciso de temperatura e umidade.",
     descricaoCompleta:
       "Salas limpas, data centers, hospitais e indústrias farmacêuticas demandam controle rigoroso de temperatura, umidade, pressão diferencial e qualidade do ar. A Gaiatec integra instrumentação BACnet/Modbus com sistemas de gerenciamento predial (BMS), garantindo conformidade com ISO 14644, ANVISA e ASHRAE.",
-    imagem: "/images/services/4.6.webp",
+    imagem: "/images/aplicacoes/climatizacao-industrial-hvac.webp",
     icone: "Wind",
     setores: ["HVAC", "Indústria", "Controle Ambiental"],
     produtosRelacionados: [
@@ -338,7 +338,7 @@ export const aplicacoes: AplicacaoListItem[] = [
       "Caracterização contínua da composição (CH4, CO2, H2S, O2) para otimizar a produção e qualidade do biogás.",
     descricaoCompleta:
       "Biodigestores industriais e rurais geram biogás com composição variável. A análise contínua permite otimizar a alimentação do digestor, garantir qualidade para uso (combustão, geração elétrica, biometano), e prevenir problemas de corrosão por H2S. Solução com analisadores fixos, portáteis e cromatógrafos para auditoria.",
-    imagem: "/images/industries/5.3.webp",
+    imagem: "/images/aplicacoes/analise-biogas-biodigestores.webp",
     icone: "Leaf",
     setores: ["Biogás e Biometano", "Agronegócio"],
     produtosRelacionados: [
@@ -372,7 +372,7 @@ export const aplicacoes: AplicacaoListItem[] = [
       "Monitoramento e modulação automática de pressão em redes de água tratada para reduzir perdas e roturas.",
     descricaoCompleta:
       "Pressões excessivas ou inconsistentes em adutoras causam roturas, vazamentos e desperdício de água tratada. A Gaiatec implanta sistemas de modulação por VRPs com transmissores de pressão, controladores PID e telemetria, garantindo pressão ótima em cada zona da rede 24/7, com adaptação automática à demanda.",
-    imagem: "/images/services/4.2.webp",
+    imagem: "/images/aplicacoes/controle-pressao-adutoras.webp",
     icone: "Gauge",
     setores: ["Saneamento"],
     produtosRelacionados: [
@@ -406,7 +406,7 @@ export const aplicacoes: AplicacaoListItem[] = [
       "Diagnóstico técnico do revestimento anticorrosivo de dutos enterrados via DCVG e CIPS.",
     descricaoCompleta:
       "O revestimento é a primeira barreira contra corrosão em dutos enterrados. Falhas comprometem a proteção catódica e aceleram a degradação. A Gaiatec realiza inspeções DCVG (Direct Current Voltage Gradient) e CIPS (Close Interval Potential Survey), gerando mapeamento georreferenciado de defeitos para planejamento de manutenção.",
-    imagem: "/images/services/4.8.webp",
+    imagem: "/images/aplicacoes/inspecao-revestimento-dutos.webp",
     icone: "ScanLine",
     setores: ["Gás e Petróleo", "Proteção Catódica"],
     produtosRelacionados: [

@@ -32,9 +32,9 @@ const FALLBACK_BLOCKS = [
 ];
 
 const BLOCK_IMAGES = [
-  "/images/solutions/3.1.png",
-  "/images/solutions/3.2.png",
-  "/images/solutions/3.3.png",
+  "/images/home/solutions/projetos-sob-medida.webp",
+  "/images/home/solutions/capacidades-engenharia-metrologia.webp",
+  "/images/home/solutions/servico-suporte-tecnico.webp",
 ];
 
 /* ────────────────────────────────────────────────────────

@@ -15,21 +15,21 @@ const FALLBACK_NEWS = [
     title: "Como Escolher o Medidor de Vazão Ideal para a Sua Aplicação",
     category: "Instrumentação",
     description: "Descubra os critérios técnicos para selecionar entre medidores ultrassônicos, eletromagnéticos e de deslocamento positivo.",
-    image: "/images/blog/6.2.png",
+    image: "/images/home/news/escolha-medidor-vazao.webp",
     href: "/blog",
   },
   {
     title: "Implantação de Sistema de Macromedição Ultrassônica em Rede Municipal",
     category: "Estudo de Caso",
     description: "Como a Gaiatec reduziu as perdas de água não faturada em 18% com medidores clamp-on em adutoras de grande diâmetro.",
-    image: "/images/blog/6.3.png",
+    image: "/images/home/news/macromedicao-rede-municipal.webp",
     href: "/blog",
   },
   {
     title: "Biometano: A Revolução do Gás Renovável no Brasil e o Papel da Instrumentação",
     category: "Biogás",
     description: "O mercado de biometano brasileiro cresce acelerado. Entenda como a instrumentação é fundamental para garantir qualidade e segurança.",
-    image: "/images/blog/6.4.png",
+    image: "/images/home/news/biometano-instrumentacao.webp",
     href: "/blog",
   },
 ];
@@ -43,7 +43,7 @@ export function NewsSection() {
       title: p.titulo,
       category: (p as unknown as { categoria_nome?: string }).categoria_nome || "Blog",
       description: p.resumo || "",
-      image: p.imagem_url || "/images/blog/6.2.png",
+      image: p.imagem_url || "/images/home/news/escolha-medidor-vazao.webp",
       href: `/blog/${p.slug}`,
     }));
   }, [posts]);

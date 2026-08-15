@@ -9,17 +9,17 @@ const BRAND = "#0057DE";
 
 /** Imagem + subtítulo curto por serviço em destaque (chaveado por slug). */
 const META: Record<string, { imagem: string; subtitulo: string }> = {
-  "instalacoes-comissionamentos": { imagem: "/images/services/4.7.webp", subtitulo: "Instalação e startup técnico em campo" },
-  "medicoes-em-campo": { imagem: "/images/services/4.9.webp", subtitulo: "Vazão, pressão, nível e gases" },
-  "calibracao-rastreavel-laboratorio": { imagem: "/images/services/4.5.webp", subtitulo: "Calibração rastreável ao INMETRO" },
-  "manutencoes": { imagem: "/images/services/4.6.webp", subtitulo: "Preventiva e corretiva, com SLA" },
-  "automacoes": { imagem: "/images/services/4.1.webp", subtitulo: "CLP · SCADA · integração de campo" },
-  "protecao-catodica": { imagem: "/images/services/4.3.webp", subtitulo: "Prevenção e controle da corrosão" },
+  "instalacoes-comissionamentos": { imagem: "/images/home/services/instalacoes-comissionamentos.webp", subtitulo: "Instalação e startup técnico em campo" },
+  "medicoes-em-campo": { imagem: "/images/home/services/medicoes-em-campo.webp", subtitulo: "Vazão, pressão, nível e gases" },
+  "calibracao-rastreavel-laboratorio": { imagem: "/images/home/services/calibracao-laboratorio.webp", subtitulo: "Calibração rastreável ao INMETRO" },
+  "manutencoes": { imagem: "/images/home/services/manutencoes.webp", subtitulo: "Preventiva e corretiva, com SLA" },
+  "automacoes": { imagem: "/images/home/services/automacoes.webp", subtitulo: "CLP · SCADA · integração de campo" },
+  "protecao-catodica": { imagem: "/images/home/services/protecao-catodica.webp", subtitulo: "Prevenção e controle da corrosão" },
 };
 
 const SERVICES = featuredServices.map((s) => ({
   ...s,
-  imagem: META[s.slug]?.imagem ?? "/images/services/4.2.webp",
+  imagem: META[s.slug]?.imagem ?? "/images/home/services/instalacoes-comissionamentos.webp",
   subtitulo: META[s.slug]?.subtitulo ?? "",
 }));
 

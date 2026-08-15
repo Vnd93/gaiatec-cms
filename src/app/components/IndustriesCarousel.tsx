@@ -21,37 +21,37 @@ const FALLBACK_INDUSTRIES: Industry[] = [
   {
     title: "Saneamento / Líquido",
     description: "Macromedição, monitoramento de qualidade da água e controle de perdas para companhias de saneamento e autarquias municipais.",
-    image: "/images/industries/5.4.png",
+    image: "/images/home/industries/saneamento.webp",
     href: "/setores/saneamento",
   },
   {
     title: "Gás e Petróleo",
     description: "Soluções robustas para extração, refino e distribuição, garantindo segurança e eficiência em ambientes críticos e classificados.",
-    image: "/images/industries/5.5.png",
+    image: "/images/home/industries/gas-petroleo.webp",
     href: "/setores/gas-petroleo",
   },
   {
     title: "Biogás e Biometano",
     description: "Instrumentação, automação e biodigestores GT-BIODIGEST para toda a cadeia: da produção ao aproveitamento energético.",
-    image: "/images/industries/5.3.png",
+    image: "/images/home/industries/biogas-biometano.webp",
     href: "/setores/biogas-biometano",
   },
   {
     title: "Proteção Catódica",
     description: "Projeto, instalação e monitoramento de sistemas eletroquímicos para prevenção da corrosão em dutos e estruturas metálicas.",
-    image: "/images/industries/5.1.png",
+    image: "/images/home/industries/protecao-catodica.webp",
     href: "/setores/protecao-catodica",
   },
   {
     title: "Agronegócio",
     description: "Sensores e automação para agricultura de precisão, monitoramento de solo, clima e controle de processos agroindustriais.",
-    image: "/images/industries/5.2.png",
+    image: "/images/home/industries/agronegocio.webp",
     href: "/setores/agronegocio",
   },
   {
     title: "Indústria",
     description: "Soluções transversais em instrumentação e automação para os mais diversos processos industriais, da química à metalurgia.",
-    image: "/images/industries/5.6.png",
+    image: "/images/home/industries/industria.webp",
     href: "/setores/industria",
   },
 ];
@@ -72,7 +72,7 @@ export function IndustriesCarousel() {
     return setores.map((s) => ({
       title: s.titulo,
       description: s.descricao_curta || "",
-      image: s.imagem_url || "/images/industries/5.6.png",
+      image: s.imagem_url || "/images/home/industries/industria.webp",
       href: `/setores/${s.slug}`,
     }));
   }, [setores]);
@@ -212,6 +212,9 @@ export function IndustriesCarousel() {
           color: rgb(0, 87, 222);
         }
         @media (max-width: 767px) {
+          .sec4-bg-image {
+            object-position: 68% 50% !important;
+          }
           .sec4-section-title {
             font-size: 40px !important;
             line-height: 36px !important;
@@ -261,19 +264,20 @@ export function IndustriesCarousel() {
                       (o navegador escolhe a maior disponível em telas largas). */}
                   <source
                     type="image/avif"
-                    srcSet={`${optimizedBg(ind.image, 480, 'avif')} 480w, ${optimizedBg(ind.image, 1024, 'avif')} 1024w`}
-                    sizes="100vw"
+                    srcSet={`${optimizedBg(ind.image, 480, 'avif')} 480w, ${optimizedBg(ind.image, 1024, 'avif')} 1024w, ${optimizedBg(ind.image, 1920, 'avif')} 1920w`}
+                    sizes="(max-width: 768px) 1024px, 100vw"
                   />
                   <source
                     type="image/webp"
-                    srcSet={`${optimizedBg(ind.image, 480, 'webp')} 480w, ${optimizedBg(ind.image, 1024, 'webp')} 1024w`}
-                    sizes="100vw"
+                    srcSet={`${optimizedBg(ind.image, 480, 'webp')} 480w, ${optimizedBg(ind.image, 1024, 'webp')} 1024w, ${optimizedBg(ind.image, 1920, 'webp')} 1920w`}
+                    sizes="(max-width: 768px) 1024px, 100vw"
                   />
                   <img
                     src={optimizedBg(ind.image, 1024, 'webp')}
                     alt=""
                     loading="lazy"
                     decoding="async"
+                    className="sec4-bg-image"
                     style={{
                       width: "100%",
                       height: "100%",

@@ -19,7 +19,7 @@ const slides = [
       "Medidor de vazão ultrassônico clamp-on para instalação externa em tubulações. Sem necessidade de corte de tubulação ou parada do processo.",
     cta: "Ver Especificações Técnicas",
     image:
-      "/images/slides/11.1.png",
+      "/images/home/highlights/medicao-clamp-on.webp",
   },
   {
     label: "LINHA EXCLUSIVA",
@@ -28,7 +28,7 @@ const slides = [
       "A linha GT-BIODIGEST foi desenvolvida para otimizar a produção de biogás em propriedades rurais, frigoríficos, cervejarias e aterros sanitários.",
     cta: "Conhecer a Linha GT-BIODIGEST",
     image:
-      "/images/slides/11.2.png",
+      "/images/home/highlights/gt-biodigest.webp",
   },
   {
     label: "CALIBRAÇÃO RASTREÁVEL",
@@ -37,7 +37,7 @@ const slides = [
       "Nosso serviço de calibração utiliza padrões rastreáveis ao INMETRO, garantindo rastreabilidade total para as suas medições.",
     cta: "Solicitar Calibração",
     image:
-      "/images/slides/11.3.png",
+      "/images/home/highlights/calibracao-rastreavel.webp",
   },
   {
     label: "CONECTIVIDADE",
@@ -46,7 +46,7 @@ const slides = [
       "Sistemas de telemetria via rádio ou celular para supervisão remota de pontos distribuídos: estações de bombeamento, biodigestores, redes de gás e distribuição de água.",
     cta: "Ver Soluções em Telemetria",
     image:
-      "/images/slides/11.4.png",
+      "/images/home/highlights/telemetria-industrial.webp",
   },
   {
     label: "INTEGRIDADE DE ATIVOS",
@@ -55,7 +55,7 @@ const slides = [
       "Diagnóstico completo da integridade de dutos: inspeção de revestimento, levantamento de potenciais e relatórios técnicos para conformidade normativa.",
     cta: "Solicitar Inspeção",
     image:
-      "/images/slides/11.5.png",
+      "/images/home/highlights/inspecao-revestimento.webp",
   },
 ];
 
@@ -251,6 +251,9 @@ export function SliderModule() {
           cursor: grabbing;
         }
         @media (max-width: 768px) {
+          .sec6-slide-image {
+            object-position: 72% 50% !important;
+          }
           .sec6-slide-title {
             font-size: 40px !important;
             line-height: 36px !important;
@@ -349,18 +352,19 @@ export function SliderModule() {
                         <source
                           type="image/avif"
                           srcSet={`${optimizedBg(slide.image, 480, "avif")} 480w, ${optimizedBg(slide.image, 1024, "avif")} 1024w, ${optimizedBg(slide.image, 1920, "avif")} 1920w`}
-                          sizes="100vw"
+                          sizes="(max-width: 768px) 1024px, 100vw"
                         />
                         <source
                           type="image/webp"
                           srcSet={`${optimizedBg(slide.image, 480, "webp")} 480w, ${optimizedBg(slide.image, 1024, "webp")} 1024w, ${optimizedBg(slide.image, 1920, "webp")} 1920w`}
-                          sizes="100vw"
+                          sizes="(max-width: 768px) 1024px, 100vw"
                         />
                         <img
                           src={optimizedBg(slide.image, 1024, "webp")}
                           alt=""
                           loading={i === 0 ? "eager" : "lazy"}
                           decoding={i === 0 ? "sync" : "async"}
+                          className="sec6-slide-image"
                           // @ts-expect-error fetchpriority é válido
                           fetchpriority={i === 0 ? "high" : undefined}
                           style={{

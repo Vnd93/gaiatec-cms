@@ -10,8 +10,8 @@ import { ResponsiveImage, optimizedBg } from "../components/ResponsiveImage";
 /* ────────────────────────────────────────────────────────
    IMAGES
    ──────────────────────────────────────────────────────── */
-const HERO_IMAGE = "/images/heroes/1.1.png";
-const TEAM_IMAGE = "/images/heroes/1.2.png";
+const HERO_IMAGE = "/images/sobre/engenharia-institucional.webp";
+const TEAM_IMAGE = "/images/sobre/equipe-brasileira.webp";
 
 /* ────────────────────────────────────────────────────────
    FALLBACK DATA — usado quando o CMS está indisponível ou
@@ -206,7 +206,7 @@ export default function SobrePage() {
                   alt="Equipe Gaiatec Sistemas"
                   sizes="(max-width: 1024px) 100vw, 720px"
                   className="w-full h-full object-cover"
-                  style={{ aspectRatio: "16/11", display: "block" }}
+                  style={{ aspectRatio: "16/9", display: "block" }}
                 />
                 {/* Yellow accent bar */}
                 <div

@@ -65,8 +65,8 @@ export function HeroCarousel({ slides }: { slides: HeroSlide[] }) {
             {isVisible && (
               <div className="absolute inset-0 overflow-hidden" style={{ transform: current === i ? "scale(1.05)" : "scale(1)", transition: "transform 8s ease-out" }}>
                 <picture>
-                  <source type="image/avif" srcSet={`${optimizedBg(slide.image, 480, "avif")} 480w, ${optimizedBg(slide.image, 1024, "avif")} 1024w, ${optimizedBg(slide.image, 1920, "avif")} 1920w`} sizes="100vw" />
-                  <source type="image/webp" srcSet={`${optimizedBg(slide.image, 480, "webp")} 480w, ${optimizedBg(slide.image, 1024, "webp")} 1024w, ${optimizedBg(slide.image, 1920, "webp")} 1920w`} sizes="100vw" />
+                  <source type="image/avif" srcSet={`${optimizedBg(slide.image, 480, "avif")} 480w, ${optimizedBg(slide.image, 1024, "avif")} 1024w, ${optimizedBg(slide.image, 1920, "avif")} 1920w`} sizes="(max-width: 768px) 1024px, 100vw" />
+                  <source type="image/webp" srcSet={`${optimizedBg(slide.image, 480, "webp")} 480w, ${optimizedBg(slide.image, 1024, "webp")} 1024w, ${optimizedBg(slide.image, 1920, "webp")} 1920w`} sizes="(max-width: 768px) 1024px, 100vw" />
                   <img
                     src={optimizedBg(slide.image, 1024, "webp")}
                     alt=""
@@ -74,7 +74,7 @@ export function HeroCarousel({ slides }: { slides: HeroSlide[] }) {
                     decoding={i === 0 ? "sync" : "async"}
                     // @ts-expect-error fetchpriority é válido
                     fetchpriority={i === 0 ? "high" : undefined}
-                    className="w-full h-full object-cover object-center"
+                    className="hero-carousel-image w-full h-full object-cover"
                   />
                 </picture>
               </div>
@@ -138,6 +138,10 @@ export function HeroCarousel({ slides }: { slides: HeroSlide[] }) {
       </div>
 
       <style>{`
+        .hero-carousel-image { object-position: 50% 50%; }
+        @media (max-width: 768px) {
+          .hero-carousel-image { object-position: 72% 50%; }
+        }
         @keyframes fadeInUp {
           from { opacity: 0; transform: translateY(20px); }
           to { opacity: 1; transform: translateY(0); }

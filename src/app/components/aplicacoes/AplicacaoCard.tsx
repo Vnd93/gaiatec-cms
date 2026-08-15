@@ -1,6 +1,7 @@
 import { Link } from "react-router";
 import { ArrowUpRight } from "lucide-react";
 import type { AplicacaoListItem } from "../../data/aplicacoes";
+import { ResponsiveApplicationImage } from "./ResponsiveApplicationImage";
 
 interface AplicacaoCardProps {
   aplicacao: AplicacaoListItem;
@@ -19,10 +20,11 @@ export function AplicacaoCard({ aplicacao }: AplicacaoCardProps) {
     >
       {/* Imagem */}
       <div className="relative h-48 overflow-hidden bg-slate-100">
-        <img
+        <ResponsiveApplicationImage
           src={aplicacao.imagem}
           alt={aplicacao.nome}
           loading="lazy"
+          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />

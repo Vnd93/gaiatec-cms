@@ -199,7 +199,7 @@ export default function ServicosPage() {
       />
 
       {/* ═══════════════ 1) HERO (padrão Biodigestor) ═══════════════ */}
-      <PageHero overline="Serviços" title="Engenharia de Campo" image="/images/services/4.1.webp" />
+      <PageHero overline="Serviços" title="Engenharia de Campo" image="/images/servicos/engenharia-de-campo/hero.webp" />
 
       {/* ═══════════════ 2) CARROSSEL DESTAQUES ═══════════════ */}
       <section style={{ background: "#fff", padding: "80px 0 90px" }}>

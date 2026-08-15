@@ -3,12 +3,12 @@ import { Link } from "react-router";
 import { AnimateOnScroll } from "../components/useScrollAnimation";
 import { useBlogPosts } from "../hooks/useSiteData";
 import { ChevronRight, Calendar, ArrowRight, Mail } from "lucide-react";
-import { optimizedBg } from "../components/ResponsiveImage";
+import { optimizedBg, ResponsiveImage } from "../components/ResponsiveImage";
 
 /* ────────────────────────────────────────────────────────
    IMAGES
    ──────────────────────────────────────────────────────── */
-const HERO_IMG = "/images/heroes/1.1.png";
+const HERO_IMG = "/images/blog/hero-conteudo-tecnico.webp";
 
 /* ────────────────────────────────────────────────────────
    DATA
@@ -21,42 +21,42 @@ const FALLBACK_POSTS = [
     title: "Medicao Ultrassonica Clamp-On: Quando e Por Que Utilizar",
     excerpt: "Entenda as vantagens da medicao nao-invasiva de vazao e em quais aplicacoes ela e a melhor escolha tecnica.",
     date: "10 Mar 2026",
-    image: "/images/heroes/1.2.webp",
+    image: "/images/blog/medicao-ultrassonica-clamp-on.webp",
   },
   {
     category: "ESTUDOS DE CASO",
     title: "Companhia de Saneamento Reduz Perdas em 22% com Telemetria",
     excerpt: "Case de implantacao de sistema de monitoramento remoto em rede de distribuicao de agua.",
     date: "05 Mar 2026",
-    image: "/images/heroes/1.3.webp",
+    image: "/images/blog/telemetria-saneamento.webp",
   },
   {
     category: "NOVIDADES DO SETOR",
     title: "Biogas no Brasil: Regulamentacao e Oportunidades em 2026",
     excerpt: "Panorama do mercado de biogas e biometano no Brasil, incluindo novas regulamentacoes e incentivos.",
     date: "28 Fev 2026",
-    image: "/images/heroes/1.4.webp",
+    image: "/images/blog/biogas-brasil.webp",
   },
   {
     category: "ARTIGOS TECNICOS",
     title: "Proteção Catódica: Fundamentos e Boas Praticas",
     excerpt: "Guia tecnico sobre os principios da protecao catodica e como garantir a integridade de estruturas metalicas.",
     date: "20 Fev 2026",
-    image: "/images/heroes/1.5.webp",
+    image: "/images/blog/protecao-catodica.webp",
   },
   {
     category: "WHITEPAPERS",
     title: "Automacao de Estacoes Elevatorias: Eficiencia e Reducao de Custos",
     excerpt: "White paper tecnico sobre a automacao de estacoes elevatorias de agua e esgoto.",
     date: "15 Fev 2026",
-    image: "/images/pages/2.1.webp",
+    image: "/images/blog/automacao-estacao-elevatoria.webp",
   },
   {
     category: "EVENTOS",
     title: "Gaiatec Sistemas na Feira Internacional de Saneamento 2026",
     excerpt: "Visite nosso estande e conheca as ultimas novidades em instrumentacao e automacao.",
     date: "10 Fev 2026",
-    image: "/images/pages/2.2.webp",
+    image: "/images/blog/feira-saneamento.webp",
   },
 ];
 
@@ -84,7 +84,7 @@ export default function BlogPage() {
       title: p.titulo,
       excerpt: p.resumo || "",
       date: p.publicado_em ? new Date(p.publicado_em).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }) : "",
-      image: p.imagem_url || "/images/heroes/1.2.webp",
+      image: p.imagem_url || "/images/blog/hero-conteudo-tecnico.webp",
     }));
   }, [apiPosts]);
 
@@ -184,9 +184,10 @@ export default function BlogPage() {
               >
                 {/* Image */}
                 <div className="relative overflow-hidden" style={{ minHeight: 320 }}>
-                  <img
+                  <ResponsiveImage
                     src={featured.image}
                     alt={featured.title}
+                    sizes="(max-width: 1024px) 100vw, 50vw"
                     style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", objectFit: "cover", transition: "transform 0.5s ease" }}
                     onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.05)"; }}
                     onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
@@ -249,9 +250,10 @@ export default function BlogPage() {
                   >
                     {/* Image */}
                     <div style={{ position: "relative", paddingTop: "56%", overflow: "hidden" }}>
-                      <img
+                      <ResponsiveImage
                         src={post.image}
                         alt={post.title}
+                        sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
                         style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", objectFit: "cover", transition: "transform 0.5s ease" }}
                         onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.05)"; }}
                         onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}

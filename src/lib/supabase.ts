@@ -1,11 +1,11 @@
 import { createClient } from '@supabase/supabase-js'
 
-export const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
-export const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+const configuredUrl = import.meta.env.VITE_SUPABASE_URL
+const configuredAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  throw new Error('Defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no ambiente')
-}
+export const SUPABASE_CONFIGURED = Boolean(configuredUrl && configuredAnonKey)
+export const SUPABASE_URL = configuredUrl || 'http://127.0.0.1:54321'
+export const SUPABASE_ANON_KEY = configuredAnonKey || 'public-anon-key-not-configured'
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 

@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import { Phone, MessageSquare, MapPin, ArrowRight, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { AnimateOnScroll } from "./useScrollAnimation";
 import { useContactInfo } from "../hooks/useSiteData";
-import { SUPABASE_ANON_KEY, SUPABASE_URL } from "../../lib/supabase";
+import { SUPABASE_ANON_KEY, SUPABASE_CONFIGURED, SUPABASE_URL } from "../../lib/supabase";
 import { TurnstileChallenge } from "./TurnstileChallenge";
 
 const KNOCKOUT = "'Knockout HTF68', sans-serif";
@@ -73,6 +73,10 @@ export function ContactSection({ variant = "brand" }: { variant?: "brand" | "lig
     setErrorMsg("");
 
     try {
+      if (!SUPABASE_CONFIGURED) {
+        throw new Error("Formulário temporariamente indisponível. Tente novamente mais tarde.");
+      }
+
       const res = await fetch(`${SUPABASE_URL}/functions/v1/submit-contact`, {
         method: "POST",
         headers: {

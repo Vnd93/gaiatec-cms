@@ -20,10 +20,10 @@
 | Formulários | Consentimento ambíguo | consentimento estruturado com finalidade, texto, versão e timestamp | submissão sintética e persistência inspecionadas | Verificado live |
 | Formulários | Duplicação/perda de notificação | UUID de idempotência e outbox; ausência de Resend registra falha sem duplicar | primeira submissão 202, repetição 200/duplicate, outbox `email_not_configured` | Verificado live/fail-closed |
 
-## Owners necessários para encerrar os P0
+## Aceites funcionais para encerrar os P0
 
-| Pendência | Owner funcional requerido | Contenção atual |
+| Decisão | Owner funcional | Estado |
 |---|---|---|
-| Validar termos, consentimento e força probatória | Jurídico + Negócio, conforme ADR-010 | termos marcados como pendentes de aprovação; sem alegação de ICP-Brasil |
+| Validar termos, consentimento e força probatória | Administrador da GAIATEC SISTEMAS, pelos papéis Jurídico + Negócio conforme ADR-010 | aceito formalmente em 2026-08-28, sob responsabilidade declarada; sem alegação de ICP-Brasil |
 
-Os owners técnicos têm contenção e evidência remota. O único aceite pendente para o Gate é jurídico-negocial.
+Os owners técnicos têm contenção e evidência remota. O aceite jurídico-negocial foi registrado em [Aceite jurídico-negocial da ADR-010](./ACEITE_JURIDICO_NEGOCIAL_ADR010.md); não resta P0 sem owner e contenção.

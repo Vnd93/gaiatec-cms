@@ -10,6 +10,8 @@ O dry-run transacional das oito migrations iniciais passou com `ROLLBACK`. O end
 
 Foram configurados apenas `ALLOWED_ORIGINS`, `PUBLIC_SITE_ORIGIN`, `EVIDENCE_SALT` e `RATE_LIMIT_SALT`, todos exclusivos de staging. As sete funções foram publicadas. A matriz remota passou e a limpeza final zerou todos os dados sintéticos e objetos.
 
+O aceite jurídico-negocial requerido para a ADR-010 foi concedido pelo Administrador da GAIATEC SISTEMAS em 2026-08-28 e registrado em [Aceite jurídico-negocial da ADR-010](./ACEITE_JURIDICO_NEGOCIAL_ADR010.md). Com ele e as evidências técnicas abaixo, o Gate G1 foi aprovado sem iniciar a Fase 2.
+
 ## Pré-condições
 
 1. obter aprovação do owner de Plataforma/Backend e credencial temporária de staging;

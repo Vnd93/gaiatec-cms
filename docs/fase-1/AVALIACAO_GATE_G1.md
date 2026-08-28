@@ -2,22 +2,26 @@
 
 Data: 2026-08-28
 
-Decisão: **BLOQUEADO exclusivamente pelo aceite jurídico-negocial**
+Decisão: **APROVADO**
+
+Base da reavaliação: Gate G0 no commit `1a4d635b70fe763aeed851514a8fc03ba0f7012c`; contenção técnica nos commits `80f47b8` e `b457312a3f5263290bb41eed17498baf8d91ead5`; staging isolado `glcqsosxwgmlhzgcsnzv` (`GAIATEC CMS Staging`, `us-east-2`); aceite humano registrado em 2026-08-28.
 
 ## Critérios do planejamento
 
 | Critério | Evidência | Avaliação |
 |---|---|---|
-| acesso RDO fechado | allowlist separada; sem escopo/suspenso/alheio negados; OTP sem Resend não criou usuário | técnico aprovado |
-| assinados imutáveis | UPDATE/DELETE remotos sem efeito; correção versionada; PDF canônico server-side selado por SHA-256 | técnico aprovado |
-| mídia sensível privada | buckets privados; público 400; signed URL curta 200 somente para owner | técnico aprovado |
-| rotas privadas não indexáveis | meta/canonical/headers privados validados no frontend staging | técnico aprovado |
-| nenhum P0 sem owner e contenção | matriz atualizada; terceiros ausentes falham fechados e têm limitação registrada | técnico aprovado |
-| testes críticos verdes | testes locais, Deno, build, audit, matriz remota e Security Advisor verdes | técnico aprovado |
+| acesso RDO fechado | allowlist separada; sem escopo/suspenso/alheio negados; OTP sem Resend não criou usuário | aprovado |
+| assinados imutáveis | UPDATE/DELETE remotos sem efeito; correção versionada; PDF canônico server-side selado por SHA-256 | aprovado |
+| mídia sensível privada | buckets privados; público 400; signed URL curta 200 somente para owner | aprovado |
+| rotas privadas não indexáveis | meta/canonical/headers privados validados no frontend staging | aprovado |
+| nenhum P0 sem owner e contenção | matriz atualizada; terceiros ausentes falham fechados; aceite jurídico-negocial nominal registrado | aprovado |
+| testes críticos verdes | testes locais, Deno, build, audit, matriz remota e Security Advisor verdes | aprovado |
 
-## Único bloqueador
+## Fechamento do aceite jurídico-negocial
 
-A ADR-010 exige validação humana dos termos, consentimento e modelo probatório. A Lei 14.063/2020 disciplina assinaturas eletrônicas e a MP 2.200-2, art. 10, §2º admite outros meios de comprovação quando aceitos pelas partes; essas normas não substituem o aceite do Jurídico e do Negócio. Fontes oficiais: https://www.planalto.gov.br/ccivil_03/_ato2019-2022/2020/lei/l14063.htm e https://www.planalto.gov.br/ccivil_03/mpv/antigas_2001/2200-2.htm.
+A validação humana exigida pela ADR-010 foi concluída. Em 2026-08-28, o solicitante, na qualidade declarada de Administrador da GAIATEC SISTEMAS, autorizou formalmente o prosseguimento sob sua responsabilidade e determinou que o ato valesse pelos papéis Jurídico e Negócio para os termos, o consentimento e o modelo probatório.
+
+O texto integral, a origem, o escopo e os limites da decisão estão no [Registro de aceite jurídico-negocial — ADR-010](./ACEITE_JURIDICO_NEGOCIAL_ADR010.md). A decisão é administrativa e não é apresentada como parecer jurídico externo ou certificação ICP-Brasil.
 
 ## Limitações operacionais que não abrem o P0
 
@@ -28,4 +32,6 @@ A ADR-010 exige validação humana dos termos, consentimento e modelo probatóri
 
 ## Parecer
 
-Os bloqueios técnicos ao alcance foram removidos e verificados no staging isolado. O Gate G1 continua bloqueado somente até o aceite formal do Jurídico e do Negócio. Não está autorizada a passagem para a Fase 2.
+Todos os seis critérios normativos do Gate G1 estão atendidos. Os bloqueios técnicos foram removidos ou formalmente isolados e verificados no staging exclusivo; o único bloqueio humano remanescente foi encerrado pelo aceite formal acima. Não há outro bloqueio P0 real identificado.
+
+O **Gate G1 está aprovado em 2026-08-28**. Esta decisão encerra exclusivamente a Fase 1; nenhum trabalho da Fase 2 foi iniciado ou autorizado por este registro.

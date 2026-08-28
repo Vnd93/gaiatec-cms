@@ -45,4 +45,3 @@
 ## Limites deliberados
 
 Nenhum usuario real ou primeiro Super Admin foi criado. O bootstrap inicial continua sendo uma operacao nominal e controlada. A tela de login `/admin`, definicao de senha e MFA pertencem ao proximo pacote; ate la, a API permanece inacessivel para operacao real por ausencia de identidades CMS ativas.
-

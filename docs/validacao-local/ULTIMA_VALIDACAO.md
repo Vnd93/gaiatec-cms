@@ -2,29 +2,29 @@
 
 **Resultado geral:** APROVADO
 
-**Inicio:** 2026-08-28T19:10:53.138Z
+**Inicio:** 2026-08-28T19:59:59.871Z
 
-**Fim:** 2026-08-28T19:11:59.381Z
+**Fim:** 2026-08-28T20:01:19.096Z
 
 **Branch:** `Remodelagem`
 
-**Commit-base:** `5de49aa1a2ae012b935669e808dd1d9a877d2e9f`
+**Commit-base:** `53c69b620557046256b7377ba9fd0aa9c591f4f5`
 
-**Estado inicial:** arvore Git limpa
+**Estado inicial:** com alteracoes locais ainda nao commitadas
 
 | Verificacao | Resultado | Duracao aproximada |
 | --- | --- | --- |
 | Formatacao | APROVADO | 2s |
-| Lint | APROVADO | 12s |
-| TypeScript | APROVADO | 5s |
-| Testes unitarios | APROVADO | 3s |
+| Lint | APROVADO | 13s |
+| TypeScript | APROVADO | 6s |
+| Testes unitarios | APROVADO | 4s |
 | Testes de integracao | APROVADO | 1s |
 | Contencoes da Fase 1 | APROVADO | 1s |
 | Fundacao da Fase 3 | APROVADO | 1s |
 | Auditoria de dependencias | APROVADO | 2s |
-| Build de staging | APROVADO | 21s |
+| Build de staging | APROVADO | 22s |
 | Manifesto do artefato | APROVADO | 2s |
-| Testes de navegador | APROVADO | 21s |
+| Testes de navegador | APROVADO | 29s |
 
 
 ## Limite desta validacao

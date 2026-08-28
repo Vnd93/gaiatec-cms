@@ -1,6 +1,6 @@
 # Fase 3 — nucleo do novo CMS
 
-**Status:** `CMS-001` concluido no staging; Fase 3 em execucao com CI automatico e validacao local complementar
+**Status:** `CMS-001` e `CMS-002` concluidos no staging
 
 **Branch:** `Remodelagem`
 
@@ -27,4 +27,10 @@ O contrato e os testes estruturais de `CMS-001` foram aprovados localmente. A mi
 
 As evidencias detalhadas ficam em `EVIDENCIA_CMS_001.md`. Producao nao foi acessada.
 
-O proximo pacote e o convite fechado e os comandos server-side de usuarios, seguido pelo login administrativo. O shell `/admin` continua fora deste pacote.
+## CMS-002 — usuarios server-side
+
+O segundo pacote adiciona uma Edge Function administrativa fechada para listar usuarios, convidar, reenviar convite, alterar papeis, suspender, reativar e revogar sessoes. As mutacoes exigem permissao `cms:*`, MFA quando aplicavel, identificador idempotente, limite de requisicoes e auditoria transacional. O primeiro Super Admin continua dependendo de provisionamento controlado; nao existe cadastro publico nem bootstrap por e-mail.
+
+As evidencias tecnicas e o estado posterior do staging estao em `EVIDENCIA_CMS_002.md`.
+
+O proximo pacote e o login administrativo com MFA e recuperacao segura. O shell `/admin` continua fora deste pacote.

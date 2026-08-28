@@ -1,7 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-const routes = ["/", "/produtos", "/contato", "/blog", "/relatorio-de-obra/login"];
+const routes = ["/", "/produtos", "/contato", "/blog", "/relatorio-de-obra/login", "/admin/login"];
 
 for (const route of routes) {
   test(`smoke ${route}`, async ({ page }) => {

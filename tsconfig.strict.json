@@ -7,6 +7,9 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": [
+    "src/admin/**/*.ts",
+    "src/admin/**/*.tsx",
+    "src/lib/supabase.ts",
     "src/shared/**/*.ts",
     "tests/setup.ts",
     "tests/unit/**/*.ts",

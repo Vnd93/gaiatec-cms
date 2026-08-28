@@ -3,6 +3,8 @@ import { createBrowserRouter, Outlet } from "react-router";
 import { Layout } from "./components/Layout";
 import { AuthProvider } from "./rdo/AuthContext";
 import { RequireAuth } from "./rdo/RequireAuth";
+import { AdminAuthProvider } from "../admin/auth/AdminAuthContext";
+import { RequireAdminAuth } from "../admin/auth/RequireAdminAuth";
 
 // Home page = eager load (entry point — não vale a pena lazy)
 import HomePage from "./pages/HomePage";
@@ -45,6 +47,13 @@ const RdoFormPage = lazy(() => import("./rdo/pages/FormPage"));
 const RdoDefinirSenhaPage = lazy(() => import("./rdo/pages/DefinirSenhaPage"));
 const RdoEquipePage = lazy(() => import("./rdo/pages/EquipePage"));
 const RdoAssinarPage = lazy(() => import("./rdo/pages/AssinarPage"));
+
+// CMS administrativo isolado do RDO e do site publico.
+const AdminLoginPage = lazy(() => import("../admin/pages/LoginPage"));
+const AdminRecoveryPage = lazy(() => import("../admin/pages/RecoveryPage"));
+const AdminSetPasswordPage = lazy(() => import("../admin/pages/SetPasswordPage"));
+const AdminMfaPage = lazy(() => import("../admin/pages/MfaPage"));
+const AdminHomePage = lazy(() => import("../admin/pages/AdminHomePage"));
 
 // Loader minimalista — não bloqueia o paint
 function PageLoader() {
@@ -114,6 +123,22 @@ export const router = createBrowserRouter([
       { path: "novo", element: <RequireAuth>{lazyWrap(RdoFormPage)}</RequireAuth> },
       { path: "relatorio/:id", element: <RequireAuth>{lazyWrap(RdoFormPage)}</RequireAuth> },
       { path: "equipe", element: <RequireAuth>{lazyWrap(RdoEquipePage)}</RequireAuth> },
+    ],
+  },
+  {
+    path: "/admin",
+    element: (
+      <AdminAuthProvider>
+        <Outlet />
+      </AdminAuthProvider>
+    ),
+    errorElement: <RouteErrorPage />,
+    children: [
+      { path: "login", element: lazyWrap(AdminLoginPage) },
+      { path: "recuperar-senha", element: lazyWrap(AdminRecoveryPage) },
+      { path: "definir-senha", element: lazyWrap(AdminSetPasswordPage) },
+      { path: "mfa", element: lazyWrap(AdminMfaPage) },
+      { index: true, element: <RequireAdminAuth>{lazyWrap(AdminHomePage)}</RequireAdminAuth> },
     ],
   },
 ]);

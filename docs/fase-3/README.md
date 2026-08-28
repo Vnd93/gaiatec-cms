@@ -1,6 +1,6 @@
 # Fase 3 — nucleo do novo CMS
 
-**Status:** `CMS-001` e `CMS-002` concluidos no staging; `CMS-003` validado no CI
+**Status:** `CMS-001` e `CMS-002` concluidos no staging; `CMS-003` e `CMS-004` validados no CI
 
 **Branch:** `Remodelagem`
 
@@ -39,4 +39,10 @@ O terceiro pacote adiciona login fechado, aceite de convite, definicao e recuper
 
 O pacote passou integralmente no banco efemero e nas suites de qualidade e navegador do GitHub. A aplicacao no staging aguarda somente uma nova sessao autenticada do Supabase; producao nao foi acessada. As evidencias estao em `EVIDENCIA_CMS_003.md`.
 
-O proximo pacote e a fundacao editorial versionada, sem importar conteudo legado ou criar registros reais.
+## CMS-004 — fundacao editorial versionada
+
+O quarto pacote cria estruturas vazias para taxonomia, rascunhos concorrentes, revisoes imutaveis, projecao publicada e outbox idempotente. O contrato runtime exige fonte oficial, hash, owners e direitos confirmados, sem importar conteudo legado ou criar registros reais.
+
+As 13 migrations foram aplicadas do zero pelo CI e os 20 testes pgTAP do pacote passaram. A aplicacao sequencial de `0012` e `0013` no staging aguarda uma sessao autenticada do Supabase. As evidencias estao em `EVIDENCIA_CMS_004.md`.
+
+O proximo pacote e a API de comandos editoriais com revisao, aprovacao, publicacao, restauracao e arquivamento atomicos. Midia e API publica permanecem separadas.

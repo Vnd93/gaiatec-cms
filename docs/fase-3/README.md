@@ -1,6 +1,6 @@
 # Fase 3 — nucleo do novo CMS
 
-**Status:** `CMS-001` e `CMS-002` concluidos no staging
+**Status:** `CMS-001` e `CMS-002` concluidos no staging; `CMS-003` validado no CI
 
 **Branch:** `Remodelagem`
 
@@ -33,4 +33,10 @@ O segundo pacote adiciona uma Edge Function administrativa fechada para listar u
 
 As evidencias tecnicas e o estado posterior do staging estao em `EVIDENCIA_CMS_002.md`.
 
-O proximo pacote e o login administrativo com MFA e recuperacao segura. O shell `/admin` continua fora deste pacote.
+## CMS-003 — login administrativo e MFA
+
+O terceiro pacote adiciona login fechado, aceite de convite, definicao e recuperacao de senha, MFA TOTP e resolucao server-side da sessao. Super Admin sem `aal2`, perfil suspenso, sessao revogada e identidade exclusiva do RDO permanecem fora do shell `/admin`.
+
+O pacote passou integralmente no banco efemero e nas suites de qualidade e navegador do GitHub. A aplicacao no staging aguarda somente uma nova sessao autenticada do Supabase; producao nao foi acessada. As evidencias estao em `EVIDENCIA_CMS_003.md`.
+
+O proximo pacote e a fundacao editorial versionada, sem importar conteudo legado ou criar registros reais.

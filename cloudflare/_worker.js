@@ -65,8 +65,7 @@ async function spaResponse(request, env, status, options = {}) {
   return new Response(index.body, { status, headers });
 }
 
-export default {
-  async fetch(request, env) {
+async function handleRequest(request, env) {
     const url = new URL(request.url);
     const path = url.pathname;
     const stagingHost = url.hostname.endsWith(".pages.dev");
@@ -94,5 +93,51 @@ export default {
     }
 
     return spaResponse(request, env, 404, { noindex: true });
+}
+
+function correlationId(request) {
+  const incoming = request.headers.get("x-correlation-id") ?? "";
+  return /^[a-zA-Z0-9-]{8,80}$/.test(incoming) ? incoming : crypto.randomUUID();
+}
+
+export default {
+  async fetch(request, env) {
+    const startedAt = Date.now();
+    const id = correlationId(request);
+    const url = new URL(request.url);
+    let response;
+
+    try {
+      response = await handleRequest(request, env);
+    } catch (_error) {
+      response = new Response("Internal Server Error", {
+        status: 500,
+        headers: securityHeaders(new Headers({ "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" }), {
+          noindex: true,
+        }),
+      });
+    }
+
+    const headers = new Headers(response.headers);
+    headers.set("X-Correlation-ID", id);
+    headers.set("Server-Timing", `edge;dur=${Date.now() - startedAt}`);
+    const finalResponse = new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+
+    console.log(
+      JSON.stringify({
+        timestamp: new Date().toISOString(),
+        level: response.status >= 500 ? "error" : "info",
+        event: "api.request",
+        correlationId: id,
+        release: env.CF_PAGES_COMMIT_SHA ?? "local",
+        route: url.pathname.slice(0, 160),
+        context: { method: request.method, status: response.status, durationMs: Date.now() - startedAt },
+      }),
+    );
+    return finalResponse;
   },
 };

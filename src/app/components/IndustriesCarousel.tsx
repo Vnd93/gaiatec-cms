@@ -430,7 +430,7 @@ export function IndustriesCarousel() {
                       {/* ── ARROW BUTTON ── */}
                       <a
                         href={ind.href}
-                        onClick={(e) => e.preventDefault()}
+                        aria-label={`Conhecer soluções para ${ind.title}`}
                         className="sec4-arrow-box"
                         style={{
                           marginTop: isActive ? 10 : 6,

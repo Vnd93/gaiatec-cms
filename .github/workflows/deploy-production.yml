@@ -1,0 +1,39 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+    inputs:
+      git_ref:
+        description: Commit/tag imutável aprovado
+        required: true
+      confirmation:
+        description: Digite DEPLOY-PRODUCTION
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: github.ref_name == 'main' && inputs.confirmation == 'DEPLOY-PRODUCTION'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.git_ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run artifact:manifest
+        env:
+          GITHUB_SHA: ${{ inputs.git_ref }}
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name gaiatec-website --branch main

@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { Link, isRouteErrorResponse, useLocation, useRouteError } from "react-router";
+import { reportClientError } from "../../shared/observability";
 
 function errorMessage(error: unknown): string {
   if (isRouteErrorResponse(error)) return `${error.status}:${error.statusText}`;
@@ -17,6 +18,10 @@ export default function RouteErrorPage() {
     for (const char of `${location.pathname}:${message}`) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
     return `WEB-${(hash >>> 0).toString(16).toUpperCase().padStart(8, "0")}`;
   }, [location.pathname, message]);
+
+  useEffect(() => {
+    reportClientError("frontend.route_error", error, { chunkFailure, supportCode, route: location.pathname }, supportCode);
+  }, [chunkFailure, error, location.pathname, supportCode]);
 
   useEffect(() => {
     if (!chunkFailure) return;

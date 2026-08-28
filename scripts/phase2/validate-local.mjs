@@ -28,6 +28,7 @@ const steps = [
   ["Testes unitarios", ["run", "test"]],
   ["Testes de integracao", ["run", "test:integration"]],
   ["Contencoes da Fase 1", ["run", "test:phase1"]],
+  ["Fundacao da Fase 3", ["run", "test:phase3"]],
   ["Auditoria de dependencias", ["audit", "--audit-level=high"]],
   ["Build de staging", ["run", "build:staging"]],
   ["Manifesto do artefato", ["run", "artifact:manifest"]],

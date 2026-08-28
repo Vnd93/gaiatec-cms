@@ -29,6 +29,7 @@ jobs:
       - run: npm run test
       - run: npm run test:integration
       - run: npm run test:phase1
+      - run: npm run test:phase3
       - run: npm audit --audit-level=high
       - run: npm run build:staging
         env:

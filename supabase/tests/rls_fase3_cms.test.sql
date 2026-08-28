@@ -41,7 +41,7 @@ select 2, is(
 );
 
 set local role authenticated;
-select set_config('request.jwt.claims', '{"sub":"30000000-0000-0000-0000-000000000002","role":"authenticated","session_id":"editor-session","aal":"aal1"}', true);
+select set_config('request.jwt.claims', jsonb_build_object('sub', '30000000-0000-0000-0000-000000000002', 'role', 'authenticated', 'session_id', 'editor-session', 'aal', 'aal1', 'iat', extract(epoch from now())::bigint)::text, true);
 
 insert into fase3_test_results
 select 3, results_eq(
@@ -65,11 +65,11 @@ values (
   now() + interval '1 hour'
 );
 set local role authenticated;
-select set_config('request.jwt.claims', '{"sub":"30000000-0000-0000-0000-000000000002","role":"authenticated","session_id":"editor-session","aal":"aal1"}', true);
+select set_config('request.jwt.claims', jsonb_build_object('sub', '30000000-0000-0000-0000-000000000002', 'role', 'authenticated', 'session_id', 'editor-session', 'aal', 'aal1', 'iat', extract(epoch from now())::bigint)::text, true);
 insert into fase3_test_results
 select 6, isnt(public.cms_current_session_is_valid(), true, 'revoked CMS session is rejected');
 
-select set_config('request.jwt.claims', '{"sub":"30000000-0000-0000-0000-000000000004","role":"authenticated","session_id":"rdo-session","aal":"aal1"}', true);
+select set_config('request.jwt.claims', jsonb_build_object('sub', '30000000-0000-0000-0000-000000000004', 'role', 'authenticated', 'session_id', 'rdo-session', 'aal', 'aal1', 'iat', extract(epoch from now())::bigint)::text, true);
 insert into fase3_test_results
 select 7, results_eq(
   'select count(*)::bigint from public.cms_roles',
@@ -77,7 +77,7 @@ select 7, results_eq(
   'RDO admin receives no CMS scope'
 );
 
-select set_config('request.jwt.claims', '{"sub":"30000000-0000-0000-0000-000000000003","role":"authenticated","session_id":"suspended-session","aal":"aal1"}', true);
+select set_config('request.jwt.claims', jsonb_build_object('sub', '30000000-0000-0000-0000-000000000003', 'role', 'authenticated', 'session_id', 'suspended-session', 'aal', 'aal1', 'iat', extract(epoch from now())::bigint)::text, true);
 insert into fase3_test_results
 select 8, isnt(public.cms_user_is_active(), true, 'suspended CMS user is inactive');
 
@@ -89,7 +89,7 @@ select 9, throws_ok(
   'authenticated user cannot forge audit events'
 );
 
-select set_config('request.jwt.claims', '{"sub":"30000000-0000-0000-0000-000000000001","role":"authenticated","session_id":"super-session","aal":"aal2"}', true);
+select set_config('request.jwt.claims', jsonb_build_object('sub', '30000000-0000-0000-0000-000000000001', 'role', 'authenticated', 'session_id', 'super-session', 'aal', 'aal2', 'iat', extract(epoch from now())::bigint)::text, true);
 insert into fase3_test_results
 select 10, results_eq(
   'select count(*)::bigint from public.cms_profiles',
@@ -104,7 +104,7 @@ select 11, results_eq(
   'super admin with MFA reads immutable audit'
 );
 
-select set_config('request.jwt.claims', '{"sub":"30000000-0000-0000-0000-000000000001","role":"authenticated","session_id":"super-session","aal":"aal1"}', true);
+select set_config('request.jwt.claims', jsonb_build_object('sub', '30000000-0000-0000-0000-000000000001', 'role', 'authenticated', 'session_id', 'super-session', 'aal', 'aal1', 'iat', extract(epoch from now())::bigint)::text, true);
 insert into fase3_test_results
 select 12, isnt(
   public.cms_has_permission('cms:users.manage'),

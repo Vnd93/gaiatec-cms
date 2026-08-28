@@ -22,6 +22,6 @@
 - nenhum cadastro, texto, mídia, produto ou serviço existente foi copiado ou adaptado;
 - fixtures contêm exclusivamente identidades e registros sintéticos descartáveis;
 - produção não é acessada por scripts de validação da Fase 2;
-- migrações históricas permanecem imutáveis.
+- migrações históricas permanecem imutáveis, exceto pela correção mínima de resolução de schema em `0008`, necessária para reproduzir banco vazio e registrada em `EXCECAO_INTEGRIDADE_MIGRATION_0008.md`.
 
 Os resultados executados e a decisão do Gate G2 ficam em `EVIDENCIAS_GATE_G2.md`, preenchido somente com observações reais.

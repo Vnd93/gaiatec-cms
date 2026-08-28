@@ -13,7 +13,9 @@ O workflow de produção existe como controle preventivo, mas não é acionado n
 
 ## Aprovações
 
-Os environments `preview`, `staging` e `production` são pontos de aprovação e segregação de segredos. A proteção de branch deve exigir os três jobs de `CI` (`quality`, `database`, `browser`) antes de merge. O operador confirma explicitamente o commit imutável; rollback exige a frase `ROLLBACK-STAGING`.
+Os workflows usam os environments `preview`, `staging` e `production` como pontos de aprovação e segregação de segredos. Eles precisam existir no GitHub com revisores autorizados; a mera referência YAML não cria enforcement suficiente. A proteção de branch deve exigir os três jobs de `CI` (`quality`, `database`, `browser`) antes de merge. O operador confirma explicitamente o commit imutável; rollback exige a frase `ROLLBACK-STAGING`.
+
+Na avaliação de 2026-08-28, a API retornou zero environments e nenhuma proteção observável para `Remodelagem`. Esses controles externos precisam ser configurados antes da aprovação do G2.
 
 ## Rollback de aplicação
 

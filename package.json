@@ -6,6 +6,12 @@
   "scripts": {
     "build": "vite build",
     "build:full": "node scripts/generate-responsive-images.mjs && vite build",
+    "build:staging": "npm run build && node scripts/prepare-staging-headers.mjs",
+    "cf:whoami": "wrangler whoami",
+    "cf:projects": "wrangler pages project list",
+    "deploy:preview": "npm run build:staging && wrangler pages deploy dist --project-name gaiatec-cms-staging --branch preview",
+    "deploy:staging": "npm run build:staging && wrangler pages deploy dist --project-name gaiatec-cms-staging --branch Remodelagem",
+    "deploy:production": "npm run build && wrangler pages deploy dist --project-name gaiatec-website --branch main",
     "dev": "vite",
     "responsive-images": "node scripts/generate-responsive-images.mjs"
   },
@@ -61,7 +67,8 @@
     "@vitejs/plugin-react": "4.7.0",
     "tailwindcss": "4.1.12",
     "vite": "6.3.5",
-    "vite-plugin-compression": "^0.5.1"
+    "vite-plugin-compression": "^0.5.1",
+    "wrangler": "^4.127.0"
   },
   "optionalDependencies": {
     "sharp": "^0.33.5"

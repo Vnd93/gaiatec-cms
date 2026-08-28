@@ -5,6 +5,8 @@
 **Site auditado:** [gaiatecsistemas.com.br](https://www.gaiatecsistemas.com.br/)  
 **Objetivo:** transformar o site em uma plataforma de descoberta de soluções industriais, com um cadastro mestre por produto e vários caminhos de descoberta.
 
+> **Decisão posterior obrigatória:** produtos, serviços, taxonomias, relações, textos, imagens e documentos atuais são considerados inadequados para migração. A remodelagem utilizará banco editorial vazio e recadastro integral pelo novo painel. Este documento usa o site atual apenas para diagnosticar problemas, dimensionar a solução e planejar redirects; qualquer orientação de reaproveitamento de conteúdo foi substituída por essa decisão.
+
 ---
 
 ## Resumo executivo
@@ -57,24 +59,24 @@ Construir uma única base mestre de produtos e relacioná-la a categorias, tecno
 
 Foram examinados visualmente e funcionalmente a homepage, header, menus desktop e mobile, hero, catálogo, busca global, busca interna de produtos, filtros, páginas de produto, indústrias, aplicações, serviços, biodigestores, detecção de gases, blog, footer, 404, comparador, metadados e sitemap.
 
-Também foi feito um inventário de rotas a partir dos links internos. Foram testadas 118 rotas em desktop e amostras críticas em viewport mobile de 390 × 844 px. A planilha local **Portfolio Mestre - Gaiatec Sistemas.xlsx** foi consultada em modo somente leitura para dimensionar a arquitetura contra o acervo real.
+Também foi feito um inventário de rotas a partir dos links internos. Foram testadas 118 rotas em desktop e amostras críticas em viewport mobile de 390 × 844 px. A planilha local **Portfolio Mestre - Gaiatec Sistemas.xlsx** foi consultada em modo somente leitura apenas para dimensionar a arquitetura. Ela não será importada automaticamente nem considerada fonte final sem validação item a item.
 
 Esta etapa não substitui uma auditoria de Core Web Vitals com dados de usuários, uma revisão do CMS administrativo ou uma validação jurídica de certificações. Esses itens devem entrar no diagnóstico técnico da implementação.
 
-## A.2 O que funciona e deve permanecer
+## A.2 Capacidades observadas que devem ser redesenhadas
 
 | Elemento | Avaliação | Decisão |
 |---|---|---|
-| Identidade visual | Aparência industrial, tecnológica e B2B consistente | **Permanecer**, com melhoria de hierarquia e contraste |
-| WhatsApp e contato | Acesso comercial visível | **Permanecer**, mas sem competir com a descoberta |
-| Mega menu desktop | Boa base visual e resposta por hover | **Reestruturar** com taxonomia real, busca e links úteis |
-| Catálogo com cards | Cards legíveis, contagem, ordenação e comparação | **Aproveitar o padrão**, substituindo a base e os filtros |
-| Página de produto | Resumo, especificações, aplicações, relacionados e CTA já existem | **Aproveitar como base**, ampliando conteúdo e relacionamentos |
-| Páginas de indústria | Já tentam combinar contexto, aplicações, produtos e serviços | **Manter o conceito**, corrigindo classificação e links |
-| Páginas de aplicação | Já apresentam problema, benefícios e itens relacionados | **Manter o conceito**, acrescentando etapas/pontos de atuação |
-| Estrutura de serviços | Área → serviço já aparece no catálogo | **Simplificar e normalizar** |
-| SEO em páginas modernas | Algumas rotas possuem title, description, canonical e schema após o JavaScript carregar | **Manter a intenção**, corrigindo a entrega técnica |
-| Conteúdo técnico | Existe espaço para artigos e cases | **Transformar em conteúdo real com URL própria** |
+| Identidade visual | Aparência industrial, tecnológica e B2B | **Redesenhar e homologar** tokens, hierarquia e contraste; não copiar automaticamente. |
+| WhatsApp e contato | Acesso comercial visível | **Recadastrar e reposicionar** com dados novos aprovados. |
+| Mega menu desktop | Demonstra necessidade de navegação ampla | **Reconstruir** sobre a taxonomia nova, sem copiar árvore ou links. |
+| Catálogo com cards | Demonstra necessidade de lista, ordenação e comparação | **Criar novamente** componentes e filtros sobre o cadastro novo. |
+| Página de produto | Indica os tipos de informação esperados | **Reconstruir** template, campos e relações; conteúdo atual não é referência de correção. |
+| Páginas de indústria | Indicam uma jornada possível | **Recriar** com classificação, textos, imagens e relações novas. |
+| Páginas de aplicação | Indicam intenção de busca por problema | **Recriar** com pontos de atuação e conteúdo comprovado. |
+| Estrutura de serviços | Indica necessidade de agrupamento | **Redefinir e recadastrar** integralmente. |
+| SEO em páginas modernas | Demonstra intenção de metadados por rota | **Reimplementar** entrega técnica e conteúdo SEO novo. |
+| Conteúdo técnico | Existe necessidade de artigos e cases | **Criar conteúdo novo**, aprovado e com URL própria. |
 
 ## A.3 Principais problemas encontrados
 
@@ -171,7 +173,7 @@ O site chama de “indústria/setor” itens de naturezas diferentes:
 
 Isso prejudica clareza, filtros e manutenção.
 
-**Decisão:** indústria será uma dimensão de mercado. Proteção Catódica, Telemetria, HVAC, Controle Ambiental, Instrumentação e Segurança Operacional devem migrar para soluções, categorias ou aplicações.
+**Decisão:** indústria será uma dimensão de mercado. Se forem validados na remodelagem, Proteção Catódica, Telemetria, HVAC, Controle Ambiental, Instrumentação e Segurança Operacional deverão ser cadastrados no novo modelo como soluções, categorias ou aplicações — sem copiar os registros atuais.
 
 ### 9. Páginas de indústria têm boa forma, mas relações fracas
 
@@ -255,22 +257,22 @@ O acervo não está pronto para publicação integral sem governança:
 - há uma aba com mais de mil inconsistências e pendências;
 - vários itens não têm fabricante, marca, datasheet ou imagem validados.
 
-**Decisão:** o CMS deve aceitar todo o acervo, mas somente publicar itens que passam por uma matriz de completude e revisão técnica/comercial.
+**Decisão:** o schema do CMS deve suportar o futuro acervo, mas cada item será cadastrado novamente. Somente registros novos que passarem por completude e revisão técnica/comercial serão publicados.
 
-## A.4 Matriz de decisão: permanecer, melhorar, reorganizar, substituir ou remover
+## A.4 Matriz de decisão para a remodelagem
 
 | Item atual | Decisão | Motivo |
 |---|---|---|
-| Visual industrial e paleta | Permanecer | Adequados ao posicionamento B2B |
-| WhatsApp e contato | Melhorar | Levar contexto do produto/aplicação ao atendimento |
-| Mega menu | Reorganizar | Boa base visual, taxonomia insuficiente |
+| Visual industrial e paleta | Redesenhar sob aprovação | Manter apenas posicionamento B2B, não os valores atuais por padrão |
+| WhatsApp e contato | Recadastrar e reconstruir | Levar dados aprovados e contexto ao atendimento |
+| Mega menu | Reconstruir | Criar sobre a nova taxonomia |
 | Hero em carrossel | Substituir | Busca e orientação devem ser a ação central |
 | Catálogo de 17 produtos | Substituir | Não representa o portfólio |
-| Catálogo isolado de detecção de gás | Incorporar ao mestre | Evitar dois cadastros e duas buscas |
+| Catálogo isolado de detecção de gás | Recadastrar em modelo novo | Evitar dois cadastros e duas buscas |
 | Filtro por setor/tipo | Substituir | Campos estáticos e insuficientes |
-| Páginas de indústria | Melhorar | Estrutura comercial útil, relações genéricas |
-| Páginas de aplicação | Melhorar | Falta decomposição por ponto do processo |
-| Estrutura Área → Serviço | Permanecer | Simples e compatível com o portfólio |
+| Páginas de indústria | Reconstruir | Conteúdo e relações atuais não são confiáveis |
+| Páginas de aplicação | Reconstruir | Criar decomposição e conteúdo aprovados |
+| Estrutura de serviços | Redefinir | Não preservar áreas, serviços ou relações atuais |
 | Blocos de certificação genéricos | Remover/substituir | Exibir apenas evidência por item |
 | Links `#` | Remover | Geram falsa expectativa e páginas sem saída |
 | Artigos sem URL individual | Substituir | Necessários para SEO e navegação contextual |
@@ -782,14 +784,14 @@ A inteligência artificial pode interpretar a frase inicial e redigir a explica�
 
 ## H.1 Lista recomendada e validação
 
-As páginas atuais e o portfólio validam atuação em saneamento, petróleo/gás, biogás, agronegócio, mineração, química, energia/elétrica e marítima. Alimentos e Bebidas aparece em aplicações de produtos e deve ser confirmado comercialmente antes da publicação definitiva.
+A lista abaixo é apenas uma hipótese de arquitetura produzida durante a auditoria. Nenhuma indústria está automaticamente validada pelo site atual ou pela planilha. Comercial e Engenharia devem aprovar novamente nome, escopo, evidências, produtos e aplicações antes do recadastro.
 
 | Indústria | Status recomendado | Observação |
 |---|---|---|
-| Saneamento | Publicar na primeira onda | Maior maturidade de conteúdo e aplicações |
-| Óleo e Gás | Publicar na primeira onda | Renomear “Gás e Petróleo”; manter redirect |
-| Biogás e Biometano | Publicar na primeira onda | Portfólio amplo, 151 registros na categoria mestre |
-| Agronegócio | Publicar na primeira onda | 68 registros em Solo e Agricultura, além de biogás |
+| Saneamento | Candidato ao primeiro lote | Exige validação e conteúdo novo |
+| Óleo e Gás | Candidato ao primeiro lote | Nome e redirect devem ser aprovados |
+| Biogás e Biometano | Candidato ao primeiro lote | Exige validação do portfólio real |
+| Agronegócio | Candidato ao primeiro lote | Exige validação do portfólio real |
 | Química e Petroquímica | Publicar após curadoria | Validada pelo texto institucional e aplicações |
 | Mineração e Metais | Publicar após curadoria | Validada institucionalmente; precisa de página comercial própria |
 | Energia e Utilities | Publicar após curadoria | Validada institucionalmente e por telemetria/recuperação de energia |
@@ -954,7 +956,7 @@ Os produtos finais devem ser escolhidos a partir do cadastro publicado. A tabela
 - Consultoria e Inspeções Técnicas;
 - Locação e Comodato de Equipamentos.
 
-“Plataforma de Controle” migra para `/solucoes/plataforma-monitoramento`, podendo relacionar um serviço de implantação/suporte.
+Se a oferta “Plataforma de Controle” for validada, deverá ser cadastrada novamente em `/solucoes/plataforma-monitoramento`, podendo relacionar um serviço novo de implantação/suporte.
 
 ## J.2 Página de serviço
 
@@ -1268,7 +1270,7 @@ Produtos usam URL plana e estável. A hierarquia aparece no breadcrumb e nas pá
 - categorias estratégicas com texto útil, não apenas cards;
 - links internos contextuais e rastreáveis;
 - Open Graph e imagens sociais validadas;
-- sitemap e Search Console monitorados após migração.
+- sitemap e Search Console monitorados após o cutover.
 
 ## O.4 Conteúdo e intenção
 
@@ -1276,33 +1278,37 @@ Páginas de aplicações atendem intenção técnica de problema/processo. Pági
 
 ---
 
-# P. Migração
+# P. Recadastro e cutover
 
 ## P.1 Estratégia
 
-### Fase 0 — Inventário e congelamento
+### Fase 0 — Inventário técnico e congelamento
 
-- exportar todas as URLs atuais, metadados, conteúdo, mídia e documentos;
+- exportar somente URLs, status, metadados técnicos e indicadores necessários para redirects/SEO;
 - registrar tráfego, backlinks, leads e ranking por URL;
-- reconciliar as 118 rotas públicas com sitemap e Search Console;
-- preservar o ID mestre da planilha;
-- classificar registros em publicar, consolidar em família, pendente, arquivar e excluir.
+- mapear as 118 rotas públicas com sitemap e Search Console;
+- não extrair conteúdo, imagens ou IDs para carga do CMS;
+- classificar cada URL em redirect, 410, 404 ou manutenção temporária até o cutover.
 
 ### Fase 1 — Modelo e governança
 
 - criar entidades e vocabulários controlados;
 - definir atributos obrigatórios por categoria;
-- revisar duplicidades e nomes;
+- definir nomes e relações a partir de fontes novas aprovadas;
 - estabelecer owner técnico/comercial;
-- validar direitos de imagens e documentos.
+- definir critérios de origem, direitos e aprovação de novas imagens/documentos.
 
-### Fase 2 — Importação
+### Fase 2 — Recadastro no novo painel
 
-- importar a base mestre para ambiente de homologação;
-- agrupar modelos quando necessário;
-- criar relações de aplicação, indústria, solução e serviço;
-- publicar primeiro o portfólio prioritário e completo;
-- manter o restante como rascunho, sem páginas vazias.
+- iniciar o banco editorial vazio;
+- cadastrar manualmente/guiado cada produto, modelo, serviço e conteúdo aprovado;
+- carregar novas imagens a partir de originais autorizados;
+- criar relações de aplicação, indústria, solução e serviço no modelo novo;
+- registrar fonte, responsável, revisão e data;
+- publicar primeiro o lote prioritário completo;
+- cadastrar o restante progressivamente, sem páginas vazias.
+
+Não importar a planilha mestre, os arrays do código, as tabelas atuais ou os arquivos de mídia publicados. Essas fontes podem apoiar conferência humana, mas não criar registros automaticamente.
 
 ### Fase 3 — Experiência
 
@@ -1327,6 +1333,8 @@ Páginas de aplicações atendem intenção técnica de problema/processo. Pági
 - verificação de links, documentos e formulários;
 - crawl pré e pós-lançamento;
 - monitoramento diário de 404, leads e buscas sem resultado nas primeiras semanas.
+
+O rollback restaura a versão pública anterior inteira. Ele não copia o conteúdo anterior para o CMS novo, e nenhuma falha deve fazer o novo site consultar dados antigos como fallback editorial.
 
 ## P.2 Mapa inicial de redirects
 
@@ -1430,7 +1438,7 @@ Oferecer remover filtros, correspondências próximas, categorias e aplicações
 Antes do design visual detalhado, validar este documento em um workshop curto com Comercial, Engenharia, Marketing e responsável pelo portfólio. O workshop deve fechar cinco decisões:
 
 1. nomes finais dos seis segmentos e categorias prioritárias;
-2. produtos/famílias da primeira onda de publicação;
+2. produtos/famílias do primeiro lote de recadastro e publicação;
 3. indústrias realmente atendidas e com conteúdo comprovável;
 4. aplicações prioritárias para geração de demanda;
 5. campos obrigatórios e owners do processo de aprovação.
@@ -1459,3 +1467,11 @@ A execução dos ajustes, da fundação técnica e do painel administrativo deve
 **[Procedimento de ajustes e desenvolvimento do painel administrativo GAIATEC](./PROCEDIMENTO_AJUSTES_E_DESENVOLVIMENTO_PAINEL_ADMINISTRATIVO_GAIATEC.md)**
 
 O procedimento combina esta arquitetura de descoberta com a auditoria do CMS e o complemento técnico-operacional, definindo fases, gates e critérios para que catálogo, busca, painel e site sejam implantados como capacidades completas.
+
+O recadastro de produtos, serviços, taxonomias, imagens e documentos deve obedecer:
+
+**[Política de recadastro limpo de conteúdo e mídia GAIATEC](./POLITICA_RECADASTRO_LIMPO_CONTEUDO_E_MIDIA_GAIATEC.md)**
+
+O planejamento consolidado para execução no Codex está em:
+
+**[Planejamento executivo de desenvolvimento da remodelagem e do CMS](./PLANEJAMENTO_EXECUTIVO_DESENVOLVIMENTO_REMODELAGEM_CMS_GAIATEC.md)**

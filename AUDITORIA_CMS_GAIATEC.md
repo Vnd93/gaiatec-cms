@@ -10,7 +10,7 @@
 
 ## 1. Resumo executivo
 
-O site atual não precisa ser reconstruído do zero para receber um CMS. A base tecnológica já contém elementos que podem ser aproveitados: React/Vite no frontend, Supabase para autenticação e funções de backend, Cloudflare na borda, rotas organizadas por domínio comercial e um endpoint público de conteúdo que já devolve menus, páginas, serviços, setores, aplicações, posts e configurações.
+A remodelagem exige reconstruir integralmente a camada editorial e a experiência administrável. A infraestrutura técnica — React/Vite, Supabase e hospedagem — pode ser avaliada e mantida onde for tecnicamente segura, mas produtos, serviços, taxonomias, relações, páginas, textos, imagens e documentos atuais não serão preservados nem migrados para o novo CMS.
 
 O problema central é que essas peças ainda não formam um sistema editorial coerente. No bundle publicado, a função responsável por buscar conteúdo dinâmico está neutralizada e sempre devolve o fallback compilado. Por isso, o site público renderiza grande parte do catálogo e do conteúdo diretamente do JavaScript, mesmo havendo dados semelhantes no Supabase. Produtos, serviços, setores, aplicações, blog, menu, homepage e contato possuem fontes duplicadas ou divergentes.
 
@@ -25,11 +25,13 @@ Principais conclusões:
 7. **Existe um aplicativo autenticado separado em `/relatorio-de-obra`**, com login por senha ou código por e-mail e sessão Supabase. Ele deve ser preservado e isolado do futuro CMS.
 8. **Há problemas importantes de SEO e roteamento**: soft 404, canonical e title genéricos em algumas rotas, páginas privadas sem `noindex`, sitemap incompleto e artigos sem páginas individuais.
 9. **Há problemas de navegação e responsividade**: vários links usam `#`, cards levam para páginas genéricas em vez de detalhes e a homepage apresentou overflow horizontal em viewport de smartphone.
-10. **A melhor estratégia é evolutiva**: sanear os dados, reativar corretamente a camada dinâmica, criar autenticação/RBAC e implantar o CMS por módulos, sem colocar o site público em risco.
+10. **A estratégia será de recadastro limpo e cutover controlado**: criar banco editorial novo, autenticação/RBAC e painel; recadastrar e aprovar tudo novamente; então substituir o site por módulos ou em lançamento controlado, sem importar o conteúdo atual.
 
 ### Recomendação principal
 
 Manter React e Supabase, criar o CMS como uma aplicação administrativa separada no mesmo repositório e banco, preferencialmente publicada em `/admin` com bundle, cache e políticas próprios. Se houver liberdade operacional, `admin.gaiatecsistemas.com.br` oferece isolamento adicional. Em qualquer alternativa, segurança deve depender de Supabase Auth, RLS e autorização server-side — nunca da ocultação da rota ou de botões.
+
+O banco editorial do novo CMS deve iniciar vazio. O site atual será consultado somente para inventário de URLs, redirects e levantamento de erros. Nenhum produto, serviço, imagem, classificação ou conteúdo atualmente publicado poderá ser importado automaticamente ou usado como fallback editorial.
 
 ---
 
@@ -233,11 +235,11 @@ O mecanismo é razoável para uma PWA, mas exige deploy atômico. Durante a audi
 | Homepage | Arrays/objetos no bundle | Página `home` com 5 blocos | Híbrido, mas o dinâmico está desativado. |
 | Hero | Fallback compilado | `hero_slides` e conteúdo por grupo | Dinâmico planejado, não efetivo. |
 | Menu/header/footer | Estrutura compilada | API de menu e contato | Fonte duplicada. |
-| Produtos | 17 produtos compilados | Não foi observado endpoint de produtos no loader atual | Hardcoded e prioritário para migração. |
-| Serviços | 16 serviços compilados | 11 serviços na API | Fontes divergentes; banco contém registros de teste. |
-| Setores/indústrias | 11 setores compilados | 10 setores na API | Fontes divergentes. |
-| Aplicações | 12 aplicações compiladas | 12 aplicações na API | Duplicado; precisa eleger fonte canônica. |
-| Blog | 6 posts fallback | 6 posts na API | Duplicado; artigos não possuem rota individual funcional. |
+| Produtos | 17 produtos compilados | Não foi observado endpoint de produtos no loader atual | Conteúdo inválido para migração; recadastrar do zero no CMS novo. |
+| Serviços | 16 serviços compilados | 11 serviços na API | Ambas as fontes são excluídas do novo cadastro. |
+| Setores/indústrias | 11 setores compilados | 10 setores na API | Redefinir taxonomia e recadastrar; não copiar as listas. |
+| Aplicações | 12 aplicações compiladas | 12 aplicações na API | Redefinir estrutura e cadastrar novamente. |
+| Blog | 6 posts fallback | 6 posts na API | Não importar; criar artigos novos e rota individual correta. |
 | Sobre | Conteúdo compilado com adaptador para página dinâmica | API de página | Dinâmico desativado. |
 | Contato | Fallback compilado | 8 configurações na API | Informações globais duplicadas. |
 | Formulário geral | Estado React + POST JSON | Edge Function `submit-contact` | Dinâmico e operacional; persistência final não verificada. |
@@ -285,6 +287,8 @@ O CMS não deve tentar manter banco e arrays no código em paralelo. A regra rec
 - **Código:** componentes, schemas, validações, presets e regras de negócio;
 - **Cache/SSG:** cópia de leitura derivada, nunca fonte editorial.
 
+O banco e o storage novos começam sem conteúdo editorial herdado. Cada registro e arquivo nasce no novo painel com fonte, responsável, revisão e aprovação. O conteúdo atual não é candidato a saneamento: ele é excluído da carga inicial.
+
 ---
 
 ## 5. E. Problemas existentes e prioridades
@@ -295,19 +299,19 @@ O CMS não deve tentar manter banco e arrays no código em paralelo. A regra rec
 
 O site usa conteúdo compilado enquanto o Supabase guarda outro conjunto. Ligar a API sem saneamento pode publicar dados incorretos imediatamente.
 
-**Ação:** congelar escrita editorial temporariamente, exportar banco e hardcoded, comparar registro a registro, eliminar testes, aprovar a versão canônica e só então reativar a leitura dinâmica.
+**Ação:** congelar o conteúdo atual como referência histórica, impedir qualquer importação para o novo CMS, criar schema limpo e recadastrar a partir de fontes técnicas/comerciais aprovadas. Usar as URLs atuais somente para o mapa de redirects.
 
 #### P0.2 — Registros indevidos na coleção de serviços
 
 Há pelo menos dois registros evidentemente de teste no retorno público da API. Embora invisíveis atualmente, eles podem vazar ao reativar o carregamento.
 
-**Ação:** remover ou arquivar, identificar autor/origem pelo audit log disponível no Supabase, revisar políticas de ambiente e impedir que staging grave em produção.
+**Ação:** não conectar essa coleção ao novo site e não copiá-la. Isolar as tabelas atuais, revisar políticas de ambiente e construir a coleção nova no schema editorial limpo.
 
 #### P0.3 — Carregador dinâmico desativado
 
 O wrapper retorna o fallback e ignora a função que faria o fetch. É uma desativação sistêmica: menu, páginas, contato, blog, serviços, setores e aplicações são afetados.
 
-**Ação:** substituir o stub por um cliente tipado com autenticação pública correta, cache, timeout, tratamento de erro e fallback controlado.
+**Ação:** não reativar o stub antigo. Criar cliente e API versionados para a nova projeção publicada, com autenticação pública correta, cache, timeout e fallback apenas para a última publicação nova válida.
 
 #### P0.4 — API de conteúdo exige autorização que o fetch atual não envia
 
@@ -433,7 +437,7 @@ Pontos de atenção:
 
 ### 6.1 Princípios
 
-1. **Evoluir, não reescrever.** Preservar componentes e rotas úteis.
+1. **Remodelar o conteúdo sem herança.** Estrutura editorial, produtos, serviços e mídias são novos; componentes técnicos só permanecem após revisão formal.
 2. **Uma fonte canônica.** Conteúdo aprovado no banco, mídia no storage.
 3. **Publicação segura.** Rascunho, revisão, preview e publicação explícita.
 4. **Autorização no servidor.** RLS e funções, não apenas UI.
@@ -500,9 +504,9 @@ Se o projeto não estiver em monorepo, a mesma separação pode ser aplicada por
 Curto prazo:
 
 - continuar em React SPA;
-- corrigir o cliente de conteúdo;
+- construir o novo cliente de conteúdo sem reativar os hooks antigos;
 - usar API somente para conteúdo publicado;
-- manter fallback estável durante a migração;
+- manter o site atual apenas como versão pública separada até o cutover;
 - gerar sitemap do banco;
 - corrigir metadados por rota.
 
@@ -513,7 +517,7 @@ Médio prazo:
 - status HTTP correto;
 - HTML indexável sem depender da execução completa do JavaScript.
 
-Isso pode ser feito preservando componentes existentes; não exige necessariamente migrar tudo para outro framework.
+Isso não exige necessariamente trocar de framework, mas nenhum componente, layout ou rota deve ser mantido apenas por existir hoje. A remodelagem define o que será reconstruído, revisado ou removido.
 
 ---
 
@@ -692,7 +696,7 @@ Reutilizar Supabase Auth com:
 - Categorias/subcategorias;
 - Famílias;
 - Atributos técnicos;
-- Importação/exportação;
+- exportação e futura importação restrita a dados novos sob schema validado;
 - Comparador e relações.
 
 ### Soluções
@@ -884,7 +888,7 @@ Ao salvar conteúdo importante:
 
 ---
 
-## 12. K. Plano de migração recomendado
+## 12. K. Plano de remodelagem e recadastro recomendado
 
 ### Fase 0 — acesso e inventário interno
 
@@ -893,7 +897,7 @@ Ao salvar conteúdo importante:
 - mapear CI/CD, Cloudflare, DNS, storage, e-mail e backups;
 - criar backup restaurável;
 - criar staging separado de produção;
-- registrar baseline de rotas, SEO, links e performance.
+- registrar baseline de rotas, SEO, links e performance exclusivamente para redirects, comparação técnica e rollback.
 
 **Saída:** diagrama fonte confirmado e plano sem suposições.
 
@@ -908,18 +912,18 @@ Ao salvar conteúdo importante:
 - adicionar headers de segurança;
 - ajustar Service Worker/deploy atômico.
 
-**Saída:** site público estável antes da migração editorial.
+**Saída:** site público estável enquanto a remodelagem ocorre isoladamente.
 
-### Fase 2 — camada de dados canônica
+### Fase 2 — camada editorial nova e vazia
 
 - criar migrations e schemas validados;
-- importar conteúdo atual hardcoded;
-- reconciliar com o conteúdo já existente no Supabase;
+- não importar conteúdo hardcoded, tabelas editoriais, imagens ou documentos atuais;
+- cadastrar somente taxonomias e configurações aprovadas;
 - implementar API pública v2;
 - aplicar RLS;
-- ativar leitura dinâmica módulo por módulo com feature flag.
+- manter a projeção nova invisível ao público até existir conteúdo recadastrado e aprovado.
 
-**Ordem sugerida:** contato/menu → homepage → aplicações/setores/serviços → blog → produtos.
+**Regra:** o novo CMS nunca consulta a base atual como fallback.
 
 ### Fase 3 — autenticação e shell administrativo
 
@@ -942,21 +946,19 @@ Ao salvar conteúdo importante:
 - SEO;
 - preview;
 - workflow;
-- importação validada.
+- recadastro manual/guiado com registro da fonte e dupla aprovação;
+- imagens novas obtidas de originais autorizados.
 
 Esse é o MVP de maior valor operacional.
 
 ### Fase 5 — conteúdo e site
 
-- indústrias;
-- aplicações;
-- serviços;
-- blog;
-- páginas/blocos;
-- homepage;
-- menus/footer;
-- banners;
-- configurações globais.
+- recadastrar indústrias/setores, aplicações e serviços;
+- criar novos artigos, páginas e blocos;
+- reconstruir homepage, menus, footer e banners;
+- carregar todas as imagens novamente;
+- definir configurações globais novas;
+- conectar o site exclusivamente à projeção aprovada.
 
 ### Fase 6 — marketing e comercial
 
@@ -981,55 +983,58 @@ Esse é o MVP de maior valor operacional.
 
 - homologação por papel;
 - testes de segurança;
-- teste de migração repetível;
+- teste de recadastro/publicação e cutover repetível;
 - treinamento;
-- freeze editorial curto;
-- migração final;
+- congelamento da versão pública anterior;
+- cutover para a projeção nova;
 - smoke test;
 - monitoramento reforçado;
-- plano de rollback.
+- plano de rollback para a versão anterior inteira, sem importar seus dados no CMS.
 
 ---
 
-## 13. Estratégia de migração de conteúdo
+## 13. Estratégia de recadastro limpo
 
-### 13.1 Extração
+### 13.1 Exclusão da carga inicial
 
-Criar scripts idempotentes que extraiam:
+Não criar scripts de extração/importação para:
 
-- 17 produtos do bundle/dados fonte;
-- 16 serviços hardcoded;
-- 11 setores;
-- 12 aplicações;
-- seis posts;
-- homepage, menu, footer e contato;
-- imagens e documentos encontrados.
+- produtos e serviços atuais;
+- setores, aplicações e relações atuais;
+- posts, textos, homepage, menu, footer e contato atuais;
+- imagens e documentos atualmente publicados;
+- categorias, slugs e especificações existentes no código ou banco.
 
-### 13.2 Reconciliação
+Esses dados podem ser arquivados fora do CMS para auditoria e comparação histórica, mas nunca popularão o banco novo.
 
-Gerar planilha/relatório de conflito:
+### 13.2 Fontes autorizadas
 
-| Entidade | Chave | Código | Banco | Decisão |
-|---|---|---|---|---|
-| Serviço | slug | valor A | valor B | manter/mesclar/arquivar |
+Cada cadastro novo deve apontar para uma fonte aprovada:
 
-Nenhuma migração deve sobrescrever conteúdo sem essa decisão aprovada.
+- catálogo vigente do fabricante;
+- manual ou folha de dados oficial;
+- documentação interna validada;
+- responsável técnico/comercial nomeado;
+- original de imagem com autorização de uso.
+
+Planilhas podem orientar o trabalho, mas não devem ser importadas automaticamente no primeiro carregamento.
 
 ### 13.3 Validação
 
+- origem e responsável registrados;
 - slug único;
 - relações existentes;
-- imagem acessível;
+- imagem nova processada pela biblioteca;
 - ALT obrigatório quando informativo;
 - documentos válidos;
 - status definido;
 - SEO mínimo;
-- conteúdo de teste bloqueado;
-- preview visual comparado ao site atual.
+- conteúdo sem fonte bloqueado;
+- preview validado contra o novo design e critérios, não contra o site atual.
 
-### 13.4 Cutover gradual
+### 13.4 Cutover controlado
 
-Usar feature flags por domínio:
+Usar feature flags para alternar consumidores/site, nunca registros antigos e novos dentro do CMS:
 
 ```text
 dynamic.menu = true
@@ -1039,6 +1044,8 @@ dynamic.products = false
 ```
 
 Assim, cada módulo pode ser ativado e revertido sem uma publicação completa do restante.
+
+Após o cutover, falhas servem a última projeção nova válida. O conteúdo atual não volta como fallback editorial.
 
 ---
 
@@ -1147,16 +1154,16 @@ Também deve permitir:
 | Risco/dependência | Impacto | Mitigação |
 |---|---|---|
 | Schema/RLS atuais desconhecidos | Alto | auditoria interna do Supabase antes de qualquer escrita |
-| Conteúdo de teste no banco | Alto | saneamento, ambientes separados e aprovação editorial |
-| Fontes duplicadas | Alto | reconciliação e fonte canônica única |
+| Conteúdo de teste no banco | Alto | não importar; banco editorial novo e ambientes separados |
+| Fontes duplicadas | Alto | excluir todas da carga e tornar o novo CMS a única fonte |
 | Service Worker e chunks antigos | Alto | deploy atômico, retenção e error recovery |
 | SPA e soft 404 | Alto para SEO | edge routing/prerender/SSR gradual |
-| Mídia sem origem central conhecida | Médio/alto | inventário, checksum e migração para biblioteca |
+| Mídia sem origem central conhecida | Médio/alto | não reutilizar; obter originais aprovados e cadastrar na biblioteca nova |
 | Formulário sem destino interno confirmado | Alto comercial | validar persistência, notificações e SLA |
 | Ausência de staging confirmada | Alto | criar projeto/ambiente separado |
 | Papéis ainda não aprovados pelo negócio | Médio | workshop de matriz de acesso |
 | Conteúdo técnico heterogêneo | Médio | atributos por categoria e governança |
-| Importação em massa | Alto | dry-run, validação por linha e rollback |
+| Importação em massa no primeiro carregamento | Alto | proibida; recadastro guiado com fonte, revisão e aprovação |
 | LGPD para leads | Alto | retenção, acesso mínimo e consent log |
 | Liberdade visual excessiva | Médio | presets, schemas e tokens bloqueados |
 
@@ -1180,7 +1187,7 @@ Também deve permitir:
 ### Imediato
 
 1. backup e separação staging/produção;
-2. sanear registros de teste;
+2. isolar tabelas editoriais atuais e impedir seu uso pelo novo CMS;
 3. documentar schema/RLS/functions;
 4. corrigir soft 404, metadados privados e canonical;
 5. corrigir links `#` e overflow mobile;
@@ -1205,7 +1212,7 @@ Também deve permitir:
 3. blog e páginas;
 4. campanhas/landing pages;
 5. leads e formulários;
-6. importação/exportação;
+6. exportação e, futuramente, importação apenas para dados novos sob schema estável;
 7. diagnóstico e saúde do site;
 8. aparência com tokens e presets.
 
@@ -1215,8 +1222,8 @@ Também deve permitir:
 
 | Decisão | Recomendação |
 |---|---|
-| Reescrever o site? | **Não agora.** Corrigir e desacoplar por etapas. |
-| Trocar Supabase? | **Não há justificativa atual.** Primeiro auditar e aproveitar o investimento existente. |
+| Remodelar o site? | **Sim.** Refazer a camada editorial e a experiência; manter tecnologia somente quando aprovada tecnicamente. |
+| Trocar Supabase? | **Não há justificativa atual.** Pode suportar o banco novo, desde que schema, RLS e ambientes sejam reconstruídos corretamente. |
 | CMS genérico externo? | **Não como primeira opção.** O domínio técnico e as relações justificam CMS próprio sobre Supabase. |
 | Editor livre? | **Não.** Blocos tipados e layouts aprovados. |
 | Produtos em JSON único? | **Não.** Entidades e relações normalizadas; JSONB apenas para blocos/valores validados. |
@@ -1229,9 +1236,9 @@ Também deve permitir:
 
 ## 20. Conclusão
 
-A GAIATEC já possui parte da infraestrutura necessária para um CMS: Supabase, autenticação, Edge Functions, uma API de conteúdo e componentes de frontend organizados por domínio. O caminho tecnicamente mais seguro é aproveitar essa base, eliminar a duplicidade entre banco e código e transformar o Supabase em fonte canônica sob regras editoriais, RLS, versionamento e auditoria.
+A GAIATEC possui infraestrutura técnica que pode suportar o novo CMS, mas o conteúdo e a estrutura editorial atuais não serão aproveitados. O caminho seguro é criar schema e storage editoriais novos, com RLS, versionamento e auditoria, e recadastrar todo o portfólio e conteúdo pelo painel.
 
-O primeiro passo não é criar telas administrativas em massa. É estabilizar o site e os dados: remover registros de teste, confirmar o schema, corrigir o cliente de conteúdo, resolver SEO/rotas/cache e montar staging. Em seguida, o CMS deve nascer com autenticação e permissões corretas, tendo produtos como primeiro grande módulo, seguido por mídia, relações, homepage, conteúdo, marketing e leads.
+O primeiro passo não é copiar ou sanear os cadastros existentes. É estabilizar a operação pública, criar staging e construir a nova fundação. Em seguida, o CMS nasce com autenticação e permissões corretas; produtos são recadastrados como primeiro módulo, seguidos por serviços, mídia, relações, homepage, conteúdo, marketing e leads.
 
 Essa abordagem atende ao princípio central do projeto:
 
@@ -1271,7 +1278,7 @@ Sem acesso ao repositório e aos painéis internos naquela etapa, não foi poss�
 - monitoramento interno;
 - custos e capacidade atuais.
 
-Parte desses itens foi posteriormente confirmada no pacote-fonte, conforme seção 22. Painéis de infraestrutura, repositório do ERP, schema completo do banco e histórico Git continuam sendo dependências de Fase 0.
+Parte desses itens foi posteriormente confirmada no pacote-fonte, conforme seção 22. Painéis de infraestrutura, schema completo do banco e histórico Git continuam sendo dependências de Fase 0.
 
 ---
 
@@ -1284,7 +1291,7 @@ Principais confirmações e correções:
 - o CMS/painel de conteúdo foi explicitamente descontinuado em 29/05/2026 em `src/app/hooks/useSiteData.ts`; os hooks retornam sempre o fallback hardcoded;
 - a função `site-content` implantada não está versionada no pacote fornecido e o cliente fonte não envia atualmente os headers exigidos pelo endpoint publicado;
 - não existe rota `/admin` no código;
-- o repositório cita um painel externo no ERP, em `/marketing/site`, cujo código não foi fornecido e deve ser auditado antes de decidir onde construir a nova interface;
+- referências encontradas a uma administração externa foram retiradas da arquitetura-alvo por decisão da GAIATEC; o novo painel será exclusivo, construído para este projeto e não reutilizará código, permissões, telas ou regras do sistema anterior;
 - há sete migrations do RDO e cinco Edge Functions relacionadas, além de `submit-contact`;
 - o RDO possui riscos críticos não visíveis na auditoria externa: OTP com criação aberta de usuário, fotos em bucket público, relatórios assinados ainda editáveis/excluíveis e notificações que confiam em dados enviados pelo cliente;
 - não foram encontrados testes, CI, `tsconfig`, lint ou typecheck no pacote;
@@ -1298,5 +1305,13 @@ A especificação detalhada, incluindo matriz painel → API → banco → compo
 O roteiro de execução correspondente está em:
 
 **[Procedimento de ajustes e desenvolvimento do painel administrativo GAIATEC](./PROCEDIMENTO_AJUSTES_E_DESENVOLVIMENTO_PAINEL_ADMINISTRATIVO_GAIATEC.md)**
+
+A regra obrigatória para reconstrução do catálogo, serviços, conteúdo e imagens está em:
+
+**[Política de recadastro limpo de conteúdo e mídia GAIATEC](./POLITICA_RECADASTRO_LIMPO_CONTEUDO_E_MIDIA_GAIATEC.md)**
+
+O desenvolvimento deve ser executado segundo:
+
+**[Planejamento executivo de desenvolvimento da remodelagem e do CMS](./PLANEJAMENTO_EXECUTIVO_DESENVOLVIMENTO_REMODELAGEM_CMS_GAIATEC.md)**
 
 Esse complemento passa a ser a referência executável para o planejamento. Em caso de conflito, evidência mais recente do código e decisões formalizadas em ADR devem prevalecer sobre inferências externas deste primeiro relatório.

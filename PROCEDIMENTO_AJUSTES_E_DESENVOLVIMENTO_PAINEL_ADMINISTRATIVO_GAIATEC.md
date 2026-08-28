@@ -1,10 +1,11 @@
 # Procedimento de ajustes e desenvolvimento do painel administrativo GAIATEC
 
-**Versão:** 1.0  
+**Versão:** 1.2
 **Data:** 27 de agosto de 2026  
 **Aplicação:** site público, CMS/painel administrativo, integrações de conteúdo e correções de segurança relacionadas  
 **Repositório-base examinado:** `website_gaiatecsistemas-main/website_gaiatecsistemas-main`  
 **Estado:** procedimento obrigatório para planejamento, desenvolvimento, homologação e implantação  
+**Planejamento executivo:** `PLANEJAMENTO_EXECUTIVO_DESENVOLVIMENTO_REMODELAGEM_CMS_GAIATEC.md`
 
 ---
 
@@ -23,6 +24,36 @@ Este procedimento deve impedir quatro resultados inadequados:
 
 O procedimento não autoriza uma reconstrução indiscriminada do site. Cada mudança deve ser justificada, implementada em uma capacidade vertical completa e liberada por critérios objetivos.
 
+### 1.1 Decisão vigente sobre a administração
+
+O painel administrativo será **novo, exclusivo e independente**. O sistema administrativo anterior foi retirado do escopo e não deverá ser reutilizado, adaptado, consultado como base arquitetural ou mantido em paralelo.
+
+Regras decorrentes:
+
+- o novo painel será a única interface de administração do site;
+- a implementação recomendada inicia em `/admin`, com build, cache e segurança separados da área pública;
+- autenticação, usuários, papéis, workflows, banco administrativo e auditoria serão próprios da nova arquitetura;
+- nenhum código, tela, permissão ou regra operacional do painel retirado será migrado;
+- nenhum produto, serviço, setor, aplicação, página, texto, relação, classificação, imagem ou documento do site atual será importado para o novo CMS;
+- os conteúdos serão cadastrados novamente no novo painel, a partir de fontes técnicas e comerciais aprovadas;
+- os leads do site serão administrados no novo CMS;
+- o encaminhamento administrativo legado será removido após a homologação do novo módulo de leads;
+- não haverá operação paralela de dois painéis administrativos.
+
+### 1.2 Decisão vigente sobre conteúdo e remodelagem
+
+O conteúdo e a estrutura editorial atuais são considerados **não confiáveis para migração**. A remodelagem será executada em regime de **recadastro limpo**, com estas regras:
+
+- o banco editorial do novo CMS começa vazio, exceto configurações técnicas e vocabulários aprovados;
+- arrays hardcoded, tabelas de conteúdo existentes, arquivos de imagem publicados e cadastros atuais não serão usados para popular o novo banco;
+- o site atual poderá ser consultado apenas como evidência de problemas, inventário de URLs e referência para redirects;
+- planilhas, catálogos de fabricantes e documentos internos também não serão importados automaticamente: servem como fontes de comprovação para cadastro humano/revisado;
+- cada novo registro deve ter responsável, origem da informação, data de revisão e status editorial;
+- cada imagem deve ser obtida novamente de original autorizado, identificada, tratada e vinculada pelo novo painel;
+- o novo site só publica conteúdos que tenham sido recadastrados e aprovados;
+- componentes e infraestrutura técnica existentes só podem ser mantidos após revisão; a estrutura editorial e visual será remodelada conforme a arquitetura aprovada;
+- o lançamento ocorre por substituição controlada do site público, com redirects quando necessários, sem copiar conteúdo inválido.
+
 ---
 
 ## 2. Documentos normativos e ordem de prevalência
@@ -32,9 +63,10 @@ O desenvolvimento deve consultar estes documentos:
 1. `Analise e Arquitetura do Site - GAIATEC SISTEMAS.md` — experiência de descoberta, catálogo mestre, busca, taxonomia, páginas e SEO;
 2. `AUDITORIA_CMS_GAIATEC.md` — auditoria externa, arquitetura geral, módulos e riscos do CMS;
 3. `COMPLEMENTO_TECNICO_OPERACIONAL_AUDITORIA_CMS_GAIATEC.md` — evidências do código, contratos, segurança, RDO, operação e critérios de aceite;
-4. este procedimento — sequência, responsabilidades, gates e forma de executar;
-5. ADRs aprovados — decisões arquiteturais posteriores e específicas;
-6. contratos versionados, migrations e testes existentes no repositório.
+4. `POLITICA_RECADASTRO_LIMPO_CONTEUDO_E_MIDIA_GAIATEC.md` — proibições de importação, fontes aceitas, checklists e gates do recadastro;
+5. este procedimento — sequência, responsabilidades, gates e forma de executar;
+6. ADRs aprovados — decisões arquiteturais posteriores e específicas;
+7. contratos versionados, migrations e testes existentes no repositório.
 
 Em caso de conflito, prevalecem, nesta ordem:
 
@@ -54,7 +86,7 @@ Nenhuma divergência deve ser resolvida silenciosamente. Deve ser criada uma ADR
 
 ### 3.1 Fonte canônica
 
-Cada domínio deve possuir uma única fonte oficial. Não manter produto, serviço, setor, aplicação, menu ou contato simultaneamente no banco e em arrays hardcoded após a migração definitiva.
+Cada domínio deve possuir uma única fonte oficial: o novo CMS. Não cadastrar produto, serviço, setor, aplicação, menu ou contato em arrays hardcoded ou tabelas antigas. O código atual não é fonte de conteúdo para o recadastro.
 
 ### 3.2 Capacidade vertical completa
 
@@ -87,9 +119,9 @@ Ocultar menu ou botão não é autorização. Toda ação deve ser verificada na
 
 Conteúdo publicado nunca é sobrescrito sem versão. Toda publicação deve gerar auditoria e permitir restauração.
 
-### 3.6 Migração gradual
+### 3.6 Cutover gradual
 
-Não reativar todos os hooks de conteúdo de uma vez. Cada domínio deve usar feature flag e possuir rollback independente.
+Não reativar os hooks antigos nem copiar seus dados. Cada domínio novo deve ser liberado por feature flag somente depois de possuir conteúdo recadastrado, aprovado e renderizado pelo contrato novo, com rollback independente para a versão pública anterior durante a janela de lançamento.
 
 ### 3.7 Falha segura
 
@@ -111,7 +143,7 @@ Todo campo administrativo deve possuir `consumer_id`, schema, componente consumi
 | Product Owner | Fechar regras, critérios de aceite e ordem do backlog. |
 | Responsável pelo portfólio | Validar taxonomia, produtos, atributos, documentos e relações. |
 | Marketing | Validar homepage, campanhas, blog, SEO, mídia e tom editorial. |
-| Comercial | Validar jornadas, CTAs, formulários, leads e integração com ERP. |
+| Comercial | Validar jornadas, CTAs, formulários e operação de leads no novo CMS. |
 | Engenharia/técnico | Validar especificações, aplicações, serviços e evidências técnicas. |
 | Tech Lead | Aprovar arquitetura, ADRs, contratos, migrations e releases. |
 | Desenvolvedor frontend | Painel, preview, componentes públicos e acessibilidade. |
@@ -126,7 +158,7 @@ Uma pessoa pode acumular funções, mas as responsabilidades não podem ficar se
 
 | Decisão/atividade | Responsável | Aprovador | Consultados |
 |---|---|---|---|
-| Taxonomia e primeira onda de produtos | Portfólio | Product Owner | Comercial, Engenharia |
+| Taxonomia e primeiro lote de recadastro | Portfólio | Product Owner | Comercial, Engenharia |
 | Arquitetura e hosting | Tech Lead | Patrocinador | DevOps, Segurança |
 | RBAC e MFA | Backend/Segurança | Tech Lead | Product Owner |
 | Design do painel | Frontend/UX | Product Owner | Usuários reais |
@@ -153,7 +185,6 @@ Uma pessoa pode acumular funções, mas as responsabilidades não podem ficar se
 Obter antes de alterar produção:
 
 - repositório Git completo, com histórico e branch principal identificada;
-- repositório do ERP/`dzsystem` e código do painel `/marketing/site` citado;
 - fonte de todas as Edge Functions implantadas, especialmente `site-content`;
 - migrations completas das tabelas de conteúdo e `leads`;
 - acesso separado ao Supabase de desenvolvimento, staging e produção;
@@ -169,15 +200,15 @@ Obter antes de alterar produção:
 
 Devem ser registradas como ADR:
 
-1. painel dentro do ERP, em `/admin` ou em subdomínio;
+1. novo painel exclusivo em `/admin`, com eventual subdomínio apenas como decisão de hospedagem;
 2. hosting canônico: Cloudflare Pages, Vercel ou outra plataforma;
 3. modelo de API pública e administrativa;
 4. separação de permissões CMS/RDO;
 5. schema canônico e estratégia de publicação;
 6. mídia e processamento de variantes;
 7. prerender/SSR/edge para SEO e status HTTP;
-8. sistema mestre de leads — ERP ou CMS;
-9. migração ou manutenção especializada da detecção de gases;
+8. modelo de formulários e leads no novo CMS;
+9. novo modelo especializado ou integrado para detecção de gases;
 10. política de imutabilidade e correção do RDO.
 
 ### 5.3 Ambientes
@@ -223,10 +254,10 @@ O desenvolvimento pode começar quando:
 - staging e banco não produtivo estão disponíveis;
 - ADRs bloqueadoras têm decisão ou prazo/owner;
 - riscos críticos do RDO possuem plano de contenção;
-- catálogo mestre e primeira onda de produtos foram definidos;
+- taxonomia e primeiro lote de produtos para recadastro foram definidos;
 - critérios de aceite deste procedimento foram aceitos.
 
-Se o repositório do ERP não estiver disponível, é permitido trabalhar apenas em tarefas independentes — CI, contratos, staging, correções públicas e desenho do backend — sem decidir definitivamente a localização do painel.
+O Gate G0 não depende de nenhum repositório administrativo anterior. A localização funcional está definida em `/admin`; eventual uso de subdomínio será apenas uma escolha de hospedagem do mesmo sistema novo.
 
 ---
 
@@ -410,14 +441,14 @@ Executar prioritariamente:
 - implementar honeypot/CAPTCHA adaptativo e rate limit;
 - estruturar consentimento e origem;
 - usar remetente de domínio aprovado;
-- criar outbox/retentativa para ERP/e-mail;
+- criar persistência no novo CMS, outbox e retentativa de e-mail;
 - não expor detalhes internos na resposta pública.
 
 ---
 
 ## 10. Gate G1 — segurança e estabilidade mínimas
 
-Não iniciar migração de conteúdo dinâmico em produção enquanto houver:
+Não iniciar o cutover para o conteúdo novo em produção enquanto houver:
 
 - cadastro aberto no RDO;
 - relatório assinado alterável/excluível;
@@ -569,14 +600,18 @@ Entregar:
 ### 13.6 Mídia
 
 - upload validado;
+- biblioteca nova iniciada vazia, sem copiar arquivos publicados atualmente;
+- origem/autorização, proprietário, data e finalidade registrados;
 - hash/deduplicação;
 - original protegido;
 - variantes WebP/AVIF e tamanhos;
-- ALT, legenda, crédito/licença;
+- ALT, legenda, crédito/licença e ponto focal;
 - busca e categorias;
 - mapa de usos;
 - substituição versionada;
 - exclusão bloqueada quando referenciada.
+
+Cada imagem deve ser conferida no contexto do produto/serviço correto. Nome de arquivo, pasta ou associação atual não constitui prova de correspondência. O revisor deve validar conteúdo visual, modelo representado, orientação, recorte, resolução, fundo, direitos e ALT antes da aprovação.
 
 ---
 
@@ -612,31 +647,37 @@ Fechar:
 - indústrias/setores e aplicações prioritárias;
 - documentos e certificações;
 - regras de descontinuado;
-- primeira onda de publicação;
+- primeiro lote de recadastro e publicação;
 - owner de cada campo.
 
-### 15.2 Reconciliar fontes atuais
+### 15.2 Preparar o recadastro limpo
 
-Comparar:
+Não copiar ou transformar em registros do novo CMS:
 
 - `src/app/data/products.ts`;
 - produtos embutidos em `ProdutosPage.tsx`;
 - catálogo de detecção de gases;
 - dados da API/banco legado;
-- `Portfolio Mestre - Gaiatec Sistemas.xlsx`;
-- documentos técnicos aprovados.
+- imagens e documentos atualmente publicados;
+- slugs, categorias, relações e especificações cadastrados no site atual.
 
-Gerar relatório de reconciliação com:
+O site atual deve produzir apenas dois artefatos de transição:
 
-- identidade canônica;
-- duplicatas;
-- conflitos;
-- campos ausentes;
-- evidência/origem;
-- decisão e aprovador;
-- item migrado, descartado ou pendente.
+1. inventário de URLs para definir redirects, 404 e retirada;
+2. lista de problemas conhecidos para criar testes que impeçam repetição.
 
-Nenhuma importação deve “escolher o valor mais recente” sem owner quando houver conflito técnico.
+Para cadastrar cada produto novo:
+
+1. selecionar fonte oficial aprovada — fabricante, catálogo técnico vigente, documento interno validado ou responsável técnico;
+2. criar o registro manualmente no novo painel;
+3. preencher taxonomia, atributos, aplicações e relações conforme o modelo novo;
+4. carregar imagens originais autorizadas, sem reutilizar o arquivo publicado atual;
+5. registrar origem, versão/data da fonte e responsável;
+6. executar revisão comercial e técnica;
+7. validar preview, SEO, acessibilidade e responsividade;
+8. publicar somente após aprovação.
+
+Planilhas e catálogos podem auxiliar a conferência humana, mas o primeiro carregamento não utilizará importador em massa. Automação de importação só poderá ser criada futuramente, depois que o schema estiver estável e amostras manuais comprovarem a qualidade.
 
 ### 15.3 Banco e contrato do produto
 
@@ -673,7 +714,7 @@ Campos técnicos aparecem conforme categoria. Não criar um formulário universa
 
 ### 15.5 Consumidores públicos
 
-Migrar conjuntamente:
+Construir e conectar conjuntamente ao conteúdo novo:
 
 - `/produtos`;
 - `/produtos/:slug`;
@@ -740,20 +781,21 @@ Após G4:
 
 ### 17.1 Serviços
 
-- reconciliar `servicesList.ts`, `services.ts` e banco legado;
 - definir categorias oficiais;
-- migrar lista/detalhe/destaques;
+- recadastrar cada serviço a partir de escopo, capacidade e evidência aprovados;
+- cadastrar novas imagens e documentos, sem reutilizar automaticamente os atuais;
+- construir lista, detalhe e destaques sobre a fonte nova;
 - relacionar produtos, setores e aplicações;
-- preservar slugs ou criar redirects;
-- remover fallback após observação.
+- definir novas URLs e criar redirects somente quando houver correspondência válida;
+- retirar arrays e fallbacks atuais no cutover.
 
 ### 17.2 Setores/indústrias
 
 - aprovar glossário e nome canônico;
 - separar indústria, infraestrutura, aplicação e tema quando misturados;
-- migrar conteúdo, estatísticas, desafios, soluções e relações;
+- recadastrar conteúdo, estatísticas, desafios, soluções e relações somente com fontes aprovadas;
 - validar evidências de claims;
-- preservar URLs relevantes.
+- definir URLs novas; usar as antigas apenas como origem de redirect quando aplicável.
 
 ### 17.3 Aplicações
 
@@ -767,10 +809,10 @@ Após G4:
 
 Executar uma decisão explícita:
 
-- migrar para catálogo mestre com atributos suficientes; ou
-- manter módulo especializado, mas integrado à busca, relações, mídia, SEO e governança.
+- criar o catálogo novo dentro do modelo mestre, com atributos suficientes; ou
+- criar um módulo novo especializado, integrado à busca, relações, mídia, SEO e governança.
 
-Não achatar dados especializados em campos genéricos com perda de faixa, gás, sensor, certificação ou categoria.
+Não copiar as estruturas atuais e não achatar dados especializados em campos genéricos com perda de faixa, gás, sensor, certificação ou categoria.
 
 ### 17.5 Busca
 
@@ -805,7 +847,7 @@ Para cada bloco:
 
 ### 18.2 Homepage
 
-Migrar em ondas:
+Recadastrar e publicar em ondas:
 
 1. hero;
 2. caminhos de descoberta;
@@ -816,7 +858,7 @@ Migrar em ondas:
 7. conteúdo/blog;
 8. CTA/contato.
 
-Cada onda recebe feature flag e validação mobile antes de remover o fallback.
+Cada onda recebe feature flag e validação mobile antes de substituir a seção pública anterior. Textos, imagens, ordens e relações atuais não são copiados.
 
 ### 18.3 Menus
 
@@ -880,17 +922,18 @@ Cada onda recebe feature flag e validação mobile antes de remover o fallback.
 - 404 HTTP real;
 - metadados no HTML inicial por prerender/SSR/edge conforme ADR.
 
-### 19.4 Leads e ERP
+### 19.4 Leads no novo CMS
 
-- definir sistema mestre;
+- definir o novo CMS como sistema administrativo mestre dos leads do site;
 - formulários e consentimentos versionados;
 - origem, campanha, produto e UTMs estruturados;
 - outbox idempotente;
-- status e owner sincronizados por contrato;
+- status, responsável, SLA e histórico dentro do novo módulo;
 - retentativa e diagnóstico;
 - exportação restrita e auditada;
 - retenção/LGPD;
-- teste completo site → persistência → ERP → notificação.
+- teste completo site → persistência → atribuição → atendimento → notificação;
+- remover o encaminhamento administrativo anterior somente após homologar o novo módulo e definir o tratamento dos leads pendentes conforme retenção e responsabilidade comercial.
 
 ### 19.5 Fase 8 — hardening, treinamento e go-live
 
@@ -900,7 +943,7 @@ Depois de concluir os módulos contratados:
 2. executar regressão funcional, visual, responsiva e de acessibilidade;
 3. executar revisão de segurança, RLS, secrets, uploads e dependências;
 4. ensaiar restore, rollback, expurgo de cache e resposta a incidente;
-5. reconciliar novamente contagens, slugs, relações, mídia e redirects;
+5. validar completude do cadastro novo, relações, mídia e redirects contra o escopo aprovado;
 6. treinar cada perfil com tarefas reais e ambiente de treinamento;
 7. produzir guia rápido do usuário e canal de suporte;
 8. executar canary interno e depois público;
@@ -914,7 +957,7 @@ O go-live exige:
 - aceite formal dos owners de conteúdo, negócio, tecnologia, segurança e operação;
 - zero P0 aberto e P1 com risco/owner/prazo formalmente aceitos;
 - testes e evidências arquivados;
-- dados reconciliados;
+- conteúdo novo integralmente revisado e aprovado para o lote de lançamento;
 - backup e rollback comprovados;
 - alertas e responsáveis ativos;
 - comunicação e suporte preparados;
@@ -923,52 +966,56 @@ O go-live exige:
 
 ---
 
-## 20. Procedimento de migration e feature flag
+## 20. Procedimento de recadastro, cutover e feature flag
 
-Para cada domínio:
+Este procedimento substitui qualquer estratégia anterior de importação ou reconciliação do conteúdo atual.
 
-### Etapa A — observar
+### Etapa A — banco editorial limpo
 
-- manter frontend legado;
-- gerar projeção nova em paralelo;
-- comparar contagens, IDs, slugs e hashes;
-- corrigir divergências.
+- criar schema novo sem carregar registros editoriais atuais;
+- cadastrar apenas taxonomias e configurações formalmente aprovadas;
+- impedir que scripts, hooks ou seeds copiem dados hardcoded/tabelas antigas;
+- registrar a origem autorizada de cada novo conteúdo.
 
-### Etapa B — shadow read
+### Etapa B — recadastro no novo painel
 
-- frontend continua usando legado;
-- sistema consulta novo backend de forma não bloqueante;
-- registra diferenças sem expor dados sensíveis;
-- não altera experiência do usuário.
+- cadastrar manualmente o lote aprovado;
+- realizar dupla revisão comercial/técnica conforme o tipo;
+- carregar novas imagens e documentos a partir dos originais aprovados;
+- validar preview, relações, busca, SEO e responsividade;
+- manter tudo fora da API pública até a aprovação.
 
-### Etapa C — canary
+### Etapa C — homologação isolada
 
-- habilitar nova fonte para equipe/staging ou percentual controlado;
-- medir erros, latência, conteúdo ausente e SEO;
-- rollback instantâneo por flag.
+- site de staging consome exclusivamente a projeção nova;
+- executar crawl, E2E, acessibilidade, segurança e performance;
+- verificar completude contra o escopo aprovado, não contra os dados atuais;
+- validar mapa de redirects separado.
 
-### Etapa D — fonte principal
+### Etapa D — canary/cutover
 
-- nova projeção passa a responder pelo domínio;
-- fallback legado permanece temporariamente somente como rollback explícito;
-- edições hardcoded ficam congeladas.
+- disponibilizar o novo domínio/página para equipe ou tráfego controlado;
+- medir erros, latência, leads, busca e SEO;
+- usar feature flag somente para alternar entre sites/consumidores, nunca para misturar registros antigos e novos;
+- rollback restaura a versão pública anterior inteira, sem importar seus dados no novo CMS.
 
-### Etapa E — remoção
+### Etapa E — retirada do conteúdo antigo
 
-- período de observação concluído;
-- conteúdo e métricas reconciliados;
-- fallback e adaptadores antigos removidos;
-- testes impedem reintrodução;
+- aprovação e observação concluídas;
+- rotas antigas recebem redirect, 410 ou 404 conforme mapa aprovado;
+- arrays, adaptadores, tabelas editoriais e imagens obsoletas deixam de ser consumidores/fontes;
+- testes impedem reintrodução de conteúdo hardcoded;
+- conteúdo antigo é arquivado apenas para evidência/rollback técnico, sem aparecer no painel novo;
 - documentação atualizada.
 
-Não manter fallback oculto indefinidamente, pois ele recria duas fontes de verdade.
+O novo CMS nunca deve consultar o conteúdo anterior como fallback editorial. Em falha, deve servir a última projeção **nova e aprovada**, não registros do site antigo.
 
 ---
 
 ## 21. Procedimento de banco e migrations
 
 1. escrever migration pequena, reversível ou compatível;
-2. adicionar constraints inicialmente sem bloquear dados legados quando necessário;
+2. adicionar constraints desde o início para impedir registros incompletos; compatibilidade temporária só se aplica a dados operacionais que não fazem parte do conteúdo remodelado;
 3. executar backfill idempotente;
 4. validar contagens, nulos, duplicatas e relações;
 5. habilitar leitura/escrita nova por código compatível;
@@ -1213,7 +1260,7 @@ Ao mudar uma regra do RDO, permissão, status editorial ou contrato público, at
 ### Onda 0 — desbloqueio
 
 - DEV-000: identificar repositórios e owners;
-- DEV-001: ADR do painel/ERP;
+- DEV-001: ADR do novo painel exclusivo em `/admin`;
 - DEV-002: ADR de hosting;
 - DEV-003: staging e secrets;
 - DEV-004: trazer Edge Functions/migrations ausentes;
@@ -1255,9 +1302,9 @@ Ao mudar uma regra do RDO, permissão, status editorial ou contrato público, at
 ### Onda 4 — produto piloto
 
 - CAT-001: workshop/taxonomia;
-- CAT-002: reconciliação;
+- CAT-002: definição das fontes oficiais e roteiro de recadastro;
 - CAT-003: schema/migration;
-- CAT-004: importador com validação;
+- CAT-004: cadastro guiado, origem e aprovação;
 - CAT-005: editor de produto;
 - CAT-006: lista/detalhe/comparador;
 - CAT-007: busca/SEO/relações;
@@ -1279,7 +1326,7 @@ Ao mudar uma regra do RDO, permissão, status editorial ou contrato público, at
 - BLOG-001: blog completo;
 - MKT-001: campanhas/landing pages;
 - SEO-001: metadados/sitemap/redirects/404;
-- LEAD-002: formulários/leads/ERP;
+- LEAD-002: formulários e gestão de leads no novo CMS;
 - OPS-001: diagnóstico avançado;
 - LAUNCH-001: hardening, treinamento e go-live.
 
@@ -1300,7 +1347,7 @@ Cada ID deve ser decomposto em tickets verticais pequenos; a lista não substitu
 
 ### Conteúdo
 
-- produtos reconciliados/aprovados;
+- produtos novos cadastrados e aprovados;
 - itens sem imagem/ALT/SEO/documento;
 - links/relações órfãos;
 - revisões pendentes e tempo de aprovação;
@@ -1311,7 +1358,7 @@ Cada ID deve ser decomposto em tickets verticais pequenos; a lista não substitu
 - buscas com e sem resultado;
 - caminho até produto/solução;
 - conversão por CTA/formulário;
-- leads entregues ao ERP;
+- leads persistidos, atribuídos e acompanhados no novo CMS;
 - páginas com erro;
 - Core Web Vitals e acessibilidade.
 
@@ -1349,7 +1396,7 @@ Cada ID deve ser decomposto em tickets verticais pequenos; a lista não substitu
 ### Conteúdo
 
 - [ ] Fonte canônica definida por domínio.
-- [ ] Produtos, serviços, setores e aplicações reconciliados.
+- [ ] Produtos, serviços, setores e aplicações foram recadastrados no novo CMS e aprovados.
 - [ ] Relações não apontam para itens ausentes/não publicados.
 - [ ] Mídia possui ALT, variantes e mapa de usos.
 - [ ] Dados técnicos possuem owner e evidência.
@@ -1404,8 +1451,8 @@ Realizar um workshop de início com Product Owner, Portfólio, Comercial, Market
 
 1. responsáveis e RACI confirmados;
 2. repositórios, ambientes e acessos inventariados;
-3. decisão provisória ou definitiva sobre painel/ERP e hosting;
-4. primeira onda de produtos e taxonomia aprovadas;
+3. confirmação da hospedagem do novo painel em `/admin` e do hosting canônico;
+4. primeiro lote de recadastro e taxonomia aprovados;
 5. plano imediato para os riscos P0 do RDO;
 6. backlog das Ondas 0 e 1 priorizado;
 7. datas e evidências exigidas para Gates G0 e G1.

@@ -1,5 +1,7 @@
 # Operacao local sem GitHub Actions pago
 
+> **Status em 2026-08-28:** contingencia encerrada. Os gatilhos automaticos de CI e preview foram restaurados apos a regularizacao do GitHub Actions. Este procedimento permanece documentado apenas como plano de continuidade; `npm run validate:local` continua sendo uma protecao complementar.
+
 ## Decisao
 
 Enquanto a conta proprietaria estiver impedida de iniciar GitHub-hosted runners, o GitHub permanece como repositorio e historico remoto, mas nao executa CI ou preview automaticamente. Os workflows `CI` e `Preview` foram preservados com acionamento exclusivamente manual para uma eventual reativacao.

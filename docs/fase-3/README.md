@@ -1,6 +1,6 @@
 # Fase 3 — nucleo do novo CMS
 
-**Status:** `CMS-001` concluido no staging; Fase 3 em execucao sob contingencia local
+**Status:** `CMS-001` concluido no staging; Fase 3 em execucao com CI automatico e validacao local complementar
 
 **Branch:** `Remodelagem`
 

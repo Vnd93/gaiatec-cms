@@ -1,9 +1,9 @@
 name: CI
 
 on:
-  # Contingencia sem consumo automatico de GitHub-hosted runners.
-  # A validacao obrigatoria do desenvolvimento roda com `npm run validate:local`.
-  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [Remodelagem]
 
 permissions:
   contents: read

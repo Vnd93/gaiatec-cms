@@ -43,4 +43,5 @@ test("preview and private paths are fail-closed in edge configuration", async ()
   assert.match(worker, /relatorio-de-obra\|admin\|preview/);
   assert.match(worker, /noindex, nofollow, noarchive/);
   assert.match(worker, /private, no-store/);
+  assert.match(worker, /frame-src[^;]*https:\/\/www\.openstreetmap\.org/);
 });

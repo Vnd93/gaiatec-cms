@@ -43,7 +43,7 @@ function securityHeaders(headers, { noindex = false, privateRoute = false } = {}
   headers.set("Permissions-Policy", privateRoute ? "camera=(self), microphone=(), geolocation=(self)" : "camera=(), microphone=(), geolocation=()");
   headers.set("Strict-Transport-Security", "max-age=31536000");
   headers.set("Cross-Origin-Opener-Policy", "same-origin");
-  headers.set("Content-Security-Policy-Report-Only", "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://challenges.cloudflare.com https://api.resend.com; frame-src https://challenges.cloudflare.com https://www.google.com; form-action 'self'");
+  headers.set("Content-Security-Policy-Report-Only", "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://challenges.cloudflare.com https://api.resend.com; frame-src https://challenges.cloudflare.com https://www.google.com https://www.openstreetmap.org; form-action 'self'");
   if (noindex) headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
   if (privateRoute) headers.set("Cache-Control", "private, no-store, max-age=0");
   return headers;

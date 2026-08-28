@@ -24,6 +24,8 @@
     "test:rls": "supabase test db",
     "test:e2e": "playwright test",
     "test:a11y": "playwright test --grep @a11y",
+    "validate:local": "node scripts/phase2/validate-local.mjs",
+    "validate:local:clean": "npm ci && npm run validate:local",
     "preview:test": "vite preview --host 127.0.0.1 --port 4173",
     "smoke:http": "node scripts/phase2/http-smoke.mjs",
     "test:phase1": "node --test scripts/phase1/*.test.mjs",

@@ -73,6 +73,12 @@ O gate permanece bloqueado porque os controles operacionais obrigatórios de F2-
 
 Para desbloquear: regularizar cobrança/limite do GitHub Actions, configurar environments com revisores autorizados, proteger a branch com os três checks, executar uma PR real até obter CI verde e registrar uma aprovação protegida de staging. Esses passos dependem de autoridade administrativa/faturamento externa ao repositório.
 
+### Contingência local sem serviço pago
+
+Por decisão do responsável em 2026-08-28, os gatilhos automáticos de `CI` e `Preview` foram suspensos para impedir consumo ou falhas de GitHub-hosted runners. Os workflows permanecem versionados para acionamento manual futuro, e o desenvolvimento na branch `Remodelagem` passa a exigir `npm run validate:local` com evidência em `docs/validacao-local/ULTIMA_VALIDACAO.md`.
+
+Essa contingência libera a continuidade do desenvolvimento local e o envio de commits ao repositório, mas não transforma checks inexistentes em checks aprovados. Merge em `main` e deploy de produção continuam bloqueados até aprovação explícita e validação equivalente de banco, staging e rollback.
+
 ## F2-04 — observabilidade sem PII
 
 - Eventos JSON estruturados incluem nível, evento, versão, rota e correlation ID.
@@ -88,4 +94,4 @@ Para desbloquear: regularizar cobrança/limite do GitHub Actions, configurar env
 
 ## Decisão formal
 
-**Gate G2: BLOQUEADO.** A engenharia local, o staging e os cinco ensaios técnicos do gate estão aprovados, mas F2-03 não tem enforcement operacional no GitHub. Não avançar para a Fase 3 até que as ações de desbloqueio acima sejam comprovadas.
+**Gate G2 técnico: ATENDIDO SOB CONTINGÊNCIA LOCAL.** O desenvolvimento pode continuar na branch `Remodelagem` com validação local obrigatória. O enforcement remoto de F2-03, o merge em `main` e o deploy de produção permanecem bloqueados até que os controles externos ou uma alternativa equivalente sejam comprovados.

@@ -32,7 +32,7 @@ test("@a11y critical public journeys have no serious automated violations", asyn
 });
 
 test("@a11y keyboard skip link moves focus to main content", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "networkidle" });
   const skip = page.getByRole("link", { name: "Pular para o conteúdo principal" });
   await skip.focus();
   await skip.press("Enter");
@@ -42,7 +42,7 @@ test("@a11y keyboard skip link moves focus to main content", async ({ page }) =>
 
 test("@a11y mobile menu closes with Escape and restores scrolling", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile-chromium", "mobile interaction");
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "networkidle" });
   const menu = page.locator('button[aria-controls="mobile-navigation"]');
   await menu.click();
   await expect(page.getByRole("navigation", { name: "Menu principal mobile" })).toBeVisible();

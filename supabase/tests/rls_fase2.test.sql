@@ -1,5 +1,9 @@
 begin;
-select plan(7);
+create extension if not exists pgtap with schema extensions;
+set local search_path = public, extensions;
+create temp table fase2_test_results (seq integer not null, result text not null);
+grant insert, select on fase2_test_results to authenticated;
+insert into fase2_test_results values (0, plan(7));
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 values
@@ -17,15 +21,19 @@ values ('20000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-0000000
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000001', true);
-select results_eq('select count(*)::bigint from public.rdo_relatorios', array[1::bigint], 'owner can read own draft');
+insert into fase2_test_results
+select 1, results_eq('select count(*)::bigint from public.rdo_relatorios', array[1::bigint], 'owner can read own draft');
 
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000002', true);
-select results_eq('select count(*)::bigint from public.rdo_relatorios', array[0::bigint], 'other member cannot read owner draft');
+insert into fase2_test_results
+select 2, results_eq('select count(*)::bigint from public.rdo_relatorios', array[0::bigint], 'other member cannot read owner draft');
 
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000003', true);
-select results_eq('select count(*)::bigint from public.rdo_relatorios', array[0::bigint], 'user without RDO scope reads nothing');
+insert into fase2_test_results
+select 3, results_eq('select count(*)::bigint from public.rdo_relatorios', array[0::bigint], 'user without RDO scope reads nothing');
 
-select throws_ok(
+insert into fase2_test_results
+select 4, throws_ok(
   $$insert into public.rdo_relatorios (created_by, status, cliente, contrato) values ('10000000-0000-0000-0000-000000000001', 'rascunho', 'Cliente forjado', 'RDO-TEST-02')$$,
   '42501',
   null,
@@ -36,7 +44,8 @@ reset role;
 update public.rdo_relatorios set status = 'finalizado' where id = '20000000-0000-0000-0000-000000000001';
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000001', true);
-select results_eq(
+insert into fase2_test_results
+select 5, results_eq(
   $$with changed as (
       update public.rdo_relatorios
       set comentarios = 'mutado'
@@ -46,7 +55,8 @@ select results_eq(
   array[0::bigint],
   'finalized report cannot be updated by its owner'
 );
-select results_eq(
+insert into fase2_test_results
+select 6, results_eq(
   $$with changed as (
       delete from public.rdo_relatorios
       where id = '20000000-0000-0000-0000-000000000001'
@@ -55,11 +65,15 @@ select results_eq(
   array[0::bigint],
   'finalized report cannot be deleted by its owner'
 );
-select results_eq(
+reset role;
+insert into fase2_test_results
+select 7, results_eq(
   $$select count(*)::bigint from storage.buckets where id in ('rdo-fotos', 'rdo-assinados') and public = false$$,
   array[2::bigint],
   'sensitive buckets stay private'
 );
 
-select * from finish();
+insert into fase2_test_results
+select 8, result from finish() as result;
+select result from fase2_test_results order by seq;
 rollback;

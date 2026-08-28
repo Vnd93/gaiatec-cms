@@ -114,7 +114,7 @@ create unique index if not exists rdo_assinatura_token_hash_uidx
 -- Tokens antigos continuam verificáveis pelo hash e deixam de ser armazenados
 -- em claro. Novos tokens são criados somente pelo comando server-side.
 update public.rdo_relatorios
-set assinatura_token_hash = encode(digest(assinatura_token::text, 'sha256'), 'hex'),
+set assinatura_token_hash = encode(extensions.digest(assinatura_token::text, 'sha256'), 'hex'),
     assinatura_token = null
 where assinatura_token is not null and assinatura_token_hash is null;
 

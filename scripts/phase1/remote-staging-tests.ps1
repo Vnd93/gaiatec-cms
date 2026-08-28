@@ -13,7 +13,10 @@ $ProjectUrl = "https://$TargetRef.supabase.co"
 $AllowedOrigin = "https://gaiatec-cms-staging.pages.dev"
 $ManagementUrl = "https://api.supabase.com/v1/projects/$TargetRef"
 
-$tokenLines = @(Get-Content -LiteralPath $SecretFile | Where-Object { $_ -match '^SUPABASE_ACCESS_TOKEN=' })
+$tokenLines = @(
+  Select-String -LiteralPath $SecretFile -Pattern '^SUPABASE_ACCESS_TOKEN=' |
+    ForEach-Object { $_.Line }
+)
 if ($tokenLines.Count -ne 1) { throw "Esperada exatamente uma linha SUPABASE_ACCESS_TOKEN." }
 $managementToken = (($tokenLines[0] -split '=', 2)[1]).Trim().Trim('"').Trim("'")
 if ([string]::IsNullOrWhiteSpace($managementToken)) { throw "SUPABASE_ACCESS_TOKEN vazio." }

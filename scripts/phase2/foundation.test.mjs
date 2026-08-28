@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 
-test("migrations are sequential, immutable and contain RLS enforcement", async () => {
+test("migrations are sequential and contain RLS enforcement", async () => {
   const migrations = (await readdir("supabase/migrations")).filter((file) => file.endsWith(".sql")).sort();
   assert.deepEqual(
     migrations.map((file) => file.slice(0, 4)),
@@ -15,6 +15,7 @@ test("migrations are sequential, immutable and contain RLS enforcement", async (
   assert.match(combined, /create policy/);
   assert.match(combined, /rdo_rel_update_draft/);
   assert.match(combined, /rdo_rel_delete_draft/);
+  assert.match(combined, /extensions\.digest/);
   assert.doesNotMatch(combined, /disable row level security/);
 });
 

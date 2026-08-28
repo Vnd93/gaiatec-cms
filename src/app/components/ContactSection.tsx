@@ -3,19 +3,18 @@ import { Link } from "react-router";
 import { Phone, MessageSquare, MapPin, ArrowRight, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { AnimateOnScroll } from "./useScrollAnimation";
 import { useContactInfo } from "../hooks/useSiteData";
+import { SUPABASE_ANON_KEY, SUPABASE_URL } from "../../lib/supabase";
+import { TurnstileChallenge } from "./TurnstileChallenge";
 
 const KNOCKOUT = "'Knockout HTF68', sans-serif";
 
 const FALLBACK_CTAS = [
   { icon: Phone, value: "(11) 2207-1933", hint: "Fale com nossa equipe comercial · Fax (11) 2207-1986", href: "tel:+551122071933" },
   { icon: MessageSquare, value: "(11) 2207-1986", hint: "WhatsApp · Seg. a Sex., 8h às 18h", href: "https://wa.me/551122071986" },
-  { icon: MapPin, value: "Parque Novo Mundo · São Paulo/SP", hint: "R. Herói da Força Expedicionária Brasileira, 22", href: "#" },
+  { icon: MapPin, value: "Parque Novo Mundo · São Paulo/SP", hint: "R. Herói da Força Expedicionária Brasileira, 22", href: "/contato" },
 ];
 
 const enquiryTypes = ["Orçamento", "Suporte Técnico", "Calibração", "Instrumentação", "Automação", "Proteção Catódica", "Outros"];
-
-const SUPABASE_URL = "https://pbmyttjnqijdbscrjayk.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBibXl0dGpucWlqZGJzY3JqYXlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIwNTM3MTIsImV4cCI6MjA4NzYyOTcxMn0.YtCaZCoKHJTGEHxaCRl3yaf0Aol86oXWjKoD0xgXcok";
 
 type FormStatus = "idle" | "submitting" | "success" | "error";
 
@@ -23,8 +22,10 @@ export function ContactSection({ variant = "brand" }: { variant?: "brand" | "lig
   const { contact } = useContactInfo();
   const light = variant === "light";
   const [formData, setFormData] = useState({
-    firstName: "", lastName: "", email: "", phone: "", company: "", enquiryType: "", message: "", consent: false,
+    firstName: "", lastName: "", email: "", phone: "", company: "", enquiryType: "", message: "", consent: false, website: "",
   });
+  const [captchaRequired, setCaptchaRequired] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState("");
   const [status, setStatus] = useState<FormStatus>("idle");
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -46,15 +47,17 @@ export function ContactSection({ variant = "brand" }: { variant?: "brand" | "lig
           icon: MapPin,
           value: contact.bairro_cidade || "Nossa unidade",
           hint: contact.endereco || "",
-          href: "#",
+          href: "/contato",
         },
       ]
     : FALLBACK_CTAS;
 
   const resetForm = () => {
     setFormData({
-      firstName: "", lastName: "", email: "", phone: "", company: "", enquiryType: "", message: "", consent: false,
+      firstName: "", lastName: "", email: "", phone: "", company: "", enquiryType: "", message: "", consent: false, website: "",
     });
+    setCaptchaRequired(false);
+    setCaptchaToken("");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -80,12 +83,15 @@ export function ContactSection({ variant = "brand" }: { variant?: "brand" | "lig
         body: JSON.stringify({
           ...formData,
           origem: typeof window !== "undefined" ? window.location.pathname : "/",
+          idempotencyKey: crypto.randomUUID(),
+          captchaToken: captchaToken || undefined,
         }),
       });
 
       const data = await res.json().catch(() => null);
 
       if (!res.ok) {
+        if (data?.captchaRequired) setCaptchaRequired(true);
         throw new Error(data?.error || `Erro ${res.status}`);
       }
 
@@ -142,17 +148,22 @@ export function ContactSection({ variant = "brand" }: { variant?: "brand" | "lig
             )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <input type="text" placeholder="Nome" required disabled={isSubmitting} className={inputClass} value={formData.firstName} onChange={(e) => setFormData({ ...formData, firstName: e.target.value })} />
-                <input type="text" placeholder="Sobrenome" disabled={isSubmitting} className={inputClass} value={formData.lastName} onChange={(e) => setFormData({ ...formData, lastName: e.target.value })} />
+              <div className="absolute -left-[10000px] h-px w-px overflow-hidden" aria-hidden="true">
+                <label htmlFor="contact-website">Não preencha este campo</label>
+                <input id="contact-website" name="website" tabIndex={-1} autoComplete="off" value={formData.website} onChange={(e) => setFormData({ ...formData, website: e.target.value })} />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <input type="email" placeholder="E-mail" required disabled={isSubmitting} className={inputClass} value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
-                <input type="tel" placeholder="Telefone / WhatsApp" disabled={isSubmitting} className={inputClass} value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} />
+                <input type="text" aria-label="Nome" maxLength={80} placeholder="Nome" required disabled={isSubmitting} className={inputClass} value={formData.firstName} onChange={(e) => setFormData({ ...formData, firstName: e.target.value })} />
+                <input type="text" aria-label="Sobrenome" maxLength={100} placeholder="Sobrenome" disabled={isSubmitting} className={inputClass} value={formData.lastName} onChange={(e) => setFormData({ ...formData, lastName: e.target.value })} />
               </div>
-              <input type="text" placeholder="Empresa" disabled={isSubmitting} className={inputClass} value={formData.company} onChange={(e) => setFormData({ ...formData, company: e.target.value })} />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <input type="email" aria-label="E-mail" maxLength={254} placeholder="E-mail" required disabled={isSubmitting} className={inputClass} value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
+                <input type="tel" aria-label="Telefone ou WhatsApp" maxLength={40} placeholder="Telefone / WhatsApp" disabled={isSubmitting} className={inputClass} value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} />
+              </div>
+              <input type="text" aria-label="Empresa" maxLength={160} placeholder="Empresa" disabled={isSubmitting} className={inputClass} value={formData.company} onChange={(e) => setFormData({ ...formData, company: e.target.value })} />
               <select
                 disabled={isSubmitting}
+                aria-label="Tipo de solicitação"
                 className={`${inputClass} appearance-none`}
                 value={formData.enquiryType}
                 onChange={(e) => setFormData({ ...formData, enquiryType: e.target.value })}
@@ -161,7 +172,7 @@ export function ContactSection({ variant = "brand" }: { variant?: "brand" | "lig
                 <option value="">Tipo de Solicitação</option>
                 {enquiryTypes.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
-              <textarea placeholder="Sua Mensagem" required rows={5} disabled={isSubmitting} className={`${inputClass} resize-none`} value={formData.message} onChange={(e) => setFormData({ ...formData, message: e.target.value })} />
+              <textarea aria-label="Mensagem" maxLength={4000} placeholder="Sua Mensagem" required rows={5} disabled={isSubmitting} className={`${inputClass} resize-none`} value={formData.message} onChange={(e) => setFormData({ ...formData, message: e.target.value })} />
               <div className="space-y-3">
                 <label className="flex items-start gap-2 cursor-pointer">
                   <input type="checkbox" required disabled={isSubmitting} className="mt-1 accent-black" checked={formData.consent} onChange={(e) => setFormData({ ...formData, consent: e.target.checked })} />
@@ -181,6 +192,7 @@ export function ContactSection({ variant = "brand" }: { variant?: "brand" | "lig
                   </span>
                 </label>
               </div>
+              {captchaRequired && <TurnstileChallenge onToken={setCaptchaToken} />}
               <button
                 type="submit"
                 disabled={isSubmitting}

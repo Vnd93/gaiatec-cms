@@ -849,6 +849,7 @@ export default function ProdutosPage() {
               <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
                 <span style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700 }}>Ordenar:</span>
                 <select
+                  aria-label="Ordenar produtos"
                   value={sort}
                   onChange={(e) => setSort(e.target.value)}
                   style={{
@@ -894,6 +895,7 @@ export default function ProdutosPage() {
               {/* Search */}
               <div style={{ position: "relative", maxWidth: 260 }}>
                 <input
+                  aria-label="Buscar produto"
                   type="text"
                   placeholder="Buscar produto..."
                   value={search}

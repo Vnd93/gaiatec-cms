@@ -405,10 +405,10 @@ export function useContentSection(fallback: {
     servicesItems && servicesItems.length > 0
       ? servicesItems.slice(0, 4).map((it) => ({
           title: it.titulo ?? '',
-          href: '#',
+          href: '/servicos',
           desc: it.descricao ?? '',
           cta: 'Ver Serviço →',
-          ctaHref: '#',
+          ctaHref: '/contato',
         }))
       : fallback.services
 

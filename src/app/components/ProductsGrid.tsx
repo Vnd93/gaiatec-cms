@@ -383,6 +383,22 @@ export function ProductsGrid() {
           transition: background 0.3s, transform 0.3s;
           padding: 0;
         }
+        @media (max-width: 640px) {
+          .sec3-header {
+            align-items: flex-start !important;
+            flex-direction: column !important;
+            gap: 18px;
+          }
+          .sec3-actions {
+            flex-wrap: wrap;
+            gap: 10px !important;
+            width: 100%;
+          }
+          .sec3-heading {
+            font-size: 38px !important;
+            line-height: 38px !important;
+          }
+        }
       `}</style>
 
       <div
@@ -393,6 +409,7 @@ export function ProductsGrid() {
           paddingTop: 80,
           fontFamily: BODY_FONT,
           fontSize: 14,
+          overflow: "hidden",
         }}
       >
         <div
@@ -414,8 +431,10 @@ export function ProductsGrid() {
                 justifyContent: "space-between",
                 marginBottom: 28,
               }}
+              className="sec3-header"
             >
               <h2
+                className="sec3-heading"
                 style={{
                   fontFamily: "'Knockout HTF68', sans-serif",
                   fontSize: 44,
@@ -428,7 +447,7 @@ export function ProductsGrid() {
                 Produtos em Destaque
               </h2>
 
-              <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+              <div className="sec3-actions" style={{ display: "flex", alignItems: "center", gap: 16 }}>
                 <a
                   href="/produtos"
                   className="sec3-viewall-link"

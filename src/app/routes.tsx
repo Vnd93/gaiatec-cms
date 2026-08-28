@@ -6,6 +6,7 @@ import { RequireAuth } from "./rdo/RequireAuth";
 
 // Home page = eager load (entry point — não vale a pena lazy)
 import HomePage from "./pages/HomePage";
+import RouteErrorPage from "./pages/RouteErrorPage";
 
 // Demais páginas = lazy load (code splitting)
 const SobrePage = lazy(() => import("./pages/SobrePage"));
@@ -65,6 +66,7 @@ export const router = createBrowserRouter([
   {
     path: "/",
     Component: Layout,
+    errorElement: <RouteErrorPage />,
     children: [
       { index: true, Component: HomePage },
       { path: "sobre", element: lazyWrap(SobrePage) },
@@ -102,6 +104,7 @@ export const router = createBrowserRouter([
         <Outlet />
       </AuthProvider>
     ),
+    errorElement: <RouteErrorPage />,
     children: [
       { path: "login", element: lazyWrap(RdoLoginPage) },
       { path: "definir-senha", element: lazyWrap(RdoDefinirSenhaPage) },

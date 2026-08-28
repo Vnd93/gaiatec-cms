@@ -34,8 +34,8 @@ function adaptApiMenu(items: SiteMenuItem[]): NavItem[] {
   return items.map((it) => ({
     label: it.label,
     // The API allows href=null (pure groupers). The Header's hover/click
-    // logic assumes `href` is always a string, so coerce to "#".
-    href: it.href ?? "#",
+    // Grupos sem destino usam a página de contato, evitando links inertes.
+    href: it.href ?? "/contato",
     children:
       it.children && it.children.length > 0 ? adaptApiMenu(it.children) : undefined,
   }));
@@ -563,7 +563,7 @@ export function Header() {
 
         {/* ── SKIP TO CONTENT ── */}
         <a
-          href="#Main"
+          href="#main-content"
           style={{
             position: "absolute",
             top: -10,
@@ -612,6 +612,9 @@ export function Header() {
               <li style={{ paddingLeft: 24, display: "inline-block", verticalAlign: "top" }}>
                 <div ref={searchRef} style={{ display: "flex", alignItems: "center", position: "relative" }}>
                   <button
+                    type="button"
+                    aria-label={searchOpen ? "Fechar busca" : "Abrir busca"}
+                    aria-expanded={searchOpen}
                     onClick={() => {
                       setSearchOpen(!searchOpen);
                       if (searchOpen) setSearchQuery("");
@@ -755,13 +758,13 @@ export function Header() {
                 </div>
               </li>
               <li style={{ paddingLeft: 24, display: "inline-block", verticalAlign: "top" }}>
-                <a href="#" className="hdr-utility-link">Localização</a>
+                <a href="/contato" className="hdr-utility-link">Localização</a>
               </li>
               <li style={{ paddingLeft: 24, display: "inline-block", verticalAlign: "top" }}>
                 <a href="/sobre" className="hdr-utility-link">Sobre</a>
               </li>
               <li style={{ paddingLeft: 24, display: "inline-block", verticalAlign: "top" }}>
-                <a href="#" className="hdr-utility-link">Carreiras</a>
+                <a href="/contato" className="hdr-utility-link">Carreiras</a>
               </li>
             </ul>
           </div>
@@ -890,6 +893,9 @@ export function Header() {
             {/* ── MOBILE BUTTON ── */}
             <div className="hdr-mobile-btn" style={{ marginLeft: "auto" }}>
               <button
+                type="button"
+                aria-label={mobileOpen ? "Fechar menu" : "Abrir menu"}
+                aria-expanded={mobileOpen}
                 onClick={() => {
                   setMobileOpen(!mobileOpen);
                   setMobileAccordion(null);
@@ -955,7 +961,7 @@ export function Header() {
                   >
                     <div style={{ marginBottom: 20 }}>
                       <a
-                        href={col.href || "#"}
+                        href={col.href || "/contato"}
                         {...externalLinkProps(col.href)}
                         className="hdr-mega-l1-link"
                         style={{ fontWeight: 500 }}
@@ -968,7 +974,7 @@ export function Header() {
                       <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
                         {col.children.map((sub: any) => (
                           <li key={sub.label} style={{ marginBottom: 8 }}>
-                            <a href={sub.href || "#"} {...externalLinkProps(sub.href)} className="hdr-mega-l2-link">
+                            <a href={sub.href || "/contato"} {...externalLinkProps(sub.href)} className="hdr-mega-l2-link">
                               {sub.label}
                             </a>
                           </li>
@@ -990,7 +996,7 @@ export function Header() {
                     {activeItem!.children!.map((child: any) => (
                       <a
                         key={child.label}
-                        href={child.href || "#"}
+                        href={child.href || "/contato"}
                         {...externalLinkProps(child.href)}
                         className="hdr-mega-l1-link"
                         style={{ marginBottom: 12 }}
@@ -1112,7 +1118,7 @@ export function Header() {
                                     {child.children.map((third: any) => (
                                       <a
                                         key={third.label}
-                                        href={third.href || "#"}
+                                        href={third.href || "/contato"}
                                         {...externalLinkProps(third.href)}
                                         style={{
                                           display: "block",
@@ -1133,7 +1139,7 @@ export function Header() {
                               </>
                             ) : (
                               <a
-                                href={child.href || "#"}
+                                href={child.href || "/contato"}
                                 {...externalLinkProps(child.href)}
                                 style={{
                                   display: "flex",

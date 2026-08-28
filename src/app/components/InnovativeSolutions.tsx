@@ -84,7 +84,7 @@ export function InnovativeSolutions() {
   const blocks = cmsBlocks.map((b, i) => ({
     ...b,
     image: BLOCK_IMAGES[i] || BLOCK_IMAGES[BLOCK_IMAGES.length - 1],
-    href: "#",
+    href: "/contato",
   }));
 
   return (

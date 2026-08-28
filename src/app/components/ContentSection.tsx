@@ -20,31 +20,31 @@ const FALLBACK_INTRO =
 const FALLBACK_SERVICES = [
   {
     title: "Instrumentação Industrial",
-    href: "#",
+    href: "/servicos",
     desc: "Medição, controle e monitoramento de variáveis de processo: vazão, pressão, nível, temperatura e qualidade. Soluções completas desde a especificação até a instalação.",
     cta: "Ver Serviço →",
-    ctaHref: "#",
+    ctaHref: "/contato",
   },
   {
     title: "Automação Industrial",
-    href: "#",
+    href: "/servicos",
     desc: "Projetos de automação com CLPs, IHMs, sistemas supervisórios SCADA e integração IoT para processos industriais de alta complexidade.",
     cta: "Ver Serviço →",
-    ctaHref: "#",
+    ctaHref: "/contato",
   },
   {
     title: "Proteção Catódica",
-    href: "#",
+    href: "/servicos",
     desc: "Projeto, instalação e monitoramento de sistemas de proteção catódica para dutos, tanques e estruturas enterradas, garantindo integridade ao longo do tempo.",
     cta: "Ver Serviço →",
-    ctaHref: "#",
+    ctaHref: "/contato",
   },
   {
     title: "Calibração Rastreável",
-    href: "#",
+    href: "/servicos",
     desc: "Calibração de instrumentos com rastreabilidade metrológica ao INMETRO, conforme boas práticas e normas ABNT/ISO.",
     cta: "Ver Serviço →",
-    ctaHref: "#",
+    ctaHref: "/contato",
   },
 ];
 
@@ -283,6 +283,13 @@ export function ContentSection() {
           .sec2-h2-title span {
             font-size: inherit !important;
             line-height: inherit !important;
+          }
+        }
+        @media (max-width: 640px) {
+          .sec2-h2-title {
+            font-size: 44px !important;
+            line-height: 40px !important;
+            overflow-wrap: anywhere;
           }
         }
       `}</style>

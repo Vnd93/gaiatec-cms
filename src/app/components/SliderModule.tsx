@@ -460,7 +460,7 @@ export function SliderModule() {
                         </div>
 
                         {/* CTA Button — split design: [text] [arrow] */}
-                        <a href="#" className="sec6-cta-btn">
+                        <a href="/contato" className="sec6-cta-btn">
                           <span
                             className="sec6-cta-text"
                             style={{

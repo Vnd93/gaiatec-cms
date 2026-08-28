@@ -133,8 +133,9 @@ export default function LoginPage() {
           {modo === "senha" && (
             <form onSubmit={onSubmitSenha} className="mt-6">
               <div>
-                <label className={labelCls}>E-mail</label>
+                <label htmlFor="rdo-login-email" className={labelCls}>E-mail</label>
                 <input
+                  id="rdo-login-email"
                   type="email"
                   autoComplete="email"
                   required
@@ -146,7 +147,7 @@ export default function LoginPage() {
               </div>
               <div className="mt-5">
                 <div className="mb-2 flex items-center justify-between">
-                  <label className={labelCls + " mb-0"}>Senha</label>
+                  <label htmlFor="rdo-login-password" className={labelCls + " mb-0"}>Senha</label>
                   <button
                     type="button"
                     onClick={() => setShow((s) => !s)}
@@ -156,6 +157,7 @@ export default function LoginPage() {
                   </button>
                 </div>
                 <input
+                  id="rdo-login-password"
                   type={show ? "text" : "password"}
                   autoComplete="current-password"
                   required
@@ -182,8 +184,9 @@ export default function LoginPage() {
               <p className="mb-5 text-sm text-[var(--rdo-ink-2)]">
                 Digite seu e-mail e enviaremos um código de 6 dígitos para acessar.
               </p>
-              <label className={labelCls}>E-mail</label>
+              <label htmlFor="rdo-otp-email" className={labelCls}>E-mail</label>
               <input
+                id="rdo-otp-email"
                 type="email"
                 autoComplete="email"
                 inputMode="email"
@@ -211,8 +214,9 @@ export default function LoginPage() {
                   {info}
                 </p>
               )}
-              <label className={labelCls}>Código de 6 dígitos</label>
+              <label htmlFor="rdo-otp-code" className={labelCls}>Código de 6 dígitos</label>
               <input
+                id="rdo-otp-code"
                 type="text"
                 inputMode="numeric"
                 autoComplete="one-time-code"
@@ -257,7 +261,7 @@ export default function LoginPage() {
         </div>
 
         <p className="mt-10 text-[12px] leading-relaxed text-[var(--rdo-ink-3)]">
-          Qualquer pessoa pode acessar com o e-mail. Você vê apenas os seus relatórios.
+          Acesso restrito a pessoas previamente convidadas e com escopo RDO ativo.
         </p>
       </motion.div>
     </div>

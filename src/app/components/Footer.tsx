@@ -2,13 +2,9 @@ import { useState } from "react";
 import { Link } from "react-router";
 import { Phone, MessageSquare, Mail, ArrowRight, Loader2, CheckCircle2, Linkedin, Instagram, Facebook, Youtube } from "lucide-react";
 import { useMenu, useContactInfo } from "../hooks/useSiteData";
-import type { SiteMenuItem } from "../../lib/supabase";
+import { SUPABASE_ANON_KEY, SUPABASE_URL, type SiteMenuItem } from "../../lib/supabase";
 
 const KNOCKOUT = "'Knockout HTF68', sans-serif";
-
-const SUPABASE_URL = "https://pbmyttjnqijdbscrjayk.supabase.co";
-const SUPABASE_ANON_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBibXl0dGpucWlqZGJzY3JqYXlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIwNTM3MTIsImV4cCI6MjA4NzYyOTcxMn0.YtCaZCoKHJTGEHxaCRl3yaf0Aol86oXWjKoD0xgXcok";
 
 /* ────────────────────────────────────────────────────────
    Footer hardcoded fallback (used when CMS API is unreachable)
@@ -110,12 +106,8 @@ function menuToColumns(menu: SiteMenuItem[]): FooterColumn[] {
 }
 
 /* Redes sociais — URLs reais a fornecer pela Gaiatec (placeholders por ora). */
-const SOCIALS: { icon: typeof Linkedin; label: string; href: string }[] = [
-  { icon: Linkedin, label: "LinkedIn", href: "#" },
-  { icon: Instagram, label: "Instagram", href: "#" },
-  { icon: Facebook, label: "Facebook", href: "#" },
-  { icon: Youtube, label: "YouTube", href: "#" },
-];
+// Links sociais voltam somente após URLs oficiais serem aprovadas; nunca publicar `#`.
+const SOCIALS: { icon: typeof Linkedin; label: string; href: string }[] = [];
 
 type NlStatus = "idle" | "submitting" | "success" | "error";
 
@@ -131,11 +123,13 @@ export function Footer() {
   const mail = contact.email || "vendas@gaiatecsistemas.com.br";
 
   const [email, setEmail] = useState("");
+  const [newsletterConsent, setNewsletterConsent] = useState(false);
+  const [newsletterWebsite, setNewsletterWebsite] = useState("");
   const [nlStatus, setNlStatus] = useState<NlStatus>("idle");
 
   const handleNewsletter = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim() || nlStatus === "submitting") return;
+    if (!email.trim() || !newsletterConsent || nlStatus === "submitting") return;
     setNlStatus("submitting");
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/submit-contact`, {
@@ -155,11 +149,14 @@ export function Footer() {
           message: "Solicito inscrição na newsletter da Gaiatec Sistemas.",
           consent: true,
           origem: typeof window !== "undefined" ? window.location.pathname : "/",
+          website: newsletterWebsite,
+          idempotencyKey: crypto.randomUUID(),
         }),
       });
       if (!res.ok) throw new Error();
       setNlStatus("success");
       setEmail("");
+      setNewsletterConsent(false);
       setTimeout(() => setNlStatus("idle"), 6000);
     } catch {
       setNlStatus("error");
@@ -178,7 +175,7 @@ export function Footer() {
       <div className="max-w-[1400px] mx-auto px-4 md:px-6 py-16 md:py-24">
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.5fr] gap-14 lg:gap-24">
           {/* Newsletter + Conecte-se */}
-          <div>
+          <div id="newsletter">
             <span className="block text-[12px] font-semibold tracking-[0.22em] uppercase text-[#0057DE] mb-4">
               Newsletter
             </span>
@@ -201,9 +198,15 @@ export function Footer() {
               </div>
             ) : (
               <form onSubmit={handleNewsletter} className="max-w-[440px]">
+                <div className="absolute -left-[10000px] h-px w-px overflow-hidden" aria-hidden="true">
+                  <label htmlFor="newsletter-website">Não preencha este campo</label>
+                  <input id="newsletter-website" tabIndex={-1} autoComplete="off" value={newsletterWebsite} onChange={(e) => setNewsletterWebsite(e.target.value)} />
+                </div>
                 <div className="flex flex-col sm:flex-row gap-3">
                   <input
                     type="email"
+                    aria-label="E-mail para newsletter"
+                    maxLength={254}
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
@@ -224,6 +227,10 @@ export function Footer() {
                     )}
                   </button>
                 </div>
+                <label className="mt-3 flex items-start gap-2 text-[12px] leading-5 text-slate-400">
+                  <input type="checkbox" required checked={newsletterConsent} onChange={(e) => setNewsletterConsent(e.target.checked)} className="mt-1 accent-[#0057DE]" />
+                  <span>Li a <Link to="/politica-de-privacidade" className="underline hover:text-white">Política de Privacidade</Link> e autorizo o envio da newsletter.</span>
+                </label>
                 {nlStatus === "error" && (
                   <p className="text-[13px] text-red-400 mt-2.5">
                     Não foi possível concluir. Tente novamente em instantes.

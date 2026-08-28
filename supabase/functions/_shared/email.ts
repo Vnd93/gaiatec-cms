@@ -4,6 +4,16 @@
 const FROM = "Gaiatec Sistemas <nao-responda@gaiatecsistemas.com>";
 const LOGO = "https://gaiatecsistemas.com.br/logo-gaiatec.png";
 
+function escapeHtml(value: unknown): string {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[char] ?? char));
+}
+
+function cleanSubject(value: unknown, fallback: string): string {
+  return String(value || fallback).replace(/[\r\n]+/g, " ").slice(0, 160);
+}
+
 function shell(opts: { heading: string; body: string; button: string; link: string; footer: string }): string {
   return `<!doctype html><html lang="pt-BR"><body style="margin:0;padding:0;background:#f4f4f5;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 12px;"><tr><td align="center">
@@ -75,7 +85,7 @@ export interface ResumoRelatorio {
 function resumoRows(r: ResumoRelatorio): string {
   const row = (label: string, value?: string) =>
     value && String(value).trim()
-      ? `<tr><td style="padding:8px 0;border-bottom:1px solid #f0f0f1;font-size:10.5px;color:#a1a1aa;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;width:44%;vertical-align:top;">${label}</td><td style="padding:8px 0;border-bottom:1px solid #f0f0f1;font-size:13px;color:#27272a;line-height:1.5;">${value}</td></tr>`
+      ? `<tr><td style="padding:8px 0;border-bottom:1px solid #f0f0f1;font-size:10.5px;color:#a1a1aa;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;width:44%;vertical-align:top;">${escapeHtml(label)}</td><td style="padding:8px 0;border-bottom:1px solid #f0f0f1;font-size:13px;color:#27272a;line-height:1.5;">${escapeHtml(value)}</td></tr>`
       : "";
   return [
     row("Contrato", r.contrato),
@@ -120,7 +130,7 @@ function resumoShell(opts: { badge: string; badgeBg: string; badgeColor: string;
 </table></td></tr></table></body></html>`;
 }
 
-/** E-mail ao admin quando um relatório é finalizado (PDF vai anexado). */
+/** E-mail ao admin quando um relatório é finalizado. */
 export function relatorioFinalizadoEmail(r: ResumoRelatorio) {
   const html = resumoShell({
     badge: "Finalizado",
@@ -128,14 +138,14 @@ export function relatorioFinalizadoEmail(r: ResumoRelatorio) {
     badgeColor: "#e2640b",
     badgeBorder: "#f87010",
     heading: "Relatório finalizado",
-    intro: "Um relatório foi finalizado no sistema. O <strong>PDF completo está anexado</strong> a este e-mail. Resumo abaixo.",
+    intro: "Um relatório foi finalizado no sistema. Consulte a versão imutável no ambiente autenticado. Resumo abaixo.",
     rows: resumoRows(r),
     footer: "Gaiatec Sistemas — Acompanhamento de Obra · Notificação automática de relatório finalizado.",
   });
-  return { subject: `RDO finalizado — ${r.contrato || "sem contrato"} · ${r.cliente || "sem cliente"}`, html };
+  return { subject: `RDO finalizado — ${cleanSubject(r.contrato, "sem contrato")} · ${cleanSubject(r.cliente, "sem cliente")}`, html };
 }
 
-/** E-mail (admins + cliente) quando o relatório é totalmente assinado (PDF anexado). */
+/** E-mail (admins + cliente) quando o relatório é totalmente assinado. */
 export function relatorioAssinadoEmail(r: ResumoRelatorio) {
   const html = resumoShell({
     badge: "Assinado",
@@ -143,20 +153,20 @@ export function relatorioAssinadoEmail(r: ResumoRelatorio) {
     badgeColor: "#1a7f43",
     badgeBorder: "#34a36a",
     heading: "Relatório assinado",
-    intro: "O relatório foi <strong>assinado eletronicamente</strong> por todas as partes. O <strong>PDF assinado está anexado</strong> a este e-mail. Resumo abaixo.",
+    intro: "O relatório foi <strong>assinado eletronicamente</strong> por todas as partes. Consulte a versão vinculada às evidências no ambiente seguro. Resumo abaixo.",
     rows: resumoRows(r),
     footer: "Gaiatec Sistemas — Acompanhamento de Obra · Assinatura eletrônica registrada (data, hora e identificação).",
   });
-  return { subject: `RDO assinado — ${r.contrato || "sem contrato"} · ${r.cliente || "sem cliente"}`, html };
+  return { subject: `RDO assinado — ${cleanSubject(r.contrato, "sem contrato")} · ${cleanSubject(r.cliente, "sem cliente")}`, html };
 }
 
 /** E-mail ao cliente com o link para assinar o relatório remotamente. */
 export function assinarClienteEmail(link: string, r: ResumoRelatorio) {
   return {
-    subject: `Assine o Relatório Diário de Obra — ${r.contrato || "Gaiatec Sistemas"}`,
+    subject: `Assine o Relatório Diário de Obra — ${cleanSubject(r.contrato, "Gaiatec Sistemas")}`,
     html: shell({
       heading: "Assine o relatório de obra",
-      body: `A <strong>Gaiatec Sistemas</strong> finalizou o Relatório Diário de Obra${r.contrato ? ` <strong>${r.contrato}</strong>` : ""}${r.cliente ? ` referente a <strong>${r.cliente}</strong>` : ""} e solicita a sua assinatura eletrônica. Clique no botão abaixo para revisar e assinar — é rápido e pode ser feito pelo celular.`,
+      body: `A <strong>Gaiatec Sistemas</strong> finalizou o Relatório Diário de Obra${r.contrato ? ` <strong>${escapeHtml(r.contrato)}</strong>` : ""}${r.cliente ? ` referente a <strong>${escapeHtml(r.cliente)}</strong>` : ""} e solicita a sua assinatura eletrônica. Clique no botão abaixo para revisar e assinar — é rápido e pode ser feito pelo celular.`,
       button: "Revisar e assinar",
       link,
       footer: "Se você não reconhece esta solicitação, pode ignorar este e-mail com segurança.",

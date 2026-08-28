@@ -10,10 +10,10 @@ import { LocationMaps } from "../components/LocationMaps";
 import { reverseGeocode } from "../lib/geo";
 import { fetchCnpj, isValidCnpj, maskCnpj, onlyDigits } from "../lib/cnpj";
 import { notifyRelatorioFinalizado } from "../lib/notify";
-import { finalizarComAssinatura, signLinkUrl, type AssinaturaPayload } from "../lib/assinatura";
+import { finalizarComAssinatura, type AssinaturaPayload } from "../lib/assinatura";
 import { FinalizarAssinaturaModal } from "../components/FinalizarAssinaturaModal";
 import { createRelatorio, deleteFoto, getRelatorio, updateRelatorio, uploadFotos } from "../lib/relatorios";
-import type { AssinaturaStatus, Foto, RdoStatus } from "../lib/types";
+import type { Foto, RdoStatus } from "../lib/types";
 
 interface NovaFoto {
   file: File;
@@ -69,7 +69,6 @@ export default function FormPage() {
   const [engCliente, setEngCliente] = useState("");
   const [creaCliente, setCreaCliente] = useState("");
   const [emailCliente, setEmailCliente] = useState("");
-  const [origAssinatura, setOrigAssinatura] = useState<AssinaturaStatus>("nao_assinado");
   const [modalOpen, setModalOpen] = useState(false);
   const [inicioData, setInicioData] = useState("");
   const [inicioHora, setInicioHora] = useState("");
@@ -108,7 +107,11 @@ export default function FormPage() {
         setEngCliente(r.eng_cliente || "");
         setCreaCliente(r.crea_cliente || "");
         setEmailCliente(r.email_cliente || "");
-        setOrigAssinatura(r.assinatura_status || "nao_assinado");
+        if (r.status !== "rascunho" || r.assinatura_status !== "nao_assinado") {
+          toast.error("Relatórios finalizados ou assinados são imutáveis. Crie uma versão corretiva pela visualização.");
+          navigate("/relatorio-de-obra", { replace: true });
+          return;
+        }
         const [iData, iHora] = splitISO(r.periodo_inicio);
         const [fData, fHora] = splitISO(r.periodo_fim);
         setInicioData(iData);
@@ -233,8 +236,6 @@ export default function FormPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  const jaAssinado = origAssinatura !== "nao_assinado";
-
   function buildInput() {
     return {
       cliente: cliente.trim(),
@@ -284,21 +285,6 @@ export default function FormPage() {
     }
   }
 
-  // Edição de um relatório já assinado: salva os campos sem reabrir a assinatura.
-  async function salvarAlteracoes() {
-    setSaving("finalizado");
-    try {
-      await persist("finalizado");
-      toast.success("Alterações salvas.");
-      navigate("/relatorio-de-obra");
-    } catch (e) {
-      console.error(e);
-      toast.error("Não foi possível salvar. Tente novamente.");
-    } finally {
-      setSaving(null);
-    }
-  }
-
   function abrirFinalizacao() {
     if (!cliente.trim()) {
       toast.error("Informe o nome do cliente para finalizar.");
@@ -311,13 +297,11 @@ export default function FormPage() {
   async function confirmarFinalizacao(p: AssinaturaPayload) {
     setSaving("finalizado");
     try {
-      const rid = await persist("finalizado");
-      const assinado = await finalizarComAssinatura(rid, p);
-      const signLink = assinado.assinatura_token ? signLinkUrl(assinado.assinatura_token) : null;
-      const officialPdf = p.gaiatecMetodo === "importado" ? p.gaiatecPdf ?? null : null;
+      const rid = await persist("rascunho");
+      await finalizarComAssinatura(rid, p);
       try {
         const full = await getRelatorio(rid);
-        if (full) await notifyRelatorioFinalizado(full, { signLink, officialPdf });
+        if (full) await notifyRelatorioFinalizado(full);
       } catch (err) {
         console.error("[rdo] falha ao notificar:", err);
         toast.error("Assinado, mas o envio de e-mail falhou.");
@@ -606,14 +590,6 @@ export default function FormPage() {
         </AnimatePresence>
       </div>
 
-      {/* Aviso de relatório já assinado (edição livre, mas sem atualizar assinaturas) */}
-      {jaAssinado && (
-        <div className="mt-4 max-w-2xl rounded-md border border-[var(--rdo-line)] bg-[var(--rdo-bg-2)] px-3.5 py-2.5 text-[12px] leading-snug text-[var(--rdo-ink-3)]">
-          Este relatório já foi assinado. Alterações no conteúdo <strong>não atualizam</strong> as assinaturas já
-          coletadas — para reassinar, use “Reabrir assinatura” na visualização.
-        </div>
-      )}
-
       {/* Ações */}
       <div className="mt-5 flex max-w-2xl flex-col gap-3 sm:flex-row sm:items-center">
         <button type="button" onClick={salvarRascunho} disabled={saving !== null} className={ghostBtn}>
@@ -630,17 +606,10 @@ export default function FormPage() {
             <button type="button" onClick={() => setStep(1)} className={ghostBtn}>
               ← Voltar
             </button>
-            {jaAssinado ? (
-              <button type="button" onClick={salvarAlteracoes} disabled={saving !== null} className={primaryBtn}>
-                {saving === "finalizado" ? <Loader2 size={15} className="rdo-spin" /> : <Check size={15} />}
-                Salvar alterações
-              </button>
-            ) : (
-              <button type="button" onClick={abrirFinalizacao} disabled={saving !== null} className={primaryBtn}>
-                <PenLine size={15} />
-                Finalizar e assinar
-              </button>
-            )}
+            <button type="button" onClick={abrirFinalizacao} disabled={saving !== null} className={primaryBtn}>
+              <PenLine size={15} />
+              Finalizar e assinar
+            </button>
           </div>
         )}
       </div>

@@ -6,6 +6,7 @@ interface AuthState {
   session: Session | null;
   user: User | null;
   isAdmin: boolean;
+  hasRdoAccess: boolean;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   requestOtp: (email: string) => Promise<{ error: string | null }>;
@@ -18,6 +19,30 @@ const AuthCtx = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [access, setAccess] = useState<{ active: boolean; role: "rdo_admin" | "rdo_member" } | null>(null);
+  const [accessLoading, setAccessLoading] = useState(false);
+
+  useEffect(() => {
+    const robots = document.querySelector<HTMLMetaElement>('meta[name="robots"]') ?? document.head.appendChild(document.createElement("meta"));
+    robots.name = "robots";
+    const previous = robots.content;
+    const previousTitle = document.title;
+    const canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+    const canonicalHref = canonical?.getAttribute("href") ?? null;
+    canonical?.remove();
+    robots.content = "noindex, nofollow, noarchive";
+    document.title = "Relatório Diário de Obra | GAIATEC";
+    return () => {
+      robots.content = previous || "index, follow";
+      document.title = previousTitle;
+      if (canonicalHref && !document.querySelector('link[rel="canonical"]')) {
+        const restoredCanonical = document.createElement("link");
+        restoredCanonical.rel = "canonical";
+        restoredCanonical.href = canonicalHref;
+        document.head.appendChild(restoredCanonical);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -30,6 +55,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => sub.subscription.unsubscribe();
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (!session?.user) {
+      setAccess(null);
+      setAccessLoading(false);
+      return;
+    }
+    setAccessLoading(true);
+    supabase
+      .from("rdo_user_access")
+      .select("active,role")
+      .eq("user_id", session.user.id)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        setAccess(!error && data ? (data as { active: boolean; role: "rdo_admin" | "rdo_member" }) : null);
+        setAccessLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user?.id]);
+
   async function signIn(email: string, password: string) {
     const { error } = await supabase.auth.signInWithPassword({
       email: email.trim(),
@@ -38,7 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: error ? traduzErro(error.message) : null };
   }
 
-  /** Solicita o código de acesso (OTP) por e-mail. Cadastro aberto. */
+  /** Solicita OTP somente para usuário previamente convidado e ativo. */
   async function requestOtp(email: string) {
     const { error } = await supabase.functions.invoke("rdo-otp", {
       body: { email: email.trim().toLowerCase() },
@@ -73,10 +121,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const user = session?.user ?? null;
-  const isAdmin = (user?.app_metadata as Record<string, unknown> | undefined)?.role === "admin";
+  const hasRdoAccess = access?.active === true;
+  const isAdmin = hasRdoAccess && access?.role === "rdo_admin";
 
   return (
-    <AuthCtx.Provider value={{ session, user, isAdmin, loading, signIn, requestOtp, verifyOtp, signOut }}>
+    <AuthCtx.Provider value={{ session, user, isAdmin, hasRdoAccess, loading: loading || accessLoading, signIn, requestOtp, verifyOtp, signOut }}>
       {children}
     </AuthCtx.Provider>
   );

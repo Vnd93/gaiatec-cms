@@ -31,7 +31,6 @@ export default function RelatoriosPage() {
   );
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
-  const [dragOver, setDragOver] = useState<RdoStatus | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const autor = searchParams.get("autor");
   const autorEmail = searchParams.get("e");
@@ -75,18 +74,6 @@ export default function RelatoriosPage() {
       toast.success("Relatório arquivado.");
     } catch {
       toast.error("Não foi possível arquivar.");
-    }
-  }
-
-  async function moveStatus(r: Relatorio, status: RdoStatus) {
-    if (r.status === status) return;
-    setItems((prev) => prev.map((x) => (x.id === r.id ? { ...x, status } : x)));
-    try {
-      await setStatus(r.id, status);
-      toast.success(status === "finalizado" ? "Relatório finalizado." : "Movido para rascunho.");
-    } catch {
-      setItems((prev) => prev.map((x) => (x.id === r.id ? { ...x, status: r.status } : x)));
-      toast.error("Não foi possível mover.");
     }
   }
 
@@ -185,21 +172,7 @@ export default function RelatoriosPage() {
               return (
                 <div
                   key={col.status}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    setDragOver(col.status);
-                  }}
-                  onDragLeave={() => setDragOver((s) => (s === col.status ? null : s))}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setDragOver(null);
-                    const id = e.dataTransfer.getData("text/plain");
-                    const r = items.find((x) => x.id === id);
-                    if (r) moveStatus(r, col.status);
-                  }}
-                  className={`flex w-[300px] shrink-0 flex-col rounded-xl border bg-[var(--rdo-bg-2)] transition-colors ${
-                    dragOver === col.status ? "border-[var(--rdo-blue)] bg-[var(--rdo-blue-soft)]" : "border-[var(--rdo-line)]"
-                  }`}
+                  className="flex w-[300px] shrink-0 flex-col rounded-xl border border-[var(--rdo-line)] bg-[var(--rdo-bg-2)]"
                 >
                   <div className="flex items-center justify-between px-4 py-3">
                     <StatusBadge status={col.status} />
@@ -207,7 +180,7 @@ export default function RelatoriosPage() {
                   </div>
                   <div className="flex-1 space-y-2 px-3 pb-3">
                     {cards.length === 0 ? (
-                      <p className="px-1 py-6 text-center text-[12px] text-[var(--rdo-ghost)]">Arraste relatórios para cá</p>
+                      <p className="px-1 py-6 text-center text-[12px] text-[var(--rdo-ghost)]">Nenhum relatório nesta etapa</p>
                     ) : (
                       cards.map((r) => (
                         <KanbanCard
@@ -267,8 +240,6 @@ function KanbanCard({
   const eng = [r.eng_gaiatec, r.eng_cliente].filter(Boolean).join(" · ");
   return (
     <div
-      draggable
-      onDragStart={(e) => e.dataTransfer.setData("text/plain", r.id)}
       onClick={onOpen}
       className="cursor-pointer rounded-lg border border-[var(--rdo-line)] bg-white p-3 shadow-[var(--rdo-shadow-sm)] transition-colors hover:border-[var(--rdo-line-strong)]"
     >

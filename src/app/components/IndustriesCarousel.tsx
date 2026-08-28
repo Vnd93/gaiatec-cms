@@ -331,7 +331,7 @@ export function IndustriesCarousel() {
               >
                 Indústrias de Atuação
               </h2>
-              <a href="#" className="sec4-viewall-btn">
+              <a href="/setores" className="sec4-viewall-btn">
                 Ver todos os 11 setores <ArrowRight size={14} />
               </a>
             </AnimateOnScroll>

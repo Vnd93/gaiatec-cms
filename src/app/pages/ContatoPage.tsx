@@ -1,5 +1,6 @@
 import { PageHero } from "../components/PageHero";
 import { ContactSection } from "../components/ContactSection";
+import { SEO } from "../components/SEO";
 
 const HERO_IMG = "/images/contato/atendimento-consultivo.webp";
 
@@ -12,6 +13,11 @@ const HERO_IMG = "/images/contato/atendimento-consultivo.webp";
 export default function ContatoPage() {
   return (
     <>
+      <SEO
+        title="Contato"
+        description="Fale com a equipe da Gaiatec Sistemas para atendimento técnico e comercial."
+        path="/contato"
+      />
       <PageHero overline="CONTATO" title="Fale com a Gaiatec Sistemas" image={HERO_IMG} />
 
       <ContactSection variant="light" />

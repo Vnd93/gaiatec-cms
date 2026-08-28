@@ -8,7 +8,7 @@
 //
 // Bump CACHE_VERSION sempre que mudar a estratégia para invalidar caches antigos.
 
-const CACHE_VERSION = 'v2-avif'
+const CACHE_VERSION = 'v3-fase1-private-exclusion'
 const STATIC_CACHE = `gaiatec-static-${CACHE_VERSION}`
 const IMAGE_CACHE = `gaiatec-images-${CACHE_VERSION}`
 const FONT_CACHE = `gaiatec-fonts-${CACHE_VERSION}`
@@ -129,6 +129,18 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return
 
   const url = new URL(request.url)
+
+  // Áreas privadas/temporárias nunca entram no cache público nem recebem
+  // fallback HTML offline. A rede/servidor decide autenticação e noindex.
+  if (
+    url.origin === self.location.origin &&
+    (url.pathname.startsWith('/relatorio-de-obra') ||
+      url.pathname.startsWith('/admin') ||
+      url.pathname.startsWith('/preview'))
+  ) {
+    event.respondWith(fetch(request))
+    return
+  }
 
   // === ESTRATÉGIA 1: Assets com hash (cache eterno) ===
   // /assets/index-CnADk9_X.js → cache-first

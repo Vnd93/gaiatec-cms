@@ -13,7 +13,7 @@ function configuredOrigins(): Set<string> {
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);
-  return new Set([...DEFAULT_ORIGINS, ...configured]);
+  return configured.length ? new Set(configured) : DEFAULT_ORIGINS;
 }
 
 export function isAllowedOrigin(req: Request): boolean {
@@ -61,8 +61,12 @@ export async function readJsonLimited<T = Record<string, unknown>>(req: Request,
 }
 
 export async function sha256(value: string): Promise<string> {
-  const bytes = new TextEncoder().encode(value);
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return sha256Bytes(new TextEncoder().encode(value));
+}
+
+export async function sha256Bytes(bytes: Uint8Array): Promise<string> {
+  const input = Uint8Array.from(bytes);
+  const digest = await crypto.subtle.digest("SHA-256", input.buffer);
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 

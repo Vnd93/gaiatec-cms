@@ -1,7 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { relatorioAssinadoEmail, sendEmail, type ResumoRelatorio } from "../_shared/email.ts";
-import { cleanText, clientAddress, consumeRateLimit, corsHeaders, isAllowedOrigin, json, readJsonLimited, sha256 } from "../_shared/security.ts";
+import { CANONICAL_PDF_VERSION, generateCanonicalRdoPdf } from "../_shared/canonical-pdf.ts";
+import { cleanText, clientAddress, consumeRateLimit, corsHeaders, isAllowedOrigin, json, readJsonLimited, sha256, sha256Bytes } from "../_shared/security.ts";
 
 const MAX_SIGNATURE_BYTES = 500_000;
 const isUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
@@ -84,7 +85,7 @@ Deno.serve(async (req) => {
     return json(req, { relatorio: { ...safe, fotos: photos }, gaiatecPdfUrl });
   }
 
-  let uploadedPath: string | null = null;
+  const uploadedPaths: string[] = [];
   try {
     const now = new Date().toISOString();
     let patch: Record<string, unknown>;
@@ -95,30 +96,58 @@ Deno.serve(async (req) => {
       const name = cleanText(body.nome, 160);
       if (!signature.startsWith("data:image/png;base64,") || Math.ceil((signature.split(",")[1]?.length ?? 0) * 3 / 4) > MAX_SIGNATURE_BYTES) throw new Error("INVALID_SIGNATURE");
       if (!name || body.aceite !== true) throw new Error("ACCEPTANCE_REQUIRED");
-      evidenceHash = await sha256(`${report.snapshot_hash}:${signature}:${name}:${now}`);
-      patch = { assinatura_cliente: signature, assinatura_cliente_nome: name, assinatura_cliente_em: now, assinatura_cliente_metodo: "desenho", assinatura_status: "assinado", assinatura_token_hash: null, assinatura_token_expira: null };
+      const canonicalReport = { ...report, assinatura_cliente_nome: name, assinatura_cliente_em: now, assinatura_cliente_metodo: "desenho", assinatura_status: "assinado" };
+      const canonicalBytes = await generateCanonicalRdoPdf({
+        report: canonicalReport,
+        generatedAt: now,
+        snapshotHash: String(report.snapshot_hash ?? ""),
+        termsHash: String(report.terms_hash ?? ""),
+        termsVersion: String(report.termos_versao ?? ""),
+        gaiatecSignature: report.assinatura_gaiatec,
+        customerSignature: signature,
+        gaiatecSourceHash: report.assinatura_gaiatec_source_hash,
+      });
+      evidenceHash = await sha256Bytes(canonicalBytes);
+      const canonicalPath = `assinados/${report.id}/canonical-v${Number(report.version_number ?? 1)}-final-${crypto.randomUUID()}.pdf`;
+      const canonicalUpload = await admin.storage.from("rdo-assinados").upload(canonicalPath, canonicalBytes, { contentType: "application/pdf", upsert: false });
+      if (canonicalUpload.error) throw canonicalUpload.error;
+      uploadedPaths.push(canonicalPath);
+      patch = {
+        assinatura_cliente: signature,
+        assinatura_cliente_nome: name,
+        assinatura_cliente_em: now,
+        assinatura_cliente_metodo: "desenho",
+        assinatura_status: "assinado",
+        assinatura_token_hash: null,
+        assinatura_token_expira: null,
+        signed_pdf_hash: evidenceHash,
+        canonical_pdf_path: canonicalPath,
+        canonical_pdf_hash: evidenceHash,
+        canonical_pdf_generated_at: now,
+      };
     } else if (action === "upload-signed") {
       const bytes = decodePdf(String(body.pdfBase64 ?? ""));
       const name = cleanText(body.nome, 160) || cleanText(report.eng_cliente, 160);
       const filename = cleanText(body.filename, 180) || "relatorio-assinado.pdf";
-      uploadedPath = `assinados/${report.id}/cliente-${crypto.randomUUID()}.pdf`;
+      const uploadedPath = `assinados/${report.id}/cliente-${crypto.randomUUID()}.pdf`;
       const upload = await admin.storage.from("rdo-assinados").upload(uploadedPath, bytes, { contentType: "application/pdf", upsert: false });
       if (upload.error) throw upload.error;
-      evidenceHash = await sha256(String(body.pdfBase64 ?? ""));
-      patch = { assinatura_cliente_metodo: "importado", assinatura_cliente_pdf_path: uploadedPath, assinatura_cliente_arquivo: filename, assinatura_cliente_nome: name, assinatura_cliente_em: now, assinatura_status: "assinado", assinatura_token_hash: null, assinatura_token_expira: null, signed_pdf_hash: evidenceHash };
+      uploadedPaths.push(uploadedPath);
+      evidenceHash = await sha256Bytes(bytes);
+      patch = { assinatura_cliente_metodo: "importado", assinatura_cliente_pdf_path: uploadedPath, assinatura_cliente_arquivo: filename, assinatura_cliente_nome: name, assinatura_cliente_em: now, assinatura_status: "assinado", assinatura_token_hash: null, assinatura_token_expira: null, signed_pdf_hash: evidenceHash, canonical_pdf_path: uploadedPath, canonical_pdf_hash: evidenceHash, canonical_pdf_generated_at: now, assinatura_cliente_source_hash: evidenceHash };
     } else {
       return json(req, { error: "Ação desconhecida." }, 400);
     }
 
     const { data: updated, error: updateError } = await admin.from("rdo_relatorios").update(patch).eq("id", report.id).eq("assinatura_token_hash", tokenHash).select("*").maybeSingle();
     if (updateError || !updated) {
-      if (uploadedPath) await admin.storage.from("rdo-assinados").remove([uploadedPath]);
+      if (uploadedPaths.length) await admin.storage.from("rdo-assinados").remove(uploadedPaths);
       return json(req, { error: "Link já utilizado ou assinatura concorrente." }, 409);
     }
 
     const ipHash = await sha256(`${evidenceSalt}:${clientAddress(req)}`);
     const userAgentHash = await sha256(req.headers.get("User-Agent") ?? "unknown");
-    await admin.from("rdo_audit_events").insert({ report_id: report.id, actor_id: null, action: `signature.${action}`, evidence_hash: evidenceHash, event_data: { occurredAt: now, ipHash, userAgentHash, tokenHash: await sha256(tokenHash) } });
+    await admin.from("rdo_audit_events").insert({ report_id: report.id, actor_id: null, action: `signature.${action}`, evidence_hash: evidenceHash, event_data: { occurredAt: now, canonicalPdfVersion: action === "sign" ? CANONICAL_PDF_VERSION : "external-import", canonicalPdfHash: evidenceHash, ipHash, userAgentHash, tokenHash: await sha256(tokenHash) } });
 
     const notifyKey = crypto.randomUUID();
     await admin.from("rdo_notification_outbox").insert({ report_id: report.id, action: "signed_remote", idempotency_key: notifyKey, requested_by: report.created_by, status: "sending", attempt_count: 1 });
@@ -130,7 +159,7 @@ Deno.serve(async (req) => {
     }
     return json(req, { ok: true });
   } catch (error) {
-    if (uploadedPath) await admin.storage.from("rdo-assinados").remove([uploadedPath]);
+    if (uploadedPaths.length) await admin.storage.from("rdo-assinados").remove(uploadedPaths);
     const code = error instanceof Error ? error.message : "SIGN_FAILED";
     const message = code === "INVALID_SIGNATURE" ? "Assinatura inválida ou muito grande." : code === "ACCEPTANCE_REQUIRED" ? "Nome e aceite são obrigatórios." : code === "PDF_TOO_LARGE" ? "PDF muito grande (máx. 14 MB)." : code === "INVALID_PDF" ? "O arquivo precisa ser um PDF válido." : "Não foi possível concluir a assinatura.";
     return json(req, { error: message }, code === "SIGN_FAILED" ? 500 : 400);

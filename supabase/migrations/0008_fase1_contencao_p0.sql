@@ -29,6 +29,18 @@ from auth.users
 where raw_app_meta_data ->> 'role' in ('admin', 'membro')
 on conflict (user_id) do nothing;
 
+-- Remove o helper legado sem argumentos depois de retirar suas dependências.
+-- A versão abaixo usa um alvo explícito/opcional e consulta a allowlist RDO.
+drop policy if exists "rdo_rel_select" on public.rdo_relatorios;
+drop policy if exists "rdo_rel_insert" on public.rdo_relatorios;
+drop policy if exists "rdo_rel_update" on public.rdo_relatorios;
+drop policy if exists "rdo_rel_delete" on public.rdo_relatorios;
+drop policy if exists "rdo_fotos_select" on public.rdo_fotos;
+drop policy if exists "rdo_fotos_insert" on public.rdo_fotos;
+drop policy if exists "rdo_fotos_update" on public.rdo_fotos;
+drop policy if exists "rdo_fotos_delete" on public.rdo_fotos;
+drop function if exists public.rdo_is_admin();
+
 create or replace function public.rdo_user_is_active(target_user uuid default auth.uid())
 returns boolean
 language sql
@@ -76,6 +88,11 @@ alter table public.rdo_relatorios
   add column if not exists immutable_snapshot jsonb,
   add column if not exists snapshot_hash text,
   add column if not exists signed_pdf_hash text,
+  add column if not exists canonical_pdf_path text,
+  add column if not exists canonical_pdf_hash text,
+  add column if not exists canonical_pdf_generated_at timestamptz,
+  add column if not exists assinatura_gaiatec_source_hash text,
+  add column if not exists assinatura_cliente_source_hash text,
   add column if not exists terms_hash text,
   add column if not exists assinatura_token_hash text,
   add column if not exists archived_at timestamptz;
@@ -382,7 +399,7 @@ create policy "rdo_storage_assinados_read" on storage.objects
     and exists (
       select 1 from public.rdo_relatorios r
       where (r.created_by = auth.uid() or public.rdo_is_admin())
-        and name in (r.assinatura_gaiatec_pdf_path, r.assinatura_cliente_pdf_path)
+        and name in (r.assinatura_gaiatec_pdf_path, r.assinatura_cliente_pdf_path, r.canonical_pdf_path)
     )
   );
 

@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { cleanText, clientAddress, consumeRateLimit, corsHeaders, isAllowedOrigin, json, readJsonLimited, sha256 } from "../_shared/security.ts";
+import { CANONICAL_PDF_VERSION, generateCanonicalRdoPdf } from "../_shared/canonical-pdf.ts";
+import { cleanText, clientAddress, consumeRateLimit, corsHeaders, isAllowedOrigin, json, readJsonLimited, sha256, sha256Bytes } from "../_shared/security.ts";
 
 const TERMS_VERSION = "v2-2026-08-pendente-juridico";
 const TERMS_TEXT = `Ao assinar este Relatório Diário de Obra (RDO), declaro que:
@@ -87,7 +88,7 @@ Deno.serve(async (req) => {
   const receipt = await admin.from("rdo_command_receipts").insert({ actor_id: authData.user.id, action, idempotency_key: key, report_id: reportId });
   if (receipt.error) return json(req, { error: "Operação idempotente já está em processamento." }, 409);
 
-  let uploadedPdfPath: string | null = null;
+  const uploadedPdfPaths: string[] = [];
   try {
     let response: Record<string, unknown>;
 
@@ -104,7 +105,7 @@ Deno.serve(async (req) => {
       let gaiatecSignature: string | null = null;
       let gaiatecPdfPath: string | null = null;
       let gaiatecPdfName: string | null = null;
-      let signedPdfHash: string | null = null;
+      let sourcePdfHash: string | null = null;
       if (gaiatecMethod === "desenho") {
         gaiatecSignature = cleanText(signature.gaiatecSignature, 700_000);
         if (!gaiatecSignature.startsWith("data:image/png;base64,") || dataUrlSize(gaiatecSignature) > 500_000) throw new Error("INVALID_SIGNATURE_IMAGE");
@@ -112,10 +113,10 @@ Deno.serve(async (req) => {
         const bytes = decodePdf(String(signature.gaiatecPdfBase64 ?? ""));
         gaiatecPdfName = cleanText(signature.gaiatecPdfName, 180) || "rdo-gaiatec-assinado.pdf";
         gaiatecPdfPath = `assinados/${reportId}/gaiatec-${crypto.randomUUID()}.pdf`;
-        uploadedPdfPath = gaiatecPdfPath;
+        uploadedPdfPaths.push(gaiatecPdfPath);
         const upload = await admin.storage.from("rdo-assinados").upload(gaiatecPdfPath, bytes, { contentType: "application/pdf", upsert: false });
         if (upload.error) throw upload.error;
-        signedPdfHash = await sha256(String(signature.gaiatecPdfBase64 ?? ""));
+        sourcePdfHash = await sha256Bytes(bytes);
       }
 
       const now = new Date().toISOString();
@@ -128,6 +129,34 @@ Deno.serve(async (req) => {
       const customerEmail = cleanText(signature.customerEmail, 254).toLowerCase() || cleanText(report.email_cliente, 254).toLowerCase();
       if (mode === "presencial" && (!customerSignature.startsWith("data:image/png;base64,") || dataUrlSize(customerSignature) > 500_000 || !customerName)) throw new Error("INVALID_CUSTOMER_SIGNATURE");
       if (mode === "remoto" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) throw new Error("INVALID_CUSTOMER_EMAIL");
+
+      const canonicalReport = {
+        ...report,
+        status: "finalizado",
+        finalized_at: now,
+        assinatura_status: mode === "presencial" ? "assinado" : "aguardando_cliente",
+        assinatura_gaiatec_nome: gaiatecName,
+        assinatura_gaiatec_em: now,
+        assinatura_gaiatec_metodo: gaiatecMethod,
+        assinatura_cliente_nome: mode === "presencial" ? customerName : null,
+        assinatura_cliente_em: mode === "presencial" ? now : null,
+        assinatura_cliente_metodo: mode === "presencial" ? "desenho" : null,
+      };
+      const canonicalBytes = await generateCanonicalRdoPdf({
+        report: canonicalReport,
+        generatedAt: now,
+        snapshotHash,
+        termsHash,
+        termsVersion: TERMS_VERSION,
+        gaiatecSignature,
+        customerSignature: mode === "presencial" ? customerSignature : null,
+        gaiatecSourceHash: sourcePdfHash,
+      });
+      const canonicalPdfHash = await sha256Bytes(canonicalBytes);
+      const canonicalPdfPath = `assinados/${reportId}/canonical-v${Number(report.version_number ?? 1)}-${crypto.randomUUID()}.pdf`;
+      const canonicalUpload = await admin.storage.from("rdo-assinados").upload(canonicalPdfPath, canonicalBytes, { contentType: "application/pdf", upsert: false });
+      if (canonicalUpload.error) throw canonicalUpload.error;
+      uploadedPdfPaths.push(canonicalPdfPath);
 
       const patch = {
         status: "finalizado",
@@ -153,7 +182,11 @@ Deno.serve(async (req) => {
         termos_aceito_em: now,
         immutable_snapshot: snapshot,
         snapshot_hash: snapshotHash,
-        signed_pdf_hash: signedPdfHash,
+        signed_pdf_hash: canonicalPdfHash,
+        canonical_pdf_path: canonicalPdfPath,
+        canonical_pdf_hash: canonicalPdfHash,
+        canonical_pdf_generated_at: now,
+        assinatura_gaiatec_source_hash: sourcePdfHash,
         terms_hash: termsHash,
       };
       const { data: updated, error: updateError } = await admin.from("rdo_relatorios").update(patch).eq("id", reportId).eq("status", "rascunho").select("*").single();
@@ -161,7 +194,7 @@ Deno.serve(async (req) => {
 
       const ipHash = await sha256(`${evidenceSalt}:${clientAddress(req)}`);
       const userAgentHash = await sha256(req.headers.get("User-Agent") ?? "unknown");
-      await admin.from("rdo_audit_events").insert({ report_id: reportId, actor_id: authData.user.id, action: "report.finalized", evidence_hash: snapshotHash, event_data: { version: report.version_number, mode, termsVersion: TERMS_VERSION, ipHash, userAgentHash } });
+      await admin.from("rdo_audit_events").insert({ report_id: reportId, actor_id: authData.user.id, action: "report.finalized", evidence_hash: canonicalPdfHash, event_data: { version: report.version_number, mode, termsVersion: TERMS_VERSION, canonicalPdfVersion: CANONICAL_PDF_VERSION, snapshotHash, termsHash, canonicalPdfHash, ipHash, userAgentHash } });
       response = { ok: true, report: updated };
     } else if (action === "create_correction") {
       if (report.status === "rascunho" && report.assinatura_status === "nao_assinado") throw new Error("REPORT_NOT_IMMUTABLE");
@@ -188,7 +221,7 @@ Deno.serve(async (req) => {
     await admin.from("rdo_command_receipts").update({ response }).eq("actor_id", authData.user.id).eq("action", action).eq("idempotency_key", key);
     return json(req, response);
   } catch (error) {
-    if (uploadedPdfPath) await admin.storage.from("rdo-assinados").remove([uploadedPdfPath]);
+    if (uploadedPdfPaths.length) await admin.storage.from("rdo-assinados").remove(uploadedPdfPaths);
     await admin.from("rdo_command_receipts").delete().eq("actor_id", authData.user.id).eq("action", action).eq("idempotency_key", key);
     const code = error instanceof Error ? error.message : "COMMAND_FAILED";
     const known: Record<string, string> = {

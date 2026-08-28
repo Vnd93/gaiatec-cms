@@ -2,6 +2,14 @@
 
 Este runbook é exclusivamente para o ambiente de staging. Não autoriza acesso ou alteração de produção.
 
+## Execução em 2026-08-28
+
+Executado no ref `glcqsosxwgmlhzgcsnzv` após confirmação de nome `GAIATEC CMS Staging` e região `us-east-2` pela Management API. O PAT permaneceu apenas no processo; outras linhas do arquivo de secrets não foram usadas.
+
+O dry-run transacional das oito migrations iniciais passou com `ROLLBACK`. O endpoint de migrations gerou duas colisões de versão por chamadas no mesmo segundo; o estado parcial foi auditado, somente 0004/0006/0008 ausentes foram reaplicadas com falha terminante e espaçamento, e a história final foi confirmada. A migration 0009 foi aplicada depois do Security Advisor. Não houve dado real.
+
+Foram configurados apenas `ALLOWED_ORIGINS`, `PUBLIC_SITE_ORIGIN`, `EVIDENCE_SALT` e `RATE_LIMIT_SALT`, todos exclusivos de staging. As sete funções foram publicadas. A matriz remota passou e a limpeza final zerou todos os dados sintéticos e objetos.
+
 ## Pré-condições
 
 1. obter aprovação do owner de Plataforma/Backend e credencial temporária de staging;

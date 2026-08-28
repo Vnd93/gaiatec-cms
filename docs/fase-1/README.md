@@ -10,9 +10,11 @@ Escopo: exclusivamente a Fase 1 do planejamento executivo.
 
 ## Resultado executivo
 
-O código de contenção P0 foi preparado para RDO, site e formulários, e o frontend foi publicado somente em staging. O Gate G1 permanece **BLOQUEADO**: não houve autorização/acesso ao projeto Supabase de staging para aplicar e testar a migração e as Edge Functions; a aprovação jurídico-negocial exigida pela ADR-010 não foi apresentada; e falta concluir a geração server-side do PDF canônico para assinaturas desenhadas.
+As contenções P0 de RDO, site e formulários foram aplicadas e testadas no projeto exclusivo de staging `glcqsosxwgmlhzgcsnzv` (`GAIATEC CMS Staging`, `us-east-2`). O PDF canônico de assinaturas desenhadas agora é gerado e selado server-side, armazenado em bucket privado e verificado por SHA-256.
 
-Nenhum produto, serviço, texto editorial, imagem, mídia, cadastro ou estrutura atualmente cadastrada foi importado, copiado ou adaptado. Nenhuma submissão de formulário foi realizada. Produção não foi acessada ou modificada e nenhum segredo foi lido ou versionado.
+Todos os critérios técnicos do Gate G1 têm evidência verde. O Gate permanece **BLOQUEADO exclusivamente pelo aceite jurídico-negocial humano exigido pela ADR-010**, que não pode ser presumido tecnicamente.
+
+Nenhum produto, serviço, texto editorial, imagem, mídia ou cadastro atual foi importado, copiado ou adaptado. Somente dados sintéticos descartáveis foram usados e todos os contadores retornaram a zero. Produção não foi consultada ou modificada. O PAT foi usado apenas em memória para o ref exato de staging; nenhum segredo foi impresso ou versionado.
 
 ## Evidências
 
@@ -20,6 +22,7 @@ Nenhum produto, serviço, texto editorial, imagem, mídia, cadastro ou estrutura
 - [Validação técnica e de staging](./VALIDACAO_TECNICA_STAGING.md)
 - [Runbook de aplicação no Supabase de staging](./RUNBOOK_APLICACAO_SUPABASE.md)
 - [Avaliação formal do Gate G1](./AVALIACAO_GATE_G1.md)
+- [Evidência do Supabase staging](./EVIDENCIA_SUPABASE_STAGING.md)
 
 ## Alterações locais preexistentes
 
@@ -31,3 +34,4 @@ As mudanças já existentes e ainda não commitadas em `ContactSection.tsx`, `Fo
 - a API/CMS legado permanece desabilitada e protegida por teste de regressão;
 - nenhum trabalho da Fase 2 foi iniciado;
 - o deployment de frontend é staging e recebe `X-Robots-Tag: noindex, nofollow, noarchive` em todas as rotas.
+- Resend e Turnstile não receberam credenciais de produção; a ausência foi validada em modo fail-closed e registrada como limitação operacional de staging.

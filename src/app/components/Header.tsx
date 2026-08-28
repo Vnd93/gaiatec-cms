@@ -223,6 +223,21 @@ export function Header() {
 
   useEffect(() => {
     document.body.style.overflow = mobileOpen ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [mobileOpen]);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setMobileOpen(false);
+      setMobileAccordion(null);
+      setMobileSecond(null);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
   }, [mobileOpen]);
 
   const openMenu = useCallback((i: number) => {
@@ -561,24 +576,6 @@ export function Header() {
           />
         </div>
 
-        {/* ── SKIP TO CONTENT ── */}
-        <a
-          href="#main-content"
-          style={{
-            position: "absolute",
-            top: -10,
-            left: 0,
-            width: 1,
-            height: 1,
-            overflow: "hidden",
-            zIndex: -999,
-            color: "#fff",
-            textDecoration: "underline",
-          }}
-        >
-          Skip to main content
-        </a>
-
         {/* ── CONTAINER ── */}
         <div
           style={{
@@ -896,6 +893,7 @@ export function Header() {
                 type="button"
                 aria-label={mobileOpen ? "Fechar menu" : "Abrir menu"}
                 aria-expanded={mobileOpen}
+                aria-controls="mobile-navigation"
                 onClick={() => {
                   setMobileOpen(!mobileOpen);
                   setMobileAccordion(null);
@@ -1015,7 +1013,9 @@ export function Header() {
 
       {/* ── MOBILE MENU ── */}
       {mobileOpen && (
-        <div
+        <nav
+          id="mobile-navigation"
+          aria-label="Menu principal mobile"
           className="lg:hidden"
           style={{
             position: "fixed",
@@ -1208,7 +1208,7 @@ export function Header() {
               Solicitar Orçamento <ChevronRight size={14} />
             </a>
           </div>
-        </div>
+        </nav>
       )}
     </>
   );

@@ -31,6 +31,28 @@ test("@a11y critical public journeys have no serious automated violations", asyn
   }
 });
 
+test("@a11y keyboard skip link moves focus to main content", async ({ page }) => {
+  await page.goto("/");
+  const skip = page.getByRole("link", { name: "Pular para o conteúdo principal" });
+  await skip.focus();
+  await skip.press("Enter");
+  await expect(page.locator("#main-content")).toBeFocused();
+  await expect(page).toHaveURL(/#main-content$/);
+});
+
+test("@a11y mobile menu closes with Escape and restores scrolling", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "mobile-chromium", "mobile interaction");
+  await page.goto("/");
+  const menu = page.locator('button[aria-controls="mobile-navigation"]');
+  await menu.click();
+  await expect(page.getByRole("navigation", { name: "Menu principal mobile" })).toBeVisible();
+  await expect(menu).toHaveAttribute("aria-expanded", "true");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "Abrir menu" })).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByRole("navigation", { name: "Menu principal mobile" })).toHaveCount(0);
+  await expect(page.locator("body")).not.toHaveCSS("overflow", "hidden");
+});
+
 test("missing hashed asset does not return the SPA shell on staging", async ({ request, baseURL }) => {
   test.skip(!baseURL?.includes("pages.dev"), "edge status is verified only against Cloudflare staging");
   const response = await request.get("/assets/fase-2-inexistente.js");

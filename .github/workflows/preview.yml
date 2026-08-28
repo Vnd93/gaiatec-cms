@@ -18,6 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     environment: preview
+    env:
+      CLOUDFLARE_CONFIGURED: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -32,14 +34,29 @@ jobs:
       - run: npm run artifact:manifest
         env:
           GITHUB_SHA: ${{ github.sha }}
-      - id: deploy
+      - if: env.CLOUDFLARE_CONFIGURED != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-${{ github.sha }}
+          path: dist
+          if-no-files-found: error
+          retention-days: 14
+      - if: env.CLOUDFLARE_CONFIGURED != 'true'
+        run: |
+          echo "::warning::Cloudflare credentials are not configured; the validated preview was preserved as a GitHub artifact."
+          echo "## Preview remoto" >> "$GITHUB_STEP_SUMMARY"
+          echo "Credenciais Cloudflare ausentes. O build validado foi preservado como artefato desta execução." >> "$GITHUB_STEP_SUMMARY"
+      - if: env.CLOUDFLARE_CONFIGURED == 'true'
+        id: deploy
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy dist --project-name gaiatec-cms-staging --branch pr-${{ github.event.pull_request.number }}
-      - run: npm run smoke:http -- "${{ steps.deploy.outputs.deployment-url }}"
-      - uses: actions/github-script@v7
+      - if: env.CLOUDFLARE_CONFIGURED == 'true'
+        run: npm run smoke:http -- "${{ steps.deploy.outputs.deployment-url }}"
+      - if: env.CLOUDFLARE_CONFIGURED == 'true'
+        uses: actions/github-script@v7
         with:
           script: |
             github.rest.issues.createComment({

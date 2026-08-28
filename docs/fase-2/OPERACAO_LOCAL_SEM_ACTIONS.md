@@ -2,6 +2,8 @@
 
 > **Status em 2026-08-28:** contingencia encerrada. Os gatilhos automaticos de CI e preview foram restaurados apos a regularizacao do GitHub Actions. Este procedimento permanece documentado apenas como plano de continuidade; `npm run validate:local` continua sendo uma protecao complementar.
 
+O preview remoto depende de `CLOUDFLARE_API_TOKEN` e `CLOUDFLARE_ACCOUNT_ID` no environment `preview`. Na ausencia dessas credenciais, o workflow valida o projeto e preserva `dist` como artefato do GitHub, sem bloquear a pull request; a publicacao remota volta automaticamente quando os dois secrets forem configurados.
+
 ## Decisao
 
 Enquanto a conta proprietaria estiver impedida de iniciar GitHub-hosted runners, o GitHub permanece como repositorio e historico remoto, mas nao executa CI ou preview automaticamente. Os workflows `CI` e `Preview` foram preservados com acionamento exclusivamente manual para uma eventual reativacao.

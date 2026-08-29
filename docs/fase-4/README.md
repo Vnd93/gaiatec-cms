@@ -24,3 +24,11 @@ Nenhum dado, imagem, documento, taxonomia ou estrutura editorial do site, banco 
 ## Contingência G2
 
 `npm run validate:local` permanece obrigatório. Esta fase não declara GitHub Actions, environments, branch protection, `main` ou produção verdes.
+
+## Evidências
+
+- `MODELO_E_CONTRATO.md`: contrato e projeções;
+- `RECADASTRO_PILOTO.md`: estado clean-room do lote;
+- `EXECUCAO_F4_01_A_F4_06.md`: execução e ciclo remoto;
+- `VALIDACAO_UX_UI_F4.md`: desktop/mobile, navegador e HTTP;
+- `EVIDENCIAS_GATE_G4.md`: matriz de critérios e decisão explícita.

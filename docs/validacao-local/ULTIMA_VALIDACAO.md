@@ -2,29 +2,30 @@
 
 **Resultado geral:** APROVADO
 
-**Inicio:** 2026-08-29T00:13:43.423Z
+**Inicio:** 2026-08-29T01:01:55.699Z
 
-**Fim:** 2026-08-29T00:14:53.339Z
+**Fim:** 2026-08-29T01:03:06.560Z
 
 **Branch:** `Remodelagem`
 
-**Commit-base:** `c4ca32d044f408bea15b81a8f0744438fa14db96`
+**Commit-base:** `8cd7650f5f706ffc41930415f7405a0285850bd3`
 
-**Estado inicial:** arvore Git limpa
+**Estado inicial:** com alteracoes locais ainda nao commitadas
 
-| Verificacao               | Resultado | Duracao aproximada |
-| ------------------------- | --------- | ------------------ |
-| Formatacao                | APROVADO  | 2s                 |
-| Lint                      | APROVADO  | 12s                |
-| TypeScript                | APROVADO  | 6s                 |
-| Testes unitarios          | APROVADO  | 3s                 |
-| Testes de integracao      | APROVADO  | 1s                 |
-| Contencoes da Fase 1      | APROVADO  | 1s                 |
-| Fundacao da Fase 3        | APROVADO  | 1s                 |
-| Auditoria de dependencias | APROVADO  | 2s                 |
-| Build de staging          | APROVADO  | 22s                |
-| Manifesto do artefato     | APROVADO  | 2s                 |
-| Testes de navegador       | APROVADO  | 22s                |
+| Verificacao                | Resultado | Duracao aproximada |
+| -------------------------- | --------- | ------------------ |
+| Formatacao                 | APROVADO  | 2s                 |
+| Lint                       | APROVADO  | 12s                |
+| TypeScript                 | APROVADO  | 6s                 |
+| Testes unitarios           | APROVADO  | 3s                 |
+| Testes de integracao       | APROVADO  | 1s                 |
+| Contencoes da Fase 1       | APROVADO  | 1s                 |
+| Fundacao da Fase 3         | APROVADO  | 1s                 |
+| Produto vertical da Fase 4 | APROVADO  | 1s                 |
+| Auditoria de dependencias  | APROVADO  | 2s                 |
+| Build de staging           | APROVADO  | 20s                |
+| Manifesto do artefato      | APROVADO  | 2s                 |
+| Testes de navegador        | APROVADO  | 24s                |
 
 ## Limite desta validacao
 

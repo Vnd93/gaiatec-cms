@@ -15,7 +15,9 @@ O lote funcional GATFLOW foi preservado. A auditoria final do staging confirmou:
 - campos de fabricante/OEM e dados técnicos incertos continuam editáveis;
 - exatamente uma projeção de produto publicada.
 
-Nenhum lote real de serviços, indústrias, aplicações, soluções ou detecção de gases foi fornecido com fonte nova e aprovação dos owners. O solicitante registrou que fará os cadastros definitivos futuramente no `/admin`. Por isso, a decisão formal do Gate G5 é **BLOQUEADO**. A Fase 6 não foi iniciada.
+Nenhum lote real de serviços, indústrias, aplicações, soluções ou detecção de gases foi fornecido com fonte nova e aprovação dos owners. O solicitante registrou que fará os cadastros definitivos futuramente no `/admin`. Por isso, a decisão formal do Gate G5 editorial permanece **BLOQUEADO**.
+
+Em decisão posterior de 2026-08-29, o administrador autorizou que a construção técnica da Fase 6 avance sem preenchimento automático, mantendo G5 editorial e o go-live bloqueados. A direção funcional está formalizada na [ADR-011 — CMS total e site builder governado](../adr/ADR-011-cms-total-site-builder-governado.md). A primeira entrega visual dessa exceção foi a remodelagem local da página de produtos, ainda sem alterar produção.
 
 Na retomada de 2026-08-29, a pasta nova autorizada de instrumentos de medição foi inventariada read-only. Foram identificados candidatos documentais para um lote mínimo, sem presumir correspondência, direitos ou aprovação editorial. Nenhum arquivo ou conteúdo foi levado ao staging. A proposta e a checklist objetiva dos owners estão em `PROPOSTA_LOTE_MINIMO_G5_INSTRUMENTOS_MEDICAO.md`; o Gate continua bloqueado.
 

@@ -267,6 +267,7 @@ Tornar o projeto executável, rastreável e livre de decisões implícitas.
 - ADR-008: SEO/prerender/SSR/edge;
 - ADR-009: modelo de leads no novo CMS;
 - ADR-010: imutabilidade do RDO.
+- ADR-011: CMS total e site builder governado.
 
 #### F0-04 — Governança
 
@@ -678,6 +679,8 @@ Expandir o padrão comprovado sem copiar estruturas atuais.
 - imagens com origem/ALT;
 - páginas completas, sem placeholders.
 
+Decisão posterior do administrador em 2026-08-29: o Gate G5 editorial permanece aberto até existirem lotes reais completos, mas a construção técnica da Fase 6 pode avançar conforme a ADR-011. A exceção não autoriza publicação em produção, preenchimento automático nem go-live sem G5/G8.
+
 ---
 
 ## 14. Fase 6 — remodelagem do site público
@@ -687,6 +690,24 @@ Expandir o padrão comprovado sem copiar estruturas atuais.
 Aplicar a nova arquitetura de informação e experiência sobre o conteúdo recadastrado.
 
 ### Tarefas
+
+#### Administração total e site builder
+
+- transformar páginas e homepage em entidades totalmente editáveis pelo CMS;
+- editor visual por blocos governados, sem JSON como interface editorial principal;
+- templates aprovados e composição de páginas temáticas/landing pages;
+- criar, duplicar, reordenar, ocultar, despublicar, arquivar e restaurar páginas;
+- preview responsivo desktop/mobile dentro do fluxo editorial;
+- registro dinâmico de rotas com proteção contra colisões e URLs reservadas;
+- seletores pesquisáveis para relações entre produtos, serviços, indústrias, aplicações e soluções;
+- administração de header, mega menu, menu mobile, footer e links globais;
+- configurações globais de contato, redes, CTAs e identidade permitida;
+- destaques temporários com início, término, prioridade e fallback;
+- decisão explícita de redirect, `404` ou `410` ao retirar uma página publicada;
+- auditoria, versionamento, aprovação e rollback para toda alteração;
+- hard delete somente para rascunho nunca publicado e com permissão específica;
+- blocos não podem executar HTML, JavaScript ou CSS arbitrário;
+- atender integralmente à `ADR-011`.
 
 #### Navegação
 
@@ -741,6 +762,10 @@ Aplicar a nova arquitetura de informação e experiência sobre o conteúdo reca
 
 - jornadas desktop/mobile aprovadas;
 - WCAG 2.2 AA nas jornadas principais;
+- administrador cria, edita, ordena, publica, despublica e restaura uma página sem alterar código;
+- menus, configurações globais e destaques publicados chegam aos respectivos consumidores;
+- editor visual não depende de JSON e preview reproduz o frontend público;
+- remoção de página publicada exige destino explícito e não cria link órfão;
 - nenhum link `#` editorial;
 - sem overflow;
 - SEO e HTTP status corretos;
@@ -764,6 +789,8 @@ Aplicar a nova arquitetura de informação e experiência sobre o conteúdo reca
 - templates aprovados;
 - blocos;
 - períodos;
+- posicionamentos e destaques temporários por produto, serviço, solução ou página;
+- prioridade, início, término, expiração e conteúdo de fallback;
 - formulários;
 - preview;
 - tracking conforme consentimento;

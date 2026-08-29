@@ -6,9 +6,11 @@
 
 **HEAD inicial auditado:** `65accfc5f59884c0546ab08b224cf7372d5e30f8`
 
+**Commit funcional final validado:** `c4ca32d044f408bea15b81a8f0744438fa14db96`
+
 **Alvo exclusivo:** Supabase `glcqsosxwgmlhzgcsnzv`, nome `GAIATEC CMS Staging`, região `us-east-2`
 
-**Frontend de homologação final:** `https://e48a3283.gaiatec-cms-staging.pages.dev`
+**Frontend de homologação final:** `https://c67cd638.gaiatec-cms-staging.pages.dev`
 
 **Produção:** não acessada
 
@@ -69,13 +71,21 @@ Fixtures foram removidas transacionalmente, objetos privados apagados e identida
 
 O registro técnico `cms.synthetic-article.v1` permanece porque é configuração versionada de capacidade, não conteúdo ou fixture.
 
+No fechamento, uma consulta somente leitura com a chave pública do próprio staging confirmou `cms_published_projection` com `Content-Range: */0` e corpo `[]`. Os seis contadores privilegiados acima são os resultados capturados imediatamente após a limpeza transacional da matriz; a credencial temporária já havia sido retirada e não foi recriada apenas para repetir a prova.
+
+O deployment final `c67cd638` foi revalidado por HTTP: `/`, `/admin` e `/admin/login` retornaram `200`; asset inexistente retornou `404`; `/admin` manteve `private, no-store` e `noindex, nofollow, noarchive`; preview inválido e slug público sintético ausente retornaram `404` nas funções do staging.
+
 ## Validação local obrigatória
 
 Comando: `npm run validate:local`.
 
-**Resultado final: APROVADO.** O ciclo integral de 2026-08-29T00:01:17.750Z a 2026-08-29T00:02:23.361Z aprovou formatação, lint sem erros, TypeScript, 11 testes unitários, 3 testes de integração, 4 contenções da Fase 1, 19 testes estruturais da Fase 3, auditoria com zero vulnerabilidades, build de staging, manifesto e 19 testes Playwright com 3 skips intencionais. O registro integral está em `docs/validacao-local/ULTIMA_VALIDACAO.md`.
+**Resultado final: APROVADO.** O ciclo integral de 2026-08-29T00:13:43.423Z a 2026-08-29T00:14:53.339Z, iniciado com árvore Git limpa no commit `c4ca32d`, aprovou formatação, lint sem erros, TypeScript, 11 testes unitários, 3 testes de integração, 4 contenções da Fase 1, 19 testes estruturais da Fase 3, auditoria com zero vulnerabilidades, build de staging, manifesto de 1.435 arquivos e 19 testes Playwright com 3 skips intencionais. O registro integral está em `docs/validacao-local/ULTIMA_VALIDACAO.md`.
 
-Warnings de lint preexistentes no site público não foram convertidos em erros e não alteram o resultado. Banco local efêmero continua fora de `validate:local` porque Docker não está disponível; a matriz remota foi executada exclusivamente no staging limpo.
+Os 95 warnings de lint já existentes antes do fechamento — um de Fast Refresh no contexto administrativo e os demais no site público/RDO — não foram convertidos em erros e não alteram o resultado. O warning novo da biblioteca de mídia foi corrigido antes do ciclo final. Banco local efêmero continua fora de `validate:local` porque Docker não está disponível; a matriz remota foi executada exclusivamente no staging limpo.
+
+## Revisão de segurança do diff
+
+O diff integral desde `65accfc` passou em `git diff --check`. A busca por padrões de PAT, service role, token Cloudflare, JWT e chaves privadas encontrou somente nomes esperados de variáveis server-side e nenhum valor de segredo. `.env.local`, `dist`, resultados do Playwright e credenciais temporárias permanecem fora do versionamento. Também não foi localizado conteúdo, mídia ou cadastro real: payloads, e-mails e imagens do pacote de prova são explicitamente sintéticos.
 
 ## Critério do Gate G3
 

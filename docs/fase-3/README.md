@@ -6,6 +6,8 @@
 
 **Supabase staging:** `glcqsosxwgmlhzgcsnzv` (`GAIATEC CMS Staging`)
 
+**Frontend final:** `https://c67cd638.gaiatec-cms-staging.pages.dev`
+
 **Produção e `main`:** não acessadas; merge e promoção continuam bloqueados
 
 ## Escopo entregue
@@ -33,3 +35,7 @@ As migrations `0010` a `0018` estão aplicadas somente no staging. As funções 
 `npm run validate:local` é a autoridade obrigatória enquanto a integração externa não for regularizada. Este pacote não declara GitHub Actions, environments ou branch protection verdes. Referências históricas a CI remoto nos arquivos incrementais não substituem a contingência formal de `docs/fase-2/EVIDENCIAS_GATE_G2.md`.
 
 Gate G3 aprovado não autoriza Fase 4, merge em `main` nem produção.
+
+## Fechamento recuperado
+
+O commit funcional `c4ca32d` passou em `npm run validate:local` com árvore limpa e foi publicado somente no projeto/branch de staging. A reconsulta final confirmou projeção pública vazia, headers privados do admin, 404 real para asset/preview/conteúdo ausentes e ausência de segredo ou conteúdo real no diff. A matriz remota completa não foi repetida porque suas fixtures já haviam sido removidas e a credencial temporária retirada.

@@ -2,30 +2,29 @@
 
 **Resultado geral:** APROVADO
 
-**Inicio:** 2026-08-29T00:01:17.750Z
+**Inicio:** 2026-08-29T00:13:43.423Z
 
-**Fim:** 2026-08-29T00:02:23.361Z
+**Fim:** 2026-08-29T00:14:53.339Z
 
 **Branch:** `Remodelagem`
 
-**Commit-base:** `65accfc5f59884c0546ab08b224cf7372d5e30f8`
+**Commit-base:** `c4ca32d044f408bea15b81a8f0744438fa14db96`
 
-**Estado inicial:** com alteracoes locais ainda nao commitadas
+**Estado inicial:** arvore Git limpa
 
-| Verificacao | Resultado | Duracao aproximada |
-| --- | --- | --- |
-| Formatacao | APROVADO | 2s |
-| Lint | APROVADO | 12s |
-| TypeScript | APROVADO | 6s |
-| Testes unitarios | APROVADO | 3s |
-| Testes de integracao | APROVADO | 1s |
-| Contencoes da Fase 1 | APROVADO | 1s |
-| Fundacao da Fase 3 | APROVADO | 1s |
-| Auditoria de dependencias | APROVADO | 2s |
-| Build de staging | APROVADO | 20s |
-| Manifesto do artefato | APROVADO | 2s |
-| Testes de navegador | APROVADO | 21s |
-
+| Verificacao               | Resultado | Duracao aproximada |
+| ------------------------- | --------- | ------------------ |
+| Formatacao                | APROVADO  | 2s                 |
+| Lint                      | APROVADO  | 12s                |
+| TypeScript                | APROVADO  | 6s                 |
+| Testes unitarios          | APROVADO  | 3s                 |
+| Testes de integracao      | APROVADO  | 1s                 |
+| Contencoes da Fase 1      | APROVADO  | 1s                 |
+| Fundacao da Fase 3        | APROVADO  | 1s                 |
+| Auditoria de dependencias | APROVADO  | 2s                 |
+| Build de staging          | APROVADO  | 22s                |
+| Manifesto do artefato     | APROVADO  | 2s                 |
+| Testes de navegador       | APROVADO  | 22s                |
 
 ## Limite desta validacao
 

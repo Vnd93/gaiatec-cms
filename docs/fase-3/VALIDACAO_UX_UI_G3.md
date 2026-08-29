@@ -4,7 +4,9 @@
 
 **Ferramenta:** skill `browser:control-in-app-browser`, navegador integrado do Codex
 
-**Staging final:** `https://e48a3283.gaiatec-cms-staging.pages.dev`
+**Staging inspecionado visualmente:** `https://e48a3283.gaiatec-cms-staging.pages.dev`
+
+**Deployment final de fechamento:** `https://c67cd638.gaiatec-cms-staging.pages.dev`
 
 ## Cenários executados
 
@@ -30,6 +32,8 @@
 1. O preview usava `window.open` depois de uma chamada assíncrona e era bloqueado como popup. Foi alterado para navegação determinística na mesma aba, mantendo retorno pelo histórico.
 2. O menu mobile deixava links fora da tela ainda focalizáveis e não respondia a `Escape`. A sidebar fechada agora usa `visibility: hidden`; `Escape` fecha o menu e restaura foco.
 3. A auditoria do escopo F3-03 mostrou ausência de busca global e página de perfil/sessão. Ambas foram implementadas e revalidadas em desktop e mobile.
+
+O único ajuste posterior à inspeção foi estabilizar a função de carregamento da biblioteca de mídia para remover um warning de dependência do React, sem alteração visual. O deployment final foi recompilado pelo ciclo integral, publicado na mesma branch `Remodelagem` e revalidado por HTTP em `/`, `/admin`, `/admin/login`, asset inexistente, preview inválido e projeção pública ausente.
 
 ## Dados de teste
 

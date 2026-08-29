@@ -17,6 +17,8 @@ O lote funcional GATFLOW foi preservado. A auditoria final do staging confirmou:
 
 Nenhum lote real de serviços, indústrias, aplicações, soluções ou detecção de gases foi fornecido com fonte nova e aprovação dos owners. O solicitante registrou que fará os cadastros definitivos futuramente no `/admin`. Por isso, a decisão formal do Gate G5 é **BLOQUEADO**. A Fase 6 não foi iniciada.
 
+Na retomada de 2026-08-29, a pasta nova autorizada de instrumentos de medição foi inventariada read-only. Foram identificados candidatos documentais para um lote mínimo, sem presumir correspondência, direitos ou aprovação editorial. Nenhum arquivo ou conteúdo foi levado ao staging. A proposta e a checklist objetiva dos owners estão em `PROPOSTA_LOTE_MINIMO_G5_INSTRUMENTOS_MEDICAO.md`; o Gate continua bloqueado.
+
 ## Entregas principais
 
 - contratos `CmsServiceContentSchema`, `CmsIndustryContentSchema`, `CmsApplicationContentSchema` e `CmsSolutionContentSchema`;
@@ -44,4 +46,5 @@ Nenhum lote real de serviços, indústrias, aplicações, soluções ou detecç�
 - `AUDITORIA_CAMPO_CONSUMIDOR.md`
 - `EVIDENCIAS_TECNICAS_F5.md`
 - `VALIDACAO_UX_UI_F5.md`
+- `PROPOSTA_LOTE_MINIMO_G5_INSTRUMENTOS_MEDICAO.md`
 - `EVIDENCIAS_GATE_G5.md`

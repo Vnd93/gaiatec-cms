@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAdminAuth } from "../auth/AdminAuthContext";
 import { mediaCommand } from "../api/cms-api";
 
@@ -17,27 +17,30 @@ export default function AdminMediaPage() {
     [query, setQuery] = useState(""),
     [loading, setLoading] = useState(true),
     [error, setError] = useState("");
-  async function load() {
-    if (!session) return;
-    setLoading(true);
-    try {
-      const result = await mediaCommand<{ items: Media[] }>(session, {
-        action: "list",
-        query,
-        page: 1,
-        pageSize: 20,
-      });
-      setItems(result.items);
-      setError("");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Falha ao carregar mídia.");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const load = useCallback(
+    async (requestedQuery: string) => {
+      if (!session) return;
+      setLoading(true);
+      try {
+        const result = await mediaCommand<{ items: Media[] }>(session, {
+          action: "list",
+          query: requestedQuery,
+          page: 1,
+          pageSize: 20,
+        });
+        setItems(result.items);
+        setError("");
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "Falha ao carregar mídia.");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [session],
+  );
   useEffect(() => {
-    void load();
-  }, [session]);
+    void load("");
+  }, [load]);
   return (
     <section>
       <p className="admin-eyebrow">BIBLIOTECA PRIVADA</p>
@@ -51,7 +54,7 @@ export default function AdminMediaPage() {
           Buscar arquivo
           <input value={query} onChange={(e) => setQuery(e.target.value)} />
         </label>
-        <button onClick={() => void load()}>Buscar</button>
+        <button onClick={() => void load(query)}>Buscar</button>
       </div>
       {loading ? (
         <div className="admin-state" aria-busy="true">

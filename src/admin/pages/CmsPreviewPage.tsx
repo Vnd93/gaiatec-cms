@@ -2,9 +2,11 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabase";
 import { CmsStructuredArticle, type CmsArticlePayload } from "@/shared/components/CmsStructuredArticle";
+import { CmsProductRenderer } from "@/public/components/CmsProductRenderer";
+import type { CmsProductContent } from "@/shared/contracts/cms-content";
 export default function CmsPreviewPage() {
   const { token = "" } = useParams();
-  const [payload, setPayload] = useState<CmsArticlePayload | null>(null),
+  const [payload, setPayload] = useState<(CmsArticlePayload | CmsProductContent) | null>(null),
     [error, setError] = useState("");
   useEffect(() => {
     document.title = "Preview privado | CMS GAIATEC";
@@ -34,7 +36,11 @@ export default function CmsPreviewPage() {
           <p>{error}</p>
         </div>
       ) : payload ? (
-        <CmsStructuredArticle payload={payload} preview />
+        "contentType" in payload && payload.contentType === "product" ? (
+          <CmsProductRenderer payload={payload} preview />
+        ) : (
+          <CmsStructuredArticle payload={payload as CmsArticlePayload} preview />
+        )
       ) : (
         <div className="admin-state" aria-busy="true">
           Carregando preview real…

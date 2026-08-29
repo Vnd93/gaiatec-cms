@@ -1,8 +1,11 @@
 const STATIC_PUBLIC_ROUTES = [
   /^\/$/,
-  /^\/(sobre|blog|contato|setores|servicos|produtos|aplicacoes|deteccao-de-gas|politica-de-privacidade|termos-de-uso)\/?$/,
+  /^\/(sobre|blog|busca|contato|setores|servicos|produtos|aplicacoes|deteccao-de-gas|politica-de-privacidade|termos-de-uso)\/?$/,
   /^\/biodigestor(?:\/(como-funciona|portes|beneficios|monitoramento|biogas-biometano|automacao|escolas))?\/?$/,
 ];
+
+const CMS_PUBLIC_API = "__CMS_PUBLIC_API__";
+const CMS_PUBLIC_ANON_KEY = "__CMS_PUBLIC_ANON_KEY__";
 
 // Manifesto fechado das rotas dinâmicas já implementadas em código. Não é
 // conteúdo de CMS: serve apenas para devolver HTTP 404 real a entidades falsas.
@@ -10,7 +13,6 @@ const ENTITY_ROUTES = new Set([
   ..."saneamento gas-petroleo biogas-biometano protecao-catodica hvac controle-ambiental seguranca-operacional agronegocio industria instrumentacao telemetria".split(" ").map((slug) => `/setores/${slug}`),
   ..."instalacoes-comissionamentos medicoes-em-campo deteccao-vazamento-gas deteccao-vazamento-agua calibracao-rastreavel-laboratorio calibracao-rastreavel-campo manutencoes testes automacoes controle-monitoramento locacao-comodato plataforma-controle protecao-catodica inspecao-revestimentos projetos consultoria-inspecoes-tecnicas".split(" ").map((slug) => `/servicos/${slug}`),
   ..."macromedicao-redes-distribuicao producao-biogas-aterros deteccao-vazamentos-gasodutos monitoramento-h2s-refinarias calibracao-medidores-vazao protecao-catodica-dutos-subterraneos automacao-eta-ete telemetria-estacoes-remotas climatizacao-industrial-hvac analise-biogas-biodigestores controle-pressao-adutoras inspecao-revestimento-dutos".split(" ").map((slug) => `/aplicacoes/${slug}`),
-  ..."1-medidor-eletromagnetico-flangeado 2-macromedidor-ultrasonico-clamp-on 3-medidor-ultrasonico-clamp-on-para-gas 4-sensor-de-nivel-radar-para-efluentes 5-transmissor-de-pressao-serie-gp 6-modulo-de-telemetria-gaiatec 7-detector-portatil-de-vazamento-de-gas 8-junta-isolante-flangeada 9-biodigestor-industrial-modular-biogaia-m 10-biodigestor-compacto-rural-biogaia-r 11-sistema-fixo-de-analise-de-biogas-gaiasense-s 12-analisador-portatil-de-biogas-gaiasense-p 13-controlador-logico-programavel-clp 14-retificador-de-protecao-catodica 15-sensores-agricolas-inteligentes 16-unidade-de-tratamento-de-ar-uta 17-valvula-de-controle-automatica".split(" ").map((slug) => `/produtos/${slug}`),
   "/produtos/comparador",
 ]);
 
@@ -34,7 +36,7 @@ function isPublicRoute(path) {
 
 const PRIVATE_ROUTE = /^\/(relatorio-de-obra|admin|preview|cms\/conteudo)(?:\/|$)/;
 const RDO_ROUTES = /^\/relatorio-de-obra(?:\/(login|definir-senha|assinar\/[^/]+|arquivo|novo|relatorio\/[^/]+|equipe))?\/?$/;
-const ADMIN_ROUTES = /^\/admin(?:\/(login|recuperar-senha|definir-senha|mfa|conteudo(?:\/novo|\/[0-9a-f-]{36})?|midia|usuarios|diagnosticos))?\/?$/;
+const ADMIN_ROUTES = /^\/admin(?:\/(login|recuperar-senha|definir-senha|mfa|conteudo(?:\/novo|\/[0-9a-f-]{36})?|produtos(?:\/novo|\/[0-9a-f-]{36})?|midia|perfil|usuarios|diagnosticos))?\/?$/;
 const PREVIEW_ROUTES = /^\/preview\/[A-Za-z0-9_-]{43}\/?$/;
 const CMS_DEMO_ROUTES = /^\/cms\/conteudo\/[a-z0-9]+(?:-[a-z0-9]+)*\/?$/;
 const ASSET_PATH = /^\/(assets|images|fonts)\/|\.(?:js|mjs|css|map|png|jpe?g|webp|avif|svg|gif|ico|woff2?|ttf|pdf|xml|txt|json|webmanifest)$/i;
@@ -68,6 +70,13 @@ async function spaResponse(request, env, status, options = {}) {
   return new Response(index.body, { status, headers });
 }
 
+async function cmsPublic(params) {
+  if (CMS_PUBLIC_API.startsWith("__") || CMS_PUBLIC_ANON_KEY.startsWith("__")) return null;
+  const target = new URL(CMS_PUBLIC_API);
+  for (const [key, value] of Object.entries(params)) target.searchParams.set(key, value);
+  return fetch(target, { headers: { apikey: CMS_PUBLIC_ANON_KEY } });
+}
+
 async function handleRequest(request, env) {
     const url = new URL(request.url);
     const path = url.pathname;
@@ -75,6 +84,27 @@ async function handleRequest(request, env) {
 
     if (path === "/servicos/calibracao-rbc-laboratorio") {
       return new Response(null, { status: 301, headers: { Location: "/servicos/calibracao-rastreavel-laboratorio" } });
+    }
+
+    if (path === "/sitemap-produtos.xml") {
+      const sitemap = await cmsPublic({ type: "sitemap", origin: url.origin });
+      if (!sitemap?.ok) return new Response("Not Found", { status: 404, headers: securityHeaders(new Headers(), { noindex: true }) });
+      return withHeaders(sitemap, { noindex: stagingHost });
+    }
+
+    if (/^\/produtos\/[a-z0-9]+(?:-[a-z0-9]+)*\/?$/.test(path) && path !== "/produtos/comparador") {
+      const slug = path.replace(/^\/produtos\//, "").replace(/\/$/, "");
+      const detail = await cmsPublic({ type: "detail", slug });
+      if (detail?.ok) return spaResponse(request, env, 200, { noindex: stagingHost });
+      if (detail?.status === 404) {
+        const redirect = await cmsPublic({ type: "redirect", path });
+        if (redirect?.ok) {
+          const rule = await redirect.json();
+          return new Response(null, { status: rule.status_code, headers: { Location: rule.destination_path } });
+        }
+        return spaResponse(request, env, 404, { noindex: true });
+      }
+      return spaResponse(request, env, ENTITY_ROUTES.has(path) ? 200 : 404, { noindex: true });
     }
 
     if (ASSET_PATH.test(path) || path === "/sw.js" || path === "/manifest.json") {

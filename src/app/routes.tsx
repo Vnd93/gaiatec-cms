@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { lazy, Suspense } from "react";
 import { createBrowserRouter, Outlet } from "react-router";
 import { Layout } from "./components/Layout";
@@ -24,14 +25,15 @@ const BiodigestorAutomacao = lazy(() => import("./pages/BiodigestorAutomacao"));
 const BiodigestorEscolas = lazy(() => import("./pages/BiodigestorEscolas"));
 const BlogPage = lazy(() => import("./pages/BlogPage"));
 const ContatoPage = lazy(() => import("./pages/ContatoPage"));
-const ProdutosPage = lazy(() => import("./pages/ProdutosPage"));
-const ProdutoPage = lazy(() => import("./pages/ProdutoPage"));
+const ProdutosPage = lazy(() => import("../public/pages/CmsProductsPage"));
+const ProdutoPage = lazy(() => import("../public/pages/CmsProductPage"));
 const SetoresPage = lazy(() => import("./pages/SetoresPage"));
 const ServicosPage = lazy(() => import("./pages/ServicosPage"));
 const ServicoPage = lazy(() => import("./pages/ServicoPage"));
 const AplicacoesPage = lazy(() => import("./pages/AplicacoesPage"));
 const AplicacaoPage = lazy(() => import("./pages/AplicacaoPage"));
-const ComparadorPage = lazy(() => import("./pages/ComparadorPage"));
+const ComparadorPage = lazy(() => import("../public/pages/CmsComparePage"));
+const SearchPage = lazy(() => import("../public/pages/CmsSearchPage"));
 const DeteccaoGasPage = lazy(() => import("./pages/DeteccaoGasPage"));
 const DeteccaoGasCategoriaPage = lazy(() => import("./pages/DeteccaoGasCategoriaPage"));
 const DeteccaoGasProdutoPage = lazy(() => import("./pages/DeteccaoGasProdutoPage"));
@@ -57,6 +59,8 @@ const AdminMfaPage = lazy(() => import("../admin/pages/MfaPage"));
 const AdminHomePage = lazy(() => import("../admin/pages/AdminHomePage"));
 const AdminContentPage = lazy(() => import("../admin/pages/AdminContentPage"));
 const AdminEditorPage = lazy(() => import("../admin/pages/AdminEditorPage"));
+const AdminProductsPage = lazy(() => import("../admin/pages/AdminProductsPage"));
+const AdminProductEditorPage = lazy(() => import("../admin/pages/AdminProductEditorPage"));
 const AdminMediaPage = lazy(() => import("../admin/pages/AdminMediaPage"));
 const AdminProfilePage = lazy(() => import("../admin/pages/AdminProfilePage"));
 const AdminUsersPage = lazy(() => import("../admin/pages/AdminUsersPage"));
@@ -105,6 +109,7 @@ export const router = createBrowserRouter([
       { path: "produtos", element: lazyWrap(ProdutosPage) },
       { path: "produtos/comparador", element: lazyWrap(ComparadorPage) },
       { path: "produtos/:slug", element: lazyWrap(ProdutoPage) },
+      { path: "busca", element: lazyWrap(SearchPage) },
       { path: "aplicacoes", element: lazyWrap(AplicacoesPage) },
       { path: "aplicacoes/:slug", element: lazyWrap(AplicacaoPage) },
       { path: "deteccao-de-gas", element: lazyWrap(DeteccaoGasPage) },
@@ -153,6 +158,8 @@ export const router = createBrowserRouter([
           { index: true, element: lazyWrap(AdminHomePage) },
           { path: "conteudo", element: lazyWrap(AdminContentPage) },
           { path: "conteudo/:id", element: lazyWrap(AdminEditorPage) },
+          { path: "produtos", element: lazyWrap(AdminProductsPage) },
+          { path: "produtos/:id", element: lazyWrap(AdminProductEditorPage) },
           { path: "midia", element: lazyWrap(AdminMediaPage) },
           { path: "perfil", element: lazyWrap(AdminProfilePage) },
           { path: "usuarios", element: lazyWrap(AdminUsersPage) },

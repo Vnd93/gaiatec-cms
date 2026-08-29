@@ -14,6 +14,7 @@ export function AdminShell() {
   const segments = location.pathname.split("/").filter(Boolean);
   const links = [
     ["/admin", "Visão geral", true],
+    ["/admin/produtos", "Produtos", can("cms:products.read")],
     ["/admin/conteudo", "Conteúdo", can("cms:posts.read")],
     ["/admin/midia", "Mídia", can("cms:media.read")],
     ["/admin/perfil", "Perfil e sessão", true],
@@ -45,13 +46,13 @@ export function AdminShell() {
         <Link to="/admin" aria-label="CMS GAIATEC — início">
           <img src="/logo-gaiatec.png" alt="" />
         </Link>
-        {can("cms:posts.read") && (
+        {(can("cms:posts.read") || can("cms:products.read")) && (
           <form
             className="admin-global-search"
             role="search"
             onSubmit={(event) => {
               event.preventDefault();
-              navigate("/admin/conteudo?q=" + encodeURIComponent(search.trim()));
+              navigate("/admin/produtos?q=" + encodeURIComponent(search.trim()));
             }}
           >
             <label htmlFor="admin-global-search">Busca global no CMS</label>
@@ -60,7 +61,7 @@ export function AdminShell() {
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Buscar conteúdo"
+              placeholder="Buscar produtos"
             />
             <button type="submit">Buscar</button>
           </form>

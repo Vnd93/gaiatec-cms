@@ -6,6 +6,7 @@ export const CmsSlugSchema = z
   .max(160);
 const RequiredText = z.string().trim().min(1);
 const Sha256 = z.string().regex(/^[0-9a-f]{64}$/);
+export const CmsConsumerIdSchema = z.string().regex(/^cms\.[a-z][a-z0-9_.-]+\.v[0-9]+$/);
 
 export const CmsProvenanceSchema = z
   .object({
@@ -45,6 +46,7 @@ export const CmsBlockSchema = z
 
 const BaseContent = {
   schemaVersion: z.literal(1),
+  consumerId: CmsConsumerIdSchema,
   title: RequiredText.max(180),
   summary: z.string().trim().max(500).optional(),
   blocks: z.array(CmsBlockSchema).max(80),

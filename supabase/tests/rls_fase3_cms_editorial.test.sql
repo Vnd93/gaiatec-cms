@@ -94,7 +94,7 @@ values
   ('33000000-0000-0000-0000-000000000204', 'product', 'produto-sintetico-dois', '33000000-0000-0000-0000-000000000002', '33000000-0000-0000-0000-000000000002');
 
 insert into public.cms_content_revisions (id, item_id, revision_number, schema_version, payload, seo, provenance, source_draft_version, reason, created_by)
-values ('33000000-0000-0000-0000-000000000301', '33000000-0000-0000-0000-000000000201', 1, 1, '{}', '{}', '{}', 1, 'Revisao sintetica inicial', '33000000-0000-0000-0000-000000000002');
+values ('33000000-0000-0000-0000-000000000301', '33000000-0000-0000-0000-000000000201', 1, 1, '{}', '{}', '[{"rightsConfirmed":true}]', 1, 'Revisao sintetica inicial', '33000000-0000-0000-0000-000000000002');
 
 set local role authenticated;
 select set_config('request.jwt.claims', jsonb_build_object('sub', '33000000-0000-0000-0000-000000000002', 'role', 'authenticated', 'session_id', 'editor-editorial-session', 'aal', 'aal1', 'iat', extract(epoch from now())::bigint)::text, true);

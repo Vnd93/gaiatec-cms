@@ -91,7 +91,7 @@ ${skippedRows}
 
 O banco Supabase efemero nao faz parte deste comando porque exige Docker e Supabase CLI instalados. Quando esse ambiente estiver disponivel, execute \`supabase start\`, \`supabase db reset --local --no-seed\`, \`npm run test:rls\` e \`supabase stop --no-backup\`.
 
-Esta evidencia complementa os checks automaticos do GitHub Actions e permanece disponivel como contingencia. Ela nao autoriza deploy de producao.
+Esta evidencia e a autoridade obrigatoria da contingencia local vigente. Ela nao comprova GitHub Actions, environments ou branch protection e nao autoriza merge em main nem deploy de producao.
 `;
 
 await mkdir(resolve("docs/validacao-local"), { recursive: true });

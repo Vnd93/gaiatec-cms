@@ -40,6 +40,13 @@ test("@a11y keyboard skip link moves focus to main content", async ({ page }) =>
   await expect(page).toHaveURL(/#main-content$/);
 });
 
+test("admin is fail-closed and private when signed out", async ({ page }) => {
+  await page.goto("/admin");
+  await expect(page).toHaveURL(/\/admin\/login$/);
+  await expect(page.getByRole("heading", { name: /entrar no painel/i })).toBeVisible();
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/i);
+});
+
 test("@a11y mobile menu closes with Escape and restores scrolling", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile-chromium", "mobile interaction");
   await page.goto("/", { waitUntil: "networkidle" });

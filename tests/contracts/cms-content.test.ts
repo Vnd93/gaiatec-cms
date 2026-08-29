@@ -3,6 +3,7 @@ import { CmsContentPayloadSchema } from "../../src/shared/contracts/cms-content"
 
 const validProduct = {
   schemaVersion: 1,
+  consumerId: "cms.synthetic-product.v1",
   contentType: "product",
   title: "Produto sintetico de contrato",
   summary: "Registro somente em memoria para validar o schema.",

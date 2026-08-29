@@ -2,33 +2,33 @@
 
 **Resultado geral:** APROVADO
 
-**Inicio:** 2026-08-28T20:05:50.008Z
+**Inicio:** 2026-08-29T00:01:17.750Z
 
-**Fim:** 2026-08-28T20:07:02.597Z
+**Fim:** 2026-08-29T00:02:23.361Z
 
 **Branch:** `Remodelagem`
 
-**Commit-base:** `11cdbba5ed1c54873d8d0f72e34244d517e84480`
+**Commit-base:** `65accfc5f59884c0546ab08b224cf7372d5e30f8`
 
-**Estado inicial:** arvore Git limpa
+**Estado inicial:** com alteracoes locais ainda nao commitadas
 
 | Verificacao | Resultado | Duracao aproximada |
 | --- | --- | --- |
 | Formatacao | APROVADO | 2s |
-| Lint | APROVADO | 11s |
-| TypeScript | APROVADO | 5s |
+| Lint | APROVADO | 12s |
+| TypeScript | APROVADO | 6s |
 | Testes unitarios | APROVADO | 3s |
 | Testes de integracao | APROVADO | 1s |
 | Contencoes da Fase 1 | APROVADO | 1s |
 | Fundacao da Fase 3 | APROVADO | 1s |
 | Auditoria de dependencias | APROVADO | 2s |
-| Build de staging | APROVADO | 21s |
+| Build de staging | APROVADO | 20s |
 | Manifesto do artefato | APROVADO | 2s |
-| Testes de navegador | APROVADO | 29s |
+| Testes de navegador | APROVADO | 21s |
 
 
 ## Limite desta validacao
 
 O banco Supabase efemero nao faz parte deste comando porque exige Docker e Supabase CLI instalados. Quando esse ambiente estiver disponivel, execute `supabase start`, `supabase db reset --local --no-seed`, `npm run test:rls` e `supabase stop --no-backup`.
 
-Esta evidencia complementa os checks automaticos do GitHub Actions e permanece disponivel como contingencia. Ela nao autoriza deploy de producao.
+Esta evidencia e a autoridade obrigatoria da contingencia local vigente. Ela nao comprova GitHub Actions, environments ou branch protection e nao autoriza merge em main nem deploy de producao.

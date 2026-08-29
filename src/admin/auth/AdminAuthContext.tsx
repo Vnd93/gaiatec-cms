@@ -64,6 +64,17 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<SessionSnapshot | null>(null);
   const requestId = useRef(0);
 
+  useEffect(() => {
+    let robots = document.querySelector('meta[name="robots"]') as HTMLMetaElement | null;
+    if (!robots) {
+      robots = document.createElement("meta");
+      robots.name = "robots";
+      document.head.append(robots);
+    }
+    robots.content = "noindex,nofollow,noarchive";
+    document.title = "CMS GAIATEC — acesso privado";
+  }, []);
+
   const resolveSession = useCallback(
     async (nextSession: Session, action: "resolve" | "mfa" | "recovery" = "resolve") => {
       const currentRequest = ++requestId.current;

@@ -32,8 +32,11 @@ function isPublicRoute(path) {
   return STATIC_PUBLIC_ROUTES.some((pattern) => pattern.test(path)) || ENTITY_ROUTES.has(normalized);
 }
 
-const PRIVATE_ROUTE = /^\/(relatorio-de-obra|admin|preview)(?:\/|$)/;
+const PRIVATE_ROUTE = /^\/(relatorio-de-obra|admin|preview|cms\/conteudo)(?:\/|$)/;
 const RDO_ROUTES = /^\/relatorio-de-obra(?:\/(login|definir-senha|assinar\/[^/]+|arquivo|novo|relatorio\/[^/]+|equipe))?\/?$/;
+const ADMIN_ROUTES = /^\/admin(?:\/(login|recuperar-senha|definir-senha|mfa|conteudo(?:\/novo|\/[0-9a-f-]{36})?|midia|usuarios|diagnosticos))?\/?$/;
+const PREVIEW_ROUTES = /^\/preview\/[A-Za-z0-9_-]{43}\/?$/;
+const CMS_DEMO_ROUTES = /^\/cms\/conteudo\/[a-z0-9]+(?:-[a-z0-9]+)*\/?$/;
 const ASSET_PATH = /^\/(assets|images|fonts)\/|\.(?:js|mjs|css|map|png|jpe?g|webp|avif|svg|gif|ico|woff2?|ttf|pdf|xml|txt|json|webmanifest)$/i;
 
 function securityHeaders(headers, { noindex = false, privateRoute = false } = {}) {
@@ -84,7 +87,7 @@ async function handleRequest(request, env) {
     }
 
     if (PRIVATE_ROUTE.test(path)) {
-      if (!RDO_ROUTES.test(path)) return spaResponse(request, env, 404, { noindex: true, privateRoute: true });
+      if (!RDO_ROUTES.test(path) && !ADMIN_ROUTES.test(path) && !PREVIEW_ROUTES.test(path) && !CMS_DEMO_ROUTES.test(path)) return spaResponse(request, env, 404, { noindex: true, privateRoute: true });
       return spaResponse(request, env, 200, { noindex: true, privateRoute: true });
     }
 

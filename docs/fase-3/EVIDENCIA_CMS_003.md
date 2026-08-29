@@ -1,5 +1,7 @@
 # Evidencia CMS-003 — login administrativo e MFA
 
+> Nota vigente em 2026-08-28: referências abaixo a CI remoto são históricas e não comprovam o estado atual. A contingência aceita em `docs/fase-2/EVIDENCIAS_GATE_G2.md` torna `npm run validate:local` obrigatório e mantém Actions, environments, branch protection, `main` e produção bloqueados.
+
 **Data:** 2026-08-28
 
 **Commit funcional:** `82a56c2`

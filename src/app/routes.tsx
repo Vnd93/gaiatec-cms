@@ -5,6 +5,7 @@ import { AuthProvider } from "./rdo/AuthContext";
 import { RequireAuth } from "./rdo/RequireAuth";
 import { AdminAuthProvider } from "../admin/auth/AdminAuthContext";
 import { RequireAdminAuth } from "../admin/auth/RequireAdminAuth";
+import { AdminShell } from "../admin/components/AdminShell";
 
 // Home page = eager load (entry point — não vale a pena lazy)
 import HomePage from "./pages/HomePage";
@@ -54,6 +55,14 @@ const AdminRecoveryPage = lazy(() => import("../admin/pages/RecoveryPage"));
 const AdminSetPasswordPage = lazy(() => import("../admin/pages/SetPasswordPage"));
 const AdminMfaPage = lazy(() => import("../admin/pages/MfaPage"));
 const AdminHomePage = lazy(() => import("../admin/pages/AdminHomePage"));
+const AdminContentPage = lazy(() => import("../admin/pages/AdminContentPage"));
+const AdminEditorPage = lazy(() => import("../admin/pages/AdminEditorPage"));
+const AdminMediaPage = lazy(() => import("../admin/pages/AdminMediaPage"));
+const AdminProfilePage = lazy(() => import("../admin/pages/AdminProfilePage"));
+const AdminUsersPage = lazy(() => import("../admin/pages/AdminUsersPage"));
+const AdminDiagnosticsPage = lazy(() => import("../admin/pages/AdminDiagnosticsPage"));
+const CmsPreviewPage = lazy(() => import("../admin/pages/CmsPreviewPage"));
+const CmsPublishedPage = lazy(() => import("../admin/pages/CmsPublishedPage"));
 
 // Loader minimalista — não bloqueia o paint
 function PageLoader() {
@@ -138,7 +147,20 @@ export const router = createBrowserRouter([
       { path: "recuperar-senha", element: lazyWrap(AdminRecoveryPage) },
       { path: "definir-senha", element: lazyWrap(AdminSetPasswordPage) },
       { path: "mfa", element: lazyWrap(AdminMfaPage) },
-      { index: true, element: <RequireAdminAuth>{lazyWrap(AdminHomePage)}</RequireAdminAuth> },
+      {
+        element: <RequireAdminAuth><AdminShell /></RequireAdminAuth>,
+        children: [
+          { index: true, element: lazyWrap(AdminHomePage) },
+          { path: "conteudo", element: lazyWrap(AdminContentPage) },
+          { path: "conteudo/:id", element: lazyWrap(AdminEditorPage) },
+          { path: "midia", element: lazyWrap(AdminMediaPage) },
+          { path: "perfil", element: lazyWrap(AdminProfilePage) },
+          { path: "usuarios", element: lazyWrap(AdminUsersPage) },
+          { path: "diagnosticos", element: lazyWrap(AdminDiagnosticsPage) },
+        ],
+      },
     ],
   },
+  { path: "/preview/:token", element: lazyWrap(CmsPreviewPage), errorElement: <RouteErrorPage /> },
+  { path: "/cms/conteudo/:slug", element: lazyWrap(CmsPublishedPage), errorElement: <RouteErrorPage /> },
 ]);

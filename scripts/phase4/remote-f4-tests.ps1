@@ -1,4 +1,7 @@
-param([Parameter(Mandatory = $true)][string]$SecretFile)
+param(
+  [Parameter(Mandatory = $true)][string]$SecretFile,
+  [switch]$KeepFixtures
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -196,8 +199,10 @@ try {
   Assert-Check "zero_orphan_projection" (@($projectionRows.Json).Count -eq 2 -and @($variantRows.Json).Count -eq 2 -and @($attributeRows.Json).Count -eq 4 -and @($documentRows.Json).Count -eq 2) "todas as estruturas derivadas"
 }
 finally {
-  foreach ($path in $storagePaths) { $null = Invoke-WebRequest -Method Delete -Uri "$ProjectUrl/storage/v1/object/cms-media-private/$path" -Headers @{ apikey = $serviceKey; Authorization = "Bearer $serviceKey" } -SkipHttpErrorCheck }
-  if ($createdUsers.Count -gt 0) {
+  if (!$KeepFixtures) {
+    foreach ($path in $storagePaths) { $null = Invoke-WebRequest -Method Delete -Uri "$ProjectUrl/storage/v1/object/cms-media-private/$path" -Headers @{ apikey = $serviceKey; Authorization = "Bearer $serviceKey" } -SkipHttpErrorCheck }
+  }
+  if (!$KeepFixtures -and $createdUsers.Count -gt 0) {
     $ids = ($createdUsers | ForEach-Object { "'$($_ -replace "'", "''")'::uuid" }) -join ","
     $cleanupSql = @"
 begin;
@@ -234,8 +239,13 @@ commit;
     try { $null = Invoke-RestMethod -Method Post -Uri "$ManagementUrl/database/query" -Headers $managementHeaders -Body (@{ query = $cleanupSql; read_only = $false } | ConvertTo-Json -Compress) }
     catch { Write-Warning "A limpeza transacional requer auditoria." }
   }
-  foreach ($userId in $createdUsers) { $null = Invoke-Api Delete "$ProjectUrl/auth/v1/admin/users/$userId" @{ apikey = $serviceKey; Authorization = "Bearer $serviceKey" } }
+  if (!$KeepFixtures) {
+    foreach ($userId in $createdUsers) { $null = Invoke-Api Delete "$ProjectUrl/auth/v1/admin/users/$userId" @{ apikey = $serviceKey; Authorization = "Bearer $serviceKey" } }
+  }
   $managementToken = $null; $anonKey = $null; $serviceKey = $null; $password = $null
 }
 
 $results | Format-Table -AutoSize
+if ($KeepFixtures) {
+  Write-Output "TEMP_FIXTURES=$slugA,$slugB"
+}

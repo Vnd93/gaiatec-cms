@@ -125,6 +125,12 @@ async function handleRequest(request, env) {
       return spaResponse(request, env, 200, { noindex: stagingHost });
     }
 
+    const redirect = await cmsPublic({ type: "redirect", path });
+    if (redirect?.ok) {
+      const rule = await redirect.json();
+      return new Response(null, { status: rule.status_code, headers: { Location: rule.destination_path } });
+    }
+
     return spaResponse(request, env, 404, { noindex: true });
 }
 

@@ -49,6 +49,6 @@ A suíte descartável adicional comprovou 403 sem permissão, conflito de lock, 
 
 ## F4-06 — UX, segurança e gate
 
-A inspeção prática no navegador integrado cobriu detalhe, galeria, downloads, lista, filtros, busca, estado vazio, comparador, preview e admin sem sessão. O Advisor ficou sem warnings, e o batch de URLs assinadas eliminou a latência sequencial detectada durante o primeiro run.
+A inspeção prática no navegador integrado cobriu detalhe, galeria, downloads, lista, filtros, busca, estado vazio, comparador, preview e admin sem sessão. Os cinco warnings de banco detectados na F4 foram corrigidos sem reduzir RLS. Em 2026-08-29 o Advisor passou a expor um warning de Auth (`auth_leaked_password_protection`): a Management API recusou a ativação com HTTP 402 por exigir plano Pro. O risco e a decisão de plano estão registrados no Gate G4; não há perfil ativo no staging. O batch de URLs assinadas eliminou a latência sequencial detectada durante o primeiro run.
 
 As fontes estão em `EVIDENCIA_FONTES_PILOTO_VZ_ELETRO_01.md`, UX em `VALIDACAO_UX_UI_F4.md` e decisão em `EVIDENCIAS_GATE_G4.md`.

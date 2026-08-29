@@ -11,7 +11,7 @@ Data: 2026-08-28 (America/Sao_Paulo)
 | zero arquivo atual reutilizado | somente os três caminhos explicitamente autorizados; nenhum site/banco/painel antigo ou dado derivado    | aprovado               |
 | preview fiel                   | mesmo renderer, duas mídias e PDF assinado; `noindex` e `no-store`                                       | aprovado               |
 | rollback funcional             | revisão 2 publicada e revisão 1 restaurada como content version 3                                        | aprovado               |
-| segurança                      | RLS remoto verde; Advisor com 0 WARN/ERROR; preview/documentos privados; ator final suspenso             | aprovado               |
+| segurança                      | RLS remoto verde; 5 warnings de banco corrigidos; 1 warning Auth depende de plano Pro; ator suspenso     | aprovado tecnicamente  |
 | responsividade/WCAG            | navegador integrado, mobile Chromium, 19 testes aprovados e Axe sem séria/crítica                        | aprovado               |
 | performance                    | URLs assinadas em lote, chunks F4 pequenos, sem erro de console ou overflow                              | aprovado tecnicamente  |
 | homologação do owner           | autorização dos arquivos existe; aprovação visual e relação GATFLOW-B/KF700E ainda não foram confirmadas | **pendente**           |
@@ -20,7 +20,7 @@ Data: 2026-08-28 (America/Sao_Paulo)
 
 - alvo fixo: `glcqsosxwgmlhzgcsnzv`, `GAIATEC CMS Staging`, `us-east-2`;
 - migrations `0021`–`0023` aplicadas após dry-run;
-- Security Advisor: 9 itens `INFO`, 0 `WARN`, 0 `ERROR`;
+- Security Advisor em 2026-08-29: 9 itens `INFO`, 1 `WARN`, 0 `ERROR`. O único warning é `auth_leaked_password_protection`; a tentativa de ativar `password_hibp_enabled` pela Management API foi recusada com HTTP 402 porque o recurso exige plano Pro. Isso não altera RLS, preview ou storage. Como mitigação atual, não há perfil ativo e o único ator auditável está suspenso e banido. A decisão de contratar o plano e habilitar a proteção deve ser tomada antes de abrir autenticação por senha a usuários reais;
 - suíte remota de contenção: 36/36 checks, incluindo 403, conflito otimista, preview, publicação, negação de owner, comparação e rollback;
 - `npm run validate:local`: aprovado integralmente; 13 testes unitários/contrato/componentes, 3 integrações, 4 contenções F1, 19 testes F3, 4 testes F4, audit com 0 vulnerabilidades, build e Playwright 19 aprovados/3 skips previstos;
 - manifesto: 1.441 arquivos, SHA-256 `617e922ace4c29f4f488b5f25f7c383ac5cbb470b3cb18de58a09fe54ebdb2f0`;

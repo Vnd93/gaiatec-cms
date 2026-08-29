@@ -162,6 +162,43 @@
   gap: 1rem;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
 }
+.product-detail figure {
+  margin: 0;
+}
+.product-detail figcaption {
+  padding-top: 0.45rem;
+  color: #526176;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+.product-detail__identity,
+.product-detail__classification {
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  margin: 1rem 0;
+}
+.product-detail__identity div,
+.product-detail__classification div {
+  border-left: 3px solid #dbe7f8;
+  padding-left: 0.7rem;
+}
+.product-detail__identity dt,
+.product-detail__classification dt {
+  color: #526176;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.product-detail__identity dd,
+.product-detail__classification dd {
+  margin: 0.2rem 0 0;
+}
+.product-detail__governance {
+  overflow-wrap: anywhere;
+  border-top: 1px solid #dbe2ea;
+  color: #34445a;
+}
 .product-detail__nav a {
   flex: 0 0 auto;
   padding: 0.65rem;

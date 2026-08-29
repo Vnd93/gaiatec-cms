@@ -2,7 +2,7 @@
 
 Data da autorização: 2026-08-28 (America/Sao_Paulo)
 
-Escopo concedido pelo administrador/solicitante: consulta manual e uso somente para formar o esboço do produto no Supabase staging `glcqsosxwgmlhzgcsnzv`. O cadastro definitivo e a homologação visual permanecem pendentes. A autorização não abrange produção, importação em massa nem reutilização de conteúdo do site, banco ou painel anteriores.
+Escopo concedido pelo administrador/solicitante: consulta manual e uso somente para formar o esboço do produto no Supabase staging `glcqsosxwgmlhzgcsnzv`. Em 2026-08-29, o mesmo solicitante homologou funcionalmente o piloto e confirmou a distinção entre marca, modelo comercial e referência do fabricante. O cadastro técnico definitivo permanece editável e poderá ser completado pelo novo painel. A autorização não abrange produção, importação em massa nem reutilização de conteúdo do site, banco ou painel anteriores.
 
 ## Arquivos inspecionados
 
@@ -18,7 +18,7 @@ As imagens são PNG RGB, respectivamente 1233×1276 e 1122×1402. O PDF tem uma 
 
 As duas imagens mostram o mesmo conjunto físico identificado visualmente como `GATFLOW-B`: medidor flangeado, conversor com display redondo e quatro botões, duas entradas de cabo e pack externo de bateria. O PDF mostra a mesma família física e o pack de bateria, mas identifica `Series KF700E Battery-powered Electromagnetic Flowmeter` e `NINGBO KIO FLOW INSTRUMENTS CO., LTD`.
 
-Essa correspondência visual sustenta apenas o esboço autorizado. Não comprova relação OEM/private-label, fabricante definitivo ou equivalência comercial entre GATFLOW-B e KF700E. Esses pontos estão marcados `a confirmar` no cadastro e impedem homologação final.
+O solicitante esclareceu que `GATFLOW` é a marca comercial própria, `GATFLOW-B` é o nome/modelo comercial GAIATEC e `KF700E` é a referência/modelo do fabricante. Essa confirmação sustenta a modelagem comercial do esboço, mas não comprova fabricante/OEM nominal, relação jurídica private-label nem especificações técnicas definitivas. O OEM e as incertezas técnicas continuam marcados `a confirmar` e editáveis; isso não impede a homologação funcional do piloto.
 
 ## Informações extraídas manualmente do PDF
 
@@ -41,3 +41,5 @@ O próprio PDF diverge na faixa nominal: cabeçalho `15–600 mm`, tabela `DN10�
 ## Proveniência persistida
 
 O payload da revisão publicada registra para cada arquivo: caminho original, data de modificação, hash SHA-256, referência e data da autorização, escopo dos direitos, owner, revisor e instante de verificação. As mídias registram os mesmos dados em `source_reference`, além de ALT, licença limitada ao esboço e owner. O PDF foi relacionado pelo hash e armazenado no bucket privado `cms-documents-private`; os consumidores recebem apenas URL assinada.
+
+Nenhum texto, taxonomia, mídia ou cadastro do site, banco ou painel antigos foi consultado, importado ou usado como fonte editorial. Não houve importação em massa.

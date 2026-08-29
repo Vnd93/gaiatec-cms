@@ -15,14 +15,14 @@ export function ProductCard({
   const image = product.media_urls?.["medium.webp"] ?? product.media_urls?.["thumbnail.webp"];
   return (
     <article className="product-card">
-      {p.pilotState === "awaiting_owner" && (
-        <span className="product-detail__status">Conteúdo piloto em homologação</span>
-      )}
+      <span className="product-detail__status">
+        {p.pilotState === "homologated" ? "Piloto homologado" : "Conteúdo piloto em homologação"}
+      </span>
       {image && (
         <img src={image} alt={p.media.find((entry) => entry.role === "primary")?.alt ?? ""} loading="lazy" />
       )}
       <p className="product-card__meta">
-        {p.classification.category} · {p.manufacturer.name}
+        {p.classification.category} · {p.brand.name}
       </p>
       <h2>{p.title}</h2>
       <p>{p.commercial.shortDescription}</p>
@@ -30,6 +30,10 @@ export function ProductCard({
         <div>
           <dt>Modelo</dt>
           <dd>{p.models[0]?.model}</dd>
+        </div>
+        <div>
+          <dt>Referência do fabricante</dt>
+          <dd>{p.models[0]?.manufacturerReference}</dd>
         </div>
         {p.specifications.slice(0, 3).map((spec) => (
           <div key={spec.id}>

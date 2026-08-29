@@ -76,12 +76,13 @@ function Product-Payload {
   @{
     schemaVersion = 1; consumerId = "cms.catalog-product.v1"; contentType = "product"; pilotState = "synthetic_test"
     title = $Title; summary = "Fixture vertical sintética descartável da Fase 4."
+    brand = @{ name = "Marca Sintética F4"; slug = "marca-sintetica-f4" }
     manufacturer = @{ name = "Fabricante Sintético F4"; slug = "fabricante-sintetico-f4" }
     productLine = @{ name = "Linha Sintética F4"; slug = "linha-sintetica-f4" }
     classification = @{ segment = "Segmento sintético"; category = "Categoria sintética"; subcategory = "Subcategoria sintética"; family = "Família sintética" }
     commercial = @{ shortDescription = "Produto fictício para teste isolado do staging."; valueProposition = "Valida o contrato vertical sem representar item comercial."; benefits = @("Verificação descartável"); differentiators = @("Sem origem no acervo anterior") }
     function = "Medição sintética"; technology = "Tecnologia sintética"
-    models = @(@{ id = [guid]::NewGuid().ToString(); model = $Model; sku = "SKU-$Model"; status = "active"; variants = @(@{ id = [guid]::NewGuid().ToString(); name = "Variante $Version"; code = "VAR-$Version"; order = 0 }) })
+    models = @(@{ id = [guid]::NewGuid().ToString(); model = $Model; manufacturerReference = "REF-$Model"; sku = "SKU-$Model"; status = "active"; variants = @(@{ id = [guid]::NewGuid().ToString(); name = "Variante $Version"; code = "VAR-$Version"; order = 0 }) })
     specifications = @(
       @{ id = [guid]::NewGuid().ToString(); key = "faixa-medicao"; label = "Faixa de medição"; type = "range"; value = @{ min = 0; max = 100 }; unit = "%"; required = $true; filterable = $true; comparable = $true; searchable = $true },
       @{ id = [guid]::NewGuid().ToString(); key = "protocolo"; label = "Protocolo"; type = "enum"; value = @("SYNTH-A", "SYNTH-B"); required = $true; filterable = $true; comparable = $true; searchable = $true }

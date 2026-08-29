@@ -541,6 +541,16 @@
   color: var(--admin-blue-dark);
   font-weight: 700;
 }
+.admin-governed-json {
+  min-width: 0;
+}
+.admin-governed-json textarea {
+  min-height: 15rem;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  tab-size: 2;
+}
 .admin-editor-grid {
   display: grid;
   gap: 1.5rem;

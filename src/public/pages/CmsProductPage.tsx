@@ -16,8 +16,13 @@ export default function CmsProductPage() {
         setProduct(data);
         const canonical = applyCatalogSeo({
           title: data.seo.title,
+          description: data.seo.description,
           canonicalPath: data.seo.canonicalPath,
           indexable: data.seo.indexable,
+          ogImage: data.seo.ogImageId
+            ? (data.media_urls?.[`${data.seo.ogImageId}:large.webp`] ??
+              data.media_urls?.[`${data.seo.ogImageId}:medium.webp`])
+            : undefined,
         });
         const script = document.createElement("script");
         script.type = "application/ld+json";
@@ -27,7 +32,9 @@ export default function CmsProductPage() {
           "@type": "Product",
           name: data.payload.title,
           model: data.payload.models[0]?.model,
-          brand: { "@type": "Brand", name: data.payload.manufacturer.name },
+          brand: { "@type": "Brand", name: data.payload.brand.name },
+          manufacturer: { "@type": "Organization", name: data.payload.manufacturer.name },
+          mpn: data.payload.models[0]?.manufacturerReference,
           category: data.payload.classification.category,
           description: data.payload.commercial.shortDescription,
           url: canonical,

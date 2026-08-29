@@ -128,21 +128,22 @@ try {
   $verified = [DateTime]::UtcNow.ToString("o")
   function New-Payload([string]$RevisionText) {
     @{
-      schemaVersion = 1; consumerId = "cms.catalog-product.v1"; contentType = "product"; pilotState = "awaiting_owner"
+      schemaVersion = 1; consumerId = "cms.catalog-product.v1"; contentType = "product"; pilotState = "homologated"
       title = "Medidor de Vazão Eletromagnético a Bateria GATFLOW-B"
-      summary = "Conteúdo piloto em homologação. Esboço editável; fabricante, relação GATFLOW-B/KF700E, faixa nominal definitiva e configuração comercial permanecem a confirmar."
+      brand = @{ name = "GATFLOW"; slug = "gatflow" }
+      summary = "Piloto funcional homologado e integralmente editável no CMS. GATFLOW é a marca comercial, GATFLOW-B é o modelo comercial e KF700E é a referência do fabricante; fabricante/OEM nominal e especificações definitivas permanecem a confirmar."
       manufacturer = @{ name = "Fabricante do GATFLOW-B — a confirmar"; slug = "fabricante-gatflow-b-a-confirmar" }
       productLine = @{ name = "Medidores eletromagnéticos a bateria"; slug = "medidores-eletromagneticos-bateria" }
       classification = @{ segment = "Instrumentação para líquidos — a confirmar"; category = "Medição de vazão"; subcategory = "Medidor eletromagnético"; family = "Alimentado por bateria" }
       commercial = @{
         shortDescription = "Medidor eletromagnético alimentado por bateria para líquidos condutivos; conteúdo piloto em homologação, com configuração definitiva a confirmar."
-        valueProposition = "O PDF técnico da família KF700E sustenta operação sem alimentação externa e aplicação em pontos remotos. A equivalência comercial com GATFLOW-B ainda requer homologação visual e técnica do owner."
+        valueProposition = "O PDF técnico da referência KF700E sustenta operação sem alimentação externa e aplicação em pontos remotos. O conteúdo permanece editável para homologação técnica definitiva."
         benefits = @("Operação por bateria, sem alimentação externa", "Sem partes móveis e sem perda de pressão segundo o PDF", "Aplicável a líquidos condutivos compatíveis com os materiais selecionados")
         differentiators = @("Opção de leitura remota quando pareado com GPRS, segundo o PDF", "Eletrodos anti-incrustação e baixa exigência de trechos retos, segundo o PDF")
       }
       function = "Medição de vazão volumétrica de líquidos condutivos"
       technology = "Medição eletromagnética alimentada por bateria"
-      models = @(@{ id = $modelId; model = "GATFLOW-B"; sku = "A confirmar"; status = "active"; variants = @(@{ id = $variantId; name = "Configuração sob consulta"; code = "A-CONFIRMAR"; order = 0 }) })
+      models = @(@{ id = $modelId; model = "GATFLOW-B"; manufacturerReference = "KF700E"; sku = "A confirmar"; status = "active"; variants = @(@{ id = $variantId; name = "Configuração sob consulta"; code = "A-CONFIRMAR"; order = 0 }) })
       specifications = @(
         @{ id=$specIds[0]; key="diametro-nominal"; label="Diâmetro nominal"; type="text"; value="A confirmar: o PDF diverge entre DN10–DN600, DN15–DN600 e 15–600 mm"; required=$true; filterable=$false; comparable=$true; searchable=$true },
         @{ id=$specIds[1]; key="velocidade-fluido"; label="Velocidade do fluido"; type="range"; value=@{min=0.3;max=10}; unit="m/s"; required=$true; filterable=$true; comparable=$true; searchable=$true },
@@ -164,7 +165,7 @@ try {
       search = @{ synonyms=@("medidor eletromagnético a bateria","GATFLOW-B","KF700E","medidor de vazão sem alimentação externa"); keywords=@("vazão","líquido condutivo","bateria","eletromagnético","GPRS") }
       redirects = @(@{ sourcePath="/produtos/piloto-vz-eletro-01"; statusCode="302" })
       blocks = @(
-        @{ id=$blockIds[0]; type="rich_text"; data=@{ text="Conteúdo piloto em homologação. As imagens identificam GATFLOW-B; o PDF identifica a família KF700E e Ningbo Kio Flow Instruments. A relação entre essas identificações, o fabricante definitivo e a configuração comercial está a confirmar. $RevisionText" } },
+        @{ id=$blockIds[0]; type="rich_text"; data=@{ text="Piloto funcional homologado. GATFLOW é a marca comercial própria, GATFLOW-B é o modelo comercial GAIATEC e KF700E é a referência/modelo do fabricante. O fabricante/OEM nominal e as especificações definitivas permanecem editáveis e a confirmar. $RevisionText" } },
         @{ id=$blockIds[1]; type="specifications"; data=@{ source="typed-attributes" } },
         @{ id=$blockIds[2]; type="gallery"; data=@{ assetIds=@($mediaIds[0],$mediaIds[1]) } },
         @{ id=$blockIds[3]; type="related_content"; data=@{ state="Nenhuma relação homologada" } }
@@ -175,7 +176,7 @@ try {
         @{ sourceKind="owner_authored"; sourcePath=$ImageOne; fileModifiedAt=(Get-Item -LiteralPath $ImageOne).LastWriteTimeUtc.ToString("o"); sourceSha256=$ExpectedHashes[$ImageOne]; authorizationReference="Autorização explícita do administrador/solicitante na retomada da Fase 4"; authorizationDate="2026-08-28"; rightsScope="Uso da imagem somente no esboço PILOTO-VZ-ELETRO-01 em staging"; rightsConfirmed=$true; commercialOwner="Administrador/solicitante GAIATEC"; technicalOwner="A confirmar na homologação"; verifiedAt=$verified },
         @{ sourceKind="owner_authored"; sourcePath=$ImageTwo; fileModifiedAt=(Get-Item -LiteralPath $ImageTwo).LastWriteTimeUtc.ToString("o"); sourceSha256=$ExpectedHashes[$ImageTwo]; authorizationReference="Autorização explícita do administrador/solicitante na retomada da Fase 4"; authorizationDate="2026-08-28"; rightsScope="Uso da imagem somente no esboço PILOTO-VZ-ELETRO-01 em staging"; rightsConfirmed=$true; commercialOwner="Administrador/solicitante GAIATEC"; technicalOwner="A confirmar na homologação"; verifiedAt=$verified }
       )
-      approval = @{ portfolioOwner="Administrador/solicitante GAIATEC — homologação visual pendente"; technicalReviewer="Revisão interna do esboço; validação definitiva pendente"; commercialReviewer="Autorização limitada ao esboço em staging"; editorialReviewer="Clean-room e proveniência conferidos" }
+      approval = @{ portfolioOwner="Administrador/solicitante GAIATEC — homologação funcional do piloto"; technicalReviewer="Especificações permanecem editáveis e sujeitas a validação definitiva"; commercialReviewer="GATFLOW/GATFLOW-B/KF700E confirmados em 2026-08-29"; editorialReviewer="Clean-room, proveniência e round-trip conferidos"; homologatedAt=$verified }
     }
   }
 

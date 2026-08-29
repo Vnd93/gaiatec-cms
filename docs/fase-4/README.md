@@ -19,7 +19,7 @@
 
 ## Regra de conteúdo
 
-Nenhum dado, imagem, documento, taxonomia ou estrutura editorial do site, banco ou painel anterior foi consultado ou transformado em cadastro. Somente os três arquivos nominalmente autorizados foram usados no staging. Dados não sustentados permanecem `a confirmar`, e a homologação visual final não será inferida.
+Nenhum dado, imagem, documento, taxonomia ou estrutura editorial do site, banco ou painel anterior foi consultado ou transformado em cadastro. Somente os três arquivos nominalmente autorizados foram usados no staging. Dados não sustentados permanecem `a confirmar`. O solicitante homologou funcionalmente o piloto e confirmou `GATFLOW` como marca, `GATFLOW-B` como modelo comercial e `KF700E` como referência do fabricante; isso não congela as especificações técnicas editáveis.
 
 ## Contingência G2
 
@@ -28,8 +28,13 @@ Nenhum dado, imagem, documento, taxonomia ou estrutura editorial do site, banco 
 ## Evidências
 
 - `MODELO_E_CONTRATO.md`: contrato e projeções;
+- `AUDITORIA_CAMPO_CONSUMIDOR.md`: cobertura integral sem campos órfãos ou perda silenciosa;
 - `EVIDENCIA_FONTES_PILOTO_VZ_ELETRO_01.md`: caminhos, hashes, autorização, correspondência e extração manual;
 - `RECADASTRO_PILOTO.md`: estado clean-room do lote;
 - `EXECUCAO_F4_01_A_F4_06.md`: execução e ciclo remoto;
 - `VALIDACAO_UX_UI_F4.md`: desktop/mobile, navegador e HTTP;
 - `EVIDENCIAS_GATE_G4.md`: matriz de critérios e decisão explícita.
+
+## Decisão
+
+**Gate G4 aprovado em 2026-08-29.** O lote único permanece publicado somente no staging, homologado funcionalmente e não indexável. A Fase 5 não foi iniciada.

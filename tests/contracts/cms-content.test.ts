@@ -26,6 +26,7 @@ const validProduct = {
     },
   ],
   pilotState: "synthetic_test",
+  brand: { name: "Marca sintética", slug: "marca-sintetica" },
   manufacturer: {
     name: "Fabricante sintetico",
     slug: "fabricante-sintetico",
@@ -49,6 +50,7 @@ const validProduct = {
     {
       id: "10000000-0000-4000-8000-000000000001",
       model: "Modelo sintetico",
+      manufacturerReference: "REF-SINTETICA",
       sku: "SKU-SINTETICO",
       status: "active",
       variants: [

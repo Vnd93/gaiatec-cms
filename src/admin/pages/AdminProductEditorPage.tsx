@@ -2,6 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { supabase } from "@/lib/supabase";
 import { CmsProductContentSchema } from "@/shared/contracts/cms-content";
+import {
+  buildProductPayload,
+  createInitialProductDraft,
+  hydrateProductDraft,
+  tabForProductPath,
+  type GovernedJsonField,
+  type ProductEditorDraft,
+  type ProductEditorTab,
+} from "../product-editor-model";
 import { useAdminAuth } from "../auth/AdminAuthContext";
 import { editorialCommand, issuePreview } from "../api/cms-api";
 
@@ -18,19 +27,8 @@ type Loaded = {
     payload: Record<string, unknown>;
   }[];
 };
-type Tab =
-  | "identificacao"
-  | "classificacao"
-  | "comercial"
-  | "especificacoes"
-  | "midia"
-  | "documentos"
-  | "relacoes"
-  | "busca"
-  | "seo"
-  | "governanca"
-  | "historico";
-const tabs: [Tab, string][] = [
+
+const tabs: [ProductEditorTab, string][] = [
   ["identificacao", "Identificação"],
   ["classificacao", "Classificação"],
   ["comercial", "Conteúdo comercial"],
@@ -43,120 +41,34 @@ const tabs: [Tab, string][] = [
   ["governanca", "Governança"],
   ["historico", "Histórico/publicação"],
 ];
-const splitLines = (value: string) =>
-  value
-    .split(/\r?\n|,/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-const uuidList = (value: string) => splitLines(value);
-const parseJsonArray = (value: string): unknown[] => {
-  try {
-    const parsed: unknown = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed : [{ invalidJsonArray: true }];
-  } catch {
-    return [{ invalidJson: true }];
-  }
-};
 
-function initialDraft() {
-  return {
-    slug: `produto-novo-${Date.now()}`,
-    title: "",
-    summary: "",
-    manufacturerName: "",
-    manufacturerSlug: "",
-    manufacturerUrl: "",
-    lineName: "",
-    lineSlug: "",
-    segment: "",
-    category: "",
-    subcategory: "",
-    family: "",
-    functionText: "",
-    technology: "",
-    modelId: crypto.randomUUID(),
-    model: "",
-    sku: "",
-    variantId: crypto.randomUUID(),
-    variantName: "",
-    variantCode: "",
-    shortDescription: "",
-    valueProposition: "",
-    benefits: "",
-    differentiators: "",
-    body: "",
-    richBlockId: crypto.randomUUID(),
-    specificationBlockId: crypto.randomUUID(),
-    imageBlockId: crypto.randomUUID(),
-    attributeId: crypto.randomUUID(),
-    attributeKey: "",
-    attributeLabel: "",
-    attributeValue: "",
-    attributeUnit: "",
-    additionalSpecificationsJson: "[]",
-    mediaId: "",
-    mediaAlt: "",
-    mediaCaption: "",
-    additionalMediaJson: "[]",
-    documentId: crypto.randomUUID(),
-    documentKind: "datasheet",
-    documentTitle: "",
-    documentUrl: "",
-    documentStoragePath: "",
-    documentHash: "",
-    documentRevision: "",
-    documentLanguage: "pt-BR",
-    documentVisibility: "public",
-    additionalDocumentsJson: "[]",
-    productIds: "",
-    applicationIds: "",
-    sectorIds: "",
-    serviceIds: "",
-    synonyms: "",
-    keywords: "",
-    redirectPaths: "",
-    seoTitle: "",
-    seoDescription: "",
-    canonicalPath: "",
-    indexable: false,
-    pilotState: "awaiting_owner",
-    sourceKind: "official_manufacturer",
-    sourceUrl: "",
-    sourcePath: "",
-    fileModifiedAt: "",
-    sourceVersion: "",
-    sourceDate: "",
-    sourceHash: "",
-    authorizationReference: "",
-    authorizationDate: "",
-    rightsScope: "",
-    additionalProvenanceJson: "[]",
-    additionalBlocksJson: "[]",
-    rightsConfirmed: false,
-    commercialOwner: "",
-    technicalOwner: "",
-    verifiedAt: "",
-    portfolioOwner: "",
-    technicalReviewer: "",
-    commercialReviewer: "",
-    editorialReviewer: "",
-    homologatedAt: "",
-    reason: "Cadastro manual do produto piloto",
-  };
-}
+const jsonHelp: Record<GovernedJsonField, string> = {
+  modelsJson:
+    "Lista validada de modelos, SKU, status e variantes. O modelo comercial e a referência do fabricante do primeiro item são espelhados pelos campos acima.",
+  specificationsJson:
+    "Lista validada de atributos text, number, boolean, enum ou range, incluindo unidade e flags required/filterable/comparable/searchable.",
+  mediaJson:
+    "Lista validada de ativos da biblioteca com role, ALT, legenda e ordem. Nenhum caminho de arquivo do frontend é aceito.",
+  documentsJson:
+    "Lista validada de documentos com tipo, URL ou storage privado, hash, revisão, idioma, visibilidade e direitos.",
+  redirectsJson: "Lista validada de sourcePath e statusCode 301/302.",
+  blocksJson:
+    "Lista validada de blocos rich_text, image, gallery, cta, specifications e related_content. A descrição completa espelha o primeiro rich_text.",
+  provenanceJson: "Lista validada de fontes, hashes, autorização, direitos, owners e datas de verificação.",
+};
 
 export default function AdminProductEditorPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { session, profile } = useAdminAuth();
-  const [draft, setDraft] = useState(initialDraft);
+  const [draft, setDraft] = useState(createInitialProductDraft);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
-  const [activeTab, setActiveTab] = useState<Tab>("identificacao");
+  const [activeTab, setActiveTab] = useState<ProductEditorTab>("identificacao");
   const [loading, setLoading] = useState(id !== "novo");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const set = (key: keyof ReturnType<typeof initialDraft>, value: string | boolean) =>
+  const set = (key: keyof ProductEditorDraft, value: string | boolean) =>
     setDraft((current) => ({ ...current, [key]: value }));
   const can = (permission: string) => profile?.permissions.includes(permission) ?? false;
 
@@ -176,101 +88,13 @@ export default function AdminProductEditorPage() {
         if (loadError) setError("Produto indisponível ou sem permissão.");
         else {
           const item = data as unknown as Loaded;
-          const p = item.cms_content_drafts.payload as any;
-          setLoaded(item);
-          setDraft((current) => ({
-            ...current,
-            slug: item.slug,
-            title: p.title ?? "",
-            summary: p.summary ?? "",
-            manufacturerName: p.manufacturer?.name ?? "",
-            manufacturerSlug: p.manufacturer?.slug ?? "",
-            manufacturerUrl: p.manufacturer?.officialUrl ?? "",
-            lineName: p.productLine?.name ?? "",
-            lineSlug: p.productLine?.slug ?? "",
-            segment: p.classification?.segment ?? "",
-            category: p.classification?.category ?? "",
-            subcategory: p.classification?.subcategory ?? "",
-            family: p.classification?.family ?? "",
-            functionText: p.function ?? "",
-            technology: p.technology ?? "",
-            modelId: p.models?.[0]?.id ?? current.modelId,
-            model: p.models?.[0]?.model ?? "",
-            sku: p.models?.[0]?.sku ?? "",
-            variantId: p.models?.[0]?.variants?.[0]?.id ?? current.variantId,
-            variantName: p.models?.[0]?.variants?.[0]?.name ?? "",
-            variantCode: p.models?.[0]?.variants?.[0]?.code ?? "",
-            shortDescription: p.commercial?.shortDescription ?? "",
-            valueProposition: p.commercial?.valueProposition ?? "",
-            benefits: (p.commercial?.benefits ?? []).join("\n"),
-            differentiators: (p.commercial?.differentiators ?? []).join("\n"),
-            body: p.blocks?.find((block: any) => block.type === "rich_text")?.data?.text ?? "",
-            richBlockId:
-              p.blocks?.find((block: any) => block.type === "rich_text")?.id ?? current.richBlockId,
-            specificationBlockId:
-              p.blocks?.find((block: any) => block.type === "specifications")?.id ??
-              current.specificationBlockId,
-            imageBlockId: p.blocks?.find((block: any) => block.type === "image")?.id ?? current.imageBlockId,
-            attributeId: p.specifications?.[0]?.id ?? current.attributeId,
-            attributeKey: p.specifications?.[0]?.key ?? "",
-            attributeLabel: p.specifications?.[0]?.label ?? "",
-            attributeValue: String(p.specifications?.[0]?.value ?? ""),
-            attributeUnit: p.specifications?.[0]?.unit ?? "",
-            additionalSpecificationsJson: JSON.stringify(p.specifications?.slice(1) ?? [], null, 2),
-            mediaId: p.media?.[0]?.assetId ?? "",
-            mediaAlt: p.media?.[0]?.alt ?? "",
-            mediaCaption: p.media?.[0]?.caption ?? "",
-            additionalMediaJson: JSON.stringify(p.media?.slice(1) ?? [], null, 2),
-            documentId: p.documents?.[0]?.id ?? current.documentId,
-            documentKind: p.documents?.[0]?.kind ?? "datasheet",
-            documentTitle: p.documents?.[0]?.title ?? "",
-            documentUrl: p.documents?.[0]?.officialUrl ?? "",
-            documentStoragePath: p.documents?.[0]?.storagePath ?? "",
-            documentHash: p.documents?.[0]?.sha256 ?? "",
-            documentRevision: p.documents?.[0]?.revision ?? "",
-            documentLanguage: p.documents?.[0]?.language ?? "pt-BR",
-            documentVisibility: p.documents?.[0]?.visibility ?? "public",
-            additionalDocumentsJson: JSON.stringify(p.documents?.slice(1) ?? [], null, 2),
-            productIds: (p.relations?.productIds ?? []).join("\n"),
-            applicationIds: (p.relations?.applicationIds ?? []).join("\n"),
-            sectorIds: (p.relations?.sectorIds ?? []).join("\n"),
-            serviceIds: (p.relations?.serviceIds ?? []).join("\n"),
-            synonyms: (p.search?.synonyms ?? []).join("\n"),
-            keywords: (p.search?.keywords ?? []).join("\n"),
-            redirectPaths: (p.redirects ?? []).map((entry: any) => entry.sourcePath).join("\n"),
-            seoTitle: p.seo?.title ?? "",
-            seoDescription: p.seo?.description ?? "",
-            canonicalPath: p.seo?.canonicalPath ?? "",
-            indexable: p.seo?.indexable ?? false,
-            pilotState: p.pilotState ?? "awaiting_owner",
-            sourceKind: p.provenance?.[0]?.sourceKind ?? "official_manufacturer",
-            sourceUrl: p.provenance?.[0]?.sourceUrl ?? "",
-            sourcePath: p.provenance?.[0]?.sourcePath ?? "",
-            fileModifiedAt: p.provenance?.[0]?.fileModifiedAt?.slice(0, 16) ?? "",
-            sourceVersion: p.provenance?.[0]?.documentVersion ?? "",
-            sourceDate: p.provenance?.[0]?.documentDate ?? "",
-            sourceHash: p.provenance?.[0]?.sourceSha256 ?? "",
-            authorizationReference: p.provenance?.[0]?.authorizationReference ?? "",
-            authorizationDate: p.provenance?.[0]?.authorizationDate ?? "",
-            rightsScope: p.provenance?.[0]?.rightsScope ?? "",
-            additionalProvenanceJson: JSON.stringify(p.provenance?.slice(1) ?? [], null, 2),
-            additionalBlocksJson: JSON.stringify(
-              (p.blocks ?? []).filter(
-                (block: any) => !["rich_text", "specifications", "image"].includes(block.type),
-              ),
-              null,
-              2,
-            ),
-            rightsConfirmed: p.provenance?.[0]?.rightsConfirmed ?? false,
-            commercialOwner: p.provenance?.[0]?.commercialOwner ?? "",
-            technicalOwner: p.provenance?.[0]?.technicalOwner ?? "",
-            verifiedAt: p.provenance?.[0]?.verifiedAt?.slice(0, 16) ?? "",
-            portfolioOwner: p.approval?.portfolioOwner ?? "",
-            technicalReviewer: p.approval?.technicalReviewer ?? "",
-            commercialReviewer: p.approval?.commercialReviewer ?? "",
-            editorialReviewer: p.approval?.editorialReviewer ?? "",
-            homologatedAt: p.approval?.homologatedAt?.slice(0, 16) ?? "",
-          }));
+          const parsed = CmsProductContentSchema.safeParse(item.cms_content_drafts.payload);
+          if (!parsed.success) {
+            setError(`Rascunho incompatível com o contrato: ${parsed.error.issues[0]?.path.join(".")}.`);
+          } else {
+            setLoaded(item);
+            setDraft((current) => hydrateProductDraft(parsed.data, item.slug, current));
+          }
         }
         setLoading(false);
       });
@@ -279,156 +103,15 @@ export default function AdminProductEditorPage() {
     };
   }, [id]);
 
-  const payload = useMemo(
-    () => ({
-      schemaVersion: 1 as const,
-      consumerId: "cms.catalog-product.v1" as const,
-      contentType: "product" as const,
-      pilotState: draft.pilotState,
-      title: draft.title,
-      summary: draft.summary || undefined,
-      manufacturer: {
-        name: draft.manufacturerName,
-        slug: draft.manufacturerSlug,
-        ...(draft.manufacturerUrl ? { officialUrl: draft.manufacturerUrl } : {}),
-      },
-      productLine: { name: draft.lineName, slug: draft.lineSlug },
-      classification: {
-        segment: draft.segment,
-        category: draft.category,
-        ...(draft.subcategory ? { subcategory: draft.subcategory } : {}),
-        family: draft.family,
-      },
-      commercial: {
-        shortDescription: draft.shortDescription,
-        valueProposition: draft.valueProposition,
-        benefits: splitLines(draft.benefits),
-        differentiators: splitLines(draft.differentiators),
-      },
-      function: draft.functionText,
-      technology: draft.technology,
-      models: [
-        {
-          id: draft.modelId,
-          model: draft.model,
-          sku: draft.sku,
-          status: "active" as const,
-          variants: [{ id: draft.variantId, name: draft.variantName, code: draft.variantCode, order: 0 }],
-        },
-      ],
-      specifications: [
-        {
-          id: draft.attributeId,
-          key: draft.attributeKey,
-          label: draft.attributeLabel,
-          type: "text" as const,
-          value: draft.attributeValue,
-          ...(draft.attributeUnit ? { unit: draft.attributeUnit } : {}),
-          required: true,
-          filterable: true,
-          comparable: true,
-          searchable: true,
-        },
-        ...parseJsonArray(draft.additionalSpecificationsJson),
-      ],
-      media: [
-        ...(draft.mediaId
-          ? [
-              {
-                assetId: draft.mediaId,
-                role: "primary" as const,
-                alt: draft.mediaAlt,
-                ...(draft.mediaCaption ? { caption: draft.mediaCaption } : {}),
-                order: 0,
-              },
-            ]
-          : []),
-        ...parseJsonArray(draft.additionalMediaJson),
-      ],
-      documents: [
-        ...(draft.documentTitle
-          ? [
-              {
-                id: draft.documentId,
-                kind: draft.documentKind,
-                title: draft.documentTitle,
-                ...(draft.documentUrl ? { officialUrl: draft.documentUrl } : {}),
-                ...(draft.documentStoragePath ? { storagePath: draft.documentStoragePath } : {}),
-                sha256: draft.documentHash,
-                revision: draft.documentRevision,
-                language: draft.documentLanguage,
-                visibility: draft.documentVisibility,
-                rightsConfirmed: draft.rightsConfirmed,
-              },
-            ]
-          : []),
-        ...parseJsonArray(draft.additionalDocumentsJson),
-      ],
-      relations: {
-        productIds: uuidList(draft.productIds),
-        applicationIds: uuidList(draft.applicationIds),
-        sectorIds: uuidList(draft.sectorIds),
-        serviceIds: uuidList(draft.serviceIds),
-      },
-      search: { synonyms: splitLines(draft.synonyms), keywords: splitLines(draft.keywords) },
-      redirects: splitLines(draft.redirectPaths).map((sourcePath) => ({
-        sourcePath,
-        statusCode: "301" as const,
-      })),
-      blocks: [
-        { id: draft.richBlockId, type: "rich_text" as const, data: { text: draft.body } },
-        {
-          id: draft.specificationBlockId,
-          type: "specifications" as const,
-          data: { source: "typed-attributes" },
-        },
-        ...(draft.mediaId
-          ? [
-              {
-                id: draft.imageBlockId,
-                type: "image" as const,
-                data: { assetId: draft.mediaId, alt: draft.mediaAlt, caption: draft.mediaCaption },
-              },
-            ]
-          : []),
-        ...parseJsonArray(draft.additionalBlocksJson),
-      ],
-      seo: {
-        title: draft.seoTitle,
-        description: draft.seoDescription,
-        canonicalPath: draft.canonicalPath || `/produtos/${draft.slug}`,
-        indexable: draft.indexable,
-      },
-      provenance: [
-        {
-          sourceKind: draft.sourceKind,
-          ...(draft.sourceUrl ? { sourceUrl: draft.sourceUrl } : {}),
-          ...(draft.sourcePath ? { sourcePath: draft.sourcePath } : {}),
-          ...(draft.fileModifiedAt ? { fileModifiedAt: new Date(draft.fileModifiedAt).toISOString() } : {}),
-          ...(draft.sourceVersion ? { documentVersion: draft.sourceVersion } : {}),
-          ...(draft.sourceDate ? { documentDate: draft.sourceDate } : {}),
-          ...(draft.sourceHash ? { sourceSha256: draft.sourceHash } : {}),
-          ...(draft.authorizationReference ? { authorizationReference: draft.authorizationReference } : {}),
-          ...(draft.authorizationDate ? { authorizationDate: draft.authorizationDate } : {}),
-          ...(draft.rightsScope ? { rightsScope: draft.rightsScope } : {}),
-          rightsConfirmed: draft.rightsConfirmed,
-          commercialOwner: draft.commercialOwner,
-          technicalOwner: draft.technicalOwner,
-          verifiedAt: draft.verifiedAt ? new Date(draft.verifiedAt).toISOString() : "",
-        },
-        ...parseJsonArray(draft.additionalProvenanceJson),
-      ],
-      approval: {
-        portfolioOwner: draft.portfolioOwner,
-        technicalReviewer: draft.technicalReviewer,
-        commercialReviewer: draft.commercialReviewer,
-        editorialReviewer: draft.editorialReviewer,
-        ...(draft.homologatedAt ? { homologatedAt: new Date(draft.homologatedAt).toISOString() } : {}),
-      },
-    }),
-    [draft],
+  const built = useMemo(() => buildProductPayload(draft), [draft]);
+  const validation = useMemo(
+    () => (built.jsonErrors.length ? null : CmsProductContentSchema.safeParse(built.payload)),
+    [built],
   );
-  const validation = CmsProductContentSchema.safeParse(payload);
+  const contractIssues = validation && !validation.success ? validation.error.issues : [];
+  const latestRevision = loaded?.cms_content_revisions
+    .slice()
+    .sort((a, b) => b.revision_number - a.revision_number)[0];
 
   async function run(action: string, extras: Record<string, unknown> = {}) {
     if (!session) return;
@@ -436,23 +119,23 @@ export default function AdminProductEditorPage() {
     setError("");
     setSuccess("");
     try {
-      if ((action === "create" || action === "save") && !validation.success) {
-        const first = validation.error.issues[0];
-        setActiveTab(
-          first.path[0] === "seo"
-            ? "seo"
-            : first.path[0] === "provenance" || first.path[0] === "approval"
-              ? "governanca"
-              : "identificacao",
-        );
-        throw new Error(`Cadastro incompleto: ${first.path.join(".")} — ${first.message}`);
+      if (action === "create" || action === "save") {
+        if (built.jsonErrors[0]) {
+          setActiveTab(built.jsonErrors[0].tab);
+          throw new Error(built.jsonErrors[0].message);
+        }
+        if (!validation?.success) {
+          const first = contractIssues[0];
+          setActiveTab(tabForProductPath(first.path));
+          throw new Error(`Cadastro incompleto: ${first.path.join(".")} — ${first.message}`);
+        }
       }
       const result = await editorialCommand(session, {
         action,
         itemId: loaded?.id ?? null,
         contentType: loaded ? null : "product",
         slug: draft.slug,
-        payload: action === "create" || action === "save" ? payload : null,
+        payload: action === "create" || action === "save" ? built.payload : null,
         expectedLockVersion: loaded?.cms_content_drafts.lock_version ?? null,
         reason: draft.reason,
         ...extras,
@@ -466,6 +149,7 @@ export default function AdminProductEditorPage() {
       setBusy(false);
     }
   }
+
   async function preview(revisionId?: string) {
     if (!session || !loaded) return;
     setBusy(true);
@@ -478,6 +162,7 @@ export default function AdminProductEditorPage() {
       setBusy(false);
     }
   }
+
   if (loading)
     return (
       <div className="admin-state" aria-busy="true">
@@ -490,8 +175,9 @@ export default function AdminProductEditorPage() {
         {error}
       </div>
     );
+
   const state = loaded?.workflow_status ?? "new";
-  const input = (label: string, key: keyof ReturnType<typeof initialDraft>, type = "text") => (
+  const input = (label: string, key: keyof ProductEditorDraft, type = "text") => (
     <label>
       {label}
       <input
@@ -502,24 +188,41 @@ export default function AdminProductEditorPage() {
       />
     </label>
   );
-  const area = (label: string, key: keyof ReturnType<typeof initialDraft>) => (
+  const area = (label: string, key: keyof ProductEditorDraft, rows = 4) => (
     <label>
       {label}
       <textarea
-        rows={4}
+        rows={rows}
         value={String(draft[key])}
         onChange={(event) => set(key, event.target.value)}
         disabled={busy}
       />
     </label>
   );
+  const governedArea = (label: string, field: GovernedJsonField) => {
+    const jsonError = built.jsonErrors.find((entry) => entry.field === field);
+    return (
+      <div className="admin-governed-json">
+        {area(`${label} — JSON governado`, field, 12)}
+        <p
+          className={jsonError ? "admin-notice admin-notice--error" : "admin-help"}
+          role={jsonError ? "alert" : undefined}
+        >
+          {jsonError
+            ? jsonError.message
+            : `${jsonHelp[field]} JSON válido: ${built.counts[field]} registro(s).`}
+        </p>
+      </div>
+    );
+  };
+
   return (
     <section>
       <p className="admin-eyebrow">PRODUTO PILOTO VERTICAL</p>
       <h1>{draft.title || "Novo produto"}</h1>
       <p className="admin-help">
-        Cadastro manual clean-room. Salvar exige proveniência verificável; indexação exige homologação do
-        owner.
+        Fonte editorial única. Todo campo abaixo é validado, persistido e versionado; o frontend é atualizado
+        após publicação, sem rebuild.
       </p>
       {error && (
         <p className="admin-notice admin-notice--error" role="alert">
@@ -532,13 +235,47 @@ export default function AdminProductEditorPage() {
         </p>
       )}
       <div className="admin-tabs" role="tablist" aria-label="Seções do produto">
-        {tabs.map(([key, label]) => (
-          <button key={key} role="tab" aria-selected={activeTab === key} onClick={() => setActiveTab(key)}>
+        {tabs.map(([key, label], index) => (
+          <button
+            key={key}
+            id={`product-tab-${key}`}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === key}
+            aria-controls="product-tabpanel"
+            tabIndex={activeTab === key ? 0 : -1}
+            onClick={() => setActiveTab(key)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                setActiveTab(key);
+                return;
+              }
+              const offset = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+              const targetIndex =
+                event.key === "Home"
+                  ? 0
+                  : event.key === "End"
+                    ? tabs.length - 1
+                    : offset
+                      ? (index + offset + tabs.length) % tabs.length
+                      : -1;
+              if (targetIndex >= 0) {
+                event.preventDefault();
+                const target = tabs[targetIndex][0];
+                setActiveTab(target);
+                document.getElementById(`product-tab-${target}`)?.focus();
+              }
+            }}
+          >
             {label}
           </button>
         ))}
       </div>
       <form
+        id="product-tabpanel"
+        role="tabpanel"
+        aria-labelledby={`product-tab-${activeTab}`}
         className="admin-product-form"
         onSubmit={(event) => {
           event.preventDefault();
@@ -547,23 +284,24 @@ export default function AdminProductEditorPage() {
       >
         {activeTab === "identificacao" && (
           <fieldset>
-            <legend>Identificação, fabricante, linha, modelo e variante</legend>
+            <legend>Marca, fabricante, linha, modelo comercial e referência do fabricante</legend>
             {input("Slug", "slug")}
-            {input("Nome comercial", "title")}
-            {input("Fabricante", "manufacturerName")}
-            {input("Slug do fabricante", "manufacturerSlug")}
-            {input("Site oficial do fabricante", "manufacturerUrl", "url")}
+            {input("Nome comercial do produto", "title")}
+            {input("Marca comercial", "brandName")}
+            {input("Slug da marca", "brandSlug")}
+            {input("Fabricante/OEM nominal", "manufacturerName")}
+            {input("Slug do fabricante/OEM", "manufacturerSlug")}
+            {input("Site oficial do fabricante/OEM", "manufacturerUrl", "url")}
             {input("Linha", "lineName")}
             {input("Slug da linha", "lineSlug")}
-            {input("Modelo", "model")}
-            {input("SKU/código novo", "sku")}
-            {input("Variante", "variantName")}
-            {input("Código da variante", "variantCode")}
+            {input("Modelo comercial GAIATEC", "commercialModel")}
+            {input("Referência/modelo do fabricante", "manufacturerReference")}
+            {governedArea("Modelos e variantes completos", "modelsJson")}
           </fieldset>
         )}
         {activeTab === "classificacao" && (
           <fieldset>
-            <legend>Taxonomia nova</legend>
+            <legend>Taxonomia, função e tecnologia</legend>
             {input("Segmento", "segment")}
             {input("Categoria", "category")}
             {input("Subcategoria", "subcategory")}
@@ -574,64 +312,32 @@ export default function AdminProductEditorPage() {
         )}
         {activeTab === "comercial" && (
           <fieldset>
-            <legend>Conteúdo comercial novo</legend>
+            <legend>Conteúdo comercial e blocos</legend>
             {area("Resumo", "summary")}
             {area("Descrição curta", "shortDescription")}
             {area("Proposta de valor", "valueProposition")}
             {area("Benefícios — um por linha", "benefits")}
             {area("Diferenciais — um por linha", "differentiators")}
-            {area("Descrição completa", "body")}
+            {area("Descrição completa — espelha o primeiro bloco rich_text", "body", 7)}
+            {governedArea("Blocos completos", "blocksJson")}
           </fieldset>
         )}
         {activeTab === "especificacoes" && (
           <fieldset>
-            <legend>Atributo tipado inicial</legend>
-            {input("Chave técnica", "attributeKey")}
-            {input("Rótulo", "attributeLabel")}
-            {input("Valor", "attributeValue")}
-            {input("Unidade", "attributeUnit")}
-            {area("Atributos adicionais — JSON governado", "additionalSpecificationsJson")}
-            <p className="admin-help">
-              Este atributo é obrigatório, filtrável, comparável e pesquisável. O contrato suporta texto,
-              número, booleano, enum e faixa.
-            </p>
+            <legend>Atributos tipados</legend>
+            {governedArea("Especificações", "specificationsJson")}
           </fieldset>
         )}
         {activeTab === "midia" && (
           <fieldset>
-            <legend>Mídia nova autorizada</legend>
-            {input("UUID do ativo da biblioteca", "mediaId")}
-            {input("ALT", "mediaAlt")}
-            {area("Legenda", "mediaCaption")}
-            {area("Mídias adicionais — JSON governado", "additionalMediaJson")}
-            <p className="admin-help">
-              Use somente ativo enviado à biblioteca vazia do CMS, nunca arquivo do site atual.
-            </p>
+            <legend>Imagens da biblioteca do CMS</legend>
+            {governedArea("Mídias", "mediaJson")}
           </fieldset>
         )}
         {activeTab === "documentos" && (
           <fieldset>
-            <legend>Documento oficial</legend>
-            <label>
-              Tipo
-              <select
-                value={draft.documentKind}
-                onChange={(event) => set("documentKind", event.target.value)}
-              >
-                <option value="datasheet">Datasheet</option>
-                <option value="manual">Manual</option>
-                <option value="certificate">Certificado</option>
-                <option value="drawing">Desenho</option>
-                <option value="other">Outro</option>
-              </select>
-            </label>
-            {input("Título", "documentTitle")}
-            {input("URL oficial", "documentUrl", "url")}
-            {input("Caminho no storage privado", "documentStoragePath")}
-            {input("SHA-256", "documentHash")}
-            {input("Revisão", "documentRevision")}
-            {input("Idioma", "documentLanguage")}
-            {area("Documentos adicionais — JSON governado", "additionalDocumentsJson")}
+            <legend>Documentos oficiais e privados</legend>
+            {governedArea("Documentos", "documentsJson")}
           </fieldset>
         )}
         {activeTab === "relacoes" && (
@@ -657,14 +363,15 @@ export default function AdminProductEditorPage() {
             {input("Meta title", "seoTitle")}
             {area("Meta description", "seoDescription")}
             {input("Canonical path", "canonicalPath")}
-            {area("Redirects de origem — um path por linha", "redirectPaths")}
+            {input("UUID da imagem Open Graph", "ogImageId")}
+            {governedArea("Redirects", "redirectsJson")}
             <label className="admin-checkbox">
               <input
                 type="checkbox"
                 checked={draft.indexable}
                 onChange={(event) => set("indexable", event.target.checked)}
               />{" "}
-              Indexável — disponível somente após homologação
+              Indexável — somente após homologação
             </label>
           </fieldset>
         )}
@@ -679,36 +386,7 @@ export default function AdminProductEditorPage() {
                 <option value="synthetic_test">Teste sintético</option>
               </select>
             </label>
-            <label>
-              Tipo da fonte
-              <select value={draft.sourceKind} onChange={(event) => set("sourceKind", event.target.value)}>
-                <option value="official_manufacturer">Fabricante oficial</option>
-                <option value="official_company">GAIATEC oficial</option>
-                <option value="owner_authored">Produzida pelo owner</option>
-              </select>
-            </label>
-            {input("URL da fonte", "sourceUrl", "url")}
-            {input("Caminho original autorizado", "sourcePath")}
-            {input("Arquivo modificado em", "fileModifiedAt", "datetime-local")}
-            {input("Versão", "sourceVersion")}
-            {input("Data da fonte", "sourceDate", "date")}
-            {input("SHA-256 da fonte", "sourceHash")}
-            {input("Referência da autorização", "authorizationReference")}
-            {input("Data da autorização", "authorizationDate", "date")}
-            {area("Escopo dos direitos de uso", "rightsScope")}
-            {area("Fontes adicionais — JSON governado", "additionalProvenanceJson")}
-            {area("Blocos adicionais — JSON governado", "additionalBlocksJson")}
-            {input("Owner comercial", "commercialOwner")}
-            {input("Owner técnico", "technicalOwner")}
-            {input("Verificado em", "verifiedAt", "datetime-local")}
-            <label className="admin-checkbox">
-              <input
-                type="checkbox"
-                checked={draft.rightsConfirmed}
-                onChange={(event) => set("rightsConfirmed", event.target.checked)}
-              />{" "}
-              Direitos de uso confirmados
-            </label>
+            {governedArea("Fontes e direitos", "provenanceJson")}
             {input("Owner do portfólio", "portfolioOwner")}
             {input("Revisor técnico", "technicalReviewer")}
             {input("Revisor comercial", "commercialReviewer")}
@@ -734,7 +412,7 @@ export default function AdminProductEditorPage() {
             {state === "in_review" && can("cms:products.approve") && (
               <button
                 type="button"
-                onClick={() => void run("approve", { revisionId: loaded?.cms_content_revisions.at(-1)?.id })}
+                onClick={() => void run("approve", { revisionId: latestRevision?.id })}
                 disabled={busy}
               >
                 Aprovar revisão
@@ -743,7 +421,7 @@ export default function AdminProductEditorPage() {
             {state === "approved" && can("cms:products.publish") && (
               <button
                 type="button"
-                onClick={() => void run("publish", { revisionId: loaded?.cms_content_revisions.at(-1)?.id })}
+                onClick={() => void run("publish", { revisionId: latestRevision?.id })}
                 disabled={busy}
               >
                 Publicar
@@ -762,6 +440,7 @@ export default function AdminProductEditorPage() {
                   <summary>
                     Revisão {revision.revision_number} — {revision.reason}
                   </summary>
+                  <p>Criada em {new Date(revision.created_at).toLocaleString("pt-BR")}</p>
                   <button type="button" onClick={() => void preview(revision.id)}>
                     Preview
                   </button>
@@ -780,13 +459,26 @@ export default function AdminProductEditorPage() {
           </button>
         )}
       </form>
-      <p className="admin-help">
-        Completude do contrato:{" "}
-        {validation.success
-          ? "100% — pronto para workflow"
-          : `${validation.error.issues.length} pendência(s)`}
-        .
-      </p>
+      <div className="admin-help" aria-live="polite">
+        <p>
+          Completude do contrato:{" "}
+          {built.jsonErrors.length
+            ? `${built.jsonErrors.length} JSON(s) inválido(s)`
+            : validation?.success
+              ? "100% — pronto para workflow"
+              : `${contractIssues.length} pendência(s)`}
+          .
+        </p>
+        {contractIssues.length > 0 && (
+          <ul>
+            {contractIssues.slice(0, 8).map((issue) => (
+              <li key={`${issue.path.join(".")}-${issue.message}`}>
+                {issue.path.join(".")} — {issue.message}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </section>
   );
 }

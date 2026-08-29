@@ -43,13 +43,57 @@ export const CmsSeoSchema = z
   })
   .strict();
 
-export const CmsBlockSchema = z
-  .object({
-    id: z.uuid(),
-    type: z.enum(["rich_text", "image", "gallery", "cta", "specifications", "related_content"]),
-    data: z.record(z.string(), z.unknown()),
-  })
-  .strict();
+const BlockBase = { id: z.uuid() };
+export const CmsBlockSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      ...BlockBase,
+      type: z.literal("rich_text"),
+      data: z.object({ text: RequiredText.max(10000) }).strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...BlockBase,
+      type: z.literal("image"),
+      data: z
+        .object({
+          assetId: z.uuid(),
+          alt: RequiredText.max(300),
+          caption: z.string().trim().max(500).optional(),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...BlockBase,
+      type: z.literal("gallery"),
+      data: z.object({ assetIds: z.array(z.uuid()).min(1).max(30) }).strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...BlockBase,
+      type: z.literal("cta"),
+      data: z.object({ label: RequiredText.max(120), href: z.string().startsWith("/").max(300) }).strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...BlockBase,
+      type: z.literal("specifications"),
+      data: z.object({ source: z.literal("typed-attributes") }).strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...BlockBase,
+      type: z.literal("related_content"),
+      data: z.object({ state: z.string().trim().max(300).optional() }).strict(),
+    })
+    .strict(),
+]);
 
 const BaseContent = {
   schemaVersion: z.literal(1),
@@ -66,6 +110,7 @@ export const CmsProductContentSchema = z
     ...BaseContent,
     contentType: z.literal("product"),
     pilotState: z.enum(["synthetic_test", "awaiting_owner", "homologated"]),
+    brand: z.object({ name: RequiredText.max(120), slug: CmsSlugSchema }).strict(),
     manufacturer: z
       .object({
         name: RequiredText.max(120),
@@ -98,6 +143,7 @@ export const CmsProductContentSchema = z
           .object({
             id: z.uuid(),
             model: RequiredText.max(160),
+            manufacturerReference: RequiredText.max(160),
             sku: RequiredText.max(120),
             status: z.enum(["active", "discontinued"]),
             variants: z

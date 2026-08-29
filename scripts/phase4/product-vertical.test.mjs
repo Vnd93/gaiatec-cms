@@ -4,13 +4,16 @@ import test from "node:test";
 const read = (path) => readFile(path, "utf8");
 
 test("F4 product contract covers the full clean-room vertical", async () => {
-  const [contract, migration, hardening] = await Promise.all([
+  const [contract, migration, hardening, roundTrip] = await Promise.all([
     read("src/shared/contracts/cms-content.ts"),
     read("supabase/migrations/0019_fase4_product_vertical.sql"),
     read("supabase/migrations/0021_fase4_authorized_pilot_hardening.sql"),
+    read("supabase/migrations/0024_fase4_product_identity_and_roundtrip.sql"),
   ]);
   for (const marker of [
     "manufacturer",
+    "brand",
+    "manufacturerReference",
     "productLine",
     "classification",
     "models",
@@ -34,6 +37,10 @@ test("F4 product contract covers the full clean-room vertical", async () => {
   assert.match(contract, /storagePath/);
   assert.match(hardening, /cms-documents-private/);
   assert.match(hardening, /security invoker/i);
+  assert.match(roundTrip, /brand_name/);
+  assert.match(roundTrip, /manufacturer_reference/);
+  assert.match(roundTrip, /storage_path/);
+  assert.match(roundTrip, /required boolean/);
   assert.doesNotMatch(
     migration,
     /insert\s+into\s+public\.cms_(?:content_items|published_projection|media_assets)/i,
@@ -62,8 +69,13 @@ test("F4 admin editor exposes every governed section and workflow", async () => 
   assert.match(editor, /Preview fiel/);
   assert.match(editor, /Restaurar como nova revisão/);
   assert.match(editor, /cms:products\.approve/);
-  assert.match(editor, /Atributos adicionais — JSON governado/);
-  assert.match(editor, /Mídias adicionais — JSON governado/);
+  assert.match(editor, /Modelos e variantes completos/);
+  assert.match(editor, /Especificações/);
+  assert.match(editor, /JSON governado/);
+  assert.match(editor, /Referência\/modelo do fabricante/);
+  assert.match(editor, /onKeyDown/);
+  assert.match(editor, /ArrowRight/);
+  assert.match(editor, /role="tabpanel"/);
   assert.match(list, /Catálogo editorial vazio/);
   assert.match(list, /anterior é consultado/i);
 });

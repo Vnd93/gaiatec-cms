@@ -7,8 +7,8 @@ O rascunho/revisão versionado em `cms_content_*` é a fonte editorial. Ao publi
 ## Modelo
 
 - identificação imutável e slug novo;
-- fabricante e linha;
-- um ou mais modelos e variantes, com SKU/código novo;
+- marca comercial, fabricante/OEM nominal e linha como conceitos independentes;
+- um ou mais modelos e variantes, separando nome/modelo comercial GAIATEC da referência/modelo do fabricante, com SKU/código novo;
 - segmento → categoria → subcategoria opcional → família;
 - atributos `text`, `number`, `boolean`, `enum` e `range`, com unidade e flags de filtro/comparação/busca;
 - mídia aprovada da biblioteca nova e documentos com URL oficial ou caminho privado, revisão, idioma, hash e direito de uso;
@@ -31,3 +31,12 @@ O rascunho/revisão versionado em `cms_content_*` é a fonte editorial. Ao publi
 ## Consumer ID
 
 `cms.catalog-product.v1` usa renderer público e de preview `catalog-product` nas rotas `/produtos`, `/produtos/:slug`, `/produtos/comparador` e `/busca`, além do sitemap de produtos.
+
+## Fechamento da identidade do piloto
+
+- marca comercial: `GATFLOW`;
+- nome/modelo comercial GAIATEC: `GATFLOW-B`;
+- referência/modelo do fabricante: `KF700E`;
+- fabricante/OEM nominal: editável e `a confirmar` até existir evidência documental conclusiva.
+
+A migration `0024_fase4_product_identity_and_roundtrip.sql` projeta esses conceitos em colunas distintas e completa as flags `required` dos atributos e `storage_path` dos documentos. O editor mantém campos explícitos para a identidade e JSON governado para as coleções completas, sem perda no round-trip. A matriz integral está em `AUDITORIA_CAMPO_CONSUMIDOR.md`.

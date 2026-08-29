@@ -97,8 +97,8 @@ Deno.serve(async (req) => {
     if (filters.family && p.classification?.family !== filters.family) return false;
     if (filters.technology && p.technology !== filters.technology) return false;
     if (!query) return true;
-    const searchable = normalize([p.title, p.summary, p.manufacturer?.name, p.productLine?.name,
-      p.models?.map((m: any) => [m.model, m.sku, m.variants?.map((v: any) => [v.name, v.code])]),
+    const searchable = normalize([p.title, p.summary, p.brand?.name, p.manufacturer?.name, p.productLine?.name,
+      p.models?.map((m: any) => [m.model, m.manufacturerReference, m.sku, m.variants?.map((v: any) => [v.name, v.code])]),
       p.classification?.segment, p.classification?.category, p.classification?.subcategory, p.classification?.family,
       p.function, p.technology, p.search?.synonyms, p.search?.keywords,
       p.specifications?.map((s: any) => [s.label, s.value, s.unit])].flat(6).join(" "));

@@ -282,8 +282,167 @@ export const CmsServiceContentSchema = z
   .object({
     ...BaseContent,
     contentType: z.literal("service"),
+    governanceState: z.enum(["synthetic_test", "awaiting_owner", "homologated"]),
     serviceKind: RequiredText.max(120),
+    scope: RequiredText.max(3000),
+    whenToHire: z.array(RequiredText.max(300)).min(1).max(30),
     deliverables: z.array(RequiredText.max(300)).min(1).max(50),
+    prerequisites: z.array(RequiredText.max(300)).max(30),
+    executionSteps: z.array(RequiredText.max(300)).min(1).max(30),
+    media: z
+      .array(
+        z
+          .object({
+            assetId: z.uuid(),
+            role: z.enum(["primary", "gallery", "diagram"]),
+            alt: RequiredText.max(300),
+            caption: z.string().trim().max(500).optional(),
+            order: z.number().int().min(0).max(999),
+          })
+          .strict(),
+      )
+      .max(30),
+    cta: z.object({ label: RequiredText.max(120), href: z.string().startsWith("/").max(300) }).strict(),
+    relations: z
+      .object({
+        productIds: z.array(z.uuid()).max(100),
+        industryIds: z.array(z.uuid()).max(100),
+        applicationIds: z.array(z.uuid()).max(100),
+        solutionIds: z.array(z.uuid()).max(100),
+      })
+      .strict(),
+    search: z
+      .object({
+        synonyms: z.array(RequiredText.max(120)).max(50),
+        keywords: z.array(RequiredText.max(120)).max(50),
+      })
+      .strict(),
+    approval: z
+      .object({
+        operationalOwner: RequiredText.max(120),
+        technicalReviewer: RequiredText.max(120),
+        commercialReviewer: RequiredText.max(120),
+        editorialReviewer: RequiredText.max(120),
+        homologatedAt: z.iso.datetime().optional(),
+      })
+      .strict(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.governanceState === "homologated" && !value.approval.homologatedAt)
+      context.addIssue({
+        code: "custom",
+        path: ["approval", "homologatedAt"],
+        message: "Homologação exige data.",
+      });
+    if (value.seo.indexable && value.governanceState !== "homologated")
+      context.addIssue({
+        code: "custom",
+        path: ["seo", "indexable"],
+        message: "Somente serviço homologado pode ser indexável.",
+      });
+  });
+
+const DiscoveryRelationsSchema = z
+  .object({
+    productIds: z.array(z.uuid()).max(100),
+    serviceIds: z.array(z.uuid()).max(100),
+    industryIds: z.array(z.uuid()).max(100),
+    applicationIds: z.array(z.uuid()).max(100),
+    solutionIds: z.array(z.uuid()).max(100),
+  })
+  .strict();
+const DiscoverySearchSchema = z
+  .object({
+    synonyms: z.array(RequiredText.max(120)).max(50),
+    keywords: z.array(RequiredText.max(120)).max(50),
+  })
+  .strict();
+const DiscoveryApprovalSchema = z
+  .object({
+    businessOwner: RequiredText.max(120),
+    technicalReviewer: RequiredText.max(120),
+    commercialReviewer: RequiredText.max(120),
+    editorialReviewer: RequiredText.max(120),
+    homologatedAt: z.iso.datetime().optional(),
+  })
+  .strict();
+const DiscoveryMediaSchema = z
+  .array(
+    z
+      .object({
+        assetId: z.uuid(),
+        role: z.enum(["primary", "gallery", "diagram"]),
+        alt: RequiredText.max(300),
+        caption: z.string().trim().max(500).optional(),
+        order: z.number().int().min(0).max(999),
+      })
+      .strict(),
+  )
+  .max(30);
+const GovernedDiscovery = {
+  governanceState: z.enum(["synthetic_test", "awaiting_owner", "homologated"]),
+  media: DiscoveryMediaSchema,
+  relations: DiscoveryRelationsSchema,
+  search: DiscoverySearchSchema,
+  approval: DiscoveryApprovalSchema,
+};
+
+export const CmsIndustryContentSchema = z
+  .object({
+    ...BaseContent,
+    ...GovernedDiscovery,
+    contentType: z.literal("industry"),
+    marketName: RequiredText.max(160),
+    challenges: z.array(RequiredText.max(500)).min(1).max(30),
+    evidence: z.array(RequiredText.max(500)).min(1).max(30),
+    processAreas: z.array(RequiredText.max(300)).min(1).max(50),
+    cta: z.object({ label: RequiredText.max(120), href: z.string().startsWith("/").max(300) }).strict(),
+  })
+  .strict();
+
+export const CmsApplicationContentSchema = z
+  .object({
+    ...BaseContent,
+    ...GovernedDiscovery,
+    contentType: z.literal("application"),
+    process: RequiredText.max(1000),
+    problem: RequiredText.max(1000),
+    benefits: z.array(RequiredText.max(500)).min(1).max(30),
+    points: z
+      .array(
+        z
+          .object({
+            id: z.uuid(),
+            title: RequiredText.max(160),
+            need: RequiredText.max(500),
+            variable: RequiredText.max(160),
+            function: RequiredText.max(500),
+            technicalBenefit: RequiredText.max(500),
+            operationalBenefit: RequiredText.max(500),
+            conditions: z.string().trim().max(500).optional(),
+            productIds: z.array(z.uuid()).max(30),
+            serviceIds: z.array(z.uuid()).max(30),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(50),
+    cta: z.object({ label: RequiredText.max(120), href: z.string().startsWith("/").max(300) }).strict(),
+  })
+  .strict();
+
+export const CmsSolutionContentSchema = z
+  .object({
+    ...BaseContent,
+    ...GovernedDiscovery,
+    contentType: z.literal("solution"),
+    problem: RequiredText.max(1000),
+    approach: RequiredText.max(3000),
+    benefits: z.array(RequiredText.max(500)).min(1).max(30),
+    components: z.array(RequiredText.max(300)).min(1).max(50),
+    gasDetectionModel: z.enum(["not_applicable", "integrated_master_catalog"]),
+    cta: z.object({ label: RequiredText.max(120), href: z.string().startsWith("/").max(300) }).strict(),
   })
   .strict();
 
@@ -307,9 +466,16 @@ export const CmsPageContentSchema = z
 export const CmsContentPayloadSchema = z.discriminatedUnion("contentType", [
   CmsProductContentSchema,
   CmsServiceContentSchema,
+  CmsIndustryContentSchema,
+  CmsApplicationContentSchema,
+  CmsSolutionContentSchema,
   CmsPostContentSchema,
   CmsPageContentSchema,
 ]);
 
 export type CmsContentPayload = z.infer<typeof CmsContentPayloadSchema>;
 export type CmsProductContent = z.infer<typeof CmsProductContentSchema>;
+export type CmsServiceContent = z.infer<typeof CmsServiceContentSchema>;
+export type CmsIndustryContent = z.infer<typeof CmsIndustryContentSchema>;
+export type CmsApplicationContent = z.infer<typeof CmsApplicationContentSchema>;
+export type CmsSolutionContent = z.infer<typeof CmsSolutionContentSchema>;

@@ -6,7 +6,7 @@ import { clientAddress, consumeRateLimit, corsHeaders, isAllowedOrigin, json, re
 const Uuid = z.uuid();
 const Command = z.object({
   action: z.enum(["create", "save", "submit", "approve", "schedule", "publish", "restore", "archive", "trash"]),
-  itemId: Uuid.nullish(), contentType: z.enum(["product", "service", "post", "page", "homepage"]).nullish(),
+  itemId: Uuid.nullish(), contentType: z.enum(["product", "service", "industry", "application", "solution", "post", "page", "homepage"]).nullish(),
   slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(160).nullish(), payload: z.record(z.string(), z.unknown()).nullish(),
   expectedLockVersion: z.number().int().positive().nullish(), revisionId: Uuid.nullish(), reason: z.string().trim().min(3).max(500).nullish(),
   publishAt: z.iso.datetime().nullish(),

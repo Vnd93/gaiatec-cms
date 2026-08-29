@@ -28,10 +28,8 @@ const ContatoPage = lazy(() => import("./pages/ContatoPage"));
 const ProdutosPage = lazy(() => import("../public/pages/CmsProductsPage"));
 const ProdutoPage = lazy(() => import("../public/pages/CmsProductPage"));
 const SetoresPage = lazy(() => import("./pages/SetoresPage"));
-const ServicosPage = lazy(() => import("./pages/ServicosPage"));
-const ServicoPage = lazy(() => import("./pages/ServicoPage"));
-const AplicacoesPage = lazy(() => import("./pages/AplicacoesPage"));
-const AplicacaoPage = lazy(() => import("./pages/AplicacaoPage"));
+const DiscoveryListPage = lazy(() => import("../public/pages/CmsDiscoveryListPage"));
+const DiscoveryDetailPage = lazy(() => import("../public/pages/CmsDiscoveryDetailPage"));
 const ComparadorPage = lazy(() => import("../public/pages/CmsComparePage"));
 const SearchPage = lazy(() => import("../public/pages/CmsSearchPage"));
 const DeteccaoGasPage = lazy(() => import("./pages/DeteccaoGasPage"));
@@ -65,6 +63,8 @@ const AdminMediaPage = lazy(() => import("../admin/pages/AdminMediaPage"));
 const AdminProfilePage = lazy(() => import("../admin/pages/AdminProfilePage"));
 const AdminUsersPage = lazy(() => import("../admin/pages/AdminUsersPage"));
 const AdminDiagnosticsPage = lazy(() => import("../admin/pages/AdminDiagnosticsPage"));
+const AdminDiscoveryPage = lazy(() => import("../admin/pages/AdminDiscoveryPage"));
+const AdminSearchGovernancePage = lazy(() => import("../admin/pages/AdminSearchGovernancePage"));
 const CmsPreviewPage = lazy(() => import("../admin/pages/CmsPreviewPage"));
 const CmsPublishedPage = lazy(() => import("../admin/pages/CmsPublishedPage"));
 
@@ -83,6 +83,12 @@ const lazyWrap = (Component: React.ComponentType) => (
     <Component />
   </Suspense>
 );
+const discoveryList = (contentType: "service" | "industry" | "application" | "solution") => (
+  <Suspense fallback={<PageLoader />}><DiscoveryListPage contentType={contentType} /></Suspense>
+);
+const discoveryDetail = (contentType: "service" | "industry" | "application" | "solution") => (
+  <Suspense fallback={<PageLoader />}><DiscoveryDetailPage contentType={contentType} /></Suspense>
+);
 
 export const router = createBrowserRouter([
   {
@@ -94,8 +100,12 @@ export const router = createBrowserRouter([
       { path: "sobre", element: lazyWrap(SobrePage) },
       { path: "setores", element: lazyWrap(SetoresPage) },
       { path: "setores/:slug", element: lazyWrap(SectorPage) },
-      { path: "servicos", element: lazyWrap(ServicosPage) },
-      { path: "servicos/:slug", element: lazyWrap(ServicoPage) },
+      { path: "servicos", element: discoveryList("service") },
+      { path: "servicos/:slug", element: discoveryDetail("service") },
+      { path: "industrias", element: discoveryList("industry") },
+      { path: "industrias/:slug", element: discoveryDetail("industry") },
+      { path: "solucoes", element: discoveryList("solution") },
+      { path: "solucoes/:slug", element: discoveryDetail("solution") },
       { path: "biodigestor", element: lazyWrap(BiodigestorPage) },
       { path: "biodigestor/como-funciona", element: lazyWrap(BiodigestorComoFunciona) },
       { path: "biodigestor/portes", element: lazyWrap(BiodigestorPortes) },
@@ -110,8 +120,8 @@ export const router = createBrowserRouter([
       { path: "produtos/comparador", element: lazyWrap(ComparadorPage) },
       { path: "produtos/:slug", element: lazyWrap(ProdutoPage) },
       { path: "busca", element: lazyWrap(SearchPage) },
-      { path: "aplicacoes", element: lazyWrap(AplicacoesPage) },
-      { path: "aplicacoes/:slug", element: lazyWrap(AplicacaoPage) },
+      { path: "aplicacoes", element: discoveryList("application") },
+      { path: "aplicacoes/:slug", element: discoveryDetail("application") },
       { path: "deteccao-de-gas", element: lazyWrap(DeteccaoGasPage) },
       { path: "deteccao-de-gas/:categoria", element: lazyWrap(DeteccaoGasCategoriaPage) },
       { path: "deteccao-de-gas/:categoria/:produto", element: lazyWrap(DeteccaoGasProdutoPage) },
@@ -160,6 +170,9 @@ export const router = createBrowserRouter([
           { path: "conteudo/:id", element: lazyWrap(AdminEditorPage) },
           { path: "produtos", element: lazyWrap(AdminProductsPage) },
           { path: "produtos/:id", element: lazyWrap(AdminProductEditorPage) },
+          { path: "descoberta/:contentType", element: lazyWrap(AdminDiscoveryPage) },
+          { path: "descoberta/:contentType/:id", element: lazyWrap(AdminDiscoveryPage) },
+          { path: "busca", element: lazyWrap(AdminSearchGovernancePage) },
           { path: "midia", element: lazyWrap(AdminMediaPage) },
           { path: "perfil", element: lazyWrap(AdminProfilePage) },
           { path: "usuarios", element: lazyWrap(AdminUsersPage) },

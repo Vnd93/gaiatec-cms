@@ -15,6 +15,11 @@ export function AdminShell() {
   const links = [
     ["/admin", "Visão geral", true],
     ["/admin/produtos", "Produtos", can("cms:products.read")],
+    ["/admin/descoberta/service", "Serviços", can("cms:services.read")],
+    ["/admin/descoberta/industry", "Indústrias", can("cms:industries.read")],
+    ["/admin/descoberta/application", "Aplicações", can("cms:applications.read")],
+    ["/admin/descoberta/solution", "Soluções", can("cms:solutions.read")],
+    ["/admin/busca", "Busca e sinônimos", can("cms:search.read")],
     ["/admin/conteudo", "Conteúdo", can("cms:posts.read")],
     ["/admin/midia", "Mídia", can("cms:media.read")],
     ["/admin/perfil", "Perfil e sessão", true],
@@ -61,7 +66,7 @@ export function AdminShell() {
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Buscar produtos"
+              placeholder="Buscar catálogo e descoberta"
             />
             <button type="submit">Buscar</button>
           </form>

@@ -7,9 +7,21 @@ type Event = {
   correlation_id: string;
   created_at: string;
 };
+const discoveryLabels = {
+  service: "serviços publicados",
+  industry: "indústrias publicadas",
+  application: "aplicações publicadas",
+  solution: "soluções publicadas",
+} as const;
 export default function AdminDiagnosticsPage() {
   const [events, setEvents] = useState<Event[]>([]),
     [outbox, setOutbox] = useState(0),
+    [discovery, setDiscovery] = useState<Record<keyof typeof discoveryLabels, number>>({
+      service: 0,
+      industry: 0,
+      application: 0,
+      solution: 0,
+    }),
     [loading, setLoading] = useState(true),
     [error, setError] = useState("");
   useEffect(() => {
@@ -25,12 +37,24 @@ export default function AdminDiagnosticsPage() {
         .from("cms_publication_outbox")
         .select("id", { count: "exact", head: true })
         .in("status", ["pending", "failed"]),
-    ]).then(([eventResult, queueResult]) => {
+      supabase.from("cms_discovery_projection").select("content_type"),
+    ]).then(([eventResult, queueResult, discoveryResult]) => {
       if (!active) return;
-      if (eventResult.error || queueResult.error) setError("Diagnóstico indisponível.");
+      if (eventResult.error || queueResult.error || discoveryResult.error)
+        setError("Diagnóstico indisponível.");
       else {
         setEvents((eventResult.data ?? []) as Event[]);
         setOutbox(queueResult.count ?? 0);
+        setDiscovery(
+          (discoveryResult.data ?? []).reduce(
+            (counts, row) => {
+              const kind = row.content_type as keyof typeof discoveryLabels;
+              if (kind in counts) counts[kind] += 1;
+              return counts;
+            },
+            { service: 0, industry: 0, application: 0, solution: 0 },
+          ),
+        );
       }
       setLoading(false);
     });
@@ -61,6 +85,12 @@ export default function AdminDiagnosticsPage() {
               <strong>{events.length}</strong>
               <span>alertas abertos</span>
             </article>
+            {(Object.keys(discoveryLabels) as Array<keyof typeof discoveryLabels>).map((kind) => (
+              <article key={kind}>
+                <strong>{discovery[kind]}</strong>
+                <span>{discoveryLabels[kind]}</span>
+              </article>
+            ))}
           </div>
           {events.length === 0 ? (
             <div className="admin-state">

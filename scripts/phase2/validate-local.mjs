@@ -30,6 +30,7 @@ const steps = [
   ["Contencoes da Fase 1", ["run", "test:phase1"]],
   ["Fundacao da Fase 3", ["run", "test:phase3"]],
   ["Produto vertical da Fase 4", ["run", "test:phase4"]],
+  ["Catalogo e descoberta da Fase 5", ["run", "test:phase5"]],
   ["Auditoria de dependencias", ["audit", "--audit-level=high"]],
   ["Build de staging", ["run", "build:staging"]],
   ["Manifesto do artefato", ["run", "artifact:manifest"]],

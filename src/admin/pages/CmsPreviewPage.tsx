@@ -4,10 +4,26 @@ import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabase";
 import { CmsStructuredArticle, type CmsArticlePayload } from "@/shared/components/CmsStructuredArticle";
 import { CmsProductRenderer } from "@/public/components/CmsProductRenderer";
 import type { CmsProductContent } from "@/shared/contracts/cms-content";
+import type {
+  CmsApplicationContent,
+  CmsIndustryContent,
+  CmsServiceContent,
+  CmsSolutionContent,
+} from "@/shared/contracts/cms-content";
+import { DiscoveryEntityRenderer } from "@/public/components/DiscoveryEntityRenderer";
 export default function CmsPreviewPage() {
   const { token = "" } = useParams();
   const [previewData, setPreviewData] = useState<{
-      payload: CmsArticlePayload | CmsProductContent;
+      payload:
+        | CmsArticlePayload
+        | CmsProductContent
+        | CmsServiceContent
+        | CmsIndustryContent
+        | CmsApplicationContent
+        | CmsSolutionContent;
+      itemId?: string;
+      slug?: string;
+      contentType?: string;
       media_urls?: Record<string, string>;
       document_urls?: Record<string, string>;
     } | null>(null),
@@ -46,6 +62,25 @@ export default function CmsPreviewPage() {
             mediaUrls={previewData.media_urls}
             documentUrls={previewData.document_urls}
             preview
+          />
+        ) : "contentType" in previewData.payload &&
+          ["service", "industry", "application", "solution"].includes(previewData.payload.contentType) ? (
+          <DiscoveryEntityRenderer
+            preview
+            entity={{
+              item_id: previewData.itemId ?? "preview",
+              revision_id: "preview",
+              slug: previewData.slug ?? "preview",
+              content_type: previewData.payload.contentType as any,
+              path: "#",
+              payload: previewData.payload as any,
+              seo: previewData.payload.seo,
+              content_version: 0,
+              etag: "preview",
+              published_at: new Date().toISOString(),
+              media_urls: previewData.media_urls,
+              document_urls: previewData.document_urls,
+            }}
           />
         ) : (
           <CmsStructuredArticle payload={previewData.payload as CmsArticlePayload} preview />

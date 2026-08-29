@@ -15,9 +15,11 @@ import {
 import { getPublishedProducts, type ProductCollection } from "../catalog-api";
 import { ProductCard } from "../components/ProductCard";
 import { applyCatalogSeo } from "../catalog-seo";
+import { usePublishedSiteShell } from "../site-shell-context";
 import "../product-catalog.css";
 
 export default function CmsProductsPage() {
+  const { placements } = usePublishedSiteShell();
   const [params, setParams] = useSearchParams();
   const [collection, setCollection] = useState<ProductCollection | null>(null);
   const [error, setError] = useState("");
@@ -81,6 +83,30 @@ export default function CmsProductsPage() {
   const hasActiveFilters = Boolean(queryParam || activeFilters.length);
   const total = collection?.total ?? 0;
   const totalLabel = total === 1 ? "1 produto encontrado" : `${total} produtos encontrados`;
+  const featured = useMemo(
+    () =>
+      new Map(
+        (placements?.placements ?? [])
+          .filter(
+            (placement) =>
+              placement.slot === "catalog_featured" && placement.target.contentType === "product",
+          )
+          .map((placement, index) => [
+            placement.target.itemId,
+            { order: index, label: placement.label || "Produto em destaque" },
+          ]),
+      ),
+    [placements],
+  );
+  const visibleProducts = useMemo(
+    () =>
+      (collection?.items ?? []).slice().sort((left, right) => {
+        const leftOrder = featured.get(left.item_id)?.order ?? Number.MAX_SAFE_INTEGER;
+        const rightOrder = featured.get(right.item_id)?.order ?? Number.MAX_SAFE_INTEGER;
+        return leftOrder - rightOrder;
+      }),
+    [collection, featured],
+  );
 
   return (
     <section className="products-catalog" aria-labelledby="products-catalog-title">
@@ -251,13 +277,14 @@ export default function CmsProductsPage() {
             </div>
           ) : (
             <div className="products-catalog__grid">
-              {collection?.items.map((product, index) => (
+              {visibleProducts.map((product, index) => (
                 <ProductCard
                   key={product.item_id}
                   product={product}
                   index={index}
                   selected={selected.includes(product.slug)}
                   selectionDisabled={selected.length >= 4 && !selected.includes(product.slug)}
+                  featuredLabel={featured.get(product.item_id)?.label}
                   onSelect={(checked) =>
                     setSelected((current) =>
                       checked

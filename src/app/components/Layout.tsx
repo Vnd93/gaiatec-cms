@@ -6,6 +6,8 @@ import { CookieBanner } from "./CookieBanner";
 import { BackToTop } from "./BackToTop";
 import { ComparadorProvider } from "./produtos/ComparadorContext";
 import { ComparadorFloating } from "./produtos/ComparadorFloating";
+import { SiteShellProvider } from "../../public/site-shell-context";
+import { ContextualPlacements, GlobalAnnouncement } from "../../public/components/SitePlacements";
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -43,18 +45,23 @@ function SkipToContent() {
 export function Layout() {
   return (
     <ComparadorProvider>
-      <div className="min-h-screen bg-white" style={{ fontFamily: "'Inter', sans-serif" }}>
-        <SkipToContent />
-        <ScrollToTop />
-        <Header />
-        <main id="main-content" tabIndex={-1}>
-          <Outlet />
-        </main>
-        <Footer />
-        <CookieBanner />
-        <BackToTop />
-        <ComparadorFloating />
-      </div>
+      <SiteShellProvider>
+        <div className="min-h-screen bg-white" style={{ fontFamily: "'Inter', sans-serif" }}>
+          <SkipToContent />
+          <ScrollToTop />
+          <Header />
+          <GlobalAnnouncement />
+          <main id="main-content" tabIndex={-1}>
+            <ContextualPlacements position="before" />
+            <Outlet />
+            <ContextualPlacements position="after" />
+          </main>
+          <Footer />
+          <CookieBanner />
+          <BackToTop />
+          <ComparadorFloating />
+        </div>
+      </SiteShellProvider>
     </ComparadorProvider>
   );
 }

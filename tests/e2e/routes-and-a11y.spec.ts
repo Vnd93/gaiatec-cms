@@ -23,7 +23,7 @@ for (const route of routes) {
 test("@a11y critical public journeys have no serious automated violations", async ({ page }) => {
   for (const route of ["/", "/contato", "/produtos"]) {
     await page.goto(route, { waitUntil: "networkidle" });
-    const results = await new AxeBuilder({ page }).disableRules(["color-contrast"]).analyze();
+    const results = await new AxeBuilder({ page }).analyze();
     const serious = results.violations.filter((violation) =>
       ["serious", "critical"].includes(violation.impact ?? ""),
     );

@@ -3,9 +3,14 @@ import type { CmsProductContent } from "@/shared/contracts/cms-content";
 import type {
   CmsApplicationContent,
   CmsIndustryContent,
+  CmsNavigationContent,
+  CmsPageContent,
+  CmsPlacementContent,
   CmsServiceContent,
+  CmsSiteSettingsContent,
   CmsSolutionContent,
 } from "@/shared/contracts/cms-content";
+import type { CmsRelatedItem } from "./components/CmsPageRenderer";
 
 export type PublishedProduct = {
   item_id: string;
@@ -17,6 +22,7 @@ export type PublishedProduct = {
   etag: string;
   published_at: string;
   media_urls?: Record<string, string>;
+  media_alt?: Record<string, string>;
   document_urls?: Record<string, string>;
 };
 export type ProductCollection = {
@@ -42,6 +48,37 @@ export type UnifiedSearchResult = {
   facets: ProductCollection["facets"];
   groups: Record<"product" | DiscoveryType, number>;
   query: string;
+};
+
+export type PublishedPage = Omit<PublishedProduct, "payload"> & {
+  content_type: "page" | "homepage";
+  path: string;
+  payload: CmsPageContent;
+  related_items?: CmsRelatedItem[];
+};
+export type PublishedPageResolution =
+  | { kind: "page"; page: PublishedPage }
+  | { kind: "route"; rule: { destination_path: string | null; status_code: 301 | 302 | 404 | 410 } }
+  | { kind: "fallback" };
+
+export type PublishedSiteShell = {
+  navigation: CmsNavigationContent | null;
+  settings: CmsSiteSettingsContent | null;
+  placements:
+    | (Omit<CmsPlacementContent, "placements"> & {
+        placements: Array<
+          CmsPlacementContent["placements"][number] & {
+            target: {
+              itemId: string;
+              contentType: string;
+              title: string;
+              summary?: string;
+              path: string;
+            };
+          }
+        >;
+      })
+    | null;
 };
 
 async function catalogFetch<T>(params: URLSearchParams): Promise<T> {
@@ -74,4 +111,18 @@ export function getPublishedDiscoveryCollection(contentType: DiscoveryType, quer
 }
 export function autocompletePublished(query: string) {
   return catalogFetch<UnifiedSearchResult>(new URLSearchParams({ type: "autocomplete", q: query }));
+}
+
+export function getPublishedPageByPath(path: string) {
+  return catalogFetch<PublishedPageResolution>(new URLSearchParams({ type: "page-by-path", path }));
+}
+
+export function getPublicRouteRule(path: string) {
+  return catalogFetch<{ destination_path: string | null; status_code: 301 | 302 | 404 | 410 }>(
+    new URLSearchParams({ type: "redirect", path }),
+  );
+}
+
+export function getPublishedSiteShell() {
+  return catalogFetch<PublishedSiteShell>(new URLSearchParams({ type: "site-shell" }));
 }

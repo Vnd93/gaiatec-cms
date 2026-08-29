@@ -65,8 +65,14 @@ const AdminUsersPage = lazy(() => import("../admin/pages/AdminUsersPage"));
 const AdminDiagnosticsPage = lazy(() => import("../admin/pages/AdminDiagnosticsPage"));
 const AdminDiscoveryPage = lazy(() => import("../admin/pages/AdminDiscoveryPage"));
 const AdminSearchGovernancePage = lazy(() => import("../admin/pages/AdminSearchGovernancePage"));
+const AdminPagesPage = lazy(() => import("../admin/pages/AdminPagesPage"));
+const AdminPageBuilderPage = lazy(() => import("../admin/pages/AdminPageBuilderPage"));
+const AdminSiteConfigurationPage = lazy(() => import("../admin/pages/AdminSiteConfigurationPage"));
 const CmsPreviewPage = lazy(() => import("../admin/pages/CmsPreviewPage"));
 const CmsPublishedPage = lazy(() => import("../admin/pages/CmsPublishedPage"));
+const CmsManagedPageRoute = lazy(() =>
+  import("../public/pages/CmsManagedPageRoute").then((module) => ({ default: module.CmsManagedPageRoute })),
+);
 
 // Loader minimalista — não bloqueia o paint
 function PageLoader() {
@@ -89,6 +95,11 @@ const discoveryList = (contentType: "service" | "industry" | "application" | "so
 const discoveryDetail = (contentType: "service" | "industry" | "application" | "solution") => (
   <Suspense fallback={<PageLoader />}><DiscoveryDetailPage contentType={contentType} /></Suspense>
 );
+const managedPage = (fallback: React.ReactNode) => (
+  <Suspense fallback={<PageLoader />}>
+    <CmsManagedPageRoute fallback={fallback} />
+  </Suspense>
+);
 
 export const router = createBrowserRouter([
   {
@@ -96,38 +107,38 @@ export const router = createBrowserRouter([
     Component: Layout,
     errorElement: <RouteErrorPage />,
     children: [
-      { index: true, Component: HomePage },
-      { path: "sobre", element: lazyWrap(SobrePage) },
-      { path: "setores", element: lazyWrap(SetoresPage) },
-      { path: "setores/:slug", element: lazyWrap(SectorPage) },
+      { index: true, element: managedPage(<HomePage />) },
+      { path: "sobre", element: managedPage(lazyWrap(SobrePage)) },
+      { path: "setores", element: managedPage(lazyWrap(SetoresPage)) },
+      { path: "setores/:slug", element: managedPage(lazyWrap(SectorPage)) },
       { path: "servicos", element: discoveryList("service") },
       { path: "servicos/:slug", element: discoveryDetail("service") },
       { path: "industrias", element: discoveryList("industry") },
       { path: "industrias/:slug", element: discoveryDetail("industry") },
       { path: "solucoes", element: discoveryList("solution") },
       { path: "solucoes/:slug", element: discoveryDetail("solution") },
-      { path: "biodigestor", element: lazyWrap(BiodigestorPage) },
-      { path: "biodigestor/como-funciona", element: lazyWrap(BiodigestorComoFunciona) },
-      { path: "biodigestor/portes", element: lazyWrap(BiodigestorPortes) },
-      { path: "biodigestor/beneficios", element: lazyWrap(BiodigestorBeneficios) },
-      { path: "biodigestor/monitoramento", element: lazyWrap(BiodigestorMonitoramento) },
-      { path: "biodigestor/biogas-biometano", element: lazyWrap(BiodigestorBiogasBiometano) },
-      { path: "biodigestor/automacao", element: lazyWrap(BiodigestorAutomacao) },
-      { path: "biodigestor/escolas", element: lazyWrap(BiodigestorEscolas) },
-      { path: "blog", element: lazyWrap(BlogPage) },
-      { path: "contato", element: lazyWrap(ContatoPage) },
+      { path: "biodigestor", element: managedPage(lazyWrap(BiodigestorPage)) },
+      { path: "biodigestor/como-funciona", element: managedPage(lazyWrap(BiodigestorComoFunciona)) },
+      { path: "biodigestor/portes", element: managedPage(lazyWrap(BiodigestorPortes)) },
+      { path: "biodigestor/beneficios", element: managedPage(lazyWrap(BiodigestorBeneficios)) },
+      { path: "biodigestor/monitoramento", element: managedPage(lazyWrap(BiodigestorMonitoramento)) },
+      { path: "biodigestor/biogas-biometano", element: managedPage(lazyWrap(BiodigestorBiogasBiometano)) },
+      { path: "biodigestor/automacao", element: managedPage(lazyWrap(BiodigestorAutomacao)) },
+      { path: "biodigestor/escolas", element: managedPage(lazyWrap(BiodigestorEscolas)) },
+      { path: "blog", element: managedPage(lazyWrap(BlogPage)) },
+      { path: "contato", element: managedPage(lazyWrap(ContatoPage)) },
       { path: "produtos", element: lazyWrap(ProdutosPage) },
       { path: "produtos/comparador", element: lazyWrap(ComparadorPage) },
       { path: "produtos/:slug", element: lazyWrap(ProdutoPage) },
       { path: "busca", element: lazyWrap(SearchPage) },
       { path: "aplicacoes", element: discoveryList("application") },
       { path: "aplicacoes/:slug", element: discoveryDetail("application") },
-      { path: "deteccao-de-gas", element: lazyWrap(DeteccaoGasPage) },
-      { path: "deteccao-de-gas/:categoria", element: lazyWrap(DeteccaoGasCategoriaPage) },
-      { path: "deteccao-de-gas/:categoria/:produto", element: lazyWrap(DeteccaoGasProdutoPage) },
-      { path: "politica-de-privacidade", element: lazyWrap(PoliticaPrivacidadePage) },
-      { path: "termos-de-uso", element: lazyWrap(TermosDeUsoPage) },
-      { path: "*", element: lazyWrap(NotFoundPage) },
+      { path: "deteccao-de-gas", element: managedPage(lazyWrap(DeteccaoGasPage)) },
+      { path: "deteccao-de-gas/:categoria", element: managedPage(lazyWrap(DeteccaoGasCategoriaPage)) },
+      { path: "deteccao-de-gas/:categoria/:produto", element: managedPage(lazyWrap(DeteccaoGasProdutoPage)) },
+      { path: "politica-de-privacidade", element: managedPage(lazyWrap(PoliticaPrivacidadePage)) },
+      { path: "termos-de-uso", element: managedPage(lazyWrap(TermosDeUsoPage)) },
+      { path: "*", element: managedPage(lazyWrap(NotFoundPage)) },
     ],
   },
   {
@@ -173,6 +184,9 @@ export const router = createBrowserRouter([
           { path: "descoberta/:contentType", element: lazyWrap(AdminDiscoveryPage) },
           { path: "descoberta/:contentType/:id", element: lazyWrap(AdminDiscoveryPage) },
           { path: "busca", element: lazyWrap(AdminSearchGovernancePage) },
+          { path: "paginas", element: lazyWrap(AdminPagesPage) },
+          { path: "paginas/:id", element: lazyWrap(AdminPageBuilderPage) },
+          { path: "site", element: lazyWrap(AdminSiteConfigurationPage) },
           { path: "midia", element: lazyWrap(AdminMediaPage) },
           { path: "perfil", element: lazyWrap(AdminProfilePage) },
           { path: "usuarios", element: lazyWrap(AdminUsersPage) },

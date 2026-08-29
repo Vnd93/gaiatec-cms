@@ -4,8 +4,9 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const headers = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "apikey, authorization, content-type, if-none-match, x-client-info", "Access-Control-Allow-Methods": "GET, OPTIONS", Vary: "Origin" };
 const json = (body: unknown, status = 200, extra: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { ...headers, "Content-Type": "application/json; charset=utf-8", ...extra } });
 const normalize = (value: unknown) => String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[₂]/g, "2").replace(/[–—]/g, "-").replace(/\bdn\s+(\d+)/g, "dn$1").replace(/4\s*-\s*20\s*ma/g, "4-20ma").replace(/[^a-z0-9%/.-]+/g, " ").trim();
-const publicTypes = ["product", "service", "industry", "application", "solution"];
-const routeFor = (row: any) => row.content_type === "product" ? `/produtos/${row.slug}` : row.content_type === "industry" ? `/industrias/${row.slug}` : row.content_type === "application" ? `/aplicacoes/${row.slug}` : row.content_type === "solution" ? `/solucoes/${row.slug}` : `/servicos/${row.slug}`;
+const publicTypes = ["product", "service", "industry", "application", "solution", "page", "homepage", "navigation", "site_settings", "placement"];
+const searchableTypes = ["product", "service", "industry", "application", "solution"];
+const routeFor = (row: any) => row.content_type === "product" ? `/produtos/${row.slug}` : row.content_type === "industry" ? `/industrias/${row.slug}` : row.content_type === "application" ? `/aplicacoes/${row.slug}` : row.content_type === "solution" ? `/solucoes/${row.slug}` : row.content_type === "service" ? `/servicos/${row.slug}` : row.payload?.route?.path ?? "/";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers });
@@ -15,8 +16,14 @@ Deno.serve(async (req) => {
   const url = new URL(req.url), type = url.searchParams.get("type") ?? "detail";
   const client = createClient(supabaseUrl, service ?? anon, { auth: { persistSession: false } });
   const enrichMedia = async (row: any) => {
-    const mediaUrls: Record<string, string> = {}, media = row.payload?.media ?? [], assetIds = media.map((entry: any) => entry.assetId);
+    const mediaUrls: Record<string, string> = {}, media = row.payload?.media ?? [];
+    const blockAssetIds = (row.payload?.blocks ?? []).flatMap((block: any) => [block.data?.assetId, ...(block.data?.assetIds ?? []), ...(block.data?.items ?? []).map((item: any) => item.assetId)].filter(Boolean));
+    const assetIds = [...new Set([...media.map((entry: any) => entry.assetId), ...blockAssetIds, row.seo?.ogImageId].filter(Boolean))];
     const primaryId = media.find((entry: any) => entry.role === "primary")?.assetId;
+    const { data: assets } = assetIds.length
+      ? await client.from("cms_media_assets").select("id,alt_text").in("id", assetIds)
+      : { data: [] };
+    const mediaAlt = Object.fromEntries((assets ?? []).map((asset: any) => [asset.id, asset.alt_text]));
     const { data: variants } = assetIds.length ? await client.from("cms_media_variants").select("asset_id,variant_key,format,transform_path").in("asset_id", assetIds) : { data: [] };
     const paths = (variants ?? []).map((variant: any) => variant.transform_path);
     const { data: signedVariants } = paths.length ? await client.storage.from("cms-media-private").createSignedUrls(paths, 3600) : { data: [] };
@@ -29,24 +36,60 @@ Deno.serve(async (req) => {
     const documents = (row.payload?.documents ?? []).filter((document: any) => document.visibility === "public" && document.storagePath);
     const { data: signedDocuments } = documents.length ? await client.storage.from("cms-documents-private").createSignedUrls(documents.map((document: any) => document.storagePath), 3600) : { data: [] };
     documents.forEach((document: any, index: number) => { const signedUrl = signedDocuments?.[index]?.signedUrl; if (signedUrl) documentUrls[document.id] = signedUrl; });
-    return { ...row, path: routeFor(row), media_urls: mediaUrls, document_urls: documentUrls };
+    return { ...row, path: routeFor(row), media_urls: mediaUrls, media_alt: mediaAlt, document_urls: documentUrls };
   };
   if (type === "redirect") {
     const path = url.searchParams.get("path") ?? "";
+    const { data: routeRule } = await client.from("cms_route_rules").select("destination_path,status_code").eq("source_path", path).eq("active", true).maybeSingle();
+    if (routeRule) return json(routeRule, 200, { "Cache-Control": "public, max-age=300" });
     const { data } = await client.from("cms_redirects").select("destination_path,status_code").eq("source_path", path).eq("active", true).maybeSingle();
     return data ? json(data, 200, { "Cache-Control": "public, max-age=300" }) : json({ error: "Não encontrado." }, 404);
   }
   const { data, error } = await client.from("cms_published_projection").select("item_id,revision_id,content_type,slug,schema_version,consumer_id,renderer_key,payload,seo,content_version,cache_tag,etag,published_at").in("content_type", publicTypes).order("published_at", { ascending: false }).limit(1000);
   if (error) return json({ error: "Conteúdo temporariamente indisponível." }, 503, { "Cache-Control": "no-store" });
   const published = data ?? [];
+  if (type === "site-shell") {
+    const latest = (contentType: string) => published.find((row) => row.content_type === contentType)?.payload ?? null;
+    const placements = latest("placement");
+    const now = Date.now();
+    const activePlacements = (placements?.placements ?? [])
+      .filter((item: any) => item.enabled && Date.parse(item.startsAt) <= now && Date.parse(item.endsAt) > now)
+      .sort((a: any,b: any) => b.priority-a.priority)
+      .flatMap((item: any) => {
+        const target = published.find((row) => row.item_id === item.targetId);
+        return target ? [{ ...item, target: { itemId: target.item_id, contentType: target.content_type, title: target.payload?.title ?? target.slug, summary: target.payload?.summary, path: routeFor(target) } }] : [];
+      });
+    return json({
+      navigation: latest("navigation"),
+      settings: latest("site_settings"),
+      placements: placements ? { ...placements, placements: activePlacements } : null,
+    }, 200, { "Cache-Control": "public, max-age=60, stale-while-revalidate=300" });
+  }
+  if (type === "page-by-path") {
+    const path = url.searchParams.get("path") ?? "";
+    if (!/^\/(?:[a-z0-9]+(?:-[a-z0-9]+)*\/?)*$/.test(path)) return json({ error: "Não encontrado." }, 404);
+    const row = published.find((entry) => ["page", "homepage"].includes(entry.content_type) && entry.payload?.route?.path === path);
+    if (!row) {
+      const { data: managedRule } = await client.from("cms_route_rules").select("destination_path,status_code").eq("source_path", path).eq("active", true).maybeSingle();
+      if (managedRule) return json({ kind: "route", rule: managedRule }, 200, { "Cache-Control": "public, max-age=60" });
+      const { data: legacyRule } = await client.from("cms_redirects").select("destination_path,status_code").eq("source_path", path).eq("active", true).maybeSingle();
+      return legacyRule ? json({ kind: "route", rule: legacyRule }, 200, { "Cache-Control": "public, max-age=60" }) : json({ kind: "fallback" }, 200, { "Cache-Control": "public, max-age=30" });
+    }
+    const relationIds = [...new Set([
+      ...Object.values(row.payload?.relations ?? {}).flatMap((value: any) => value ?? []),
+      ...(row.payload?.blocks ?? []).filter((block: any) => block.type === "related_content").flatMap((block: any) => block.data?.itemIds ?? []),
+    ])];
+    const related_items = published.filter((entry) => relationIds.includes(entry.item_id) && searchableTypes.includes(entry.content_type)).map((entry) => ({ item_id: entry.item_id, content_type: entry.content_type, title: entry.payload?.title, summary: entry.payload?.summary, path: routeFor(entry) }));
+    return json({ kind: "page", page: { ...(await enrichMedia(row)), related_items } }, 200, { ETag: row.etag, "Cache-Control": "public, max-age=60, stale-while-revalidate=300", "Surrogate-Key": row.cache_tag });
+  }
   if (type === "sitemap") {
     const origin = (Deno.env.get("PUBLIC_SITE_ORIGIN") ?? "https://gaiatecsistemas.com.br").replace(/\/$/, "");
-    const urls = published.filter((row) => row.payload?.seo?.indexable === true).map((row) => `<url><loc>${origin}${routeFor(row)}</loc><lastmod>${new Date(row.published_at).toISOString()}</lastmod></url>`).join("");
+    const urls = published.filter((row) => !["navigation", "site_settings", "placement"].includes(row.content_type) && row.seo?.indexable === true).map((row) => `<url><loc>${origin}${routeFor(row)}</loc><lastmod>${new Date(row.published_at).toISOString()}</lastmod></url>`).join("");
     return new Response(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>`, { headers: { ...headers, "Content-Type": "application/xml; charset=utf-8", "Cache-Control": "public, max-age=300" } });
   }
   if (type === "detail" || type === "entity-detail") {
     const slug = url.searchParams.get("slug") ?? "", domain = url.searchParams.get("contentType") ?? "product";
-    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) || !publicTypes.includes(domain)) return json({ error: "Não encontrado." }, 404);
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) || !searchableTypes.includes(domain)) return json({ error: "Não encontrado." }, 404);
     const row = published.find((entry) => entry.slug === slug && entry.content_type === domain);
     if (!row) return json({ error: "Não encontrado." }, 404, { "Cache-Control": "public, max-age=30" });
     if (req.headers.get("If-None-Match") === row.etag) return new Response(null, { status: 304, headers: { ...headers, ETag: row.etag } });
@@ -57,7 +100,7 @@ Deno.serve(async (req) => {
   const { data: synonymRows } = query ? await client.from("cms_search_synonyms").select("canonical_term,aliases,scope").eq("active", true) : { data: [] };
   const expanded = new Set(query.split(" ").filter(Boolean));
   for (const synonym of synonymRows ?? []) { const aliases = (synonym.aliases ?? []).map(normalize), canonical = normalize(synonym.canonical_term); if (aliases.some((alias: string) => query.includes(alias)) || query.includes(canonical)) { expanded.add(canonical); aliases.forEach((alias: string) => expanded.add(alias)); } }
-  const scored = published.map((row) => {
+  const scored = published.filter((row) => searchableTypes.includes(row.content_type)).map((row) => {
     const p = row.payload as Record<string, any>;
     if (domain && row.content_type !== domain) return null;
     if (requested.length && !requested.includes(row.slug) && !requested.includes(row.item_id)) return null;
@@ -73,6 +116,6 @@ Deno.serve(async (req) => {
   if ((type === "search" || type === "autocomplete") && query && service) await client.from("cms_search_events").insert({ normalized_query:query,result_count:enriched.length,content_types:[...new Set(enriched.map((row)=>row.content_type))],refinements:{domain:domain??null},correlation_id:crypto.randomUUID() });
   const productRows = selected.filter((entry)=>entry.row.content_type === "product").map((entry)=>entry.row);
   const facets = ["segment","category","family","technology"].reduce((all,key)=>{ all[key]=[...new Set(productRows.map((row)=>key === "technology"?row.payload?.technology:row.payload?.classification?.[key]).filter(Boolean))].sort(); return all;},{} as Record<string,unknown[]>);
-  const groups = publicTypes.reduce((all,key)=>{all[key]=enriched.filter((row)=>row.content_type===key).length;return all;},{} as Record<string,number>);
+  const groups = searchableTypes.reduce((all,key)=>{all[key]=enriched.filter((row)=>row.content_type===key).length;return all;},{} as Record<string,number>);
   return json({items:enriched,total:enriched.length,facets,groups,query:rawQuery},200,{"Cache-Control":type === "search" || type === "autocomplete"?"private, no-store":"public, max-age=60, stale-while-revalidate=300"});
 });

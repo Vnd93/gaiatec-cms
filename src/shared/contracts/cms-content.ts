@@ -456,7 +456,525 @@ export const CmsPostContentSchema = z
   })
   .strict();
 
-export const CmsPageContentSchema = z
+const PageBlockBase = {
+  id: z.uuid(),
+  hidden: z.boolean().default(false),
+  anchor: CmsSlugSchema.optional(),
+  width: z.enum(["content", "wide", "full"]).default("content"),
+  tone: z.enum(["light", "muted", "dark", "brand"]).default("light"),
+};
+
+const PageInternalPathSchema = z
+  .string()
+  .regex(/^\/(?:[a-z0-9]+(?:-[a-z0-9]+)*\/?)*$/)
+  .max(300);
+const PageHttpUrlSchema = z
+  .url()
+  .max(500)
+  .refine((value) => /^https?:\/\//i.test(value), "Somente URLs HTTP ou HTTPS são aceitas.");
+const PageHrefSchema = z.union([PageInternalPathSchema, PageHttpUrlSchema]);
+
+const PageLinkSchema = z
+  .object({
+    label: RequiredText.max(120),
+    href: PageHrefSchema,
+  })
+  .strict();
+
+export const CmsPageBlockSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      ...PageBlockBase,
+      type: z.literal("hero"),
+      data: z
+        .object({
+          eyebrow: z.string().trim().max(120).optional(),
+          title: RequiredText.max(220),
+          text: z.string().trim().max(1200).optional(),
+          primaryCta: PageLinkSchema.optional(),
+          secondaryCta: PageLinkSchema.optional(),
+          assetId: z.uuid().optional(),
+          alt: z.string().trim().max(300).optional(),
+          alignment: z.enum(["left", "center"]).default("left"),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...PageBlockBase,
+      type: z.literal("rich_text"),
+      data: z
+        .object({
+          eyebrow: z.string().trim().max(120).optional(),
+          heading: z.string().trim().max(220).optional(),
+          text: RequiredText.max(20000),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...PageBlockBase,
+      type: z.literal("image"),
+      data: z
+        .object({
+          assetId: z.uuid(),
+          alt: RequiredText.max(300),
+          caption: z.string().trim().max(500).optional(),
+          fit: z.enum(["cover", "contain"]).default("cover"),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...PageBlockBase,
+      type: z.literal("gallery"),
+      data: z
+        .object({
+          heading: z.string().trim().max(220).optional(),
+          assetIds: z.array(z.uuid()).min(1).max(24),
+          columns: z.number().int().min(2).max(4).default(3),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...PageBlockBase,
+      type: z.literal("benefit_grid"),
+      data: z
+        .object({
+          eyebrow: z.string().trim().max(120).optional(),
+          heading: RequiredText.max(220),
+          items: z
+            .array(
+              z.object({ id: z.uuid(), title: RequiredText.max(160), text: RequiredText.max(800) }).strict(),
+            )
+            .min(1)
+            .max(12),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...PageBlockBase,
+      type: z.literal("content_grid"),
+      data: z
+        .object({
+          eyebrow: z.string().trim().max(120).optional(),
+          heading: RequiredText.max(220),
+          items: z
+            .array(
+              z
+                .object({
+                  id: z.uuid(),
+                  title: RequiredText.max(160),
+                  text: z.string().trim().max(800).optional(),
+                  href: PageInternalPathSchema.optional(),
+                  assetId: z.uuid().optional(),
+                })
+                .strict(),
+            )
+            .min(1)
+            .max(24),
+          columns: z.number().int().min(2).max(4).default(3),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...PageBlockBase,
+      type: z.literal("steps"),
+      data: z
+        .object({
+          heading: RequiredText.max(220),
+          items: z
+            .array(
+              z.object({ id: z.uuid(), title: RequiredText.max(160), text: RequiredText.max(800) }).strict(),
+            )
+            .min(1)
+            .max(20),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...PageBlockBase,
+      type: z.literal("metrics"),
+      data: z
+        .object({
+          heading: z.string().trim().max(220).optional(),
+          items: z
+            .array(
+              z.object({ id: z.uuid(), value: RequiredText.max(80), label: RequiredText.max(160) }).strict(),
+            )
+            .min(1)
+            .max(12),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...PageBlockBase,
+      type: z.literal("testimonial"),
+      data: z
+        .object({
+          quote: RequiredText.max(2000),
+          author: RequiredText.max(160),
+          role: z.string().trim().max(160).optional(),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...PageBlockBase,
+      type: z.literal("faq"),
+      data: z
+        .object({
+          heading: RequiredText.max(220),
+          items: z
+            .array(
+              z
+                .object({ id: z.uuid(), question: RequiredText.max(300), answer: RequiredText.max(3000) })
+                .strict(),
+            )
+            .min(1)
+            .max(30),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...PageBlockBase,
+      type: z.literal("form"),
+      data: z
+        .object({
+          heading: RequiredText.max(220),
+          text: z.string().trim().max(1000).optional(),
+          formKey: z.enum(["contact", "newsletter", "lead"]),
+          buttonLabel: RequiredText.max(120),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...PageBlockBase,
+      type: z.literal("cta"),
+      data: z
+        .object({
+          heading: RequiredText.max(220),
+          text: z.string().trim().max(1000).optional(),
+          link: PageLinkSchema,
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...PageBlockBase,
+      type: z.literal("related_content"),
+      data: z
+        .object({
+          heading: RequiredText.max(220),
+          itemIds: z.array(z.uuid()).min(1).max(24),
+          presentation: z.enum(["cards", "list"]).default("cards"),
+        })
+        .strict(),
+    })
+    .strict(),
+]);
+
+const ManagedPageBase = {
+  schemaVersion: z.literal(1),
+  title: RequiredText.max(180),
+  summary: z.string().trim().max(500).optional(),
+  pageKind: z.enum(["institutional", "thematic", "landing", "campaign", "home"]),
+  templateKey: z.enum(["standard", "editorial", "landing", "technical", "home"]).default("standard"),
+  route: z
+    .object({
+      path: z
+        .string()
+        .regex(/^\/(?:[a-z0-9]+(?:-[a-z0-9]+)*\/?)*$/)
+        .max(200)
+        .refine((path) => path !== "/", "A rota raiz é exclusiva da homepage."),
+      navigationLabel: z.string().trim().max(80).optional(),
+      breadcrumbLabel: z.string().trim().max(80).optional(),
+    })
+    .strict(),
+  blocks: z.array(CmsPageBlockSchema).min(1).max(80),
+  seo: CmsSeoSchema,
+  provenance: z.array(CmsProvenanceSchema).min(1).max(30),
+  governanceState: z.enum(["synthetic_test", "awaiting_owner", "homologated"]),
+  relations: z
+    .object({
+      productIds: z.array(z.uuid()).max(100),
+      serviceIds: z.array(z.uuid()).max(100),
+      industryIds: z.array(z.uuid()).max(100),
+      applicationIds: z.array(z.uuid()).max(100),
+      solutionIds: z.array(z.uuid()).max(100),
+    })
+    .strict(),
+  retirement: z
+    .object({
+      mode: z.enum(["not_found", "gone", "redirect"]),
+      destinationPath: z
+        .string()
+        .regex(/^\/(?:[a-z0-9]+(?:-[a-z0-9]+)*\/?)*$/)
+        .max(300)
+        .optional(),
+    })
+    .strict(),
+  approval: z
+    .object({
+      businessOwner: RequiredText.max(120),
+      editorialReviewer: RequiredText.max(120),
+      approvedAt: z.iso.datetime().optional(),
+    })
+    .strict(),
+};
+
+function validateManagedPage(
+  value: {
+    governanceState: string;
+    route: { path: string };
+    seo: { indexable: boolean; canonicalPath: string };
+    retirement: { mode: string; destinationPath?: string };
+    approval: { approvedAt?: string };
+    blocks: Array<{ type: string; data: unknown }>;
+  },
+  context: z.RefinementCtx,
+) {
+  if (
+    /^\/(?:admin|preview|relatorio-de-obra|assets|functions|cms|produtos|servicos|industrias|aplicacoes|solucoes|busca)(?:\/|$)/.test(
+      value.route.path,
+    )
+  )
+    context.addIssue({
+      code: "custom",
+      path: ["route", "path"],
+      message: "Este prefixo é reservado por uma função estrutural do site.",
+    });
+  if (value.seo.indexable && value.governanceState !== "homologated")
+    context.addIssue({
+      code: "custom",
+      path: ["seo", "indexable"],
+      message: "Somente página homologada pode ser indexável.",
+    });
+  if (value.governanceState === "homologated" && !value.approval.approvedAt)
+    context.addIssue({
+      code: "custom",
+      path: ["approval", "approvedAt"],
+      message: "Página homologada exige data de aprovação.",
+    });
+  if (value.seo.canonicalPath !== value.route.path)
+    context.addIssue({
+      code: "custom",
+      path: ["seo", "canonicalPath"],
+      message: "O canonical deve ser idêntico à rota pública.",
+    });
+  if (value.retirement.mode === "redirect" && !value.retirement.destinationPath)
+    context.addIssue({
+      code: "custom",
+      path: ["retirement", "destinationPath"],
+      message: "Retirada com redirect exige destino.",
+    });
+  if (
+    value.retirement.mode === "redirect" &&
+    value.retirement.destinationPath?.replace(/\/$/, "") === value.route.path.replace(/\/$/, "")
+  )
+    context.addIssue({
+      code: "custom",
+      path: ["retirement", "destinationPath"],
+      message: "O redirecionamento não pode apontar para a própria página.",
+    });
+  value.blocks.forEach((block, index) => {
+    const data = block.data as { assetId?: string; alt?: string };
+    if (block.type === "hero" && data.assetId && !data.alt?.trim())
+      context.addIssue({
+        code: "custom",
+        path: ["blocks", index, "data", "alt"],
+        message: "Hero com imagem exige texto alternativo.",
+      });
+  });
+}
+
+export const CmsManagedPageContentSchema = z
+  .object({
+    ...ManagedPageBase,
+    consumerId: z.literal("cms.managed-page.v1"),
+    contentType: z.literal("page"),
+  })
+  .strict()
+  .superRefine(validateManagedPage);
+
+export const CmsHomepageContentSchema = z
+  .object({
+    ...ManagedPageBase,
+    consumerId: z.literal("cms.homepage-builder.v1"),
+    contentType: z.literal("homepage"),
+    pageKind: z.literal("home"),
+    templateKey: z.literal("home"),
+    route: z
+      .object({
+        path: z.literal("/"),
+        navigationLabel: z.string().trim().max(80).optional(),
+        breadcrumbLabel: z.string().trim().max(80).optional(),
+      })
+      .strict(),
+  })
+  .strict()
+  .superRefine(validateManagedPage);
+
+const SiteDocumentBase = {
+  schemaVersion: z.literal(1),
+  title: RequiredText.max(180),
+  blocks: z.array(z.never()).max(0),
+  seo: CmsSeoSchema,
+  provenance: z.array(CmsProvenanceSchema).min(1).max(30),
+};
+
+export const CmsNavigationContentSchema = z
+  .object({
+    ...SiteDocumentBase,
+    consumerId: z.literal("cms.site-navigation.v1"),
+    contentType: z.literal("navigation"),
+    items: z
+      .array(
+        z
+          .object({
+            id: z.uuid(),
+            parentId: z.uuid().nullable(),
+            location: z.enum(["header", "footer"]),
+            label: RequiredText.max(80),
+            href: PageHrefSchema,
+            order: z.number().int().min(0).max(999),
+            newTab: z.boolean().default(false),
+            visible: z.boolean().default(true),
+          })
+          .strict(),
+      )
+      .max(200),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const itemById = new Map(value.items.map((item) => [item.id, item]));
+    const seenIds = new Set<string>();
+    for (const [index, item] of value.items.entries()) {
+      if (seenIds.has(item.id))
+        context.addIssue({
+          code: "custom",
+          path: ["items", index, "id"],
+          message: "Identificador de menu duplicado.",
+        });
+      seenIds.add(item.id);
+      if (item.parentId && !itemById.has(item.parentId))
+        context.addIssue({
+          code: "custom",
+          path: ["items", index, "parentId"],
+          message: "Item pai inexistente.",
+        });
+      if (!item.parentId) continue;
+      const parent = itemById.get(item.parentId);
+      if (parent && parent.location !== item.location)
+        context.addIssue({
+          code: "custom",
+          path: ["items", index, "parentId"],
+          message: "Item pai deve pertencer ao mesmo local do menu.",
+        });
+      const ancestors = new Set([item.id]);
+      let cursor: string | null = item.parentId;
+      let depth = 0;
+      while (cursor) {
+        if (ancestors.has(cursor)) {
+          context.addIssue({
+            code: "custom",
+            path: ["items", index, "parentId"],
+            message: "O menu não pode conter ciclos.",
+          });
+          break;
+        }
+        ancestors.add(cursor);
+        depth += 1;
+        cursor = itemById.get(cursor)?.parentId ?? null;
+      }
+      if (depth > 2)
+        context.addIssue({
+          code: "custom",
+          path: ["items", index, "parentId"],
+          message: "O menu aceita no máximo três níveis.",
+        });
+    }
+  });
+
+export const CmsSiteSettingsContentSchema = z
+  .object({
+    ...SiteDocumentBase,
+    consumerId: z.literal("cms.site-settings.v1"),
+    contentType: z.literal("site_settings"),
+    company: z
+      .object({
+        name: RequiredText.max(160),
+        legalName: z.string().trim().max(200).optional(),
+        phone: z.string().trim().max(40),
+        whatsapp: z.string().trim().max(40),
+        email: z.email().max(254),
+        address: z.string().trim().max(500),
+      })
+      .strict(),
+    socialLinks: z
+      .array(z.object({ id: z.uuid(), network: RequiredText.max(50), url: PageHttpUrlSchema }).strict())
+      .max(20),
+    defaultCta: PageLinkSchema,
+  })
+  .strict();
+
+export const CmsPlacementContentSchema = z
+  .object({
+    ...SiteDocumentBase,
+    consumerId: z.literal("cms.site-placements.v1"),
+    contentType: z.literal("placement"),
+    placements: z
+      .array(
+        z
+          .object({
+            id: z.uuid(),
+            slot: z.enum(["home_hero", "home_featured", "catalog_featured", "global_announcement"]),
+            targetType: z.enum(["product", "service", "industry", "application", "solution", "page"]),
+            targetId: z.uuid(),
+            label: z.string().trim().max(120).optional(),
+            startsAt: z.iso.datetime(),
+            endsAt: z.iso.datetime(),
+            priority: z.number().int().min(0).max(999),
+            enabled: z.boolean(),
+          })
+          .strict()
+          .refine(
+            (item) => new Date(item.endsAt) > new Date(item.startsAt),
+            "Término deve ser posterior ao início.",
+          ),
+      )
+      .max(100),
+  })
+  .strict();
+
+export const CmsPageContentSchema = z.union([CmsManagedPageContentSchema, CmsHomepageContentSchema]);
+
+export const CmsSiteDocumentContentSchema = z.discriminatedUnion("contentType", [
+  CmsNavigationContentSchema,
+  CmsSiteSettingsContentSchema,
+  CmsPlacementContentSchema,
+]);
+
+export const CmsLegacyPageContentSchema = z
   .object({
     ...BaseContent,
     contentType: z.enum(["page", "homepage"]),
@@ -470,7 +988,11 @@ export const CmsContentPayloadSchema = z.discriminatedUnion("contentType", [
   CmsApplicationContentSchema,
   CmsSolutionContentSchema,
   CmsPostContentSchema,
-  CmsPageContentSchema,
+  CmsManagedPageContentSchema,
+  CmsHomepageContentSchema,
+  CmsNavigationContentSchema,
+  CmsSiteSettingsContentSchema,
+  CmsPlacementContentSchema,
 ]);
 
 export type CmsContentPayload = z.infer<typeof CmsContentPayloadSchema>;
@@ -479,3 +1001,8 @@ export type CmsServiceContent = z.infer<typeof CmsServiceContentSchema>;
 export type CmsIndustryContent = z.infer<typeof CmsIndustryContentSchema>;
 export type CmsApplicationContent = z.infer<typeof CmsApplicationContentSchema>;
 export type CmsSolutionContent = z.infer<typeof CmsSolutionContentSchema>;
+export type CmsPageContent = z.infer<typeof CmsPageContentSchema>;
+export type CmsPageBlock = z.infer<typeof CmsPageBlockSchema>;
+export type CmsNavigationContent = z.infer<typeof CmsNavigationContentSchema>;
+export type CmsSiteSettingsContent = z.infer<typeof CmsSiteSettingsContentSchema>;
+export type CmsPlacementContent = z.infer<typeof CmsPlacementContentSchema>;

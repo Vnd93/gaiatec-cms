@@ -2,59 +2,73 @@ import { useState } from "react";
 import { Link } from "react-router";
 import { Phone, MessageSquare, MapPin, ArrowRight, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { AnimateOnScroll } from "./useScrollAnimation";
-import { useContactInfo } from "../hooks/useSiteData";
+import { usePublishedSiteShell } from "@/public/site-shell-context";
 import { SUPABASE_ANON_KEY, SUPABASE_CONFIGURED, SUPABASE_URL } from "../../lib/supabase";
 import { TurnstileChallenge } from "./TurnstileChallenge";
 
 const KNOCKOUT = "'Knockout HTF68', sans-serif";
 
-const FALLBACK_CTAS = [
-  { icon: Phone, value: "(11) 2207-1933", hint: "Fale com nossa equipe comercial · Fax (11) 2207-1986", href: "tel:+551122071933" },
-  { icon: MessageSquare, value: "(11) 2207-1986", hint: "WhatsApp · Seg. a Sex., 8h às 18h", href: "https://wa.me/551122071986" },
-  { icon: MapPin, value: "Parque Novo Mundo · São Paulo/SP", hint: "R. Herói da Força Expedicionária Brasileira, 22", href: "/contato" },
-];
-
 const enquiryTypes = ["Orçamento", "Suporte Técnico", "Calibração", "Instrumentação", "Automação", "Proteção Catódica", "Outros"];
 
 type FormStatus = "idle" | "submitting" | "success" | "error";
 
-export function ContactSection({ variant = "brand" }: { variant?: "brand" | "light" }) {
-  const { contact } = useContactInfo();
+export function ContactSection({
+  variant = "brand",
+  heading = "Solicitar Orçamento",
+  introduction = "Preencha o formulário e retornaremos o mais breve possível.",
+  submitLabel = "Enviar",
+  sectionId = "contact",
+  initialEnquiryType = "",
+}: {
+  variant?: "brand" | "light";
+  heading?: string;
+  introduction?: string;
+  submitLabel?: string;
+  sectionId?: string;
+  initialEnquiryType?: string;
+}) {
+  const { settings } = usePublishedSiteShell();
   const light = variant === "light";
   const [formData, setFormData] = useState({
-    firstName: "", lastName: "", email: "", phone: "", company: "", enquiryType: "", message: "", consent: false, website: "",
+    firstName: "", lastName: "", email: "", phone: "", company: "", enquiryType: initialEnquiryType, message: "", consent: false, website: "",
   });
   const [captchaRequired, setCaptchaRequired] = useState(false);
   const [captchaToken, setCaptchaToken] = useState("");
   const [status, setStatus] = useState<FormStatus>("idle");
   const [errorMsg, setErrorMsg] = useState("");
 
-  const contactCtas = contact.telefone
-    ? [
-        {
+  const company = settings?.company;
+  const whatsappDigits = company?.whatsapp.replace(/\D/g, "") ?? "";
+  const contactCtas = [
+    company?.phone
+      ? {
           icon: Phone,
-          value: contact.telefone,
-          hint: `Fale com nossa equipe comercial${contact.fax ? ` · Fax ${contact.fax}` : ""}`,
-          href: `tel:+55${contact.telefone.replace(/\D/g, "")}`,
-        },
-        {
+          value: company.phone,
+          hint: "Fale com nossa equipe comercial",
+          href: `tel:${company.phone.replace(/[^\d+]/g, "")}`,
+        }
+      : null,
+    company?.whatsapp
+      ? {
           icon: MessageSquare,
-          value: contact.whatsapp || "(11) 2207-1986",
-          hint: `WhatsApp${contact.whatsapp_horario ? ` · ${contact.whatsapp_horario}` : ""}`,
-          href: `https://wa.me/55${(contact.whatsapp || "").replace(/\D/g, "")}`,
-        },
-        {
+          value: company.whatsapp,
+          hint: "WhatsApp da equipe GAIATEC",
+          href: `https://wa.me/${whatsappDigits.startsWith("55") ? whatsappDigits : `55${whatsappDigits}`}`,
+        }
+      : null,
+    company?.address
+      ? {
           icon: MapPin,
-          value: contact.bairro_cidade || "Nossa unidade",
-          hint: contact.endereco || "",
+          value: company.name,
+          hint: company.address,
           href: "/contato",
-        },
-      ]
-    : FALLBACK_CTAS;
+        }
+      : null,
+  ].filter((item): item is NonNullable<typeof item> => item !== null);
 
   const resetForm = () => {
     setFormData({
-      firstName: "", lastName: "", email: "", phone: "", company: "", enquiryType: "", message: "", consent: false, website: "",
+      firstName: "", lastName: "", email: "", phone: "", company: "", enquiryType: initialEnquiryType, message: "", consent: false, website: "",
     });
     setCaptchaRequired(false);
     setCaptchaToken("");
@@ -119,16 +133,16 @@ export function ContactSection({ variant = "brand" }: { variant?: "brand" | "lig
     : "w-full bg-white border border-black/10 px-4 py-3 text-[14px] text-black placeholder:text-[#8a8a8a] outline-none focus:border-black transition-colors disabled:opacity-50";
 
   return (
-    <section className={light ? "bg-white" : "bg-[#FFCC00]"} id="contact" style={{ fontFamily: "Inter, sans-serif" }}>
+    <section className={light ? "bg-white" : "bg-[#FFCC00]"} id={sectionId} style={{ fontFamily: "Inter, sans-serif" }}>
       <div className="max-w-[1400px] mx-auto px-4 md:px-6">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 py-16 md:py-24">
           {/* ─── Esquerda — formulário ─── */}
           <div>
             <AnimateOnScroll>
               <h2 className="text-black mb-2" style={{ fontFamily: KNOCKOUT, fontSize: "clamp(40px, 5vw, 64px)", fontWeight: 500, lineHeight: 0.95, textTransform: "uppercase" }}>
-                Solicitar Orçamento
+                {heading}
               </h2>
-              <p className="text-black/70 text-[15px] mb-8">Preencha o formulário e retornaremos o mais breve possível.</p>
+              <p className="text-black/70 text-[15px] mb-8">{introduction}</p>
             </AnimateOnScroll>
 
             {status === "success" && (
@@ -203,7 +217,7 @@ export function ContactSection({ variant = "brand" }: { variant?: "brand" | "lig
                 className={`${light ? "bg-[#0057DE] text-white hover:bg-[#0046b3]" : "bg-black text-[#FFCC00] hover:bg-[#0057DE] hover:text-white"} px-10 py-3.5 text-[13px] tracking-wider transition-colors inline-flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed uppercase`}
                 style={{ fontWeight: 700, letterSpacing: "0.08em" }}
               >
-                {isSubmitting ? (<><Loader2 size={16} className="animate-spin" /> Enviando...</>) : "Enviar"}
+                {isSubmitting ? (<><Loader2 size={16} className="animate-spin" /> Enviando...</>) : submitLabel}
               </button>
             </form>
           </div>

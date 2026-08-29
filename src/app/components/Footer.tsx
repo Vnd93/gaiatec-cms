@@ -1,126 +1,61 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import { Phone, MessageSquare, Mail, ArrowRight, Loader2, CheckCircle2, Linkedin, Instagram, Facebook, Youtube } from "lucide-react";
-import { useMenu, useContactInfo } from "../hooks/useSiteData";
-import { SUPABASE_ANON_KEY, SUPABASE_URL, type SiteMenuItem } from "../../lib/supabase";
+import type { CmsNavigationContent } from "@/shared/contracts/cms-content";
+import { usePublishedSiteShell } from "@/public/site-shell-context";
+import { SUPABASE_ANON_KEY, SUPABASE_URL } from "../../lib/supabase";
 
 const KNOCKOUT = "'Knockout HTF68', sans-serif";
 
-/* ────────────────────────────────────────────────────────
-   Footer hardcoded fallback (used when CMS API is unreachable)
-   ──────────────────────────────────────────────────────── */
-type FooterColumn = { title: string; links: { label: string; href: string }[] };
+type FooterLink = { label: string; href: string; newTab: boolean };
+type FooterColumn = { title: string; links: FooterLink[] };
 
-const FALLBACK_COLUMNS: FooterColumn[] = [
+const SAFE_COLUMNS: FooterColumn[] = [
   {
-    title: "INDÚSTRIAS",
+    title: "NAVEGAÇÃO",
     links: [
-      { label: "Saneamento / Líquido", href: "/setores/saneamento" },
-      { label: "Gás e Petróleo", href: "/setores/gas-petroleo" },
-      { label: "Biogás e Biometano", href: "/setores/biogas-biometano" },
-      { label: "Proteção Catódica", href: "/setores/protecao-catodica" },
-      { label: "HVAC", href: "/setores/hvac" },
-      { label: "Controle Ambiental", href: "/setores/controle-ambiental" },
-      { label: "Agronegócio", href: "/setores/agronegocio" },
-      { label: "Indústria", href: "/setores/industria" },
-      { label: "Telemetria", href: "/setores/telemetria" },
-    ],
-  },
-  {
-    title: "PRODUTOS",
-    links: [
-      { label: "Medição de Vazão", href: "/setores/instrumentacao" },
-      { label: "Detecção de Gases", href: "/deteccao-de-gas" },
-      { label: "Automação", href: "/setores/industria" },
-      { label: "Proteção Catódica", href: "/setores/protecao-catodica" },
-      { label: "Telemetria", href: "/setores/telemetria" },
-    ],
-  },
-  {
-    title: "SERVIÇOS",
-    links: [
-      { label: "Automações", href: "/servicos/automacoes" },
-      { label: "Instalações e Comissionamentos", href: "/servicos/instalacoes-comissionamentos" },
-      { label: "Calibração Rastreável", href: "/servicos/calibracao-rastreavel-laboratorio" },
-      { label: "Manutenções", href: "/servicos/manutencoes" },
-      { label: "Consultoria e Inspeções Técnicas", href: "/servicos/consultoria-inspecoes-tecnicas" },
-    ],
-  },
-  {
-    title: "EMPRESA",
-    links: [
-      { label: "A Gaiatec", href: "/sobre" },
-      { label: "Blog", href: "/blog" },
-      { label: "Biodigestor", href: "/biodigestor" },
-      { label: "Contato", href: "/contato" },
+      { label: "Produtos", href: "/produtos", newTab: false },
+      { label: "Serviços", href: "/servicos", newTab: false },
+      { label: "Indústrias", href: "/industrias", newTab: false },
+      { label: "Aplicações", href: "/aplicacoes", newTab: false },
+      { label: "Soluções", href: "/solucoes", newTab: false },
+      { label: "Contato", href: "/contato", newTab: false },
     ],
   },
 ];
 
-/* ────────────────────────────────────────────────────────
-   Build columns from the CMS menu tree (top-level → coluna,
-   itens sem filhos agregados em EMPRESA, achatando até as folhas).
-   ──────────────────────────────────────────────────────── */
-function flattenLeaves(item: SiteMenuItem): SiteMenuItem[] {
-  if (!item.children || item.children.length === 0) return [item];
-  return item.children.flatMap(flattenLeaves);
+function menuToColumns(items: CmsNavigationContent["items"] | undefined): FooterColumn[] {
+  if (!items) return SAFE_COLUMNS;
+  const visible = items.filter((item) => item.visible && item.location === "footer");
+  const roots = visible.filter((item) => item.parentId === null).sort((a, b) => a.order - b.order);
+  const columns = roots.map((root) => ({
+    title: root.label.toUpperCase(),
+    links: visible
+      .filter((item) => item.parentId === root.id)
+      .sort((a, b) => a.order - b.order)
+      .map((item) => ({ label: item.label, href: item.href, newTab: item.newTab })),
+  }));
+  return columns.length ? columns : SAFE_COLUMNS;
 }
 
-function menuToColumns(menu: SiteMenuItem[]): FooterColumn[] {
-  if (!menu || menu.length === 0) return FALLBACK_COLUMNS;
-
-  const cols: FooterColumn[] = [];
-  const orphans: { label: string; href: string }[] = [];
-
-  for (const item of menu) {
-    if (item.href === "/" || item.label.toLowerCase() === "home") continue;
-
-    if (item.children && item.children.length > 0) {
-      const leaves = item.children.flatMap(flattenLeaves);
-      const seen = new Set<string>();
-      const links: { label: string; href: string }[] = [];
-      for (const leaf of leaves) {
-        const href = leaf.href ?? "#";
-        if (seen.has(href)) continue;
-        seen.add(href);
-        links.push({ label: leaf.label, href });
-        if (links.length >= 9) break;
-      }
-      cols.push({ title: item.label.toUpperCase(), links });
-    } else {
-      orphans.push({ label: item.label, href: item.href ?? "#" });
-    }
-  }
-
-  if (orphans.length > 0) {
-    const empresaCol = cols.find((c) => c.title === "EMPRESA");
-    if (empresaCol) {
-      const seen = new Set(empresaCol.links.map((l) => l.href));
-      for (const o of orphans) if (!seen.has(o.href)) empresaCol.links.push(o);
-    } else {
-      cols.push({ title: "EMPRESA", links: orphans });
-    }
-  }
-
-  return cols;
-}
-
-/* Redes sociais — URLs reais a fornecer pela Gaiatec (placeholders por ora). */
-// Links sociais voltam somente após URLs oficiais serem aprovadas; nunca publicar `#`.
-const SOCIALS: { icon: typeof Linkedin; label: string; href: string }[] = [];
+const SOCIAL_ICONS: Record<string, typeof Linkedin> = {
+  linkedin: Linkedin,
+  instagram: Instagram,
+  facebook: Facebook,
+  youtube: Youtube,
+};
 
 type NlStatus = "idle" | "submitting" | "success" | "error";
 
 export function Footer() {
-  const { menu } = useMenu();
-  const { contact } = useContactInfo();
+  const { navigation, settings } = usePublishedSiteShell();
 
-  const columns = menuToColumns(menu).slice(0, 4);
+  const columns = menuToColumns(navigation?.items).slice(0, 4);
   const year = new Date().getFullYear();
 
-  const tel = contact.telefone || "(11) 2207-1933";
-  const wpp = contact.whatsapp || "(11) 2207-1986";
-  const mail = contact.email || "vendas@gaiatecsistemas.com.br";
+  const tel = settings?.company.phone.trim() ?? "";
+  const wpp = settings?.company.whatsapp.trim() ?? "";
+  const mail = settings?.company.email.trim() ?? "";
 
   const [email, setEmail] = useState("");
   const [newsletterConsent, setNewsletterConsent] = useState(false);
@@ -164,10 +99,20 @@ export function Footer() {
   };
 
   const connectLinks = [
-    { icon: Phone, label: tel, href: `tel:+55${tel.replace(/\D/g, "")}` },
-    { icon: MessageSquare, label: wpp, href: `https://wa.me/55${wpp.replace(/\D/g, "")}` },
-    { icon: Mail, label: mail, href: `mailto:${mail}` },
-  ];
+    tel ? { icon: Phone, label: tel, href: `tel:${tel.replace(/[^\d+]/g, "")}` } : null,
+    wpp
+      ? {
+          icon: MessageSquare,
+          label: wpp,
+          href: `https://wa.me/${wpp.replace(/\D/g, "").startsWith("55") ? wpp.replace(/\D/g, "") : `55${wpp.replace(/\D/g, "")}`}`,
+        }
+      : null,
+    mail ? { icon: Mail, label: mail, href: `mailto:${mail}` } : null,
+  ].filter((item): item is NonNullable<typeof item> => item !== null);
+  const socialLinks = (settings?.socialLinks ?? []).map((item) => ({
+    ...item,
+    icon: SOCIAL_ICONS[item.network.toLowerCase()] ?? Linkedin,
+  }));
 
   return (
     <footer className="bg-[#080d1a] text-white" style={{ fontFamily: "Inter, sans-serif" }}>
@@ -176,7 +121,7 @@ export function Footer() {
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.5fr] gap-14 lg:gap-24">
           {/* Newsletter + Conecte-se */}
           <div id="newsletter">
-            <span className="block text-[12px] font-semibold tracking-[0.22em] uppercase text-[#0057DE] mb-4">
+            <span className="block text-[12px] font-semibold tracking-[0.22em] uppercase text-[#4d94ff] mb-4">
               Newsletter
             </span>
             <h2
@@ -240,8 +185,8 @@ export function Footer() {
             )}
 
             {/* Conecte-se — canais reais de contato */}
-            <div className="mt-10 pt-8 border-t border-white/10">
-              <span className="block text-[12px] font-semibold tracking-[0.22em] uppercase text-slate-500 mb-4">
+            {connectLinks.length > 0 && <div className="mt-10 pt-8 border-t border-white/10">
+              <span className="block text-[12px] font-semibold tracking-[0.22em] uppercase text-slate-400 mb-4">
                 Conecte-se
               </span>
               <div className="flex flex-col gap-3">
@@ -260,7 +205,7 @@ export function Footer() {
                   );
                 })}
               </div>
-            </div>
+            </div>}
           </div>
 
           {/* Link columns */}
@@ -273,20 +218,26 @@ export function Footer() {
                 <ul className="space-y-3">
                   {col.links.map((link) => (
                     <li key={`${col.title}-${link.label}-${link.href}`}>
-                      <a href={link.href} className="text-slate-400 text-[13px] leading-snug hover:text-white transition-colors">
+                      <a
+                        href={link.href}
+                        {...(link.newTab || /^https?:\/\//i.test(link.href)
+                          ? { target: "_blank", rel: "noopener noreferrer" }
+                          : {})}
+                        className="text-slate-400 text-[13px] leading-snug hover:text-white transition-colors"
+                      >
                         {link.label}
                       </a>
                     </li>
                   ))}
                 </ul>
 
-                {col.title === "EMPRESA" && (
+                {col === columns[columns.length - 1] && socialLinks.length > 0 && (
                   <div className="mt-7">
                     <span className="block text-[11px] tracking-[0.12em] uppercase text-white mb-3" style={{ fontWeight: 700 }}>
                       Redes sociais
                     </span>
                     <div className="flex items-center gap-4">
-                      {SOCIALS.map((s) => (
+                      {socialLinks.map((s) => (
                         <a
                           key={s.label}
                           href={s.href}
@@ -315,7 +266,7 @@ export function Footer() {
               <a href="/" className="inline-block">
                 <img loading="lazy" src="/logo-gaiatec-white.png" alt="Gaiatec Sistemas" style={{ height: 30, width: "auto" }} />
               </a>
-              <span className="text-[12px] text-slate-500">
+              <span className="text-[12px] text-slate-400">
                 &copy; {year} Gaiatec Sistemas. Todos os direitos reservados.
               </span>
             </div>

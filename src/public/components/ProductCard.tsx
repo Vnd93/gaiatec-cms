@@ -10,6 +10,7 @@ export function ProductCard({
   selected,
   selectionDisabled = false,
   showCompare = true,
+  featuredLabel,
   onSelect,
 }: {
   product: PublishedProduct;
@@ -17,6 +18,7 @@ export function ProductCard({
   selected: boolean;
   selectionDisabled?: boolean;
   showCompare?: boolean;
+  featuredLabel?: string;
   onSelect: (checked: boolean) => void;
 }) {
   const p = product.payload;
@@ -33,10 +35,13 @@ export function ProductCard({
   ].filter((fact): fact is { label: string; value: string } => Boolean(fact?.value));
 
   return (
-    <article className="catalog-product-card" style={{ "--card-order": index } as CSSProperties}>
+    <article
+      className={`catalog-product-card${featuredLabel ? " is-featured" : ""}`}
+      style={{ "--card-order": index } as CSSProperties}
+    >
       <div className="catalog-product-card__media">
         <span className="catalog-product-card__status">
-          {p.pilotState === "homologated" ? "Produto homologado" : "Em homologação"}
+          {featuredLabel || (p.pilotState === "homologated" ? "Produto homologado" : "Em homologação")}
         </span>
         {image ? (
           <Link to={`/produtos/${product.slug}`} tabIndex={-1} aria-hidden="true">

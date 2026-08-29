@@ -1,20 +1,18 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Search, Phone, ChevronRight, Menu, X, ChevronDown, ArrowRight } from "lucide-react";
-import { searchIndex, type SearchItem } from "../data/searchIndex";
-import { useMenu } from "../hooks/useSiteData";
-import type { SiteMenuItem } from "../../lib/supabase";
+import { searchIndex } from "../data/searchIndex";
+import type { CmsNavigationContent } from "@/shared/contracts/cms-content";
+import { usePublishedSiteShell } from "@/public/site-shell-context";
 import { MegaMenuPanel } from "./header/MegaMenuPanel";
 
 /** Itens da nav que renderizam o painel V2 (IFM-style) ao invés do dropdown legado. */
 const MEGA_PANEL_ITEMS = ["Indústrias", "Produtos", "Serviços"];
 
-/* The hardcoded `navItems` below stays as fallback. When the CMS API
-   returns at least one item, it overrides. This makes the menu safely
-   editable from the ERP painel without breaking the site if Supabase
-   is briefly unreachable. */
 type NavItem = {
+  id: string;
   label: string;
   href: string;
+  newTab?: boolean;
   children?: NavItem[];
 };
 
@@ -24,155 +22,59 @@ type NavItem = {
  * Abre em nova aba e usa noopener para a página de destino não conseguir
  * manipular window.opener. Retorna {} para link interno, que segue normal.
  */
-function externalLinkProps(href?: string) {
-  return href && /^https?:\/\//i.test(href)
+function externalLinkProps(href?: string, newTab = false) {
+  return href && (newTab || /^https?:\/\//i.test(href))
     ? { target: "_blank" as const, rel: "noopener noreferrer" }
     : {};
 }
 
-function adaptApiMenu(items: SiteMenuItem[]): NavItem[] {
-  return items.map((it) => ({
-    label: it.label,
-    // The API allows href=null (pure groupers). The Header's hover/click
-    // Grupos sem destino usam a página de contato, evitando links inertes.
-    href: it.href ?? "/contato",
-    children:
-      it.children && it.children.length > 0 ? adaptApiMenu(it.children) : undefined,
-  }));
-}
-
-/* ────────────────────────────────────────────────────────
-   NAV DATA
-   ──────────────────────────────────────────────────────── */
-const navItems = [
-  {
-    label: "Indústrias",
-    href: "/setores",
-    children: [
-      { label: "Saneamento / Líquido", href: "/setores/saneamento" },
-      { label: "Gás e Petróleo", href: "/setores/gas-petroleo" },
-      { label: "Biogás e Biometano", href: "/setores/biogas-biometano" },
-      { label: "Proteção Catódica", href: "/setores/protecao-catodica" },
-      { label: "HVAC", href: "/setores/hvac" },
-      { label: "Controle Ambiental", href: "/setores/controle-ambiental" },
-      { label: "Agronegócio", href: "/setores/agronegocio" },
-      { label: "Indústria", href: "/setores/industria" },
-      { label: "Telemetria", href: "/setores/telemetria" },
-    ],
-  },
-  {
-    label: "Produtos",
-    href: "/produtos",
-    children: [
-      {
-        label: "Medição de Vazão",
-        href: "/setores/instrumentacao",
-        children: [
-          { label: "Ultrassônico Clamp-On", href: "/setores/instrumentacao" },
-          { label: "Eletromagnético", href: "/setores/instrumentacao" },
-          { label: "Coriolis", href: "/setores/instrumentacao" },
-          { label: "Turbina", href: "/setores/instrumentacao" },
-          { label: "Vortex", href: "/setores/instrumentacao" },
-        ],
-      },
-      {
-        label: "Detecção de Gases",
-        href: "/setores/seguranca-operacional",
-        children: [
-          { label: "Analisadores de Biogás", href: "/setores/seguranca-operacional" },
-          { label: "Detectores de Gás", href: "/setores/seguranca-operacional" },
-          { label: "Cromatógrafos", href: "/setores/seguranca-operacional" },
-          { label: "Qualidade da Água", href: "/setores/seguranca-operacional" },
-        ],
-      },
-      {
-        label: "Automação e Controle",
-        href: "/setores/industria",
-        children: [
-          { label: "CLPs", href: "/setores/industria" },
-          { label: "IHMs", href: "/setores/industria" },
-          { label: "Supervisórios SCADA", href: "/setores/industria" },
-          { label: "Telemetria", href: "/setores/telemetria" },
-        ],
-      },
-    ],
-  },
-  {
-    label: "Serviços",
-    href: "/servicos",
-    children: [
-      {
-        label: "Instrumentação Industrial",
-        href: "/servicos",
-        children: [
-          { label: "Instalações e Comissionamentos", href: "/servicos/instalacoes-comissionamentos" },
-          { label: "Medições em Campo", href: "/servicos/medicoes-em-campo" },
-          { label: "Manutenções", href: "/servicos/manutencoes" },
-          { label: "Consultoria e Inspeções Técnicas", href: "/servicos/consultoria-inspecoes-tecnicas" },
-        ],
-      },
-      {
-        label: "Automação Industrial",
-        href: "/servicos/automacoes",
-        children: [
-          { label: "Automações", href: "/servicos/automacoes" },
-          { label: "Controle e Monitoramento", href: "/servicos/controle-monitoramento" },
-          { label: "Proteção Catódica", href: "/servicos/protecao-catodica" },
-          { label: "Inspeção de Revestimentos", href: "/servicos/inspecao-revestimentos" },
-        ],
-      },
-      {
-        label: "Calibração e Certificação",
-        href: "/servicos/calibracao-rastreavel-laboratorio",
-        children: [
-          { label: "Calibração Rastreável em Laboratório", href: "/servicos/calibracao-rastreavel-laboratorio" },
-          { label: "Calibração Rastreável em Campo", href: "/servicos/calibracao-rastreavel-campo" },
-        ],
-      },
-    ],
-  },
-  {
-    label: "Aplicações",
-    href: "/aplicacoes",
-  },
-  {
-    label: "Biodigestor",
-    href: "/biodigestor",
-  },
-  {
-    label: "Detecção de Gás",
-    href: "/deteccao-de-gas",
-    children: [
-      { label: "Detecção Móvel", href: "/deteccao-de-gas/deteccao-movel" },
-      { label: "Monitoramento Online", href: "/deteccao-de-gas/monitoramento-online" },
-      { label: "Localização de Tubulação PE", href: "/deteccao-de-gas/localizacao-tubulacao-pe" },
-      { label: "Detecção de Rede Enterrada", href: "/deteccao-de-gas/deteccao-rede-enterrada-gas" },
-      { label: "Detectores Portáteis", href: "/deteccao-de-gas/detectores-portateis" },
-      { label: "Monitoramento Meteorológico", href: "/deteccao-de-gas/monitoramento-meteorologico" },
-      /* Catálogo fica em domínio próprio — abre em nova aba (ver externalLinkProps) */
-      { label: "Catálogo de Produtos", href: "https://ruyang.gaiatecsistemas.com/" },
-    ],
-  },
-  {
-    label: "Contato",
-    href: "/contato",
-  },
+const SAFE_NAVIGATION: NavItem[] = [
+  { id: "products", label: "Produtos", href: "/produtos" },
+  { id: "services", label: "Serviços", href: "/servicos" },
+  { id: "industries", label: "Indústrias", href: "/industrias" },
+  { id: "applications", label: "Aplicações", href: "/aplicacoes" },
+  { id: "solutions", label: "Soluções", href: "/solucoes" },
+  { id: "contact", label: "Contato", href: "/contato" },
 ];
 
+function navigationTree(items: CmsNavigationContent["items"]): NavItem[] {
+  const visible = items.filter((item) => item.visible && item.location === "header");
+  const byParent = new Map<string | null, typeof visible>();
+  for (const item of visible) {
+    const siblings = byParent.get(item.parentId) ?? [];
+    siblings.push(item);
+    byParent.set(item.parentId, siblings);
+  }
+  const build = (parentId: string | null): NavItem[] =>
+    (byParent.get(parentId) ?? [])
+      .sort((left, right) => left.order - right.order)
+      .map((item) => {
+        const children = build(item.id);
+        return {
+          id: item.id,
+          label: item.label,
+          href: item.href,
+          newTab: item.newTab,
+          children: children.length ? children : undefined,
+        };
+      });
+  return build(null);
+}
+
 export function Header() {
-  // Menu vem do CMS (ERP painel /marketing/site, tab Menu). Cai pro
-  // hardcoded `navItems` se a API ainda não respondeu, falhou, ou
-  // retornou vazio — o site nunca fica sem menu.
-  const { menu: cmsMenu } = useMenu();
+  const { navigation, settings } = usePublishedSiteShell();
   const effectiveNavItems = useMemo<NavItem[]>(() => {
-    const base = cmsMenu && cmsMenu.length > 0 ? adaptApiMenu(cmsMenu) : (navItems as NavItem[]);
-    // Blog (fica no rodapé) e Sobre (fica na barra superior, ao lado de Localização)
-    // saem do menu principal — filtra mesmo se vier do CMS.
-    return base.filter((it) => {
-      const l = it.label.toLowerCase();
-      return it.href !== "/blog" && it.href !== "/sobre" && l !== "blog" && l !== "sobre";
-    });
-  }, [cmsMenu]);
+    if (!navigation) return SAFE_NAVIGATION;
+    const configured = navigationTree(navigation.items);
+    return configured.length ? configured : SAFE_NAVIGATION;
+  }, [navigation]);
+  const whatsappDigits = settings?.company.whatsapp.replace(/\D/g, "") ?? "";
+  const whatsappHref = whatsappDigits
+    ? `https://wa.me/${whatsappDigits.startsWith("55") ? whatsappDigits : `55${whatsappDigits}`}`
+    : settings?.defaultCta.href || "/contato";
+  const headerCtaLabel = whatsappDigits
+    ? "Fale no WhatsApp"
+    : (settings?.defaultCta.label ?? "Fale com especialista");
 
   const [scrolled, setScrolled] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
@@ -754,15 +656,6 @@ export function Header() {
                   )}
                 </div>
               </li>
-              <li style={{ paddingLeft: 24, display: "inline-block", verticalAlign: "top" }}>
-                <a href="/contato" className="hdr-utility-link">Localização</a>
-              </li>
-              <li style={{ paddingLeft: 24, display: "inline-block", verticalAlign: "top" }}>
-                <a href="/sobre" className="hdr-utility-link">Sobre</a>
-              </li>
-              <li style={{ paddingLeft: 24, display: "inline-block", verticalAlign: "top" }}>
-                <a href="/contato" className="hdr-utility-link">Carreiras</a>
-              </li>
             </ul>
           </div>
 
@@ -840,7 +733,11 @@ export function Header() {
                     onMouseEnter={() => item.children ? openMenu(i) : setActiveMenu(null)}
                     onMouseLeave={closeMenu}
                   >
-                    <a href={item.href} className="hdr-nav-link">
+                    <a
+                      href={item.href}
+                      {...externalLinkProps(item.href, item.newTab)}
+                      className="hdr-nav-link"
+                    >
                       {item.label}
                       {item.children && (
                         <ChevronDown
@@ -862,9 +759,8 @@ export function Header() {
 
             {/* ── WHATSAPP BUTTON ── pílula moderna, visível só em desktop */}
             <a
-              href="https://wa.me/551122071986"
-              target="_blank"
-              rel="noopener noreferrer"
+              href={whatsappHref}
+              {...externalLinkProps(whatsappHref, true)}
               aria-label="Fale conosco no WhatsApp"
               className="hdr-whatsapp-btn"
             >
@@ -882,7 +778,7 @@ export function Header() {
               </span>
               <span className="hdr-whatsapp-text">
                 <span className="hdr-whatsapp-eyebrow">Atendimento rápido</span>
-                <span className="hdr-whatsapp-label">Fale no WhatsApp</span>
+                <span className="hdr-whatsapp-label">{headerCtaLabel}</span>
               </span>
               <ChevronRight size={16} className="hdr-whatsapp-arrow" strokeWidth={2.5} />
             </a>
@@ -960,7 +856,7 @@ export function Header() {
                     <div style={{ marginBottom: 20 }}>
                       <a
                         href={col.href || "/contato"}
-                        {...externalLinkProps(col.href)}
+                        {...externalLinkProps(col.href, col.newTab)}
                         className="hdr-mega-l1-link"
                         style={{ fontWeight: 500 }}
                       >
@@ -972,7 +868,7 @@ export function Header() {
                       <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
                         {col.children.map((sub: any) => (
                           <li key={sub.label} style={{ marginBottom: 8 }}>
-                            <a href={sub.href || "/contato"} {...externalLinkProps(sub.href)} className="hdr-mega-l2-link">
+                            <a href={sub.href || "/contato"} {...externalLinkProps(sub.href, sub.newTab)} className="hdr-mega-l2-link">
                               {sub.label}
                             </a>
                           </li>
@@ -995,7 +891,7 @@ export function Header() {
                       <a
                         key={child.label}
                         href={child.href || "/contato"}
-                        {...externalLinkProps(child.href)}
+                        {...externalLinkProps(child.href, child.newTab)}
                         className="hdr-mega-l1-link"
                         style={{ marginBottom: 12 }}
                       >
@@ -1030,12 +926,13 @@ export function Header() {
         >
           <div style={{ padding: "24px 24px 0" }}>
             <a
-              href="https://wa.me/551122071986"
+              href={whatsappHref}
+              {...externalLinkProps(whatsappHref, true)}
               className="hdr-utility-link"
               style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
             >
               <Phone size={12} color="rgb(0, 87, 222)" />
-              Falar pelo WhatsApp
+              {headerCtaLabel}
             </a>
           </div>
 
@@ -1119,7 +1016,7 @@ export function Header() {
                                       <a
                                         key={third.label}
                                         href={third.href || "/contato"}
-                                        {...externalLinkProps(third.href)}
+                                        {...externalLinkProps(third.href, third.newTab)}
                                         style={{
                                           display: "block",
                                           padding: "6px 0",
@@ -1140,7 +1037,7 @@ export function Header() {
                             ) : (
                               <a
                                 href={child.href || "/contato"}
-                                {...externalLinkProps(child.href)}
+                                {...externalLinkProps(child.href, child.newTab)}
                                 style={{
                                   display: "flex",
                                   alignItems: "center",
@@ -1167,6 +1064,7 @@ export function Header() {
                 ) : (
                   <a
                     href={item.href}
+                    {...externalLinkProps(item.href, item.newTab)}
                     style={{
                       display: "block",
                       padding: "16px 24px",
@@ -1189,7 +1087,8 @@ export function Header() {
 
           <div style={{ padding: "24px 24px 0", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
             <a
-              href="/contato"
+              href={settings?.defaultCta.href ?? "/contato"}
+              {...externalLinkProps(settings?.defaultCta.href)}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -1205,7 +1104,7 @@ export function Header() {
                 transition: "all 0.3s",
               }}
             >
-              Solicitar Orçamento <ChevronRight size={14} />
+              {settings?.defaultCta.label ?? "Falar com especialista"} <ChevronRight size={14} />
             </a>
           </div>
         </nav>

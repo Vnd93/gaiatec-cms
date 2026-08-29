@@ -5,8 +5,8 @@ import { clientAddress, consumeRateLimit, corsHeaders, isAllowedOrigin, json, re
 
 const Uuid = z.uuid();
 const Command = z.object({
-  action: z.enum(["create", "save", "submit", "approve", "schedule", "publish", "restore", "archive", "trash"]),
-  itemId: Uuid.nullish(), contentType: z.enum(["product", "service", "industry", "application", "solution", "post", "page", "homepage"]).nullish(),
+  action: z.enum(["create", "save", "submit", "approve", "schedule", "publish", "restore", "archive", "trash", "reopen", "retire", "hard_delete"]),
+  itemId: Uuid.nullish(), contentType: z.enum(["product", "service", "industry", "application", "solution", "post", "page", "homepage", "navigation", "site_settings", "placement"]).nullish(),
   slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(160).nullish(), payload: z.record(z.string(), z.unknown()).nullish(),
   expectedLockVersion: z.number().int().positive().nullish(), revisionId: Uuid.nullish(), reason: z.string().trim().min(3).max(500).nullish(),
   publishAt: z.iso.datetime().nullish(),
@@ -44,6 +44,55 @@ Deno.serve(async (req) => {
     }
   }
   const correlationId = crypto.randomUUID();
+  if (parsed.action === "retire") {
+    if (!parsed.itemId || !parsed.payload || !parsed.expectedLockVersion) {
+      return json(req, { error: "Página, conteúdo e versão são obrigatórios." }, 400);
+    }
+    const { data, error } = await identity.admin.rpc("cms_retire_managed_page", {
+      p_actor_id: identity.user.id, p_item_id: parsed.itemId, p_slug: parsed.slug,
+      p_payload: parsed.payload, p_expected_lock_version: parsed.expectedLockVersion,
+      p_reason: parsed.reason ?? "Retirada governada de página",
+      p_aal: identity.claims.aal, p_session_id: identity.claims.sessionId,
+      p_issued_at: identity.claims.issuedAt, p_idempotency_key: idempotencyKey,
+      p_correlation_id: correlationId,
+    });
+    if (error) {
+      const forbidden = error.message.includes("FORBIDDEN"), notFound = error.message.includes("NOT_FOUND"),
+        conflict = error.message.includes("CONFLICT"), transition = error.message.includes("TRANSITION");
+      return json(req, {
+        error: forbidden ? "Permissão insuficiente." : notFound ? "Conteúdo não encontrado." :
+          conflict ? "O conteúdo foi alterado em outra sessão." :
+          transition ? "A página não está publicada." : "Configuração de retirada inválida.",
+        correlationId,
+        code: forbidden ? "CMS_COMMAND_FORBIDDEN" : notFound ? "CMS_CONTENT_NOT_FOUND" :
+          conflict ? "CMS_CONTENT_CONFLICT" : transition ? "CMS_TRANSITION_INVALID" : "CMS_PAGE_RETIREMENT_INVALID",
+      }, forbidden ? 403 : notFound ? 404 : conflict ? 409 : 422);
+    }
+    return json(req, { ...data, correlationId });
+  }
+  if (parsed.action === "hard_delete" || parsed.action === "reopen") {
+    if (!parsed.itemId) return json(req, { error: "Conteúdo obrigatório." }, 400);
+    const functionName = parsed.action === "hard_delete" ? "cms_hard_delete_draft" : "cms_reopen_site_builder";
+    const { data, error } = await identity.admin.rpc(functionName, {
+      p_actor_id: identity.user.id, p_item_id: parsed.itemId,
+      p_reason: parsed.reason ?? (parsed.action === "hard_delete" ? "Exclusão definitiva de rascunho nunca publicado" : "Abrir nova versão de conteúdo publicado"),
+      p_aal: identity.claims.aal, p_session_id: identity.claims.sessionId,
+      p_issued_at: identity.claims.issuedAt, p_idempotency_key: idempotencyKey,
+      p_correlation_id: correlationId,
+    });
+    if (error) {
+      const forbidden = error.message.includes("FORBIDDEN"), notFound = error.message.includes("NOT_FOUND"),
+        transition = error.message.includes("TRANSITION");
+      return json(req, {
+        error: forbidden ? "Permissão insuficiente." : notFound ? "Conteúdo não encontrado." :
+          transition ? "O conteúdo não está em um estado compatível." : "Exclusão definitiva não permitida.",
+        correlationId,
+        code: forbidden ? "CMS_COMMAND_FORBIDDEN" : notFound ? "CMS_CONTENT_NOT_FOUND" :
+          transition ? "CMS_TRANSITION_INVALID" : "CMS_HARD_DELETE_NOT_ALLOWED",
+      }, forbidden ? 403 : notFound ? 404 : 422);
+    }
+    return json(req, { ...data, correlationId });
+  }
   const { data, error } = await identity.admin.rpc("cms_execute_editorial_command", {
     p_actor_id: identity.user.id, p_action: parsed.action, p_item_id: parsed.itemId ?? null,
     p_content_type: parsed.contentType ?? null, p_slug: parsed.slug ?? null, p_payload: parsed.payload ?? null,

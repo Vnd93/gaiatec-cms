@@ -420,6 +420,14 @@
     box-shadow 0.3s ease,
     transform 0.3s ease;
 }
+.catalog-product-card.is-featured {
+  outline: 2px solid #ffcc00;
+  outline-offset: -2px;
+}
+.catalog-product-card.is-featured .catalog-product-card__status {
+  background: #ffcc00;
+  color: #07101f;
+}
 
 .catalog-product-card:hover {
   border-color: #aeb6c1;
@@ -617,11 +625,15 @@
 
 .catalog-product-card__facts dt {
   margin-bottom: 0.28rem;
-  color: #7b838e;
+  color: #5f6772;
   font-size: 0.58rem;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.products-catalog__cta .products-catalog__overline {
+  color: #4d94ff;
 }
 
 .catalog-product-card__facts dd {

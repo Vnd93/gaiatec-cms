@@ -21,6 +21,12 @@ export function AdminShell() {
     ["/admin/descoberta/solution", "Soluções", can("cms:solutions.read")],
     ["/admin/busca", "Busca e sinônimos", can("cms:search.read")],
     ["/admin/conteudo", "Conteúdo", can("cms:posts.read")],
+    ["/admin/paginas", "Páginas e homepage", can("cms:pages.read") || can("cms:homepage.read")],
+    [
+      "/admin/site",
+      "Estrutura do site",
+      can("cms:navigation.read") || can("cms:settings.read") || can("cms:placements.read"),
+    ],
     ["/admin/midia", "Mídia", can("cms:media.read")],
     ["/admin/perfil", "Perfil e sessão", true],
     ["/admin/usuarios", "Usuários", can("cms:users.read")],
@@ -51,7 +57,7 @@ export function AdminShell() {
         <Link to="/admin" aria-label="CMS GAIATEC — início">
           <img src="/logo-gaiatec.png" alt="" />
         </Link>
-        {(can("cms:posts.read") || can("cms:products.read")) && (
+        {(can("cms:posts.read") || can("cms:products.read") || can("cms:pages.read")) && (
           <form
             className="admin-global-search"
             role="search"

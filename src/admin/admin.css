@@ -654,6 +654,226 @@
   font-weight: 700;
 }
 
+/* Fase 6 — editor visual governado e configuração global do site. */
+.admin-heading-actions,
+.admin-builder-status,
+.admin-workflow-actions,
+.admin-page-block__toolbar,
+.admin-block-palette {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+}
+.admin-heading-actions .admin-button {
+  margin: 0;
+}
+.admin-input-with-icon {
+  position: relative;
+}
+.admin-input-with-icon svg {
+  position: absolute;
+  left: 0.7rem;
+  bottom: 0.8rem;
+  color: var(--admin-muted);
+}
+.admin-input-with-icon input {
+  padding-left: 2.2rem;
+}
+.admin-builder-status {
+  margin: 0 0 1rem;
+  border: 1px solid var(--admin-line);
+  padding: 0.75rem 1rem;
+  background: #fff;
+}
+.admin-page-builder,
+.admin-site-document {
+  display: grid;
+  gap: 1rem;
+}
+.admin-page-builder > fieldset,
+.admin-site-document > fieldset,
+.admin-page-block__content > fieldset,
+.admin-repeaters > fieldset {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr));
+  gap: 1rem;
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--admin-line);
+  padding: clamp(1rem, 3vw, 1.35rem);
+  background: #fff;
+}
+.admin-page-builder legend,
+.admin-site-document legend,
+.admin-page-block legend {
+  padding: 0 0.45rem;
+  color: var(--admin-blue-dark);
+  font-weight: 800;
+}
+.admin-page-builder label,
+.admin-site-document label,
+.admin-page-block label,
+.admin-block-palette label {
+  display: grid;
+  align-content: start;
+  gap: 0.4rem;
+  min-width: 0;
+  color: var(--admin-ink);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.admin-page-builder input,
+.admin-page-builder textarea,
+.admin-page-builder select,
+.admin-site-document input,
+.admin-site-document textarea,
+.admin-site-document select,
+.admin-page-block input,
+.admin-page-block textarea,
+.admin-page-block select,
+.admin-block-palette select {
+  width: 100%;
+  min-height: 2.75rem;
+  border: 1px solid #aeb9c6;
+  padding: 0.65rem 0.75rem;
+  background: #fff;
+  color: var(--admin-ink);
+  font: inherit;
+}
+.admin-page-builder :is(input, textarea, select):focus,
+.admin-site-document :is(input, textarea, select):focus,
+.admin-page-block :is(input, textarea, select):focus {
+  outline: 0.15rem solid rgb(0 87 222 / 18%);
+  border-color: var(--admin-blue);
+}
+.admin-checkbox {
+  display: flex !important;
+  flex-direction: row;
+  align-items: flex-start !important;
+  gap: 0.55rem !important;
+  text-transform: none;
+}
+.admin-checkbox input {
+  width: 1.15rem !important;
+  min-height: 1.15rem !important;
+  flex: 0 0 auto;
+}
+.admin-block-palette {
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  border: 1px solid var(--admin-line);
+  padding: 1rem;
+  background: #eef4ff;
+}
+.admin-block-palette label {
+  min-width: min(22rem, 100%);
+}
+.admin-block-palette button,
+.admin-page-block button,
+.admin-workflow-actions button,
+.admin-site-document button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 2.65rem;
+  border: 1px solid var(--admin-blue);
+  padding: 0.55rem 0.8rem;
+  background: #fff;
+  color: var(--admin-blue-dark);
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+}
+.admin-page-blocks,
+.admin-repeaters {
+  display: grid;
+  gap: 1rem;
+}
+.admin-page-block {
+  overflow: clip;
+  border: 1px solid var(--admin-line);
+  background: #fff;
+  box-shadow: 0 0.45rem 1.4rem rgb(19 34 56 / 5%);
+}
+.admin-page-block.is-hidden {
+  opacity: 0.68;
+  background: #f2f4f7;
+}
+.admin-page-block > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 3.25rem;
+  padding: 0.75rem 1rem;
+  background: #eef3f8;
+  cursor: pointer;
+  list-style: none;
+}
+.admin-page-block > summary::-webkit-details-marker {
+  display: none;
+}
+.admin-page-block > summary span:last-child {
+  margin-left: auto;
+  color: var(--admin-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.admin-page-block__drag {
+  display: inline-flex;
+  color: var(--admin-muted);
+}
+.admin-page-block__toolbar,
+.admin-page-block__settings,
+.admin-page-block__content {
+  padding: 1rem;
+  border-top: 1px solid var(--admin-line);
+}
+.admin-page-block__settings,
+.admin-page-block__content {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr));
+  gap: 1rem;
+}
+.admin-page-block__content > .admin-repeaters,
+.admin-page-block__content > .admin-check-grid {
+  grid-column: 1 / -1;
+}
+.admin-check-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));
+  gap: 0.75rem;
+}
+.admin-danger-link {
+  border-color: #bf2626 !important;
+  color: #9e1d1d !important;
+}
+.admin-workflow-actions {
+  align-items: end;
+  grid-column: 1 / -1;
+}
+.admin-workflow-actions a {
+  color: var(--admin-blue-dark);
+  font-weight: 750;
+}
+.admin-contract-issues {
+  margin-top: 1.25rem;
+  border-left: 0.25rem solid #b3261e;
+  padding: 1rem 1.25rem;
+  background: #fff2f2;
+  color: #7d1914;
+}
+.admin-contract-issues h2 {
+  margin-top: 0;
+  font-size: 1.1rem;
+}
+.admin-contract-issues li {
+  margin: 0.35rem 0;
+  overflow-wrap: anywhere;
+}
+
 @media (min-width: 900px) {
   .admin-menu-button {
     visibility: hidden;
@@ -714,5 +934,15 @@
   .admin-table-wrap td {
     border: 0;
     padding: 0.35rem;
+  }
+  .admin-heading-actions,
+  .admin-heading-actions .admin-button,
+  .admin-block-palette button,
+  .admin-workflow-actions button,
+  .admin-workflow-actions label {
+    width: 100%;
+  }
+  .admin-page-block__toolbar button {
+    flex: 1 1 9rem;
   }
 }

@@ -22,8 +22,17 @@ Deno.serve(async (req) => {
     const mediaUrls: Record<string, string> = {};
     const documentUrls: Record<string, string> = {};
     const media = payload?.media ?? [];
-    const assetIds = media.map((entry: any) => entry.assetId);
+    const blockAssetIds = (payload?.blocks ?? []).flatMap((block: any) => [
+      block.data?.assetId,
+      ...(block.data?.assetIds ?? []),
+      ...(block.data?.items ?? []).map((item: any) => item.assetId),
+    ].filter(Boolean));
+    const assetIds = [...new Set([...media.map((entry: any) => entry.assetId), ...blockAssetIds, payload?.seo?.ogImageId].filter(Boolean))];
     const primaryId = media.find((entry: any) => entry.role === "primary")?.assetId;
+    const { data: assets } = assetIds.length
+      ? await admin.from("cms_media_assets").select("id,alt_text").in("id", assetIds)
+      : { data: [] };
+    const mediaAlt = Object.fromEntries((assets ?? []).map((asset: any) => [asset.id, asset.alt_text]));
     const { data: variants } = assetIds.length
       ? await admin.from("cms_media_variants").select("asset_id,variant_key,format,transform_path").in("asset_id", assetIds)
       : { data: [] };
@@ -48,7 +57,7 @@ Deno.serve(async (req) => {
       const signedUrl = signedDocuments?.[index]?.signedUrl;
       if (signedUrl) documentUrls[document.id] = signedUrl;
     });
-    return json(req, { ...data, media_urls: mediaUrls, document_urls: documentUrls }, 200, { "X-Robots-Tag": "noindex, nofollow, noarchive", "Cache-Control": "private, no-store, max-age=0" });
+    return json(req, { ...data, media_urls: mediaUrls, media_alt: mediaAlt, document_urls: documentUrls }, 200, { "X-Robots-Tag": "noindex, nofollow, noarchive", "Cache-Control": "private, no-store, max-age=0" });
   }
   if (req.method !== "POST") return json(req, { error: "Método não permitido." }, 405);
   const identity = await authenticateCms(req);

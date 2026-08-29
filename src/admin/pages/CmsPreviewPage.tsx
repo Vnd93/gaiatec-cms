@@ -7,10 +7,12 @@ import type { CmsProductContent } from "@/shared/contracts/cms-content";
 import type {
   CmsApplicationContent,
   CmsIndustryContent,
+  CmsPageContent,
   CmsServiceContent,
   CmsSolutionContent,
 } from "@/shared/contracts/cms-content";
 import { DiscoveryEntityRenderer } from "@/public/components/DiscoveryEntityRenderer";
+import { CmsPageRenderer } from "@/public/components/CmsPageRenderer";
 export default function CmsPreviewPage() {
   const { token = "" } = useParams();
   const [previewData, setPreviewData] = useState<{
@@ -20,11 +22,13 @@ export default function CmsPreviewPage() {
         | CmsServiceContent
         | CmsIndustryContent
         | CmsApplicationContent
-        | CmsSolutionContent;
+        | CmsSolutionContent
+        | CmsPageContent;
       itemId?: string;
       slug?: string;
       contentType?: string;
       media_urls?: Record<string, string>;
+      media_alt?: Record<string, string>;
       document_urls?: Record<string, string>;
     } | null>(null),
     [error, setError] = useState("");
@@ -61,6 +65,14 @@ export default function CmsPreviewPage() {
             payload={previewData.payload}
             mediaUrls={previewData.media_urls}
             documentUrls={previewData.document_urls}
+            preview
+          />
+        ) : "contentType" in previewData.payload &&
+          ["page", "homepage"].includes(previewData.payload.contentType) ? (
+          <CmsPageRenderer
+            payload={previewData.payload as CmsPageContent}
+            mediaUrls={previewData.media_urls}
+            mediaAlt={previewData.media_alt}
             preview
           />
         ) : "contentType" in previewData.payload &&

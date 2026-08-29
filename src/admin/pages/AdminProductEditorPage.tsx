@@ -49,6 +49,14 @@ const splitLines = (value: string) =>
     .map((item) => item.trim())
     .filter(Boolean);
 const uuidList = (value: string) => splitLines(value);
+const parseJsonArray = (value: string): unknown[] => {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [{ invalidJsonArray: true }];
+  } catch {
+    return [{ invalidJson: true }];
+  }
+};
 
 function initialDraft() {
   return {
@@ -85,17 +93,21 @@ function initialDraft() {
     attributeLabel: "",
     attributeValue: "",
     attributeUnit: "",
+    additionalSpecificationsJson: "[]",
     mediaId: "",
     mediaAlt: "",
     mediaCaption: "",
+    additionalMediaJson: "[]",
     documentId: crypto.randomUUID(),
     documentKind: "datasheet",
     documentTitle: "",
     documentUrl: "",
+    documentStoragePath: "",
     documentHash: "",
     documentRevision: "",
     documentLanguage: "pt-BR",
     documentVisibility: "public",
+    additionalDocumentsJson: "[]",
     productIds: "",
     applicationIds: "",
     sectorIds: "",
@@ -110,9 +122,16 @@ function initialDraft() {
     pilotState: "awaiting_owner",
     sourceKind: "official_manufacturer",
     sourceUrl: "",
+    sourcePath: "",
+    fileModifiedAt: "",
     sourceVersion: "",
     sourceDate: "",
     sourceHash: "",
+    authorizationReference: "",
+    authorizationDate: "",
+    rightsScope: "",
+    additionalProvenanceJson: "[]",
+    additionalBlocksJson: "[]",
     rightsConfirmed: false,
     commercialOwner: "",
     technicalOwner: "",
@@ -197,17 +216,21 @@ export default function AdminProductEditorPage() {
             attributeLabel: p.specifications?.[0]?.label ?? "",
             attributeValue: String(p.specifications?.[0]?.value ?? ""),
             attributeUnit: p.specifications?.[0]?.unit ?? "",
+            additionalSpecificationsJson: JSON.stringify(p.specifications?.slice(1) ?? [], null, 2),
             mediaId: p.media?.[0]?.assetId ?? "",
             mediaAlt: p.media?.[0]?.alt ?? "",
             mediaCaption: p.media?.[0]?.caption ?? "",
+            additionalMediaJson: JSON.stringify(p.media?.slice(1) ?? [], null, 2),
             documentId: p.documents?.[0]?.id ?? current.documentId,
             documentKind: p.documents?.[0]?.kind ?? "datasheet",
             documentTitle: p.documents?.[0]?.title ?? "",
             documentUrl: p.documents?.[0]?.officialUrl ?? "",
+            documentStoragePath: p.documents?.[0]?.storagePath ?? "",
             documentHash: p.documents?.[0]?.sha256 ?? "",
             documentRevision: p.documents?.[0]?.revision ?? "",
             documentLanguage: p.documents?.[0]?.language ?? "pt-BR",
             documentVisibility: p.documents?.[0]?.visibility ?? "public",
+            additionalDocumentsJson: JSON.stringify(p.documents?.slice(1) ?? [], null, 2),
             productIds: (p.relations?.productIds ?? []).join("\n"),
             applicationIds: (p.relations?.applicationIds ?? []).join("\n"),
             sectorIds: (p.relations?.sectorIds ?? []).join("\n"),
@@ -222,9 +245,22 @@ export default function AdminProductEditorPage() {
             pilotState: p.pilotState ?? "awaiting_owner",
             sourceKind: p.provenance?.[0]?.sourceKind ?? "official_manufacturer",
             sourceUrl: p.provenance?.[0]?.sourceUrl ?? "",
+            sourcePath: p.provenance?.[0]?.sourcePath ?? "",
+            fileModifiedAt: p.provenance?.[0]?.fileModifiedAt?.slice(0, 16) ?? "",
             sourceVersion: p.provenance?.[0]?.documentVersion ?? "",
             sourceDate: p.provenance?.[0]?.documentDate ?? "",
             sourceHash: p.provenance?.[0]?.sourceSha256 ?? "",
+            authorizationReference: p.provenance?.[0]?.authorizationReference ?? "",
+            authorizationDate: p.provenance?.[0]?.authorizationDate ?? "",
+            rightsScope: p.provenance?.[0]?.rightsScope ?? "",
+            additionalProvenanceJson: JSON.stringify(p.provenance?.slice(1) ?? [], null, 2),
+            additionalBlocksJson: JSON.stringify(
+              (p.blocks ?? []).filter(
+                (block: any) => !["rich_text", "specifications", "image"].includes(block.type),
+              ),
+              null,
+              2,
+            ),
             rightsConfirmed: p.provenance?.[0]?.rightsConfirmed ?? false,
             commercialOwner: p.provenance?.[0]?.commercialOwner ?? "",
             technicalOwner: p.provenance?.[0]?.technicalOwner ?? "",
@@ -293,33 +329,41 @@ export default function AdminProductEditorPage() {
           comparable: true,
           searchable: true,
         },
+        ...parseJsonArray(draft.additionalSpecificationsJson),
       ],
-      media: draft.mediaId
-        ? [
-            {
-              assetId: draft.mediaId,
-              role: "primary" as const,
-              alt: draft.mediaAlt,
-              ...(draft.mediaCaption ? { caption: draft.mediaCaption } : {}),
-              order: 0,
-            },
-          ]
-        : [],
-      documents: draft.documentTitle
-        ? [
-            {
-              id: draft.documentId,
-              kind: draft.documentKind,
-              title: draft.documentTitle,
-              officialUrl: draft.documentUrl,
-              sha256: draft.documentHash,
-              revision: draft.documentRevision,
-              language: draft.documentLanguage,
-              visibility: draft.documentVisibility,
-              rightsConfirmed: draft.rightsConfirmed,
-            },
-          ]
-        : [],
+      media: [
+        ...(draft.mediaId
+          ? [
+              {
+                assetId: draft.mediaId,
+                role: "primary" as const,
+                alt: draft.mediaAlt,
+                ...(draft.mediaCaption ? { caption: draft.mediaCaption } : {}),
+                order: 0,
+              },
+            ]
+          : []),
+        ...parseJsonArray(draft.additionalMediaJson),
+      ],
+      documents: [
+        ...(draft.documentTitle
+          ? [
+              {
+                id: draft.documentId,
+                kind: draft.documentKind,
+                title: draft.documentTitle,
+                ...(draft.documentUrl ? { officialUrl: draft.documentUrl } : {}),
+                ...(draft.documentStoragePath ? { storagePath: draft.documentStoragePath } : {}),
+                sha256: draft.documentHash,
+                revision: draft.documentRevision,
+                language: draft.documentLanguage,
+                visibility: draft.documentVisibility,
+                rightsConfirmed: draft.rightsConfirmed,
+              },
+            ]
+          : []),
+        ...parseJsonArray(draft.additionalDocumentsJson),
+      ],
       relations: {
         productIds: uuidList(draft.productIds),
         applicationIds: uuidList(draft.applicationIds),
@@ -347,6 +391,7 @@ export default function AdminProductEditorPage() {
               },
             ]
           : []),
+        ...parseJsonArray(draft.additionalBlocksJson),
       ],
       seo: {
         title: draft.seoTitle,
@@ -358,14 +403,20 @@ export default function AdminProductEditorPage() {
         {
           sourceKind: draft.sourceKind,
           ...(draft.sourceUrl ? { sourceUrl: draft.sourceUrl } : {}),
+          ...(draft.sourcePath ? { sourcePath: draft.sourcePath } : {}),
+          ...(draft.fileModifiedAt ? { fileModifiedAt: new Date(draft.fileModifiedAt).toISOString() } : {}),
           ...(draft.sourceVersion ? { documentVersion: draft.sourceVersion } : {}),
           ...(draft.sourceDate ? { documentDate: draft.sourceDate } : {}),
           ...(draft.sourceHash ? { sourceSha256: draft.sourceHash } : {}),
+          ...(draft.authorizationReference ? { authorizationReference: draft.authorizationReference } : {}),
+          ...(draft.authorizationDate ? { authorizationDate: draft.authorizationDate } : {}),
+          ...(draft.rightsScope ? { rightsScope: draft.rightsScope } : {}),
           rightsConfirmed: draft.rightsConfirmed,
           commercialOwner: draft.commercialOwner,
           technicalOwner: draft.technicalOwner,
           verifiedAt: draft.verifiedAt ? new Date(draft.verifiedAt).toISOString() : "",
         },
+        ...parseJsonArray(draft.additionalProvenanceJson),
       ],
       approval: {
         portfolioOwner: draft.portfolioOwner,
@@ -539,6 +590,7 @@ export default function AdminProductEditorPage() {
             {input("Rótulo", "attributeLabel")}
             {input("Valor", "attributeValue")}
             {input("Unidade", "attributeUnit")}
+            {area("Atributos adicionais — JSON governado", "additionalSpecificationsJson")}
             <p className="admin-help">
               Este atributo é obrigatório, filtrável, comparável e pesquisável. O contrato suporta texto,
               número, booleano, enum e faixa.
@@ -551,6 +603,7 @@ export default function AdminProductEditorPage() {
             {input("UUID do ativo da biblioteca", "mediaId")}
             {input("ALT", "mediaAlt")}
             {area("Legenda", "mediaCaption")}
+            {area("Mídias adicionais — JSON governado", "additionalMediaJson")}
             <p className="admin-help">
               Use somente ativo enviado à biblioteca vazia do CMS, nunca arquivo do site atual.
             </p>
@@ -574,9 +627,11 @@ export default function AdminProductEditorPage() {
             </label>
             {input("Título", "documentTitle")}
             {input("URL oficial", "documentUrl", "url")}
+            {input("Caminho no storage privado", "documentStoragePath")}
             {input("SHA-256", "documentHash")}
             {input("Revisão", "documentRevision")}
             {input("Idioma", "documentLanguage")}
+            {area("Documentos adicionais — JSON governado", "additionalDocumentsJson")}
           </fieldset>
         )}
         {activeTab === "relacoes" && (
@@ -633,9 +688,16 @@ export default function AdminProductEditorPage() {
               </select>
             </label>
             {input("URL da fonte", "sourceUrl", "url")}
+            {input("Caminho original autorizado", "sourcePath")}
+            {input("Arquivo modificado em", "fileModifiedAt", "datetime-local")}
             {input("Versão", "sourceVersion")}
             {input("Data da fonte", "sourceDate", "date")}
             {input("SHA-256 da fonte", "sourceHash")}
+            {input("Referência da autorização", "authorizationReference")}
+            {input("Data da autorização", "authorizationDate", "date")}
+            {area("Escopo dos direitos de uso", "rightsScope")}
+            {area("Fontes adicionais — JSON governado", "additionalProvenanceJson")}
+            {area("Blocos adicionais — JSON governado", "additionalBlocksJson")}
             {input("Owner comercial", "commercialOwner")}
             {input("Owner técnico", "technicalOwner")}
             {input("Verificado em", "verifiedAt", "datetime-local")}

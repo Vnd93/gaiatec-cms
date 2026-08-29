@@ -1,13 +1,16 @@
 import type { CmsProductContent } from "@/shared/contracts/cms-content";
+import { formatProductSpecification } from "../format-product-spec";
 import "../product-catalog.css";
 
 export function CmsProductRenderer({
   payload: p,
   mediaUrls = {},
+  documentUrls = {},
   preview = false,
 }: {
   payload: CmsProductContent;
   mediaUrls?: Record<string, string>;
+  documentUrls?: Record<string, string>;
   preview?: boolean;
 }) {
   const image = mediaUrls["large.webp"] ?? mediaUrls["medium.webp"];
@@ -35,7 +38,7 @@ export function CmsProductRenderer({
               ? "Homologado"
               : p.pilotState === "synthetic_test"
                 ? "Teste sintético"
-                : "Aguardando owner"}
+                : "Conteúdo piloto em homologação"}
           </span>
           <p className="new-catalog__lead">{p.commercial.shortDescription}</p>
           <p>
@@ -46,6 +49,18 @@ export function CmsProductRenderer({
           </a>
         </div>
       </header>
+      {p.media.length > 1 && (
+        <section aria-labelledby="galeria-produto">
+          <h2 id="galeria-produto">Galeria</h2>
+          <div className="product-detail__gallery">
+            {p.media.slice(1).map((entry) => {
+              const source =
+                mediaUrls[`${entry.assetId}:large.webp`] ?? mediaUrls[`${entry.assetId}:medium.webp`];
+              return source ? <img key={entry.assetId} src={source} alt={entry.alt} /> : null;
+            })}
+          </div>
+        </section>
+      )}
       <nav className="product-detail__nav" aria-label="Conteúdo do produto">
         <a href="#visao-geral">Visão geral</a>
         <a href="#especificacoes">Especificações</a>
@@ -76,10 +91,7 @@ export function CmsProductRenderer({
               {p.specifications.map((spec) => (
                 <tr key={spec.id}>
                   <th>{spec.label}</th>
-                  <td>
-                    {typeof spec.value === "object" ? JSON.stringify(spec.value) : String(spec.value)}{" "}
-                    {spec.unit}
-                  </td>
+                  <td>{formatProductSpecification(spec)}</td>
                 </tr>
               ))}
             </tbody>
@@ -136,7 +148,7 @@ export function CmsProductRenderer({
               .filter((document) => document.visibility === "public")
               .map((document) => (
                 <li key={document.id}>
-                  <a href={document.officialUrl} rel="noreferrer">
+                  <a href={documentUrls[document.id] ?? document.officialUrl} rel="noreferrer">
                     {document.title} — revisão {document.revision}
                   </a>
                 </li>

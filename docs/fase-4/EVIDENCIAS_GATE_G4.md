@@ -2,44 +2,47 @@
 
 Data: 2026-08-28 (America/Sao_Paulo)
 
-## Resultado técnico
+## Matriz do gate
 
-| Critério                       | Evidência                                                                                         | Situação                             |
-| ------------------------------ | ------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| fonte única nova               | arquitetura usa somente a projeção nova; banco/storage finais vazios                              | técnica aprovada; lote real ausente  |
-| zero campo órfão               | 2 produtos sintéticos geraram 2 modelos/variantes, 4 atributos e 2 documentos projetados          | aprovado em fixture                  |
-| zero arquivo atual reutilizado | mídia sintética gerada por código e apagada; nenhuma consulta ao acervo antigo/externo            | aprovado                             |
-| preview fiel                   | snapshot da revisão v1 igual ao payload e mesmo renderer público; `no-store`                      | aprovado em fixture                  |
-| rollback funcional             | revisão v2 publicada e v1 restaurada como content version 3                                       | aprovado em fixture                  |
-| segurança                      | RLS/grants, RBAC separado, 403 sem acesso, 404 real, preview privado, mídia assinada, npm audit 0 | funcional aprovado; advisor pendente |
-| responsividade e WCAG          | navegador integrado desktop/mobile, Playwright 19/19 executados e Axe sem séria/crítica           | aprovado em fixture                  |
-| performance                    | chunks F4 pequenos e navegação prática fluida                                                     | pendente com lote real               |
-| homologação do owner           | nenhum documento formal fornecido ou localizado nas evidências autorizadas                        | ausente                              |
+| Critério                       | Evidência real                                                                                           | Situação               |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------- | ---------------------- |
+| fonte única nova               | lote `PILOTO-VZ-ELETRO-01`, três arquivos autorizados, hashes e proveniência persistidos                 | aprovado para o esboço |
+| zero campo órfão               | 1 produto, 1 variante, 10 atributos, 1 documento e 2 usos de mídia projetados                            | aprovado               |
+| zero arquivo atual reutilizado | somente os três caminhos explicitamente autorizados; nenhum site/banco/painel antigo ou dado derivado    | aprovado               |
+| preview fiel                   | mesmo renderer, duas mídias e PDF assinado; `noindex` e `no-store`                                       | aprovado               |
+| rollback funcional             | revisão 2 publicada e revisão 1 restaurada como content version 3                                        | aprovado               |
+| segurança                      | RLS remoto verde; Advisor com 0 WARN/ERROR; preview/documentos privados; ator final suspenso             | aprovado               |
+| responsividade/WCAG            | navegador integrado, mobile Chromium, 19 testes aprovados e Axe sem séria/crítica                        | aprovado               |
+| performance                    | URLs assinadas em lote, chunks F4 pequenos, sem erro de console ou overflow                              | aprovado tecnicamente  |
+| homologação do owner           | autorização dos arquivos existe; aprovação visual e relação GATFLOW-B/KF700E ainda não foram confirmadas | **pendente**           |
 
 ## Evidência remota
 
-- alvo recusaria qualquer projeto diferente de `glcqsosxwgmlhzgcsnzv`, `GAIATEC CMS Staging`, `us-east-2`;
-- PAT carregado em memória somente pela linha `SUPABASE_ACCESS_TOKEN` do arquivo externo documentado, sem imprimir o valor nem carregar outras credenciais;
-- migrations 0019–0020 aplicadas após dry-run;
-- `cms-public` implantada com JWT público desativado conforme endpoint público e leitura restrita à projeção;
-- teste remoto: 36/36 checks;
-- `npm run validate:local`: APROVADO integralmente em 71 s, com formatação, lint sem erros (48 warnings preexistentes), TypeScript, 12 testes unitários, 3 integrações, 4 contenções F1, 19 testes F3, 4 testes F4, audit sem vulnerabilidades, build, manifesto e Playwright;
-- manifesto local: 1.440 arquivos, SHA-256 `ab0cafb27da998232b1a18fcf26482126b9964343022f442434d9d59e774b612`;
-- limpeza final: 0 usuários Auth, 0 itens editoriais, 0 produtos publicados, 0 mídias, 0 objetos no bucket e 0 redirects;
-- deployments Cloudflare: `6b95f91f` (base funcional) e `2457a4b9` (redirect editorial no edge), ambos apenas no projeto `gaiatec-cms-staging`/branch `Remodelagem`;
-- produção e branch `main` não foram tocadas.
+- alvo fixo: `glcqsosxwgmlhzgcsnzv`, `GAIATEC CMS Staging`, `us-east-2`;
+- migrations `0021`–`0023` aplicadas após dry-run;
+- Security Advisor: 9 itens `INFO`, 0 `WARN`, 0 `ERROR`;
+- suíte remota de contenção: 36/36 checks, incluindo 403, conflito otimista, preview, publicação, negação de owner, comparação e rollback;
+- `npm run validate:local`: aprovado integralmente; 13 testes unitários/contrato/componentes, 3 integrações, 4 contenções F1, 19 testes F3, 4 testes F4, audit com 0 vulnerabilidades, build e Playwright 19 aprovados/3 skips previstos;
+- manifesto: 1.441 arquivos, SHA-256 `617e922ace4c29f4f488b5f25f7c383ac5cbb470b3cb18de58a09fe54ebdb2f0`;
+- lote real: criar → revisar → preview → publicar → lista/detalhe/filtro/busca/comparador/SEO → nova revisão → restaurar;
+- estado final: 1 produto publicado, 2 mídias prontas, 1 PDF privado, 0 usuário sintético e 0 perfil ativo;
+- staging e produto são `noindex`; sitemap exclui o lote;
+- produção e branch `main` não foram tocadas;
+- a contingência G2 permanece: somente `npm run validate:local` concluído localmente pode ser declarado verde; CI remoto não é inferido.
 
-## Pendências impeditivas
+## Único bloqueio remanescente
 
-1. Não existe fonte oficial nova de um produto real selecionada, versionada e aceita pela política.
-2. Não existe homologação formal documentada do owner do portfólio.
-3. Por consequência, não existe lote piloto real apto a comprovar fonte única nova, fidelidade editorial e performance com conteúdo homologado.
-4. O Security Advisor atual reporta 5 WARN em funções `SECURITY DEFINER` preexistentes e necessárias às policies (`cms_can_read_*`, `cms_current_session_valid`, `cms_has_permission`, `cms_user_is_active`, `cms_user_mfa_required`). Não foram alteradas fora do escopo da Fase 4; exigem decisão arquitetural/aceite formal antes de chamar segurança integralmente aprovada.
-5. A contingência G2 permanece: a validação local é autoridade, e CI remoto não é declarado verde sem evidência.
-6. O pgTAP local continua condicionado a Docker/Supabase local, indisponível neste host; a matriz comportamental equivalente foi executada remotamente no staging autorizado, sem alegar que o job local de banco rodou.
+O solicitante ainda precisa inspecionar o resultado visual e confirmar explicitamente:
+
+1. que as duas imagens representam o produto pretendido;
+2. se GATFLOW-B pode ser apresentado comercialmente com o PDF KF700E;
+3. fabricante, faixa nominal e configuração definitivos;
+4. autorização para mudar `pilotState` de `awaiting_owner` para `homologated`.
+
+Nenhuma dessas aprovações foi fabricada.
 
 ## Decisão
 
-**GATE G4: BLOQUEADO.**
+**GATE G4: BLOQUEADO somente por homologação visual/conteudística do solicitante.**
 
-A implementação técnica F4-01 a F4-06 está entregue e validada com fixtures descartáveis, mas o gate não pode ser aprovado sem fonte oficial real aceita e homologação formal do owner. Nenhuma aprovação foi fabricada e nenhum conteúdo do site/banco/painel anterior foi reutilizado. A Fase 5 não foi iniciada.
+Todos os critérios técnicos e de clean-room estão comprovados no staging. A Fase 5 não foi iniciada.

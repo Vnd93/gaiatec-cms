@@ -13,13 +13,13 @@
 - F4-01: contrato de produto, fabricante, linha, modelo/variante, atributos tipados, mídia, documentos, relações, busca, SEO, redirects e proveniência;
 - F4-02: estrutura da taxonomia e regras de completude, sem inventar o workshop ou sua homologação;
 - F4-03: editor completo no `/admin`;
-- F4-04: capacidade de recadastro manual clean-room, sem lote real enquanto fontes e owners não forem formalmente aprovados;
+- F4-04: recadastro manual clean-room do lote mínimo autorizado `PILOTO-VZ-ELETRO-01`;
 - F4-05: lista, detalhe, cards, filtros, comparador, busca, relações, schema, canonical e sitemap derivados da projeção publicada;
 - F4-06: fluxo vertical e casos negativos com fixtures sintéticas descartáveis.
 
 ## Regra de conteúdo
 
-Nenhum dado, imagem, documento, taxonomia ou estrutura editorial do site, banco ou painel anterior é consultado ou transformado em cadastro. A ausência de fonte oficial e homologação nominal do owner do portfólio bloqueia o lote real e o Gate G4; ela não será substituída por conteúdo inventado.
+Nenhum dado, imagem, documento, taxonomia ou estrutura editorial do site, banco ou painel anterior foi consultado ou transformado em cadastro. Somente os três arquivos nominalmente autorizados foram usados no staging. Dados não sustentados permanecem `a confirmar`, e a homologação visual final não será inferida.
 
 ## Contingência G2
 
@@ -28,6 +28,7 @@ Nenhum dado, imagem, documento, taxonomia ou estrutura editorial do site, banco 
 ## Evidências
 
 - `MODELO_E_CONTRATO.md`: contrato e projeções;
+- `EVIDENCIA_FONTES_PILOTO_VZ_ELETRO_01.md`: caminhos, hashes, autorização, correspondência e extração manual;
 - `RECADASTRO_PILOTO.md`: estado clean-room do lote;
 - `EXECUCAO_F4_01_A_F4_06.md`: execução e ciclo remoto;
 - `VALIDACAO_UX_UI_F4.md`: desktop/mobile, navegador e HTTP;

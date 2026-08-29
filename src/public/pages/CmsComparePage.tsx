@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import { comparePublishedProducts, type PublishedProduct } from "../catalog-api";
 import { applyCatalogSeo } from "../catalog-seo";
+import { formatProductSpecification } from "../format-product-spec";
 import "../product-catalog.css";
 
 export default function CmsComparePage() {
@@ -73,13 +74,7 @@ export default function CmsComparePage() {
                   </th>
                   {products.map((product) => {
                     const spec = product.payload.specifications.find((entry) => entry.key === key);
-                    return (
-                      <td key={product.item_id}>
-                        {spec
-                          ? `${typeof spec.value === "object" ? JSON.stringify(spec.value) : String(spec.value)} ${spec.unit ?? ""}`
-                          : "—"}
-                      </td>
-                    );
+                    return <td key={product.item_id}>{spec ? formatProductSpecification(spec) : "—"}</td>;
                   })}
                 </tr>
               ))}

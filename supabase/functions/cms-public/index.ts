@@ -21,15 +21,38 @@ Deno.serve(async (req) => {
   const url = new URL(req.url), type = url.searchParams.get("type") ?? "detail";
   const client = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? anon, { auth: { persistSession: false } });
   const enrichMedia = async (row: any) => {
-    const assetId = row.payload?.media?.find((entry: any) => entry.role === "primary")?.assetId;
-    if (!assetId) return { ...row, media_urls: {} };
-    const { data: variants } = await client.from("cms_media_variants").select("variant_key,format,transform_path").eq("asset_id", assetId);
     const mediaUrls: Record<string, string> = {};
+    const media = row.payload?.media ?? [];
+    const assetIds = media.map((entry: any) => entry.assetId);
+    const primaryId = media.find((entry: any) => entry.role === "primary")?.assetId;
+    const { data: variants } = assetIds.length
+      ? await client.from("cms_media_variants").select("asset_id,variant_key,format,transform_path").in("asset_id", assetIds)
+      : { data: [] };
+    const paths = (variants ?? []).map((variant: any) => variant.transform_path);
+    const { data: signedVariants } = paths.length
+      ? await client.storage.from("cms-media-private").createSignedUrls(paths, 3600)
+      : { data: [] };
+    const signedByPath = new Map((signedVariants ?? []).map((signed: any) => [signed.path, signed.signedUrl]));
     for (const variant of variants ?? []) {
-      const { data: signed } = await client.storage.from("cms-media-private").createSignedUrl(variant.transform_path, 3600);
-      if (signed?.signedUrl) mediaUrls[`${variant.variant_key}.${variant.format}`] = signed.signedUrl;
+      const signedUrl = signedByPath.get(variant.transform_path);
+      const key = `${variant.variant_key}.${variant.format}`;
+      if (signedUrl) {
+        mediaUrls[`${variant.asset_id}:${key}`] = signedUrl;
+        if (variant.asset_id === primaryId) mediaUrls[key] = signedUrl;
+      }
     }
-    return { ...row, media_urls: mediaUrls };
+    const documentUrls: Record<string, string> = {};
+    const documents = (row.payload?.documents ?? []).filter(
+      (document: any) => document.visibility === "public" && document.storagePath,
+    );
+    const { data: signedDocuments } = documents.length
+      ? await client.storage.from("cms-documents-private").createSignedUrls(documents.map((document: any) => document.storagePath), 3600)
+      : { data: [] };
+    documents.forEach((document: any, index: number) => {
+      const signedUrl = signedDocuments?.[index]?.signedUrl;
+      if (signedUrl) documentUrls[document.id] = signedUrl;
+    });
+    return { ...row, media_urls: mediaUrls, document_urls: documentUrls };
   };
 
   if (type === "redirect") {

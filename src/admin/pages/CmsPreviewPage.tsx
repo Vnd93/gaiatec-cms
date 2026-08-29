@@ -6,7 +6,11 @@ import { CmsProductRenderer } from "@/public/components/CmsProductRenderer";
 import type { CmsProductContent } from "@/shared/contracts/cms-content";
 export default function CmsPreviewPage() {
   const { token = "" } = useParams();
-  const [payload, setPayload] = useState<(CmsArticlePayload | CmsProductContent) | null>(null),
+  const [previewData, setPreviewData] = useState<{
+      payload: CmsArticlePayload | CmsProductContent;
+      media_urls?: Record<string, string>;
+      document_urls?: Record<string, string>;
+    } | null>(null),
     [error, setError] = useState("");
   useEffect(() => {
     document.title = "Preview privado | CMS GAIATEC";
@@ -24,7 +28,7 @@ export default function CmsPreviewPage() {
       .then(async (response) => {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error);
-        setPayload(data.payload);
+        setPreviewData(data);
       })
       .catch((caught) => setError(caught instanceof Error ? caught.message : "Preview indisponível."));
   }, [token]);
@@ -35,11 +39,16 @@ export default function CmsPreviewPage() {
           <h1>Preview indisponível</h1>
           <p>{error}</p>
         </div>
-      ) : payload ? (
-        "contentType" in payload && payload.contentType === "product" ? (
-          <CmsProductRenderer payload={payload} preview />
+      ) : previewData ? (
+        "contentType" in previewData.payload && previewData.payload.contentType === "product" ? (
+          <CmsProductRenderer
+            payload={previewData.payload}
+            mediaUrls={previewData.media_urls}
+            documentUrls={previewData.document_urls}
+            preview
+          />
         ) : (
-          <CmsStructuredArticle payload={payload as CmsArticlePayload} preview />
+          <CmsStructuredArticle payload={previewData.payload as CmsArticlePayload} preview />
         )
       ) : (
         <div className="admin-state" aria-busy="true">

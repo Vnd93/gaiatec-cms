@@ -1,5 +1,6 @@
 import { Link } from "react-router";
 import type { PublishedProduct } from "../catalog-api";
+import { formatProductSpecification } from "../format-product-spec";
 
 export function ProductCard({
   product,
@@ -14,6 +15,9 @@ export function ProductCard({
   const image = product.media_urls?.["medium.webp"] ?? product.media_urls?.["thumbnail.webp"];
   return (
     <article className="product-card">
+      {p.pilotState === "awaiting_owner" && (
+        <span className="product-detail__status">Conteúdo piloto em homologação</span>
+      )}
       {image && (
         <img src={image} alt={p.media.find((entry) => entry.role === "primary")?.alt ?? ""} loading="lazy" />
       )}
@@ -30,9 +34,7 @@ export function ProductCard({
         {p.specifications.slice(0, 3).map((spec) => (
           <div key={spec.id}>
             <dt>{spec.label}</dt>
-            <dd>
-              {typeof spec.value === "object" ? JSON.stringify(spec.value) : String(spec.value)} {spec.unit}
-            </dd>
+            <dd>{formatProductSpecification(spec)}</dd>
           </div>
         ))}
       </dl>

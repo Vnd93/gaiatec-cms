@@ -48,7 +48,7 @@ export default function CmsProductsPage() {
   return (
     <main className="new-catalog">
       <p className="new-catalog__eyebrow">CATÁLOGO NOVO</p>
-      <h1>Produtos homologados no CMS</h1>
+      <h1>Produtos publicados no CMS</h1>
       <p className="new-catalog__lead">
         Busca, filtros, cards e comparação usam exclusivamente a projeção publicada do cadastro clean-room.
       </p>
@@ -97,8 +97,8 @@ export default function CmsProductsPage() {
         </div>
       ) : collection?.items.length === 0 ? (
         <div className="new-catalog__state">
-          <h2>Nenhum produto publicado</h2>
-          <p>O catálogo clean-room permanece vazio até um lote ser homologado e publicado.</p>
+          <h2>Nenhum produto encontrado</h2>
+          <p>Ajuste a busca ou remova filtros para ver os produtos publicados.</p>
         </div>
       ) : (
         <>

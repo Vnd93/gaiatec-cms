@@ -12,9 +12,14 @@ export const CmsProvenanceSchema = z
   .object({
     sourceKind: z.enum(["official_manufacturer", "official_company", "owner_authored"]),
     sourceUrl: z.url().optional(),
+    sourcePath: RequiredText.max(500).optional(),
+    fileModifiedAt: z.iso.datetime().optional(),
     documentVersion: z.string().trim().min(1).max(80).optional(),
     documentDate: z.iso.date().optional(),
     sourceSha256: Sha256.optional(),
+    authorizationReference: RequiredText.max(300).optional(),
+    authorizationDate: z.iso.date().optional(),
+    rightsScope: RequiredText.max(300).optional(),
     rightsConfirmed: z.literal(true),
     commercialOwner: RequiredText.max(120),
     technicalOwner: RequiredText.max(120),
@@ -22,8 +27,10 @@ export const CmsProvenanceSchema = z
   })
   .strict()
   .refine(
-    (value) => value.sourceKind === "owner_authored" || Boolean(value.sourceUrl && value.sourceSha256),
-    "Fontes externas exigem URL e hash do documento oficial.",
+    (value) =>
+      value.sourceKind === "owner_authored" ||
+      Boolean((value.sourceUrl || value.sourcePath) && value.sourceSha256),
+    "Fontes externas exigem localização e hash do documento oficial.",
   );
 
 export const CmsSeoSchema = z
@@ -156,14 +163,21 @@ export const CmsProductContentSchema = z
             id: z.uuid(),
             kind: z.enum(["datasheet", "manual", "certificate", "drawing", "software", "other"]),
             title: RequiredText.max(180),
-            officialUrl: z.url(),
+            officialUrl: z.url().optional(),
+            storagePath: z
+              .string()
+              .regex(/^cms-documents\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+$/)
+              .optional(),
             sha256: Sha256,
             revision: RequiredText.max(80),
             language: RequiredText.max(20),
             visibility: z.enum(["public", "private"]),
             rightsConfirmed: z.literal(true),
           })
-          .strict(),
+          .strict()
+          .refine((value) => Boolean(value.officialUrl || value.storagePath), {
+            message: "Documento exige URL oficial ou arquivo privado.",
+          }),
       )
       .max(30),
     relations: z

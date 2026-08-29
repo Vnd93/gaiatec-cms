@@ -11,6 +11,7 @@ export type PublishedProduct = {
   etag: string;
   published_at: string;
   media_urls?: Record<string, string>;
+  document_urls?: Record<string, string>;
 };
 export type ProductCollection = {
   items: PublishedProduct[];

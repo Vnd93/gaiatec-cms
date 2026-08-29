@@ -60,5 +60,11 @@ export default function CmsProductPage() {
         </div>
       </main>
     );
-  return <CmsProductRenderer payload={product.payload} mediaUrls={product.media_urls} />;
+  return (
+    <CmsProductRenderer
+      payload={product.payload}
+      mediaUrls={product.media_urls}
+      documentUrls={product.document_urls}
+    />
+  );
 }

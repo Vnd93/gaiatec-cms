@@ -18,7 +18,37 @@ Deno.serve(async (req) => {
     const { data, error } = await admin.rpc("cms_consume_preview", { p_token_hash: await sha256(token) });
     if (error) return json(req, { error: "Preview expirado ou indisponível." }, 410,
       { "X-Robots-Tag": "noindex, nofollow, noarchive", "Cache-Control": "private, no-store, max-age=0" });
-    return json(req, data, 200, { "X-Robots-Tag": "noindex, nofollow, noarchive", "Cache-Control": "private, no-store, max-age=0" });
+    const payload = data?.payload;
+    const mediaUrls: Record<string, string> = {};
+    const documentUrls: Record<string, string> = {};
+    const media = payload?.media ?? [];
+    const assetIds = media.map((entry: any) => entry.assetId);
+    const primaryId = media.find((entry: any) => entry.role === "primary")?.assetId;
+    const { data: variants } = assetIds.length
+      ? await admin.from("cms_media_variants").select("asset_id,variant_key,format,transform_path").in("asset_id", assetIds)
+      : { data: [] };
+    const paths = (variants ?? []).map((variant: any) => variant.transform_path);
+    const { data: signedVariants } = paths.length
+      ? await admin.storage.from("cms-media-private").createSignedUrls(paths, 1800)
+      : { data: [] };
+    const signedByPath = new Map((signedVariants ?? []).map((signed: any) => [signed.path, signed.signedUrl]));
+    for (const variant of variants ?? []) {
+      const signedUrl = signedByPath.get(variant.transform_path);
+      const variantKey = `${variant.variant_key}.${variant.format}`;
+      if (signedUrl) {
+        mediaUrls[`${variant.asset_id}:${variantKey}`] = signedUrl;
+        if (variant.asset_id === primaryId) mediaUrls[variantKey] = signedUrl;
+      }
+    }
+    const documents = (payload?.documents ?? []).filter((document: any) => document.storagePath);
+    const { data: signedDocuments } = documents.length
+      ? await admin.storage.from("cms-documents-private").createSignedUrls(documents.map((document: any) => document.storagePath), 1800)
+      : { data: [] };
+    documents.forEach((document: any, index: number) => {
+      const signedUrl = signedDocuments?.[index]?.signedUrl;
+      if (signedUrl) documentUrls[document.id] = signedUrl;
+    });
+    return json(req, { ...data, media_urls: mediaUrls, document_urls: documentUrls }, 200, { "X-Robots-Tag": "noindex, nofollow, noarchive", "Cache-Control": "private, no-store, max-age=0" });
   }
   if (req.method !== "POST") return json(req, { error: "Método não permitido." }, 405);
   const identity = await authenticateCms(req);

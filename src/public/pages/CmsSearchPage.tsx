@@ -165,6 +165,7 @@ export default function CmsSearchPage() {
                   key={item.item_id}
                   product={item as any}
                   selected={false}
+                  showCompare={false}
                   onSelect={() => undefined}
                 />
               ) : (

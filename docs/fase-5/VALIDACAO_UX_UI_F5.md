@@ -41,3 +41,19 @@ As jornadas foram verificadas no viewport normal e em `390 × 844`. Produto, qua
 ## Limite registrado
 
 Não existe perfil humano ativo nem credencial real autorizada para login. A UI autenticada dos editores foi verificada por contratos/componentes e o workflow administrativo real foi exercitado remotamente por usuários sintéticos descartáveis; no navegador, foi validado o estado sem permissão. Nenhuma credencial ou sessão persistente foi criada para contornar esse limite.
+
+## Retomada — remodelagem do catálogo de produtos
+
+Em 2026-08-29, a rota local `/produtos` foi remodelada e verificada novamente antes de qualquer publicação em staging. A composição reutiliza somente a linguagem visual do site — hero escuro, tipografia institucional em caixa alta, azul `#0057DE`, linhas técnicas, cantos retos, transições e CTA — sem copiar produtos, imagens ou estruturas de cadastro da implementação antiga.
+
+O catálogo continua consumindo exclusivamente a projeção publicada do CMS. Busca, filtros por segmento/categoria/família/tecnologia, parâmetros de URL, estados de carregamento/erro/vazio, card técnico e seleção para comparação permaneceram conectados ao front-end.
+
+Validações executadas:
+
+- inspeção visual e interativa no Codex in-app browser em `http://127.0.0.1:5173/produtos`;
+- somente um landmark `<main>`, título principal único e nenhum erro no console;
+- seleção e remoção de filtro refletidas na URL e nos chips ativos;
+- seleção e limpeza do comparador confirmadas no navegador;
+- ausência de overflow horizontal em viewport desktop;
+- Playwright nos projetos Desktop Chrome e Pixel 7, cobrindo filtros, card, comparador, largura do card/painel e ausência de overflow;
+- preferências de movimento reduzido preservadas por CSS, removendo animações e transições quando solicitadas pelo sistema.

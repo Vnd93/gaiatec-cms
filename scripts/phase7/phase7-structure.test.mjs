@@ -117,10 +117,12 @@ test("critical permissions, unpublishing and governed forms are fail-closed", as
 });
 
 test("staging form setup is governed, repeatable and isolated from production", async () => {
-  const [setup, cleanup, email] = await Promise.all([
+  const [setup, cleanup, email, worker, outboxCron] = await Promise.all([
     read("scripts/phase7/configure-staging-forms.mjs"),
     read("scripts/phase7/cleanup-staging-synthetic-lead.mjs"),
     read("supabase/functions/_shared/email.ts"),
+    read("supabase/functions/cms-outbox-worker/index.ts"),
+    read("supabase/migrations/0034_fase8_outbox_cron.sql"),
   ]);
   assert.match(setup, /glcqsosxwgmlhzgcsnzv/);
   assert.match(setup, /contato-principal/);
@@ -131,7 +133,17 @@ test("staging form setup is governed, repeatable and isolated from production", 
   assert.doesNotMatch(setup, /painel antigo|legacy/i);
   assert.match(cleanup, /@example\.com/);
   assert.match(cleanup, /fixture sintética/);
+  assert.match(cleanup, /phase8-resend-validation/);
   assert.match(cleanup, /productionTouched: false/);
   assert.match(email, /Deno\.env\.get\("EMAIL_FROM"\)/);
   assert.match(email, /nao-responda@gaiatecsistemas\.com\.br/);
+  assert.match(email, /providerFailureReason/);
+  assert.match(worker, /lead_notification_\$\{caught\.reason\}/);
+  assert.match(worker, /anonymized_at/);
+  assert.match(worker, /leadSkipped/);
+  assert.match(outboxCron, /cms-outbox-worker-every-5m/);
+  assert.match(outboxCron, /vault\.decrypted_secrets/);
+  assert.match(outboxCron, /private\.invoke_outbox_worker/);
+  assert.match(outboxCron, /revoke all.+anon, authenticated/);
+  assert.doesNotMatch(outboxCron, /OUTBOX_WORKER_SECRET\s*=/);
 });

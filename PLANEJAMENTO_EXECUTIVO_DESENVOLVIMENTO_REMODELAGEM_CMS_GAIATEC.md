@@ -855,6 +855,8 @@ Decisão complementar executada em 2026-08-29: a allowlist de visibilidade e o c
 
 Reavaliação em 2026-08-30: o lote sintético completo aprovou erro atômico com zero criação, dry-run, criação de dois rascunhos, idempotência, auditoria, publicação interna, projeção pública e retirada. O Gate G8 continua aberto pelos lotes reais, provedor de e-mail, aprovações LGPD/owners, operação de alertas/restore e aceite de go-live. Esta pendência impede iniciar a Fase 9 e não autoriza produção.
 
+Reavaliação operacional em 2026-08-30: a aprovação LGPD administrativa foi confirmada, `RESEND_API_KEY` foi detectada, e o cron protegido por Vault passou a executar `cms-outbox-worker` a cada cinco minutos com HTTP 200. A entrega foi recusada como `sender_not_authorized`, coerente com a ausência pública de DKIM/SPF/MX do Resend para o domínio raiz. Configurações globais e um produto estão publicados, mas navegação, serviços, indústrias, aplicações e soluções ainda não foram recadastrados. O Gate G8 e a vedação da Fase 9 permanecem.
+
 ### Gate G8
 
 - zero P0;

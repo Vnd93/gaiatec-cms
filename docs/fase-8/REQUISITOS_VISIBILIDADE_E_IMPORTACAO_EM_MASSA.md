@@ -2,7 +2,7 @@
 
 ## Estado
 
-Implementação técnica e lote sintético completo aprovados em staging. O Gate G8 permanece pendente dos lotes editoriais reais, das dependências operacionais e da decisão formal de go-live.
+Implementação técnica e lote sintético completo aprovados em staging. A aprovação LGPD administrativa foi registrada, a chave Resend existe e o cron seguro está ativo. O Gate G8 permanece pendente dos lotes editoriais reais, da autorização do remetente no Resend, das demais dependências operacionais e da decisão formal de go-live.
 
 ## Evidências executadas em staging
 
@@ -42,7 +42,7 @@ As nove etapas previstas foram executadas pelo run `20260830143413-3fb870`; o pa
 ## Pendências que não podem ser substituídas por automação
 
 1. A GAIATEC deve preencher e aprovar os lotes editoriais reais diretamente no CMS novo.
-2. Deve fornecer a chave Resend para entrega real de notificações; o destinatário de staging já está configurado.
-3. O DPO/responsável deve aprovar consentimento, retenção e operação de leads.
+2. O domínio exato do remetente deve ser verificado no Resend; chave, destinatário, cron e Vault já estão configurados.
+3. A aprovação LGPD/DPO administrativa foi confirmada em 2026-08-30; qualquer mudança de finalidade ou retenção exige nova revisão.
 4. Owners devem executar treinamento, aprovar runbooks/alertas e assinar o go-live.
 5. Produção só pode receber canary/cutover depois do Gate G8 formal.

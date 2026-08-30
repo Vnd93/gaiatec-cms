@@ -4,6 +4,32 @@
 const DEFAULT_FROM = "GAIATEC SISTEMAS <nao-responda@gaiatecsistemas.com.br>";
 const LOGO = "https://gaiatecsistemas.com.br/logo-gaiatec.png";
 
+export class EmailProviderError extends Error {
+  readonly reason: string;
+  readonly status: number;
+
+  constructor(status: number, reason: string) {
+    super(`O provedor de e-mail recusou a solicitação com status ${status}.`);
+    this.name = "EmailProviderError";
+    this.reason = reason;
+    this.status = status;
+  }
+}
+
+function providerFailureReason(status: number, responseBody: string): string {
+  const message = responseBody.toLowerCase();
+  if (message.includes("domain is not verified") || message.includes("verify your domain")) {
+    return "domain_not_verified";
+  }
+  if (message.includes("only send testing emails")) return "testing_restriction";
+  if (message.includes("restricted") && message.includes("domain")) return "api_key_scope";
+  if (message.includes("not authorized") && message.includes("send")) return "sender_not_authorized";
+  if (status === 401) return "invalid_api_key";
+  if (status === 429) return "rate_limited";
+  if (status === 422) return "invalid_request";
+  return `provider_${status}`;
+}
+
 function senderAddress(): string {
   return Deno.env.get("EMAIL_FROM")?.trim() || DEFAULT_FROM;
 }
@@ -239,7 +265,7 @@ export async function sendEmail(
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`Resend ${res.status}: ${t.slice(0, 200)}`);
+    const responseBody = await res.text();
+    throw new EmailProviderError(res.status, providerFailureReason(res.status, responseBody));
   }
 }

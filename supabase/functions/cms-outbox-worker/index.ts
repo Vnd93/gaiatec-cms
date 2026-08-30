@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { leadNotificationEmail, sendEmail } from "../_shared/email.ts";
+import { EmailProviderError, leadNotificationEmail, sendEmail } from "../_shared/email.ts";
 
 Deno.serve(async (req) => {
   const expected = Deno.env.get("OUTBOX_WORKER_SECRET"), supplied = req.headers.get("X-Worker-Secret");
@@ -30,22 +30,30 @@ Deno.serve(async (req) => {
   const leadClaimed = await admin.rpc("cms_claim_lead_outbox", { p_limit: 20 });
   if (leadClaimed.error)
     return new Response(JSON.stringify({ error: "Falha na fila de leads.", correlationId }), { status: 503, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
-  let leadCompleted = 0, leadFailed = 0;
+  let leadCompleted = 0, leadFailed = 0, leadSkipped = 0;
   const resendKey = Deno.env.get("RESEND_API_KEY"), recipient = Deno.env.get("LEAD_NOTIFICATION_TO"), adminBaseUrl = Deno.env.get("CMS_ADMIN_URL");
   for (const event of leadClaimed.data ?? []) {
     let success = false, errorCode: string | null = null;
     try {
-      if (!resendKey || !recipient || !adminBaseUrl) throw new Error("lead_notification_not_configured");
-      const { data: lead, error: leadError } = await admin.from("cms_leads").select("reference_code").eq("id", event.lead_id).single();
+      const { data: lead, error: leadError } = await admin.from("cms_leads").select("reference_code,anonymized_at").eq("id", event.lead_id).single();
       if (leadError || !lead) throw new Error("lead_not_found");
-      await sendEmail(resendKey, recipient.split(",").map((value) => value.trim()).filter(Boolean), leadNotificationEmail(lead.reference_code, event.event_type, adminBaseUrl));
+      if (lead.anonymized_at) {
+        leadSkipped += 1;
+      } else {
+        if (!resendKey || !recipient || !adminBaseUrl) throw new Error("lead_notification_not_configured");
+        await sendEmail(resendKey, recipient.split(",").map((value) => value.trim()).filter(Boolean), leadNotificationEmail(lead.reference_code, event.event_type, adminBaseUrl));
+      }
       success = true;
     } catch (caught) {
-      errorCode = caught instanceof Error && caught.message === "lead_not_found" ? "lead_not_found" : "lead_notification_failed";
+      errorCode = caught instanceof Error && caught.message === "lead_not_found"
+        ? "lead_not_found"
+        : caught instanceof EmailProviderError
+        ? `lead_notification_${caught.reason}`
+        : "lead_notification_failed";
     }
     const finish = await admin.rpc("cms_finish_lead_outbox", { p_id: event.id, p_success: success, p_error_code: errorCode });
     if (!finish.error && success) leadCompleted += 1; else leadFailed += 1;
   }
-  return new Response(JSON.stringify({ scheduled, expiredCampaigns: expiredCampaigns.data ?? 0, retainedLeads: retainedLeads.data ?? 0, breachedSlas: breachedSlas.data ?? 0, claimed: claimed.data?.length ?? 0, completed, failed, leadClaimed: leadClaimed.data?.length ?? 0, leadCompleted, leadFailed, correlationId }),
+  return new Response(JSON.stringify({ scheduled, expiredCampaigns: expiredCampaigns.data ?? 0, retainedLeads: retainedLeads.data ?? 0, breachedSlas: breachedSlas.data ?? 0, claimed: claimed.data?.length ?? 0, completed, failed, leadClaimed: leadClaimed.data?.length ?? 0, leadCompleted, leadFailed, leadSkipped, correlationId }),
     { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
 });

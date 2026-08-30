@@ -25,8 +25,9 @@ if (found.data.anonymized_at) {
   process.stdout.write(`${JSON.stringify({ reference, status: "already_anonymized" }, null, 2)}\n`);
   process.exit(0);
 }
+const authorizedSyntheticSources = new Set(["contact", "phase8-resend-validation"]);
 if (
-  found.data.origin_source !== "contact" ||
+  !authorizedSyntheticSources.has(found.data.origin_source) ||
   typeof found.data.payload?.email !== "string" ||
   !found.data.payload.email.endsWith("@example.com")
 )

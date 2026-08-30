@@ -23,6 +23,8 @@ Também foi removido o ruído visual/técnico causado pela consulta de formulár
 
 `PLAYWRIGHT_BASE_URL=https://gaiatec-cms-staging.pages.dev npm run test:e2e`: **26 aprovados, 2 skips condicionais, 0 falhas**.
 
+Revalidação em 2026-08-30: `/contato` carregou o formulário governado, consentimento, newsletter e os dados globais publicados pelo CMS. A API pública confirmou `site_settings` e um produto; a navegação continuou no fallback seguro porque nenhum documento de navegação foi publicado. Não houve alteração visual de frontend nesta rodada.
+
 Evidência: [cadastro em massa autenticado](./evidencia-cadastro-massa-staging.png).
 
 Esta aprovação não substitui o aceite editorial dos lotes reais nem autoriza o go-live.

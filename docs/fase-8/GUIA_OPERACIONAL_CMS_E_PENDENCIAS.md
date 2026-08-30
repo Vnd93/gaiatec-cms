@@ -17,18 +17,22 @@ Produção não deve ser usada enquanto o Gate G8 estiver bloqueado.
 - envio público de contato testado com fixture sintética e protocolo confirmado;
 - fixture de teste anonimizada após a validação;
 - remetente de e-mail corrigido para `.com.br` e tornado configurável por `EMAIL_FROM`;
+- `RESEND_API_KEY` detectada no Supabase staging;
+- cron `cms-outbox-worker-every-5m` ativo com segredo protegido no Vault;
+- aprovação administrativa LGPD/DPO confirmada em 2026-08-30;
+- dados globais publicados e consumidos por contato, header e footer;
 - visibilidade público/interno e cadastro em massa homologados com dados sintéticos;
 - produção e conteúdo do painel antigo não foram utilizados.
 
-## 2. Configurar o envio de e-mail pelo Resend
+## 2. Concluir a autorização do remetente no Resend
 
-Esta etapa exige uma conta Resend e acesso ao DNS do domínio. A chave nunca deve ser enviada por chat, salva em documento ou commitada no Git.
+A chave existe e o worker responde HTTP 200, mas o Resend devolveu `sender_not_authorized`. Em 2026-08-30, a consulta DNS pública não encontrou DKIM/SPF/MX do Resend para `gaiatecsistemas.com.br`. A chave nunca deve ser enviada por chat, salva em documento ou commitada no Git.
 
 ### 2.1 Criar e verificar o domínio
 
-1. Acesse `https://resend.com` e crie ou entre na conta corporativa.
-2. Abra **Domains** e escolha **Add Domain**.
-3. Para manter o remetente já configurado, informe `gaiatecsistemas.com.br`.
+1. Acesse `https://resend.com` e entre na conta corporativa usada para criar a chave.
+2. Abra **Domains** e observe o domínio exato e o status exibido.
+3. Para manter o remetente atual, o domínio deve ser exatamente `gaiatecsistemas.com.br` e ficar como **Verified**.
 4. Habilite somente envio. Não habilite recebimento: o recebimento corporativo atual não deve ser alterado.
 5. Se o DNS estiver no Cloudflare, prefira **Sign in to Cloudflare** para o Domain Connect automático.
 6. Se fizer manualmente, copie exatamente os registros apresentados pelo Resend:
@@ -37,18 +41,23 @@ Esta etapa exige uma conta Resend e acesso ao DNS do domínio. A chave nunca dev
    - MX de envio no subdomínio indicado, normalmente `send`.
 7. Não apague nem substitua os registros MX corporativos já existentes no domínio raiz.
 8. Volte ao Resend, clique em **Verify DNS Records** e aguarde o estado **Verified**.
+9. Se o domínio verificado for um subdomínio, por exemplo `email.gaiatecsistemas.com.br`, `EMAIL_FROM` deve usar esse mesmo subdomínio. Domínio e subdomínio precisam coincidir exatamente.
 
 Referências oficiais: [domínios no Resend](https://resend.com/docs/dashboard/domains/introduction) e [configuração com Cloudflare](https://resend.com/docs/knowledge-base/cloudflare).
 
 ### 2.2 Criar a chave restrita
 
+Esta etapa foi concluída. Se for necessário recriar a chave:
+
 1. No Resend, abra **API Keys**.
 2. Crie uma chave chamada `GAIATEC CMS Staging`.
 3. Selecione **Sending access**; não use `Full access`.
-4. Se a interface permitir, restrinja a chave ao domínio verificado.
+4. Restrinja a chave ao mesmo domínio usado no campo `from`.
 5. Copie a chave no momento da criação. O Resend a mostra apenas uma vez.
 
 ### 2.3 Salvar no Supabase sem expor a chave
+
+`RESEND_API_KEY` e `EMAIL_FROM` já existem no staging. Somente atualize `EMAIL_FROM` se o domínio verificado no Resend for diferente do domínio raiz.
 
 Opção pela interface:
 
@@ -69,13 +78,17 @@ Referência oficial: [secrets de Edge Functions no Supabase](https://supabase.co
 
 ### 2.4 Ativar o processamento periódico
 
-O worker `cms-outbox-worker` deve rodar a cada cinco minutos. A configuração recomendada usa Supabase Cron, `pg_cron`, `pg_net` e Vault, mantendo `OUTBOX_WORKER_SECRET` fora do SQL e dos logs.
+O worker `cms-outbox-worker` já roda a cada cinco minutos. A configuração usa Supabase Cron, `pg_cron`, `pg_net` e Vault, mantendo `OUTBOX_WORKER_SECRET` fora do SQL e dos logs.
 
-Depois que a chave Resend estiver configurada, solicitar a configuração/validação do cron. Não criar um cron contendo secrets em texto aberto. A execução deve aparecer em **Integrations → Cron → Jobs**, e o histórico deve mostrar HTTP 200.
+O job deve aparecer como `cms-outbox-worker-every-5m` em **Integrations → Cron → Jobs**. O HTTP 200 já foi comprovado; falta o domínio autorizado para que `leadCompleted` passe de zero para um ou mais.
+
+O worker descarta de forma segura notificações de leads já anonimizados. Em staging, seis fixtures foram encerradas sem envio e quatro notificações ativas permanecem em retry até a correção do domínio.
 
 Referência oficial: [agendar Edge Functions](https://supabase.com/docs/guides/functions/schedule-functions).
 
 ## 3. Aprovar LGPD/DPO
+
+Victor Nishida, como administrador, confirmou em 2026-08-30 os valores e as recomendações abaixo. Alterar finalidade, consentimento, SLA, retenção ou perfis de acesso exige nova revisão.
 
 O responsável deve revisar e registrar aceite dos seguintes valores de staging:
 
@@ -115,6 +128,8 @@ Qualquer alteração deve gerar uma nova versão do formulário. Nunca editar ou
 - imagens e documentos devem ser enviados separadamente em **Mídia**, com origem e direitos;
 - nunca usar exportação do painel antigo;
 - todo conteúdo precisa passar por rascunho, revisão, aprovação e publicação.
+
+Estado observado em 2026-08-30: configurações globais e um produto estão publicados. Navegação, serviços, indústrias, aplicações e soluções ainda têm zero documentos na projeção pública e precisam ser recadastrados antes da retirada do caminho anterior.
 
 ## 5. Como comprovar que o CMS altera o site
 

@@ -1,8 +1,12 @@
 // E-mails transacionais branded (Gaiatec Sistemas), enviados via Resend.
 // Usado pelas Edge Functions rdo-invite e rdo-team (não dependem do template do GoTrue).
 
-const FROM = "Gaiatec Sistemas <nao-responda@gaiatecsistemas.com>";
+const DEFAULT_FROM = "GAIATEC SISTEMAS <nao-responda@gaiatecsistemas.com.br>";
 const LOGO = "https://gaiatecsistemas.com.br/logo-gaiatec.png";
+
+function senderAddress(): string {
+  return Deno.env.get("EMAIL_FROM")?.trim() || DEFAULT_FROM;
+}
 
 function escapeHtml(value: unknown): string {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({
@@ -223,7 +227,7 @@ export async function sendEmail(
   msg: { subject: string; html: string; attachments?: { filename: string; content: string }[] },
 ): Promise<void> {
   const payload: Record<string, unknown> = {
-    from: FROM,
+    from: senderAddress(),
     to: Array.isArray(to) ? to : [to],
     subject: msg.subject,
     html: msg.html,

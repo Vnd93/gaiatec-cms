@@ -15,6 +15,6 @@
 
 ## Secrets necessários em staging
 
-`SUPABASE_SERVICE_ROLE_KEY`, `OUTBOX_WORKER_SECRET`, `LEAD_EVIDENCE_SALT`, `RESEND_API_KEY`, `LEAD_NOTIFICATION_TO`, `CMS_ADMIN_URL`, `TURNSTILE_SECRET_KEY` e `VITE_TURNSTILE_SITE_KEY`.
+`SUPABASE_SERVICE_ROLE_KEY`, `OUTBOX_WORKER_SECRET`, `LEAD_EVIDENCE_SALT`, `RESEND_API_KEY`, `EMAIL_FROM`, `LEAD_NOTIFICATION_TO`, `CMS_ADMIN_URL`, `TURNSTILE_SECRET_KEY` e `VITE_TURNSTILE_SITE_KEY`.
 
 Nenhum valor de secret deve ser registrado neste repositório. A ausência de configuração resulta em falha fechada ou notificação retida para retry.

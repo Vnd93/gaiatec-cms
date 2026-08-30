@@ -822,7 +822,7 @@ Aplicar a nova arquitetura de informação e experiência sobre o conteúdo reca
 - permissões e exportações testadas;
 - nenhum encaminhamento administrativo anterior ativo.
 
-Reavaliação técnica em 2026-08-30: o round-trip remoto `20260830143413-3fb870` aprovou os fluxos de blog, campanha, formulário, lead, atribuição, exportação, anonimização, expiração, AAL2/RBAC e retirada de fixtures. O gate permanece formalmente bloqueado somente até a entrega real de e-mail, a revisão do DPO e a publicação dos dados/formulários permanentes pelo proprietário. Produção continua vedada.
+Reavaliação técnica em 2026-08-30: o round-trip remoto `20260830143413-3fb870` aprovou os fluxos de blog, campanha, formulário, lead, atribuição, exportação, anonimização, expiração, AAL2/RBAC e retirada de fixtures. Os formulários permanentes de contato e newsletter foram publicados e testados em staging. O gate permanece formalmente bloqueado somente até a entrega real de e-mail, a revisão do DPO e a publicação dos demais dados globais permanentes pelo proprietário. Produção continua vedada.
 
 ---
 

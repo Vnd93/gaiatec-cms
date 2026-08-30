@@ -28,10 +28,21 @@
 - zero fixture sintético permaneceu publicado;
 - `main` e produção não foram alterados.
 
+## Configuração permanente validada em staging
+
+- `contato-principal` versão 1 publicado com sete campos conectados ao frontend;
+- `newsletter` versão 1 publicada com e-mail e consentimento versionado;
+- envio público de contato aprovado com protocolo `LD-BDDCDE3FA3`;
+- fixture sintética anonimizada após o teste;
+- remetente corrigido para o domínio `.com.br` e controlado pelo secret `EMAIL_FROM`;
+- guia simplificado de operação e testes registrado em `GUIA_OPERACIONAL_CMS_E_PENDENCIAS.md`.
+
+Evidência visual: [formulários publicados em staging](./evidencia-formularios-publicados-staging.png).
+
 ## Dependências para liberar o gate
 
 1. cadastrar e aprovar os lotes reais novos no CMS, sem importar o painel antigo;
-2. configurar `RESEND_API_KEY` e comprovar entrega real de uma notificação de staging;
+2. configurar `RESEND_API_KEY`, verificar o domínio e comprovar entrega real de uma notificação de staging;
 3. obter aceite do DPO e dos owners de conteúdo/operação;
 4. concluir treinamento, alerta operacional, backup/restore e decisão de canary;
 5. registrar autorização explícita de go-live.

@@ -115,3 +115,23 @@ test("critical permissions, unpublishing and governed forms are fail-closed", as
   assert.match(contact, /getPublishedForm/);
   assert.match(footer, /getPublishedForm/);
 });
+
+test("staging form setup is governed, repeatable and isolated from production", async () => {
+  const [setup, cleanup, email] = await Promise.all([
+    read("scripts/phase7/configure-staging-forms.mjs"),
+    read("scripts/phase7/cleanup-staging-synthetic-lead.mjs"),
+    read("supabase/functions/_shared/email.ts"),
+  ]);
+  assert.match(setup, /glcqsosxwgmlhzgcsnzv/);
+  assert.match(setup, /contato-principal/);
+  assert.match(setup, /newsletter/);
+  assert.match(setup, /challengeAndVerify/);
+  assert.match(setup, /cms-leads/);
+  assert.match(setup, /productionTouched: false/);
+  assert.doesNotMatch(setup, /painel antigo|legacy/i);
+  assert.match(cleanup, /@example\.com/);
+  assert.match(cleanup, /fixture sintética/);
+  assert.match(cleanup, /productionTouched: false/);
+  assert.match(email, /Deno\.env\.get\("EMAIL_FROM"\)/);
+  assert.match(email, /nao-responda@gaiatecsistemas\.com\.br/);
+});

@@ -129,7 +129,7 @@ Qualquer alteração deve gerar uma nova versão do formulário. Nunca editar ou
 - nunca usar exportação do painel antigo;
 - todo conteúdo precisa passar por rascunho, revisão, aprovação e publicação.
 
-Estado observado em 2026-08-30: configurações globais e um produto estão publicados. Navegação, serviços, indústrias, aplicações e soluções ainda têm zero documentos na projeção pública e precisam ser recadastrados antes da retirada do caminho anterior.
+Estado observado em 2026-08-30: configurações globais, um produto, navegação, cinco serviços, oito indústrias, três aplicações e duas soluções estão publicados. O lote foi criado a partir das informações fornecidas diretamente pelo administrador e permanece integralmente editável no CMS.
 
 ## 5. Como comprovar que o CMS altera o site
 

@@ -121,6 +121,22 @@ test("edge serves managed pages with initial SEO and real retirement statuses", 
   globalThis.fetch = async (input) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
     const path = url.searchParams.get("path");
+    if (
+      url.searchParams.get("type") === "entity-detail" &&
+      url.searchParams.get("contentType") === "solution" &&
+      url.searchParams.get("slug") === "instrumentacao-monitoramento-remoto"
+    )
+      return Response.json({
+        content_type: "solution",
+        payload: { title: "Instrumentação e monitoramento remoto" },
+        seo: {
+          title: "Instrumentação e monitoramento remoto | GAIATEC",
+          description: "Solução integrada publicada pelo CMS.",
+          canonicalPath: "/solucoes/instrumentacao-monitoramento-remoto",
+          indexable: true,
+        },
+        media_urls: {},
+      });
     if (path === "/pagina-retirada")
       return Response.json({ kind: "route", rule: { status_code: 410, destination_path: null } });
     if (path === "/pagina-antiga")
@@ -150,6 +166,21 @@ test("edge serves managed pages with initial SEO and real retirement statuses", 
     assert.match(body, /Descrição publicada pelo CMS/);
     assert.match(body, /rel="canonical" href="https:\/\/gaiatecsistemas\.com\.br\/pagina-nova"/);
     assert.match(body, /data-cms-page/);
+
+    const discovery = await module.default.fetch(
+      new Request("https://gaiatecsistemas.com.br/solucoes/instrumentacao-monitoramento-remoto"),
+      env,
+    );
+    const discoveryBody = await discovery.text();
+    assert.equal(discovery.status, 200);
+    assert.match(discoveryBody, /<title>Instrumentação e monitoramento remoto \| GAIATEC<\/title>/);
+    assert.match(discoveryBody, /Solução integrada publicada pelo CMS/);
+
+    const discoveryCollection = await module.default.fetch(
+      new Request("https://gaiatecsistemas.com.br/solucoes"),
+      env,
+    );
+    assert.equal(discoveryCollection.status, 200);
 
     const retired = await module.default.fetch(
       new Request("https://gaiatecsistemas.com.br/pagina-retirada"),

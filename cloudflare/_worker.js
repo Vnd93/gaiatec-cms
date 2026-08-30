@@ -1,6 +1,6 @@
 const STATIC_PUBLIC_ROUTES = [
   /^\/$/,
-  /^\/(sobre|blog|busca|contato|setores|servicos|produtos|aplicacoes|deteccao-de-gas|politica-de-privacidade|termos-de-uso)\/?$/,
+  /^\/(sobre|blog|busca|contato|setores|servicos|produtos|industrias|aplicacoes|solucoes|deteccao-de-gas|politica-de-privacidade|termos-de-uso)\/?$/,
   /^\/biodigestor(?:\/(como-funciona|portes|beneficios|monitoramento|biogas-biometano|automacao|escolas))?\/?$/,
 ];
 
@@ -250,6 +250,46 @@ async function handleRequest(request, env) {
       return spaResponse(request, env, 404, { noindex: true });
     }
     return spaResponse(request, env, ENTITY_ROUTES.has(path) ? 200 : 404, { noindex: true });
+  }
+
+  const discoveryMatch = path.match(
+    /^\/(servicos|industrias|aplicacoes|solucoes)\/([a-z0-9]+(?:-[a-z0-9]+)*)\/?$/,
+  );
+  if (discoveryMatch) {
+    const contentTypeByCollection = {
+      servicos: "service",
+      industrias: "industry",
+      aplicacoes: "application",
+      solucoes: "solution",
+    };
+    const [, collection, slug] = discoveryMatch;
+    const detail = await cmsPublic({
+      type: "entity-detail",
+      contentType: contentTypeByCollection[collection],
+      slug,
+    });
+    if (detail?.ok) {
+      const page = await detail.json();
+      return spaResponse(request, env, 200, {
+        noindex: stagingHost || page?.seo?.indexable !== true,
+        page,
+        stagingHost,
+      });
+    }
+    if (detail?.status === 404) {
+      const redirect = await cmsPublic({ type: "redirect", path: path.replace(/\/$/, "") });
+      if (redirect?.ok) {
+        const rule = await redirect.json();
+        return new Response(null, {
+          status: rule.status_code,
+          headers: { Location: rule.destination_path },
+        });
+      }
+      return spaResponse(request, env, ENTITY_ROUTES.has(path.replace(/\/$/, "")) ? 200 : 404, {
+        noindex: true,
+      });
+    }
+    return spaResponse(request, env, 503, { noindex: true });
   }
 
   if (ASSET_PATH.test(path) || path === "/sw.js" || path === "/manifest.json") {

@@ -6,15 +6,15 @@
 
 **Decisão:** BLOQUEADO PARA GO-LIVE; HARDENING TÉCNICO SINTÉTICO APROVADO
 
-| Critério                        | Evidência atual                                                                                                      | Decisão                              |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| zero P0                         | lint remoto limpo, check local e E2E staging verdes; nenhum P0 técnico conhecido                                     | atende no escopo testado             |
-| P1 com aceite/owner/prazo       | administrador aprovou parâmetros LGPD; entrega de e-mail ainda rejeitada pelo remetente não autorizado               | bloqueia                             |
-| lote 100% novo e aprovado       | configurações globais e um produto publicados; navegação, serviços, indústrias, aplicações e soluções ainda ausentes | bloqueia                             |
-| nenhum fallback editorial atual | formulários e dados globais consomem CMS; navegação pública ainda usa fallback seguro                                | bloqueia                             |
-| restore/rollback comprovados    | restauração editorial e retirada de projeção aprovadas; runbook de infraestrutura existe                             | validação operacional final pendente |
-| alertas e runbooks ativos       | cron seguro ativo a cada 5 minutos; Resend responde, mas rejeita o domínio/remetente                                 | bloqueia                             |
-| owners aprovam go-live          | aprovação de parâmetros e testes registrada; autorização de canary/produção não foi presumida                        | bloqueia                             |
+| Critério                        | Evidência atual                                                                                           | Decisão                              |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| zero P0                         | lint remoto limpo, check local e E2E staging verdes; nenhum P0 técnico conhecido                          | atende no escopo testado             |
+| P1 com aceite/owner/prazo       | administrador aprovou parâmetros LGPD; entrega de e-mail ainda rejeitada pelo remetente não autorizado    | bloqueia                             |
+| lote 100% novo e aprovado       | configurações globais, produto, navegação, 5 serviços, 8 indústrias, 3 aplicações e 2 soluções publicados | atende no escopo inicial             |
+| nenhum fallback editorial atual | formulários, dados globais, navegação e coleções do lançamento consomem somente a nova projeção           | atende no escopo inicial             |
+| restore/rollback comprovados    | restauração editorial e retirada de projeção aprovadas; runbook de infraestrutura existe                  | validação operacional final pendente |
+| alertas e runbooks ativos       | cron seguro ativo a cada 5 minutos; Resend responde, mas rejeita o domínio/remetente                      | bloqueia                             |
+| owners aprovam go-live          | aprovação de parâmetros e testes registrada; autorização de canary/produção não foi presumida             | bloqueia                             |
 
 ## Homologação técnica
 
@@ -24,9 +24,26 @@
 - round-trip `20260830143413-3fb870` aprovou blog, campanha, formulário, leads, expiração, importação e visibilidade;
 - cadastro em massa aprovou bloqueio total por erro, dry-run sem escrita, atomicidade, idempotência e auditoria;
 - campos internos ficaram ausentes de API, busca, HTML e JSON-LD até a republicação explícita como públicos;
-- 26 testes E2E aprovados em desktop/mobile, 2 skips condicionais e zero falha;
+- 36 testes E2E aprovados em desktop/mobile, 2 skips condicionais e zero falha;
 - zero fixture sintético permaneceu publicado;
 - `main` e produção não foram alterados.
+
+## Lote clean-room inicial
+
+- autorização `GAIATEC-ADMIN-CHAT-2026-08-30` registrada como `owner_authored`;
+- cinco serviços publicados;
+- oito indústrias publicadas;
+- três aplicações publicadas;
+- duas soluções publicadas;
+- navegação com seis links no header e seis links no footer publicada;
+- dois atores temporários distintos, com MFA, executaram autoria/publicação e aprovação;
+- API pública e páginas detalhadas confirmaram o conteúdo sem consulta ao caminho anterior;
+- acessos diretos às coleções e páginas detalhadas retornaram HTTP 200 real no Worker, preservando 404 para rotas inexistentes;
+- a coleção de produtos foi isolada de serviços, indústrias, aplicações e soluções nas camadas cliente e API;
+- viewport móvel 393 × 852 sem overflow horizontal;
+- evidência completa registrada em `LOTE_CLEAN_ROOM_INICIAL.md`.
+
+Evidência visual: [solução clean-room publicada](./evidencia-solucao-clean-room-staging.png).
 
 ## Operação, Resend e LGPD
 
@@ -54,9 +71,8 @@ Evidência visual: [formulários publicados em staging](./evidencia-formularios-
 
 ## Dependências para liberar o gate
 
-1. cadastrar e aprovar navegação, serviços, indústrias, aplicações e soluções novos no CMS, sem importar o painel antigo;
-2. concluir o DNS do domínio exato verificado no Resend, alinhar `EMAIL_FROM` e comprovar a entrega real;
-3. concluir treinamento, alerta operacional, backup/restore e decisão de canary;
-4. registrar autorização explícita de go-live.
+1. concluir o DNS do domínio exato verificado no Resend, alinhar `EMAIL_FROM` e comprovar a entrega real;
+2. concluir treinamento, alerta operacional, backup/restore e decisão de canary;
+3. registrar autorização explícita de go-live.
 
 A Fase 9 não pode começar antes disso, pois sua retirada do caminho anterior depende do período de estabilidade e do Gate G8 concluído.

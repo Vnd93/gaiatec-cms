@@ -857,6 +857,8 @@ Reavaliação em 2026-08-30: o lote sintético completo aprovou erro atômico co
 
 Reavaliação operacional em 2026-08-30: a aprovação LGPD administrativa foi confirmada, `RESEND_API_KEY` foi detectada, e o cron protegido por Vault passou a executar `cms-outbox-worker` a cada cinco minutos com HTTP 200. A entrega foi recusada como `sender_not_authorized`, coerente com a ausência pública de DKIM/SPF/MX do Resend para o domínio raiz. Configurações globais e um produto estão publicados, mas navegação, serviços, indústrias, aplicações e soluções ainda não foram recadastrados. O Gate G8 e a vedação da Fase 9 permanecem.
 
+Complemento clean-room em 2026-08-30: usando somente informações fornecidas pelo administrador, foram publicados pelo workflow com MFA a navegação, cinco serviços, oito indústrias, três aplicações e duas soluções. API, coleções, páginas detalhadas e viewport móvel foram aprovadas. O lote editorial inicial deixou de bloquear o gate; permanecem a autorização do remetente no Resend, a conclusão operacional e a autorização explícita de canary/go-live.
+
 ### Gate G8
 
 - zero P0;

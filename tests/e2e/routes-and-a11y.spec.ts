@@ -4,6 +4,10 @@ import { expect, test } from "@playwright/test";
 const routes = [
   { path: "/", status: 200 },
   { path: "/produtos", status: 200 },
+  { path: "/servicos", status: 200 },
+  { path: "/industrias", status: 200 },
+  { path: "/aplicacoes", status: 200 },
+  { path: "/solucoes", status: 200 },
   { path: "/contato", status: 200 },
   { path: "/blog", status: 200 },
   { path: "/campanhas/campanha-sintetica-inexistente", status: 404 },
@@ -36,13 +40,37 @@ for (const route of routes) {
 }
 
 test("@a11y critical public journeys have no serious automated violations", async ({ page }) => {
-  for (const route of ["/", "/contato", "/produtos", "/blog", "/campanhas/campanha-sintetica-inexistente"]) {
+  for (const route of [
+    "/",
+    "/contato",
+    "/produtos",
+    "/solucoes",
+    "/blog",
+    "/campanhas/campanha-sintetica-inexistente",
+  ]) {
     await page.goto(route, { waitUntil: "networkidle" });
     const results = await new AxeBuilder({ page }).analyze();
     const serious = results.violations.filter((violation) =>
       ["serious", "critical"].includes(violation.impact ?? ""),
     );
     expect(serious, `${route}: ${serious.map((item) => item.id).join(", ")}`).toEqual([]);
+  }
+});
+
+test("staging exposes the clean-room launch projection", async ({ page, baseURL }) => {
+  test.skip(!baseURL?.includes("pages.dev"), "published projection is verified against staging");
+  for (const [path, heading] of [
+    ["/servicos/instalacao-de-medidores", "Instalação de Medidores"],
+    ["/industrias/saneamento", "Saneamento"],
+    ["/aplicacoes/medicao-estacoes-agua-esgoto", "Medição em Estações de Água e Esgoto"],
+    ["/solucoes/instrumentacao-monitoramento-remoto", "Instrumentação e Monitoramento Remoto"],
+  ] as const) {
+    const response = await page.goto(path, { waitUntil: "networkidle" });
+    expect(response?.status()).toBe(200);
+    await expect(page.getByRole("heading", { name: heading, level: 1 })).toBeVisible();
+    expect(await page.locator("body").evaluate((body) => body.scrollWidth <= body.clientWidth + 1)).toBe(
+      true,
+    );
   }
 });
 

@@ -110,6 +110,13 @@ test("F4 public consumers share only the published projection", async () => {
   assert.doesNotMatch(source, /app\/data\/products|site-content|deteccaoGas|fallback hardcoded/i);
 });
 
+test("F4 product collections remain isolated from discovery content", async () => {
+  const client = await read("src/public/catalog-api.ts");
+  const publicApi = await read("supabase/functions/cms-public/index.ts");
+  assert.match(client, /type: "products", contentType: "product"/);
+  assert.match(publicApi, /type === "products" \? "product" : null/);
+});
+
 test("F4 route and security boundaries include products, search, preview and admin", async () => {
   const [routes, worker] = await Promise.all([read("src/app/routes.tsx"), read("cloudflare/_worker.js")]);
   assert.match(routes, /CmsProductsPage/);

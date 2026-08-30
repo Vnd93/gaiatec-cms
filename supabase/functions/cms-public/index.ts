@@ -179,7 +179,7 @@ Deno.serve(async (req) => {
     if (req.headers.get("If-None-Match") === row.etag) return new Response(null, { status: 304, headers: { ...headers, ETag: row.etag } });
     return json(await enrichMedia(row), 200, { ETag: row.etag, "Cache-Control": "public, max-age=60, stale-while-revalidate=300", "Surrogate-Key": row.cache_tag });
   }
-  const requested = (url.searchParams.get("ids") ?? "").split(",").filter(Boolean), rawQuery = url.searchParams.get("q") ?? "", query = normalize(rawQuery), domain = url.searchParams.get("contentType");
+  const requested = (url.searchParams.get("ids") ?? "").split(",").filter(Boolean), rawQuery = url.searchParams.get("q") ?? "", query = normalize(rawQuery), domain = url.searchParams.get("contentType") ?? (type === "products" ? "product" : null);
   const filters = { segment: url.searchParams.get("segment"), category: url.searchParams.get("category"), family: url.searchParams.get("family"), technology: url.searchParams.get("technology") };
   const { data: synonymRows } = query ? await client.from("cms_search_synonyms").select("canonical_term,aliases,scope").eq("active", true) : { data: [] };
   const expanded = new Set(query.split(" ").filter(Boolean));

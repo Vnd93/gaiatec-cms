@@ -140,13 +140,17 @@ export function getPublishedProduct(slug: string) {
   return catalogFetch<PublishedProduct>(new URLSearchParams({ type: "detail", slug }));
 }
 export function getPublishedProducts(params: Record<string, string>) {
-  return catalogFetch<ProductCollection>(new URLSearchParams({ type: "products", ...params }));
+  return catalogFetch<ProductCollection>(
+    new URLSearchParams({ type: "products", contentType: "product", ...params }),
+  );
 }
 export function searchPublishedProducts(query: string) {
   return catalogFetch<UnifiedSearchResult>(new URLSearchParams({ type: "search", q: query }));
 }
 export function comparePublishedProducts(slugs: string[]) {
-  return catalogFetch<ProductCollection>(new URLSearchParams({ type: "products", ids: slugs.join(",") }));
+  return catalogFetch<ProductCollection>(
+    new URLSearchParams({ type: "products", contentType: "product", ids: slugs.join(",") }),
+  );
 }
 export function getPublishedDiscovery(contentType: DiscoveryType, slug: string) {
   return catalogFetch<PublishedDiscovery>(new URLSearchParams({ type: "entity-detail", contentType, slug }));

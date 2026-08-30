@@ -21,10 +21,14 @@ Também foi removido o ruído visual/técnico causado pela consulta de formulár
 
 ## Resultado
 
-`PLAYWRIGHT_BASE_URL=https://gaiatec-cms-staging.pages.dev npm run test:e2e`: **26 aprovados, 2 skips condicionais, 0 falhas**.
+`PLAYWRIGHT_BASE_URL=https://gaiatec-cms-staging.pages.dev npm run test:e2e`: **36 aprovados, 2 skips condicionais, 0 falhas**.
 
 Revalidação em 2026-08-30: `/contato` carregou o formulário governado, consentimento, newsletter e os dados globais publicados pelo CMS. A API pública confirmou `site_settings` e um produto; a navegação continuou no fallback seguro porque nenhum documento de navegação foi publicado. Não houve alteração visual de frontend nesta rodada.
 
-Evidência: [cadastro em massa autenticado](./evidencia-cadastro-massa-staging.png).
+Revalidação do lote clean-room: as quatro coleções renderizaram cards e filtros com o conteúdo novo; páginas detalhadas de serviço, indústria, aplicação e solução exibiram título, resumo, dados técnicos e CTA. A navegação publicada substituiu o fallback. Em 393 × 852, a página representativa permaneceu sem overflow horizontal e com menu móvel operável.
+
+Revalidação após o lote: o Worker passou a reconhecer `/industrias`, `/solucoes` e as quatro famílias de páginas detalhadas do CMS com HTTP 200 real e metadados iniciais, sem transformar URLs inexistentes em soft 404. O catálogo de produtos deixou de misturar entidades de descoberta e voltou a aprovar cards, filtros, comparação, ausência de overflow, console limpo e Axe em execução concorrente. A inspeção visual no navegador confirmou a identidade GAIATEC, hierarquia, busca, benefícios e menu móvel em 1280 × 720 e 393 × 852.
+
+Evidências: [cadastro em massa autenticado](./evidencia-cadastro-massa-staging.png) e [solução clean-room publicada](./evidencia-solucao-clean-room-staging.png).
 
 Esta aprovação não substitui o aceite editorial dos lotes reais nem autoriza o go-live.

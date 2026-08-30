@@ -15,6 +15,7 @@ export function AdminShell() {
   const links = [
     ["/admin", "Visão geral", true],
     ["/admin/produtos", "Produtos", can("cms:products.read")],
+    ["/admin/produtos/importacao", "Cadastro em massa", can("cms:products.edit")],
     ["/admin/descoberta/service", "Serviços", can("cms:services.read")],
     ["/admin/descoberta/industry", "Indústrias", can("cms:industries.read")],
     ["/admin/descoberta/application", "Aplicações", can("cms:applications.read")],
@@ -22,7 +23,7 @@ export function AdminShell() {
     ["/admin/busca", "Busca e sinônimos", can("cms:search.read")],
     ["/admin/conteudo", "Conteúdo", can("cms:posts.read")],
     ["/admin/marketing", "Campanhas e formulários", can("cms:campaigns.read") || can("cms:forms.read")],
-    ["/admin/leads", "Leads", can("lead:read")],
+    ["/admin/leads", "Leads", can("cms:leads.read")],
     ["/admin/paginas", "Páginas e homepage", can("cms:pages.read") || can("cms:homepage.read")],
     [
       "/admin/site",

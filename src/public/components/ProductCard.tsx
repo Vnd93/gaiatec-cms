@@ -78,8 +78,8 @@ export function ProductCard({
 
       <div className="catalog-product-card__body">
         <p className="catalog-product-card__meta">
-          <span>{p.classification.category}</span>
-          <span>{p.brand.name}</span>
+          {p.classification?.category && <span>{p.classification.category}</span>}
+          {p.brand?.name && <span>{p.brand.name}</span>}
         </p>
         <h3>
           <Link to={`/produtos/${product.slug}`}>{p.title}</Link>

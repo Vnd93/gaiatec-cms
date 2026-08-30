@@ -53,9 +53,14 @@ export default function AdminProductsPage() {
           </p>
         </div>
         {canEdit && (
-          <Link className="admin-button" to="/admin/produtos/novo">
-            Cadastrar manualmente
-          </Link>
+          <div className="admin-workflow-actions">
+            <Link className="admin-button admin-button--secondary" to="/admin/produtos/importacao">
+              Cadastro em massa
+            </Link>
+            <Link className="admin-button" to="/admin/produtos/novo">
+              Cadastrar manualmente
+            </Link>
+          </div>
         )}
       </div>
       <div className="admin-filters">

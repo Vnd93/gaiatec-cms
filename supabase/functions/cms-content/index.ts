@@ -4,13 +4,24 @@ import { authenticateCms } from "../_shared/cms-auth.ts";
 import { clientAddress, consumeRateLimit, corsHeaders, isAllowedOrigin, json, readJsonLimited } from "../_shared/security.ts";
 
 const Uuid = z.uuid();
-const Command = z.object({
+const EditorialCommand = z.object({
   action: z.enum(["create", "save", "submit", "approve", "schedule", "publish", "restore", "archive", "trash", "reopen", "retire", "hard_delete"]),
   itemId: Uuid.nullish(), contentType: z.enum(["product", "service", "industry", "application", "solution", "post", "page", "homepage", "navigation", "site_settings", "placement", "campaign"]).nullish(),
   slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(160).nullish(), payload: z.record(z.string(), z.unknown()).nullish(),
   expectedLockVersion: z.number().int().positive().nullish(), revisionId: Uuid.nullish(), reason: z.string().trim().min(3).max(500).nullish(),
   publishAt: z.iso.datetime().nullish(),
 }).strict();
+const BulkCommand = z.object({
+  action: z.enum(["bulk_validate", "bulk_create"]),
+  contentType: z.literal("product"),
+  reason: z.string().trim().min(3).max(500),
+  rows: z.array(z.object({
+    sourceRow: z.number().int().min(2).max(100000),
+    slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(160),
+    payload: z.record(z.string(), z.unknown()),
+  }).strict()).min(1).max(500),
+}).strict();
+const Command = z.discriminatedUnion("action", [EditorialCommand, BulkCommand]);
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders(req) });
@@ -21,13 +32,38 @@ Deno.serve(async (req) => {
   const idempotencyKey = req.headers.get("X-Idempotency-Key");
   if (!idempotencyKey || !Uuid.safeParse(idempotencyKey).success) return json(req, { error: "Chave idempotente obrigatória." }, 400);
   let parsed: z.infer<typeof Command>;
-  try { parsed = Command.parse(await readJsonLimited(req, 131072)); }
+  try { parsed = Command.parse(await readJsonLimited(req, 5 * 1024 * 1024)); }
   catch { return json(req, { error: "Comando editorial inválido." }, 400); }
   try {
     const allowed = await consumeRateLimit(identity.admin, req, "cms_content_" + parsed.action,
-      identity.user.id + ":" + clientAddress(req), 120, 900);
+      identity.user.id + ":" + clientAddress(req), parsed.action.startsWith("bulk_") ? 20 : 120, 900);
     if (!allowed) return json(req, { error: "Muitas operações. Aguarde." }, 429);
   } catch { return json(req, { error: "Proteção temporariamente indisponível." }, 503); }
+  if (parsed.action === "bulk_validate" || parsed.action === "bulk_create") {
+    const correlationId = crypto.randomUUID();
+    const functionName = parsed.action === "bulk_validate" ? "cms_validate_bulk_product_import" : "cms_execute_bulk_product_import";
+    const { data, error } = await identity.admin.rpc(functionName, {
+      p_actor_id: identity.user.id,
+      p_rows: parsed.rows,
+      p_reason: parsed.reason,
+      p_aal: identity.claims.aal,
+      p_session_id: identity.claims.sessionId,
+      p_issued_at: identity.claims.issuedAt,
+      p_idempotency_key: idempotencyKey,
+      p_correlation_id: correlationId,
+    });
+    if (error) {
+      const conflict = error.message.includes("CONFLICT") || error.code === "23505";
+      const forbidden = error.message.includes("FORBIDDEN");
+      const invalid = error.message.includes("INVALID") || error.code === "22023" || error.code === "23514";
+      return json(req, {
+        error: forbidden ? "Permissão insuficiente." : conflict ? "O lote conflita com cadastros existentes." : invalid ? "A planilha contém dados inválidos." : "Falha no cadastro em massa.",
+        correlationId,
+        code: forbidden ? "CMS_COMMAND_FORBIDDEN" : conflict ? "CMS_BULK_CONFLICT" : invalid ? "CMS_BULK_INVALID" : error.code,
+      }, forbidden ? 403 : conflict ? 409 : invalid ? 422 : 500);
+    }
+    return json(req, { ...data, correlationId });
+  }
   // Give API clients a deterministic conflict response before invoking the
   // transactional command. The database command repeats this check while
   // holding the draft row lock, so this is presentation logic, not the

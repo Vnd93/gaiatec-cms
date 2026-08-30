@@ -842,9 +842,14 @@ Validar o sistema completo e substituir a versão pública anterior com seguran�
 - mapa de redirects/404/410;
 - treinamento por perfil;
 - manual do usuário;
+- controle por allowlist para campos públicos ou somente internos, com fabricante/OEM interno por padrão;
+- cadastro em massa de conteúdo novo por planilha oficial, com dry-run, atomicidade, idempotência e auditoria;
+- bloqueio explícito de exportações do painel/site anterior e de importação em massa de imagens/documentos;
 - canary;
 - observação intensiva;
 - comunicação e suporte.
+
+Decisão complementar executada em 2026-08-29: a allowlist de visibilidade e o cadastro em massa de produtos novos foram publicados em staging. Fabricante/OEM, referência do fabricante e SKU são internos por padrão; a projeção pública remove também duplicações indiretas, proveniência e caminhos privados. A planilha oficial é vazia, versionada e não aceita conteúdo legado, fórmulas, macros, imagens ou documentos. O Gate G8 continua aberto até o round-trip sintético completo, a conclusão dos lotes reais e o aceite de go-live.
 
 ### Gate G8
 

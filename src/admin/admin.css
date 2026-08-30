@@ -754,6 +754,93 @@
   gap: 0.55rem !important;
   text-transform: none;
 }
+
+.admin-visibility-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.85rem;
+  margin-block: 1rem;
+}
+
+.admin-product-form .admin-visibility-section {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.admin-visibility-field {
+  display: grid;
+  gap: 0.45rem;
+  padding: 1rem;
+  border: 1px solid var(--admin-line);
+  background: #f6f8fb;
+}
+
+.admin-visibility-field span {
+  font-weight: 700;
+}
+
+.admin-bulk-import {
+  width: min(100%, 70rem);
+}
+
+.admin-bulk-import > p {
+  max-width: 62rem;
+  line-height: 1.6;
+}
+
+.admin-bulk-import > fieldset {
+  display: grid;
+  gap: 0.9rem;
+  margin-top: 1rem;
+  border: 1px solid var(--admin-line);
+  padding: 1.25rem;
+  background: #fff;
+}
+
+.admin-bulk-import > fieldset legend {
+  padding-inline: 0.45rem;
+  color: var(--admin-blue-dark);
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.admin-bulk-import > fieldset > label:not(.admin-checkbox) {
+  display: grid;
+  gap: 0.55rem;
+  max-width: 44rem;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.admin-bulk-import input[type="file"] {
+  min-height: 3.5rem;
+  width: 100%;
+  border: 1px dashed #8fa0b4;
+  padding: 0.7rem;
+  background: #f6f8fb;
+  color: var(--admin-ink);
+  font: inherit;
+}
+
+.admin-bulk-import > fieldset > .admin-button {
+  justify-self: start;
+}
+
+.admin-bulk-import .admin-workflow-actions {
+  margin-block: 1rem;
+}
+
+@media (max-width: 760px) {
+  .admin-visibility-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 1100px) {
+  .admin-tabs {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+}
 .admin-checkbox input {
   width: 1.15rem !important;
   min-height: 1.15rem !important;

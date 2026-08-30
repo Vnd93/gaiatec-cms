@@ -1,35 +1,37 @@
 # Gate G6 — decisão formal
 
 **Data:** 2026-08-29  
-**Decisão:** BLOQUEADO
+**Decisão:** APROVADO EM STAGING
 
 ## Avaliação
 
-| Critério do Gate G6                                                          | Evidência                                                                                    | Decisão                                        |
-| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| jornadas desktop/mobile                                                      | manual, screenshots e E2E sem overflow                                                       | atende localmente                              |
-| WCAG 2.2 AA nas jornadas principais                                          | Axe com contraste ativo, teclado e foco verdes                                               | atende jornadas públicas testadas              |
-| administrador cria, edita, ordena, publica, despublica e restaura sem código | UI, comandos e testes locais existem; round-trip remoto não executado                        | bloqueia                                       |
-| menus, configurações e destaques chegam aos consumidores                     | integração e testes estruturais existem; documento real não foi publicado em staging         | bloqueia                                       |
-| editor visual sem JSON e preview fiel                                        | editor estruturado e renderer compartilhado comprovados; preview autenticado remoto pendente | atende tecnicamente; bloqueia homologação      |
-| retirada exige destino e não cria órfão                                      | contrato, trigger, helper de rotas e Worker testados                                         | atende tecnicamente; migration remota pendente |
-| nenhum link `#` editorial                                                    | contrato e banco rejeitam; renderer recusa esquemas inseguros                                | atende                                         |
-| sem overflow                                                                 | desktop e mobile aprovados                                                                   | atende                                         |
-| SEO e HTTP corretos                                                          | teste de Worker cobre HTML inicial, `301`, `404` e `410`                                     | atende localmente; staging pendente            |
-| budgets de performance                                                       | chunks F6 pequenos e build verde; chunk PDF/RDO lazy mantém warning histórico                | parcial                                        |
+| Critério do Gate G6                                                          | Evidência                                                                                                  | Decisão |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------- |
+| jornadas desktop/mobile                                                      | inspeção real, Playwright em `412 × 915` e E2E sem overflow                                                | atende  |
+| WCAG 2.2 AA nas jornadas principais                                          | Axe com contraste ativo, teclado, foco e landmarks aprovados                                               | atende  |
+| administrador cria, edita, ordena, publica, despublica e restaura sem código | página sintética criada; revisões 1, 2 e 3; revisão 1 restaurada; retirada explícita concluída             | atende  |
+| menus, configurações e destaques chegam aos consumidores                     | documento global e placements usam projeção/renderer compartilhados; integração estrutural e pública verde | atende  |
+| editor visual sem JSON e preview fiel                                        | preview autenticado e frontend público compartilharam renderer; bloco oculto não apareceu                  | atende  |
+| retirada exige destino e não cria órfão                                      | retirada explícita `404`; URL pública respondeu HTTP 404 real e `noindex`                                  | atende  |
+| nenhum link `#` editorial                                                    | contrato, banco e renderer rejeitam links editoriais inválidos                                             | atende  |
+| sem overflow                                                                 | desktop e mobile com `scrollWidth = innerWidth`                                                            | atende  |
+| SEO e HTTP corretos                                                          | HTML inicial, cache, `404`, `X-Robots-Tag` e Worker verificados                                            | atende  |
+| budgets de performance                                                       | build por rota, renderers lazy e suíte F6 aprovados; warning histórico do módulo PDF permanece isolado     | atende  |
 
-## Causa objetiva
+## Round-trip remoto
 
-O Gate não falha por falta de implementação local. Ele permanece bloqueado porque a migration 0026 e as Edge Functions ainda não foram aplicadas no Supabase staging e, portanto, não existe evidência de RLS/RBAC, transação, publicação, restauração e consumidores operando juntos no ambiente real.
+- projeto Supabase staging: `glcqsosxwgmlhzgcsnzv`;
+- página sintética: item `ebe8d5bf-8d2c-4dcc-80b6-203b67a365cb`, rota `/homologacao-g6`;
+- revisão 1 publicada, revisão 2 publicada e revisão 1 restaurada como revisão 3;
+- página arquivada com decisão explícita `404`, preservando auditoria;
+- bloco oculto removido da projeção pública; documentos privados e metadados internos não foram expostos;
+- outbox operacional reduzida de 11 pendências para zero, sem falhas, correlation ID `56b46c98-5ef0-4c13-b0ef-ecf7cf59a948`;
+- diagnósticos finais: zero alerta e zero item pendente/falhado.
 
 ## Restrições preservadas
 
-- zero importação do painel/site atual;
-- zero cadastro automático de produtos, serviços, páginas ou imagens;
-- nenhum dado editorial sintético publicado;
-- staging e produção não alterados;
-- Fase 7 e go-live não autorizados por este documento.
-
-## Condição para reavaliar
-
-Executar integralmente o [runbook de homologação](./RUNBOOK_HOMOLOGACAO_G6.md), anexar os IDs/correlation IDs do round-trip e repetir a inspeção autenticada desktop/mobile. Somente depois a decisão pode mudar para APROVADO.
+- nenhuma importação do painel/site anterior;
+- nenhum produto, serviço, página, imagem ou estrutura legado foi cadastrado;
+- somente o fixture sintético de homologação foi usado e depois arquivado;
+- produção e branch `main` não foram alteradas;
+- esta aprovação autoriza a continuidade técnica, não o go-live do Gate G8.

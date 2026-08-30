@@ -14,8 +14,8 @@
     "deploy:preview": "npm run build:staging && wrangler pages deploy dist --project-name gaiatec-cms-staging --branch preview",
     "deploy:staging": "npm run build:staging && wrangler pages deploy dist --project-name gaiatec-cms-staging --branch Remodelagem",
     "deploy:production": "npm run build && wrangler pages deploy dist --project-name gaiatec-website --branch main",
-    "format": "prettier --write eslint.config.js playwright.config.ts tsconfig.json tsconfig.strict.json vitest.config.ts .github/workflows cloudflare scripts/prepare-cloudflare-worker.mjs docs/fase-2 docs/fase-3 docs/fase-4 docs/fase-5 docs/fase-6 docs/fase-7 src/admin src/public src/shared tests scripts/phase2 scripts/phase3 scripts/phase4 scripts/phase5 scripts/phase6 scripts/phase7",
-    "format:check": "prettier --check eslint.config.js playwright.config.ts tsconfig.json tsconfig.strict.json vitest.config.ts .github/workflows cloudflare scripts/prepare-cloudflare-worker.mjs docs/fase-2 docs/fase-3 docs/fase-4 docs/fase-5 docs/fase-6 docs/fase-7 src/admin src/public src/shared tests scripts/phase2 scripts/phase3 scripts/phase4 scripts/phase5 scripts/phase6 scripts/phase7",
+    "format": "prettier --write eslint.config.js playwright.config.ts tsconfig.json tsconfig.strict.json vitest.config.ts .github/workflows cloudflare scripts/prepare-cloudflare-worker.mjs docs/adr docs/fase-2 docs/fase-3 docs/fase-4 docs/fase-5 docs/fase-6 docs/fase-7 docs/fase-8 src/admin src/public src/shared tests scripts/phase2 scripts/phase3 scripts/phase4 scripts/phase5 scripts/phase6 scripts/phase7",
+    "format:check": "prettier --check eslint.config.js playwright.config.ts tsconfig.json tsconfig.strict.json vitest.config.ts .github/workflows cloudflare scripts/prepare-cloudflare-worker.mjs docs/adr docs/fase-2 docs/fase-3 docs/fase-4 docs/fase-5 docs/fase-6 docs/fase-7 docs/fase-8 src/admin src/public src/shared tests scripts/phase2 scripts/phase3 scripts/phase4 scripts/phase5 scripts/phase6 scripts/phase7",
     "lint": "eslint src tests scripts/phase2 scripts/phase3 scripts/phase4 scripts/phase5 scripts/phase6 scripts/phase7 vite.config.ts vitest.config.ts playwright.config.ts cloudflare/_worker.js scripts/prepare-cloudflare-worker.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.strict.json && tsc --noEmit --noCheck -p tsconfig.json",
     "test": "vitest run",
@@ -71,6 +71,7 @@
     "cmdk": "1.1.1",
     "date-fns": "3.6.0",
     "embla-carousel-react": "8.6.0",
+    "exceljs": "^4.4.0",
     "lucide-react": "0.487.0",
     "motion": "12.23.24",
     "next-themes": "0.4.6",
@@ -131,6 +132,11 @@
     "esbuild@0.25.12": true,
     "esbuild@0.28.1": true,
     "workerd@1.20260826.1": true
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "11.1.1"
+    }
   },
   "pnpm": {
     "overrides": {

@@ -5,7 +5,7 @@
 **Branch:** `Remodelagem`
 
 **Base autorizada:** `aab55f7`
-**Status:** implementação e validação local; Gate G7 pendente de autenticação e homologação Supabase
+**Status:** implementação publicada em staging; Gate G7 pendente do round-trip próprio de marketing e leads
 
 ## Resultado local
 
@@ -30,4 +30,6 @@ A Fase 7 implementa uma vertical limpa para blog, campanhas, landing pages, form
 
 ## Limite formal
 
-Sem autenticação posterior no Supabase não é possível aplicar as migrations `0026` e `0027`, publicar as Edge Functions, testar RLS/RBAC com identidades reais nem comprovar o round-trip campanha → lead em staging. Não há evidência remota simulada. Produção e `main` permanecem intocadas.
+As migrations `0026` a `0029` e as Edge Functions da Fase 7 estão ativas em staging. O esquema remoto passa no lint sem erro ou aviso, e as permissões de leads seguem o padrão fechado `cms:leads.*`.
+
+O Gate G7 ainda exige executar o round-trip campanha → formulário → lead → atribuição → atendimento, além dos testes reais por perfil e da revisão LGPD. Produção e `main` permanecem intocadas.

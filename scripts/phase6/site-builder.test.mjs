@@ -106,7 +106,16 @@ test("edge serves managed pages with initial SEO and real retirement statuses", 
     '<!doctype html><html><head><title>Base</title><meta name="description" content="base"><meta name="robots" content="index, follow"><link rel="canonical" href="https://gaiatecsistemas.com.br/"></head><body><div id="root"></div></body></html>';
   const env = {
     PUBLIC_SITE_ORIGIN: "https://gaiatecsistemas.com.br",
-    ASSETS: { fetch: async () => new Response(html, { headers: { "Content-Type": "text/html" } }) },
+    ASSETS: {
+      fetch: async (request) =>
+        new URL(request.url).pathname.endsWith(".xlsx")
+          ? new Response("xlsx-template", {
+              headers: {
+                "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              },
+            })
+          : new Response(html, { headers: { "Content-Type": "text/html" } }),
+    },
   };
 
   globalThis.fetch = async (input) => {
@@ -162,6 +171,21 @@ test("edge serves managed pages with initial SEO and real retirement statuses", 
     );
     assert.equal(admin.status, 200);
     assert.match(admin.headers.get("cache-control") ?? "", /no-store/);
+
+    const bulkAdmin = await module.default.fetch(
+      new Request("https://gaiatecsistemas.com.br/admin/produtos/importacao"),
+      env,
+    );
+    assert.equal(bulkAdmin.status, 200);
+    assert.match(bulkAdmin.headers.get("cache-control") ?? "", /no-store/);
+
+    const workbook = await module.default.fetch(
+      new Request("https://gaiatecsistemas.com.br/modelos/GAIATEC-CMS-Cadastro-em-Massa-v1.xlsx"),
+      env,
+    );
+    assert.equal(workbook.status, 200);
+    assert.equal(await workbook.text(), "xlsx-template");
+    assert.match(workbook.headers.get("content-type") ?? "", /spreadsheetml/);
   } finally {
     globalThis.fetch = originalFetch;
   }

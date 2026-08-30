@@ -33,3 +33,12 @@
 O lint encerrou com **0 erros** e 45 warnings preexistentes fora do escopo F7. O build manteve apenas o aviso conhecido de chunk PDF acima do limiar. As capturas e a matriz de inspeção estão em `VALIDACAO_UX_UI_F7.md`.
 
 Nenhum dado remoto, sessão autenticada, entrega de e-mail ou execução de migration foi fabricado para completar esta matriz.
+
+## Implantação remota posterior
+
+- migrations 0027, 0028 e 0029 aplicadas no Supabase staging `glcqsosxwgmlhzgcsnzv`;
+- `supabase db lint --linked --level warning`: zero resultado;
+- funções `cms-content`, `cms-public`, `cms-preview`, `cms-leads`, `lead-capture` e `cms-outbox-worker` ativas;
+- frontend publicado no Cloudflare Pages staging, mantendo `noindex` e `no-store` no administrativo;
+- correção de compatibilidade do RBAC: permissões de leads usam `cms:leads.read|assign|export|privacy`;
+- nenhum artigo, campanha, formulário ou lead real foi criado durante a implantação.

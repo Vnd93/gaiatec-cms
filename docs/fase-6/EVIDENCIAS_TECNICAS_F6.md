@@ -58,15 +58,15 @@ Principais tamanhos gzip do build final observado:
 
 O chunk PDF/RDO permanece grande (`~605 kB` gzip), porém separado e carregado sob demanda; não integra a jornada pública do catálogo nem o site builder. O build mantém o warning existente para chunks acima de 600 kB.
 
-## Limitação de banco e staging
+## Banco e staging
 
-- Supabase staging esperado: `glcqsosxwgmlhzgcsnzv`;
-- `SUPABASE_ACCESS_TOKEN`: ausente nesta sessão;
-- Docker/Podman: ausentes;
-- `supabase db push --dry-run --linked`: bloqueado por falta do token;
-- migration 0026: não aplicada remotamente;
-- Edge Functions F6: não implantadas;
-- Cloudflare staging: não alterado;
-- produção e branch `main`: não acessadas.
+- Supabase staging: `glcqsosxwgmlhzgcsnzv`;
+- migration 0026 aplicada e listada remotamente;
+- `cms-content`, `cms-public`, `cms-preview` e `cms-outbox-worker` implantadas;
+- Cloudflare Pages staging publicado na branch `Remodelagem`;
+- Super Admin real com MFA executou o round-trip de revisões 1, 2 e 3;
+- restauração, retirada `404`, preview desktop/mobile, RLS/RBAC e projeção pública verificados;
+- outbox processada de 11 pendências para zero, sem falhas;
+- produção e branch `main` não acessadas.
 
-Portanto, os resultados acima comprovam compilação, contratos, frontend, Worker e comportamento automatizado local, mas não substituem a execução transacional e RLS no banco de staging.
+Os resultados locais e remotos agora comprovam a integração transacional do Gate G6 no staging. O fixture sintético permanece arquivado para auditoria e não integra o conteúdo editorial do site.

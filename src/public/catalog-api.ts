@@ -18,11 +18,37 @@ import type {
 } from "@/shared/contracts/cms-content";
 import type { CmsRelatedItem } from "./components/CmsPageRenderer";
 
+type CmsProductModel = CmsProductContent["models"][number];
+export type CmsPublicProductContent = Omit<
+  CmsProductContent,
+  | "fieldVisibility"
+  | "brand"
+  | "manufacturer"
+  | "productLine"
+  | "classification"
+  | "function"
+  | "technology"
+  | "models"
+  | "relations"
+> & {
+  brand?: CmsProductContent["brand"];
+  manufacturer?: CmsProductContent["manufacturer"];
+  productLine?: CmsProductContent["productLine"];
+  classification?: CmsProductContent["classification"];
+  function?: string;
+  technology?: string;
+  models: Array<
+    Omit<CmsProductModel, "model" | "manufacturerReference" | "sku"> &
+      Partial<Pick<CmsProductModel, "model" | "manufacturerReference" | "sku">>
+  >;
+  relations?: CmsProductContent["relations"];
+};
+
 export type PublishedProduct = {
   item_id: string;
   revision_id: string;
   slug: string;
-  payload: CmsProductContent;
+  payload: CmsPublicProductContent;
   seo: CmsProductContent["seo"];
   content_version: number;
   etag: string;

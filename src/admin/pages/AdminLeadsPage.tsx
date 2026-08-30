@@ -140,9 +140,9 @@ export default function AdminLeadsPage() {
       setBusy(false);
     }
   }
-  const canAssign = profile?.permissions.includes("lead:assign"),
-    canExport = profile?.permissions.includes("lead:export"),
-    canPrivacy = profile?.permissions.includes("lead:privacy");
+  const canAssign = profile?.permissions.includes("cms:leads.assign"),
+    canExport = profile?.permissions.includes("cms:leads.export"),
+    canPrivacy = profile?.permissions.includes("cms:leads.privacy");
   return (
     <section>
       <div className="admin-page-heading">

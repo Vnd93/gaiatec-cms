@@ -10,7 +10,7 @@
 - consentimento append-only com texto, versão, política, horário de servidor e evidência técnica com IP hasheado;
 - histórico append-only para status/atribuição, SLA persistido e notificação via outbox com retry/dead-letter;
 - exportação exige permissão crítica, justificativa e gera auditoria; limite de 5.000 linhas;
-- anonimização manual exige `lead:privacy`; retenção automática remove payload, UTM e responsável;
+- anonimização manual exige `cms:leads.privacy`; retenção automática remove payload, UTM e responsável;
 - tracking de campanha somente emite evento quando o consentimento de cookies está aceito.
 
 ## Secrets necessários em staging

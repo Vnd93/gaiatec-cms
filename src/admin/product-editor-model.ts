@@ -1,4 +1,4 @@
-import type { CmsProductContent } from "@/shared/contracts/cms-content";
+import type { CmsProductContent, CmsProductFieldVisibility } from "@/shared/contracts/cms-content";
 
 export type ProductEditorTab =
   | "identificacao"
@@ -9,6 +9,7 @@ export type ProductEditorTab =
   | "documentos"
   | "relacoes"
   | "busca"
+  | "visibilidade"
   | "seo"
   | "governanca"
   | "historico";
@@ -107,6 +108,20 @@ export function createInitialProductDraft() {
     indexable: false,
     ogImageId: "",
     pilotState: "awaiting_owner",
+    fieldVisibility: {
+      brand: "public",
+      manufacturer: "internal",
+      productLine: "public",
+      commercialModel: "public",
+      manufacturerReference: "internal",
+      sku: "internal",
+      classification: "public",
+      function: "public",
+      technology: "public",
+      specifications: "public",
+      relations: "public",
+      documents: "public",
+    } as CmsProductFieldVisibility,
     provenanceJson: "[]",
     portfolioOwner: "",
     technicalReviewer: "",
@@ -169,6 +184,7 @@ export function hydrateProductDraft(
     indexable: product.seo.indexable,
     ogImageId: product.seo.ogImageId ?? "",
     pilotState: product.pilotState,
+    fieldVisibility: product.fieldVisibility,
     provenanceJson: pretty(product.provenance),
     portfolioOwner: product.approval.portfolioOwner,
     technicalReviewer: product.approval.technicalReviewer,
@@ -223,6 +239,7 @@ export function buildProductPayload(draft: ProductEditorDraft) {
     consumerId: "cms.catalog-product.v1" as const,
     contentType: "product" as const,
     pilotState: draft.pilotState,
+    fieldVisibility: draft.fieldVisibility,
     title: draft.title,
     ...(draft.summary ? { summary: draft.summary } : {}),
     brand: { name: draft.brandName, slug: draft.brandSlug },
@@ -292,6 +309,7 @@ export function tabForProductPath(path: PropertyKey[]): ProductEditorTab {
   if (root === "documents") return "documentos";
   if (root === "relations") return "relacoes";
   if (root === "search") return "busca";
+  if (root === "fieldVisibility") return "visibilidade";
   if (["seo", "redirects"].includes(root)) return "seo";
   if (["provenance", "approval", "pilotState"].includes(root)) return "governanca";
   return "identificacao";

@@ -2,7 +2,7 @@
 
 **Data:** 2026-08-29  
 **Branch:** `Remodelagem`  
-**Status:** implementação local concluída; Gate G6 bloqueado para homologação remota
+**Status:** implementação e homologação remota concluídas; Gate G6 aprovado em staging
 
 ## Resultado
 
@@ -32,8 +32,8 @@ Também foi consolidada a nova experiência da página de produtos em desktop e 
 - [Gate G6](./EVIDENCIAS_GATE_G6.md)
 - [Runbook de homologação](./RUNBOOK_HOMOLOGACAO_G6.md)
 
-## Limite atual
+## Homologação remota
 
-A migration `0026_fase6_site_builder.sql` é inédita e não foi aplicada em staging porque não há `SUPABASE_ACCESS_TOKEN` disponível nesta sessão e a máquina não possui Docker/Podman para um banco local efêmero. Consequentemente, o código não foi implantado e o fluxo administrativo autenticado não foi executado contra o banco real.
+A migration `0026_fase6_site_builder.sql`, as Edge Functions e o frontend foram aplicados somente em staging. O Super Admin com MFA executou o round-trip real de página, incluindo preview, publicação, nova versão, restauração, retirada `404`, inspeção pública desktop/mobile e processamento integral da outbox. A decisão detalhada está em `EVIDENCIAS_GATE_G6.md`.
 
-Esse bloqueio não autoriza avançar ao Gate G7 nem publicar em produção. O código permanece preparado para a homologação assim que o acesso seguro ao staging for restabelecido.
+Produção e branch `main` permanecem intocadas. O Gate G6 aprovado não substitui os critérios próprios dos Gates G7 e G8.

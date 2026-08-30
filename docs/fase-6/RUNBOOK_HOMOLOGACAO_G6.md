@@ -1,8 +1,8 @@
 # Runbook simples para homologar o Gate G6
 
-## O que falta
+## Estado
 
-O código está pronto localmente. Para concluir o Gate, ainda é necessário provar que ele funciona no ambiente de staging com o banco e a autenticação reais.
+Executado integralmente em 2026-08-29 no staging `glcqsosxwgmlhzgcsnzv`. O histórico abaixo permanece como procedimento reproduzível; as evidências e a decisão estão em `EVIDENCIAS_GATE_G6.md`.
 
 ## Acesso necessário
 
@@ -54,4 +54,4 @@ Usar apenas uma página sintética claramente marcada como teste, sem dados de p
 
 ## Encerramento
 
-Se qualquer ação falhar, não publicar em produção. Corrigir no mesmo branch, repetir o roteiro e atualizar `EVIDENCIAS_GATE_G6.md` somente quando todos os critérios estiverem comprovados.
+O roteiro foi concluído, a outbox terminou sem pendências e o Gate G6 foi aprovado em staging. Produção continua proibida até o Gate G8.

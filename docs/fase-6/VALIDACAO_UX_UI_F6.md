@@ -29,11 +29,17 @@ O Playwright/Axe percorreu `/`, `/contato` e `/produtos` em desktop e mobile, se
 - nomes acessíveis de busca, filtros, comparação e CTAs;
 - login administrativo privado e sem indexação.
 
-## Estados administrativos
+## Estados administrativos e preview remoto
 
-Sem sessão, `/admin/paginas` redirecionou corretamente para `/admin/login`, sem erro no console. Essa inspeção comprova o fail-closed público, mas não a UX interna do builder autenticado.
+Sem sessão, `/admin/paginas` redirecionou corretamente para `/admin/login`, sem erro no console. Com a sessão própria do Super Admin e MFA, o builder e o preview foram inspecionados no staging real.
 
-A UX do builder está coberta localmente por contratos, testes de componente e build. A validação visual autenticada final permanece pendente até a migration ser aplicada e o administrador iniciar sua própria sessão no staging, sem compartilhar senha.
+Resultados adicionais:
+
+- criação, duplicação, reordenação e ocultação de bloco operáveis pelo teclado e mouse;
+- bloco oculto ausente no preview e na resposta pública;
+- preview restaurado em `412 × 915`, sem overflow (`scrollWidth = 412`);
+- desktop com hierarquia, conteúdo e ações sem corte;
+- rota retirada com estado 404 legível, sem conteúdo residual.
 
 ## Capturas
 

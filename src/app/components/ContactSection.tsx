@@ -129,8 +129,8 @@ export function ContactSection({
   const isSubmitting = status === "submitting";
 
   const inputClass = light
-    ? "w-full bg-[#F2F2F2] border border-black/10 px-4 py-3 text-[14px] text-black placeholder:text-[#8a8a8a] outline-none focus:border-[#0057DE] transition-colors disabled:opacity-50"
-    : "w-full bg-white border border-black/10 px-4 py-3 text-[14px] text-black placeholder:text-[#8a8a8a] outline-none focus:border-black transition-colors disabled:opacity-50";
+    ? "w-full bg-[#F2F2F2] border border-black/10 px-4 py-3 text-[14px] text-black placeholder:text-[#666666] outline-none focus:border-[#0057DE] transition-colors disabled:opacity-50"
+    : "w-full bg-white border border-black/10 px-4 py-3 text-[14px] text-black placeholder:text-[#666666] outline-none focus:border-black transition-colors disabled:opacity-50";
 
   return (
     <section className={light ? "bg-white" : "bg-[#FFCC00]"} id={sectionId} style={{ fontFamily: "Inter, sans-serif" }}>
@@ -185,7 +185,7 @@ export function ContactSection({
                 className={`${inputClass} appearance-none`}
                 value={formData.enquiryType}
                 onChange={(e) => setFormData({ ...formData, enquiryType: e.target.value })}
-                style={{ color: formData.enquiryType ? "#000" : "#8a8a8a" }}
+                style={{ color: formData.enquiryType ? "#000" : "#666666" }}
               >
                 <option value="">Tipo de Solicitação</option>
                 {enquiryTypes.map((t) => <option key={t} value={t}>{t}</option>)}

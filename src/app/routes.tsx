@@ -61,6 +61,7 @@ const AdminContentPage = lazy(() => import("../admin/pages/AdminContentPage"));
 const AdminEditorPage = lazy(() => import("../admin/pages/AdminEditorPage"));
 const AdminProductsPage = lazy(() => import("../admin/pages/AdminProductsPage"));
 const AdminProductEditorPage = lazy(() => import("../admin/pages/AdminProductEditorPage"));
+const AdminBulkImportPage = lazy(() => import("../admin/pages/AdminBulkImportPage"));
 const AdminMediaPage = lazy(() => import("../admin/pages/AdminMediaPage"));
 const AdminProfilePage = lazy(() => import("../admin/pages/AdminProfilePage"));
 const AdminUsersPage = lazy(() => import("../admin/pages/AdminUsersPage"));
@@ -188,6 +189,7 @@ export const router = createBrowserRouter([
           { path: "conteudo", element: lazyWrap(AdminContentPage) },
           { path: "conteudo/:id", element: lazyWrap(AdminEditorPage) },
           { path: "produtos", element: lazyWrap(AdminProductsPage) },
+          { path: "produtos/importacao", element: lazyWrap(AdminBulkImportPage) },
           { path: "produtos/:id", element: lazyWrap(AdminProductEditorPage) },
           { path: "descoberta/:contentType", element: lazyWrap(AdminDiscoveryPage) },
           { path: "descoberta/:contentType/:id", element: lazyWrap(AdminDiscoveryPage) },

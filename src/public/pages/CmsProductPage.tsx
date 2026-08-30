@@ -32,10 +32,12 @@ export default function CmsProductPage() {
           "@type": "Product",
           name: data.payload.title,
           model: data.payload.models[0]?.model,
-          brand: { "@type": "Brand", name: data.payload.brand.name },
-          manufacturer: { "@type": "Organization", name: data.payload.manufacturer.name },
+          ...(data.payload.brand ? { brand: { "@type": "Brand", name: data.payload.brand.name } } : {}),
+          ...(data.payload.manufacturer
+            ? { manufacturer: { "@type": "Organization", name: data.payload.manufacturer.name } }
+            : {}),
           mpn: data.payload.models[0]?.manufacturerReference,
-          category: data.payload.classification.category,
+          ...(data.payload.classification ? { category: data.payload.classification.category } : {}),
           description: data.payload.commercial.shortDescription,
           url: canonical,
         });

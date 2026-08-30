@@ -1,14 +1,21 @@
 import type { Session } from "@supabase/supabase-js";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabase";
 
-async function invoke<T>(session: Session, fn: string, body: unknown, idempotent = false): Promise<T> {
+async function invoke<T>(
+  session: Session,
+  fn: string,
+  body: unknown,
+  idempotent: boolean | string = false,
+): Promise<T> {
   const response = await fetch(SUPABASE_URL + "/functions/v1/" + fn, {
     method: "POST",
     headers: {
       apikey: SUPABASE_ANON_KEY,
       Authorization: "Bearer " + session.access_token,
       "Content-Type": "application/json",
-      ...(idempotent ? { "X-Idempotency-Key": crypto.randomUUID() } : {}),
+      ...(idempotent
+        ? { "X-Idempotency-Key": typeof idempotent === "string" ? idempotent : crypto.randomUUID() }
+        : {}),
     },
     body: JSON.stringify(body),
   });
@@ -46,4 +53,11 @@ export function searchGovernanceCommand<T>(session: Session, body: Record<string
 }
 export function leadCommand<T>(session: Session, body: Record<string, unknown>) {
   return invoke<T>(session, "cms-leads", body, true);
+}
+export function bulkImportCommand<T>(
+  session: Session,
+  body: Record<string, unknown>,
+  idempotencyKey: string,
+) {
+  return invoke<T>(session, "cms-content", body, idempotencyKey);
 }

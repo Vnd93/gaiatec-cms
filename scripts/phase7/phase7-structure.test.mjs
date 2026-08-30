@@ -26,7 +26,7 @@ test("F7 migration is structural, clean-room and fail-closed", async () => {
     "cms_expire_campaigns",
     "cms_validate_phase7_projection",
     "enable row level security",
-    "lead:privacy",
+    "cms:leads.privacy",
   ])
     assert.match(sql, new RegExp(evidence));
 });
@@ -61,6 +61,7 @@ test("admin fields are connected to versioned public consumers", async () => {
   assert.match(publicApi, /campaign-placements/);
   assert.match(publicApi, /post-detail/);
   assert.match(publicApi, /loadPublishedForm/);
+  assert.match(publicApi, /kind: "fallback"/);
   assert.match(leadApi, /active_version_id/);
   assert.match(leadApi, /captchaToken/);
   assert.match(leadApi, /idempotencyKey/);
@@ -78,12 +79,12 @@ test("edge returns Article schema, campaign expiry statuses and complete sitemap
   assert.match(worker, /leads/);
 });
 
-test("G6 remains formally blocked and F7 exception is explicit", async () => {
+test("G6 is formally approved and the earlier F7 exception remains auditable", async () => {
   const [g6, exception] = await Promise.all([
     read("docs/fase-6/EVIDENCIAS_GATE_G6.md"),
     read("docs/fase-7/EXCECAO_AVANCO_COM_G6_PENDENTE.md"),
   ]);
-  assert.match(g6, /Decisão:\*\* BLOQUEADO/);
+  assert.match(g6, /Decisão:\*\* APROVADO EM STAGING/);
   assert.match(exception, /aab55f7/);
   assert.match(exception, /não aprova o Gate G6/i);
 });

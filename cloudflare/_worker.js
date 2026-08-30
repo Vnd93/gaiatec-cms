@@ -46,11 +46,11 @@ const PRIVATE_ROUTE = /^\/(relatorio-de-obra|admin|preview|cms\/conteudo)(?:\/|$
 const RDO_ROUTES =
   /^\/relatorio-de-obra(?:\/(login|definir-senha|assinar\/[^/]+|arquivo|novo|relatorio\/[^/]+|equipe))?\/?$/;
 const ADMIN_ROUTES =
-  /^\/admin(?:\/(login|recuperar-senha|definir-senha|mfa|conteudo(?:\/novo|\/[0-9a-f-]{36})?|produtos(?:\/novo|\/[0-9a-f-]{36})?|descoberta\/(?:service|industry|application|solution)(?:\/[0-9a-f-]{36})?|busca|paginas(?:\/(?:novo|[0-9a-f-]{36}))?|site|marketing(?:\/campanhas\/(?:novo|[0-9a-f-]{36})|\/formularios)?|leads|midia|perfil|usuarios|diagnosticos))?\/?$/;
+  /^\/admin(?:\/(login|recuperar-senha|definir-senha|mfa|conteudo(?:\/novo|\/[0-9a-f-]{36})?|produtos(?:\/novo|\/importacao|\/[0-9a-f-]{36})?|descoberta\/(?:service|industry|application|solution)(?:\/[0-9a-f-]{36})?|busca|paginas(?:\/(?:novo|[0-9a-f-]{36}))?|site|marketing(?:\/campanhas\/(?:novo|[0-9a-f-]{36})|\/formularios)?|leads|midia|perfil|usuarios|diagnosticos))?\/?$/;
 const PREVIEW_ROUTES = /^\/preview\/[A-Za-z0-9_-]{43}\/?$/;
 const CMS_DEMO_ROUTES = /^\/cms\/conteudo\/[a-z0-9]+(?:-[a-z0-9]+)*\/?$/;
 const ASSET_PATH =
-  /^\/(assets|images|fonts)\/|\.(?:js|mjs|css|map|png|jpe?g|webp|avif|svg|gif|ico|woff2?|ttf|pdf|xml|txt|json|webmanifest)$/i;
+  /^\/(assets|images|fonts)\/|\.(?:js|mjs|css|map|png|jpe?g|webp|avif|svg|gif|ico|woff2?|ttf|pdf|xlsx|xml|txt|json|webmanifest)$/i;
 
 function securityHeaders(headers, { noindex = false, privateRoute = false } = {}) {
   headers.set("X-Content-Type-Options", "nosniff");
@@ -229,6 +229,7 @@ async function handleRequest(request, env) {
         return new Response(null, { status, headers: { Location: destination } });
       return spaResponse(request, env, status === 410 ? 410 : 404, { noindex: true });
     }
+    if (resolution.kind === "fallback") return spaResponse(request, env, 404, { noindex: true });
     return spaResponse(request, env, 200, {
       noindex: stagingHost || resolution?.seo?.indexable !== true,
       page: resolution,

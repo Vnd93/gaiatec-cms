@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { containsInternalProductValue, sanitizePublicPayload, sanitizePublicSeo } from "../_shared/cms-public-projection.ts";
 
 const headers = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "apikey, authorization, content-type, if-none-match, x-client-info", "Access-Control-Allow-Methods": "GET, OPTIONS", Vary: "Origin" };
 const json = (body: unknown, status = 200, extra: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { ...headers, "Content-Type": "application/json; charset=utf-8", ...extra } });
@@ -16,8 +17,9 @@ Deno.serve(async (req) => {
   const url = new URL(req.url), type = url.searchParams.get("type") ?? "detail";
   const client = createClient(supabaseUrl, service ?? anon, { auth: { persistSession: false } });
   const enrichMedia = async (row: any) => {
-    const mediaUrls: Record<string, string> = {}, media = row.payload?.media ?? [];
-    const blockAssetIds = (row.payload?.blocks ?? []).flatMap((block: any) => [block.data?.assetId, ...(block.data?.assetIds ?? []), ...(block.data?.items ?? []).map((item: any) => item.assetId)].filter(Boolean));
+    const payload = sanitizePublicPayload(row.payload);
+    const mediaUrls: Record<string, string> = {}, media = payload.media ?? [];
+    const blockAssetIds = (payload.blocks ?? []).flatMap((block: any) => [block.data?.assetId, ...(block.data?.assetIds ?? []), ...(block.data?.items ?? []).map((item: any) => item.assetId)].filter(Boolean));
     const assetIds = [...new Set([...media.map((entry: any) => entry.assetId), ...blockAssetIds, row.seo?.ogImageId].filter(Boolean))];
     const primaryId = media.find((entry: any) => entry.role === "primary")?.assetId;
     const { data: assets } = assetIds.length
@@ -33,10 +35,11 @@ Deno.serve(async (req) => {
       if (signedUrl) { mediaUrls[`${variant.asset_id}:${key}`] = signedUrl; if (variant.asset_id === primaryId) mediaUrls[key] = signedUrl; }
     }
     const documentUrls: Record<string, string> = {};
-    const documents = (row.payload?.documents ?? []).filter((document: any) => document.visibility === "public" && document.storagePath);
+    const publicDocumentIds = new Set((payload.documents ?? []).map((document: any) => document.id));
+    const documents = (row.payload?.documents ?? []).filter((document: any) => document.visibility === "public" && publicDocumentIds.has(document.id) && document.storagePath && !containsInternalProductValue(document.storagePath, row.payload));
     const { data: signedDocuments } = documents.length ? await client.storage.from("cms-documents-private").createSignedUrls(documents.map((document: any) => document.storagePath), 3600) : { data: [] };
     documents.forEach((document: any, index: number) => { const signedUrl = signedDocuments?.[index]?.signedUrl; if (signedUrl) documentUrls[document.id] = signedUrl; });
-    return { ...row, path: routeFor(row), media_urls: mediaUrls, media_alt: mediaAlt, document_urls: documentUrls };
+    return { ...row, payload, seo: sanitizePublicSeo(row.seo, row.payload), path: routeFor(row), media_urls: mediaUrls, media_alt: mediaAlt, document_urls: documentUrls };
   };
   if (type === "redirect") {
     const path = url.searchParams.get("path") ?? "";
@@ -50,11 +53,12 @@ Deno.serve(async (req) => {
   const published = data ?? [];
   const campaignIsActive = (row: any, now = Date.now()) => row.content_type === "campaign" && Date.parse(row.payload?.window?.startsAt ?? "") <= now && Date.parse(row.payload?.window?.endsAt ?? "") > now;
   const resolveRelated = (row: any) => {
+    const publicPayload = sanitizePublicPayload(row.payload);
     const relationIds = [...new Set([
-      ...Object.values(row.payload?.relations ?? {}).flatMap((value: any) => value ?? []),
-      ...(row.payload?.blocks ?? []).filter((block: any) => block.type === "related_content").flatMap((block: any) => block.data?.itemIds ?? []),
+      ...Object.values(publicPayload.relations ?? {}).flatMap((value: any) => value ?? []),
+      ...(publicPayload.blocks ?? []).filter((block: any) => block.type === "related_content").flatMap((block: any) => block.data?.itemIds ?? []),
     ])];
-    return published.filter((entry) => relationIds.includes(entry.item_id) && searchableTypes.includes(entry.content_type)).map((entry) => ({ item_id: entry.item_id, content_type: entry.content_type, title: entry.payload?.title, summary: entry.payload?.summary, path: routeFor(entry) }));
+    return published.filter((entry) => relationIds.includes(entry.item_id) && searchableTypes.includes(entry.content_type)).map((entry) => { const payload = sanitizePublicPayload(entry.payload); return { item_id: entry.item_id, content_type: entry.content_type, title: payload.title, summary: payload.summary, path: routeFor(entry) }; });
   };
   const formatForm = (form: any, version: any) => ({
     schemaVersion: 1, formId: form.id, versionId: version.id, version: version.version,
@@ -76,7 +80,10 @@ Deno.serve(async (req) => {
     return version ? formatForm(form, version) : null;
   };
   if (type === "site-shell") {
-    const latest = (contentType: string) => published.find((row) => row.content_type === contentType)?.payload ?? null;
+    const latest = (contentType: string) => {
+      const payload = published.find((row) => row.content_type === contentType)?.payload;
+      return payload ? sanitizePublicPayload(payload) : null;
+    };
     const placements = latest("placement");
     const now = Date.now();
     const activePlacements = (placements?.placements ?? [])
@@ -84,7 +91,9 @@ Deno.serve(async (req) => {
       .sort((a: any,b: any) => b.priority-a.priority)
       .flatMap((item: any) => {
         const target = published.find((row) => row.item_id === item.targetId);
-        return target ? [{ ...item, target: { itemId: target.item_id, contentType: target.content_type, title: target.payload?.title ?? target.slug, summary: target.payload?.summary, path: routeFor(target) } }] : [];
+        if (!target) return [];
+        const targetPayload = sanitizePublicPayload(target.payload);
+        return [{ ...item, target: { itemId: target.item_id, contentType: target.content_type, title: targetPayload.title ?? target.slug, summary: targetPayload.summary, path: routeFor(target) } }];
       });
     return json({
       navigation: latest("navigation"),
@@ -102,11 +111,12 @@ Deno.serve(async (req) => {
       const { data: legacyRule } = await client.from("cms_redirects").select("destination_path,status_code").eq("source_path", path).eq("active", true).maybeSingle();
       return legacyRule ? json({ kind: "route", rule: legacyRule }, 200, { "Cache-Control": "public, max-age=60" }) : json({ kind: "fallback" }, 200, { "Cache-Control": "public, max-age=30" });
     }
+    const publicPayload = sanitizePublicPayload(row.payload);
     const relationIds = [...new Set([
-      ...Object.values(row.payload?.relations ?? {}).flatMap((value: any) => value ?? []),
-      ...(row.payload?.blocks ?? []).filter((block: any) => block.type === "related_content").flatMap((block: any) => block.data?.itemIds ?? []),
+      ...Object.values(publicPayload.relations ?? {}).flatMap((value: any) => value ?? []),
+      ...(publicPayload.blocks ?? []).filter((block: any) => block.type === "related_content").flatMap((block: any) => block.data?.itemIds ?? []),
     ])];
-    const related_items = published.filter((entry) => relationIds.includes(entry.item_id) && searchableTypes.includes(entry.content_type)).map((entry) => ({ item_id: entry.item_id, content_type: entry.content_type, title: entry.payload?.title, summary: entry.payload?.summary, path: routeFor(entry) }));
+    const related_items = published.filter((entry) => relationIds.includes(entry.item_id) && searchableTypes.includes(entry.content_type)).map((entry) => { const payload = sanitizePublicPayload(entry.payload); return { item_id: entry.item_id, content_type: entry.content_type, title: payload.title, summary: payload.summary, path: routeFor(entry) }; });
     return json({ kind: "page", page: { ...(await enrichMedia(row)), related_items } }, 200, { ETag: row.etag, "Cache-Control": "public, max-age=60, stale-while-revalidate=300", "Surrogate-Key": row.cache_tag });
   }
   if (type === "posts") {
@@ -131,7 +141,7 @@ Deno.serve(async (req) => {
     const path = url.searchParams.get("path") ?? "";
     if (!/^\/campanhas\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(path)) return json({ error: "Não encontrado." }, 404);
     const row = published.find((entry)=>entry.content_type==="campaign"&&entry.payload?.route?.path===path);
-    if (!row) return json({ error: "Não encontrado." },404);
+    if (!row) return json({ kind: "fallback" },200,{"Cache-Control":"public, max-age=30"});
     if (!campaignIsActive(row)) {
       const mode=row.payload?.expiry?.mode;
       if(mode==="redirect") return json({kind:"route",rule:{destination_path:row.payload.expiry.destinationPath,status_code:301}},200,{"Cache-Control":"public, max-age=60"});
@@ -167,7 +177,7 @@ Deno.serve(async (req) => {
   const expanded = new Set(query.split(" ").filter(Boolean));
   for (const synonym of synonymRows ?? []) { const aliases = (synonym.aliases ?? []).map(normalize), canonical = normalize(synonym.canonical_term); if (aliases.some((alias: string) => query.includes(alias)) || query.includes(canonical)) { expanded.add(canonical); aliases.forEach((alias: string) => expanded.add(alias)); } }
   const scored = published.filter((row) => searchableTypes.includes(row.content_type)).map((row) => {
-    const p = row.payload as Record<string, any>;
+    const p = sanitizePublicPayload(row.payload, { includeSearchMetadata: true });
     if (domain && row.content_type !== domain) return null;
     if (requested.length && !requested.includes(row.slug) && !requested.includes(row.item_id)) return null;
     if (filters.segment && p.classification?.segment !== filters.segment || filters.category && p.classification?.category !== filters.category || filters.family && p.classification?.family !== filters.family || filters.technology && p.technology !== filters.technology) return null;
@@ -175,7 +185,7 @@ Deno.serve(async (req) => {
     const searchable = normalize([p.title,p.summary,p.commercial?.shortDescription,p.brand?.name,p.manufacturer?.name,p.productLine?.name,p.models,p.classification,p.function,p.technology,p.serviceKind,p.marketName,p.process,p.problem,p.approach,p.benefits,p.deliverables,p.challenges,p.points,p.components,p.search?.synonyms,p.search?.keywords,p.specifications].flat(6).join(" "));
     if (query && !query.split(" ").every((token) => searchable.includes(token) || [...expanded].some((term) => searchable.includes(term)))) return null;
     const score = !query ? 0 : exact.includes(query) ? 100 : [...expanded].reduce((sum,term)=>sum+(exact.includes(term)?20:searchable.includes(term)?5:0),0);
-    return { row, score, matchedBy: exact.includes(query) ? "nome, modelo ou referência" : "conteúdo técnico ou sinônimo" };
+    return { row: { ...row, payload: p }, score, matchedBy: exact.includes(query) ? "nome ou modelo público" : "conteúdo técnico ou sinônimo" };
   }).filter(Boolean).sort((a:any,b:any)=>b.score-a.score);
   const limit = type === "autocomplete" ? 8 : type === "search" ? 50 : 200, selected = scored.slice(0,limit) as any[];
   const enriched = await Promise.all(selected.map(async(entry)=>({ ...(await enrichMedia(entry.row)), score:entry.score, matched_by:entry.matchedBy })));

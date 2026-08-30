@@ -37,6 +37,7 @@ const tabs: [ProductEditorTab, string][] = [
   ["documentos", "Documentos"],
   ["relacoes", "Relações"],
   ["busca", "Busca"],
+  ["visibilidade", "Público ou interno"],
   ["seo", "SEO"],
   ["governanca", "Governança"],
   ["historico", "Histórico/publicação"],
@@ -70,6 +71,11 @@ export default function AdminProductEditorPage() {
   const [success, setSuccess] = useState("");
   const set = (key: keyof ProductEditorDraft, value: string | boolean) =>
     setDraft((current) => ({ ...current, [key]: value }));
+  const setVisibility = (key: keyof ProductEditorDraft["fieldVisibility"], value: "public" | "internal") =>
+    setDraft((current) => ({
+      ...current,
+      fieldVisibility: { ...current.fieldVisibility, [key]: value },
+    }));
   const can = (permission: string) => profile?.permissions.includes(permission) ?? false;
 
   useEffect(() => {
@@ -355,6 +361,49 @@ export default function AdminProductEditorPage() {
             <legend>Busca e sinônimos governados</legend>
             {area("Sinônimos", "synonyms")}
             {area("Palavras-chave", "keywords")}
+          </fieldset>
+        )}
+        {activeTab === "visibilidade" && (
+          <fieldset className="admin-visibility-section">
+            <legend>O que o site público pode divulgar</legend>
+            <p className="admin-help">
+              “Somente interno” mantém o valor no CMS e o remove da API pública, da busca, dos filtros e do
+              código estruturado. Título e URL são campos essenciais e permanecem públicos enquanto o produto
+              estiver publicado.
+            </p>
+            <div className="admin-visibility-grid">
+              {(
+                [
+                  ["brand", "Marca comercial"],
+                  ["manufacturer", "Fabricante/OEM e site oficial"],
+                  ["productLine", "Linha de produto"],
+                  ["commercialModel", "Modelo comercial GAIATEC"],
+                  ["manufacturerReference", "Referência do fabricante"],
+                  ["sku", "SKU/código interno"],
+                  ["classification", "Classificação e família"],
+                  ["function", "Função"],
+                  ["technology", "Tecnologia"],
+                  ["specifications", "Especificações técnicas"],
+                  ["relations", "Relações com outros conteúdos"],
+                  ["documents", "Documentos públicos aprovados"],
+                ] as const
+              ).map(([key, label]) => (
+                <label className="admin-visibility-field" key={key}>
+                  <span>{label}</span>
+                  <select
+                    value={draft.fieldVisibility[key]}
+                    onChange={(event) => setVisibility(key, event.target.value as "public" | "internal")}
+                    disabled={busy}
+                  >
+                    <option value="public">Público no site</option>
+                    <option value="internal">Somente interno</option>
+                  </select>
+                </label>
+              ))}
+            </div>
+            <p className="admin-notice">
+              Fabricante/OEM, referência do fabricante e SKU começam como “Somente interno”.
+            </p>
           </fieldset>
         )}
         {activeTab === "seo" && (

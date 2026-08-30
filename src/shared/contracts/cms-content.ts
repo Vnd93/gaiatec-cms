@@ -105,11 +105,43 @@ const BaseContent = {
   provenance: z.array(CmsProvenanceSchema).min(1).max(30),
 };
 
+export const CmsProductFieldVisibilitySchema = z
+  .object({
+    brand: z.enum(["public", "internal"]).default("public"),
+    manufacturer: z.enum(["public", "internal"]).default("internal"),
+    productLine: z.enum(["public", "internal"]).default("public"),
+    commercialModel: z.enum(["public", "internal"]).default("public"),
+    manufacturerReference: z.enum(["public", "internal"]).default("internal"),
+    sku: z.enum(["public", "internal"]).default("internal"),
+    classification: z.enum(["public", "internal"]).default("public"),
+    function: z.enum(["public", "internal"]).default("public"),
+    technology: z.enum(["public", "internal"]).default("public"),
+    specifications: z.enum(["public", "internal"]).default("public"),
+    relations: z.enum(["public", "internal"]).default("public"),
+    documents: z.enum(["public", "internal"]).default("public"),
+  })
+  .strict()
+  .default({
+    brand: "public",
+    manufacturer: "internal",
+    productLine: "public",
+    commercialModel: "public",
+    manufacturerReference: "internal",
+    sku: "internal",
+    classification: "public",
+    function: "public",
+    technology: "public",
+    specifications: "public",
+    relations: "public",
+    documents: "public",
+  });
+
 export const CmsProductContentSchema = z
   .object({
     ...BaseContent,
     contentType: z.literal("product"),
     pilotState: z.enum(["synthetic_test", "awaiting_owner", "homologated"]),
+    fieldVisibility: CmsProductFieldVisibilitySchema,
     brand: z.object({ name: RequiredText.max(120), slug: CmsSlugSchema }).strict(),
     manufacturer: z
       .object({
@@ -1255,6 +1287,7 @@ export const CmsContentPayloadSchema = z.discriminatedUnion("contentType", [
 
 export type CmsContentPayload = z.infer<typeof CmsContentPayloadSchema>;
 export type CmsProductContent = z.infer<typeof CmsProductContentSchema>;
+export type CmsProductFieldVisibility = z.infer<typeof CmsProductFieldVisibilitySchema>;
 export type CmsServiceContent = z.infer<typeof CmsServiceContentSchema>;
 export type CmsIndustryContent = z.infer<typeof CmsIndustryContentSchema>;
 export type CmsApplicationContent = z.infer<typeof CmsApplicationContentSchema>;

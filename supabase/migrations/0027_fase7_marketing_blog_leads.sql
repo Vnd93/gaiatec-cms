@@ -17,18 +17,18 @@ insert into public.cms_permissions(permission_key,description,critical) values
   ('cms:forms.read','Consultar definicoes e versoes de formularios.',false),
   ('cms:forms.edit','Criar novas versoes de formularios.',false),
   ('cms:forms.publish','Publicar ou retirar versoes de formularios.',true),
-  ('lead:read','Consultar leads dentro do escopo autorizado.',false),
-  ('lead:assign','Atribuir e alterar atendimento de leads.',false),
-  ('lead:export','Exportar leads com trilha de auditoria.',true),
-  ('lead:privacy','Anonimizar e aplicar retencao de leads.',true)
+  ('cms:leads.read','Consultar leads dentro do escopo autorizado.',false),
+  ('cms:leads.assign','Atribuir e alterar atendimento de leads.',false),
+  ('cms:leads.export','Exportar leads com trilha de auditoria.',true),
+  ('cms:leads.privacy','Anonimizar e aplicar retencao de leads.',true)
 on conflict(permission_key) do nothing;
 
 insert into public.cms_role_permissions(role_key,permission_key)
 select role_key,permission_key from (
-  select 'super_admin'::text role_key,permission_key from public.cms_permissions where permission_key like 'cms:campaigns.%' or permission_key like 'cms:forms.%' or permission_key like 'lead:%'
-  union all select 'admin',permission_key from public.cms_permissions where permission_key like 'cms:campaigns.%' or permission_key like 'cms:forms.%' or permission_key like 'lead:%'
-  union all select 'marketing',permission_key from public.cms_permissions where permission_key in ('cms:campaigns.read','cms:campaigns.edit','cms:campaigns.publish','cms:forms.read','cms:forms.edit','lead:read')
-  union all select 'commercial',permission_key from public.cms_permissions where permission_key in ('cms:campaigns.read','cms:forms.read','lead:read','lead:assign','lead:export')
+  select 'super_admin'::text role_key,permission_key from public.cms_permissions where permission_key like 'cms:campaigns.%' or permission_key like 'cms:forms.%' or permission_key like 'cms:leads.%'
+  union all select 'admin',permission_key from public.cms_permissions where permission_key like 'cms:campaigns.%' or permission_key like 'cms:forms.%' or permission_key like 'cms:leads.%'
+  union all select 'marketing',permission_key from public.cms_permissions where permission_key in ('cms:campaigns.read','cms:campaigns.edit','cms:campaigns.publish','cms:forms.read','cms:forms.edit','cms:leads.read')
+  union all select 'commercial',permission_key from public.cms_permissions where permission_key in ('cms:campaigns.read','cms:forms.read','cms:leads.read','cms:leads.assign','cms:leads.export')
   union all select 'editor',permission_key from public.cms_permissions where permission_key in ('cms:campaigns.read','cms:campaigns.edit','cms:forms.read')
   union all select 'reviewer',permission_key from public.cms_permissions where permission_key in ('cms:campaigns.read','cms:campaigns.approve','cms:forms.read')
 ) grants
@@ -69,7 +69,7 @@ insert into public.cms_capability_registry(
   consumer_id,content_type,schema_name,schema_version,renderer_key,preview_renderer_key,
   route_pattern,permissions,validation_contract,fixture_contract,test_contract
 ) values
-('cms.blog-article.v1','post','CmsPostContentSchema',1,'structured-article','structured-article','/blog/:slug',
+('cms.blog-article.v1','post','CmsPostContentSchema',1,'blog-article','blog-article','/blog/:slug',
  '{"read":"cms:posts.read","edit":"cms:posts.edit","approve":"cms:posts.approve","publish":"cms:posts.publish"}',
  '{"blocks":["rich_text","image","gallery","cta","related_content"],"author":true,"category":true,"tags":true,"relations":true,"articleSchema":true,"sitemap":true,"seo":true,"provenance":true}',
  '{"kind":"synthetic-only","viewports":["mobile","tablet","desktop"]}',
@@ -234,10 +234,10 @@ create policy cms_blog_categories_read on public.cms_blog_categories for select 
 create policy cms_blog_tags_read on public.cms_blog_tags for select to authenticated using(public.cms_has_permission('cms:posts.read'));
 create policy cms_forms_read on public.cms_form_definitions for select to authenticated using(public.cms_has_permission('cms:forms.read'));
 create policy cms_form_versions_read on public.cms_form_versions for select to authenticated using(public.cms_has_permission('cms:forms.read'));
-create policy cms_leads_read on public.cms_leads for select to authenticated using(public.cms_has_permission('lead:read'));
-create policy cms_lead_consents_read on public.cms_lead_consents for select to authenticated using(public.cms_has_permission('lead:read'));
-create policy cms_lead_history_read on public.cms_lead_status_history for select to authenticated using(public.cms_has_permission('lead:read'));
-create policy cms_lead_outbox_read on public.cms_lead_outbox for select to authenticated using(public.cms_has_permission('lead:read'));
+create policy cms_leads_read on public.cms_leads for select to authenticated using(public.cms_has_permission('cms:leads.read'));
+create policy cms_lead_consents_read on public.cms_lead_consents for select to authenticated using(public.cms_has_permission('cms:leads.read'));
+create policy cms_lead_history_read on public.cms_lead_status_history for select to authenticated using(public.cms_has_permission('cms:leads.read'));
+create policy cms_lead_outbox_read on public.cms_lead_outbox for select to authenticated using(public.cms_has_permission('cms:leads.read'));
 create policy cms_lead_exports_read on public.cms_lead_exports for select to authenticated using(actor_id=auth.uid() or public.cms_has_permission('cms:audit.read'));
 
 revoke all on table public.cms_blog_authors,public.cms_blog_categories,public.cms_blog_tags,
@@ -337,7 +337,7 @@ create function public.cms_manage_lead(p_actor_id uuid,p_lead_id uuid,p_status t
 returns jsonb language plpgsql security definer set search_path=public,pg_temp as $$
 declare lead_row public.cms_leads%rowtype; old_status text; old_assignee uuid;
 begin
-  if not public.cms_actor_authorized(p_actor_id,'lead:assign',p_aal,p_session_id,p_issued_at) then raise exception 'CMS_COMMAND_FORBIDDEN' using errcode='42501'; end if;
+  if not public.cms_actor_authorized(p_actor_id,'cms:leads.assign',p_aal,p_session_id,p_issued_at) then raise exception 'CMS_COMMAND_FORBIDDEN' using errcode='42501'; end if;
   select * into lead_row from public.cms_leads where id=p_lead_id for update;
   if not found or lead_row.status='anonymized' then raise exception 'CMS_LEAD_NOT_FOUND' using errcode='P0002'; end if;
   if p_status not in ('new','assigned','in_service','responded','converted','disqualified','archived') then raise exception 'CMS_LEAD_STATUS_INVALID' using errcode='23514'; end if;
@@ -353,7 +353,7 @@ create function public.cms_export_leads(p_actor_id uuid,p_status text,p_justific
 returns jsonb language plpgsql security definer set search_path=public,pg_temp as $$
 declare result jsonb; rows_count integer;
 begin
-  if not public.cms_actor_authorized(p_actor_id,'lead:export',p_aal,p_session_id,p_issued_at) then raise exception 'CMS_COMMAND_FORBIDDEN' using errcode='42501'; end if;
+  if not public.cms_actor_authorized(p_actor_id,'cms:leads.export',p_aal,p_session_id,p_issued_at) then raise exception 'CMS_COMMAND_FORBIDDEN' using errcode='42501'; end if;
   select coalesce(jsonb_agg(jsonb_build_object('reference',reference_code,'status',status,'createdAt',created_at,'originPath',origin_path,'originSource',origin_source,'utm',utm,'fields',payload) order by created_at desc),'[]'::jsonb),count(*)
   into result,rows_count
   from (select reference_code,status,created_at,origin_path,origin_source,utm,payload from public.cms_leads where anonymized_at is null and (p_status is null or status=p_status) order by created_at desc limit 5000) exported;
@@ -366,7 +366,7 @@ create function public.cms_anonymize_lead(p_actor_id uuid,p_lead_id uuid,p_reaso
 returns jsonb language plpgsql security definer set search_path=public,pg_temp as $$
 declare old_status text;
 begin
-  if not public.cms_actor_authorized(p_actor_id,'lead:privacy',p_aal,p_session_id,p_issued_at) then raise exception 'CMS_COMMAND_FORBIDDEN' using errcode='42501'; end if;
+  if not public.cms_actor_authorized(p_actor_id,'cms:leads.privacy',p_aal,p_session_id,p_issued_at) then raise exception 'CMS_COMMAND_FORBIDDEN' using errcode='42501'; end if;
   select status into old_status from public.cms_leads where id=p_lead_id and anonymized_at is null for update;
   if not found then raise exception 'CMS_LEAD_NOT_FOUND' using errcode='P0002'; end if;
   update public.cms_leads set payload='{}'::jsonb,utm='{}'::jsonb,assigned_to=null,status='anonymized',anonymized_at=now(),last_activity_at=now() where id=p_lead_id;

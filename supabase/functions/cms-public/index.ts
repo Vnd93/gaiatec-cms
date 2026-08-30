@@ -4,9 +4,9 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const headers = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "apikey, authorization, content-type, if-none-match, x-client-info", "Access-Control-Allow-Methods": "GET, OPTIONS", Vary: "Origin" };
 const json = (body: unknown, status = 200, extra: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { ...headers, "Content-Type": "application/json; charset=utf-8", ...extra } });
 const normalize = (value: unknown) => String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[₂]/g, "2").replace(/[–—]/g, "-").replace(/\bdn\s+(\d+)/g, "dn$1").replace(/4\s*-\s*20\s*ma/g, "4-20ma").replace(/[^a-z0-9%/.-]+/g, " ").trim();
-const publicTypes = ["product", "service", "industry", "application", "solution", "page", "homepage", "navigation", "site_settings", "placement"];
-const searchableTypes = ["product", "service", "industry", "application", "solution"];
-const routeFor = (row: any) => row.content_type === "product" ? `/produtos/${row.slug}` : row.content_type === "industry" ? `/industrias/${row.slug}` : row.content_type === "application" ? `/aplicacoes/${row.slug}` : row.content_type === "solution" ? `/solucoes/${row.slug}` : row.content_type === "service" ? `/servicos/${row.slug}` : row.payload?.route?.path ?? "/";
+const publicTypes = ["product", "service", "industry", "application", "solution", "post", "campaign", "page", "homepage", "navigation", "site_settings", "placement"];
+const searchableTypes = ["product", "service", "industry", "application", "solution", "post"];
+const routeFor = (row: any) => row.content_type === "product" ? `/produtos/${row.slug}` : row.content_type === "industry" ? `/industrias/${row.slug}` : row.content_type === "application" ? `/aplicacoes/${row.slug}` : row.content_type === "solution" ? `/solucoes/${row.slug}` : row.content_type === "service" ? `/servicos/${row.slug}` : row.content_type === "post" ? `/blog/${row.slug}` : row.payload?.route?.path ?? "/";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers });
@@ -48,6 +48,33 @@ Deno.serve(async (req) => {
   const { data, error } = await client.from("cms_published_projection").select("item_id,revision_id,content_type,slug,schema_version,consumer_id,renderer_key,payload,seo,content_version,cache_tag,etag,published_at").in("content_type", publicTypes).order("published_at", { ascending: false }).limit(1000);
   if (error) return json({ error: "Conteúdo temporariamente indisponível." }, 503, { "Cache-Control": "no-store" });
   const published = data ?? [];
+  const campaignIsActive = (row: any, now = Date.now()) => row.content_type === "campaign" && Date.parse(row.payload?.window?.startsAt ?? "") <= now && Date.parse(row.payload?.window?.endsAt ?? "") > now;
+  const resolveRelated = (row: any) => {
+    const relationIds = [...new Set([
+      ...Object.values(row.payload?.relations ?? {}).flatMap((value: any) => value ?? []),
+      ...(row.payload?.blocks ?? []).filter((block: any) => block.type === "related_content").flatMap((block: any) => block.data?.itemIds ?? []),
+    ])];
+    return published.filter((entry) => relationIds.includes(entry.item_id) && searchableTypes.includes(entry.content_type)).map((entry) => ({ item_id: entry.item_id, content_type: entry.content_type, title: entry.payload?.title, summary: entry.payload?.summary, path: routeFor(entry) }));
+  };
+  const formatForm = (form: any, version: any) => ({
+    schemaVersion: 1, formId: form.id, versionId: version.id, version: version.version,
+    key: form.form_key, title: form.title, purpose: form.purpose,
+    fields: version.definition?.fields ?? [],
+    consent: { required: true, text: version.consent_text, version: version.consent_version, privacyPath: version.privacy_path },
+    slaMinutes: version.sla_minutes, retentionDays: version.retention_days,
+    successMessage: version.definition?.successMessage ?? "Recebemos sua solicitação.",
+    submitLabel: version.definition?.submitLabel ?? "Enviar", status: "published",
+  });
+  const loadPublishedForm = async (filters: { key?: string; formId?: string; versionId?: string }) => {
+    if (!service) return null;
+    let formQuery = client.from("cms_form_definitions").select("id,form_key,title,purpose,active_version_id,status").eq("status", "published");
+    if (filters.key) formQuery = formQuery.eq("form_key", filters.key);
+    if (filters.formId) formQuery = formQuery.eq("id", filters.formId);
+    const { data: form } = await formQuery.maybeSingle();
+    if (!form?.active_version_id || (filters.versionId && form.active_version_id !== filters.versionId)) return null;
+    const { data: version } = await client.from("cms_form_versions").select("id,form_id,version,definition,consent_text,consent_version,privacy_path,sla_minutes,retention_days,status").eq("id", form.active_version_id).eq("form_id", form.id).eq("status", "published").maybeSingle();
+    return version ? formatForm(form, version) : null;
+  };
   if (type === "site-shell") {
     const latest = (contentType: string) => published.find((row) => row.content_type === contentType)?.payload ?? null;
     const placements = latest("placement");
@@ -82,9 +109,48 @@ Deno.serve(async (req) => {
     const related_items = published.filter((entry) => relationIds.includes(entry.item_id) && searchableTypes.includes(entry.content_type)).map((entry) => ({ item_id: entry.item_id, content_type: entry.content_type, title: entry.payload?.title, summary: entry.payload?.summary, path: routeFor(entry) }));
     return json({ kind: "page", page: { ...(await enrichMedia(row)), related_items } }, 200, { ETag: row.etag, "Cache-Control": "public, max-age=60, stale-while-revalidate=300", "Surrogate-Key": row.cache_tag });
   }
+  if (type === "posts") {
+    const items = await Promise.all(published.filter((row) => row.content_type === "post").sort((a,b)=>Date.parse(b.published_at)-Date.parse(a.published_at)).map(async(row)=>({ ...(await enrichMedia(row)), related_items: resolveRelated(row) })));
+    return json({ items, total: items.length }, 200, { "Cache-Control": "public, max-age=60, stale-while-revalidate=300" });
+  }
+  if (type === "post-detail") {
+    const slug = url.searchParams.get("slug") ?? "";
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) return json({ error: "Não encontrado." }, 404);
+    const row = published.find((entry) => entry.content_type === "post" && entry.slug === slug);
+    if (!row) return json({ error: "Não encontrado." }, 404, { "Cache-Control": "public, max-age=30" });
+    return json({ ...(await enrichMedia(row)), related_items: resolveRelated(row) }, 200, { ETag: row.etag, "Cache-Control": "public, max-age=60, stale-while-revalidate=300", "Surrogate-Key": row.cache_tag });
+  }
+  if (type === "form") {
+    const key = url.searchParams.get("key") ?? "";
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(key)) return json({ error: "Não encontrado." }, 404);
+    if (!service) return json({ error: "Serviço indisponível." }, 503, { "Cache-Control": "no-store" });
+    const form = await loadPublishedForm({ key });
+    return form ? json(form, 200, { "Cache-Control": "public, max-age=60" }) : json({ error: "Não encontrado." }, 404);
+  }
+  if (type === "campaign-by-path") {
+    const path = url.searchParams.get("path") ?? "";
+    if (!/^\/campanhas\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(path)) return json({ error: "Não encontrado." }, 404);
+    const row = published.find((entry)=>entry.content_type==="campaign"&&entry.payload?.route?.path===path);
+    if (!row) return json({ error: "Não encontrado." },404);
+    if (!campaignIsActive(row)) {
+      const mode=row.payload?.expiry?.mode;
+      if(mode==="redirect") return json({kind:"route",rule:{destination_path:row.payload.expiry.destinationPath,status_code:301}},200,{"Cache-Control":"public, max-age=60"});
+      if(mode==="fallback") { const fallback=published.find((entry)=>entry.item_id===row.payload.expiry.fallbackCampaignId&&campaignIsActive(entry)); if(fallback) return json({kind:"route",rule:{destination_path:routeFor(fallback),status_code:302}},200,{"Cache-Control":"public, max-age=60"}); }
+      return json({kind:"route",rule:{destination_path:null,status_code:mode==="gone"?410:404}},200,{"Cache-Control":"public, max-age=60"});
+    }
+    const form = row.payload?.form?.versionId
+      ? await loadPublishedForm({ formId: row.payload.form.formId, versionId: row.payload.form.versionId })
+      : null;
+    return json({ ...(await enrichMedia(row)), form, related_items:resolveRelated(row) },200,{ETag:row.etag,"Cache-Control":"public, max-age=60, stale-while-revalidate=300","Surrogate-Key":row.cache_tag});
+  }
+  if (type === "campaign-placements") {
+    const contextPath=url.searchParams.get("contextPath")??"/"; const contextRow=published.find((row)=>routeFor(row)===contextPath); const contextType=contextPath==="/"?"global":contextRow?.content_type??"page",contextId=contextRow?.item_id;
+    const now=Date.now(); const candidates=published.filter((row)=>campaignIsActive(row,now)).flatMap((row)=>(row.payload?.placements??[]).filter((placement:any)=>placement.contextType===contextType&&(contextType==="global"||placement.contextId===contextId)).map((placement:any)=>({ ...placement,campaign:{itemId:row.item_id,title:row.payload.title,summary:row.payload.summary,path:routeFor(row)},startsAt:row.payload.window.startsAt,endsAt:row.payload.window.endsAt }))).sort((a:any,b:any)=>b.priority-a.priority);
+    return json({items:candidates},200,{"Cache-Control":"public, max-age=60, stale-while-revalidate=300"});
+  }
   if (type === "sitemap") {
     const origin = (Deno.env.get("PUBLIC_SITE_ORIGIN") ?? "https://gaiatecsistemas.com.br").replace(/\/$/, "");
-    const urls = published.filter((row) => !["navigation", "site_settings", "placement"].includes(row.content_type) && row.seo?.indexable === true).map((row) => `<url><loc>${origin}${routeFor(row)}</loc><lastmod>${new Date(row.published_at).toISOString()}</lastmod></url>`).join("");
+    const urls = published.filter((row) => !["navigation", "site_settings", "placement"].includes(row.content_type) && row.seo?.indexable === true && (row.content_type!=="campaign"||campaignIsActive(row))).map((row) => `<url><loc>${origin}${routeFor(row)}</loc><lastmod>${new Date(row.published_at).toISOString()}</lastmod></url>`).join("");
     return new Response(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>`, { headers: { ...headers, "Content-Type": "application/xml; charset=utf-8", "Cache-Control": "public, max-age=300" } });
   }
   if (type === "detail" || type === "entity-detail") {

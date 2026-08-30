@@ -46,7 +46,7 @@ const PRIVATE_ROUTE = /^\/(relatorio-de-obra|admin|preview|cms\/conteudo)(?:\/|$
 const RDO_ROUTES =
   /^\/relatorio-de-obra(?:\/(login|definir-senha|assinar\/[^/]+|arquivo|novo|relatorio\/[^/]+|equipe))?\/?$/;
 const ADMIN_ROUTES =
-  /^\/admin(?:\/(login|recuperar-senha|definir-senha|mfa|conteudo(?:\/novo|\/[0-9a-f-]{36})?|produtos(?:\/novo|\/[0-9a-f-]{36})?|descoberta\/(?:service|industry|application|solution)(?:\/[0-9a-f-]{36})?|busca|paginas(?:\/(?:novo|[0-9a-f-]{36}))?|site|midia|perfil|usuarios|diagnosticos))?\/?$/;
+  /^\/admin(?:\/(login|recuperar-senha|definir-senha|mfa|conteudo(?:\/novo|\/[0-9a-f-]{36})?|produtos(?:\/novo|\/[0-9a-f-]{36})?|descoberta\/(?:service|industry|application|solution)(?:\/[0-9a-f-]{36})?|busca|paginas(?:\/(?:novo|[0-9a-f-]{36}))?|site|marketing(?:\/campanhas\/(?:novo|[0-9a-f-]{36})|\/formularios)?|leads|midia|perfil|usuarios|diagnosticos))?\/?$/;
 const PREVIEW_ROUTES = /^\/preview\/[A-Za-z0-9_-]{43}\/?$/;
 const CMS_DEMO_ROUTES = /^\/cms\/conteudo\/[a-z0-9]+(?:-[a-z0-9]+)*\/?$/;
 const ASSET_PATH =
@@ -113,6 +113,7 @@ function injectPageMetadata(html, page, requestUrl, env, stagingHost) {
   result = replaceMeta(result, "property", "og:title", title);
   result = replaceMeta(result, "property", "og:description", description);
   result = replaceMeta(result, "property", "og:url", canonicalUrl);
+  result = replaceMeta(result, "property", "og:type", page?.content_type === "post" ? "article" : "website");
   result = replaceMeta(result, "name", "twitter:title", title);
   result = replaceMeta(result, "name", "twitter:description", description);
   if (ogImage) {
@@ -125,13 +126,29 @@ function injectPageMetadata(html, page, requestUrl, env, stagingHost) {
     ? result.replace(/<link\s+rel=["']canonical["'][^>]*>/i, canonicalTag)
     : result.replace("</head>", `  ${canonicalTag}\n  </head>`);
 
-  const schema = JSON.stringify({
-    "@context": "https://schema.org",
-    "@type": "WebPage",
-    name: title,
-    description,
-    url: canonicalUrl,
-  }).replaceAll("<", "\\u003c");
+  const schema = JSON.stringify(
+    page?.content_type === "post"
+      ? {
+          "@context": "https://schema.org",
+          "@type": "Article",
+          headline: page.payload?.title || title,
+          description,
+          url: canonicalUrl,
+          datePublished: page.published_at,
+          author: page.payload?.author?.name
+            ? { "@type": "Person", name: page.payload.author.name }
+            : undefined,
+          articleSection: page.payload?.category?.name,
+          keywords: page.payload?.tags?.map((tag) => tag.name).join(", "),
+        }
+      : {
+          "@context": "https://schema.org",
+          "@type": "WebPage",
+          name: title,
+          description,
+          url: canonicalUrl,
+        },
+  ).replaceAll("<", "\\u003c");
   return result.replace(
     "</head>",
     `  <script type="application/ld+json" data-cms-page>${schema}</script>\n  </head>`,
@@ -175,7 +192,9 @@ async function handleRequest(request, env) {
     });
   }
 
-  if (path === "/sitemap-produtos.xml") {
+  if (
+    ["/sitemap.xml", "/sitemap-conteudo.xml", "/sitemap-produtos.xml", "/sitemap-blog.xml"].includes(path)
+  ) {
     const sitemap = await cmsPublic({ type: "sitemap", origin: url.origin });
     if (!sitemap?.ok)
       return new Response("Not Found", {
@@ -183,6 +202,38 @@ async function handleRequest(request, env) {
         headers: securityHeaders(new Headers(), { noindex: true }),
       });
     return withHeaders(sitemap, { noindex: stagingHost });
+  }
+
+  if (/^\/blog\/[a-z0-9]+(?:-[a-z0-9]+)*\/?$/.test(path)) {
+    const slug = path.replace(/^\/blog\//, "").replace(/\/$/, "");
+    const detail = await cmsPublic({ type: "post-detail", slug });
+    if (detail?.ok) {
+      const page = await detail.json();
+      return spaResponse(request, env, 200, {
+        noindex: stagingHost || page?.seo?.indexable !== true,
+        page,
+        stagingHost,
+      });
+    }
+    return spaResponse(request, env, detail?.status === 404 ? 404 : 503, { noindex: true });
+  }
+
+  if (/^\/campanhas\/[a-z0-9]+(?:-[a-z0-9]+)*\/?$/.test(path)) {
+    const detail = await cmsPublic({ type: "campaign-by-path", path: path.replace(/\/$/, "") });
+    if (!detail?.ok) return spaResponse(request, env, detail?.status === 404 ? 404 : 503, { noindex: true });
+    const resolution = await detail.json();
+    if (resolution.kind === "route") {
+      const status = Number(resolution.rule?.status_code);
+      const destination = resolution.rule?.destination_path;
+      if ((status === 301 || status === 302) && destination)
+        return new Response(null, { status, headers: { Location: destination } });
+      return spaResponse(request, env, status === 410 ? 410 : 404, { noindex: true });
+    }
+    return spaResponse(request, env, 200, {
+      noindex: stagingHost || resolution?.seo?.indexable !== true,
+      page: resolution,
+      stagingHost,
+    });
   }
 
   if (/^\/produtos\/[a-z0-9]+(?:-[a-z0-9]+)*\/?$/.test(path) && path !== "/produtos/comparador") {

@@ -21,6 +21,8 @@ export function AdminShell() {
     ["/admin/descoberta/solution", "Soluções", can("cms:solutions.read")],
     ["/admin/busca", "Busca e sinônimos", can("cms:search.read")],
     ["/admin/conteudo", "Conteúdo", can("cms:posts.read")],
+    ["/admin/marketing", "Campanhas e formulários", can("cms:campaigns.read") || can("cms:forms.read")],
+    ["/admin/leads", "Leads", can("lead:read")],
     ["/admin/paginas", "Páginas e homepage", can("cms:pages.read") || can("cms:homepage.read")],
     [
       "/admin/site",

@@ -6,6 +6,7 @@ import { CmsProductRenderer } from "@/public/components/CmsProductRenderer";
 import type { CmsProductContent } from "@/shared/contracts/cms-content";
 import type {
   CmsApplicationContent,
+  CmsCampaignContent,
   CmsIndustryContent,
   CmsPageContent,
   CmsServiceContent,
@@ -23,6 +24,7 @@ export default function CmsPreviewPage() {
         | CmsIndustryContent
         | CmsApplicationContent
         | CmsSolutionContent
+        | CmsCampaignContent
         | CmsPageContent;
       itemId?: string;
       slug?: string;
@@ -68,9 +70,9 @@ export default function CmsPreviewPage() {
             preview
           />
         ) : "contentType" in previewData.payload &&
-          ["page", "homepage"].includes(previewData.payload.contentType) ? (
+          ["page", "homepage", "campaign"].includes(previewData.payload.contentType) ? (
           <CmsPageRenderer
-            payload={previewData.payload as CmsPageContent}
+            payload={previewData.payload as CmsPageContent | CmsCampaignContent}
             mediaUrls={previewData.media_urls}
             mediaAlt={previewData.media_alt}
             preview
@@ -95,7 +97,12 @@ export default function CmsPreviewPage() {
             }}
           />
         ) : (
-          <CmsStructuredArticle payload={previewData.payload as CmsArticlePayload} preview />
+          <CmsStructuredArticle
+            payload={previewData.payload as CmsArticlePayload}
+            mediaUrls={previewData.media_urls}
+            mediaAlt={previewData.media_alt}
+            preview
+          />
         )
       ) : (
         <div className="admin-state" aria-busy="true">

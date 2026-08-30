@@ -1,7 +1,15 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-const routes = ["/", "/produtos", "/contato", "/blog", "/relatorio-de-obra/login", "/admin/login"];
+const routes = [
+  "/",
+  "/produtos",
+  "/contato",
+  "/blog",
+  "/campanhas/campanha-sintetica-inexistente",
+  "/relatorio-de-obra/login",
+  "/admin/login",
+];
 
 for (const route of routes) {
   test(`smoke ${route}`, async ({ page }) => {
@@ -21,7 +29,7 @@ for (const route of routes) {
 }
 
 test("@a11y critical public journeys have no serious automated violations", async ({ page }) => {
-  for (const route of ["/", "/contato", "/produtos"]) {
+  for (const route of ["/", "/contato", "/produtos", "/blog", "/campanhas/campanha-sintetica-inexistente"]) {
     await page.goto(route, { waitUntil: "networkidle" });
     const results = await new AxeBuilder({ page }).analyze();
     const serious = results.violations.filter((violation) =>

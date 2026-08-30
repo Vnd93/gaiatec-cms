@@ -23,7 +23,9 @@ const BiodigestorMonitoramento = lazy(() => import("./pages/BiodigestorMonitoram
 const BiodigestorBiogasBiometano = lazy(() => import("./pages/BiodigestorBiogasBiometano"));
 const BiodigestorAutomacao = lazy(() => import("./pages/BiodigestorAutomacao"));
 const BiodigestorEscolas = lazy(() => import("./pages/BiodigestorEscolas"));
-const BlogPage = lazy(() => import("./pages/BlogPage"));
+const BlogPage = lazy(() => import("../public/pages/CmsBlogPage"));
+const BlogPostPage = lazy(() => import("../public/pages/CmsBlogPostPage"));
+const CampaignPage = lazy(() => import("../public/pages/CmsCampaignPage"));
 const ContatoPage = lazy(() => import("./pages/ContatoPage"));
 const ProdutosPage = lazy(() => import("../public/pages/CmsProductsPage"));
 const ProdutoPage = lazy(() => import("../public/pages/CmsProductPage"));
@@ -68,6 +70,10 @@ const AdminSearchGovernancePage = lazy(() => import("../admin/pages/AdminSearchG
 const AdminPagesPage = lazy(() => import("../admin/pages/AdminPagesPage"));
 const AdminPageBuilderPage = lazy(() => import("../admin/pages/AdminPageBuilderPage"));
 const AdminSiteConfigurationPage = lazy(() => import("../admin/pages/AdminSiteConfigurationPage"));
+const AdminMarketingPage = lazy(() => import("../admin/pages/AdminMarketingPage"));
+const AdminCampaignEditorPage = lazy(() => import("../admin/pages/AdminCampaignEditorPage"));
+const AdminFormsPage = lazy(() => import("../admin/pages/AdminFormsPage"));
+const AdminLeadsPage = lazy(() => import("../admin/pages/AdminLeadsPage"));
 const CmsPreviewPage = lazy(() => import("../admin/pages/CmsPreviewPage"));
 const CmsPublishedPage = lazy(() => import("../admin/pages/CmsPublishedPage"));
 const CmsManagedPageRoute = lazy(() =>
@@ -125,7 +131,9 @@ export const router = createBrowserRouter([
       { path: "biodigestor/biogas-biometano", element: managedPage(lazyWrap(BiodigestorBiogasBiometano)) },
       { path: "biodigestor/automacao", element: managedPage(lazyWrap(BiodigestorAutomacao)) },
       { path: "biodigestor/escolas", element: managedPage(lazyWrap(BiodigestorEscolas)) },
-      { path: "blog", element: managedPage(lazyWrap(BlogPage)) },
+      { path: "blog", element: lazyWrap(BlogPage) },
+      { path: "blog/:slug", element: lazyWrap(BlogPostPage) },
+      { path: "campanhas/:slug", element: lazyWrap(CampaignPage) },
       { path: "contato", element: managedPage(lazyWrap(ContatoPage)) },
       { path: "produtos", element: lazyWrap(ProdutosPage) },
       { path: "produtos/comparador", element: lazyWrap(ComparadorPage) },
@@ -187,6 +195,10 @@ export const router = createBrowserRouter([
           { path: "paginas", element: lazyWrap(AdminPagesPage) },
           { path: "paginas/:id", element: lazyWrap(AdminPageBuilderPage) },
           { path: "site", element: lazyWrap(AdminSiteConfigurationPage) },
+          { path: "marketing", element: lazyWrap(AdminMarketingPage) },
+          { path: "marketing/campanhas/:id", element: lazyWrap(AdminCampaignEditorPage) },
+          { path: "marketing/formularios", element: lazyWrap(AdminFormsPage) },
+          { path: "leads", element: lazyWrap(AdminLeadsPage) },
           { path: "midia", element: lazyWrap(AdminMediaPage) },
           { path: "perfil", element: lazyWrap(AdminProfilePage) },
           { path: "usuarios", element: lazyWrap(AdminUsersPage) },

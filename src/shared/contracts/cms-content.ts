@@ -452,6 +452,29 @@ export const CmsPostContentSchema = z
     contentType: z.literal("post"),
     excerpt: RequiredText.max(500),
     authorName: RequiredText.max(120),
+    author: z
+      .object({
+        id: z.uuid(),
+        name: RequiredText.max(120),
+        slug: CmsSlugSchema,
+        role: z.string().trim().max(120).optional(),
+        bio: z.string().trim().max(800).optional(),
+      })
+      .strict(),
+    category: z.object({ id: z.uuid(), name: RequiredText.max(120), slug: CmsSlugSchema }).strict(),
+    tags: z
+      .array(z.object({ id: z.uuid(), name: RequiredText.max(80), slug: CmsSlugSchema }).strict())
+      .max(20),
+    relations: z
+      .object({
+        postIds: z.array(z.uuid()).max(30),
+        productIds: z.array(z.uuid()).max(30),
+        serviceIds: z.array(z.uuid()).max(30),
+        applicationIds: z.array(z.uuid()).max(30),
+        solutionIds: z.array(z.uuid()).max(30),
+      })
+      .strict(),
+    readingMinutes: z.number().int().min(1).max(180),
     publishAfter: z.iso.datetime().optional(),
   })
   .strict();
@@ -659,7 +682,9 @@ export const CmsPageBlockSchema = z.discriminatedUnion("type", [
         .object({
           heading: RequiredText.max(220),
           text: z.string().trim().max(1000).optional(),
-          formKey: z.enum(["contact", "newsletter", "lead"]),
+          formKey: CmsSlugSchema,
+          formId: z.uuid().optional(),
+          formVersionId: z.uuid().optional(),
           buttonLabel: RequiredText.max(120),
         })
         .strict(),
@@ -754,7 +779,7 @@ function validateManagedPage(
   context: z.RefinementCtx,
 ) {
   if (
-    /^\/(?:admin|preview|relatorio-de-obra|assets|functions|cms|produtos|servicos|industrias|aplicacoes|solucoes|busca)(?:\/|$)/.test(
+    /^\/(?:admin|preview|relatorio-de-obra|assets|functions|cms|produtos|servicos|industrias|aplicacoes|solucoes|busca|blog|campanhas)(?:\/|$)/.test(
       value.route.path,
     )
   )
@@ -966,6 +991,238 @@ export const CmsPlacementContentSchema = z
   })
   .strict();
 
+export const CmsFormFieldSchema = z
+  .object({
+    id: z.uuid(),
+    key: CmsSlugSchema,
+    label: RequiredText.max(120),
+    type: z.enum(["text", "email", "tel", "textarea", "select", "checkbox", "hidden"]),
+    required: z.boolean(),
+    maxLength: z.number().int().min(1).max(5000).optional(),
+    options: z.array(RequiredText.max(120)).max(50).default([]),
+    personalData: z.boolean().default(false),
+    order: z.number().int().min(0).max(999),
+  })
+  .strict();
+
+export const CmsFormVersionSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    formId: z.uuid(),
+    versionId: z.uuid(),
+    version: z.number().int().min(1),
+    key: CmsSlugSchema,
+    title: RequiredText.max(180),
+    purpose: RequiredText.max(500),
+    fields: z.array(CmsFormFieldSchema).min(1).max(50),
+    consent: z
+      .object({
+        required: z.literal(true),
+        text: RequiredText.max(2000),
+        version: RequiredText.max(80),
+        privacyPath: PageInternalPathSchema,
+      })
+      .strict(),
+    slaMinutes: z.number().int().min(5).max(525600),
+    retentionDays: z.number().int().min(1).max(3650),
+    successMessage: RequiredText.max(500),
+    submitLabel: RequiredText.max(120),
+    status: z.enum(["draft", "published", "retired"]),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const keys = new Set<string>();
+    value.fields.forEach((field, index) => {
+      if (keys.has(field.key))
+        context.addIssue({
+          code: "custom",
+          path: ["fields", index, "key"],
+          message: "Chave de campo duplicada.",
+        });
+      keys.add(field.key);
+      if (field.type === "select" && field.options.length === 0)
+        context.addIssue({
+          code: "custom",
+          path: ["fields", index, "options"],
+          message: "Seleção exige opções.",
+        });
+    });
+  });
+
+const CampaignPathSchema = z
+  .string()
+  .regex(/^\/campanhas\/[a-z0-9]+(?:-[a-z0-9]+)*$/)
+  .max(220);
+
+export const CmsCampaignContentSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    consumerId: z.literal("cms.campaign-landing.v1"),
+    contentType: z.literal("campaign"),
+    title: RequiredText.max(180),
+    summary: RequiredText.max(500),
+    campaignKind: z.enum(["lead_generation", "product_launch", "event", "download", "institutional"]),
+    templateKey: z.enum(["landing_conversion", "landing_product", "landing_event", "landing_download"]),
+    route: z.object({ path: CampaignPathSchema }).strict(),
+    window: z
+      .object({
+        startsAt: z.iso.datetime(),
+        endsAt: z.iso.datetime(),
+        timezone: z.literal("America/Sao_Paulo"),
+      })
+      .strict(),
+    blocks: z.array(CmsPageBlockSchema).min(1).max(80),
+    placements: z
+      .array(
+        z
+          .object({
+            id: z.uuid(),
+            slot: z.enum([
+              "home_hero",
+              "home_featured",
+              "global_announcement",
+              "article_inline",
+              "product_banner",
+              "service_banner",
+              "solution_banner",
+              "page_banner",
+            ]),
+            contextType: z.enum(["global", "product", "service", "solution", "page", "post"]),
+            contextId: z.uuid().optional(),
+            priority: z.number().int().min(0).max(999),
+          })
+          .strict()
+          .superRefine((value, context) => {
+            if (value.contextType !== "global" && !value.contextId)
+              context.addIssue({
+                code: "custom",
+                path: ["contextId"],
+                message: "Posicionamento contextual exige destino.",
+              });
+          }),
+      )
+      .max(100),
+    form: z.object({ formId: z.uuid(), versionId: z.uuid(), key: CmsSlugSchema }).strict().optional(),
+    tracking: z
+      .object({
+        enabled: z.boolean(),
+        requiresConsent: z.literal(true),
+        provider: z.enum(["internal", "ga4", "meta"]),
+        eventName: CmsSlugSchema,
+      })
+      .strict(),
+    expiry: z
+      .object({
+        mode: z.enum(["redirect", "not_found", "gone", "fallback"]),
+        destinationPath: PageInternalPathSchema.optional(),
+        fallbackCampaignId: z.uuid().optional(),
+      })
+      .strict(),
+    relations: z
+      .object({
+        productIds: z.array(z.uuid()).max(50),
+        serviceIds: z.array(z.uuid()).max(50),
+        solutionIds: z.array(z.uuid()).max(50),
+        pageIds: z.array(z.uuid()).max(50),
+      })
+      .strict(),
+    seo: CmsSeoSchema,
+    provenance: z.array(CmsProvenanceSchema).min(1).max(30),
+    governanceState: z.enum(["synthetic_test", "awaiting_owner", "homologated"]),
+    approval: z
+      .object({
+        businessOwner: RequiredText.max(120),
+        marketingReviewer: RequiredText.max(120),
+        privacyReviewer: RequiredText.max(120),
+        approvedAt: z.iso.datetime().optional(),
+      })
+      .strict(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (new Date(value.window.endsAt) <= new Date(value.window.startsAt))
+      context.addIssue({
+        code: "custom",
+        path: ["window", "endsAt"],
+        message: "Término deve ser posterior ao início.",
+      });
+    if (value.seo.canonicalPath !== value.route.path)
+      context.addIssue({
+        code: "custom",
+        path: ["seo", "canonicalPath"],
+        message: "Canonical deve coincidir com a landing page.",
+      });
+    if (value.governanceState === "homologated" && !value.approval.approvedAt)
+      context.addIssue({
+        code: "custom",
+        path: ["approval", "approvedAt"],
+        message: "Campanha homologada exige aprovação.",
+      });
+    if (value.seo.indexable && value.governanceState !== "homologated")
+      context.addIssue({
+        code: "custom",
+        path: ["seo", "indexable"],
+        message: "Somente campanha homologada pode ser indexável.",
+      });
+    if (value.expiry.mode === "redirect" && !value.expiry.destinationPath)
+      context.addIssue({
+        code: "custom",
+        path: ["expiry", "destinationPath"],
+        message: "Expiração por redirect exige destino.",
+      });
+    if (value.expiry.mode === "fallback" && !value.expiry.fallbackCampaignId)
+      context.addIssue({
+        code: "custom",
+        path: ["expiry", "fallbackCampaignId"],
+        message: "Fallback exige campanha substituta.",
+      });
+  });
+
+export const CmsLeadCaptureSchema = z
+  .object({
+    formId: z.uuid(),
+    formVersionId: z.uuid(),
+    idempotencyKey: z.uuid(),
+    fields: z.record(
+      CmsSlugSchema,
+      z.union([z.string().max(5000), z.boolean(), z.array(z.string().max(500)).max(50)]),
+    ),
+    origin: z
+      .object({
+        path: PageInternalPathSchema,
+        source: RequiredText.max(120),
+        campaignId: z.uuid().optional(),
+        productId: z.uuid().optional(),
+        utm: z
+          .object({
+            source: z.string().max(120).optional(),
+            medium: z.string().max(120).optional(),
+            campaign: z.string().max(160).optional(),
+            term: z.string().max(160).optional(),
+            content: z.string().max(160).optional(),
+          })
+          .strict(),
+      })
+      .strict(),
+    consent: z
+      .object({ accepted: z.literal(true), text: RequiredText.max(2000), version: RequiredText.max(80) })
+      .strict(),
+    honeypot: z.string().max(0).default(""),
+    captchaToken: z.string().max(4096).optional(),
+  })
+  .strict();
+
+export const CmsLeadStatusSchema = z.enum([
+  "new",
+  "assigned",
+  "in_service",
+  "responded",
+  "converted",
+  "disqualified",
+  "archived",
+  "anonymized",
+]);
+
 export const CmsPageContentSchema = z.union([CmsManagedPageContentSchema, CmsHomepageContentSchema]);
 
 export const CmsSiteDocumentContentSchema = z.discriminatedUnion("contentType", [
@@ -993,6 +1250,7 @@ export const CmsContentPayloadSchema = z.discriminatedUnion("contentType", [
   CmsNavigationContentSchema,
   CmsSiteSettingsContentSchema,
   CmsPlacementContentSchema,
+  CmsCampaignContentSchema,
 ]);
 
 export type CmsContentPayload = z.infer<typeof CmsContentPayloadSchema>;
@@ -1001,8 +1259,12 @@ export type CmsServiceContent = z.infer<typeof CmsServiceContentSchema>;
 export type CmsIndustryContent = z.infer<typeof CmsIndustryContentSchema>;
 export type CmsApplicationContent = z.infer<typeof CmsApplicationContentSchema>;
 export type CmsSolutionContent = z.infer<typeof CmsSolutionContentSchema>;
+export type CmsPostContent = z.infer<typeof CmsPostContentSchema>;
 export type CmsPageContent = z.infer<typeof CmsPageContentSchema>;
 export type CmsPageBlock = z.infer<typeof CmsPageBlockSchema>;
 export type CmsNavigationContent = z.infer<typeof CmsNavigationContentSchema>;
 export type CmsSiteSettingsContent = z.infer<typeof CmsSiteSettingsContentSchema>;
 export type CmsPlacementContent = z.infer<typeof CmsPlacementContentSchema>;
+export type CmsCampaignContent = z.infer<typeof CmsCampaignContentSchema>;
+export type CmsFormVersion = z.infer<typeof CmsFormVersionSchema>;
+export type CmsLeadCapture = z.infer<typeof CmsLeadCaptureSchema>;

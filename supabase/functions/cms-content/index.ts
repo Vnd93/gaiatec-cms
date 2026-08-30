@@ -6,7 +6,7 @@ import { clientAddress, consumeRateLimit, corsHeaders, isAllowedOrigin, json, re
 const Uuid = z.uuid();
 const Command = z.object({
   action: z.enum(["create", "save", "submit", "approve", "schedule", "publish", "restore", "archive", "trash", "reopen", "retire", "hard_delete"]),
-  itemId: Uuid.nullish(), contentType: z.enum(["product", "service", "industry", "application", "solution", "post", "page", "homepage", "navigation", "site_settings", "placement"]).nullish(),
+  itemId: Uuid.nullish(), contentType: z.enum(["product", "service", "industry", "application", "solution", "post", "page", "homepage", "navigation", "site_settings", "placement", "campaign"]).nullish(),
   slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(160).nullish(), payload: z.record(z.string(), z.unknown()).nullish(),
   expectedLockVersion: z.number().int().positive().nullish(), revisionId: Uuid.nullish(), reason: z.string().trim().min(3).max(500).nullish(),
   publishAt: z.iso.datetime().nullish(),
@@ -44,6 +44,33 @@ Deno.serve(async (req) => {
     }
   }
   const correlationId = crypto.randomUUID();
+  let effectivePayload = parsed.payload;
+  if ((parsed.action === "create" || parsed.action === "save") && parsed.payload?.contentType === "post") {
+    const post = parsed.payload as Record<string, any>;
+    const tagSlugs = (post.tags ?? []).map((tag: any) => tag.slug).filter(Boolean);
+    const [authorResult, categoryResult, tagResult] = await Promise.all([
+      identity.admin.from("cms_blog_authors").select("id").eq("slug", post.author?.slug ?? "").maybeSingle(),
+      identity.admin.from("cms_blog_categories").select("id").eq("slug", post.category?.slug ?? "").maybeSingle(),
+      tagSlugs.length
+        ? identity.admin.from("cms_blog_tags").select("id,slug").in("slug", tagSlugs)
+        : Promise.resolve({ data: [] }),
+    ]);
+    const tagIds = new Map((tagResult.data ?? []).map((tag: any) => [tag.slug, tag.id]));
+    effectivePayload = {
+      ...post,
+      author: { ...post.author, id: authorResult.data?.id ?? post.author?.id },
+      category: { ...post.category, id: categoryResult.data?.id ?? post.category?.id },
+      tags: (post.tags ?? []).map((tag: any) => ({ ...tag, id: tagIds.get(tag.slug) ?? tag.id })),
+    };
+    const { error: taxonomyError } = await identity.admin.rpc("cms_sync_blog_taxonomy", {
+      p_actor_id: identity.user.id,
+      p_payload: effectivePayload,
+      p_aal: identity.claims.aal,
+      p_session_id: identity.claims.sessionId,
+      p_issued_at: identity.claims.issuedAt,
+    });
+    if (taxonomyError) return json(req, { error: "Autor ou taxonomia editorial inválidos.", code: "CMS_BLOG_TAXONOMY_INVALID", correlationId }, 422);
+  }
   if (parsed.action === "retire") {
     if (!parsed.itemId || !parsed.payload || !parsed.expectedLockVersion) {
       return json(req, { error: "Página, conteúdo e versão são obrigatórios." }, 400);
@@ -95,7 +122,7 @@ Deno.serve(async (req) => {
   }
   const { data, error } = await identity.admin.rpc("cms_execute_editorial_command", {
     p_actor_id: identity.user.id, p_action: parsed.action, p_item_id: parsed.itemId ?? null,
-    p_content_type: parsed.contentType ?? null, p_slug: parsed.slug ?? null, p_payload: parsed.payload ?? null,
+    p_content_type: parsed.contentType ?? null, p_slug: parsed.slug ?? null, p_payload: effectivePayload ?? null,
     p_expected_lock_version: parsed.expectedLockVersion ?? null, p_revision_id: parsed.revisionId ?? null,
     p_reason: parsed.reason ?? "Operação editorial sintética", p_publish_at: parsed.publishAt ?? null,
     p_aal: identity.claims.aal, p_session_id: identity.claims.sessionId, p_issued_at: identity.claims.issuedAt,

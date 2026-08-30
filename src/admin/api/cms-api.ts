@@ -44,3 +44,6 @@ export function mediaCommand<T>(session: Session, body: Record<string, unknown>)
 export function searchGovernanceCommand<T>(session: Session, body: Record<string, unknown>) {
   return invoke<T>(session, "cms-search-admin", body, true);
 }
+export function leadCommand<T>(session: Session, body: Record<string, unknown>) {
+  return invoke<T>(session, "cms-leads", body, true);
+}

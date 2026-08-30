@@ -1,5 +1,11 @@
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabase";
-import type { CmsProductContent } from "@/shared/contracts/cms-content";
+import type {
+  CmsCampaignContent,
+  CmsFormVersion,
+  CmsPostContent,
+  CmsProductContent,
+} from "@/shared/contracts/cms-content";
+import { CmsCampaignContentSchema, CmsPostContentSchema } from "@/shared/contracts/cms-content";
 import type {
   CmsApplicationContent,
   CmsIndustryContent,
@@ -61,6 +67,20 @@ export type PublishedPageResolution =
   | { kind: "route"; rule: { destination_path: string | null; status_code: 301 | 302 | 404 | 410 } }
   | { kind: "fallback" };
 
+export type PublishedPost = Omit<PublishedProduct, "payload"> & {
+  content_type: "post";
+  path: string;
+  payload: CmsPostContent;
+  related_items?: CmsRelatedItem[];
+};
+export type PublishedCampaign = Omit<PublishedProduct, "payload"> & {
+  content_type: "campaign";
+  path: string;
+  payload: CmsCampaignContent;
+  form?: CmsFormVersion;
+  related_items?: CmsRelatedItem[];
+};
+
 export type PublishedSiteShell = {
   navigation: CmsNavigationContent | null;
   settings: CmsSiteSettingsContent | null;
@@ -84,6 +104,7 @@ export type PublishedSiteShell = {
 async function catalogFetch<T>(params: URLSearchParams): Promise<T> {
   const response = await fetch(`${SUPABASE_URL}/functions/v1/cms-public?${params}`, {
     headers: { apikey: SUPABASE_ANON_KEY },
+    signal: AbortSignal.timeout(10_000),
   });
   const data = (await response.json().catch(() => ({}))) as T & { error?: string };
   if (!response.ok) throw new Error(data.error ?? "Catálogo temporariamente indisponível.");
@@ -125,4 +146,51 @@ export function getPublicRouteRule(path: string) {
 
 export function getPublishedSiteShell() {
   return catalogFetch<PublishedSiteShell>(new URLSearchParams({ type: "site-shell" }));
+}
+
+export async function getPublishedPosts() {
+  const result = await catalogFetch<{ items?: unknown[]; total?: number }>(
+    new URLSearchParams({ type: "posts" }),
+  );
+  if (!Array.isArray(result.items)) throw new Error("Resposta do blog inválida.");
+  const items = result.items.filter((item): item is PublishedPost => {
+    if (!item || typeof item !== "object") return false;
+    const candidate = item as Partial<PublishedPost>;
+    return candidate.content_type === "post" && CmsPostContentSchema.safeParse(candidate.payload).success;
+  });
+  return { items, total: items.length };
+}
+
+export async function getPublishedPost(slug: string) {
+  const result = await catalogFetch<PublishedPost>(new URLSearchParams({ type: "post-detail", slug }));
+  if (result.content_type !== "post" || !CmsPostContentSchema.safeParse(result.payload).success)
+    throw new Error("Artigo incompatível com o contrato editorial vigente.");
+  return result;
+}
+
+export async function getPublishedCampaign(path: string) {
+  const result = await catalogFetch<PublishedCampaign | PublishedPageResolution>(
+    new URLSearchParams({ type: "campaign-by-path", path }),
+  );
+  if ("kind" in result) return result;
+  if (result.content_type !== "campaign" || !CmsCampaignContentSchema.safeParse(result.payload).success)
+    throw new Error("Campanha incompatível com o contrato vigente.");
+  return result;
+}
+
+export function getPublishedForm(key: string) {
+  return catalogFetch<CmsFormVersion>(new URLSearchParams({ type: "form", key }));
+}
+
+export function getCampaignPlacements(path: string) {
+  return catalogFetch<{
+    items: Array<{
+      id: string;
+      slot: string;
+      priority: number;
+      startsAt: string;
+      endsAt: string;
+      campaign: { itemId: string; title: string; summary: string; path: string };
+    }>;
+  }>(new URLSearchParams({ type: "campaign-placements", contextPath: path }));
 }

@@ -1,6 +1,10 @@
+import { useEffect, useState } from "react";
 import { ArrowRight, CheckCircle2, Quote } from "lucide-react";
 import { Link } from "react-router";
-import type { CmsPageBlock, CmsPageContent } from "@/shared/contracts/cms-content";
+import type { CmsPageBlock } from "@/shared/contracts/cms-content";
+import type { CmsFormVersion } from "@/shared/contracts/cms-content";
+import { getPublishedForm } from "../catalog-api";
+import { CmsLeadForm } from "./CmsLeadForm";
 import { ContactSection } from "../../app/components/ContactSection";
 import "../site-builder.css";
 
@@ -44,16 +48,46 @@ const CmsLink = ({
   );
 };
 
+function GovernedForm({
+  formKey,
+  heading,
+  campaignId,
+  productId,
+}: {
+  formKey: string;
+  heading: string;
+  campaignId?: string;
+  productId?: string;
+}) {
+  const [form, setForm] = useState<CmsFormVersion | null>(null);
+  const [unavailable, setUnavailable] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void getPublishedForm(formKey)
+      .then((value) => active && setForm(value))
+      .catch(() => active && setUnavailable(true));
+    return () => {
+      active = false;
+    };
+  }, [formKey]);
+  if (unavailable)
+    return <p role="status">Formulário temporariamente indisponível. Use a página de contato.</p>;
+  if (!form) return <p aria-busy="true">Carregando formulário…</p>;
+  return <CmsLeadForm form={form} heading={heading} campaignId={campaignId} productId={productId} />;
+}
+
 function BlockRenderer({
   block,
   mediaUrls,
   mediaAlt,
   relatedItems,
+  leadContext,
 }: {
   block: CmsPageBlock;
   mediaUrls: Record<string, string>;
   mediaAlt: Record<string, string>;
   relatedItems: CmsRelatedItem[];
+  leadContext?: { campaignId?: string; productId?: string };
 }) {
   if (block.hidden) return null;
   const className = `cms-page-block cms-page-block--${block.type} cms-page-block--${block.tone} cms-page-block--${block.width}`;
@@ -291,6 +325,19 @@ function BlockRenderer({
   }
 
   if (block.type === "form") {
+    if (block.data.formId && block.data.formVersionId)
+      return (
+        <section {...common}>
+          <div className="cms-page-block__inner">
+            <GovernedForm
+              formKey={block.data.formKey}
+              heading={block.data.heading}
+              campaignId={leadContext?.campaignId}
+              productId={leadContext?.productId}
+            />
+          </div>
+        </section>
+      );
     if (block.data.formKey !== "newsletter")
       return (
         <div className={`${className} cms-page-form-embedded`}>
@@ -341,12 +388,14 @@ export function CmsPageRenderer({
   mediaUrls = {},
   mediaAlt = {},
   relatedItems = [],
+  leadContext,
   preview = false,
 }: {
-  payload: CmsPageContent;
+  payload: { blocks: CmsPageBlock[] };
   mediaUrls?: Record<string, string>;
   mediaAlt?: Record<string, string>;
   relatedItems?: CmsRelatedItem[];
+  leadContext?: { campaignId?: string; productId?: string };
   preview?: boolean;
 }) {
   return (
@@ -362,6 +411,7 @@ export function CmsPageRenderer({
           mediaUrls={mediaUrls}
           mediaAlt={mediaAlt}
           relatedItems={relatedItems}
+          leadContext={leadContext}
           key={block.id}
         />
       ))}

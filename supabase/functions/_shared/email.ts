@@ -198,6 +198,24 @@ export function otpEmail(code: string) {
   return { subject: `${code} é o seu código de acesso — Relatório Diário de Obra`, html };
 }
 
+export function leadNotificationEmail(reference: string, eventType: string, adminBaseUrl: string) {
+  const safeReference = escapeHtml(reference);
+  const safeEvent = escapeHtml(eventType.replace(/_/g, " "));
+  const adminUrl = new URL(adminBaseUrl);
+  if (adminUrl.protocol !== "https:") throw new Error("cms_admin_url_invalid");
+  const link = new URL("/admin/leads", adminUrl).toString();
+  return {
+    subject: `Lead ${cleanSubject(reference, "novo")} — Gaiatec Sistemas`,
+    html: shell({
+      heading: "Atualização no atendimento comercial",
+      body: `O lead <strong>${safeReference}</strong> recebeu o evento <strong>${safeEvent}</strong>. Dados pessoais não são enviados por e-mail; consulte o registro no CMS autenticado.`,
+      button: "Abrir módulo de leads",
+      link,
+      footer: "Notificação idempotente do novo CMS. Não responda com dados pessoais.",
+    }),
+  };
+}
+
 /** Envia um e-mail via Resend (1+ destinatários, com anexos opcionais). Lança em caso de falha. */
 export async function sendEmail(
   resendKey: string,

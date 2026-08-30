@@ -1,7 +1,8 @@
 import { ArrowRight, Sparkles, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { usePublishedSiteShell } from "../site-shell-context";
+import { getCampaignPlacements } from "../catalog-api";
 import "../site-placements.css";
 
 export function GlobalAnnouncement() {
@@ -33,9 +34,34 @@ export function GlobalAnnouncement() {
 export function ContextualPlacements({ position }: { position: "before" | "after" }) {
   const { pathname } = useLocation();
   const { placements } = usePublishedSiteShell();
+  const [campaigns, setCampaigns] = useState<
+    Array<{ id: string; slot: string; campaign: { path: string; title: string; summary: string } }>
+  >([]);
+  useEffect(() => {
+    let active = true;
+    void getCampaignPlacements(pathname)
+      .then((result) => active && setCampaigns(result.items))
+      .catch(() => active && setCampaigns([]));
+    return () => {
+      active = false;
+    };
+  }, [pathname]);
   const allowedSlots = pathname === "/" ? [position === "before" ? "home_hero" : "home_featured"] : [];
   const active = (placements?.placements ?? []).filter((placement) => allowedSlots.includes(placement.slot));
-  if (!active.length) return null;
+  const contextual = campaigns.filter((placement) =>
+    position === "before"
+      ? [
+          "home_hero",
+          "global_announcement",
+          "product_banner",
+          "service_banner",
+          "solution_banner",
+          "page_banner",
+          "article_inline",
+        ].includes(placement.slot)
+      : ["home_featured"].includes(placement.slot),
+  );
+  if (!active.length && !contextual.length) return null;
   return (
     <section className="site-placements" aria-labelledby="site-placements-title">
       <div className="site-placements__inner">
@@ -47,6 +73,16 @@ export function ContextualPlacements({ position }: { position: "before" | "after
               <span>{placement.label || placement.target.contentType}</span>
               <strong>{placement.target.title}</strong>
               {placement.target.summary && <p>{placement.target.summary}</p>}
+              <small>
+                Conhecer <ArrowRight size={15} aria-hidden="true" />
+              </small>
+            </Link>
+          ))}
+          {contextual.map((placement) => (
+            <Link to={placement.campaign.path} key={placement.id}>
+              <span>CAMPANHA</span>
+              <strong>{placement.campaign.title}</strong>
+              <p>{placement.campaign.summary}</p>
               <small>
                 Conhecer <ArrowRight size={15} aria-hidden="true" />
               </small>

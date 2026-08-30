@@ -61,6 +61,7 @@ test("admin fields are connected to versioned public consumers", async () => {
   assert.match(publicApi, /campaign-placements/);
   assert.match(publicApi, /post-detail/);
   assert.match(publicApi, /loadPublishedForm/);
+  assert.match(publicApi, /cms_route_rules/);
   assert.match(publicApi, /kind: "fallback"/);
   assert.match(leadApi, /active_version_id/);
   assert.match(leadApi, /captchaToken/);
@@ -87,4 +88,30 @@ test("G6 is formally approved and the earlier F7 exception remains auditable", a
   assert.match(g6, /Decisão:\*\* APROVADO EM STAGING/);
   assert.match(exception, /aab55f7/);
   assert.match(exception, /não aprova o Gate G6/i);
+});
+
+test("critical permissions, unpublishing and governed forms are fail-closed", async () => {
+  const [hardening, unpublishing, reopening, leadAudit, contact, footer] = await Promise.all([
+    read("supabase/migrations/0030_cms_critical_permissions_require_aal2.sql"),
+    read("supabase/migrations/0031_cms_archive_unpublishes_all_content.sql"),
+    read("supabase/migrations/0032_cms_reopen_all_published_content.sql"),
+    read("supabase/migrations/0033_cms_lead_audit_actions.sql"),
+    read("src/app/components/ContactSection.tsx"),
+    read("src/app/components/Footer.tsx"),
+  ]);
+  assert.match(hardening, /p_aal = 'aal2'/);
+  assert.match(hardening, /permission\.critical/);
+  assert.match(unpublishing, /delete from public\.cms_published_projection/);
+  assert.match(unpublishing, /new\.content_type = 'campaign'/);
+  assert.match(reopening, /liveProjectionPreserved/);
+  assert.match(
+    reopening,
+    /when p_action='archive' then public\.cms_content_permission\(p_content_type,'publish'\)/,
+  );
+  for (const action of ["cms:leads.update", "cms:leads.export", "cms:leads.anonymize"])
+    assert.match(leadAudit, new RegExp(action.replace(".", "\\.")));
+  assert.doesNotMatch(contact, /submit-contact/);
+  assert.doesNotMatch(footer, /submit-contact/);
+  assert.match(contact, /getPublishedForm/);
+  assert.match(footer, /getPublishedForm/);
 });

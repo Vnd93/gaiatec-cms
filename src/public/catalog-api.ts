@@ -204,8 +204,16 @@ export async function getPublishedCampaign(path: string) {
   return result;
 }
 
-export function getPublishedForm(key: string) {
-  return catalogFetch<CmsFormVersion>(new URLSearchParams({ type: "form", key }));
+export async function getPublishedForm(key: string): Promise<CmsFormVersion | null> {
+  const params = new URLSearchParams({ type: "form", key });
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/cms-public?${params}`, {
+    headers: { apikey: SUPABASE_ANON_KEY },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (response.status === 204) return null;
+  const data = (await response.json().catch(() => ({}))) as CmsFormVersion & { error?: string };
+  if (!response.ok) throw new Error(data.error ?? "Formulário temporariamente indisponível.");
+  return data;
 }
 
 export function getCampaignPlacements(path: string) {

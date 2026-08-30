@@ -2,7 +2,7 @@
 
 ## Estado
 
-Implementação técnica publicada e parcialmente homologada em staging. O Gate G8 permanece pendente do lote sintético completo, dos demais lotes editoriais e da decisão formal de go-live.
+Implementação técnica e lote sintético completo aprovados em staging. O Gate G8 permanece pendente dos lotes editoriais reais, das dependências operacionais e da decisão formal de go-live.
 
 ## Evidências executadas em staging
 
@@ -15,7 +15,11 @@ Implementação técnica publicada e parcialmente homologada em staging. O Gate 
 - tela de cadastro em massa inspecionada visualmente e corrigida para fluxo em três etapas;
 - modelo XLSX vazio respondeu HTTP 200, MIME de planilha e assinatura ZIP válida;
 - rota `/admin/produtos/importacao` respondeu HTTP 200, `private, no-store` e `noindex`;
-- nenhum cadastro foi criado ou importado nessa homologação parcial.
+- lote inválido bloqueado com zero criação;
+- dry-run válido executado com zero criação;
+- lote válido criou dois rascunhos de forma atômica e idempotente, sob o correlation ID `e8d776ed-d8b7-44cb-83c9-e732271ce1d3`;
+- produto sintético foi publicado com fabricante interno, validado na API, busca, HTML e JSON-LD, reaberto, republicado com fabricante público e retirado;
+- nenhum fixture sintético permaneceu na projeção pública ao final.
 
 ## Critérios de aceite
 
@@ -31,14 +35,14 @@ Implementação técnica publicada e parcialmente homologada em staging. O Gate 
 - nenhuma imagem ou documento é importado em massa;
 - UX/UI desktop e mobile, teclado, foco, contraste, overflow e mensagens de estado são aprovados.
 
-## Homologação restante
+## Homologação sintética executada
 
-1. Baixar o modelo pelo painel.
-2. Preencher um lote exclusivamente sintético com dois produtos.
-3. Produzir intencionalmente um erro na segunda linha e confirmar zero criação.
-4. Corrigir, executar dry-run e confirmar zero criação.
-5. Criar o lote e confirmar dois rascunhos, com um único correlation ID do lote e auditoria individual.
-6. Repetir o mesmo comando idempotente e confirmar ausência de duplicidade.
-7. Publicar um produto sintético com fabricante interno e inspecionar API, busca, filtros e JSON-LD.
-8. Alterar fabricante para público, republicar e confirmar o novo comportamento.
-9. Remover os fixtures sintéticos e processar a outbox.
+As nove etapas previstas foram executadas pelo run `20260830143413-3fb870`; o painel autenticado foi reinspecionado após o ajuste responsivo. A evidência visual está em [cadastro em massa no staging](./evidencia-cadastro-massa-staging.png).
+
+## Pendências que não podem ser substituídas por automação
+
+1. A GAIATEC deve preencher e aprovar os lotes editoriais reais diretamente no CMS novo.
+2. Deve fornecer a chave Resend para entrega real de notificações; o destinatário de staging já está configurado.
+3. O DPO/responsável deve aprovar consentimento, retenção e operação de leads.
+4. Owners devem executar treinamento, aprovar runbooks/alertas e assinar o go-live.
+5. Produção só pode receber canary/cutover depois do Gate G8 formal.

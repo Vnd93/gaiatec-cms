@@ -274,7 +274,11 @@
   position: fixed;
   z-index: 15;
   inset: 4.25rem auto 0 0;
+  display: flex;
+  flex-direction: column;
   width: 17rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   transform: translateX(-105%);
   visibility: hidden;
   border-right: 1px solid var(--admin-line);
@@ -304,10 +308,9 @@
   font-weight: 750;
 }
 .admin-sidebar__identity {
-  position: absolute;
-  bottom: 1rem;
-  left: 1.4rem;
-  right: 1.4rem;
+  margin: 1.5rem 0 0;
+  border-top: 1px solid var(--admin-line);
+  padding-top: 1rem;
   overflow-wrap: anywhere;
   color: var(--admin-muted);
   font-size: 0.78rem;

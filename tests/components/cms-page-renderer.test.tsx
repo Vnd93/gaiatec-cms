@@ -1,8 +1,45 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { CmsPageContent } from "../../src/shared/contracts/cms-content";
 import { CmsPageRenderer } from "../../src/public/components/CmsPageRenderer";
+
+vi.mock("../../src/public/catalog-api", () => ({
+  getPublishedForm: () =>
+    Promise.resolve({
+      schemaVersion: 1,
+      formId: "62000000-0000-4000-8000-000000000001",
+      versionId: "62000000-0000-4000-8000-000000000002",
+      version: 1,
+      key: "contato-principal",
+      title: "Contato sintético",
+      purpose: "Validar o formulário governado.",
+      fields: [
+        {
+          id: "62000000-0000-4000-8000-000000000003",
+          key: "mensagem",
+          label: "Mensagem",
+          type: "textarea",
+          required: true,
+          maxLength: 500,
+          options: [],
+          personalData: false,
+          order: 0,
+        },
+      ],
+      consent: {
+        required: true,
+        text: "Aceito o tratamento dos dados sintéticos.",
+        version: "sintetico-v1",
+        privacyPath: "/politica-de-privacidade",
+      },
+      slaMinutes: 60,
+      retentionDays: 30,
+      successMessage: "Solicitação recebida.",
+      submitLabel: "Enviar solicitação",
+      status: "published",
+    }),
+}));
 
 const payload = {
   consumerId: "cms.managed-page.v1",
@@ -105,7 +142,7 @@ const payload = {
 } as CmsPageContent;
 
 describe("CMS page renderer", () => {
-  it("renders governed blocks without creating a nested main landmark", () => {
+  it("renders governed blocks without creating a nested main landmark", async () => {
     const { container } = render(
       <MemoryRouter>
         <CmsPageRenderer
@@ -129,7 +166,7 @@ describe("CMS page renderer", () => {
     expect(screen.getByText("O conteúdo é editável?")).toBeVisible();
     expect(screen.getByRole("img", { name: "Instrumento em bancada" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "Solicite uma análise" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "Enviar solicitação" })).toBeVisible();
+    expect(await screen.findByRole("button", { name: "Enviar solicitação" })).toBeVisible();
     expect(screen.getByRole("link", { name: /serviço relacionado/i })).toHaveAttribute(
       "href",
       "/servicos/relacionado",

@@ -135,13 +135,21 @@ Deno.serve(async (req) => {
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(key)) return json({ error: "Não encontrado." }, 404);
     if (!service) return json({ error: "Serviço indisponível." }, 503, { "Cache-Control": "no-store" });
     const form = await loadPublishedForm({ key });
-    return form ? json(form, 200, { "Cache-Control": "public, max-age=60" }) : json({ error: "Não encontrado." }, 404);
+    return form
+      ? json(form, 200, { "Cache-Control": "public, max-age=60" })
+      : new Response(null, { status: 204, headers: { ...headers, "Cache-Control": "public, max-age=60" } });
   }
   if (type === "campaign-by-path") {
     const path = url.searchParams.get("path") ?? "";
     if (!/^\/campanhas\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(path)) return json({ error: "Não encontrado." }, 404);
     const row = published.find((entry)=>entry.content_type==="campaign"&&entry.payload?.route?.path===path);
-    if (!row) return json({ kind: "fallback" },200,{"Cache-Control":"public, max-age=30"});
+    if (!row) {
+      const { data: routeRule } = await client.from("cms_route_rules")
+        .select("destination_path,status_code").eq("source_path",path).eq("active",true).maybeSingle();
+      return routeRule
+        ? json({kind:"route",rule:routeRule},200,{"Cache-Control":"public, max-age=60"})
+        : json({kind:"fallback"},200,{"Cache-Control":"public, max-age=30"});
+    }
     if (!campaignIsActive(row)) {
       const mode=row.payload?.expiry?.mode;
       if(mode==="redirect") return json({kind:"route",rule:{destination_path:row.payload.expiry.destinationPath,status_code:301}},200,{"Cache-Control":"public, max-age=60"});

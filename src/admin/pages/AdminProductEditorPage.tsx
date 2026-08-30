@@ -136,6 +136,17 @@ export default function AdminProductEditorPage() {
           throw new Error(`Cadastro incompleto: ${first.path.join(".")} — ${first.message}`);
         }
       }
+      if (action === "save" && loaded?.workflow_status === "published") {
+        await editorialCommand(session, {
+          action: "reopen",
+          itemId: loaded.id,
+          contentType: null,
+          slug: null,
+          payload: null,
+          expectedLockVersion: null,
+          reason: draft.reason,
+        });
+      }
       const result = await editorialCommand(session, {
         action,
         itemId: loaded?.id ?? null,

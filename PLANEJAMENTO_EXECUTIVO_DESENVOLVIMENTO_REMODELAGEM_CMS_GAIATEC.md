@@ -822,6 +822,8 @@ Aplicar a nova arquitetura de informação e experiência sobre o conteúdo reca
 - permissões e exportações testadas;
 - nenhum encaminhamento administrativo anterior ativo.
 
+Reavaliação técnica em 2026-08-30: o round-trip remoto `20260830143413-3fb870` aprovou os fluxos de blog, campanha, formulário, lead, atribuição, exportação, anonimização, expiração, AAL2/RBAC e retirada de fixtures. O gate permanece formalmente bloqueado somente até a entrega real de e-mail, a revisão do DPO e a publicação dos dados/formulários permanentes pelo proprietário. Produção continua vedada.
+
 ---
 
 ## 16. Fase 8 — hardening, recadastro final e go-live
@@ -849,7 +851,9 @@ Validar o sistema completo e substituir a versão pública anterior com seguran�
 - observação intensiva;
 - comunicação e suporte.
 
-Decisão complementar executada em 2026-08-29: a allowlist de visibilidade e o cadastro em massa de produtos novos foram publicados em staging. Fabricante/OEM, referência do fabricante e SKU são internos por padrão; a projeção pública remove também duplicações indiretas, proveniência e caminhos privados. A planilha oficial é vazia, versionada e não aceita conteúdo legado, fórmulas, macros, imagens ou documentos. O Gate G8 continua aberto até o round-trip sintético completo, a conclusão dos lotes reais e o aceite de go-live.
+Decisão complementar executada em 2026-08-29: a allowlist de visibilidade e o cadastro em massa de produtos novos foram publicados em staging. Fabricante/OEM, referência do fabricante e SKU são internos por padrão; a projeção pública remove também duplicações indiretas, proveniência e caminhos privados. A planilha oficial é vazia, versionada e não aceita conteúdo legado, fórmulas, macros, imagens ou documentos.
+
+Reavaliação em 2026-08-30: o lote sintético completo aprovou erro atômico com zero criação, dry-run, criação de dois rascunhos, idempotência, auditoria, publicação interna, projeção pública e retirada. O Gate G8 continua aberto pelos lotes reais, provedor de e-mail, aprovações LGPD/owners, operação de alertas/restore e aceite de go-live. Esta pendência impede iniciar a Fase 9 e não autoriza produção.
 
 ### Gate G8
 

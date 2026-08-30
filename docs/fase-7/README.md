@@ -1,11 +1,11 @@
 # Fase 7 — conteúdo, marketing e leads
 
-**Data:** 2026-08-29
+**Data:** 2026-08-30
 
 **Branch:** `Remodelagem`
 
-**Base autorizada:** `aab55f7`
-**Status:** implementação publicada em staging; Gate G7 pendente do round-trip próprio de marketing e leads
+**Base autorizada:** `116cd54`
+**Status:** implementação e round-trip técnico aprovados em staging; Gate G7 formalmente bloqueado apenas pelas dependências externas e editoriais registradas
 
 ## Resultado local
 
@@ -30,6 +30,6 @@ A Fase 7 implementa uma vertical limpa para blog, campanhas, landing pages, form
 
 ## Limite formal
 
-As migrations `0026` a `0029` e as Edge Functions da Fase 7 estão ativas em staging. O esquema remoto passa no lint sem erro ou aviso, e as permissões de leads seguem o padrão fechado `cms:leads.*`.
+As migrations `0026` a `0033` e as Edge Functions da Fase 7 estão ativas em staging. O esquema remoto passa no lint sem erro ou aviso, e as permissões de leads seguem o padrão fechado `cms:leads.*` com AAL2 obrigatório para operações críticas.
 
-O Gate G7 ainda exige executar o round-trip campanha → formulário → lead → atribuição → atendimento, além dos testes reais por perfil e da revisão LGPD. Produção e `main` permanecem intocadas.
+O round-trip remoto `20260830143413-3fb870` comprovou campanha → formulário → lead → atribuição, exportação, anonimização e outbox; também comprovou blog, expiração, RBAC/AAL2 e retirada completa das fixtures. O Gate G7 continua formalmente bloqueado até configurar o provedor de e-mail, obter a revisão LGPD/DPO e publicar pelo CMS os dados permanentes de contato/formulários. Produção e `main` permanecem intocadas.

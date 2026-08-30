@@ -1,17 +1,32 @@
-import { useMemo, useState } from "react";
-import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabase";
+import { useState } from "react";
 import { TurnstileChallenge } from "@/app/components/TurnstileChallenge";
 import type { CmsFormVersion } from "@/shared/contracts/cms-content";
+import { submitGovernedLead, type LeadFieldValue } from "../lead-api";
 
 type Props = {
   form: CmsFormVersion;
   campaignId?: string;
   productId?: string;
   heading?: string;
+  showHeader?: boolean;
+  appearance?: "default" | "contact";
+  tone?: "brand" | "light";
+  source?: string;
+  initialValues?: Record<string, LeadFieldValue>;
 };
 
-export function CmsLeadForm({ form, campaignId, productId, heading }: Props) {
-  const [values, setValues] = useState<Record<string, string | boolean>>({});
+export function CmsLeadForm({
+  form,
+  campaignId,
+  productId,
+  heading,
+  showHeader = true,
+  appearance = "default",
+  tone = "light",
+  source,
+  initialValues = {},
+}: Props) {
+  const [values, setValues] = useState<Record<string, LeadFieldValue>>(() => ({ ...initialValues }));
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -19,17 +34,6 @@ export function CmsLeadForm({ form, campaignId, productId, heading }: Props) {
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [captchaRequired, setCaptchaRequired] = useState(false);
   const [captchaToken, setCaptchaToken] = useState("");
-  const utm = useMemo(() => {
-    const params = new URLSearchParams(window.location.search);
-    return {
-      source: params.get("utm_source") || undefined,
-      medium: params.get("utm_medium") || undefined,
-      campaign: params.get("utm_campaign") || undefined,
-      term: params.get("utm_term") || undefined,
-      content: params.get("utm_content") || undefined,
-    };
-  }, []);
-
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
@@ -41,40 +45,25 @@ export function CmsLeadForm({ form, campaignId, productId, heading }: Props) {
           .filter((field) => field.type !== "hidden")
           .map((field) => [field.key, values[field.key] ?? ""]),
       );
-      const response = await fetch(`${SUPABASE_URL}/functions/v1/lead-capture`, {
-        method: "POST",
-        headers: { apikey: SUPABASE_ANON_KEY, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          formId: form.formId,
-          formVersionId: form.versionId,
-          idempotencyKey,
-          fields,
-          origin: {
-            path: window.location.pathname,
-            source: campaignId ? "campaign" : productId ? "product" : "site",
-            ...(campaignId ? { campaignId } : {}),
-            ...(productId ? { productId } : {}),
-            utm,
-          },
-          consent: { accepted: consent, text: form.consent.text, version: form.consent.version },
-          honeypot: values.website ?? "",
-          ...(captchaToken ? { captchaToken } : {}),
-        }),
+      const result = await submitGovernedLead({
+        form,
+        fields,
+        idempotencyKey,
+        source: source ?? (campaignId ? "campaign" : productId ? "product" : "site"),
+        campaignId,
+        productId,
+        consentAccepted: consent,
+        honeypot: String(values.website ?? ""),
+        captchaToken: captchaToken || undefined,
       });
-      const result = (await response.json().catch(() => ({}))) as {
-        error?: string;
-        reference?: string;
-        challengeRequired?: boolean;
-      };
-      if (result.challengeRequired) setCaptchaRequired(true);
-      if (!response.ok) throw new Error(result.error ?? "Não foi possível enviar. Tente novamente.");
-      setValues({});
+      setValues({ ...initialValues });
       setConsent(false);
       setCaptchaRequired(false);
       setCaptchaToken("");
       setIdempotencyKey(crypto.randomUUID());
       setMessage(`${form.successMessage}${result.reference ? ` Protocolo ${result.reference}.` : ""}`);
     } catch (caught) {
+      if ((caught as Error & { challengeRequired?: boolean }).challengeRequired) setCaptchaRequired(true);
       setError(caught instanceof Error ? caught.message : "Não foi possível enviar. Tente novamente.");
     } finally {
       setBusy(false);
@@ -82,9 +71,15 @@ export function CmsLeadForm({ form, campaignId, productId, heading }: Props) {
   }
 
   return (
-    <form className="cms-lead-form" onSubmit={submit} aria-labelledby={`form-title-${form.versionId}`}>
-      <h2 id={`form-title-${form.versionId}`}>{heading ?? form.title}</h2>
-      <p>{form.purpose}</p>
+    <form
+      className={`cms-lead-form cms-lead-form--${appearance} cms-lead-form--${appearance}-${tone}`}
+      onSubmit={submit}
+      {...(showHeader
+        ? { "aria-labelledby": `form-title-${form.versionId}` }
+        : { "aria-label": heading ?? form.title })}
+    >
+      {showHeader && <h2 id={`form-title-${form.versionId}`}>{heading ?? form.title}</h2>}
+      {showHeader && <p>{form.purpose}</p>}
       <div className="cms-lead-form__honeypot" aria-hidden="true">
         <label>
           Website
@@ -118,7 +113,7 @@ export function CmsLeadForm({ form, campaignId, productId, heading }: Props) {
               </label>
             );
           return (
-            <label key={field.id} htmlFor={id}>
+            <label key={field.id} htmlFor={id} data-field-key={field.key} data-field-type={field.type}>
               {field.label}
               {field.required ? " *" : ""}
               {field.type === "textarea" ? (

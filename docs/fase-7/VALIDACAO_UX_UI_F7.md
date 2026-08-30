@@ -1,7 +1,7 @@
 # Validação UX/UI — Fase 7
 
-**Data:** 2026-08-29
-**Estado:** APROVADA LOCALMENTE NO ESCOPO NÃO AUTENTICADO; telas autenticadas pendentes
+**Data:** 2026-08-30
+**Estado:** APROVADA EM STAGING NOS FLUXOS PÚBLICOS E ADMINISTRATIVOS INSPECIONADOS
 
 ## Escopo executado
 
@@ -14,9 +14,9 @@
 
 ## Resultado reproduzível
 
-`npm run test:e2e`: **24 aprovados, 4 ignorados por condição documentada, 0 falhas**.
+`npm run test:e2e` contra `https://gaiatec-cms-staging.pages.dev`: **26 aprovados, 2 ignorados por condição documentada, 0 falhas**.
 
-Os quatro skips são esperados: teste móvel omitido no projeto desktop, teste desktop estreito omitido no projeto desktop e verificação exclusiva do edge staging omitida nos dois projetos locais. O teste de acessibilidade não encontrou violações `serious` ou `critical` nas cinco jornadas públicas inspecionadas. O teste de teclado confirmou foco em `#main-content`; o menu móvel fechou com `Escape` e restaurou o scroll.
+Os dois skips são esperados e cruzados por projeto: a variação estreita roda no projeto móvel e o teste de menu móvel não roda no desktop. O teste de acessibilidade não encontrou violações `serious` ou `critical` nas cinco jornadas públicas inspecionadas. O teste de teclado confirmou foco em `#main-content`; o menu móvel fechou com `Escape` e restaurou o scroll.
 
 ## Inspeção visual e correções
 
@@ -27,7 +27,7 @@ Os quatro skips são esperados: teste móvel omitido no projeto desktop, teste d
 | campanha ausente          | fallback com `role=alert`, hierarquia visual legível, sem redirect inventado e largura 1425/1425         |
 | administrativo sem sessão | redirect para login, formulário rotulado, senha protegida e meta robots privada                          |
 
-A inspeção encontrou e corrigiu dois defeitos antes do registro final: o template de largura total não preservava gutter lateral e o fallback de campanha não carregava o CSS quando nenhum renderer era montado.
+A inspeção anterior corrigiu o gutter de largura total e o CSS do fallback. A inspeção autenticada final também corrigiu a identidade do usuário que cobria o rodapé da navegação lateral e eliminou respostas 404 usadas apenas para consultar formulários governados ainda não publicados. Ausências válidas agora produzem estado seguro sem ruído no console; falhas reais continuam visíveis.
 
 ## Evidências
 
@@ -38,4 +38,4 @@ A inspeção encontrou e corrigiu dois defeitos antes do registro final: o templ
 
 ## Limite da evidência
 
-Editor de campanha, editor de formulário, inbox/exportação de leads e preview autenticado dependem da futura autenticação e aplicação da migration no Supabase staging. Essas telas não foram simuladas, e nenhuma captura local foi apresentada como evidência remota.
+Editor, formulários, leads, importação em massa e RBAC foram exercitados em staging com sessão real e identidades temporárias. A validação não equivale ao aceite editorial do proprietário nem à revisão do DPO e não autoriza produção.

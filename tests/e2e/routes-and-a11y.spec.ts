@@ -2,29 +2,36 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
 const routes = [
-  "/",
-  "/produtos",
-  "/contato",
-  "/blog",
-  "/campanhas/campanha-sintetica-inexistente",
-  "/relatorio-de-obra/login",
-  "/admin/login",
+  { path: "/", status: 200 },
+  { path: "/produtos", status: 200 },
+  { path: "/contato", status: 200 },
+  { path: "/blog", status: 200 },
+  { path: "/campanhas/campanha-sintetica-inexistente", status: 404 },
+  { path: "/relatorio-de-obra/login", status: 200 },
+  { path: "/admin/login", status: 200 },
 ];
 
 for (const route of routes) {
-  test(`smoke ${route}`, async ({ page }) => {
+  test(`smoke ${route.path}`, async ({ page }) => {
     const consoleErrors: string[] = [];
     page.on("console", (message) => {
-      if (message.type() === "error") consoleErrors.push(message.text());
+      if (message.type() === "error") {
+        const location = message.location().url;
+        consoleErrors.push(location ? `${message.text()} @ ${location}` : message.text());
+      }
     });
 
-    const response = await page.goto(route, { waitUntil: "networkidle" });
-    expect(response?.status()).toBe(200);
+    const response = await page.goto(route.path, { waitUntil: "networkidle" });
+    expect(response?.status()).toBe(route.status);
     await expect(page.locator("h1").first()).toBeVisible();
     expect(await page.locator("body").evaluate((body) => body.scrollWidth <= body.clientWidth + 1)).toBe(
       true,
     );
-    expect(consoleErrors).toEqual([]);
+    const unexpectedConsoleErrors =
+      route.status >= 400
+        ? consoleErrors.filter((message) => !message.endsWith(`@ ${page.url()}`))
+        : consoleErrors;
+    expect(unexpectedConsoleErrors).toEqual([]);
   });
 }
 

@@ -64,7 +64,11 @@ function GovernedForm({
   useEffect(() => {
     let active = true;
     void getPublishedForm(formKey)
-      .then((value) => active && setForm(value))
+      .then((value) => {
+        if (!active) return;
+        setForm(value);
+        setUnavailable(value === null);
+      })
       .catch(() => active && setUnavailable(true));
     return () => {
       active = false;
@@ -348,6 +352,7 @@ function BlockRenderer({
             submitLabel={block.data.buttonLabel}
             sectionId={block.anchor || `form-${block.id}`}
             initialEnquiryType={block.data.formKey === "lead" ? "Orçamento" : ""}
+            formKey={block.data.formKey === "lead" ? "contato-principal" : block.data.formKey}
           />
         </div>
       );

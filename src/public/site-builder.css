@@ -71,6 +71,68 @@
   height: 1px;
   overflow: hidden;
 }
+.cms-lead-form--contact {
+  width: 100%;
+  margin: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.cms-lead-form--contact > label[data-field-type="textarea"],
+.cms-lead-form--contact > label[data-field-type="select"],
+.cms-lead-form--contact > label[data-field-key="empresa"],
+.cms-lead-form--contact > .cms-lead-form__checkbox,
+.cms-lead-form--contact > .cms-page-button,
+.cms-lead-form--contact > .cms-lead-form__success,
+.cms-lead-form--contact > .cms-lead-form__error {
+  grid-column: 1 / -1;
+}
+.cms-lead-form--contact input,
+.cms-lead-form--contact textarea,
+.cms-lead-form--contact select {
+  border-color: rgb(0 0 0 / 18%);
+  border-radius: 0;
+}
+.cms-lead-form--contact-light input,
+.cms-lead-form--contact-light textarea,
+.cms-lead-form--contact-light select {
+  background: #f2f2f2;
+}
+.cms-lead-form--contact > .cms-page-button {
+  justify-self: start;
+  min-width: 9rem;
+  border: 0;
+  border-radius: 0;
+  padding: 0.9rem 2.5rem;
+  background: #050b18;
+  color: #ffcc00;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.cms-lead-form--contact-light > .cms-page-button {
+  background: #0057de;
+  color: #fff;
+}
+.cms-governed-form-state {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem;
+  border: 1px solid rgb(0 0 0 / 20%);
+  background: rgb(255 255 255 / 72%);
+  color: #111827;
+}
+@media (max-width: 639px) {
+  .cms-lead-form--contact {
+    grid-template-columns: 1fr;
+  }
+  .cms-lead-form--contact > label {
+    grid-column: 1;
+  }
+}
 .cms-lead-form__success {
   color: #166534;
 }

@@ -1,24 +1,20 @@
-import { useState } from "react";
-import { Link } from "react-router";
-import { Phone, MessageSquare, MapPin, ArrowRight, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Phone, MessageSquare, MapPin, ArrowRight } from "lucide-react";
 import { AnimateOnScroll } from "./useScrollAnimation";
 import { usePublishedSiteShell } from "@/public/site-shell-context";
-import { SUPABASE_ANON_KEY, SUPABASE_CONFIGURED, SUPABASE_URL } from "../../lib/supabase";
-import { TurnstileChallenge } from "./TurnstileChallenge";
+import { getPublishedForm } from "@/public/catalog-api";
+import { CmsLeadForm } from "@/public/components/CmsLeadForm";
+import type { CmsFormVersion } from "@/shared/contracts/cms-content";
 
 const KNOCKOUT = "'Knockout HTF68', sans-serif";
-
-const enquiryTypes = ["Orçamento", "Suporte Técnico", "Calibração", "Instrumentação", "Automação", "Proteção Catódica", "Outros"];
-
-type FormStatus = "idle" | "submitting" | "success" | "error";
 
 export function ContactSection({
   variant = "brand",
   heading = "Solicitar Orçamento",
   introduction = "Preencha o formulário e retornaremos o mais breve possível.",
-  submitLabel = "Enviar",
   sectionId = "contact",
   initialEnquiryType = "",
+  formKey = "contato-principal",
 }: {
   variant?: "brand" | "light";
   heading?: string;
@@ -26,16 +22,30 @@ export function ContactSection({
   submitLabel?: string;
   sectionId?: string;
   initialEnquiryType?: string;
+  formKey?: string;
 }) {
   const { settings } = usePublishedSiteShell();
   const light = variant === "light";
-  const [formData, setFormData] = useState({
-    firstName: "", lastName: "", email: "", phone: "", company: "", enquiryType: initialEnquiryType, message: "", consent: false, website: "",
-  });
-  const [captchaRequired, setCaptchaRequired] = useState(false);
-  const [captchaToken, setCaptchaToken] = useState("");
-  const [status, setStatus] = useState<FormStatus>("idle");
-  const [errorMsg, setErrorMsg] = useState("");
+  const [form, setForm] = useState<CmsFormVersion | null>(null);
+  const [formLoading, setFormLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    setFormLoading(true);
+    void getPublishedForm(formKey)
+      .then((result) => {
+        if (active) setForm(result);
+      })
+      .catch(() => {
+        if (active) setForm(null);
+      })
+      .finally(() => {
+        if (active) setFormLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [formKey]);
 
   const company = settings?.company;
   const whatsappDigits = company?.whatsapp.replace(/\D/g, "") ?? "";
@@ -66,72 +76,6 @@ export function ContactSection({
       : null,
   ].filter((item): item is NonNullable<typeof item> => item !== null);
 
-  const resetForm = () => {
-    setFormData({
-      firstName: "", lastName: "", email: "", phone: "", company: "", enquiryType: initialEnquiryType, message: "", consent: false, website: "",
-    });
-    setCaptchaRequired(false);
-    setCaptchaToken("");
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!formData.consent) {
-      setStatus("error");
-      setErrorMsg("Você precisa concordar com a Política de Privacidade.");
-      return;
-    }
-
-    setStatus("submitting");
-    setErrorMsg("");
-
-    try {
-      if (!SUPABASE_CONFIGURED) {
-        throw new Error("Formulário temporariamente indisponível. Tente novamente mais tarde.");
-      }
-
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/submit-contact`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        },
-        body: JSON.stringify({
-          ...formData,
-          origem: typeof window !== "undefined" ? window.location.pathname : "/",
-          idempotencyKey: crypto.randomUUID(),
-          captchaToken: captchaToken || undefined,
-        }),
-      });
-
-      const data = await res.json().catch(() => null);
-
-      if (!res.ok) {
-        if (data?.captchaRequired) setCaptchaRequired(true);
-        throw new Error(data?.error || `Erro ${res.status}`);
-      }
-
-      setStatus("success");
-      resetForm();
-      setTimeout(() => setStatus("idle"), 6000);
-    } catch (err) {
-      setStatus("error");
-      setErrorMsg(
-        err instanceof Error
-          ? err.message
-          : "Não foi possível enviar. Tente novamente em alguns instantes."
-      );
-    }
-  };
-
-  const isSubmitting = status === "submitting";
-
-  const inputClass = light
-    ? "w-full bg-[#F2F2F2] border border-black/10 px-4 py-3 text-[14px] text-black placeholder:text-[#666666] outline-none focus:border-[#0057DE] transition-colors disabled:opacity-50"
-    : "w-full bg-white border border-black/10 px-4 py-3 text-[14px] text-black placeholder:text-[#666666] outline-none focus:border-black transition-colors disabled:opacity-50";
-
   return (
     <section className={light ? "bg-white" : "bg-[#FFCC00]"} id={sectionId} style={{ fontFamily: "Inter, sans-serif" }}>
       <div className="max-w-[1400px] mx-auto px-4 md:px-6">
@@ -145,81 +89,28 @@ export function ContactSection({
               <p className="text-black/70 text-[15px] mb-8">{introduction}</p>
             </AnimateOnScroll>
 
-            {status === "success" && (
-              <div className="mb-6 flex items-start gap-3 p-4 bg-white border border-black/10 rounded-md">
-                <CheckCircle2 size={20} className="text-green-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-black font-semibold text-sm">Mensagem enviada com sucesso!</p>
-                  <p className="text-black/70 text-sm mt-1">Recebemos sua solicitação. Nossa equipe técnica retornará em breve no e-mail informado.</p>
-                </div>
+            {formLoading ? (
+              <p className="cms-governed-form-state" role="status" aria-live="polite">
+                Carregando formulário seguro…
+              </p>
+            ) : form ? (
+              <CmsLeadForm
+                form={form}
+                showHeader={false}
+                appearance="contact"
+                tone={variant}
+                source="contact"
+                heading={heading}
+                initialValues={
+                  initialEnquiryType ? { "tipo-solicitacao": initialEnquiryType } : undefined
+                }
+              />
+            ) : (
+              <div className="cms-governed-form-state" role="status">
+                <strong>Formulário temporariamente indisponível.</strong>
+                <span>Use um dos canais ao lado enquanto a configuração é revisada no CMS.</span>
               </div>
             )}
-
-            {status === "error" && errorMsg && (
-              <div className="mb-6 flex items-start gap-3 p-4 bg-white border border-red-300 rounded-md">
-                <AlertCircle size={20} className="text-red-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-black font-semibold text-sm">Erro ao enviar</p>
-                  <p className="text-red-700 text-sm mt-1">{errorMsg}</p>
-                </div>
-              </div>
-            )}
-
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="absolute -left-[10000px] h-px w-px overflow-hidden" aria-hidden="true">
-                <label htmlFor="contact-website">Não preencha este campo</label>
-                <input id="contact-website" name="website" tabIndex={-1} autoComplete="off" value={formData.website} onChange={(e) => setFormData({ ...formData, website: e.target.value })} />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <input type="text" aria-label="Nome" maxLength={80} placeholder="Nome" required disabled={isSubmitting} className={inputClass} value={formData.firstName} onChange={(e) => setFormData({ ...formData, firstName: e.target.value })} />
-                <input type="text" aria-label="Sobrenome" maxLength={100} placeholder="Sobrenome" disabled={isSubmitting} className={inputClass} value={formData.lastName} onChange={(e) => setFormData({ ...formData, lastName: e.target.value })} />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <input type="email" aria-label="E-mail" maxLength={254} placeholder="E-mail" required disabled={isSubmitting} className={inputClass} value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
-                <input type="tel" aria-label="Telefone ou WhatsApp" maxLength={40} placeholder="Telefone / WhatsApp" disabled={isSubmitting} className={inputClass} value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} />
-              </div>
-              <input type="text" aria-label="Empresa" maxLength={160} placeholder="Empresa" disabled={isSubmitting} className={inputClass} value={formData.company} onChange={(e) => setFormData({ ...formData, company: e.target.value })} />
-              <select
-                disabled={isSubmitting}
-                aria-label="Tipo de solicitação"
-                className={`${inputClass} appearance-none`}
-                value={formData.enquiryType}
-                onChange={(e) => setFormData({ ...formData, enquiryType: e.target.value })}
-                style={{ color: formData.enquiryType ? "#000" : "#666666" }}
-              >
-                <option value="">Tipo de Solicitação</option>
-                {enquiryTypes.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
-              <textarea aria-label="Mensagem" maxLength={4000} placeholder="Sua Mensagem" required rows={5} disabled={isSubmitting} className={`${inputClass} resize-none`} value={formData.message} onChange={(e) => setFormData({ ...formData, message: e.target.value })} />
-              <div className="space-y-3">
-                <label className="flex items-start gap-2 cursor-pointer">
-                  <input type="checkbox" required disabled={isSubmitting} className="mt-1 accent-black" checked={formData.consent} onChange={(e) => setFormData({ ...formData, consent: e.target.checked })} />
-                  <span className="text-[12px] text-black/70">
-                    Concordo com a{" "}
-                    <Link
-                      to="/politica-de-privacidade"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="underline"
-                      /* dentro de <label>: impede que abrir a política marque o checkbox */
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      Política de Privacidade
-                    </Link>{" "}
-                    e em receber comunicações da Gaiatec Sistemas.
-                  </span>
-                </label>
-              </div>
-              {captchaRequired && <TurnstileChallenge onToken={setCaptchaToken} />}
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className={`${light ? "bg-[#0057DE] text-white hover:bg-[#0046b3]" : "bg-black text-[#FFCC00] hover:bg-[#0057DE] hover:text-white"} px-10 py-3.5 text-[13px] tracking-wider transition-colors inline-flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed uppercase`}
-                style={{ fontWeight: 700, letterSpacing: "0.08em" }}
-              >
-                {isSubmitting ? (<><Loader2 size={16} className="animate-spin" /> Enviando...</>) : submitLabel}
-              </button>
-            </form>
           </div>
 
           {/* ─── Direita — contatos (estilo lista, hover branco) ─── */}

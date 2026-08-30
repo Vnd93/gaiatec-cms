@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { Phone, MessageSquare, Mail, ArrowRight, Loader2, CheckCircle2, Linkedin, Instagram, Facebook, Youtube } from "lucide-react";
-import type { CmsNavigationContent } from "@/shared/contracts/cms-content";
+import type { CmsFormVersion, CmsNavigationContent } from "@/shared/contracts/cms-content";
 import { usePublishedSiteShell } from "@/public/site-shell-context";
-import { SUPABASE_ANON_KEY, SUPABASE_URL } from "../../lib/supabase";
+import { getPublishedForm } from "@/public/catalog-api";
+import { submitGovernedLead } from "@/public/lead-api";
+import { TurnstileChallenge } from "./TurnstileChallenge";
 
 const KNOCKOUT = "'Knockout HTF68', sans-serif";
 
@@ -61,39 +63,66 @@ export function Footer() {
   const [newsletterConsent, setNewsletterConsent] = useState(false);
   const [newsletterWebsite, setNewsletterWebsite] = useState("");
   const [nlStatus, setNlStatus] = useState<NlStatus>("idle");
+  const [newsletterForm, setNewsletterForm] = useState<CmsFormVersion | null>(null);
+  const [newsletterFormLoading, setNewsletterFormLoading] = useState(true);
+  const [newsletterCaptchaRequired, setNewsletterCaptchaRequired] = useState(false);
+  const [newsletterCaptchaToken, setNewsletterCaptchaToken] = useState("");
+  const [newsletterIdempotencyKey, setNewsletterIdempotencyKey] = useState(() =>
+    crypto.randomUUID(),
+  );
+
+  useEffect(() => {
+    let active = true;
+    void getPublishedForm("newsletter")
+      .then((form) => {
+        if (active) setNewsletterForm(form);
+      })
+      .catch(() => {
+        if (active) setNewsletterForm(null);
+      })
+      .finally(() => {
+        if (active) setNewsletterFormLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleNewsletter = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim() || !newsletterConsent || nlStatus === "submitting") return;
+    if (!email.trim() || !newsletterConsent || !newsletterForm || nlStatus === "submitting") return;
     setNlStatus("submitting");
     try {
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/submit-contact`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        },
-        body: JSON.stringify({
-          firstName: "Inscrição Newsletter",
-          lastName: "",
-          email: email.trim(),
-          phone: "",
-          company: "",
-          enquiryType: "Newsletter",
-          message: "Solicito inscrição na newsletter da Gaiatec Sistemas.",
-          consent: true,
-          origem: typeof window !== "undefined" ? window.location.pathname : "/",
-          website: newsletterWebsite,
-          idempotencyKey: crypto.randomUUID(),
-        }),
+      const emailField = newsletterForm.fields.find((field) => field.type === "email");
+      if (!emailField) throw new Error("O formulário de newsletter precisa de um campo de e-mail.");
+      const fields = Object.fromEntries(
+        newsletterForm.fields
+          .filter((field) => field.type !== "hidden")
+          .map((field) => [
+            field.key,
+            field.id === emailField.id ? email.trim() : field.type === "checkbox" ? true : "",
+          ]),
+      );
+      await submitGovernedLead({
+        form: newsletterForm,
+        fields,
+        idempotencyKey: newsletterIdempotencyKey,
+        source: "newsletter",
+        consentAccepted: newsletterConsent,
+        honeypot: newsletterWebsite,
+        captchaToken: newsletterCaptchaToken || undefined,
       });
-      if (!res.ok) throw new Error();
       setNlStatus("success");
       setEmail("");
       setNewsletterConsent(false);
+      setNewsletterWebsite("");
+      setNewsletterCaptchaRequired(false);
+      setNewsletterCaptchaToken("");
+      setNewsletterIdempotencyKey(crypto.randomUUID());
       setTimeout(() => setNlStatus("idle"), 6000);
-    } catch {
+    } catch (caught) {
+      if ((caught as Error & { challengeRequired?: boolean }).challengeRequired)
+        setNewsletterCaptchaRequired(true);
       setNlStatus("error");
     }
   };
@@ -156,12 +185,12 @@ export function Footer() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="Seu melhor e-mail"
-                    disabled={nlStatus === "submitting"}
+                    disabled={nlStatus === "submitting" || newsletterFormLoading || !newsletterForm}
                     className="flex-1 bg-transparent border border-white/15 px-4 py-3 text-[14px] text-white placeholder:text-slate-500 outline-none focus:border-[#0057DE] transition-colors disabled:opacity-50"
                   />
                   <button
                     type="submit"
-                    disabled={nlStatus === "submitting"}
+                    disabled={nlStatus === "submitting" || newsletterFormLoading || !newsletterForm}
                     className="inline-flex items-center justify-center gap-2 bg-[#0057DE] text-white px-6 py-3 text-[13px] uppercase tracking-[0.06em] hover:bg-[#0046b3] transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex-shrink-0"
                     style={{ fontWeight: 700 }}
                   >
@@ -174,8 +203,25 @@ export function Footer() {
                 </div>
                 <label className="mt-3 flex items-start gap-2 text-[12px] leading-5 text-slate-400">
                   <input type="checkbox" required checked={newsletterConsent} onChange={(e) => setNewsletterConsent(e.target.checked)} className="mt-1 accent-[#0057DE]" />
-                  <span>Li a <Link to="/politica-de-privacidade" className="underline hover:text-white">Política de Privacidade</Link> e autorizo o envio da newsletter.</span>
+                  <span>
+                    {newsletterForm?.consent.text ?? "A configuração de consentimento está indisponível."}{" "}
+                    <Link
+                      to={newsletterForm?.consent.privacyPath ?? "/politica-de-privacidade"}
+                      className="underline hover:text-white"
+                    >
+                      Política de Privacidade
+                    </Link>
+                    .
+                  </span>
                 </label>
+                {newsletterCaptchaRequired && (
+                  <TurnstileChallenge onToken={setNewsletterCaptchaToken} />
+                )}
+                {!newsletterFormLoading && !newsletterForm && (
+                  <p className="text-[13px] text-amber-300 mt-2.5" role="status">
+                    Newsletter temporariamente indisponível enquanto a configuração é revisada no CMS.
+                  </p>
+                )}
                 {nlStatus === "error" && (
                   <p className="text-[13px] text-red-400 mt-2.5">
                     Não foi possível concluir. Tente novamente em instantes.

@@ -12,33 +12,35 @@
 
 ## Matriz de comprovação
 
-| Requisito           | Prova local                                          | Prova remota ainda necessária                            |
-| ------------------- | ---------------------------------------------------- | -------------------------------------------------------- |
-| blog estruturado    | contrato, editor, renderer, API e testes             | publicação/agendamento/restauração autenticados          |
-| campanha e landing  | builder, preview compartilhado, API, Worker e testes | ciclo completo em staging e expiração pelo worker        |
-| formulários/leads   | versão imutável, validação dupla, RLS, outbox e UI   | captura real, atribuição, e-mail e exportação por perfis |
-| LGPD                | consent log, anonimização, retenção e auditoria      | revisão do DPO e inspeção do job em staging              |
-| configuração global | documento F6 e consumidores ativos                   | recadastro novo e publicação pelo proprietário           |
-| clean-room          | migration sem conteúdo e interfaces vazias           | inspeção do banco staging sem dados anteriores           |
+| Requisito           | Prova local                                          | Prova remota em staging                                                                     |
+| ------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| blog estruturado    | contrato, editor, renderer, API e testes             | agenda, publicação, restauração, `Article`, sitemap e retirada aprovados                    |
+| campanha e landing  | builder, preview compartilhado, API, Worker e testes | campanha/formulário publicados e expiração `301`, `302`, `404` e `410` aprovada             |
+| formulários/leads   | versão imutável, validação dupla, RLS, outbox e UI   | captura/deduplicação, atribuição, exportação AAL2, anonimização e 2 outbox events aprovados |
+| LGPD                | consent log, anonimização, retenção e auditoria      | controles técnicos aprovados; aceite humano do DPO ainda pendente                           |
+| configuração global | documento F6 e consumidores ativos                   | fail-closed aprovado; conteúdo permanente ainda deve ser publicado pelo proprietário        |
+| clean-room          | migration sem conteúdo e interfaces vazias           | fixtures exclusivamente sintéticas retiradas e zero projeção pública residual               |
 
 ## Resultados locais finais
 
 | Comando               | Resultado                                                                                         |
 | --------------------- | ------------------------------------------------------------------------------------------------- |
-| `npm run check`       | formatação, lint, typecheck estrito, 44 testes Vitest, testes estruturais F2–F7 e build aprovados |
-| `npm run test:e2e`    | 24 aprovados, 4 skips condicionais documentados, 0 falhas                                         |
-| `npm run test:phase7` | 4 verificações estruturais aprovadas                                                              |
+| `npm run check`       | formatação, lint, typecheck estrito, 48 testes Vitest, testes estruturais F2–F7 e build aprovados |
+| `npm run test:e2e`    | 26 aprovados, 2 skips condicionais documentados, 0 falhas em staging                              |
+| `npm run test:phase7` | 5 verificações estruturais aprovadas                                                              |
 | `git diff --check`    | sem erros de whitespace                                                                           |
 
 O lint encerrou com **0 erros** e 45 warnings preexistentes fora do escopo F7. O build manteve apenas o aviso conhecido de chunk PDF acima do limiar. As capturas e a matriz de inspeção estão em `VALIDACAO_UX_UI_F7.md`.
 
-Nenhum dado remoto, sessão autenticada, entrega de e-mail ou execução de migration foi fabricado para completar esta matriz.
+Nenhuma entrega de e-mail, aprovação humana ou dado editorial permanente foi fabricado para completar esta matriz.
 
 ## Implantação remota posterior
 
-- migrations 0027, 0028 e 0029 aplicadas no Supabase staging `glcqsosxwgmlhzgcsnzv`;
+- migrations 0027 a 0033 aplicadas no Supabase staging `glcqsosxwgmlhzgcsnzv`;
 - `supabase db lint --linked --level warning`: zero resultado;
 - funções `cms-content`, `cms-public`, `cms-preview`, `cms-leads`, `lead-capture` e `cms-outbox-worker` ativas;
 - frontend publicado no Cloudflare Pages staging, mantendo `noindex` e `no-store` no administrativo;
 - correção de compatibilidade do RBAC: permissões de leads usam `cms:leads.read|assign|export|privacy`;
-- nenhum artigo, campanha, formulário ou lead real foi criado durante a implantação.
+- `LEAD_NOTIFICATION_TO` configurado para `comercial@gaiatecsistemas.com.br` e `CMS_ADMIN_URL` apontando para staging;
+- round-trip `20260830143413-3fb870` aprovado, com usuários/fixtures suspensos, retirados ou anonimizados ao final;
+- nenhum artigo, campanha, formulário, produto ou lead real foi criado durante a implantação.

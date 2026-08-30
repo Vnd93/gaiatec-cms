@@ -131,6 +131,7 @@ export default function AdminDiscoveryPage() {
     [payload, setPayload] = useState<any>(() => initial(kind)),
     [slug, setSlug] = useState(`${kind}-sintetico`),
     [lock, setLock] = useState(1),
+    [workflowStatus, setWorkflowStatus] = useState("draft"),
     [revisions, setRevisions] = useState<any[]>([]),
     [loading, setLoading] = useState(true),
     [busy, setBusy] = useState(false),
@@ -157,6 +158,7 @@ export default function AdminDiscoveryPage() {
         setPayload(row.cms_content_drafts.payload);
         setSlug(row.slug);
         setLock(row.cms_content_drafts.lock_version);
+        setWorkflowStatus(row.workflow_status);
         setRevisions(row.cms_content_revisions ?? []);
       }
       setItems([]);
@@ -173,6 +175,7 @@ export default function AdminDiscoveryPage() {
       setSlug(`${kind}-sintetico`);
       setRevisions([]);
       setLock(1);
+      setWorkflowStatus("draft");
     }
     setLoading(false);
   }, [id, kind]);
@@ -190,6 +193,17 @@ export default function AdminDiscoveryPage() {
           `Contrato inválido: ${parsed.error.issues[0]?.path.join(".")} — ${parsed.error.issues[0]?.message}`,
         );
         return;
+      }
+      if (action === "save" && workflowStatus === "published" && id && id !== "novo") {
+        await editorialCommand(session, {
+          action: "reopen",
+          itemId: id,
+          contentType: null,
+          slug: null,
+          payload: null,
+          expectedLockVersion: null,
+          reason: "Abrir nova versão governada do conteúdo publicado",
+        });
       }
       const result = await editorialCommand(session, {
         action,

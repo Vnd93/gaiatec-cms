@@ -266,6 +266,17 @@ export default function AdminEditorPage() {
     try {
       if ((action === "create" || action === "save") && !CmsContentPayloadSchema.safeParse(payload).success)
         throw new Error("Revise os campos obrigatórios.");
+      if (action === "save" && loaded?.workflow_status === "published") {
+        await editorialCommand(session, {
+          action: "reopen",
+          itemId: loaded.id,
+          contentType: null,
+          slug: null,
+          payload: null,
+          expectedLockVersion: null,
+          reason,
+        });
+      }
       const result = await editorialCommand(session, {
         action,
         itemId: loaded?.id ?? null,

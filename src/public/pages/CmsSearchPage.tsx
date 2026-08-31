@@ -5,7 +5,7 @@ import { ProductCard } from "../components/ProductCard";
 import { DiscoveryEntityCard } from "../components/DiscoveryEntityRenderer";
 import { applyCatalogSeo } from "../catalog-seo";
 import "../product-catalog.css";
-type Tab = "all" | "product" | "service" | "industry" | "application" | "solution";
+type Tab = "all" | "product" | "service" | "industry" | "application" | "solution" | "page" | "post";
 const labels: { [key in Tab]: string } = {
   all: "Tudo",
   product: "Produtos",
@@ -13,7 +13,11 @@ const labels: { [key in Tab]: string } = {
   industry: "Indústrias",
   application: "Aplicações",
   solution: "Soluções",
+  page: "Páginas",
+  post: "Blog",
 };
+const contentTypeLabel = (contentType: UnifiedSearchResult["items"][number]["content_type"]) =>
+  contentType === "homepage" ? labels.page : labels[contentType];
 export default function CmsSearchPage() {
   const [params, setParams] = useSearchParams(),
     navigate = useNavigate(),
@@ -34,8 +38,23 @@ export default function CmsSearchPage() {
       setResult({
         items: [],
         total: 0,
-        facets: { segment: [], category: [], family: [], technology: [] },
-        groups: { product: 0, service: 0, industry: 0, application: 0, solution: 0 },
+        facets: {
+          productCategory: [],
+          applicationMagnitude: [],
+          technology: [],
+          installationOperation: [],
+          monitoredElement: [],
+        },
+        groups: {
+          product: 0,
+          service: 0,
+          industry: 0,
+          application: 0,
+          solution: 0,
+          page: 0,
+          homepage: 0,
+          post: 0,
+        },
         query: "",
       });
       return;
@@ -66,7 +85,11 @@ export default function CmsSearchPage() {
     };
   }, [query]);
   useEffect(() => setActiveSuggestion(-1), [query, suggestions]);
-  const visible = result?.items.filter((item) => tab === "all" || item.content_type === tab) ?? [];
+  const visible =
+    result?.items.filter(
+      (item) =>
+        tab === "all" || item.content_type === tab || (tab === "page" && item.content_type === "homepage"),
+    ) ?? [];
   const suggestionsOpen = Boolean(suggestions?.items.length);
   return (
     <section className="new-catalog" aria-labelledby="cms-search-title">
@@ -118,7 +141,7 @@ export default function CmsSearchPage() {
                   <strong>{item.payload.title}</strong>
                   <br />
                   <small>
-                    {labels[item.content_type]} · {item.matched_by}
+                    {contentTypeLabel(item.content_type)} · {item.matched_by}
                   </small>
                 </a>
               </li>
@@ -130,7 +153,12 @@ export default function CmsSearchPage() {
         <div className="unified-search__tabs" role="group" aria-label="Filtrar resultados por tipo">
           {(Object.keys(labels) as Tab[]).map((key) => (
             <button key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>
-              {labels[key]} {key === "all" ? result.total : result.groups[key]}
+              {labels[key]}{" "}
+              {key === "all"
+                ? result.total
+                : key === "page"
+                  ? result.groups.page + result.groups.homepage
+                  : result.groups[key]}
             </button>
           ))}
         </div>
@@ -168,6 +196,15 @@ export default function CmsSearchPage() {
                   showCompare={false}
                   onSelect={() => undefined}
                 />
+              ) : item.content_type === "page" ||
+                item.content_type === "homepage" ||
+                item.content_type === "post" ? (
+                <a className="cms-search-page-card" href={item.path} key={item.item_id}>
+                  <small>{item.content_type === "post" ? "BLOG" : "PÁGINA"}</small>
+                  <h2>{item.payload.title}</h2>
+                  {item.payload.summary && <p>{item.payload.summary}</p>}
+                  <span>Abrir página</span>
+                </a>
               ) : (
                 <DiscoveryEntityCard key={item.item_id} entity={item as any} />
               ),

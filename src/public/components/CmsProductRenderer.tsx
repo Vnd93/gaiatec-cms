@@ -166,36 +166,52 @@ export function CmsProductRenderer({
       <section id="visao-geral">
         <h2>Visão geral</h2>
         <p>{p.commercial.valueProposition}</p>
-        {p.classification && (
+        {(p.controlledClassification || p.classification) && (
           <dl className="product-detail__classification">
-            <div>
-              <dt>Segmento</dt>
-              <dd>{p.classification.segment}</dd>
-            </div>
-            <div>
-              <dt>Categoria</dt>
-              <dd>{p.classification.category}</dd>
-            </div>
-            {p.classification.subcategory && (
+            {(p.controlledClassification?.productCategory?.label ?? p.classification?.segment) && (
+              <div>
+                <dt>Categoria de produto</dt>
+                <dd>{p.controlledClassification?.productCategory?.label ?? p.classification?.segment}</dd>
+              </div>
+            )}
+            {(p.controlledClassification?.applicationMagnitude?.label ?? p.classification?.category) && (
+              <div>
+                <dt>Aplicação / grandeza</dt>
+                <dd>
+                  {p.controlledClassification?.applicationMagnitude?.label ?? p.classification?.category}
+                </dd>
+              </div>
+            )}
+            {p.classification?.subcategory && (
               <div>
                 <dt>Subcategoria</dt>
                 <dd>{p.classification.subcategory}</dd>
               </div>
             )}
-            <div>
-              <dt>Família</dt>
-              <dd>{p.classification.family}</dd>
-            </div>
+            {(p.controlledClassification?.technology?.label ?? p.technology) && (
+              <div>
+                <dt>Tecnologia</dt>
+                <dd>{p.controlledClassification?.technology?.label ?? p.technology}</dd>
+              </div>
+            )}
+            {(p.controlledClassification?.installationOperation?.label ?? p.classification?.family) && (
+              <div>
+                <dt>Instalação / operação</dt>
+                <dd>
+                  {p.controlledClassification?.installationOperation?.label ?? p.classification?.family}
+                </dd>
+              </div>
+            )}
+            {p.controlledClassification?.monitoredElement?.label && (
+              <div>
+                <dt>Elemento monitorado</dt>
+                <dd>{p.controlledClassification.monitoredElement.label}</dd>
+              </div>
+            )}
             {p.function && (
               <div>
                 <dt>Função</dt>
                 <dd>{p.function}</dd>
-              </div>
-            )}
-            {p.technology && (
-              <div>
-                <dt>Tecnologia</dt>
-                <dd>{p.technology}</dd>
               </div>
             )}
           </dl>

@@ -25,6 +25,15 @@ function internalProductValues(payload: JsonRecord) {
   if (isInternal("classification")) Object.values(payload.classification ?? {}).forEach(add);
   if (isInternal("function")) add(payload.function);
   if (isInternal("technology")) add(payload.technology);
+  if (payload.controlledClassification) {
+    if (isInternal("classification")) {
+      add(payload.controlledClassification.productCategory?.label);
+      add(payload.controlledClassification.applicationMagnitude?.label);
+      add(payload.controlledClassification.installationOperation?.label);
+      add(payload.controlledClassification.monitoredElement?.label);
+    }
+    if (isInternal("technology")) add(payload.controlledClassification.technology?.label);
+  }
   for (const model of payload.models ?? []) {
     if (isInternal("commercialModel")) add(model.model);
     if (isInternal("manufacturerReference", "internal")) add(model.manufacturerReference);
@@ -96,6 +105,27 @@ export function sanitizePublicPayload(
     if (isInternal("classification")) delete safe.classification;
     if (isInternal("function")) delete safe.function;
     if (isInternal("technology")) delete safe.technology;
+    if (safe.controlledClassification) {
+      const publicRef = (reference: JsonRecord | undefined) =>
+        reference?.publicVisible === false ? undefined : { slug: reference?.slug, label: reference?.label };
+      const controlled = {
+        ...(!isInternal("classification")
+          ? {
+              productCategory: publicRef(safe.controlledClassification.productCategory),
+              applicationMagnitude: publicRef(safe.controlledClassification.applicationMagnitude),
+              installationOperation: publicRef(safe.controlledClassification.installationOperation),
+              monitoredElement: publicRef(safe.controlledClassification.monitoredElement),
+            }
+          : {}),
+        ...(!isInternal("technology")
+          ? { technology: publicRef(safe.controlledClassification.technology) }
+          : {}),
+      };
+      safe.controlledClassification = Object.fromEntries(
+        Object.entries(controlled).filter(([, reference]) => reference),
+      );
+      if (!Object.keys(safe.controlledClassification).length) delete safe.controlledClassification;
+    }
     if (isInternal("specifications")) safe.specifications = [];
     if (isInternal("relations")) safe.relations = undefined;
     if (isInternal("documents")) safe.documents = [];
@@ -143,6 +173,14 @@ export function sanitizePublicPayload(
     const redacted = redactInternalText(safe, internalValues) as JsonRecord;
     if (!options.includeSearchMetadata) delete redacted.search;
     return redacted;
+  }
+  if (safe.contentType === "service" && safe.serviceKindRef) {
+    if (safe.serviceKindRef.publicVisible === false) {
+      delete safe.serviceKind;
+      delete safe.serviceKindRef;
+    } else {
+      safe.serviceKindRef = { slug: safe.serviceKindRef.slug, label: safe.serviceKindRef.label };
+    }
   }
   return safe;
 }

@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAdminAuth } from "../auth/AdminAuthContext";
 import { mediaCommand } from "../api/cms-api";
+import {
+  EmptyState,
+  ErrorState,
+  FilterBar,
+  LoadingSkeleton,
+  PageHeader,
+  StatePanel,
+} from "../components/AdminUI";
 
 type Media = {
   id: string;
@@ -43,35 +51,27 @@ export default function AdminMediaPage() {
   }, [load]);
   return (
     <section>
-      <p className="admin-eyebrow">BIBLIOTECA PRIVADA</p>
-      <h1>Mídia nova</h1>
-      <p>
-        Originais ficam privados; somente arquivos novos com origem, direitos, MIME real, dimensões e
-        variantes WebP/AVIF podem ficar prontos.
-      </p>
-      <div className="admin-filters">
+      <PageHeader
+        eyebrow="BIBLIOTECA PRIVADA"
+        title="Mídia"
+        description="Consulte arquivos novos e autorizados. Originais, direitos e usos permanecem protegidos."
+      />
+      <FilterBar summary={`${items.length} arquivo${items.length === 1 ? "" : "s"}`}>
         <label>
           Buscar arquivo
           <input value={query} onChange={(e) => setQuery(e.target.value)} />
         </label>
         <button onClick={() => void load(query)}>Buscar</button>
-      </div>
+      </FilterBar>
       {loading ? (
-        <div className="admin-state" aria-busy="true">
-          Carregando mídia…
-        </div>
+        <LoadingSkeleton label="Carregando mídia" rows={4} />
       ) : error ? (
-        <p className="admin-notice admin-notice--error" role="alert">
-          {error}
-        </p>
+        <ErrorState title="Biblioteca indisponível" description={error} />
       ) : items.length === 0 ? (
-        <div className="admin-state">
-          <h2>Biblioteca vazia</h2>
-          <p>
-            Nenhuma imagem antiga foi copiada. O processamento usa o pipeline controlado de mídia
-            sintética/autorizada.
-          </p>
-        </div>
+        <EmptyState
+          title="Biblioteca vazia"
+          description="Nenhuma mídia antiga foi copiada. Envie somente originais com origem e direitos comprovados."
+        />
       ) : (
         <div className="admin-media-grid">
           {items.map((item) => (
@@ -91,10 +91,11 @@ export default function AdminMediaPage() {
         </div>
       )}
       {!profile?.permissions.includes("cms:media.upload") && (
-        <div className="admin-state admin-state--forbidden">
-          <h2>Upload não permitido</h2>
-          <p>Seu papel possui somente leitura da biblioteca.</p>
-        </div>
+        <StatePanel
+          kind="forbidden"
+          title="Upload não permitido"
+          description="Seu papel possui somente leitura da biblioteca."
+        />
       )}
     </section>
   );

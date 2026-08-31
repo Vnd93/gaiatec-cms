@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { supabase } from "@/lib/supabase";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { ErrorState, LoadingSkeleton, PageHeader, SectionCard, StatePanel } from "../components/AdminUI";
 
 export default function AdminHomePage() {
   const { profile } = useAdminAuth();
@@ -39,20 +40,14 @@ export default function AdminHomePage() {
   }, []);
   return (
     <section>
-      <p className="admin-eyebrow">PAINEL OPERACIONAL</p>
-      <h1>Núcleo do CMS</h1>
-      <p>
-        Conteúdo novo, permissões, publicação, preview e mídia operam sem consultar a administração anterior.
-      </p>
-      {error && (
-        <p className="admin-notice admin-notice--error" role="alert">
-          {error}
-        </p>
-      )}
+      <PageHeader
+        eyebrow="PAINEL OPERACIONAL"
+        title="Visão geral"
+        description="Acompanhe o volume editorial, itens em revisão, mídia e falhas que exigem ação."
+      />
+      {error && <ErrorState title="Indicadores parcialmente indisponíveis" description={error} />}
       {loading ? (
-        <div className="admin-state" aria-busy="true">
-          Carregando indicadores…
-        </div>
+        <LoadingSkeleton label="Carregando indicadores" rows={4} />
       ) : (
         <div className="admin-metrics">
           <article>
@@ -73,24 +68,23 @@ export default function AdminHomePage() {
           </article>
         </div>
       )}
-      <div className="admin-actions">
-        <h2>Próximas ações</h2>
-        {profile?.permissions.includes("cms:posts.edit") && (
-          <Link to="/admin/conteudo/novo">Criar demonstração sintética</Link>
-        )}
-        <Link to="/admin/conteudo">Consultar workflow editorial</Link>
-        {profile?.permissions.includes("cms:diagnostics.read") && (
-          <Link to="/admin/diagnosticos">Abrir diagnósticos</Link>
-        )}
-      </div>
-      {!profile?.permissions.includes("cms:posts.edit") && (
-        <div className="admin-state admin-state--forbidden">
-          <h2>Sem permissão de edição</h2>
-          <p>
-            Você pode consultar somente os domínios concedidos ao seu papel. A API e o banco aplicam a mesma
-            restrição.
-          </p>
+      <SectionCard title="Próximas ações" description="Escolha uma tarefa compatível com suas permissões.">
+        <div className="admin-actions">
+          {profile?.permissions.includes("cms:posts.edit") && (
+            <Link to="/admin/conteudo/novo">Criar demonstração sintética</Link>
+          )}
+          <Link to="/admin/conteudo">Consultar workflow editorial</Link>
+          {profile?.permissions.includes("cms:diagnostics.read") && (
+            <Link to="/admin/diagnosticos">Abrir diagnósticos</Link>
+          )}
         </div>
+      </SectionCard>
+      {!profile?.permissions.includes("cms:posts.edit") && (
+        <StatePanel
+          kind="forbidden"
+          title="Sem permissão de edição"
+          description="Seu papel pode consultar apenas os domínios concedidos. API e banco aplicam a mesma restrição."
+        />
       )}
     </section>
   );

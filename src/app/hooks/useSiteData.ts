@@ -7,7 +7,7 @@ import {
   fetchPagina,
   type SiteMenuItem,
   type PaginaResponse,
-} from '../../lib/supabase'
+} from '../legacy/site-content'
 
 // ---------------------------------------------------------------------------
 // Types

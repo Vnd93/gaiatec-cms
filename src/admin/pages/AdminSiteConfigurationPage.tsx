@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, Save, Trash2 } from "lucide-react";
+import { useSearchParams } from "react-router";
 import { supabase } from "@/lib/supabase";
 import {
   CmsNavigationContentSchema,
@@ -10,7 +11,11 @@ import {
   type CmsSiteSettingsContent,
 } from "@/shared/contracts/cms-content";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { UnsavedChangesGuard } from "../components/UnsavedChangesGuard";
 import { editorialCommand, issuePreview } from "../api/cms-api";
+import { openExternalAfterAsync } from "../open-external-preview";
+import { useDraftBackup } from "../hooks/useDraftBackup";
+import { DraftBackupNotice } from "../components/DraftBackupNotice";
 import {
   createSiteDocument,
   siteDocumentMeta,
@@ -36,14 +41,22 @@ const schemas = {
 
 export default function AdminSiteConfigurationPage() {
   const { session, profile } = useAdminAuth();
-  const [activeType, setActiveType] = useState<SiteDocumentType>("navigation");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedSection = searchParams.get("section");
+  const initialType: SiteDocumentType =
+    requestedSection === "site_settings" || requestedSection === "placement"
+      ? requestedSection
+      : "navigation";
+  const [activeType, setActiveType] = useState<SiteDocumentType>(initialType);
   const [loadedByType, setLoadedByType] = useState<Partial<Record<SiteDocumentType, Loaded>>>({});
   const [payload, setPayload] = useState<SiteDocumentPayload>(() => createSiteDocument("navigation"));
+  const [savedSnapshot, setSavedSnapshot] = useState(() => JSON.stringify(payload));
   const [relations, setRelations] = useState<Relation[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [previewFallback, setPreviewFallback] = useState("");
   const [reason, setReason] = useState("Atualização da estrutura global do site");
   const [publishAt, setPublishAt] = useState("");
   const meta = siteDocumentMeta[activeType];
@@ -77,9 +90,15 @@ export default function AdminSiteConfigurationPage() {
       const current = map[activeType];
       if (current) {
         const parsed = schemas[activeType].safeParse(current.cms_content_drafts.payload);
-        if (parsed.success) setPayload(parsed.data as SiteDocumentPayload);
-        else setError(`Documento incompatível: ${parsed.error.issues[0]?.path.join(".")}.`);
-      } else setPayload(createSiteDocument(activeType));
+        if (parsed.success) {
+          setPayload(parsed.data as SiteDocumentPayload);
+          setSavedSnapshot(JSON.stringify(parsed.data));
+        } else setError(`Documento incompatível: ${parsed.error.issues[0]?.path.join(".")}.`);
+      } else {
+        const initial = createSiteDocument(activeType);
+        setPayload(initial);
+        setSavedSnapshot(JSON.stringify(initial));
+      }
     }
     setRelations(
       (related.data ?? []).map((row: any) => ({
@@ -96,6 +115,10 @@ export default function AdminSiteConfigurationPage() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    setActiveType(initialType);
+  }, [initialType]);
+
   const validation = useMemo(() => schemas[activeType].safeParse(payload), [activeType, payload]);
   const latestRevision = loaded?.cms_content_revisions
     .slice()
@@ -106,7 +129,10 @@ export default function AdminSiteConfigurationPage() {
     setBusy(true);
     setError("");
     setSuccess("");
+    const dirty = JSON.stringify(payload) !== savedSnapshot;
     try {
+      if (!["create", "save"].includes(action) && dirty)
+        throw new Error("Salve a configuração antes de executar uma ação de revisão ou publicação.");
       if ((action === "create" || action === "save") && !validation.success) {
         const issue = validation.error.issues[0];
         throw new Error(`Documento incompleto: ${issue.path.join(".")} — ${issue.message}`);
@@ -132,7 +158,11 @@ export default function AdminSiteConfigurationPage() {
         reason,
         ...extras,
       });
-      setSuccess(`Operação ${result.status} concluída. Código ${result.correlationId.slice(0, 8)}.`);
+      setSuccess(
+        `Operação ${result.status} concluída. Código de acompanhamento ${result.correlationId.slice(0, 8)}.`,
+      );
+      if (action === "create" || action === "save") setSavedSnapshot(JSON.stringify(payload));
+      if (["create", "save", "publish"].includes(action)) backup.clear();
       await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Operação não concluída.");
@@ -143,14 +173,29 @@ export default function AdminSiteConfigurationPage() {
 
   async function preview(revisionId?: string) {
     if (!session || !loaded) return;
-    try {
-      const result = await issuePreview(session, loaded.id, revisionId);
-      window.location.assign(result.path);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Preview indisponível.");
-    }
+    setBusy(true);
+    setError("");
+    setPreviewFallback("");
+    const result = await openExternalAfterAsync(
+      async () => (await issuePreview(session, loaded.id, revisionId)).path,
+    );
+    if (result.status === "blocked") {
+      setPreviewFallback(result.url);
+      setError("O navegador bloqueou a nova aba. Abra o preview pelo link abaixo.");
+    } else if (result.status === "failed") setError(result.error.message);
+    setBusy(false);
   }
 
+  const dirty = JSON.stringify(payload) !== savedSnapshot;
+  const backup = useDraftBackup({
+    userId: session?.user.id,
+    editorType: activeType,
+    itemKey: loaded?.id ?? "singleton",
+    value: payload,
+    dirty,
+    enabled: !loading,
+    onRestore: setPayload,
+  });
   if (loading)
     return (
       <div className="admin-state" aria-busy="true">
@@ -160,6 +205,8 @@ export default function AdminSiteConfigurationPage() {
 
   return (
     <section>
+      <UnsavedChangesGuard dirty={dirty && !busy} />
+      <DraftBackupNotice backup={backup} />
       <div className="admin-page-heading">
         <div>
           <p className="admin-eyebrow">ADMINISTRAÇÃO GLOBAL</p>
@@ -170,6 +217,27 @@ export default function AdminSiteConfigurationPage() {
         </div>
       </div>
 
+      <dl className="admin-editor-context" aria-label="Contexto da edição">
+        <div>
+          <dt>Configuração em edição</dt>
+          <dd>{meta.label}</dd>
+        </div>
+        <div>
+          <dt>Situação</dt>
+          <dd>{dirty ? "Alterações não salvas" : `Rascunho salvo · estado ${state}`}</dd>
+        </div>
+        <div>
+          <dt>Consumidores públicos</dt>
+          <dd>
+            {activeType === "navigation"
+              ? "Header, menu móvel e rodapé"
+              : activeType === "site_settings"
+                ? "Contato, header, rodapé e chamadas globais"
+                : "Páginas e regiões vinculadas aos destaques"}
+          </dd>
+        </div>
+      </dl>
+
       <div className="admin-tabs" role="tablist" aria-label="Documentos globais">
         {(Object.keys(siteDocumentMeta) as SiteDocumentType[]).map((type) => (
           <button
@@ -177,7 +245,7 @@ export default function AdminSiteConfigurationPage() {
             role="tab"
             type="button"
             aria-selected={activeType === type}
-            onClick={() => setActiveType(type)}
+            onClick={() => setSearchParams({ section: type })}
           >
             {siteDocumentMeta[type].label}
             <small>{loadedByType[type]?.workflow_status ?? "não criado"}</small>
@@ -188,6 +256,14 @@ export default function AdminSiteConfigurationPage() {
       {error && (
         <p className="admin-notice admin-notice--error" role="alert">
           {error}
+          {previewFallback && (
+            <>
+              {" "}
+              <a href={previewFallback} target="_blank" rel="noopener noreferrer">
+                Abrir preview em nova aba
+              </a>
+            </>
+          )}
         </p>
       )}
       {success && (

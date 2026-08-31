@@ -30,6 +30,7 @@ export type CmsPublicProductContent = Omit<
   | "technology"
   | "models"
   | "relations"
+  | "controlledClassification"
 > & {
   brand?: CmsProductContent["brand"];
   manufacturer?: CmsProductContent["manufacturer"];
@@ -42,6 +43,16 @@ export type CmsPublicProductContent = Omit<
       Partial<Pick<CmsProductModel, "model" | "manufacturerReference" | "sku">>
   >;
   relations?: CmsProductContent["relations"];
+  controlledClassification?: Partial<
+    Record<
+      | "productCategory"
+      | "applicationMagnitude"
+      | "technology"
+      | "installationOperation"
+      | "monitoredElement",
+      { slug: string; label: string }
+    >
+  >;
 };
 
 export type PublishedProduct = {
@@ -60,10 +71,14 @@ export type PublishedProduct = {
 export type ProductCollection = {
   items: PublishedProduct[];
   total: number;
-  facets: Record<"segment" | "category" | "family" | "technology", string[]>;
+  facets: Record<
+    "productCategory" | "applicationMagnitude" | "technology" | "installationOperation" | "monitoredElement",
+    string[]
+  >;
   query: string;
 };
 export type DiscoveryType = "service" | "industry" | "application" | "solution";
+export type SearchPageType = "page" | "homepage";
 export type PublishedDiscovery = Omit<PublishedProduct, "payload"> & {
   content_type: DiscoveryType;
   path: string;
@@ -75,10 +90,12 @@ export type UnifiedSearchResult = {
   items: Array<
     | (PublishedProduct & { content_type: "product"; path: string; matched_by?: string; score?: number })
     | PublishedDiscovery
+    | (PublishedPage & { content_type: SearchPageType; matched_by?: string; score?: number })
+    | (PublishedPost & { content_type: "post"; matched_by?: string; score?: number })
   >;
   total: number;
   facets: ProductCollection["facets"];
-  groups: Record<"product" | DiscoveryType, number>;
+  groups: Record<"product" | DiscoveryType | SearchPageType | "post", number>;
   query: string;
 };
 

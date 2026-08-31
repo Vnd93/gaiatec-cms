@@ -61,3 +61,30 @@ export function bulkImportCommand<T>(
 ) {
   return invoke<T>(session, "cms-content", body, idempotencyKey);
 }
+
+export type ControlledVocabularyOption = {
+  id: string;
+  slug: string;
+  label: string;
+  description: string;
+  public_visible: boolean;
+  active: boolean;
+  sort_order: number;
+  updated_at: string;
+};
+export type ControlledVocabularyList = {
+  id: string;
+  list_key: string;
+  entity_type: string;
+  dimension_key: string;
+  label: string;
+  description: string;
+  public_visible: boolean;
+  active: boolean;
+  sort_order: number;
+  updated_at: string;
+  options: ControlledVocabularyOption[];
+};
+export function controlledVocabularyCommand<T>(session: Session, body: Record<string, unknown>) {
+  return invoke<T>(session, "cms-controlled-vocabularies", body, true);
+}

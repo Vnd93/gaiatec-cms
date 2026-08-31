@@ -8,6 +8,15 @@ const RequiredText = z.string().trim().min(1);
 const Sha256 = z.string().regex(/^[0-9a-f]{64}$/);
 export const CmsConsumerIdSchema = z.string().regex(/^cms\.[a-z][a-z0-9_.-]+\.v[0-9]+$/);
 
+export const CmsControlledTermRefSchema = z
+  .object({
+    id: z.uuid(),
+    slug: CmsSlugSchema,
+    label: RequiredText.max(160),
+    publicVisible: z.boolean().optional(),
+  })
+  .strict();
+
 export const CmsProvenanceSchema = z
   .object({
     sourceKind: z.enum(["official_manufacturer", "official_company", "owner_authored"]),
@@ -159,6 +168,16 @@ export const CmsProductContentSchema = z
         family: RequiredText.max(160),
       })
       .strict(),
+    controlledClassification: z
+      .object({
+        productCategory: CmsControlledTermRefSchema,
+        applicationMagnitude: CmsControlledTermRefSchema,
+        technology: CmsControlledTermRefSchema,
+        installationOperation: CmsControlledTermRefSchema,
+        monitoredElement: CmsControlledTermRefSchema,
+      })
+      .strict()
+      .optional(),
     commercial: z
       .object({
         shortDescription: RequiredText.max(500),
@@ -316,6 +335,7 @@ export const CmsServiceContentSchema = z
     contentType: z.literal("service"),
     governanceState: z.enum(["synthetic_test", "awaiting_owner", "homologated"]),
     serviceKind: RequiredText.max(120),
+    serviceKindRef: CmsControlledTermRefSchema.optional(),
     scope: RequiredText.max(3000),
     whenToHire: z.array(RequiredText.max(300)).min(1).max(30),
     deliverables: z.array(RequiredText.max(300)).min(1).max(50),

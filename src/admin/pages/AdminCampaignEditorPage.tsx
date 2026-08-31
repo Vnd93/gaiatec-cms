@@ -9,8 +9,12 @@ import {
 } from "@/shared/contracts/cms-content";
 import { editorialCommand, issuePreview } from "../api/cms-api";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { UnsavedChangesGuard } from "../components/UnsavedChangesGuard";
+import { openExternalAfterAsync } from "../open-external-preview";
 import { PageBlockEditor, type BuilderMedia, type BuilderRelation } from "../components/PageBlockEditor";
 import { createPageBlock, duplicatePageBlock, movePageBlock } from "../page-builder-model";
+import { useDraftBackup } from "../hooks/useDraftBackup";
+import { DraftBackupNotice } from "../components/DraftBackupNotice";
 
 type Loaded = {
   id: string;
@@ -88,6 +92,9 @@ export default function AdminCampaignEditorPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [previewFallback, setPreviewFallback] = useState("");
+  const [refreshToken, setRefreshToken] = useState(0);
+  const [savedSnapshot, setSavedSnapshot] = useState(() => JSON.stringify(payload));
   const can = (action: string) => profile?.permissions.includes(`cms:campaigns.${action}`) ?? false;
   const validation = useMemo(() => CmsCampaignContentSchema.safeParse(payload), [payload]);
   const slug = payload.route.path.split("/").filter(Boolean).at(-1) ?? "campanha";
@@ -160,6 +167,7 @@ export default function AdminCampaignEditorPage() {
           else {
             setLoaded(item);
             setPayload(parsed.data);
+            setSavedSnapshot(JSON.stringify(parsed.data));
           }
         }
         setLoading(false);
@@ -167,14 +175,17 @@ export default function AdminCampaignEditorPage() {
     return () => {
       active = false;
     };
-  }, [id]);
+  }, [id, refreshToken]);
 
   async function run(action: string, extras: Record<string, unknown> = {}) {
     if (!session) return;
     setBusy(true);
     setError("");
     setSuccess("");
+    const dirty = JSON.stringify(payload) !== savedSnapshot;
     try {
+      if (!["create", "save"].includes(action) && dirty)
+        throw new Error("Salve a campanha antes de executar uma ação de revisão ou publicação.");
       if ((action === "create" || action === "save") && !validation.success) {
         const issue = validation.error.issues[0];
         throw new Error(`Campanha incompleta: ${issue.path.join(".")} — ${issue.message}`);
@@ -200,10 +211,14 @@ export default function AdminCampaignEditorPage() {
         reason,
         ...extras,
       });
-      setSuccess(`Operação concluída: ${result.status}. Código ${result.correlationId.slice(0, 8)}.`);
+      setSuccess(
+        `Operação concluída: ${result.status}. Código de acompanhamento ${result.correlationId.slice(0, 8)}.`,
+      );
+      if (action === "create" || action === "save") setSavedSnapshot(JSON.stringify(payload));
+      if (["create", "save", "publish"].includes(action)) backup.clear();
       if (!loaded && result.itemId)
         navigate(`/admin/marketing/campanhas/${result.itemId}`, { replace: true });
-      else window.location.reload();
+      else setRefreshToken((current) => current + 1);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Operação não concluída.");
     } finally {
@@ -215,15 +230,25 @@ export default function AdminCampaignEditorPage() {
     if (!session || !loaded) return;
     setBusy(true);
     setError("");
-    try {
-      const result = await issuePreview(session, loaded.id);
-      window.location.assign(result.path);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Preview indisponível.");
-      setBusy(false);
-    }
+    setPreviewFallback("");
+    const result = await openExternalAfterAsync(async () => (await issuePreview(session, loaded.id)).path);
+    if (result.status === "blocked") {
+      setPreviewFallback(result.url);
+      setError("O navegador bloqueou a nova aba. Abra o preview pelo link abaixo.");
+    } else if (result.status === "failed") setError(result.error.message);
+    setBusy(false);
   }
 
+  const dirty = JSON.stringify(payload) !== savedSnapshot;
+  const backup = useDraftBackup({
+    userId: session?.user.id,
+    editorType: "campaign",
+    itemKey: id ?? "novo",
+    value: payload,
+    dirty,
+    enabled: !loading,
+    onRestore: setPayload,
+  });
   if (loading)
     return (
       <div className="admin-state" aria-busy="true">
@@ -233,6 +258,8 @@ export default function AdminCampaignEditorPage() {
 
   return (
     <section>
+      <UnsavedChangesGuard dirty={dirty && !busy} />
+      <DraftBackupNotice backup={backup} />
       <div className="admin-page-heading">
         <div>
           <p className="admin-eyebrow">CAMPANHA GOVERNADA</p>
@@ -240,9 +267,35 @@ export default function AdminCampaignEditorPage() {
           <p className="admin-help">Template aprovado, período, distribuição, conversão e expiração.</p>
         </div>
       </div>
+      <dl className="admin-editor-context" aria-label="Contexto da edição">
+        <div>
+          <dt>Campanha em edição</dt>
+          <dd>
+            {payload.title || "Sem título"} · {payload.route.path}
+          </dd>
+        </div>
+        <div>
+          <dt>Situação</dt>
+          <dd>
+            {dirty ? "Alterações não salvas" : `Rascunho salvo · estado ${loaded?.workflow_status ?? "novo"}`}
+          </dd>
+        </div>
+        <div>
+          <dt>Impacto público</dt>
+          <dd>Landing page, formulário, posicionamentos, vigência e tracking após publicação.</dd>
+        </div>
+      </dl>
       {error && (
         <div className="admin-notice admin-notice--error" role="alert">
           {error}
+          {previewFallback && (
+            <>
+              {" "}
+              <a href={previewFallback} target="_blank" rel="noopener noreferrer">
+                Abrir preview em nova aba
+              </a>
+            </>
+          )}
         </div>
       )}
       {success && (
@@ -394,7 +447,10 @@ export default function AdminCampaignEditorPage() {
             onChange={(next) =>
               patch({ blocks: payload.blocks.map((item, current) => (current === index ? next : item)) })
             }
-            onRemove={() => patch({ blocks: payload.blocks.filter((_, current) => current !== index) })}
+            onRemove={() => {
+              if (!window.confirm(`Remover o bloco ${index + 1} desta campanha?`)) return;
+              patch({ blocks: payload.blocks.filter((_, current) => current !== index) });
+            }}
             onDuplicate={() =>
               patch({
                 blocks: [
@@ -504,9 +560,10 @@ export default function AdminCampaignEditorPage() {
           <button
             type="button"
             className="admin-danger-link"
-            onClick={() =>
-              patch({ placements: payload.placements.filter((_, current) => current !== index) })
-            }
+            onClick={() => {
+              if (!window.confirm(`Remover o posicionamento ${index + 1} desta campanha?`)) return;
+              patch({ placements: payload.placements.filter((_, current) => current !== index) });
+            }}
           >
             Remover
           </button>

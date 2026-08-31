@@ -30,6 +30,13 @@ export default function CmsComparePage() {
       ),
     ),
   ];
+  const controlledAttributes = [
+    ["productCategory", "Categoria de produto"],
+    ["applicationMagnitude", "Aplicação / grandeza"],
+    ["technology", "Tecnologia"],
+    ["installationOperation", "Instalação / operação"],
+    ["monitoredElement", "Elemento monitorado"],
+  ] as const;
   return (
     <main className="new-catalog">
       <p className="new-catalog__eyebrow">COMPARADOR</p>
@@ -65,6 +72,16 @@ export default function CmsComparePage() {
               </tr>
             </thead>
             <tbody>
+              {controlledAttributes.map(([key, label]) => (
+                <tr key={key}>
+                  <th>{label}</th>
+                  {products.map((product) => (
+                    <td key={product.item_id}>
+                      {product.payload.controlledClassification?.[key]?.label ?? "—"}
+                    </td>
+                  ))}
+                </tr>
+              ))}
               {attributes.map((key) => (
                 <tr key={key}>
                   <th>

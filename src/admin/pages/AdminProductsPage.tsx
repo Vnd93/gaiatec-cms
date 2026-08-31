@@ -2,6 +2,15 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { supabase } from "@/lib/supabase";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import {
+  Badge,
+  DataTable,
+  EmptyState,
+  ErrorState,
+  FilterBar,
+  LoadingSkeleton,
+  PageHeader,
+} from "../components/AdminUI";
 
 type ProductItem = {
   id: string;
@@ -42,31 +51,42 @@ export default function AdminProductsPage() {
   }, [query, status]);
 
   const canEdit = profile?.permissions.includes("cms:products.edit") ?? false;
+  const statusTone = (value: string) =>
+    value === "published"
+      ? "success"
+      : value === "in_review"
+        ? "warning"
+        : value === "archived"
+          ? "neutral"
+          : "info";
   return (
     <section>
-      <div className="admin-page-heading">
-        <div>
-          <p className="admin-eyebrow">CATÁLOGO CLEAN-ROOM</p>
-          <h1>Produtos</h1>
-          <p className="admin-help">
-            Fonte única nova. Nenhum produto do site ou banco anterior é consultado.
-          </p>
-        </div>
-        {canEdit && (
-          <div className="admin-workflow-actions">
-            <Link className="admin-button admin-button--secondary" to="/admin/produtos/importacao">
-              Cadastro em massa
-            </Link>
-            <Link className="admin-button" to="/admin/produtos/novo">
-              Cadastrar manualmente
-            </Link>
-          </div>
-        )}
-      </div>
-      <div className="admin-filters">
+      <PageHeader
+        eyebrow="CATÁLOGO CLEAN-ROOM"
+        title="Produtos"
+        description="Localize, filtre e abra produtos do novo catálogo. Nenhum cadastro do sistema anterior é consultado."
+        actions={
+          canEdit && (
+            <div className="admin-workflow-actions">
+              <Link className="admin-button admin-button--secondary" to="/admin/produtos/importacao">
+                Cadastro em massa
+              </Link>
+              <Link className="admin-button" to="/admin/produtos/novo">
+                Cadastrar manualmente
+              </Link>
+            </div>
+          )
+        }
+      />
+      <FilterBar summary={`${items.length} produto${items.length === 1 ? "" : "s"} nesta página`}>
         <label>
-          Buscar por slug
-          <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} />
+          Buscar por endereço ou título
+          <input
+            type="search"
+            value={query}
+            placeholder="Ex.: medidor-de-vazao"
+            onChange={(event) => setQuery(event.target.value)}
+          />
         </label>
         <label>
           Status
@@ -79,55 +99,62 @@ export default function AdminProductsPage() {
             <option value="archived">Arquivado</option>
           </select>
         </label>
-      </div>
+      </FilterBar>
       {loading ? (
-        <div className="admin-state" aria-busy="true">
-          Carregando produtos…
-        </div>
+        <LoadingSkeleton label="Carregando produtos" rows={5} />
       ) : error ? (
-        <div className="admin-state admin-notice--error" role="alert">
-          {error}
-        </div>
+        <ErrorState title="Produtos indisponíveis" description={error} />
       ) : items.length === 0 ? (
-        <div className="admin-state">
-          <h2>Catálogo editorial vazio</h2>
-          <p>Cadastre manualmente um lote aprovado, registro a registro.</p>
-        </div>
+        <EmptyState
+          title={query || status !== "all" ? "Nenhum produto encontrado" : "Catálogo editorial vazio"}
+          description={
+            query || status !== "all"
+              ? "Ajuste a busca ou o filtro de status."
+              : "Cadastre apenas produtos novos e autorizados."
+          }
+          action={
+            canEdit && !query && status === "all" ? (
+              <Link className="admin-button" to="/admin/produtos/novo">
+                Cadastrar produto
+              </Link>
+            ) : undefined
+          }
+        />
       ) : (
-        <div className="admin-table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Produto</th>
-                <th>Fabricante/modelo</th>
-                <th>Status</th>
-                <th>Atualização</th>
-                <th>Ação</th>
+        <DataTable caption={`Produtos do CMS: ${items.length} resultados`}>
+          <thead>
+            <tr>
+              <th>Produto</th>
+              <th>Fabricante/modelo</th>
+              <th>Status</th>
+              <th>Atualização</th>
+              <th>Ação</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => (
+              <tr key={item.id}>
+                <td>
+                  {item.cms_content_drafts?.payload.title ?? "Sem título"}
+                  <small>{item.slug}</small>
+                </td>
+                <td>
+                  {item.cms_content_drafts?.payload.manufacturer?.name ?? "—"}
+                  <small>{item.cms_content_drafts?.payload.models?.[0]?.model ?? "—"}</small>
+                </td>
+                <td>
+                  <Badge tone={statusTone(item.workflow_status)}>
+                    {item.workflow_status.replace(/_/g, " ")}
+                  </Badge>
+                </td>
+                <td>{new Date(item.updated_at).toLocaleString("pt-BR")}</td>
+                <td>
+                  <Link to={`/admin/produtos/${item.id}`}>Abrir editor</Link>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {items.map((item) => (
-                <tr key={item.id}>
-                  <td>
-                    {item.cms_content_drafts?.payload.title ?? "Sem título"}
-                    <small>{item.slug}</small>
-                  </td>
-                  <td>
-                    {item.cms_content_drafts?.payload.manufacturer?.name ?? "—"}
-                    <small>{item.cms_content_drafts?.payload.models?.[0]?.model ?? "—"}</small>
-                  </td>
-                  <td>
-                    <span className="admin-status">{item.workflow_status}</span>
-                  </td>
-                  <td>{new Date(item.updated_at).toLocaleString("pt-BR")}</td>
-                  <td>
-                    <Link to={`/admin/produtos/${item.id}`}>Abrir editor</Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </DataTable>
       )}
     </section>
   );

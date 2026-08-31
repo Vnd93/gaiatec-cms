@@ -214,18 +214,20 @@ As trilhas A e B podem avançar em paralelo. A trilha C só começa depois que s
 
 O planejamento usa sequência e gates, não datas fixas. Prazo depende da equipe, volume real de conteúdo, aprovações e acessos.
 
-| Fase | Resultado | Dependência | Gate |
-|---|---|---|---|
-| 0 | baseline, owners, ADRs e ambientes | nenhuma | G0 |
-| 1 | riscos P0 contidos | F0 | G1 |
-| 2 | engenharia reproduzível | F0/F1 | G2 |
-| 3 | núcleo do novo CMS | F2 | G3 |
-| 4 | produto piloto completo | F3 + taxonomia | G4 |
-| 5 | recadastro do catálogo e descoberta | F4 | G5 |
-| 6 | remodelagem pública e conteúdo institucional | F4/F5 | G6 |
-| 7 | marketing, blog, SEO e leads | F3/F6 | G7 |
-| 8 | hardening, recadastro final e go-live | todas | G8 |
-| 9 | retirada do caminho antigo | estabilidade pós-go-live | G9 |
+| Fase | Resultado                                    | Dependência              | Gate |
+| ---- | -------------------------------------------- | ------------------------ | ---- |
+| 0    | baseline, owners, ADRs e ambientes           | nenhuma                  | G0   |
+| 1    | riscos P0 contidos                           | F0                       | G1   |
+| 2    | engenharia reproduzível                      | F0/F1                    | G2   |
+| 3    | núcleo do novo CMS                           | F2                       | G3   |
+| 4    | produto piloto completo                      | F3 + taxonomia           | G4   |
+| 5    | recadastro do catálogo e descoberta          | F4                       | G5   |
+| 6    | remodelagem pública e conteúdo institucional | F4/F5                    | G6   |
+| 7    | marketing, blog, SEO e leads                 | F3/F6                    | G7   |
+| 8    | hardening, recadastro final e go-live        | todas                    | G8   |
+| 9    | retirada do caminho antigo                   | estabilidade pós-go-live | G9   |
+| 10   | experiência operacional e listas mestras     | F8/F9 técnica            | G10  |
+| 11   | UX/UI global e consistência administrativa   | F10 técnica              | G11  |
 
 ---
 
@@ -859,6 +861,10 @@ Reavaliação operacional em 2026-08-30: a aprovação LGPD administrativa foi c
 
 Complemento clean-room em 2026-08-30: usando somente informações fornecidas pelo administrador, foram publicados pelo workflow com MFA a navegação, cinco serviços, oito indústrias, três aplicações e duas soluções. API, coleções, páginas detalhadas e viewport móvel foram aprovadas. O lote editorial inicial deixou de bloquear o gate; permanecem a autorização do remetente no Resend, a conclusão operacional e a autorização explícita de canary/go-live.
 
+Canary operacional em 2026-08-30: o domínio verificado no Resend era `gaiatecsistemas.com`, diferente do remetente `.com.br` anteriormente configurado. `EMAIL_FROM` foi alinhado no staging, um contato sintético gerou o protocolo `LD-D6257F8D15` e o Resend confirmou HTTP 200, `sent` e `delivered`. O registro `validacao-integracao-cms-staging` passou por rascunho, revisão, aprovação e publicação; uma segunda versão temporária foi publicada e a revisão inicial foi restaurada como versão 3, com retorno comprovado no frontend. O editor institucional também foi reorganizado em formulários estruturados e validado no Chrome. Produção permanece vedada até o aceite específico do relatório de canary pelo administrador.
+
+Aceite administrativo e reavaliação do Gate G8 em 2026-08-30: Victor Nishida, administrador da GAIATEC SISTEMAS, aprovou explicitamente a Fase 8 e o `RELATORIO_CANARY_STAGING_2026-08-30.md`. Com zero P0/P1 técnico conhecido no escopo homologado, lote clean-room inicial aprovado, ausência de fallback editorial no escopo de lançamento, restore comprovado, alertas/cron ativos e entrega real de e-mail confirmada, o Gate G8 fica **APROVADO para iniciar a Fase 9 em local/staging**. Este aceite não autoriza deploy, cutover nem qualquer alteração em produção; go-live de produção exige autorização explícita adicional.
+
 ### Gate G8
 
 - zero P0;
@@ -896,6 +902,66 @@ Eliminar fontes duplicadas e impedir regressão.
 - nenhum consumidor consulta conteúdo atual;
 - nenhum usuário acessa administração paralela;
 - período de estabilidade concluído.
+
+Reavaliação do Gate G9 em 2026-08-30: homepage, páginas institucionais/legais, oito rotas de Biodigestor, o hub Detecção de Gás e seis indústrias substitutas foram criados em clean-room, aprovados pelo workflow e publicados exclusivamente no staging. Rotas, consumidores públicos, busca e sitemap usam a projeção nova; imports, queries, assets e fallbacks editoriais anteriores foram retirados do grafo ativo, mantendo-se apenas histórico sem consumo em runtime. O staging passou por suíte completa, matriz HTTP e validação UX/UI desktop/mobile. A janela pós-go-live recomendada é de 14 dias corridos, com limiares objetivos registrados no relatório de estabilidade. O Gate G9 fica **BLOQUEADO SOMENTE POR PRODUÇÃO E TEMPO REAL**: falta autorização explícita de go-live em produção — incluindo revisão final DPO/legal no sign-off — e, depois dela, a passagem efetiva da janela. Nenhuma ação desta fase autoriza produção; detalhes e evidências estão em `docs/fase-9/`.
+
+---
+
+## 17.1 Fase 10 — experiência operacional, persistência e padronização
+
+### Objetivo
+
+Preservar rascunhos durante eventos de sessão, padronizar classificações por listas mestras auditadas e transformar os editores em fluxos operacionais claros, sem alterar produção nem antecipar G9.
+
+### Tarefas
+
+- renovar sessão do mesmo usuário sem desmontar a rota e manter expiração/logout fail-closed;
+- aplicar cópia local temporária e recuperável a todos os editores governados;
+- criar vocabulários genéricos com RLS, RBAC, MFA, auditoria, ordenação, visibilidade e inativação;
+- integrar produto, serviço, importação em massa e consumidores públicos;
+- adotar editor em cards, painel de status, progresso contratual, modelos visuais e rodapé operacional;
+- validar local e staging conforme `docs/fase-10/PROGRAMA_EXECUTIVO_F10.md`.
+
+### Gate G10
+
+- sessão e rascunhos comprovados, incluindo refresh, logout e expiração;
+- listas mestras e contratos completos, sem criação implícita ou exclusão destrutiva;
+- projeção pública, busca, filtros, comparação, SEO e JSON-LD sem dados internos;
+- suíte completa, RLS, E2E, acessibilidade e validação visual verdes;
+- staging implantado e homologado com sessão MFA real.
+
+O Gate G10 permanece **NÃO APROVADO** até o preenchimento integral de `docs/fase-10/EVIDENCIAS_GATE_G10.md`. A execução de F10 não declara G9 aprovado e não autoriza produção.
+
+---
+
+## 17.2 Fase 11 — UX/UI global, clareza operacional e consistência
+
+### Objetivo
+
+Migrar todas as superfícies administrativas para um sistema visual e operacional comum, adequado a operadores não técnicos, sem alterar os contratos, a segurança ou a projeção pública estabelecidos nas fases anteriores.
+
+### Tarefas
+
+- inventariar todas as rotas, personas, tarefas, problemas e padrões de destino;
+- criar tokens e componentes compartilhados para shell, cabeçalhos, cards, campos, etapas, status, estados, filtros, tabelas, alertas, confirmações e rodapés;
+- reorganizar topo, busca, conta, sidebar, grupos, submenus, estado ativo, recolhimento e drawer mobile;
+- aplicar orientação curta por rota sobre tarefa, impacto público, uso interno e próximo passo;
+- migrar autenticação, painel, listagens, editores, builder, site, marketing, leads, mídia, usuários, perfil, diagnósticos e preview;
+- validar WCAG 2.2 AA, teclado, foco, contraste, zoom, leitor de tela, tablet/mobile e ausência de overflow;
+- preservar a continuidade de sessão/rascunho da F10 e a privacidade dos campos internos;
+- implantar exclusivamente em staging após suíte local verde.
+
+### Gate G11
+
+- 100% das rotas inventariadas e sem P0/P1;
+- componentes, textos, estados e ações consistentes;
+- desktop 1440×900 e 1280×800, tablet e 390×844 aprovados;
+- teclado, leitor de tela, contraste, zoom e overflow aprovados;
+- format, lint, typecheck, Vitest, estruturas F2–F11, build, E2E, a11y e regressão visual verdes;
+- staging implantado e homologado com sessão MFA real;
+- nenhuma regressão de segurança, sessão, rascunho, contratos ou projeção pública.
+
+O programa e as evidências estão em `docs/fase-11/`. A F11 não aprova G9 ou G10 automaticamente e não autoriza produção.
 
 ---
 
@@ -963,16 +1029,16 @@ Sem Git oficial, evitar desenvolvimento material além do baseline e tarefas aut
 
 ## 21. Matriz de testes por entrega
 
-| Entrega | Unidade | Contrato | RLS | Componente | E2E | A11y | Visual | Performance | Segurança |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| Auth/RBAC | sim | sim | sim | sim | sim | sim | não | básico | sim |
-| Produto | sim | sim | sim | sim | sim | sim | sim | sim | sim |
-| Mídia | sim | sim | sim | sim | sim | sim | visual | sim | sim |
-| Homepage/blocos | sim | sim | conforme | sim | sim | sim | sim | sim | sim |
-| Busca | sim | sim | conforme | sim | sim | sim | não | sim | sim |
-| Leads | sim | sim | sim | sim | sim | sim | não | sim | sim |
-| RDO | sim | sim | sim | sim | sim | sim | conforme | sim | sim |
-| SEO/redirects | sim | sim | não | sim | sim | básico | não | sim | básico |
+| Entrega         | Unidade | Contrato |      RLS | Componente | E2E |   A11y |   Visual | Performance | Segurança |
+| --------------- | ------: | -------: | -------: | ---------: | --: | -----: | -------: | ----------: | --------: |
+| Auth/RBAC       |     sim |      sim |      sim |        sim | sim |    sim |      não |      básico |       sim |
+| Produto         |     sim |      sim |      sim |        sim | sim |    sim |      sim |         sim |       sim |
+| Mídia           |     sim |      sim |      sim |        sim | sim |    sim |   visual |         sim |       sim |
+| Homepage/blocos |     sim |      sim | conforme |        sim | sim |    sim |      sim |         sim |       sim |
+| Busca           |     sim |      sim | conforme |        sim | sim |    sim |      não |         sim |       sim |
+| Leads           |     sim |      sim |      sim |        sim | sim |    sim |      não |         sim |       sim |
+| RDO             |     sim |      sim |      sim |        sim | sim |    sim | conforme |         sim |       sim |
+| SEO/redirects   |     sim |      sim |      não |        sim | sim | básico |      não |         sim |    básico |
 
 ---
 
@@ -1016,19 +1082,19 @@ Sem Git oficial, evitar desenvolvimento material além do baseline e tarefas aut
 
 ## 23. Riscos do planejamento
 
-| Risco | Impacto | Resposta |
-|---|---|---|
-| Desenvolver sem Git oficial | perda de rastreabilidade | resolver em F0/G0 |
-| Cadastrar antes do schema estabilizar | retrabalho e inconsistência | bloquear trilha C até G3/G4 |
-| Copiar conteúdo atual por velocidade | repetir erros | política, banco vazio e testes |
-| Volume de recadastro | atraso | lotes priorizados, owners e métricas; sem importação inicial |
-| Aprovação técnica lenta | bloqueio editorial | agenda de revisão e SLA interno |
-| Painel com campos sem consumidor | inoperância | `consumer_id` e CI |
-| Duas fontes editoriais | divergência | cutover e retirada em F9 |
-| Cache/Service Worker antigo | assets/conteúdo incorretos | versionamento, purge e smoke |
-| RLS incorreta | vazamento/escrita indevida | default-deny e testes negativos |
-| Imagens erradas | dano comercial/técnico | origem, conferência visual e dupla revisão |
-| Go-live incompleto | SEO/conversão prejudicados | Gate G8 e rollback integral |
+| Risco                                 | Impacto                     | Resposta                                                     |
+| ------------------------------------- | --------------------------- | ------------------------------------------------------------ |
+| Desenvolver sem Git oficial           | perda de rastreabilidade    | resolver em F0/G0                                            |
+| Cadastrar antes do schema estabilizar | retrabalho e inconsistência | bloquear trilha C até G3/G4                                  |
+| Copiar conteúdo atual por velocidade  | repetir erros               | política, banco vazio e testes                               |
+| Volume de recadastro                  | atraso                      | lotes priorizados, owners e métricas; sem importação inicial |
+| Aprovação técnica lenta               | bloqueio editorial          | agenda de revisão e SLA interno                              |
+| Painel com campos sem consumidor      | inoperância                 | `consumer_id` e CI                                           |
+| Duas fontes editoriais                | divergência                 | cutover e retirada em F9                                     |
+| Cache/Service Worker antigo           | assets/conteúdo incorretos  | versionamento, purge e smoke                                 |
+| RLS incorreta                         | vazamento/escrita indevida  | default-deny e testes negativos                              |
+| Imagens erradas                       | dano comercial/técnico      | origem, conferência visual e dupla revisão                   |
+| Go-live incompleto                    | SEO/conversão prejudicados  | Gate G8 e rollback integral                                  |
 
 ---
 

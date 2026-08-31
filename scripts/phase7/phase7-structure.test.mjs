@@ -136,7 +136,7 @@ test("staging form setup is governed, repeatable and isolated from production", 
   assert.match(cleanup, /phase8-resend-validation/);
   assert.match(cleanup, /productionTouched: false/);
   assert.match(email, /Deno\.env\.get\("EMAIL_FROM"\)/);
-  assert.match(email, /nao-responda@gaiatecsistemas\.com\.br/);
+  assert.match(email, /cms@gaiatecsistemas\.com/);
   assert.match(email, /providerFailureReason/);
   assert.match(worker, /lead_notification_\$\{caught\.reason\}/);
   assert.match(worker, /anonymized_at/);

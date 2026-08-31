@@ -48,6 +48,11 @@ export function DiscoveryEntityRenderer({
         {p.governanceState === "homologated" ? "homologado" : "aguardando owner"}
       </p>
       <h1>{p.title}</h1>
+      {entity.content_type === "service" && p.serviceKindRef?.label && (
+        <p className="new-catalog__chips" aria-label="Categoria do serviço">
+          <span>{p.serviceKindRef.label}</span>
+        </p>
+      )}
       <p className="discovery-detail__lead">{p.summary}</p>
       {image && <img src={image} alt={primary.alt} className="discovery-detail__image" />}
       {p.scope && (

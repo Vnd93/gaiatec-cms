@@ -8,9 +8,25 @@ import {
   CmsSolutionContentSchema,
 } from "@/shared/contracts/cms-content";
 import { useAdminAuth } from "../auth/AdminAuthContext";
-import { editorialCommand, issuePreview } from "../api/cms-api";
+import {
+  controlledVocabularyCommand,
+  editorialCommand,
+  issuePreview,
+  type ControlledVocabularyList,
+} from "../api/cms-api";
+import { DiscoveryContentEditor } from "../components/DiscoveryContentEditor";
+import { UnsavedChangesGuard } from "../components/UnsavedChangesGuard";
+import { openExternalAfterAsync } from "../open-external-preview";
+import { useDraftBackup } from "../hooks/useDraftBackup";
+import { DraftBackupNotice } from "../components/DraftBackupNotice";
 
 type Kind = "service" | "industry" | "application" | "solution";
+const publicPaths: Record<Kind, string> = {
+  service: "servicos",
+  industry: "industrias",
+  application: "aplicacoes",
+  solution: "solucoes",
+};
 const meta = {
   service: { label: "Serviços", consumerId: "cms.service.v1", permission: "cms:services" },
   industry: { label: "Indústrias", consumerId: "cms.industry.v1", permission: "cms:industries" },
@@ -73,7 +89,8 @@ function initial(kind: Kind) {
         commercialReviewer: "Revisor a definir",
         editorialReviewer: "Revisor a definir",
       },
-      serviceKind: "Categoria a definir",
+      serviceKind: "",
+      serviceKindRef: { id: "", slug: "", label: "" },
       scope: "Escopo sintético.",
       whenToHire: ["Cenário sintético."],
       deliverables: ["Entregável sintético."],
@@ -136,10 +153,31 @@ export default function AdminDiscoveryPage() {
     [loading, setLoading] = useState(true),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
-    [success, setSuccess] = useState("");
+    [success, setSuccess] = useState(""),
+    [previewFallback, setPreviewFallback] = useState(""),
+    [savedSnapshot, setSavedSnapshot] = useState(() => JSON.stringify({ payload, slug }));
+  const [vocabularies, setVocabularies] = useState<ControlledVocabularyList[]>([]);
   const permission = meta[kind].permission,
     can = (action: string) => profile?.permissions.includes(`${permission}.${action}`) ?? false;
   const parsed = useMemo(() => schemas[kind].safeParse(payload), [kind, payload]);
+  useEffect(() => {
+    if (!session || kind !== "service") return;
+    let active = true;
+    void controlledVocabularyCommand<{ items: ControlledVocabularyList[] }>(session, {
+      action: "list",
+      entityType: "service",
+      includeInactive: false,
+    })
+      .then((result) => {
+        if (active) setVocabularies(result.items);
+      })
+      .catch(() => {
+        if (active) setError("A lista mestra de categorias de serviço está indisponível.");
+      });
+    return () => {
+      active = false;
+    };
+  }, [kind, session]);
   const reload = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -157,6 +195,7 @@ export default function AdminDiscoveryPage() {
         const row = data as any;
         setPayload(row.cms_content_drafts.payload);
         setSlug(row.slug);
+        setSavedSnapshot(JSON.stringify({ payload: row.cms_content_drafts.payload, slug: row.slug }));
         setLock(row.cms_content_drafts.lock_version);
         setWorkflowStatus(row.workflow_status);
         setRevisions(row.cms_content_revisions ?? []);
@@ -187,7 +226,10 @@ export default function AdminDiscoveryPage() {
     setBusy(true);
     setError("");
     setSuccess("");
+    const dirty = JSON.stringify({ payload, slug }) !== savedSnapshot;
     try {
+      if (!["create", "save"].includes(action) && dirty)
+        throw new Error("Salve o conteúdo antes de executar uma ação de revisão ou publicação.");
       if ((action === "create" || action === "save") && !parsed.success) {
         setError(
           `Contrato inválido: ${parsed.error.issues[0]?.path.join(".")} — ${parsed.error.issues[0]?.message}`,
@@ -215,7 +257,11 @@ export default function AdminDiscoveryPage() {
         reason: "Operação governada da Fase 5",
         ...extras,
       });
-      setSuccess(`Operação ${action} concluída. Correlação: ${result.correlationId}`);
+      setSuccess(
+        `Operação ${action} concluída. Código de acompanhamento: ${result.correlationId.slice(0, 8)}.`,
+      );
+      if (action === "create" || action === "save") setSavedSnapshot(JSON.stringify({ payload, slug }));
+      if (["create", "save", "publish"].includes(action)) backup.clear();
       if (action === "create") navigate(`/admin/descoberta/${kind}/${result.itemId}`);
       else await reload();
     } catch (e) {
@@ -225,6 +271,19 @@ export default function AdminDiscoveryPage() {
     }
   }
   const latest = revisions.slice().sort((a, b) => b.revision_number - a.revision_number)[0];
+  const dirty = JSON.stringify({ payload, slug }) !== savedSnapshot;
+  const backup = useDraftBackup({
+    userId: session?.user.id,
+    editorType: kind,
+    itemKey: id ?? "novo",
+    value: { payload, slug },
+    dirty,
+    enabled: !loading,
+    onRestore: (stored) => {
+      setPayload(stored.payload);
+      setSlug(stored.slug);
+    },
+  });
   if (loading)
     return (
       <div className="admin-state" aria-busy="true">
@@ -263,7 +322,7 @@ export default function AdminDiscoveryPage() {
               <thead>
                 <tr>
                   <th>Título</th>
-                  <th>Slug</th>
+                  <th>Endereço amigável</th>
                   <th>Status</th>
                   <th>Ação</th>
                 </tr>
@@ -287,6 +346,7 @@ export default function AdminDiscoveryPage() {
     );
   return (
     <section>
+      <UnsavedChangesGuard dirty={dirty && !busy} />
       <div className="admin-page-heading">
         <div>
           <p className="admin-eyebrow">{meta[kind].consumerId}</p>
@@ -294,9 +354,33 @@ export default function AdminDiscoveryPage() {
         </div>
         <Link to={`/admin/descoberta/${kind}`}>Voltar à lista</Link>
       </div>
+      <dl className="admin-editor-context" aria-label="Contexto da edição">
+        <div>
+          <dt>Conteúdo em edição</dt>
+          <dd>
+            {payload.title || "Sem título"} · /{publicPaths[kind]}/{slug}
+          </dd>
+        </div>
+        <div>
+          <dt>Situação</dt>
+          <dd>{dirty ? "Alterações não salvas" : `Rascunho salvo · estado ${workflowStatus}`}</dd>
+        </div>
+        <div>
+          <dt>Impacto público</dt>
+          <dd>Lista, página detalhada, busca, relações e SEO após publicação.</dd>
+        </div>
+      </dl>
       {error && (
         <div role="alert" className="admin-notice--error">
           {error}
+          {previewFallback && (
+            <>
+              {" "}
+              <a href={previewFallback} target="_blank" rel="noopener noreferrer">
+                Abrir preview em nova aba
+              </a>
+            </>
+          )}
         </div>
       )}
       {success && (
@@ -304,102 +388,77 @@ export default function AdminDiscoveryPage() {
           {success}
         </div>
       )}
-      <div className="admin-editor-grid">
-        <label>
-          Slug
-          <input value={slug} onChange={(e) => setSlug(e.target.value)} />
-        </label>
-        <label>
-          Título
-          <input
-            value={payload.title ?? ""}
-            onChange={(e) => setPayload({ ...payload, title: e.target.value })}
-          />
-        </label>
-        <label>
-          Resumo
-          <textarea
-            value={payload.summary ?? ""}
-            onChange={(e) => setPayload({ ...payload, summary: e.target.value })}
-          />
-        </label>
-        <label>
-          Governança
-          <select
-            value={payload.governanceState}
-            onChange={(e) => setPayload({ ...payload, governanceState: e.target.value })}
-          >
-            <option value="synthetic_test">Fixture sintética</option>
-            <option value="awaiting_owner">Aguardando owner</option>
-            <option value="homologated">Homologado</option>
-          </select>
-        </label>
-      </div>
-      <label>
-        Contrato completo JSON
-        <textarea
-          className="admin-json-editor"
-          rows={24}
-          value={JSON.stringify(payload, null, 2)}
-          onChange={(e) => {
-            try {
-              setPayload(JSON.parse(e.target.value));
-              setError("");
-            } catch {
-              setError("JSON inválido; o salvamento está bloqueado.");
-            }
-          }}
-        />
-      </label>
-      <p className="admin-help">
-        Todos os campos são consumidos pelo editor/histórico/preview; título, resumo, mídia, relações, pontos,
-        CTA e SEO também chegam ao frontend público. Campos de aprovação e proveniência permanecem privados
-        por segurança.
-      </p>
-      <div className="admin-actions">
-        {id === "novo" ? (
-          <button disabled={busy || !can("edit")} onClick={() => void run("create")}>
-            Criar rascunho
-          </button>
-        ) : (
-          <>
-            <button disabled={busy || !can("edit")} onClick={() => void run("save")}>
-              Salvar
+      <DraftBackupNotice backup={backup} />
+      <DiscoveryContentEditor
+        kind={kind}
+        payload={payload}
+        slug={slug}
+        onChange={setPayload}
+        onSlugChange={setSlug}
+        contractValid={parsed.success}
+        contractIssue={
+          parsed.success
+            ? undefined
+            : `${parsed.error.issues[0]?.path.join(".")} — ${parsed.error.issues[0]?.message}`
+        }
+        serviceKindOptions={vocabularies.find((list) => list.list_key === "service.category")?.options}
+      />
+      <div className="admin-workflow-bar">
+        <div>
+          <span>Workflow</span>
+          <strong>{workflowStatus.replaceAll("_", " ")}</strong>
+          <DraftBackupNotice backup={{ ...backup, recoverable: null }} />
+        </div>
+        <div className="admin-actions">
+          {id === "novo" ? (
+            <button disabled={busy || !can("edit")} onClick={() => void run("create")}>
+              Criar rascunho
             </button>
-            <button disabled={busy || !can("edit")} onClick={() => void run("submit")}>
-              Enviar para revisão
-            </button>
-            <button
-              disabled={busy || !profile?.permissions.includes(`${permission}.approve`) || !latest}
-              onClick={() => void run("approve", { revisionId: latest?.id })}
-            >
-              Aprovar
-            </button>
-            <button
-              disabled={busy || !can("publish") || !latest}
-              onClick={() => void run("publish", { revisionId: latest?.id })}
-            >
-              Publicar
-            </button>
-            <button
-              disabled={busy || !can("edit")}
-              onClick={async () => {
-                if (!session || !id) return;
-                try {
-                  const p = await issuePreview(session, id, latest?.id);
-                  window.location.assign(p.path);
-                } catch (e) {
-                  setError(e instanceof Error ? e.message : "Preview indisponível.");
-                }
-              }}
-            >
-              Preview
-            </button>
-          </>
-        )}
+          ) : (
+            <>
+              <button disabled={busy || !can("edit")} onClick={() => void run("save")}>
+                Salvar
+              </button>
+              <button disabled={busy || !can("edit")} onClick={() => void run("submit")}>
+                Enviar para revisão
+              </button>
+              <button
+                disabled={busy || !profile?.permissions.includes(`${permission}.approve`) || !latest}
+                onClick={() => void run("approve", { revisionId: latest?.id })}
+              >
+                Aprovar
+              </button>
+              <button
+                disabled={busy || !can("publish") || !latest}
+                onClick={() => void run("publish", { revisionId: latest?.id })}
+              >
+                Publicar
+              </button>
+              <button
+                disabled={busy || !can("edit")}
+                onClick={async () => {
+                  if (!session || !id) return;
+                  setBusy(true);
+                  setError("");
+                  setPreviewFallback("");
+                  const result = await openExternalAfterAsync(
+                    async () => (await issuePreview(session, id, latest?.id)).path,
+                  );
+                  if (result.status === "blocked") {
+                    setPreviewFallback(result.url);
+                    setError("O navegador bloqueou a nova aba. Abra o preview pelo link abaixo.");
+                  } else if (result.status === "failed") setError(result.error.message);
+                  setBusy(false);
+                }}
+              >
+                Preview
+              </button>
+            </>
+          )}
+        </div>
       </div>
       {revisions.length > 0 && (
-        <section>
+        <section className="admin-history">
           <h2>Histórico</h2>
           <ul>
             {revisions

@@ -23,6 +23,13 @@ export function comprehensiveProductPayload() {
       subcategory: "Subcategoria",
       family: "Família",
     },
+    controlledClassification: {
+      productCategory: { id: id(60), slug: "segmento", label: "Segmento" },
+      applicationMagnitude: { id: id(61), slug: "categoria", label: "Categoria" },
+      technology: { id: id(62), slug: "tecnologia-do-produto", label: "Tecnologia do produto" },
+      installationOperation: { id: id(63), slug: "familia", label: "Família" },
+      monitoredElement: { id: id(64), slug: "liquidos", label: "Líquidos" },
+    },
     commercial: {
       shortDescription: "Descrição curta.",
       valueProposition: "Proposta de valor.",

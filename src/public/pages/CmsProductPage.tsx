@@ -37,7 +37,11 @@ export default function CmsProductPage() {
             ? { manufacturer: { "@type": "Organization", name: data.payload.manufacturer.name } }
             : {}),
           mpn: data.payload.models[0]?.manufacturerReference,
-          ...(data.payload.classification ? { category: data.payload.classification.category } : {}),
+          ...(data.payload.controlledClassification?.productCategory
+            ? { category: data.payload.controlledClassification.productCategory.label }
+            : data.payload.classification
+              ? { category: data.payload.classification.category }
+              : {}),
           description: data.payload.commercial.shortDescription,
           url: canonical,
         });

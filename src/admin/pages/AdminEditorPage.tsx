@@ -3,7 +3,11 @@ import { useNavigate, useParams } from "react-router";
 import { supabase } from "@/lib/supabase";
 import { CmsContentPayloadSchema } from "@/shared/contracts/cms-content";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { UnsavedChangesGuard } from "../components/UnsavedChangesGuard";
 import { editorialCommand, issuePreview } from "../api/cms-api";
+import { openExternalAfterAsync } from "../open-external-preview";
+import { useDraftBackup } from "../hooks/useDraftBackup";
+import { DraftBackupNotice } from "../components/DraftBackupNotice";
 
 type Loaded = {
   id: string;
@@ -37,6 +41,9 @@ export default function AdminEditorPage() {
     [busy, setBusy] = useState(false);
   const [error, setError] = useState(""),
     [success, setSuccess] = useState(""),
+    [previewFallback, setPreviewFallback] = useState(""),
+    [refreshToken, setRefreshToken] = useState(0),
+    [savedSnapshot, setSavedSnapshot] = useState<string | null>(null),
     [slug, setSlug] = useState("demo-sintetica-" + Date.now());
   const [title, setTitle] = useState("Demonstração sintética descartável"),
     [summary, setSummary] = useState("Conteúdo fictício criado exclusivamente para validar o Gate G3."),
@@ -92,6 +99,7 @@ export default function AdminEditorPage() {
   useEffect(() => {
     if (!id || id === "novo") return;
     let active = true;
+    setSavedSnapshot(null);
     void supabase
       .from("cms_content_items")
       .select(
@@ -163,7 +171,7 @@ export default function AdminEditorPage() {
     return () => {
       active = false;
     };
-  }, [id]);
+  }, [id, refreshToken]);
   const can = (permission: string) => profile?.permissions.includes(permission) ?? false;
   const relationKindFor = (contentType: string): RelationKind =>
     contentType === "post" ? "postIds" : (`${contentType}Ids` as RelationKind);
@@ -258,12 +266,72 @@ export default function AdminEditorPage() {
       title,
     ],
   );
+  const currentSnapshot = JSON.stringify({ payload, slug });
+  const dirty = savedSnapshot !== null && currentSnapshot !== savedSnapshot;
+  const backup = useDraftBackup({
+    userId: session?.user.id,
+    editorType: "post",
+    itemKey: id ?? "novo",
+    value: {
+      slug,
+      title,
+      summary,
+      body,
+      authorName,
+      authorSlug,
+      authorId,
+      categoryName,
+      categorySlug,
+      categoryId,
+      tags,
+      tagIds,
+      relationIds,
+      imageId,
+      imageAlt,
+      galleryIds,
+      ctaLabel,
+      ctaHref,
+      readingMinutes,
+      publishAfter,
+      reason,
+    },
+    dirty,
+    enabled: !loading && savedSnapshot !== null,
+    onRestore: (stored) => {
+      setSlug(stored.slug);
+      setTitle(stored.title);
+      setSummary(stored.summary);
+      setBody(stored.body);
+      setAuthorName(stored.authorName);
+      setAuthorSlug(stored.authorSlug);
+      setAuthorId(stored.authorId);
+      setCategoryName(stored.categoryName);
+      setCategorySlug(stored.categorySlug);
+      setCategoryId(stored.categoryId);
+      setTags(stored.tags);
+      setTagIds(stored.tagIds);
+      setRelationIds(stored.relationIds);
+      setImageId(stored.imageId);
+      setImageAlt(stored.imageAlt);
+      setGalleryIds(stored.galleryIds);
+      setCtaLabel(stored.ctaLabel);
+      setCtaHref(stored.ctaHref);
+      setReadingMinutes(stored.readingMinutes);
+      setPublishAfter(stored.publishAfter);
+      setReason(stored.reason);
+    },
+  });
+  useEffect(() => {
+    if (!loading && savedSnapshot === null) setSavedSnapshot(currentSnapshot);
+  }, [currentSnapshot, loading, savedSnapshot]);
   async function run(action: string, extras: Record<string, unknown> = {}) {
     if (!session) return;
     setBusy(true);
     setError("");
     setSuccess("");
     try {
+      if (!["create", "save"].includes(action) && dirty)
+        throw new Error("Salve o conteúdo antes de executar uma ação de revisão ou publicação.");
       if ((action === "create" || action === "save") && !CmsContentPayloadSchema.safeParse(payload).success)
         throw new Error("Revise os campos obrigatórios.");
       if (action === "save" && loaded?.workflow_status === "published") {
@@ -287,9 +355,16 @@ export default function AdminEditorPage() {
         reason,
         ...extras,
       });
-      setSuccess("Operação concluída: " + result.status + ". Código " + result.correlationId.slice(0, 8));
+      setSuccess(
+        "Operação concluída: " +
+          result.status +
+          ". Código de acompanhamento " +
+          result.correlationId.slice(0, 8),
+      );
+      if (action === "create" || action === "save") setSavedSnapshot(currentSnapshot);
+      if (["create", "save", "publish"].includes(action)) backup.clear();
       if (!loaded && result.itemId) navigate("/admin/conteudo/" + result.itemId, { replace: true });
-      else window.location.reload();
+      else setRefreshToken((current) => current + 1);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Falha editorial.");
     } finally {
@@ -299,17 +374,16 @@ export default function AdminEditorPage() {
   async function preview(revisionId?: string) {
     if (!session || !loaded) return;
     setBusy(true);
-    try {
-      const result = await issuePreview(session, loaded.id, revisionId);
-      // The token is issued asynchronously, so opening a new tab here is
-      // commonly blocked as a popup. Same-tab navigation is deterministic and
-      // keeps the editor one browser Back action away.
-      window.location.assign(result.path);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Falha no preview.");
-    } finally {
-      setBusy(false);
-    }
+    setError("");
+    setPreviewFallback("");
+    const result = await openExternalAfterAsync(
+      async () => (await issuePreview(session, loaded.id, revisionId)).path,
+    );
+    if (result.status === "blocked") {
+      setPreviewFallback(result.url);
+      setError("O navegador bloqueou a nova aba. Abra o preview pelo link abaixo.");
+    } else if (result.status === "failed") setError(result.error.message);
+    setBusy(false);
   }
   if (loading)
     return (
@@ -326,14 +400,40 @@ export default function AdminEditorPage() {
   const state = loaded?.workflow_status ?? "new";
   return (
     <section>
+      <UnsavedChangesGuard dirty={dirty && !busy} />
+      <DraftBackupNotice backup={backup} />
       <p className="admin-eyebrow">EDITOR E REVISÕES</p>
       <h1>{loaded ? title : "Novo conteúdo sintético"}</h1>
       <p className="admin-help">
         Ambiente limpo: use somente texto fictício e descartável, sem dados comerciais reais.
       </p>
+      <dl className="admin-editor-context" aria-label="Contexto da edição">
+        <div>
+          <dt>Conteúdo em edição</dt>
+          <dd>
+            {title || "Sem título"} · /blog/{slug}
+          </dd>
+        </div>
+        <div>
+          <dt>Situação</dt>
+          <dd>{dirty ? "Alterações não salvas" : `Rascunho salvo · estado ${state}`}</dd>
+        </div>
+        <div>
+          <dt>Impacto público</dt>
+          <dd>Blog, página do artigo, busca, sitemap e dados estruturados após publicação.</dd>
+        </div>
+      </dl>
       {error && (
         <p className="admin-notice admin-notice--error" role="alert">
           {error}
+          {previewFallback && (
+            <>
+              {" "}
+              <a href={previewFallback} target="_blank" rel="noopener noreferrer">
+                Abrir preview em nova aba
+              </a>
+            </>
+          )}
         </p>
       )}
       {success && (
@@ -350,12 +450,13 @@ export default function AdminEditorPage() {
           }}
         >
           <label>
-            Slug
+            Identificador da URL
             <input
               value={slug}
               disabled={Boolean(loaded) || busy}
               onChange={(e) => setSlug(e.target.value)}
             />
+            <small>Use letras minúsculas, números e hífens.</small>
           </label>
           <label>
             Título
@@ -447,7 +548,7 @@ export default function AdminEditorPage() {
               />
             </label>
             <label>
-              Slug do autor
+              Identificador do autor na URL
               <input
                 value={authorSlug}
                 disabled={!can("cms:posts.edit") || busy}
@@ -463,7 +564,7 @@ export default function AdminEditorPage() {
               />
             </label>
             <label>
-              Slug da categoria
+              Identificador da categoria na URL
               <input
                 value={categorySlug}
                 disabled={!can("cms:posts.edit") || busy}

@@ -1,0 +1,18 @@
+begin;
+create extension if not exists pgtap with schema extensions;
+set local search_path=public,extensions;
+select plan(12);
+select ok('public.cms_controlled_lists'::regclass is not null,'controlled lists table exists');
+select ok('public.cms_controlled_options'::regclass is not null,'controlled options table exists');
+select ok((select relrowsecurity from pg_class where oid='public.cms_controlled_lists'::regclass),'lists enforce RLS');
+select ok((select relrowsecurity from pg_class where oid='public.cms_controlled_options'::regclass),'options enforce RLS');
+select isnt(has_table_privilege('anon','public.cms_controlled_lists','SELECT'),true,'anon cannot read editorial lists');
+select isnt(has_table_privilege('authenticated','public.cms_controlled_lists','INSERT'),true,'clients cannot bypass API');
+select isnt(has_table_privilege('authenticated','public.cms_controlled_options','DELETE'),true,'clients cannot delete options');
+select is((select critical from public.cms_permissions where permission_key='cms:vocabularies.manage'),true,'management requires MFA');
+select ok(exists(select 1 from public.cms_role_permissions where role_key='super_admin' and permission_key='cms:vocabularies.manage'),'super admin can manage');
+select is((select count(*)::integer from public.cms_controlled_lists),0,'migration seeds no editorial vocabulary');
+select is((select count(*)::integer from public.cms_controlled_options),0,'migration seeds no editorial options');
+select ok(exists(select 1 from pg_trigger where tgrelid='public.cms_controlled_options'::regclass and tgname='cms_controlled_options_no_delete'),'destructive deletion is guarded');
+select * from finish();
+rollback;

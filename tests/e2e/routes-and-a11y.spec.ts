@@ -10,13 +10,13 @@ const routes = [
   { path: "/solucoes", status: 200 },
   { path: "/contato", status: 200 },
   { path: "/blog", status: 200 },
-  { path: "/campanhas/campanha-sintetica-inexistente", status: 404 },
+  { path: "/campanhas/campanha-sintetica-inexistente", status: 200, edgeStatus: 404 },
   { path: "/relatorio-de-obra/login", status: 200 },
   { path: "/admin/login", status: 200 },
 ];
 
 for (const route of routes) {
-  test(`smoke ${route.path}`, async ({ page }) => {
+  test(`smoke ${route.path}`, async ({ page, baseURL }) => {
     const consoleErrors: string[] = [];
     page.on("console", (message) => {
       if (message.type() === "error") {
@@ -26,13 +26,16 @@ for (const route of routes) {
     });
 
     const response = await page.goto(route.path, { waitUntil: "networkidle" });
-    expect(response?.status()).toBe(route.status);
+    const edgeRuntime = Boolean(process.env.PLAYWRIGHT_EDGE || baseURL?.includes("pages.dev"));
+    const expectedStatus =
+      edgeRuntime && "edgeStatus" in route ? (route.edgeStatus ?? route.status) : route.status;
+    expect(response?.status()).toBe(expectedStatus);
     await expect(page.locator("h1").first()).toBeVisible();
     expect(await page.locator("body").evaluate((body) => body.scrollWidth <= body.clientWidth + 1)).toBe(
       true,
     );
     const unexpectedConsoleErrors =
-      route.status >= 400
+      expectedStatus >= 400
         ? consoleErrors.filter((message) => !message.endsWith(`@ ${page.url()}`))
         : consoleErrors;
     expect(unexpectedConsoleErrors).toEqual([]);
@@ -60,8 +63,14 @@ test("@a11y critical public journeys have no serious automated violations", asyn
 test("staging exposes the clean-room launch projection", async ({ page, baseURL }) => {
   test.skip(!baseURL?.includes("pages.dev"), "published projection is verified against staging");
   for (const [path, heading] of [
+    ["/", "Tecnologia aplicada a processos e operações"],
+    ["/sobre", "Engenharia orientada ao contexto da operação"],
+    ["/politica-de-privacidade", "Privacidade e tratamento de dados"],
+    ["/biodigestor", "Biodigestão com escopo técnico definido"],
+    ["/deteccao-de-gas", "A tecnologia depende do cenário de risco"],
     ["/servicos/instalacao-de-medidores", "Instalação de Medidores"],
     ["/industrias/saneamento", "Saneamento"],
+    ["/industrias/telemetria", "Telemetria e Operações Remotas"],
     ["/aplicacoes/medicao-estacoes-agua-esgoto", "Medição em Estações de Água e Esgoto"],
     ["/solucoes/instrumentacao-monitoramento-remoto", "Instrumentação e Monitoramento Remoto"],
   ] as const) {
@@ -72,6 +81,19 @@ test("staging exposes the clean-room launch projection", async ({ page, baseURL 
       true,
     );
   }
+});
+
+test("staging retires legacy gas detail routes and redirects replaced sectors", async ({
+  request,
+  baseURL,
+}) => {
+  test.skip(!baseURL?.includes("pages.dev"), "edge status is verified only against Cloudflare staging");
+  const retired = await request.get("/deteccao-de-gas/deteccao-movel/s800", { maxRedirects: 0 });
+  expect(retired.status()).toBe(404);
+  expect(retired.headers()["x-robots-tag"]).toContain("noindex");
+  const redirected = await request.get("/setores/telemetria", { maxRedirects: 0 });
+  expect(redirected.status()).toBe(301);
+  expect(redirected.headers().location).toBe("/industrias/telemetria");
 });
 
 test("@a11y keyboard skip link moves focus to main content", async ({ page }) => {

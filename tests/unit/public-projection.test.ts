@@ -110,6 +110,54 @@ describe("public CMS projection", () => {
     expect(containsInternalProductValue("documentos/REF-OEM.pdf", sourceProduct())).toBe(true);
     expect(containsInternalProductValue("documentos/manual-publico.pdf", sourceProduct())).toBe(false);
   });
+
+  it("projects only visible controlled labels and never stable internal IDs", () => {
+    const result = sanitizePublicPayload({
+      contentType: "product",
+      controlledClassification: {
+        productCategory: {
+          id: crypto.randomUUID(),
+          slug: "instrumentos-medicao",
+          label: "Instrumentos de Medição",
+          publicVisible: true,
+        },
+        applicationMagnitude: {
+          id: crypto.randomUUID(),
+          slug: "medicao-vazao",
+          label: "Medição de Vazão",
+          publicVisible: true,
+        },
+        technology: {
+          id: crypto.randomUUID(),
+          slug: "ultrassonico",
+          label: "Ultrassônico",
+          publicVisible: false,
+        },
+        installationOperation: {
+          id: crypto.randomUUID(),
+          slug: "clamp-on",
+          label: "Clamp-On",
+          publicVisible: true,
+        },
+        monitoredElement: {
+          id: crypto.randomUUID(),
+          slug: "liquidos",
+          label: "Líquidos",
+          publicVisible: true,
+        },
+      },
+      fieldVisibility: { classification: "public", technology: "public" },
+    });
+
+    expect(result.controlledClassification).toEqual({
+      productCategory: { slug: "instrumentos-medicao", label: "Instrumentos de Medição" },
+      applicationMagnitude: { slug: "medicao-vazao", label: "Medição de Vazão" },
+      installationOperation: { slug: "clamp-on", label: "Clamp-On" },
+      monitoredElement: { slug: "liquidos", label: "Líquidos" },
+    });
+    expect(JSON.stringify(result)).not.toMatch(/[0-9a-f]{8}-[0-9a-f-]{27,}/);
+    expect(JSON.stringify(result)).not.toContain("publicVisible");
+  });
 });
 
 function sourceProduct() {

@@ -20,7 +20,119 @@ type BulkResponse = {
   correlationId: string;
 };
 
-const templatePath = "/modelos/GAIATEC-CMS-Cadastro-em-Massa-v1.xlsx";
+const optionalProductHeaders = [
+  "resumo",
+  "fabricante_url",
+  "subcategoria",
+  "descricao_completa",
+  "diferenciais",
+  "sinonimos",
+  "palavras_chave",
+  "seo_titulo",
+  "seo_descricao",
+  "fonte_tipo",
+  "fonte_url",
+  "fonte_sha256",
+  "autorizacao_referencia",
+  "autorizacao_data",
+  "escopo_direitos",
+  "visibilidade_marca",
+  "visibilidade_fabricante",
+  "visibilidade_linha",
+  "visibilidade_modelo_comercial",
+  "visibilidade_referencia_fabricante",
+  "visibilidade_sku",
+  "visibilidade_classificacao",
+  "visibilidade_funcao",
+  "visibilidade_tecnologia",
+  "visibilidade_especificacoes",
+  "visibilidade_relacoes",
+  "visibilidade_documentos",
+];
+
+export async function downloadBulkImportTemplate() {
+  const ExcelJS = await import("exceljs");
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "CMS GAIATEC";
+  workbook.title = "Cadastro em massa governado — Fase 10";
+  const instructions = workbook.addWorksheet("Instrucoes", { views: [{ showGridLines: false }] });
+  instructions.addRows([
+    ["CADASTRO EM MASSA GOVERNADO — CMS GAIATEC"],
+    ["Use somente conteúdo novo e clean-room. Exportações do painel/site antigo são proibidas."],
+    [
+      "Preencha os UUIDs das opções ativas exibidas em CMS > Listas mestras. Termos desconhecidos nunca são criados implicitamente.",
+    ],
+    ["O dry-run valida linha e coluna no servidor. Qualquer erro cancela o lote inteiro."],
+    ["Imagens e documentos seguem a biblioteca privada e não entram nesta planilha."],
+  ]);
+  instructions.mergeCells("A1:H1");
+  instructions.mergeCells("A2:H2");
+  instructions.mergeCells("A3:H3");
+  instructions.mergeCells("A4:H4");
+  instructions.mergeCells("A5:H5");
+  instructions.getColumn(1).width = 120;
+  instructions.getRow(1).height = 28;
+  instructions.getCell("A1").font = { bold: true, color: { argb: "FFFFFFFF" }, size: 15 };
+  instructions.getCell("A1").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0057DE" } };
+  for (let row = 2; row <= 5; row++) {
+    instructions.getCell(row, 1).alignment = { wrapText: true, vertical: "middle" };
+    instructions.getRow(row).height = 34;
+  }
+  const definitions = [
+    ["Produtos", [...bulkRequiredHeaders.products, ...optionalProductHeaders]],
+    ["Modelos", [...bulkRequiredHeaders.models, "status"]],
+    [
+      "Especificacoes",
+      [
+        ...bulkRequiredHeaders.specifications,
+        "unidade",
+        "obrigatorio",
+        "filtravel",
+        "comparavel",
+        "pesquisavel",
+      ],
+    ],
+  ] as const;
+  for (const [name, headers] of definitions) {
+    const sheet = workbook.addWorksheet(name, {
+      views: [{ state: "frozen", ySplit: 1, showGridLines: false }],
+    });
+    sheet.addRow(headers);
+    const header = sheet.getRow(1);
+    header.height = 32;
+    header.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    header.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0057DE" } };
+    header.alignment = { vertical: "middle", wrapText: true };
+    headers.forEach((_, index) => {
+      sheet.getColumn(index + 1).width = 24;
+    });
+    if (name === "Produtos") sheet.getColumn("A").width = 30;
+    for (let row = 2; row <= 501; row++) {
+      sheet.getCell(row, 1).value = name === "Produtos" ? "GAIATEC-CMS-PRODUTOS-v1" : null;
+    }
+    for (const key of ["status", "obrigatorio", "filtravel", "comparavel", "pesquisavel"]) {
+      const index = headers.indexOf(key as never) + 1;
+      if (index > 0)
+        sheet.getColumn(index).eachCell({ includeEmpty: true }, (cell, row) => {
+          if (row > 1)
+            cell.dataValidation = {
+              type: "list",
+              allowBlank: true,
+              formulae: [key === "status" ? '"ativo,descontinuado"' : '"Sim,Não"'],
+            };
+        });
+    }
+  }
+  const data = await workbook.xlsx.writeBuffer();
+  const url = URL.createObjectURL(
+    new Blob([data], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+  );
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "GAIATEC-CMS-Cadastro-em-Massa-v1.xlsx";
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 function textValue(value: unknown) {
   if (value == null) return "";
@@ -159,9 +271,13 @@ export default function AdminBulkImportPage() {
         qualquer registro e sempre gera rascunhos — nunca publica automaticamente.
       </p>
       <div className="admin-workflow-actions">
-        <a className="admin-button admin-button--secondary" href={templatePath} download>
+        <button
+          className="admin-button admin-button--secondary"
+          type="button"
+          onClick={() => void downloadBulkImportTemplate()}
+        >
           Baixar planilha-modelo vazia
-        </a>
+        </button>
         <Link to="/admin/produtos">Voltar aos produtos</Link>
       </div>
       <div className="admin-notice">

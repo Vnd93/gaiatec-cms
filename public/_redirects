@@ -1,1 +1,13 @@
-/servicos/calibracao-rbc-laboratorio    /servicos/calibracao-rastreavel-laboratorio    301
+/servicos/calibracao-rbc-laboratorio    /servicos/calibracao-de-instrumentos    301
+/setores                                 /industrias                               301
+/setores/saneamento                      /industrias/saneamento                    301
+/setores/gas-petroleo                    /industrias/oleo-e-gas                    301
+/setores/hvac                            /industrias/hvac                          301
+/setores/agronegocio                     /industrias/agronegocio                   301
+/setores/industria                       /industrias/processos-industriais         301
+/setores/biogas-biometano                /industrias/biogas-biometano              301
+/setores/protecao-catodica               /industrias/protecao-catodica             301
+/setores/controle-ambiental               /industrias/controle-ambiental             301
+/setores/seguranca-operacional            /industrias/seguranca-operacional          301
+/setores/instrumentacao                   /industrias/instrumentacao                 301
+/setores/telemetria                       /industrias/telemetria                     301

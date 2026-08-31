@@ -1,113 +1,285 @@
-import { useEffect, useRef, useState } from "react";
-import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Search, UserRound, X } from "lucide-react";
+import { Link, Outlet, useLocation, useNavigate } from "react-router";
+import {
+  adminNavigation,
+  adminPageTitle,
+  canAccessNavigationItem,
+  globalSearchTarget,
+  isNavigationItemActive,
+  resolveAdminBreadcrumbs,
+} from "../admin-navigation";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { resolveAdminRouteGuidance } from "../admin-route-guidance";
 import "../admin.css";
+import "../admin-f11.css";
 
 export function AdminShell() {
   const { profile, user, signOut } = useAdminAuth();
-  const [open, setOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return window.sessionStorage.getItem("gaiatec:cms:ui:sidebar-collapsed") === "true";
+    } catch {
+      return false;
+    }
+  });
   const [search, setSearch] = useState("");
   const menuButton = useRef<HTMLButtonElement>(null);
+  const sidebar = useRef<HTMLElement>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
   const location = useLocation();
   const navigate = useNavigate();
-  const can = (permission: string) => profile?.permissions.includes(permission) ?? false;
-  const segments = location.pathname.split("/").filter(Boolean);
-  const links = [
-    ["/admin", "Visão geral", true],
-    ["/admin/produtos", "Produtos", can("cms:products.read")],
-    ["/admin/produtos/importacao", "Cadastro em massa", can("cms:products.edit")],
-    ["/admin/descoberta/service", "Serviços", can("cms:services.read")],
-    ["/admin/descoberta/industry", "Indústrias", can("cms:industries.read")],
-    ["/admin/descoberta/application", "Aplicações", can("cms:applications.read")],
-    ["/admin/descoberta/solution", "Soluções", can("cms:solutions.read")],
-    ["/admin/busca", "Busca e sinônimos", can("cms:search.read")],
-    ["/admin/conteudo", "Conteúdo", can("cms:posts.read")],
-    ["/admin/marketing", "Campanhas e formulários", can("cms:campaigns.read") || can("cms:forms.read")],
-    ["/admin/leads", "Leads", can("cms:leads.read")],
-    ["/admin/paginas", "Páginas e homepage", can("cms:pages.read") || can("cms:homepage.read")],
-    [
-      "/admin/site",
-      "Estrutura do site",
-      can("cms:navigation.read") || can("cms:settings.read") || can("cms:placements.read"),
-    ],
-    ["/admin/midia", "Mídia", can("cms:media.read")],
-    ["/admin/perfil", "Perfil e sessão", true],
-    ["/admin/usuarios", "Usuários", can("cms:users.read")],
-    ["/admin/diagnosticos", "Diagnósticos", can("cms:diagnostics.read")],
-  ] as const;
+  const permissions = useMemo(() => profile?.permissions ?? [], [profile?.permissions]);
+  const visibleGroups = useMemo(
+    () =>
+      adminNavigation
+        .map((group) => ({
+          ...group,
+          items: group.items.filter((item) => canAccessNavigationItem(item, permissions)),
+        }))
+        .filter((group) => group.items.length > 0),
+    [permissions],
+  );
+  const activeGroupId = visibleGroups.find((group) =>
+    group.items.some((item) => isNavigationItemActive(item, location.pathname, location.search)),
+  )?.id;
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const breadcrumbs = resolveAdminBreadcrumbs(location.pathname, location.search);
+  const routeGuidance = resolveAdminRouteGuidance(location.pathname);
+
   useEffect(() => {
-    if (!open) return;
+    document.title = adminPageTitle(location.pathname, location.search);
+    if (activeGroupId) setExpandedGroups((current) => ({ ...current, [activeGroupId]: true }));
+  }, [activeGroupId, location.pathname, location.search]);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      setOpen(false);
+      setMobileOpen(false);
       menuButton.current?.focus();
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [open]);
+  }, [mobileOpen]);
+
+  useEffect(() => {
+    const focusSearch = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        searchInput.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", focusSearch);
+    return () => window.removeEventListener("keydown", focusSearch);
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem("gaiatec:cms:ui:sidebar-collapsed", String(sidebarCollapsed));
+    } catch {
+      // Preferência visual não deve bloquear a operação do CMS.
+    }
+  }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    document.body.classList.add("admin-navigation-open");
+    sidebar.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    return () => document.body.classList.remove("admin-navigation-open");
+  }, [mobileOpen]);
+
   return (
-    <div className="admin-app" data-admin-surface>
+    <div className="admin-app" data-admin-surface data-sidebar-collapsed={sidebarCollapsed || undefined}>
+      <a className="admin-skip-link" href="#admin-main">
+        Ir para o conteúdo principal
+      </a>
       <header className="admin-topbar">
         <button
           ref={menuButton}
           className="admin-menu-button"
-          aria-expanded={open}
+          type="button"
+          aria-expanded={mobileOpen}
           aria-controls="admin-navigation"
-          onClick={() => setOpen(!open)}
+          aria-label={mobileOpen ? "Fechar menu administrativo" : "Abrir menu administrativo"}
+          onClick={() => setMobileOpen(!mobileOpen)}
         >
-          Menu
+          {mobileOpen ? <X aria-hidden="true" size={20} /> : <Menu aria-hidden="true" size={20} />}
+          <span>Menu</span>
         </button>
-        <Link to="/admin" aria-label="CMS GAIATEC — início">
+        <Link to="/admin" aria-label="CMS GAIATEC — visão geral">
           <img src="/logo-gaiatec.png" alt="" />
         </Link>
-        {(can("cms:posts.read") || can("cms:products.read") || can("cms:pages.read")) && (
+        {(permissions.includes("cms:posts.read") ||
+          permissions.includes("cms:products.read") ||
+          permissions.includes("cms:pages.read")) && (
           <form
             className="admin-global-search"
             role="search"
             onSubmit={(event) => {
               event.preventDefault();
-              navigate("/admin/produtos?q=" + encodeURIComponent(search.trim()));
+              if (search.trim()) navigate(globalSearchTarget(search, permissions));
             }}
           >
-            <label htmlFor="admin-global-search">Busca global no CMS</label>
+            <label htmlFor="admin-global-search">Busca global no CMS — conteúdo permitido</label>
             <input
+              ref={searchInput}
               id="admin-global-search"
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Buscar catálogo e descoberta"
+              placeholder="Buscar no catálogo e conteúdo"
+              aria-keyshortcuts="Control+K Meta+K"
             />
-            <button type="submit">Buscar</button>
+            <button type="submit" aria-label="Executar busca">
+              <Search aria-hidden="true" size={18} />
+              <span>Buscar</span>
+            </button>
           </form>
         )}
-        <button className="admin-button admin-button--secondary" onClick={() => void signOut()}>
-          Sair
-        </button>
+        <div className="admin-account" aria-label="Conta e sessão">
+          <Link className="admin-account__profile" to="/admin/perfil">
+            <span className="admin-account__icon">
+              <UserRound aria-hidden="true" size={18} />
+            </span>
+            <span className="admin-account__copy">
+              <strong>{profile?.roles[0]?.replace(/_/g, " ") ?? "Operador"}</strong>
+              <small>{user?.email}</small>
+            </span>
+          </Link>
+          <button
+            className="admin-icon-button"
+            type="button"
+            aria-label="Sair do CMS"
+            title="Sair do CMS"
+            onClick={() => void signOut()}
+          >
+            <LogOut aria-hidden="true" size={19} />
+          </button>
+        </div>
       </header>
-      <aside id="admin-navigation" className={open ? "admin-sidebar is-open" : "admin-sidebar"}>
-        <p className="admin-eyebrow">CMS GAIATEC</p>
+
+      {mobileOpen && (
+        <button
+          className="admin-sidebar-backdrop"
+          type="button"
+          aria-label="Fechar menu administrativo"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+      <aside
+        ref={sidebar}
+        id="admin-navigation"
+        className={mobileOpen ? "admin-sidebar is-open" : "admin-sidebar"}
+        aria-label="Menu principal do CMS"
+      >
+        <div className="admin-sidebar__heading">
+          <p className="admin-eyebrow">CMS GAIATEC</p>
+          <button
+            className="admin-sidebar__collapse"
+            type="button"
+            aria-label={sidebarCollapsed ? "Expandir menu lateral" : "Recolher menu lateral"}
+            title={sidebarCollapsed ? "Expandir menu lateral" : "Recolher menu lateral"}
+            onClick={() => setSidebarCollapsed((current) => !current)}
+          >
+            {sidebarCollapsed ? (
+              <PanelLeftOpen aria-hidden="true" size={18} />
+            ) : (
+              <PanelLeftClose aria-hidden="true" size={18} />
+            )}
+          </button>
+        </div>
         <nav aria-label="Administração">
-          {links
-            .filter((entry) => entry[2])
-            .map(([to, label]) => (
-              <NavLink key={to} to={to} end={to === "/admin"} onClick={() => setOpen(false)}>
-                {label}
-              </NavLink>
-            ))}
+          {visibleGroups.map((group) => {
+            const GroupIcon = group.icon;
+            const groupActive = group.id === activeGroupId;
+            const expanded = expandedGroups[group.id] ?? groupActive ?? false;
+            const panelId = `admin-navigation-${group.id}`;
+            return (
+              <section
+                className={groupActive ? "admin-nav-group is-active" : "admin-nav-group"}
+                key={group.id}
+              >
+                <button
+                  className="admin-nav-group__trigger"
+                  type="button"
+                  aria-expanded={expanded}
+                  aria-controls={panelId}
+                  onClick={() => setExpandedGroups((current) => ({ ...current, [group.id]: !expanded }))}
+                >
+                  <GroupIcon aria-hidden="true" size={18} />
+                  <span>{group.label}</span>
+                  <ChevronDown aria-hidden="true" className="admin-nav-group__chevron" size={17} />
+                </button>
+                <div id={panelId} className="admin-nav-group__items" hidden={!expanded}>
+                  {group.items.map((item) => {
+                    const ItemIcon = item.icon;
+                    const active = isNavigationItemActive(item, location.pathname, location.search);
+                    return (
+                      <Link
+                        key={item.to}
+                        to={item.to}
+                        className={active ? "active" : undefined}
+                        aria-current={active ? "page" : undefined}
+                        title={item.description}
+                        onClick={() => setMobileOpen(false)}
+                      >
+                        <ItemIcon aria-hidden="true" size={17} />
+                        <span>{item.label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </section>
+            );
+          })}
         </nav>
         <p className="admin-sidebar__identity">
+          <span className="admin-sidebar__identity-label">Sessão ativa</span>
           {user?.email}
           <br />
           <span>{profile?.roles.join(", ")}</span>
         </p>
       </aside>
+
       <main className="admin-main" id="admin-main">
-        <nav className="admin-breadcrumbs" aria-label="Breadcrumb">
-          <Link to="/admin">Início</Link>
-          {segments.slice(1).map((segment, index) => (
-            <span key={segment + index}> / {decodeURIComponent(segment)}</span>
-          ))}
+        <nav className="admin-breadcrumbs" aria-label="Caminho da página">
+          <ol>
+            {breadcrumbs.map((breadcrumb, index) => (
+              <li key={`${breadcrumb.label}-${index}`}>
+                {breadcrumb.to && index < breadcrumbs.length - 1 ? (
+                  <Link to={breadcrumb.to}>{breadcrumb.label}</Link>
+                ) : (
+                  <span aria-current={index === breadcrumbs.length - 1 ? "page" : undefined}>
+                    {breadcrumb.label}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ol>
         </nav>
+        <aside className="admin-route-guide" aria-label="Orientação operacional desta tela">
+          <div>
+            <strong>Nesta tela</strong>
+            <span>{routeGuidance.task}</span>
+          </div>
+          <div>
+            <strong>Impacto público</strong>
+            <span>{routeGuidance.publicImpact}</span>
+          </div>
+          <div>
+            <strong>Uso interno</strong>
+            <span>{routeGuidance.internal}</span>
+          </div>
+          <div>
+            <strong>Próximo passo</strong>
+            <span>{routeGuidance.nextStep}</span>
+          </div>
+        </aside>
+        <p className="admin-route-announcer" aria-live="polite">
+          {breadcrumbs.at(-1)?.label}. {routeGuidance.task}
+        </p>
         <Outlet />
       </main>
     </div>

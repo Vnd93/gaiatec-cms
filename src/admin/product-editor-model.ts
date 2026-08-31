@@ -62,6 +62,21 @@ export function createInitialProductDraft() {
     family: "",
     functionText: "",
     technology: "",
+    productCategoryId: "",
+    productCategorySlug: "",
+    productCategoryLabel: "",
+    applicationMagnitudeId: "",
+    applicationMagnitudeSlug: "",
+    applicationMagnitudeLabel: "",
+    technologyOptionId: "",
+    technologyOptionSlug: "",
+    technologyOptionLabel: "",
+    installationOperationId: "",
+    installationOperationSlug: "",
+    installationOperationLabel: "",
+    monitoredElementId: "",
+    monitoredElementSlug: "",
+    monitoredElementLabel: "",
     commercialModel: "",
     manufacturerReference: "",
     modelsJson: pretty([
@@ -159,6 +174,21 @@ export function hydrateProductDraft(
     family: product.classification.family,
     functionText: product.function,
     technology: product.technology,
+    productCategoryId: product.controlledClassification?.productCategory.id ?? "",
+    productCategorySlug: product.controlledClassification?.productCategory.slug ?? "",
+    productCategoryLabel: product.controlledClassification?.productCategory.label ?? "",
+    applicationMagnitudeId: product.controlledClassification?.applicationMagnitude.id ?? "",
+    applicationMagnitudeSlug: product.controlledClassification?.applicationMagnitude.slug ?? "",
+    applicationMagnitudeLabel: product.controlledClassification?.applicationMagnitude.label ?? "",
+    technologyOptionId: product.controlledClassification?.technology.id ?? "",
+    technologyOptionSlug: product.controlledClassification?.technology.slug ?? "",
+    technologyOptionLabel: product.controlledClassification?.technology.label ?? "",
+    installationOperationId: product.controlledClassification?.installationOperation.id ?? "",
+    installationOperationSlug: product.controlledClassification?.installationOperation.slug ?? "",
+    installationOperationLabel: product.controlledClassification?.installationOperation.label ?? "",
+    monitoredElementId: product.controlledClassification?.monitoredElement.id ?? "",
+    monitoredElementSlug: product.controlledClassification?.monitoredElement.slug ?? "",
+    monitoredElementLabel: product.controlledClassification?.monitoredElement.label ?? "",
     commercialModel: firstModel?.model ?? "",
     manufacturerReference: firstModel?.manufacturerReference ?? "",
     modelsJson: pretty(product.models),
@@ -197,9 +227,9 @@ export function hydrateProductDraft(
 const governedFields: Array<{ field: GovernedJsonField; tab: ProductEditorTab; label: string }> = [
   { field: "modelsJson", tab: "identificacao", label: "Modelos e variantes" },
   { field: "specificationsJson", tab: "especificacoes", label: "Atributos tipados" },
-  { field: "mediaJson", tab: "midia", label: "Imagens" },
-  { field: "documentsJson", tab: "documentos", label: "Documentos" },
-  { field: "redirectsJson", tab: "seo", label: "Redirects" },
+  { field: "mediaJson", tab: "especificacoes", label: "Imagens" },
+  { field: "documentsJson", tab: "especificacoes", label: "Documentos" },
+  { field: "redirectsJson", tab: "visibilidade", label: "Redirects" },
   { field: "blocksJson", tab: "comercial", label: "Blocos de conteúdo" },
   { field: "provenanceJson", tab: "governanca", label: "Proveniência" },
 ];
@@ -250,10 +280,37 @@ export function buildProductPayload(draft: ProductEditorDraft) {
     },
     productLine: { name: draft.lineName, slug: draft.lineSlug },
     classification: {
-      segment: draft.segment,
-      category: draft.category,
+      segment: draft.productCategoryLabel,
+      category: draft.applicationMagnitudeLabel,
       ...(draft.subcategory ? { subcategory: draft.subcategory } : {}),
-      family: draft.family,
+      family: draft.installationOperationLabel,
+    },
+    controlledClassification: {
+      productCategory: {
+        id: draft.productCategoryId,
+        slug: draft.productCategorySlug,
+        label: draft.productCategoryLabel,
+      },
+      applicationMagnitude: {
+        id: draft.applicationMagnitudeId,
+        slug: draft.applicationMagnitudeSlug,
+        label: draft.applicationMagnitudeLabel,
+      },
+      technology: {
+        id: draft.technologyOptionId,
+        slug: draft.technologyOptionSlug,
+        label: draft.technologyOptionLabel,
+      },
+      installationOperation: {
+        id: draft.installationOperationId,
+        slug: draft.installationOperationSlug,
+        label: draft.installationOperationLabel,
+      },
+      monitoredElement: {
+        id: draft.monitoredElementId,
+        slug: draft.monitoredElementSlug,
+        label: draft.monitoredElementLabel,
+      },
     },
     commercial: {
       shortDescription: draft.shortDescription,
@@ -262,7 +319,7 @@ export function buildProductPayload(draft: ProductEditorDraft) {
       differentiators: splitProductLines(draft.differentiators),
     },
     function: draft.functionText,
-    technology: draft.technology,
+    technology: draft.technologyOptionLabel,
     models,
     specifications: parsed.specificationsJson,
     media: parsed.mediaJson,
@@ -302,15 +359,14 @@ export function buildProductPayload(draft: ProductEditorDraft) {
 export function tabForProductPath(path: PropertyKey[]): ProductEditorTab {
   const root = String(path[0] ?? "");
   if (["brand", "manufacturer", "productLine", "models", "title"].includes(root)) return "identificacao";
-  if (["classification", "function", "technology"].includes(root)) return "classificacao";
+  if (["classification", "controlledClassification", "function", "technology"].includes(root))
+    return "classificacao";
   if (["commercial", "summary", "blocks"].includes(root)) return "comercial";
   if (root === "specifications") return "especificacoes";
-  if (root === "media") return "midia";
-  if (root === "documents") return "documentos";
-  if (root === "relations") return "relacoes";
-  if (root === "search") return "busca";
+  if (["media", "documents"].includes(root)) return "especificacoes";
+  if (["relations", "search"].includes(root)) return "relacoes";
   if (root === "fieldVisibility") return "visibilidade";
-  if (["seo", "redirects"].includes(root)) return "seo";
+  if (["seo", "redirects"].includes(root)) return "visibilidade";
   if (["provenance", "approval", "pilotState"].includes(root)) return "governanca";
   return "identificacao";
 }

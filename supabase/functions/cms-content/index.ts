@@ -41,10 +41,31 @@ Deno.serve(async (req) => {
   } catch { return json(req, { error: "Proteção temporariamente indisponível." }, 503); }
   if (parsed.action === "bulk_validate" || parsed.action === "bulk_create") {
     const correlationId = crypto.randomUUID();
+    const normalizedRows = [];
+    const controlledErrors = [];
+    for (const row of parsed.rows) {
+      const { data: normalized, error: normalizationError } = await identity.admin.rpc(
+        "cms_normalize_controlled_payload",
+        { p_content_type: "product", p_payload: row.payload, p_require_active: true },
+      );
+      if (normalizationError) {
+        const listKey = normalizationError.message.match(/product\.[a-z_]+/)?.[0] ?? "classificacao_padronizada";
+        controlledErrors.push({
+          sheet: "Produtos",
+          row: row.sourceRow,
+          field: listKey,
+          message: "Identificador de lista mestra desconhecido, inativo ou pertencente a outra dimensão.",
+        });
+      } else normalizedRows.push({ ...row, payload: normalized });
+    }
+    if (controlledErrors.length) {
+      const body = { status: "invalid", total: parsed.rows.length, rows: [], errors: controlledErrors, correlationId };
+      return json(req, body, parsed.action === "bulk_validate" ? 200 : 422);
+    }
     const functionName = parsed.action === "bulk_validate" ? "cms_validate_bulk_product_import" : "cms_execute_bulk_product_import";
     const { data, error } = await identity.admin.rpc(functionName, {
       p_actor_id: identity.user.id,
-      p_rows: parsed.rows,
+      p_rows: normalizedRows,
       p_reason: parsed.reason,
       p_aal: identity.claims.aal,
       p_session_id: identity.claims.sessionId,
@@ -81,6 +102,25 @@ Deno.serve(async (req) => {
   }
   const correlationId = crypto.randomUUID();
   let effectivePayload = parsed.payload;
+  if (
+    (parsed.action === "create" || parsed.action === "save") &&
+    parsed.payload &&
+    (parsed.payload.contentType === "product" || parsed.payload.contentType === "service")
+  ) {
+    const contentType = String(parsed.payload.contentType);
+    const { data: normalized, error: normalizationError } = await identity.admin.rpc(
+      "cms_normalize_controlled_payload",
+      { p_content_type: contentType, p_payload: parsed.payload, p_require_active: true },
+    );
+    if (normalizationError) {
+      return json(req, {
+        error: "Classificação padronizada ausente, desconhecida ou inativa.",
+        code: "CMS_CONTROLLED_TERM_INVALID",
+        correlationId,
+      }, 422);
+    }
+    effectivePayload = normalized;
+  }
   if ((parsed.action === "create" || parsed.action === "save") && parsed.payload?.contentType === "post") {
     const post = parsed.payload as Record<string, any>;
     const tagSlugs = (post.tags ?? []).map((tag: any) => tag.slug).filter(Boolean);

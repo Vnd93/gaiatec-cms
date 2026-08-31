@@ -18,11 +18,12 @@ function validTables(): BulkWorkbookTables {
         fabricante_slug: "oem-interno",
         linha: "Linha sintética",
         linha_slug: "linha-sintetica",
-        segmento: "Instrumentação",
-        categoria: "Medição",
-        familia: "Família sintética",
+        categoria_produto_id: "10000000-0000-4000-8000-000000000060",
+        aplicacao_grandeza_id: "10000000-0000-4000-8000-000000000061",
+        tecnologia_id: "10000000-0000-4000-8000-000000000062",
+        instalacao_operacao_id: "10000000-0000-4000-8000-000000000063",
+        elemento_monitorado_id: "10000000-0000-4000-8000-000000000064",
         funcao: "Medição sintética",
-        tecnologia: "Tecnologia sintética",
         descricao_curta: "Descrição curta produzida somente para teste.",
         proposta_valor: "Proposta sintética sem conteúdo legado.",
         beneficios: "Benefício A|Benefício B",
@@ -76,6 +77,9 @@ describe("standardized bulk product import", () => {
         sku: "internal",
       },
       seo: { indexable: false },
+      controlledClassification: {
+        productCategory: { id: "10000000-0000-4000-8000-000000000060" },
+      },
     });
   });
 

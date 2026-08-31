@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { CmsFormVersionSchema } from "@/shared/contracts/cms-content";
 import { leadCommand } from "../api/cms-api";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { ErrorState } from "../components/AdminUI";
 
 type FormRow = {
   id: string;
@@ -67,17 +68,20 @@ export default function AdminFormsPage() {
     [submitLabel, setSubmitLabel] = useState("Enviar teste"),
     [successMessage, setSuccessMessage] = useState("Solicitação sintética recebida."),
     [reason, setReason] = useState("Nova versão sintética para validação da Fase 7");
-  const load = () =>
-    supabase
+  const load = () => {
+    setError("");
+    return supabase
       .from("cms_form_definitions")
       .select(
-        "id,form_key,title,purpose,status,active_version_id,cms_form_versions(id,version,status,definition,consent_text,consent_version,privacy_path,sla_minutes,retention_days)",
+        "id,form_key,title,purpose,status,active_version_id,cms_form_versions!cms_form_versions_form_id_fkey(id,version,status,definition,consent_text,consent_version,privacy_path,sla_minutes,retention_days)",
       )
       .order("updated_at", { ascending: false })
       .then(({ data, error: loadError }) => {
-        if (loadError) setError("Não foi possível carregar os formulários.");
+        if (loadError)
+          setError("A lista de formulários não respondeu. Verifique sua sessão e tente carregar novamente.");
         else setForms((data ?? []) as unknown as FormRow[]);
       });
+  };
   useEffect(() => {
     void load();
   }, []);
@@ -188,9 +192,19 @@ export default function AdminFormsPage() {
         )}
       </div>
       {error && (
-        <p className="admin-notice admin-notice--error" role="alert">
-          {error}
-        </p>
+        <ErrorState
+          title="Não foi possível carregar os formulários"
+          description={error}
+          action={
+            <button
+              className="admin-button admin-button--secondary"
+              type="button"
+              onClick={() => void load()}
+            >
+              Tentar novamente
+            </button>
+          }
+        />
       )}
       {message && (
         <p className="admin-notice admin-notice--success" role="status">

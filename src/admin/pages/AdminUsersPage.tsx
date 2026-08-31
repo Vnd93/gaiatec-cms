@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { Badge, DataTable, EmptyState, ErrorState, LoadingSkeleton, PageHeader } from "../components/AdminUI";
 type Profile = {
   user_id: string;
   display_name: string;
@@ -29,45 +30,54 @@ export default function AdminUsersPage() {
   }, []);
   return (
     <section>
-      <p className="admin-eyebrow">IDENTIDADES E SESSÕES</p>
-      <h1>Usuários administrativos</h1>
+      <PageHeader
+        eyebrow="IDENTIDADES E SESSÕES"
+        title="Usuários e acessos"
+        description="Consulte identidades convidadas, estado da conta e último acesso conhecido."
+      />
       {loading ? (
-        <div className="admin-state" aria-busy="true">
-          Carregando usuários…
-        </div>
+        <LoadingSkeleton label="Carregando usuários" rows={4} />
       ) : error ? (
-        <p className="admin-notice admin-notice--error" role="alert">
-          {error}
-        </p>
+        <ErrorState title="Usuários indisponíveis" description={error} />
       ) : items.length === 0 ? (
-        <div className="admin-state">
-          <h2>Nenhum usuário administrativo</h2>
-          <p>O cadastro permanece fechado por convite.</p>
-        </div>
+        <EmptyState
+          title="Nenhum usuário administrativo"
+          description="O cadastro permanece fechado e depende de convite autorizado."
+        />
       ) : (
-        <div className="admin-table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Nome</th>
-                <th>Status</th>
-                <th>Último acesso</th>
+        <DataTable caption={`${items.length} usuários administrativos`}>
+          <thead>
+            <tr>
+              <th>Nome</th>
+              <th>Status</th>
+              <th>Último acesso</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => (
+              <tr key={item.user_id}>
+                <td>
+                  {item.display_name}
+                  <small>{item.display_email}</small>
+                </td>
+                <td>
+                  <Badge
+                    tone={
+                      item.status === "active"
+                        ? "success"
+                        : item.status === "suspended"
+                          ? "danger"
+                          : "warning"
+                    }
+                  >
+                    {item.status}
+                  </Badge>
+                </td>
+                <td>{item.last_seen_at ? new Date(item.last_seen_at).toLocaleString("pt-BR") : "Nunca"}</td>
               </tr>
-            </thead>
-            <tbody>
-              {items.map((item) => (
-                <tr key={item.user_id}>
-                  <td>
-                    {item.display_name}
-                    <small>{item.display_email}</small>
-                  </td>
-                  <td>{item.status}</td>
-                  <td>{item.last_seen_at ? new Date(item.last_seen_at).toLocaleString("pt-BR") : "Nunca"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </DataTable>
       )}
     </section>
   );

@@ -16,7 +16,7 @@ Produção não deve ser usada enquanto o Gate G8 estiver bloqueado.
 - formulário `newsletter` criado, versionado, publicado e exibido no footer;
 - envio público de contato testado com fixture sintética e protocolo confirmado;
 - fixture de teste anonimizada após a validação;
-- remetente de e-mail corrigido para `.com.br` e tornado configurável por `EMAIL_FROM`;
+- remetente de e-mail alinhado ao domínio verificado `.com` e controlado por `EMAIL_FROM`;
 - `RESEND_API_KEY` detectada no Supabase staging;
 - cron `cms-outbox-worker-every-5m` ativo com segredo protegido no Vault;
 - aprovação administrativa LGPD/DPO confirmada em 2026-08-30;
@@ -24,15 +24,15 @@ Produção não deve ser usada enquanto o Gate G8 estiver bloqueado.
 - visibilidade público/interno e cadastro em massa homologados com dados sintéticos;
 - produção e conteúdo do painel antigo não foram utilizados.
 
-## 2. Concluir a autorização do remetente no Resend
+## 2. Remetente do Resend — concluído em staging
 
-A chave existe e o worker responde HTTP 200, mas o Resend devolveu `sender_not_authorized`. Em 2026-08-30, a consulta DNS pública não encontrou DKIM/SPF/MX do Resend para `gaiatecsistemas.com.br`. A chave nunca deve ser enviada por chat, salva em documento ou commitada no Git.
+A conta corporativa possui o domínio `gaiatecsistemas.com` verificado para envio, com DKIM, SPF/MX e TXT válidos. O secret `EMAIL_FROM` do staging usa `GAIATEC SISTEMAS <cms@gaiatecsistemas.com>`. O protocolo `LD-D6257F8D15` foi aceito pela API do Resend com HTTP 200 e ficou como `sent` e `delivered`. A chave nunca deve ser enviada por chat, salva em documento ou commitada no Git.
 
 ### 2.1 Criar e verificar o domínio
 
 1. Acesse `https://resend.com` e entre na conta corporativa usada para criar a chave.
 2. Abra **Domains** e observe o domínio exato e o status exibido.
-3. Para manter o remetente atual, o domínio deve ser exatamente `gaiatecsistemas.com.br` e ficar como **Verified**.
+3. O domínio do remetente deve ser exatamente `gaiatecsistemas.com` e ficar como **Verified**.
 4. Habilite somente envio. Não habilite recebimento: o recebimento corporativo atual não deve ser alterado.
 5. Se o DNS estiver no Cloudflare, prefira **Sign in to Cloudflare** para o Domain Connect automático.
 6. Se fizer manualmente, copie exatamente os registros apresentados pelo Resend:
@@ -65,13 +65,13 @@ Opção pela interface:
 2. Abra **Edge Functions → Secrets Management**.
 3. Adicione:
    - nome `RESEND_API_KEY`; valor: a chave iniciada por `re_`;
-   - nome `EMAIL_FROM`; valor `GAIATEC SISTEMAS <nao-responda@gaiatecsistemas.com.br>`.
+   - nome `EMAIL_FROM`; valor `GAIATEC SISTEMAS <cms@gaiatecsistemas.com>`.
 4. Salve. Não é necessário republicar as funções após alterar secrets.
 
 Opção pelo terminal, sem gravar a chave em arquivo:
 
 ```powershell
-npx supabase secrets set "RESEND_API_KEY=re_COLE_A_CHAVE_AQUI" "EMAIL_FROM=GAIATEC SISTEMAS <nao-responda@gaiatecsistemas.com.br>" --project-ref glcqsosxwgmlhzgcsnzv
+npx supabase secrets set "RESEND_API_KEY=re_COLE_A_CHAVE_AQUI" "EMAIL_FROM=GAIATEC SISTEMAS <cms@gaiatecsistemas.com>" --project-ref glcqsosxwgmlhzgcsnzv
 ```
 
 Referência oficial: [secrets de Edge Functions no Supabase](https://supabase.com/docs/guides/functions/secrets).
@@ -200,4 +200,4 @@ Somente aprovar depois de:
 3. conteúdo real novo revisado;
 4. teste desktop/mobile concluído;
 5. backup/rollback e owners confirmados;
-6. autorização explícita do administrador para canary e produção.
+6. aceite específico do relatório de canary e autorização explícita do administrador para produção.

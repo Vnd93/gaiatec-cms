@@ -40,10 +40,20 @@ export default function AdminMfaPage() {
     if (result.error) setError(result.error);
   }
 
-  if (status === "loading") return <AdminFrame title="Validando segundo fator" loading />;
+  if (status === "loading")
+    return (
+      <AdminFrame title="Validando segundo fator" description="Confirmando a segurança da sessão." loading />
+    );
 
   return (
-    <AdminFrame title={enrolling ? "Ativar verificação em duas etapas" : "Confirmar segundo fator"}>
+    <AdminFrame
+      title={enrolling ? "Ativar verificação em duas etapas" : "Confirmar segundo fator"}
+      description={
+        enrolling
+          ? "Vincule um aplicativo autenticador para proteger ações críticas."
+          : "Digite o código atual do seu aplicativo autenticador."
+      }
+    >
       {enrolling && !enrollment && (
         <>
           <p>
@@ -74,7 +84,9 @@ export default function AdminMfaPage() {
             required
             value={code}
             onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+            aria-describedby="admin-mfa-code-help"
           />
+          <small id="admin-mfa-code-help">O código muda periodicamente e não deve ser compartilhado.</small>
           {error && <AdminError>{error}</AdminError>}
           <button className="admin-button" type="submit" disabled={busy || code.length !== 6}>
             {busy ? "Verificando…" : "Verificar e entrar"}

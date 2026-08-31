@@ -1,45 +1,29 @@
 const STATIC_PUBLIC_ROUTES = [
-  /^\/$/,
-  /^\/(sobre|blog|busca|contato|setores|servicos|produtos|industrias|aplicacoes|solucoes|deteccao-de-gas|politica-de-privacidade|termos-de-uso)\/?$/,
-  /^\/biodigestor(?:\/(como-funciona|portes|beneficios|monitoramento|biogas-biometano|automacao|escolas))?\/?$/,
+  /^\/(blog|busca|servicos|produtos|industrias|aplicacoes|solucoes)\/?$/,
+  /^\/produtos\/comparador\/?$/,
 ];
 
 const CMS_PUBLIC_API = "__CMS_PUBLIC_API__";
 const CMS_PUBLIC_ANON_KEY = "__CMS_PUBLIC_ANON_KEY__";
 
-// Manifesto fechado das rotas dinâmicas já implementadas em código. Não é
-// conteúdo de CMS: serve apenas para devolver HTTP 404 real a entidades falsas.
-const ENTITY_ROUTES = new Set([
-  ..."saneamento gas-petroleo biogas-biometano protecao-catodica hvac controle-ambiental seguranca-operacional agronegocio industria instrumentacao telemetria"
-    .split(" ")
-    .map((slug) => `/setores/${slug}`),
-  ..."instalacoes-comissionamentos medicoes-em-campo deteccao-vazamento-gas deteccao-vazamento-agua calibracao-rastreavel-laboratorio calibracao-rastreavel-campo manutencoes testes automacoes controle-monitoramento locacao-comodato plataforma-controle protecao-catodica inspecao-revestimentos projetos consultoria-inspecoes-tecnicas"
-    .split(" ")
-    .map((slug) => `/servicos/${slug}`),
-  ..."macromedicao-redes-distribuicao producao-biogas-aterros deteccao-vazamentos-gasodutos monitoramento-h2s-refinarias calibracao-medidores-vazao protecao-catodica-dutos-subterraneos automacao-eta-ete telemetria-estacoes-remotas climatizacao-industrial-hvac analise-biogas-biodigestores controle-pressao-adutoras inspecao-revestimento-dutos"
-    .split(" ")
-    .map((slug) => `/aplicacoes/${slug}`),
-  "/produtos/comparador",
+const STATIC_REDIRECTS = new Map([
+  ["/servicos/calibracao-rbc-laboratorio", "/servicos/calibracao-de-instrumentos"],
+  ["/setores", "/industrias"],
+  ["/setores/saneamento", "/industrias/saneamento"],
+  ["/setores/gas-petroleo", "/industrias/oleo-e-gas"],
+  ["/setores/hvac", "/industrias/hvac"],
+  ["/setores/agronegocio", "/industrias/agronegocio"],
+  ["/setores/industria", "/industrias/processos-industriais"],
+  ["/setores/biogas-biometano", "/industrias/biogas-biometano"],
+  ["/setores/protecao-catodica", "/industrias/protecao-catodica"],
+  ["/setores/controle-ambiental", "/industrias/controle-ambiental"],
+  ["/setores/seguranca-operacional", "/industrias/seguranca-operacional"],
+  ["/setores/instrumentacao", "/industrias/instrumentacao"],
+  ["/setores/telemetria", "/industrias/telemetria"],
 ]);
 
-const DG_ROUTES = {
-  "deteccao-movel":
-    "s-series s800 s800-bomba s600 s700 ks100 veiculo-autonomo m10 c200mini uf100 ws100mini h10 ws100",
-  "monitoramento-online":
-    "sz100 poste-ia gq-tx100 z983 gtq-wx200 gtq-wx200mini gq-pm100 gq-pm200 bomba-poco-de-valvula dt-kny-wx300 dm10 c10 vibracao-acustico poste-de-solo enterrado pressao-sem-fio poco-de-valvula",
-  "localizacao-tubulacao-pe": "a200",
-  "deteccao-rede-enterrada-gas": "st100",
-  "detectores-portateis": "dg100 dg100-tht dx300 dx200 cl01 dx100 cp dx200-2 f40",
-  "monitoramento-meteorologico": "estacao-portatil estacao-movel",
-};
-for (const [category, products] of Object.entries(DG_ROUTES)) {
-  ENTITY_ROUTES.add(`/deteccao-de-gas/${category}`);
-  for (const product of products.split(" ")) ENTITY_ROUTES.add(`/deteccao-de-gas/${category}/${product}`);
-}
-
 function isPublicRoute(path) {
-  const normalized = path.length > 1 ? path.replace(/\/$/, "") : path;
-  return STATIC_PUBLIC_ROUTES.some((pattern) => pattern.test(path)) || ENTITY_ROUTES.has(normalized);
+  return STATIC_PUBLIC_ROUTES.some((pattern) => pattern.test(path));
 }
 
 const PRIVATE_ROUTE = /^\/(relatorio-de-obra|admin|preview|cms\/conteudo)(?:\/|$)/;
@@ -185,10 +169,12 @@ async function handleRequest(request, env) {
   const path = url.pathname;
   const stagingHost = url.hostname.endsWith(".pages.dev");
 
-  if (path === "/servicos/calibracao-rbc-laboratorio") {
+  const normalizedPath = path.length > 1 ? path.replace(/\/$/, "") : path;
+  const staticRedirect = STATIC_REDIRECTS.get(normalizedPath);
+  if (staticRedirect) {
     return new Response(null, {
       status: 301,
-      headers: { Location: "/servicos/calibracao-rastreavel-laboratorio" },
+      headers: { Location: staticRedirect },
     });
   }
 
@@ -249,7 +235,7 @@ async function handleRequest(request, env) {
       }
       return spaResponse(request, env, 404, { noindex: true });
     }
-    return spaResponse(request, env, ENTITY_ROUTES.has(path) ? 200 : 404, { noindex: true });
+    return spaResponse(request, env, 404, { noindex: true });
   }
 
   const discoveryMatch = path.match(
@@ -285,9 +271,7 @@ async function handleRequest(request, env) {
           headers: { Location: rule.destination_path },
         });
       }
-      return spaResponse(request, env, ENTITY_ROUTES.has(path.replace(/\/$/, "")) ? 200 : 404, {
-        noindex: true,
-      });
+      return spaResponse(request, env, 404, { noindex: true });
     }
     return spaResponse(request, env, 503, { noindex: true });
   }

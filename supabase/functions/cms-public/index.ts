@@ -6,7 +6,7 @@ const headers = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Head
 const json = (body: unknown, status = 200, extra: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { ...headers, "Content-Type": "application/json; charset=utf-8", ...extra } });
 const normalize = (value: unknown) => String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[₂]/g, "2").replace(/[–—]/g, "-").replace(/\bdn\s+(\d+)/g, "dn$1").replace(/4\s*-\s*20\s*ma/g, "4-20ma").replace(/[^a-z0-9%/.-]+/g, " ").trim();
 const publicTypes = ["product", "service", "industry", "application", "solution", "post", "campaign", "page", "homepage", "navigation", "site_settings", "placement"];
-const searchableTypes = ["product", "service", "industry", "application", "solution", "post"];
+const searchableTypes = ["product", "service", "industry", "application", "solution", "post", "page", "homepage"];
 const routeFor = (row: any) => row.content_type === "product" ? `/produtos/${row.slug}` : row.content_type === "industry" ? `/industrias/${row.slug}` : row.content_type === "application" ? `/aplicacoes/${row.slug}` : row.content_type === "solution" ? `/solucoes/${row.slug}` : row.content_type === "service" ? `/servicos/${row.slug}` : row.content_type === "post" ? `/blog/${row.slug}` : row.payload?.route?.path ?? "/";
 
 Deno.serve(async (req) => {
@@ -180,7 +180,13 @@ Deno.serve(async (req) => {
     return json(await enrichMedia(row), 200, { ETag: row.etag, "Cache-Control": "public, max-age=60, stale-while-revalidate=300", "Surrogate-Key": row.cache_tag });
   }
   const requested = (url.searchParams.get("ids") ?? "").split(",").filter(Boolean), rawQuery = url.searchParams.get("q") ?? "", query = normalize(rawQuery), domain = url.searchParams.get("contentType") ?? (type === "products" ? "product" : null);
-  const filters = { segment: url.searchParams.get("segment"), category: url.searchParams.get("category"), family: url.searchParams.get("family"), technology: url.searchParams.get("technology") };
+  const filters = {
+    productCategory: url.searchParams.get("productCategory") ?? url.searchParams.get("segment"),
+    applicationMagnitude: url.searchParams.get("applicationMagnitude") ?? url.searchParams.get("category"),
+    technology: url.searchParams.get("technology"),
+    installationOperation: url.searchParams.get("installationOperation"),
+    monitoredElement: url.searchParams.get("monitoredElement"),
+  };
   const { data: synonymRows } = query ? await client.from("cms_search_synonyms").select("canonical_term,aliases,scope").eq("active", true) : { data: [] };
   const expanded = new Set(query.split(" ").filter(Boolean));
   for (const synonym of synonymRows ?? []) { const aliases = (synonym.aliases ?? []).map(normalize), canonical = normalize(synonym.canonical_term); if (aliases.some((alias: string) => query.includes(alias)) || query.includes(canonical)) { expanded.add(canonical); aliases.forEach((alias: string) => expanded.add(alias)); } }
@@ -188,9 +194,14 @@ Deno.serve(async (req) => {
     const p = sanitizePublicPayload(row.payload, { includeSearchMetadata: true });
     if (domain && row.content_type !== domain) return null;
     if (requested.length && !requested.includes(row.slug) && !requested.includes(row.item_id)) return null;
-    if (filters.segment && p.classification?.segment !== filters.segment || filters.category && p.classification?.category !== filters.category || filters.family && p.classification?.family !== filters.family || filters.technology && p.technology !== filters.technology) return null;
+    const controlled=p.controlledClassification??{};
+    if (filters.productCategory && controlled.productCategory?.label !== filters.productCategory ||
+      filters.applicationMagnitude && controlled.applicationMagnitude?.label !== filters.applicationMagnitude ||
+      filters.technology && controlled.technology?.label !== filters.technology ||
+      filters.installationOperation && controlled.installationOperation?.label !== filters.installationOperation ||
+      filters.monitoredElement && controlled.monitoredElement?.label !== filters.monitoredElement) return null;
     const exact = normalize([p.title,p.brand?.name,p.models?.map((m:any)=>[m.model,m.manufacturerReference,m.sku])].flat(5).join(" "));
-    const searchable = normalize([p.title,p.summary,p.commercial?.shortDescription,p.brand?.name,p.manufacturer?.name,p.productLine?.name,p.models,p.classification,p.function,p.technology,p.serviceKind,p.marketName,p.process,p.problem,p.approach,p.benefits,p.deliverables,p.challenges,p.points,p.components,p.search?.synonyms,p.search?.keywords,p.specifications].flat(6).join(" "));
+    const searchable = normalize([p.title,p.summary,p.commercial?.shortDescription,p.brand?.name,p.manufacturer?.name,p.productLine?.name,p.models,p.classification,p.controlledClassification,p.function,p.technology,p.serviceKind,p.serviceKindRef,p.marketName,p.process,p.problem,p.approach,p.benefits,p.deliverables,p.challenges,p.points,p.components,p.blocks,p.route?.navigationLabel,p.route?.breadcrumbLabel,p.search?.synonyms,p.search?.keywords,p.specifications].flat(6).join(" "));
     if (query && !query.split(" ").every((token) => searchable.includes(token) || [...expanded].some((term) => searchable.includes(term)))) return null;
     const score = !query ? 0 : exact.includes(query) ? 100 : [...expanded].reduce((sum,term)=>sum+(exact.includes(term)?20:searchable.includes(term)?5:0),0);
     return { row: { ...row, payload: p }, score, matchedBy: exact.includes(query) ? "nome ou modelo público" : "conteúdo técnico ou sinônimo" };
@@ -199,7 +210,8 @@ Deno.serve(async (req) => {
   const enriched = await Promise.all(selected.map(async(entry)=>({ ...(await enrichMedia(entry.row)), score:entry.score, matched_by:entry.matchedBy })));
   if ((type === "search" || type === "autocomplete") && query && service) await client.from("cms_search_events").insert({ normalized_query:query,result_count:enriched.length,content_types:[...new Set(enriched.map((row)=>row.content_type))],refinements:{domain:domain??null},correlation_id:crypto.randomUUID() });
   const productRows = selected.filter((entry)=>entry.row.content_type === "product").map((entry)=>entry.row);
-  const facets = ["segment","category","family","technology"].reduce((all,key)=>{ all[key]=[...new Set(productRows.map((row)=>key === "technology"?row.payload?.technology:row.payload?.classification?.[key]).filter(Boolean))].sort(); return all;},{} as Record<string,unknown[]>);
+  const facetKeys=["productCategory","applicationMagnitude","technology","installationOperation","monitoredElement"];
+  const facets=facetKeys.reduce((all,key)=>{all[key]=[...new Set(productRows.map((row)=>row.payload?.controlledClassification?.[key]?.label).filter(Boolean))].sort();return all;},{} as Record<string,unknown[]>);
   const groups = searchableTypes.reduce((all,key)=>{all[key]=enriched.filter((row)=>row.content_type===key).length;return all;},{} as Record<string,number>);
   return json({items:enriched,total:enriched.length,facets,groups,query:rawQuery},200,{"Cache-Control":type === "search" || type === "autocomplete"?"private, no-store":"public, max-age=60, stale-while-revalidate=300"});
 });

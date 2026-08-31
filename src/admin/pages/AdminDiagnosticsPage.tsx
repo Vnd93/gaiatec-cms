@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { EmptyState, ErrorState, LoadingSkeleton, PageHeader } from "../components/AdminUI";
 type Event = {
   id: string;
   event_type: string;
@@ -64,16 +65,15 @@ export default function AdminDiagnosticsPage() {
   }, []);
   return (
     <section>
-      <p className="admin-eyebrow">OBSERVABILIDADE</p>
-      <h1>Diagnósticos</h1>
+      <PageHeader
+        eyebrow="OBSERVABILIDADE"
+        title="Diagnósticos"
+        description="Acompanhe falhas reais, fila de publicação e disponibilidade das projeções."
+      />
       {loading ? (
-        <div className="admin-state" aria-busy="true">
-          Carregando sinais…
-        </div>
+        <LoadingSkeleton label="Carregando diagnósticos" rows={5} />
       ) : error ? (
-        <p className="admin-notice admin-notice--error" role="alert">
-          {error}
-        </p>
+        <ErrorState title="Diagnóstico indisponível" description={error} />
       ) : (
         <>
           <div className="admin-metrics">
@@ -93,10 +93,10 @@ export default function AdminDiagnosticsPage() {
             ))}
           </div>
           {events.length === 0 ? (
-            <div className="admin-state">
-              <h2>Nenhuma falha aberta</h2>
-              <p>Publicação, outbox e processamento não possuem alerta ativo.</p>
-            </div>
+            <EmptyState
+              title="Nenhuma falha aberta"
+              description="Publicação, outbox e processamento não possuem alerta ativo."
+            />
           ) : (
             events.map((event) => (
               <article className="admin-alert" key={event.id}>

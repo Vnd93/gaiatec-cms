@@ -30,10 +30,11 @@ function collection() {
     ],
     total: 1,
     facets: {
-      segment: [payload.classification.segment],
-      category: [payload.classification.category],
-      family: [payload.classification.family],
-      technology: [payload.technology],
+      productCategory: [payload.controlledClassification!.productCategory.label],
+      applicationMagnitude: [payload.controlledClassification!.applicationMagnitude.label],
+      technology: [payload.controlledClassification!.technology.label],
+      installationOperation: [payload.controlledClassification!.installationOperation.label],
+      monitoredElement: [payload.controlledClassification!.monitoredElement.label],
     },
     query: "",
   };
@@ -54,15 +55,15 @@ describe("CMS products page", () => {
     expect(container.querySelector("main")).not.toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Produto completo de teste" })).toBeVisible();
     expect(screen.getByText("1 produto encontrado")).toBeVisible();
-    expect(screen.getByRole("combobox", { name: "Categoria" })).toHaveValue("");
+    expect(screen.getByRole("combobox", { name: "Categoria de produto" })).toHaveValue("");
 
-    fireEvent.change(screen.getByRole("combobox", { name: "Categoria" }), {
-      target: { value: "Categoria" },
+    fireEvent.change(screen.getByRole("combobox", { name: "Categoria de produto" }), {
+      target: { value: "Segmento" },
     });
     await waitFor(() =>
-      expect(catalogMocks.getPublishedProducts).toHaveBeenLastCalledWith({ category: "Categoria" }),
+      expect(catalogMocks.getPublishedProducts).toHaveBeenLastCalledWith({ productCategory: "Segmento" }),
     );
-    expect(screen.getByRole("button", { name: /categoria: categoria/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /categoria de produto: segmento/i })).toBeVisible();
   });
 
   it("submits search terms and exposes an accessible comparison tray", async () => {

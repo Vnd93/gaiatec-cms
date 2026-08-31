@@ -63,7 +63,7 @@ export default function AdminContentPage() {
       </div>
       <div className="admin-filters">
         <label>
-          Buscar por slug
+          Buscar pelo identificador da URL
           <input
             value={query}
             onChange={(e) => {
@@ -110,7 +110,7 @@ export default function AdminContentPage() {
             <thead>
               <tr>
                 <th>Título</th>
-                <th>Slug</th>
+                <th>Endereço amigável</th>
                 <th>Status</th>
                 <th>Atualização</th>
                 <th>Ação</th>

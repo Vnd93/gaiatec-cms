@@ -1,7 +1,7 @@
 // E-mails transacionais branded (Gaiatec Sistemas), enviados via Resend.
 // Usado pelas Edge Functions rdo-invite e rdo-team (não dependem do template do GoTrue).
 
-const DEFAULT_FROM = "GAIATEC SISTEMAS <nao-responda@gaiatecsistemas.com.br>";
+const DEFAULT_FROM = "GAIATEC SISTEMAS <cms@gaiatecsistemas.com>";
 const LOGO = "https://gaiatecsistemas.com.br/logo-gaiatec.png";
 
 export class EmailProviderError extends Error {

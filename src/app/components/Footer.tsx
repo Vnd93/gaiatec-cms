@@ -12,22 +12,8 @@ const KNOCKOUT = "'Knockout HTF68', sans-serif";
 type FooterLink = { label: string; href: string; newTab: boolean };
 type FooterColumn = { title: string; links: FooterLink[] };
 
-const SAFE_COLUMNS: FooterColumn[] = [
-  {
-    title: "NAVEGAÇÃO",
-    links: [
-      { label: "Produtos", href: "/produtos", newTab: false },
-      { label: "Serviços", href: "/servicos", newTab: false },
-      { label: "Indústrias", href: "/industrias", newTab: false },
-      { label: "Aplicações", href: "/aplicacoes", newTab: false },
-      { label: "Soluções", href: "/solucoes", newTab: false },
-      { label: "Contato", href: "/contato", newTab: false },
-    ],
-  },
-];
-
 function menuToColumns(items: CmsNavigationContent["items"] | undefined): FooterColumn[] {
-  if (!items) return SAFE_COLUMNS;
+  if (!items) return [];
   const visible = items.filter((item) => item.visible && item.location === "footer");
   const roots = visible.filter((item) => item.parentId === null).sort((a, b) => a.order - b.order);
   const columns = roots.map((root) => ({
@@ -37,7 +23,7 @@ function menuToColumns(items: CmsNavigationContent["items"] | undefined): Footer
       .sort((a, b) => a.order - b.order)
       .map((item) => ({ label: item.label, href: item.href, newTab: item.newTab })),
   }));
-  return columns.length ? columns : SAFE_COLUMNS;
+  return columns;
 }
 
 const SOCIAL_ICONS: Record<string, typeof Linkedin> = {
@@ -285,7 +271,7 @@ export function Footer() {
                     <div className="flex items-center gap-4">
                       {socialLinks.map((s) => (
                         <a
-                          key={s.label}
+                          key={`${s.network}-${s.href}`}
                           href={s.href}
                           target="_blank"
                           rel="noopener noreferrer"

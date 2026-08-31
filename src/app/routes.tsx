@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { lazy, Suspense } from "react";
-import { createBrowserRouter, Outlet } from "react-router";
+import { createBrowserRouter, Navigate, Outlet } from "react-router";
 import { Layout } from "./components/Layout";
 import { AuthProvider } from "./rdo/AuthContext";
 import { RequireAuth } from "./rdo/RequireAuth";
@@ -8,38 +8,19 @@ import { AdminAuthProvider } from "../admin/auth/AdminAuthContext";
 import { RequireAdminAuth } from "../admin/auth/RequireAdminAuth";
 import { AdminShell } from "../admin/components/AdminShell";
 
-// Home page = eager load (entry point — não vale a pena lazy)
-import HomePage from "./pages/HomePage";
 import RouteErrorPage from "./pages/RouteErrorPage";
 
 // Demais páginas = lazy load (code splitting)
-const SobrePage = lazy(() => import("./pages/SobrePage"));
-const SectorPage = lazy(() => import("./pages/SectorPage"));
-const BiodigestorPage = lazy(() => import("./pages/BiodigestorPage"));
-const BiodigestorComoFunciona = lazy(() => import("./pages/BiodigestorComoFunciona"));
-const BiodigestorPortes = lazy(() => import("./pages/BiodigestorPortes"));
-const BiodigestorBeneficios = lazy(() => import("./pages/BiodigestorBeneficios"));
-const BiodigestorMonitoramento = lazy(() => import("./pages/BiodigestorMonitoramento"));
-const BiodigestorBiogasBiometano = lazy(() => import("./pages/BiodigestorBiogasBiometano"));
-const BiodigestorAutomacao = lazy(() => import("./pages/BiodigestorAutomacao"));
-const BiodigestorEscolas = lazy(() => import("./pages/BiodigestorEscolas"));
 const BlogPage = lazy(() => import("../public/pages/CmsBlogPage"));
 const BlogPostPage = lazy(() => import("../public/pages/CmsBlogPostPage"));
 const CampaignPage = lazy(() => import("../public/pages/CmsCampaignPage"));
-const ContatoPage = lazy(() => import("./pages/ContatoPage"));
 const ProdutosPage = lazy(() => import("../public/pages/CmsProductsPage"));
 const ProdutoPage = lazy(() => import("../public/pages/CmsProductPage"));
-const SetoresPage = lazy(() => import("./pages/SetoresPage"));
 const DiscoveryListPage = lazy(() => import("../public/pages/CmsDiscoveryListPage"));
 const DiscoveryDetailPage = lazy(() => import("../public/pages/CmsDiscoveryDetailPage"));
 const ComparadorPage = lazy(() => import("../public/pages/CmsComparePage"));
 const SearchPage = lazy(() => import("../public/pages/CmsSearchPage"));
-const DeteccaoGasPage = lazy(() => import("./pages/DeteccaoGasPage"));
-const DeteccaoGasCategoriaPage = lazy(() => import("./pages/DeteccaoGasCategoriaPage"));
-const DeteccaoGasProdutoPage = lazy(() => import("./pages/DeteccaoGasProdutoPage"));
 const NotFoundPage = lazy(() => import("./pages/NotFoundPage"));
-const PoliticaPrivacidadePage = lazy(() => import("./pages/PoliticaPrivacidadePage"));
-const TermosDeUsoPage = lazy(() => import("./pages/TermosDeUsoPage"));
 
 // ─── App interno: Relatório Diário de Obra (/relatorio-de-obra) ───
 // Vive fora do Layout de marketing — shell/CSS próprios (Montserrat, cantos arredondados).
@@ -66,8 +47,12 @@ const AdminMediaPage = lazy(() => import("../admin/pages/AdminMediaPage"));
 const AdminProfilePage = lazy(() => import("../admin/pages/AdminProfilePage"));
 const AdminUsersPage = lazy(() => import("../admin/pages/AdminUsersPage"));
 const AdminDiagnosticsPage = lazy(() => import("../admin/pages/AdminDiagnosticsPage"));
+const AdminNotFoundPage = lazy(() => import("../admin/pages/AdminNotFoundPage"));
 const AdminDiscoveryPage = lazy(() => import("../admin/pages/AdminDiscoveryPage"));
 const AdminSearchGovernancePage = lazy(() => import("../admin/pages/AdminSearchGovernancePage"));
+const AdminControlledVocabulariesPage = lazy(
+  () => import("../admin/pages/AdminControlledVocabulariesPage"),
+);
 const AdminPagesPage = lazy(() => import("../admin/pages/AdminPagesPage"));
 const AdminPageBuilderPage = lazy(() => import("../admin/pages/AdminPageBuilderPage"));
 const AdminSiteConfigurationPage = lazy(() => import("../admin/pages/AdminSiteConfigurationPage"));
@@ -102,7 +87,7 @@ const discoveryList = (contentType: "service" | "industry" | "application" | "so
 const discoveryDetail = (contentType: "service" | "industry" | "application" | "solution") => (
   <Suspense fallback={<PageLoader />}><DiscoveryDetailPage contentType={contentType} /></Suspense>
 );
-const managedPage = (fallback: React.ReactNode) => (
+const managedPage = (fallback?: React.ReactNode) => (
   <Suspense fallback={<PageLoader />}>
     <CmsManagedPageRoute fallback={fallback} />
   </Suspense>
@@ -114,39 +99,50 @@ export const router = createBrowserRouter([
     Component: Layout,
     errorElement: <RouteErrorPage />,
     children: [
-      { index: true, element: managedPage(<HomePage />) },
-      { path: "sobre", element: managedPage(lazyWrap(SobrePage)) },
-      { path: "setores", element: managedPage(lazyWrap(SetoresPage)) },
-      { path: "setores/:slug", element: managedPage(lazyWrap(SectorPage)) },
+      { index: true, element: managedPage() },
+      { path: "sobre", element: managedPage() },
+      { path: "setores", element: <Navigate replace to="/industrias" /> },
+      { path: "setores/saneamento", element: <Navigate replace to="/industrias/saneamento" /> },
+      { path: "setores/gas-petroleo", element: <Navigate replace to="/industrias/oleo-e-gas" /> },
+      { path: "setores/hvac", element: <Navigate replace to="/industrias/hvac" /> },
+      { path: "setores/agronegocio", element: <Navigate replace to="/industrias/agronegocio" /> },
+      { path: "setores/industria", element: <Navigate replace to="/industrias/processos-industriais" /> },
+      { path: "setores/biogas-biometano", element: <Navigate replace to="/industrias/biogas-biometano" /> },
+      { path: "setores/protecao-catodica", element: <Navigate replace to="/industrias/protecao-catodica" /> },
+      { path: "setores/controle-ambiental", element: <Navigate replace to="/industrias/controle-ambiental" /> },
+      { path: "setores/seguranca-operacional", element: <Navigate replace to="/industrias/seguranca-operacional" /> },
+      { path: "setores/instrumentacao", element: <Navigate replace to="/industrias/instrumentacao" /> },
+      { path: "setores/telemetria", element: <Navigate replace to="/industrias/telemetria" /> },
+      { path: "setores/:slug", element: managedPage() },
       { path: "servicos", element: discoveryList("service") },
       { path: "servicos/:slug", element: discoveryDetail("service") },
       { path: "industrias", element: discoveryList("industry") },
       { path: "industrias/:slug", element: discoveryDetail("industry") },
       { path: "solucoes", element: discoveryList("solution") },
       { path: "solucoes/:slug", element: discoveryDetail("solution") },
-      { path: "biodigestor", element: managedPage(lazyWrap(BiodigestorPage)) },
-      { path: "biodigestor/como-funciona", element: managedPage(lazyWrap(BiodigestorComoFunciona)) },
-      { path: "biodigestor/portes", element: managedPage(lazyWrap(BiodigestorPortes)) },
-      { path: "biodigestor/beneficios", element: managedPage(lazyWrap(BiodigestorBeneficios)) },
-      { path: "biodigestor/monitoramento", element: managedPage(lazyWrap(BiodigestorMonitoramento)) },
-      { path: "biodigestor/biogas-biometano", element: managedPage(lazyWrap(BiodigestorBiogasBiometano)) },
-      { path: "biodigestor/automacao", element: managedPage(lazyWrap(BiodigestorAutomacao)) },
-      { path: "biodigestor/escolas", element: managedPage(lazyWrap(BiodigestorEscolas)) },
+      { path: "biodigestor", element: managedPage() },
+      { path: "biodigestor/como-funciona", element: managedPage() },
+      { path: "biodigestor/portes", element: managedPage() },
+      { path: "biodigestor/beneficios", element: managedPage() },
+      { path: "biodigestor/monitoramento", element: managedPage() },
+      { path: "biodigestor/biogas-biometano", element: managedPage() },
+      { path: "biodigestor/automacao", element: managedPage() },
+      { path: "biodigestor/escolas", element: managedPage() },
       { path: "blog", element: lazyWrap(BlogPage) },
       { path: "blog/:slug", element: lazyWrap(BlogPostPage) },
       { path: "campanhas/:slug", element: lazyWrap(CampaignPage) },
-      { path: "contato", element: managedPage(lazyWrap(ContatoPage)) },
+      { path: "contato", element: managedPage() },
       { path: "produtos", element: lazyWrap(ProdutosPage) },
       { path: "produtos/comparador", element: lazyWrap(ComparadorPage) },
       { path: "produtos/:slug", element: lazyWrap(ProdutoPage) },
       { path: "busca", element: lazyWrap(SearchPage) },
       { path: "aplicacoes", element: discoveryList("application") },
       { path: "aplicacoes/:slug", element: discoveryDetail("application") },
-      { path: "deteccao-de-gas", element: managedPage(lazyWrap(DeteccaoGasPage)) },
-      { path: "deteccao-de-gas/:categoria", element: managedPage(lazyWrap(DeteccaoGasCategoriaPage)) },
-      { path: "deteccao-de-gas/:categoria/:produto", element: managedPage(lazyWrap(DeteccaoGasProdutoPage)) },
-      { path: "politica-de-privacidade", element: managedPage(lazyWrap(PoliticaPrivacidadePage)) },
-      { path: "termos-de-uso", element: managedPage(lazyWrap(TermosDeUsoPage)) },
+      { path: "deteccao-de-gas", element: managedPage() },
+      { path: "deteccao-de-gas/:categoria", element: managedPage() },
+      { path: "deteccao-de-gas/:categoria/:produto", element: managedPage() },
+      { path: "politica-de-privacidade", element: managedPage() },
+      { path: "termos-de-uso", element: managedPage() },
       { path: "*", element: managedPage(lazyWrap(NotFoundPage)) },
     ],
   },
@@ -194,6 +190,7 @@ export const router = createBrowserRouter([
           { path: "descoberta/:contentType", element: lazyWrap(AdminDiscoveryPage) },
           { path: "descoberta/:contentType/:id", element: lazyWrap(AdminDiscoveryPage) },
           { path: "busca", element: lazyWrap(AdminSearchGovernancePage) },
+          { path: "listas-mestras", element: lazyWrap(AdminControlledVocabulariesPage) },
           { path: "paginas", element: lazyWrap(AdminPagesPage) },
           { path: "paginas/:id", element: lazyWrap(AdminPageBuilderPage) },
           { path: "site", element: lazyWrap(AdminSiteConfigurationPage) },
@@ -205,6 +202,7 @@ export const router = createBrowserRouter([
           { path: "perfil", element: lazyWrap(AdminProfilePage) },
           { path: "usuarios", element: lazyWrap(AdminUsersPage) },
           { path: "diagnosticos", element: lazyWrap(AdminDiagnosticsPage) },
+          { path: "*", element: lazyWrap(AdminNotFoundPage) },
         ],
       },
     ],

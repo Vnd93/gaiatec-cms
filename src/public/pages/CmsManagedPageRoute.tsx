@@ -43,6 +43,7 @@ export function CmsManagedPageRoute({ fallback }: { fallback?: React.ReactNode }
           return;
         }
         if (resolution.kind === "fallback") {
+          if (fallback === undefined) setRetiredStatus(404);
           setResolved(true);
           return;
         }
@@ -75,7 +76,7 @@ export function CmsManagedPageRoute({ fallback }: { fallback?: React.ReactNode }
     return () => {
       active = false;
     };
-  }, [pathname]);
+  }, [fallback, pathname]);
 
   if (!resolved)
     return (

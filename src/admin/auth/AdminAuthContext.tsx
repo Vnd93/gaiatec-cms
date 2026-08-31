@@ -63,6 +63,18 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<AdminAuthStatus>("loading");
   const [profile, setProfile] = useState<SessionSnapshot | null>(null);
   const requestId = useRef(0);
+  const sessionRef = useRef<Session | null>(null);
+  const statusRef = useRef<AdminAuthStatus>("loading");
+
+  const updateSession = useCallback((nextSession: Session | null) => {
+    sessionRef.current = nextSession;
+    setSession(nextSession);
+  }, []);
+
+  const updateStatus = useCallback((nextStatus: AdminAuthStatus) => {
+    statusRef.current = nextStatus;
+    setStatus(nextStatus);
+  }, []);
 
   useEffect(() => {
     let robots = document.querySelector('meta[name="robots"]') as HTMLMetaElement | null;
@@ -78,18 +90,18 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
   const resolveSession = useCallback(
     async (nextSession: Session, action: "resolve" | "mfa" | "recovery" = "resolve") => {
       const currentRequest = ++requestId.current;
-      setSession(nextSession);
-      setStatus("loading");
+      updateSession(nextSession);
+      updateStatus("loading");
       try {
         const snapshot = await invokeSession(nextSession, action);
         if (currentRequest !== requestId.current) return;
         setProfile(snapshot);
         if (snapshot.accessGranted) {
-          setStatus("ready");
+          updateStatus("ready");
           return;
         }
         if (!snapshot.mfaRequired) {
-          setStatus("unauthorized");
+          updateStatus("unauthorized");
           return;
         }
         const [{ data: factors }, { data: assurance }] = await Promise.all([
@@ -103,39 +115,70 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
           if (refreshed.data.session) {
             const verifiedSnapshot = await invokeSession(refreshed.data.session, "mfa");
             if (currentRequest !== requestId.current) return;
-            setSession(refreshed.data.session);
+            updateSession(refreshed.data.session);
             setProfile(verifiedSnapshot);
-            setStatus(verifiedSnapshot.accessGranted ? "ready" : "unauthorized");
+            updateStatus(verifiedSnapshot.accessGranted ? "ready" : "unauthorized");
           }
           return;
         }
-        setStatus(verified ? "mfa_challenge" : "mfa_enroll");
+        updateStatus(verified ? "mfa_challenge" : "mfa_enroll");
       } catch {
         if (currentRequest !== requestId.current) return;
         setProfile(null);
-        setStatus("unauthorized");
+        updateStatus("unauthorized");
       }
     },
-    [],
+    [updateSession, updateStatus],
+  );
+
+  const refreshSameUserInBackground = useCallback(
+    async (nextSession: Session) => {
+      const currentRequest = ++requestId.current;
+      updateSession(nextSession);
+      try {
+        const snapshot = await invokeSession(nextSession, "resolve");
+        if (currentRequest !== requestId.current) return;
+        setProfile(snapshot);
+        if (snapshot.accessGranted) {
+          updateStatus("ready");
+          return;
+        }
+        // A renovação silenciosa só permanece silenciosa enquanto a autorização
+        // efetiva continua válida. Qualquer downgrade volta ao fluxo completo.
+        await resolveSession(nextSession);
+      } catch {
+        if (currentRequest !== requestId.current) return;
+        setProfile(null);
+        updateStatus("unauthorized");
+      }
+    },
+    [resolveSession, updateSession, updateStatus],
   );
 
   useEffect(() => {
     let active = true;
     const applySession = (event: string, nextSession: Session | null) => {
       if (!active) return;
-      setSession(nextSession);
       if (!nextSession) {
         requestId.current += 1;
+        updateSession(null);
         setProfile(null);
-        setStatus("signed_out");
+        updateStatus("signed_out");
         return;
       }
       const passwordRoute = window.location.pathname === "/admin/definir-senha";
       if (event === "PASSWORD_RECOVERY" || passwordRoute) {
-        setStatus("password_update");
+        updateSession(nextSession);
+        updateStatus("password_update");
         return;
       }
-      void resolveSession(nextSession);
+      const sameUser = sessionRef.current?.user.id === nextSession.user.id;
+      const passiveSameUserEvent = event === "TOKEN_REFRESHED" || event === "SIGNED_IN";
+      if (sameUser && passiveSameUserEvent && statusRef.current === "ready") {
+        void refreshSameUserInBackground(nextSession);
+        return;
+      }
+      void resolveSession(nextSession, event === "MFA_CHALLENGE_VERIFIED" ? "mfa" : "resolve");
     };
 
     void supabase.auth.getSession().then(({ data }) => applySession("INITIAL_SESSION", data.session));
@@ -146,7 +189,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
       active = false;
       data.subscription.unsubscribe();
     };
-  }, [resolveSession]);
+  }, [refreshSameUserInBackground, resolveSession, updateSession, updateStatus]);
 
   const value = useMemo<AdminAuthValue>(
     () => ({
@@ -167,9 +210,9 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         if (session) await invokeSession(session, "logout").catch(() => undefined);
         await supabase.auth.signOut({ scope: "local" });
         requestId.current += 1;
-        setSession(null);
+        updateSession(null);
         setProfile(null);
-        setStatus("signed_out");
+        updateStatus("signed_out");
       },
       async requestRecovery(email) {
         const redirectTo = `${window.location.origin}/admin/definir-senha`;
@@ -226,7 +269,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         return { error: null };
       },
     }),
-    [profile, resolveSession, session, status],
+    [profile, resolveSession, session, status, updateSession, updateStatus],
   );
 
   return <AdminAuthContext.Provider value={value}>{children}</AdminAuthContext.Provider>;

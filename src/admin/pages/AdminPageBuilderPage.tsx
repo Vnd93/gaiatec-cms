@@ -4,8 +4,12 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { supabase } from "@/lib/supabase";
 import { CmsPageContentSchema, type CmsPageBlock, type CmsPageContent } from "@/shared/contracts/cms-content";
 import { PageBlockEditor, type BuilderMedia, type BuilderRelation } from "../components/PageBlockEditor";
+import { UnsavedChangesGuard } from "../components/UnsavedChangesGuard";
 import { useAdminAuth } from "../auth/AdminAuthContext";
 import { editorialCommand, issuePreview } from "../api/cms-api";
+import { openExternalAfterAsync } from "../open-external-preview";
+import { useDraftBackup } from "../hooks/useDraftBackup";
+import { DraftBackupNotice } from "../components/DraftBackupNotice";
 import {
   createInitialPagePayload,
   createPageBlock,
@@ -77,6 +81,10 @@ export default function AdminPageBuilderPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [previewFallback, setPreviewFallback] = useState("");
+  const [refreshToken, setRefreshToken] = useState(0);
+  const [savedSnapshot, setSavedSnapshot] = useState(() => JSON.stringify({ payload, slug }));
+  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(payload.blocks[0]?.id ?? null);
   const [reason, setReason] = useState("Atualização pelo site builder");
   const [publishAt, setPublishAt] = useState("");
 
@@ -146,6 +154,8 @@ export default function AdminPageBuilderPage() {
             setLoaded(item);
             setPayload(parsed.data);
             setSlug(item.slug);
+            setSavedSnapshot(JSON.stringify({ payload: parsed.data, slug: item.slug }));
+            setSelectedBlockId((current) => current ?? parsed.data.blocks[0]?.id ?? null);
           }
         }
         setLoading(false);
@@ -153,13 +163,46 @@ export default function AdminPageBuilderPage() {
     return () => {
       active = false;
     };
-  }, [id]);
+  }, [id, refreshToken]);
 
   const validation = useMemo(() => CmsPageContentSchema.safeParse(payload), [payload]);
   const latestRevision = loaded?.cms_content_revisions
     .slice()
     .sort((a, b) => b.revision_number - a.revision_number)[0];
   const state = loaded?.workflow_status ?? "new";
+  const currentSnapshot = JSON.stringify({ payload, slug });
+  const dirty = currentSnapshot !== savedSnapshot;
+  const backup = useDraftBackup({
+    userId: session?.user.id,
+    editorType: contentType,
+    itemKey: id ?? "novo",
+    value: { payload, slug, activeTab, selectedBlockId },
+    dirty,
+    enabled: !loading,
+    onRestore: (stored) => {
+      setPayload(stored.payload);
+      setSlug(stored.slug);
+      setActiveTab(stored.activeTab);
+      setSelectedBlockId(stored.selectedBlockId);
+    },
+  });
+  const selectedBlock = payload.blocks.find((block) => block.id === selectedBlockId) ?? payload.blocks[0];
+  const selectedBlockIndex = selectedBlock
+    ? payload.blocks.findIndex((block) => block.id === selectedBlock.id)
+    : -1;
+  const nextAction = dirty
+    ? "Salvar o rascunho antes de avançar no workflow"
+    : state === "draft"
+      ? "Enviar para revisão"
+      : state === "in_review"
+        ? "Aprovar a revisão"
+        : state === "approved"
+          ? "Publicar agora ou agendar"
+          : state === "published"
+            ? "Abrir nova versão para editar"
+            : state === "scheduled"
+              ? "Aguardar a publicação agendada"
+              : "Revisar o histórico e restaurar se necessário";
 
   async function run(action: string, extras: Record<string, unknown> = {}) {
     if (!session) return;
@@ -167,6 +210,10 @@ export default function AdminPageBuilderPage() {
     setError("");
     setSuccess("");
     try {
+      if (!["create", "save"].includes(action) && dirty)
+        throw new Error(
+          "Salve as alterações do rascunho antes de executar uma ação de revisão ou publicação.",
+        );
       if ((action === "create" || action === "save") && !validation.success) {
         const issue = validation.error.issues[0];
         throw new Error(`Página incompleta: ${issue.path.join(".")} — ${issue.message}`);
@@ -192,10 +239,14 @@ export default function AdminPageBuilderPage() {
         reason,
         ...extras,
       });
-      setSuccess(`Operação concluída: ${result.status}. Código ${result.correlationId.slice(0, 8)}.`);
+      setSuccess(
+        `Operação concluída: ${result.status}. Código de acompanhamento ${result.correlationId.slice(0, 8)}.`,
+      );
+      if (action === "create" || action === "save") setSavedSnapshot(currentSnapshot);
+      if (["create", "save", "publish"].includes(action)) backup.clear();
       if (!loaded && result.itemId) navigate(`/admin/paginas/${result.itemId}`, { replace: true });
       else if (action === "hard_delete") navigate("/admin/paginas", { replace: true });
-      else window.location.reload();
+      else setRefreshToken((current) => current + 1);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Operação não concluída.");
     } finally {
@@ -228,13 +279,15 @@ export default function AdminPageBuilderPage() {
     if (!session || !loaded) return;
     setBusy(true);
     setError("");
-    try {
-      const result = await issuePreview(session, loaded.id, revisionId);
-      window.location.assign(result.path);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Preview indisponível.");
-      setBusy(false);
-    }
+    setPreviewFallback("");
+    const result = await openExternalAfterAsync(
+      async () => (await issuePreview(session, loaded.id, revisionId)).path,
+    );
+    if (result.status === "blocked") {
+      setPreviewFallback(result.url);
+      setError("O navegador bloqueou a nova aba. Abra o preview pelo link abaixo.");
+    } else if (result.status === "failed") setError(result.error.message);
+    setBusy(false);
   }
 
   async function duplicatePage() {
@@ -280,6 +333,8 @@ export default function AdminPageBuilderPage() {
 
   return (
     <section>
+      <UnsavedChangesGuard dirty={dirty && !busy} />
+      <DraftBackupNotice backup={backup} />
       <div className="admin-page-heading">
         <div>
           <p className="admin-eyebrow">SITE BUILDER · {contentType === "homepage" ? "HOMEPAGE" : "PÁGINA"}</p>
@@ -301,6 +356,14 @@ export default function AdminPageBuilderPage() {
       {error && (
         <p className="admin-notice admin-notice--error" role="alert">
           {error}
+          {previewFallback && (
+            <>
+              {" "}
+              <a href={previewFallback} target="_blank" rel="noopener noreferrer">
+                Abrir preview em nova aba
+              </a>
+            </>
+          )}
         </p>
       )}
       {success && (
@@ -321,6 +384,32 @@ export default function AdminPageBuilderPage() {
           <strong>{validation.success ? "válido" : `${validation.error.issues.length} pendência(s)`}</strong>
         </span>
       </div>
+
+      <dl className="admin-editor-context" aria-label="Contexto da edição">
+        <div>
+          <dt>Conteúdo em edição</dt>
+          <dd>
+            {payload.title || "Sem título"} · {payload.route.path}
+          </dd>
+        </div>
+        <div>
+          <dt>Versão e situação</dt>
+          <dd>
+            {dirty ? "Rascunho com alterações não salvas" : `Rascunho salvo · estado ${state}`}
+            {latestRevision ? ` · revisão ${latestRevision.revision_number}` : " · sem revisão congelada"}
+          </dd>
+        </div>
+        <div>
+          <dt>Área selecionada e próxima ação</dt>
+          <dd>
+            {selectedBlock
+              ? `${blockLabels[selectedBlock.type]} · bloco ${selectedBlockIndex + 1} de ${payload.blocks.length} · ${selectedBlock.hidden ? "oculto no site" : "público após publicação"}`
+              : "Nenhum bloco selecionado"}
+            <br />
+            {nextAction}
+          </dd>
+        </div>
+      </dl>
 
       <div className="admin-tabs" role="tablist" aria-label="Seções do site builder">
         {tabs.map(([key, label], index) => (
@@ -382,12 +471,15 @@ export default function AdminPageBuilderPage() {
               />
             </label>
             <label>
-              Slug técnico
+              Identificador da URL
               <input
                 value={slug}
                 disabled={contentType === "homepage" || Boolean(loaded)}
                 onChange={(event) => setSlug(event.target.value)}
               />
+              <small>
+                Use letras minúsculas, números e hífens. Depois da criação, a alteração é bloqueada.
+              </small>
             </label>
             <label>
               Tipo de página
@@ -456,35 +548,56 @@ export default function AdminPageBuilderPage() {
               </label>
               <button
                 type="button"
-                onClick={() => update({ blocks: [...payload.blocks, createPageBlock(blockType)] })}
+                onClick={() => {
+                  const block = createPageBlock(blockType);
+                  update({ blocks: [...payload.blocks, block] });
+                  setSelectedBlockId(block.id);
+                }}
               >
                 <Plus size={16} /> Adicionar ao final
               </button>
             </div>
             <div className="admin-page-blocks">
               {payload.blocks.map((block, index) => (
-                <PageBlockEditor
+                <div
+                  className={
+                    selectedBlock?.id === block.id
+                      ? "admin-block-selection is-selected"
+                      : "admin-block-selection"
+                  }
                   key={block.id}
-                  block={block}
-                  index={index}
-                  total={payload.blocks.length}
-                  media={media}
-                  relations={relations.filter((item) => item.id !== loaded?.id)}
-                  onChange={(next) =>
-                    update({ blocks: payload.blocks.map((item) => (item.id === block.id ? next : item)) })
-                  }
-                  onRemove={() => update({ blocks: payload.blocks.filter((item) => item.id !== block.id) })}
-                  onDuplicate={() =>
-                    update({
-                      blocks: [
-                        ...payload.blocks.slice(0, index + 1),
-                        duplicatePageBlock(block),
-                        ...payload.blocks.slice(index + 1),
-                      ],
-                    })
-                  }
-                  onMove={(offset) => update({ blocks: movePageBlock(payload.blocks, index, offset) })}
-                />
+                  onClick={() => setSelectedBlockId(block.id)}
+                  onFocusCapture={() => setSelectedBlockId(block.id)}
+                >
+                  <PageBlockEditor
+                    block={block}
+                    index={index}
+                    total={payload.blocks.length}
+                    media={media}
+                    relations={relations.filter((item) => item.id !== loaded?.id)}
+                    onChange={(next) =>
+                      update({ blocks: payload.blocks.map((item) => (item.id === block.id ? next : item)) })
+                    }
+                    onRemove={() => {
+                      if (!window.confirm(`Remover o bloco “${blockLabels[block.type]}” desta página?`))
+                        return;
+                      update({ blocks: payload.blocks.filter((item) => item.id !== block.id) });
+                      setSelectedBlockId(payload.blocks.find((item) => item.id !== block.id)?.id ?? null);
+                    }}
+                    onDuplicate={() => {
+                      const duplicate = duplicatePageBlock(block);
+                      update({
+                        blocks: [
+                          ...payload.blocks.slice(0, index + 1),
+                          duplicate,
+                          ...payload.blocks.slice(index + 1),
+                        ],
+                      });
+                      setSelectedBlockId(duplicate.id);
+                    }}
+                    onMove={(offset) => update({ blocks: movePageBlock(payload.blocks, index, offset) })}
+                  />
+                </div>
               ))}
             </div>
           </div>
@@ -567,8 +680,9 @@ export default function AdminPageBuilderPage() {
               />
             </label>
             <label>
-              Canonical
+              Endereço oficial da página
               <input value={payload.seo.canonicalPath} readOnly />
+              <small>Usado pelos mecanismos de busca como endereço principal deste conteúdo.</small>
             </label>
             <label>
               Imagem de compartilhamento

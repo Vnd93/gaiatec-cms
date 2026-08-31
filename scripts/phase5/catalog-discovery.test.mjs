@@ -25,6 +25,18 @@ test("all F5 consumers and admin editors are routed", async () => {
   for (const type of ["service", "industry", "application", "solution"])
     assert.match(diagnostics, new RegExp(type));
 });
+test("institutional editor is structured for efficient operation", async () => {
+  const page = await read("src/admin/pages/AdminDiscoveryPage.tsx");
+  const editor = await read("src/admin/components/DiscoveryContentEditor.tsx");
+  const styles = await read("src/admin/admin.css");
+  assert.match(page, /DiscoveryContentEditor/);
+  for (const section of ["Conteúdo", "Busca, CTA e SEO", "Mídia e relações", "Governança", "Avançado"])
+    assert.match(editor, new RegExp(section));
+  for (const field of ["Título público", "Resumo", "Texto do botão", "Título SEO", "JSON governado"])
+    assert.match(editor, new RegExp(field));
+  assert.match(styles, /\.admin-field-grid/);
+  assert.match(styles, /\.admin-workflow-bar/);
+});
 test("unified search uses only published projection", async () => {
   const fn = await read("supabase/functions/cms-public/index.ts");
   assert.match(fn, /cms_published_projection/);

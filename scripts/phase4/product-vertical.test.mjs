@@ -56,14 +56,11 @@ test("F4 admin editor exposes every governed section and workflow", async () => 
     "Identificação",
     "Classificação",
     "Conteúdo comercial",
-    "Especificações",
-    "Imagens",
-    "Documentos",
-    "Relações",
-    "Busca",
-    "SEO",
+    "Técnica e mídia",
+    "Relações e busca",
+    "Visibilidade e SEO",
     "Governança",
-    "Histórico/publicação",
+    "Publicação e histórico",
   ])
     assert.match(editor, new RegExp(label));
   assert.match(editor, /Preview fiel/);

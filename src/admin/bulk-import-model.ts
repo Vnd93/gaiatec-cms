@@ -28,11 +28,12 @@ export const bulkRequiredHeaders = {
     "fabricante_slug",
     "linha",
     "linha_slug",
-    "segmento",
-    "categoria",
-    "familia",
+    "categoria_produto_id",
+    "aplicacao_grandeza_id",
+    "tecnologia_id",
+    "instalacao_operacao_id",
+    "elemento_monitorado_id",
     "funcao",
-    "tecnologia",
     "descricao_curta",
     "proposta_valor",
     "beneficios",
@@ -179,6 +180,28 @@ export function buildBulkProductRows(tables: BulkWorkbookTables) {
         : product.fonte_tipo === "empresa_oficial"
           ? "official_company"
           : "owner_authored";
+    const controlledIds = {
+      productCategory: product.categoria_produto_id?.trim() ?? "",
+      applicationMagnitude: product.aplicacao_grandeza_id?.trim() ?? "",
+      technology: product.tecnologia_id?.trim() ?? "",
+      installationOperation: product.instalacao_operacao_id?.trim() ?? "",
+      monitoredElement: product.elemento_monitorado_id?.trim() ?? "",
+    };
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    Object.entries(controlledIds).forEach(([field, id]) => {
+      if (!uuidPattern.test(id))
+        errors.push({
+          sheet: "Produtos",
+          row: sourceRow,
+          field,
+          message: "Informe o UUID de uma opção ativa da lista mestra correspondente.",
+        });
+    });
+    const unresolved = (id: string) => ({
+      id,
+      slug: "resolvido-no-servidor",
+      label: "Resolvido no servidor",
+    });
     const payloadCandidate = {
       schemaVersion: 1,
       consumerId: "cms.catalog-product.v1",
@@ -197,12 +220,19 @@ export function buildBulkProductRows(tables: BulkWorkbookTables) {
       },
       productLine: { name: product.linha?.trim() ?? "", slug: product.linha_slug?.trim() ?? "" },
       classification: {
-        segment: product.segmento?.trim() ?? "",
-        category: product.categoria?.trim() ?? "",
+        segment: "Resolvido no servidor",
+        category: "Resolvido no servidor",
         ...(optional(product.subcategoria ?? "")
           ? { subcategory: optional(product.subcategoria ?? "") }
           : {}),
-        family: product.familia?.trim() ?? "",
+        family: "Resolvido no servidor",
+      },
+      controlledClassification: {
+        productCategory: unresolved(controlledIds.productCategory),
+        applicationMagnitude: unresolved(controlledIds.applicationMagnitude),
+        technology: unresolved(controlledIds.technology),
+        installationOperation: unresolved(controlledIds.installationOperation),
+        monitoredElement: unresolved(controlledIds.monitoredElement),
       },
       commercial: {
         shortDescription: product.descricao_curta?.trim() ?? "",
@@ -211,7 +241,7 @@ export function buildBulkProductRows(tables: BulkWorkbookTables) {
         differentiators: splitList(product.diferenciais ?? ""),
       },
       function: product.funcao?.trim() ?? "",
-      technology: product.tecnologia?.trim() ?? "",
+      technology: "Resolvido no servidor",
       models,
       specifications,
       media: [],

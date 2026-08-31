@@ -32,3 +32,9 @@ Revalidação após o lote: o Worker passou a reconhecer `/industrias`, `/soluco
 Evidências: [cadastro em massa autenticado](./evidencia-cadastro-massa-staging.png) e [solução clean-room publicada](./evidencia-solucao-clean-room-staging.png).
 
 Esta aprovação não substitui o aceite editorial dos lotes reais nem autoriza o go-live.
+
+## Revalidação do editor administrativo
+
+O editor institucional foi revisado após relato do operador sobre campos sobrepostos e fluxo pouco prático. Serviços, indústrias, aplicações e soluções passaram a usar formulários estruturados divididos em Conteúdo; Busca, CTA e SEO; Mídia e relações; Governança; e Avançado. O JSON integral deixou de ser a interface principal e ficou restrito à manutenção excepcional.
+
+A inspeção no Chrome encontrou e corrigiu uma herança de layout que fazia a barra fixa do workflow encobrir o formulário. Depois da correção, a barra ficou com aproximadamente 69 px, todos os botões permaneceram na mesma faixa e nenhum campo apresentou largura/altura insuficiente ou sobreposição. Os nomes acessíveis dos controles foram separados dos textos de ajuda. A revisão foi publicada somente em staging e aprovada com 50 testes unitários, testes de Fase 5, typecheck, lint sem erros e build completo.

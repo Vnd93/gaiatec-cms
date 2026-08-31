@@ -2,7 +2,7 @@
 
 ## Estado
 
-Implementação técnica, lote sintético e lote clean-room inicial aprovados em staging. A aprovação LGPD administrativa foi registrada, a chave Resend existe e o cron seguro está ativo. O Gate G8 permanece pendente da autorização do remetente no Resend, das demais dependências operacionais e da decisão formal de go-live.
+Implementação técnica, lote sintético, lote clean-room inicial, canary editorial, restore e entrega pelo Resend aprovados em staging. A aprovação LGPD administrativa foi registrada, o cron seguro está ativo e o remetente usa o domínio verificado. O Gate G8 permanece fechado para produção somente até o aceite específico do relatório de canary e a decisão formal de go-live.
 
 ## Evidências executadas em staging
 

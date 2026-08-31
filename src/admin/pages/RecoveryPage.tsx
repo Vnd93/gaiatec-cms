@@ -21,11 +21,10 @@ export default function AdminRecoveryPage() {
   }
 
   return (
-    <AdminFrame title="Recuperar acesso">
-      <p>
-        Se o e-mail possuir um convite administrativo, enviaremos um link seguro. A mensagem não confirma se a
-        conta existe.
-      </p>
+    <AdminFrame
+      title="Recuperar acesso"
+      description="Solicite um link seguro. A resposta não confirma se a conta existe."
+    >
       <form onSubmit={submit} className="admin-form">
         <label htmlFor="admin-recovery-email">E-mail corporativo</label>
         <input
@@ -35,7 +34,11 @@ export default function AdminRecoveryPage() {
           required
           value={email}
           onChange={(event) => setEmail(event.target.value)}
+          aria-describedby="admin-recovery-help"
         />
+        <small id="admin-recovery-help">
+          O link é enviado somente para convites administrativos válidos.
+        </small>
         {error && <AdminError>{error}</AdminError>}
         {sent && <AdminSuccess>Solicitação recebida. Verifique a caixa de entrada e o spam.</AdminSuccess>}
         <button className="admin-button" type="submit" disabled={busy || sent}>

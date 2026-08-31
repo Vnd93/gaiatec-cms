@@ -68,10 +68,11 @@ export default function CmsProductsPage() {
   const options = useMemo(
     () =>
       [
-        ["segment", "Segmento"],
-        ["category", "Categoria"],
-        ["family", "Família"],
+        ["productCategory", "Categoria de produto"],
+        ["applicationMagnitude", "Aplicação / grandeza"],
         ["technology", "Tecnologia"],
+        ["installationOperation", "Instalação / operação"],
+        ["monitoredElement", "Elemento monitorado"],
       ] as const,
     [],
   );

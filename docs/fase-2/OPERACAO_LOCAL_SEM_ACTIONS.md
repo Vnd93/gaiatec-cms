@@ -22,16 +22,16 @@ O comando local cobre formatacao, lint, TypeScript, testes unitarios e de integr
 
 ## Banco local
 
-O job de banco continua separado porque requer Docker e Supabase CLI, que nao estao instalados nesta estacao. Quando essas ferramentas estiverem disponiveis, a verificacao obrigatoria e:
+O job de banco continua separado porque requer Docker, que nao esta instalado nesta estacao. A Supabase CLI esta disponivel via `npx supabase` 2.116.0. Quando Docker estiver disponivel, a verificacao obrigatoria e:
 
 ```powershell
-supabase start
-supabase db reset --local --no-seed
+npx supabase start
+npx supabase db reset --local --no-seed
 npm run test:rls
-supabase stop --no-backup
+npx supabase stop --no-backup
 ```
 
-Se qualquer comando falhar, executar `supabase stop --no-backup`, registrar a falha e nao promover a alteracao.
+Se qualquer comando falhar, executar `npx supabase stop --no-backup`, registrar a falha e nao promover a alteracao.
 
 ## Deploy
 

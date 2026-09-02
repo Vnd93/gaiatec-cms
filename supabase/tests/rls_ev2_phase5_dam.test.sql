@@ -111,7 +111,7 @@ select throws_ok(
 insert into public.cms_content_items(id, content_type, slug, created_by, updated_by)
 values('47000000-0000-4000-8000-000000000030','post','dam-g5','47000000-0000-4000-8000-000000000001','47000000-0000-4000-8000-000000000001');
 insert into public.cms_content_revisions(id,item_id,revision_number,schema_version,payload,seo,provenance,source_draft_version,reason,created_by)
-values('47000000-0000-4000-8000-000000000031','47000000-0000-4000-8000-000000000030',1,1,'{"title":"DAM G5","media":[]}'::jsonb,'{}','{}',1,'Revisão DAM G5','47000000-0000-4000-8000-000000000001');
+values('47000000-0000-4000-8000-000000000031','47000000-0000-4000-8000-000000000030',1,1,'{"title":"DAM G5","media":[]}'::jsonb,'{}','[{"rightsConfirmed":true}]',1,'Revisão DAM G5','47000000-0000-4000-8000-000000000001');
 insert into public.cms_media_usages(asset_id,item_id,revision_id,usage_kind)
 values('47000000-0000-4000-8000-000000000010','47000000-0000-4000-8000-000000000030','47000000-0000-4000-8000-000000000031','content');
 select throws_ok(

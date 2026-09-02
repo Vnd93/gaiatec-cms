@@ -767,8 +767,11 @@ begin
     jsonb_build_object('action',p_action,'lockVersion',v_product.lock_version),p_correlation_id);
   update public.cms_pim_command_receipts set product_id=v_product_id,response=v_response,completed_at=now()
   where actor_id=p_actor_id and action=p_action and idempotency_key=p_idempotency_key;
-  insert into public.cms_audit_log(actor_id,action,target_type,target_id,metadata)
-  values(p_actor_id,'cms:pim.'||p_action,'pim_product',v_product_id::text,jsonb_build_object('correlationId',p_correlation_id,'environment',p_environment));
+  insert into public.cms_audit_log(actor_id,action,target_type,target_id,event_data,correlation_id)
+  values(
+    p_actor_id,'cms:pim.'||p_action,'pim_product',v_product_id::text,
+    jsonb_build_object('environment',p_environment),p_correlation_id
+  );
   return v_response;
 end;
 $$;

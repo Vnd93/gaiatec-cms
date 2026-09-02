@@ -26,6 +26,7 @@
 | Autosave vazio server-side    | aprovado às 10:52 BRT |
 | Resume após correção          | aprovado às 11:43 BRT |
 | T01 v2 R1 humana              | aprovado às 12:12 BRT |
+| T01 v2 R2 humana              | aprovado às 12:38 BRT |
 | Produção fora do escopo       | preservado            |
 
 ## Ordem controlada
@@ -41,7 +42,7 @@ Para T01, a ordem intercala versões e repetições: `v1-R1`, `v2-R1`, `v1-R2`, 
 |     1 | T01    | v1    |         1 | 10:53:55 BRT   | não separável | não separável           | não medido |     1 |     1 | falhou; zero gravações      | O v1 bloqueou a identidade mínima pelo contrato completo. A duração incluiu troca de mensagens e não vale como baseline quantitativa. |
 |     2 | T01    | v2    |         1 | não registrado | não separável | incluída em 12:12 total |         ≥4 |     0 |     0 | aprovada; recuperação clara | `G2-SYN-T01-V2-R1-OP01` recuperado após fechar/reabrir; confirmação visual e banco em `lock_version=4`, às 12:12:37 BRT.              |
 |     3 | T01    | v1    |         2 | aguardando     | —             | —                       |          — |     — |     — | —                           | —                                                                                                                                     |
-|     4 | T01    | v2    |         2 | aguardando     | —             | —                       |          — |     — |     — | —                           | —                                                                                                                                     |
+|     4 | T01    | v2    |         2 | não registrado | 00:30 total   | incluída no total       |          2 |     0 |     0 | aprovada; recuperação clara | `G2-SYN-T01-V2-R2-OP01` confirmado no banco em `lock_version=10`, às 12:38:27 BRT, e recuperado em nova abertura sem alerta.          |
 |     5 | T02    | v1    |         1 | aguardando     | —             | —                       |          — |     — |     — | —                           | —                                                                                                                                     |
 |     6 | T02    | v1    |         2 | aguardando     | —             | —                       |          — |     — |     — | —                           | —                                                                                                                                     |
 |     7 | T03    | v1    |         1 | aguardando     | —             | —                       |          — |     — |     — | —                           | —                                                                                                                                     |
@@ -79,3 +80,5 @@ No preview corrigido, o teste sintético `G2-SYN-T01-V2-FIX` confirmou às 11:43
 O reteste acima é evidência técnica de regressão, não substitui as medições humanas de ações, tempo ativo, ajuda e percepção. Nenhuma decisão de gate será registrada antes da retomada da sessão quantitativa com `OP-01` e `REV-01`.
 
 A primeira repetição humana v2 foi concluída por `OP-01` com tempo total informado de 12:12, zero erros, zero ajuda e recuperação considerada clara. Como o cronômetro não separou atividade de espera de rede, o registro preserva o total observado sem convertê-lo artificialmente em tempo ativo. O navegador e a leitura server-side confirmaram o título esperado, ausência de alerta e incremento de versão.
+
+A segunda repetição humana v2 foi informada com tempo total de 00:30, duas ações, zero erros, zero ajuda e recuperação clara. A primeira conferência encontrou uma cópia R1 ainda aberta; após a confirmação do operador, o identificador R2 ficou consistente no campo, no `working_title` e no payload do rascunho. Uma nova abertura apresentou a escolha server-side e restaurou exatamente `G2-SYN-T01-V2-R2-OP01`, sem alerta.

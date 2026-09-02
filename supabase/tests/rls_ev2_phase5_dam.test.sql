@@ -149,6 +149,8 @@ select lives_ok(
 select is((select count(*)::integer from public.cms_media_assets where id='47000000-0000-4000-8000-000000000011'),0,'collected replacement target leaves no live asset row');
 select is((select count(*)::integer from public.cms_dam_replacements where target_asset_id='47000000-0000-4000-8000-000000000011' and status='rolled_back'),1,'replacement history survives target collection');
 
+-- Isolate the EV2.5 publication guard from the unrelated F7 blog contract.
+alter table public.cms_published_projection disable trigger cms_phase7_projection_validate;
 select lives_ok(
   $$insert into public.cms_published_projection(item_id,revision_id,content_type,slug,schema_version,consumer_id,renderer_key,payload,seo,content_version,cache_tag,etag,published_at)
     values('47000000-0000-4000-8000-000000000030','47000000-0000-4000-8000-000000000031','post','dam-g5',1,(select consumer_id from public.cms_capability_registry order by consumer_id limit 1),'fixture','{"title":"DAM G5","media":[{"assetId":"47000000-0000-4000-8000-000000000010"}]}'::jsonb,'{}',1,'cms:post:47000000-0000-4000-8000-000000000030','"'||repeat('a',64)||'"',now())$$,
@@ -158,6 +160,7 @@ select throws_ok(
   $$update public.cms_published_projection set payload='{"title":"DAM G5","media":[{"assetId":"47000000-0000-4000-8000-000000000012"}]}'::jsonb where item_id='47000000-0000-4000-8000-000000000030'$$,
   '23514','CMS_DAM_RIGHTS_OR_ASSET_INVALID:47000000-0000-4000-8000-000000000012','expired rights block publication'
 );
+alter table public.cms_published_projection enable trigger cms_phase7_projection_validate;
 
 select lives_ok(
   $$select pg_temp.execute_dam_command('archive_asset','{"assetId":"47000000-0000-4000-8000-000000000013","expectedVersion":3,"reason":"Arquivar com retenção"}'::jsonb)$$,

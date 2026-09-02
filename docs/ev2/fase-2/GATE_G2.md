@@ -1,9 +1,9 @@
 # Gate G2 — experiência operacional e rascunho recuperável
 
-**Resultado atual:** CANDIDATO VALIDADO EM CI — NÃO APROVADO PARA EV2.3<br>
-**Escopo:** nenhuma promoção remota ou ativação persistente
-**Commit candidato:** `a1f3177`<br>
-**CI:** [GitHub Actions — execução 33587682790](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33587682790)
+**Resultado atual:** CANARY TÉCNICO EM STAGING CONCLUÍDO — SESSÃO HUMANA PENDENTE<br>
+**Escopo:** preview isolado e default-off; nenhuma alteração em produção
+**Commit candidato:** `70489c83ffa9c7e918ec083a134a8436f2f9b4bc`<br>
+**CI:** [GitHub Actions — execução 33629916088](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33629916088)
 
 ## Critérios técnicos
 
@@ -31,12 +31,18 @@
 
 As jobs `quality`, `database` e `browser` concluíram com sucesso no mesmo commit. Permanecem conhecidas 46 advertências de lint sem erro e os chunks opcionais de Excel/PDF acima do budget; nenhum dos dois foi introduzido pela EV2.2.
 
+## Canary técnico de staging
+
+Após autorização explícita, as migrations `0037`, `0038` e `0039`, a função `cms-drafts-v2` e o build candidato foram implantados somente em staging. O ensaio autenticado concluiu 15/15 verificações, cobrindo rascunho vazio, idempotência, autosave, conflito HTTP 409 sem perda, retomada, negação anônima, bloqueio de produção, kill switch e limpeza dos dados sintéticos.
+
+O candidato está no preview isolado <https://ev2-g2-canary.gaiatec-cms-staging.pages.dev>. O deployment estável de staging permaneceu inalterado e nenhuma ação foi executada em produção. A evidência completa está no [relatório do canary](RELATORIO_CANARY_STAGING_2026-09-02.md).
+
 ## Bloqueios conhecidos
 
-O candidato técnico está verde, mas o G2 não será aprovado sem a sessão humana definida em `fase-0/BASELINE_TAREFAS.md` e no [roteiro operacional](ROTEIRO_SESSAO_HUMANA_G2.md). Não existem tempos v1 observados, portanto ainda não é possível demonstrar eficiência nem aceitar o critério operacional sem inventar dados.
+O canary técnico está verde, mas o G2 não será aprovado sem a sessão humana definida em `fase-0/BASELINE_TAREFAS.md` e no [roteiro operacional](ROTEIRO_SESSAO_HUMANA_G2.md). Não existem tempos v1 observados, portanto ainda não é possível demonstrar eficiência nem aceitar o critério operacional sem inventar dados.
 
-Após autorização do canary, ainda são obrigatórias evidências autenticadas ponta a ponta do editor v2 para offline, conflito, Axe e ausência pública. A regressão pública, os componentes, os contratos e o banco já estão cobertos no candidato.
+Ainda são obrigatórias a autenticação de `OP-01`, a baseline v1 de T01–T08, a comparação v2 de T01 e as observações humanas de offline, conflito e acessibilidade com `REV-01`. A ausência pública, a regressão, os componentes, os contratos, o banco e o canary técnico já estão cobertos.
 
 ## Limite da decisão
 
-Este gate não autoriza staging, migration remota, dados reais, canary persistente ou produção. Até a resolução das evidências, EV2.3 permanece bloqueada.
+A autorização recebida cobre somente o canary controlado de staging e a sessão G2. Ela não autoriza produção, dados reais, promoção do preview, merge em `main` ou ativação persistente. Até a resolução das evidências humanas, EV2.3 permanece bloqueada.

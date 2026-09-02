@@ -87,10 +87,10 @@ test("product adapter remains doubly gated and picker base is reusable", async (
 
 test("G2 stays blocked until real human baseline and complete evidence exist", async () => {
   const gate = await read("docs/ev2/fase-2/GATE_G2.md");
-  assert.match(gate, /CANDIDATO VALIDADO EM CI — NÃO APROVADO PARA EV2\.3/);
+  assert.match(gate, /CANARY TÉCNICO EM STAGING CONCLUÍDO — SESSÃO HUMANA PENDENTE/);
   assert.match(gate, /não será aprovado sem a sessão humana/i);
-  assert.match(gate, /33587682790/);
-  assert.match(gate, /não autoriza.+produção/i);
+  assert.match(gate, /33629916088/);
+  assert.match(gate, /não autoriza produção/i);
 });
 
 test("staging canary is explicit and rollback always disables the candidate adapter", async () => {

@@ -1,7 +1,7 @@
 # EV2.2 — experiência operacional e rascunhos progressivos
 
-**Status:** candidato validado em CI; Gate G2 operacional pendente<br>
-**Escopo:** código local aditivo, shadow storage e flag desligada por padrão
+**Status:** canary técnico de staging aprovado; sessão humana do Gate G2 pendente<br>
+**Escopo:** preview isolado, shadow storage e flag desligada por padrão
 
 ## Entregas
 
@@ -17,7 +17,7 @@
 
 O rascunho v2 não cria `cms_content_items`, revisão, publicação, projeção, sitemap, busca ou rota pública. O contrato v1 permanece como única fronteira publicável. A conversão de rascunho progressivo para payload editorial completo pertence ao gate de revisão e continuará bloqueada até as fases de dados mestres/PIM.
 
-Nenhuma flag é ativada persistentemente por esta entrega. Os testes de banco usam overrides locais e transacionais, revertidos ao terminar.
+Nenhuma flag é ativada persistentemente por esta entrega. O canary técnico usou override sintético e temporário, removido ao terminar. O acesso humano de `OP-01` terá override separado, iniciado somente durante a sessão e com TTL máximo de duas horas.
 
 ## Verificação
 
@@ -30,4 +30,4 @@ npm run test:e2e
 npm run check
 ```
 
-Consulte o [contrato operacional](CONTRATO_E_OPERACAO.md), os [cenários de resiliência](OFFLINE_CONFLITO_RECUPERACAO.md), o [roteiro da sessão humana](ROTEIRO_SESSAO_HUMANA_G2.md) e o [Gate G2](GATE_G2.md).
+Consulte o [contrato operacional](CONTRATO_E_OPERACAO.md), os [cenários de resiliência](OFFLINE_CONFLITO_RECUPERACAO.md), o [relatório do canary de staging](RELATORIO_CANARY_STAGING_2026-09-02.md), o [roteiro da sessão humana](ROTEIRO_SESSAO_HUMANA_G2.md) e o [Gate G2](GATE_G2.md).

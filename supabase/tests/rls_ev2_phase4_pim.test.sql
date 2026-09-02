@@ -168,7 +168,7 @@ select throws_ok(
   $$select pg_temp.execute_pim_command('save_product',jsonb_set(jsonb_set(pg_temp.product_payload(
     '44000000-0000-4000-8000-000000000010','44000000-0000-4000-8000-000000000011',
     '44000000-0000-4000-8000-000000000012','medidor-ufx-a','MPN-A'),'{mode}','"update"'),'{expectedVersion}','99'))$$,
-  '40001','CMS_PIM_CONFLICT','optimistic concurrency rejects a stale graph'
+  'P0001','CMS_PIM_CONFLICT','optimistic concurrency rejects a stale graph without infrastructure retry'
 );
 select throws_ok(
   $$select pg_temp.execute_pim_command('save_product',pg_temp.product_payload(

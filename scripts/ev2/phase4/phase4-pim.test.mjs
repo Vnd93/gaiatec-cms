@@ -35,7 +35,11 @@ test("EV2.4 migration is additive, private and preserves v1", async () => {
 });
 
 test("identity, SKU, units and history fail closed", async () => {
-  const sql = await read("supabase/migrations/0041_ev2_pim_core.sql");
+  const [sql, hotfix, databaseTest] = await Promise.all([
+    read("supabase/migrations/0041_ev2_pim_core.sql"),
+    read("supabase/migrations/0042_ev2_pim_conflict_sqlstate.sql"),
+    read("supabase/tests/rls_ev2_phase4_pim.test.sql"),
+  ]);
   for (const evidence of [
     "cms_pim_models_mpn_active_uidx",
     "cms_pim_skus_code_uidx",
@@ -55,6 +59,9 @@ test("identity, SKU, units and history fail closed", async () => {
   assert.match(sql, /coalesce\(p_payload->>'mode',''\) not in \('create','update'\)/);
   assert.match(sql, /p_payload->>'mode' <> 'create'/);
   assert.match(sql, /p_payload->>'mode' <> 'update'/);
+  assert.match(hotfix, /v_matches <> 2/);
+  assert.match(hotfix, /ERRCODE = ''P0001''/);
+  assert.match(databaseTest, /'P0001',\s*'CMS_PIM_CONFLICT'/);
 });
 
 test("PIM and attribute Edge boundaries are authenticated and production-gated", async () => {

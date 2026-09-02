@@ -87,10 +87,16 @@ test("G2 stays blocked until real human baseline and complete evidence exist", a
 
 test("staging canary is explicit and rollback always disables the candidate adapter", async () => {
   const deploy = await read(".github/workflows/deploy-staging.yml");
+  const preview = await read(".github/workflows/preview.yml");
   const rollback = await read(".github/workflows/rollback-staging.yml");
   assert.match(deploy, /ev2_draft_v2_candidate:/);
   assert.match(deploy, /VITE_CMS_ENVIRONMENT: staging/);
   assert.match(deploy, /VITE_EV2_DRAFT_V2_CANDIDATE: \$\{\{ inputs\.ev2_draft_v2_candidate \}\}/);
+  assert.match(preview, /VITE_CMS_ENVIRONMENT: staging/);
+  assert.match(
+    preview,
+    /VITE_EV2_DRAFT_V2_CANDIDATE: \$\{\{ github\.head_ref == 'ev2\/desenvolvimento-fases-1-a-12' \}\}/,
+  );
   assert.match(rollback, /VITE_CMS_ENVIRONMENT: staging/);
   assert.match(rollback, /VITE_EV2_DRAFT_V2_CANDIDATE: ["']false["']/);
 });

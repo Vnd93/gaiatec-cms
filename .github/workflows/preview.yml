@@ -31,6 +31,8 @@ jobs:
       - run: npm run build:staging
         env:
           VITE_RELEASE: ${{ github.sha }}
+          VITE_CMS_ENVIRONMENT: staging
+          VITE_EV2_DRAFT_V2_CANDIDATE: ${{ github.head_ref == 'ev2/desenvolvimento-fases-1-a-12' }}
       - run: npm run artifact:manifest
         env:
           GITHUB_SHA: ${{ github.sha }}

@@ -95,4 +95,30 @@ describe("PIM v1 adapter", () => {
     });
     expect(() => pimGraphToV1(product, base, {})).toThrow(/fabricante não resolvida/);
   });
+
+  it("does not invent a brand from the manufacturer when the source has no brand", () => {
+    const base = comprehensiveProductPayload();
+    const product = Ev2PimProductInputSchema.parse({
+      id: id(30),
+      name: "Produto sem marca identificada",
+      slug: "produto-sem-marca-identificada",
+      masterData: { manufacturerId: id(31), categoryId: id(32), monitoredElementIds: [id(33)] },
+      models: [{ id: id(34), name: "Modelo documental", primary: true, position: 0 }],
+      provenance: [
+        { id: id(35), sourceKind: "import", sourceRef: "Portfólio mestre", rightsConfirmed: true },
+      ],
+    });
+    const labels = Object.fromEntries(
+      [
+        [id(31), "Fabricante documental"],
+        [id(32), "Categoria documental"],
+        [id(33), "Elemento a confirmar"],
+      ].map(([key, name]) => [key, { id: key, name }]),
+    );
+
+    const projected = pimGraphToV1(product, base, labels);
+
+    expect(projected.brand).toEqual({ name: "Marca não informada", slug: "marca-nao-informada" });
+    expect(projected.manufacturer.name).toBe("Fabricante documental");
+  });
 });

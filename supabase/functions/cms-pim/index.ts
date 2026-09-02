@@ -414,6 +414,7 @@ async function previewV1(identity: Identity, command: Extract<PimCommand, { acti
   const skuByOwner = new Map(product.skus.filter((entry: Row) => entry.status === "active").map((entry: Row) => [entry.variantId ?? entry.modelId, entry.sku]));
   const base = structuredClone(command.basePayload) as Record<string, any>;
   const manufacturerName = label(product.masterData.manufacturerId, "Fabricante");
+  const brandName = label(product.masterData.brandId, "Marca não informada");
   const categoryName = label(product.masterData.categoryId, "Categoria");
   const magnitudeName = label(product.masterData.magnitudeIds[0] ?? null, categoryName);
   const technologyName = label(product.masterData.technologyIds[0] ?? null, categoryName);
@@ -423,7 +424,7 @@ async function previewV1(identity: Identity, command: Extract<PimCommand, { acti
     ...base,
     title: product.name,
     summary: product.summary || base.summary,
-    brand: { name: label(product.masterData.brandId, manufacturerName), slug: slug(product.masterData.brandId, manufacturerName) },
+    brand: { name: brandName, slug: slug(product.masterData.brandId, brandName) },
     manufacturer: { ...(base.manufacturer ?? {}), name: manufacturerName, slug: slug(product.masterData.manufacturerId, manufacturerName) },
     productLine: { name: label(product.masterData.lineId, "Linha geral"), slug: slug(product.masterData.lineId, "Linha geral") },
     classification: { ...(base.classification ?? {}), segment: categoryName, category: magnitudeName, family: installationName },

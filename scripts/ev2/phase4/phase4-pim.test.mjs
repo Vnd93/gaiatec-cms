@@ -110,21 +110,25 @@ test("guided editor uses strict contracts, attribute sets and adapter v1", async
   assert.match(navigation, /cms:pim\.read/);
 });
 
-test("Gate G4 records the approved technical canary without releasing real data", async () => {
-  const [databaseTest, gate, report] = await Promise.all([
+test("Gate G4 records the approved technical canary and controlled operational pilot", async () => {
+  const [databaseTest, gate, canaryReport, pilotReport] = await Promise.all([
     read("supabase/tests/rls_ev2_phase4_pim.test.sql"),
     read("docs/ev2/fase-4/GATE_G4.md"),
     read("docs/ev2/fase-4/RELATORIO_CANARY_STAGING_2026-09-02.md"),
+    read("docs/ev2/fase-4/RELATORIO_PILOTO_OPERACIONAL_STAGING_2026-09-02.md"),
   ]);
   assert.match(databaseTest, /select plan\(35\)/);
   assert.match(databaseTest, /L\/s ranges are materialized in the canonical m3\/h unit/);
   assert.match(databaseTest, /an idempotent retry never creates a second SKU/);
   assert.match(databaseTest, /archival requires an AAL2 session/);
-  assert.match(gate, /G4 PENDENTE/);
-  assert.match(gate, /canary técnico aprovado/i);
-  assert.match(gate, /EV2\.5[\s\S]+continua[m]? bloquead/i);
-  assert.match(report, /Não houve dado real/i);
-  assert.match(report, /32\/32 verificações/);
+  assert.match(gate, /G4 APROVADO/);
+  assert.match(gate, /canary técnico[\s\S]+aprovado/i);
+  assert.match(gate, /EV2\.5 LIBERADA/i);
+  assert.match(canaryReport, /Não houve dado real/i);
+  assert.match(canaryReport, /32\/32 verificações/);
+  assert.match(pilotReport, /20\/20 grafos/);
+  assert.match(pilotReport, /97%/);
+  assert.match(pilotReport, /Produção:[\s\S]+não acessada nem alterada/i);
 });
 
 test("EV2.4 canary is SHA-pinned, synthetic, isolated and fail-closed", async () => {

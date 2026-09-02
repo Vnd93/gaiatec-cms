@@ -6,13 +6,15 @@
 2. Aplicar o schema shadow aditivo e a correção `0042`, publicar `cms-pim` e `cms-attributes` e manter `ev2.pim_v2` desligada. **Concluído.**
 3. Publicar build candidato em alias isolado, sem substituir o staging estável. **Concluído.**
 4. Criar usuário sintético e overrides individuais com expiração curta; executar testes de identidade, unidade, SKU, concorrência, RLS e limpeza. **Concluído, 32/32 e zero resíduos.**
-5. Após decisão EV2-D02 e autorização de dados, mapear 20–50 produtos piloto sem inferir valores ausentes.
-6. Gerar a projeção v1, comparar campos críticos e devolver conflitos ao data steward.
-7. Só habilitar dual-write para o lote aprovado depois de zero divergência crítica e ao menos 95% de completude.
+5. Após decisão EV2-D02 e autorização de dados, mapear 20–50 produtos piloto sem inferir valores ausentes. **Concluído com 20 produtos.**
+6. Gerar a projeção v1, comparar campos críticos e devolver conflitos ao data steward. **Concluído com 20/20 e zero divergência crítica.**
+7. Manter dual-write desligado até homologação técnica dos valores e liberação posterior específica. **Contenção preservada.**
 
 ## Backfill
 
 O importador deve operar em dry-run, identificar fonte por campo, separar MPN/GTIN/NCM/SKU e nunca criar compatibilidade mestre por inferência. Registros incompletos entram como rascunho e valores personalizados ficam não filtráveis até homologação.
+
+O executor versionado é `scripts/ev2/phase4/operational-pilot.mjs`; o manifesto é `scripts/ev2/phase4/operational-pilot.json`. Sem `--apply`, a execução é somente dry-run. `--rollback` desliga o escopo técnico e preserva os dados reais.
 
 ## Reconciliação
 

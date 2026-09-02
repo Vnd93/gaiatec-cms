@@ -28,7 +28,7 @@ export function pimGraphToV1(
   const manufacturer = requiredLabel(labels, product.masterData.manufacturerId, "fabricante");
   const brand = product.masterData.brandId
     ? requiredLabel(labels, product.masterData.brandId, "marca")
-    : manufacturer;
+    : { id: "unidentified-brand", name: "Marca não informada", slug: "marca-nao-informada" };
   const line = product.masterData.lineId
     ? requiredLabel(labels, product.masterData.lineId, "linha")
     : { id: manufacturer.id, name: "Linha geral", slug: "linha-geral" };

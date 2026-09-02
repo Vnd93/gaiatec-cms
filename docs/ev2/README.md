@@ -1,6 +1,6 @@
 # EV2 — Evolução do CMS GAIATEC
 
-**Status:** Gates G0–G3 aprovados; EV2.4 liberada no branch; produção bloqueada<br>
+**Status:** Gates G0–G4 aprovados; EV2.5 liberada no branch; produção bloqueada<br>
 **Data-base:** 2 de setembro de 2026<br>
 **Fonte canônica:** Markdown versionado neste diretório
 **Branch de execução:** `ev2/desenvolvimento-fases-1-a-12`<br>
@@ -34,4 +34,4 @@ O documento principal é a fonte de verdade para o desenvolvimento. O DOCX que o
 
 ## Estado da execução
 
-Os Gates G0–G3 foram aprovados com evidências reproduzíveis. A EV2.2 passou nos gates técnicos locais/CI, no canary isolado de staging e em duas recuperações humanas. O protocolo reduzido por risco está registrado na ADR-021, sem inventar métrica de tempo. A EV2.3 passou por 185/185 testes pgTAP e por canary sintético 21/21 em staging, com zero resíduos e zero órfãos. Migration e função permanecem no staging, o build candidato está em alias isolado e a flag continua desligada. A implementação candidata da EV2.4 foi validada localmente e na CI, sem deploy; o Gate G4 permanece pendente. Produção, dados reais, merge em `main` e promoção de preview continuam fora do escopo.
+Os Gates G0–G4 foram aprovados com evidências reproduzíveis. A EV2.4 passou pelo canary sintético 32/32 e pelo piloto real de 20 produtos em staging. A carga atingiu 97% de completude crítica, zero divergência no adapter, busca por faixa correta e repetição idempotente sem novos registros. Os dados permanecem privados, as flags estão desligadas e o operador técnico foi suspenso após o rollback lógico. Produção, publicação do lote, dual-write, merge em `main` e promoção do staging estável continuam fora do escopo; EV2.5 está liberada.

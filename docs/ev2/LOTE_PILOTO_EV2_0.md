@@ -1,6 +1,6 @@
 # Lote piloto e tarefas operacionais da EV2.0
 
-**Status:** selecionado para baseline, prototipação e testes da EV2.0<br>
+**Status:** autorizado e executado como piloto operacional G4 em staging; publicação bloqueada<br>
 **Quantidade:** 20 produtos e 8 tarefas operacionais<br>
 **Data:** 1 de setembro de 2026
 
@@ -8,7 +8,7 @@
 
 A seleção foi feita a partir do portfólio mestre localizado em `Documentos/Soluções/outputs/gaiatec_portfolio_20260826/Portfolio_Mestre_GAIATEC_SISTEMAS.xlsx`, que contém 1.395 registros de produto.
 
-O lote é uma amostra de trabalho para testar PIM, UX, validação, busca, mídia, workflow e release. Ele não autoriza importação automática, publicação, uso de imagem, alteração de staging/produção ou aceitação de especificação técnica sem revisão humana e fonte oficial vigente.
+O lote é uma amostra de trabalho para testar PIM, UX, validação, busca, mídia, workflow e release. A seleção original não autoriza importação automática. Em 2 de setembro de 2026, o solicitante concedeu autorização específica para sua importação controlada somente em staging. Essa autorização não inclui publicação, uso de imagem, produção nem aceitação de especificação técnica sem revisão humana e fonte oficial vigente.
 
 ## Critérios de seleção
 
@@ -71,4 +71,4 @@ As nomeações reutilizam o RACI aprovado em 28 de agosto de 2026 e permanecem i
 
 ## Gate do lote
 
-O lote pode ser usado imediatamente para baseline e protótipos. Importação ou publicação exige validação individual de fonte oficial, correspondência de modelo, direitos, dados técnicos e owner. Os casos `GAI-0691` e `GAI-0696` devem permanecer bloqueados enquanto o conflito documental das abas Compacto/Remoto não for corrigido e aprovado.
+O lote foi importado como rascunho privado, com fonte e owner registrados. Publicação continua exigindo validação individual de fonte oficial, correspondência de modelo, direitos e dados técnicos. Os casos `GAI-0691` e `GAI-0696` permanecem bloqueados e sem SKU enquanto o conflito documental das abas Compacto/Remoto não for corrigido e aprovado; `GAI-1130` permanece incompleto pelo fabricante original não identificado.

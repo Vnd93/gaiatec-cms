@@ -84,3 +84,13 @@ test("G2 stays blocked until real human baseline and complete evidence exist", a
   assert.match(gate, /33587682790/);
   assert.match(gate, /não autoriza.+produção/i);
 });
+
+test("staging canary is explicit and rollback always disables the candidate adapter", async () => {
+  const deploy = await read(".github/workflows/deploy-staging.yml");
+  const rollback = await read(".github/workflows/rollback-staging.yml");
+  assert.match(deploy, /ev2_draft_v2_candidate:/);
+  assert.match(deploy, /VITE_CMS_ENVIRONMENT: staging/);
+  assert.match(deploy, /VITE_EV2_DRAFT_V2_CANDIDATE: \$\{\{ inputs\.ev2_draft_v2_candidate \}\}/);
+  assert.match(rollback, /VITE_CMS_ENVIRONMENT: staging/);
+  assert.match(rollback, /VITE_EV2_DRAFT_V2_CANDIDATE: ["']false["']/);
+});

@@ -1,6 +1,6 @@
 # EV2.4 — PIM e conteúdo principal
 
-**Status:** implementação candidata concluída no branch; Gate G4 pendente<br>
+**Status:** implementação candidata validada localmente e na CI; Gate G4 pendente<br>
 **Escopo:** F-002, F-004, F-005 e adapter v1<br>
 **Rollout:** nenhum; migration `0041` e funções permanecem somente no código
 
@@ -19,6 +19,8 @@
 A migration `0041_ev2_pim_core.sql` não foi aplicada em staging ou produção. As funções não foram publicadas, a flag continua desligada e nenhum catálogo real, backfill, dual-write ou projeção v1 foi alterado.
 
 O Gate G4 depende de autorização própria para staging, decisão sobre fontes ERP/MPN/GTIN/NCM, carga piloto aprovada e reconciliação do adapter. A autorização anterior da EV2.3 não foi ampliada para a EV2.4.
+
+A execução CI `33676699106`, no commit funcional `a670f14`, recriou todas as migrations e aprovou 220/220 testes pgTAP, incluindo as 35 asserções específicas desta fase. Qualidade, 32 testes de navegador e preview também foram aprovados.
 
 ## Verificação
 

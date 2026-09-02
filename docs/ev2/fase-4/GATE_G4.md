@@ -14,7 +14,8 @@
 | Identidade/SKU       | coberto em teste          | unicidade, imutabilidade, idempotência e histórico |
 | Atributos/unidades   | coberto em teste          | attribute sets e conversão L/s → m³/h              |
 | Adapter v1           | coberto em teste unitário | projeção e comparação estrutural                   |
-| Banco integrado      | aguardando CI             | suíte pgTAP com 35 asserções específicas           |
+| Banco integrado      | aprovado na CI            | 220/220 pgTAP; 35 asserções específicas da EV2.4   |
+| Qualidade/navegador  | aprovado na CI            | 112 Vitest, check, 32 Playwright e preview         |
 | Piloto/reconciliação | não executado             | exige autorização própria para staging e dados     |
 
 ## Critérios objetivos para aprovação
@@ -30,6 +31,6 @@
 
 ## Estado e decisão
 
-A implementação candidata está pronta para validação automatizada, mas a migration `0041` não foi aplicada em staging, as funções não foram publicadas e nenhum dado real ou sintético da EV2.4 foi criado remotamente. Portanto, G4 permanece pendente e a EV2.5 não está liberada.
+A implementação candidata foi validada na execução CI `33676699106`, referente ao commit funcional `a670f14`: migration recriada do zero, 220/220 testes pgTAP, qualidade, navegador e preview aprovados. Entretanto, a migration `0041` não foi aplicada em staging, as funções não foram publicadas e nenhum dado real ou sintético da EV2.4 foi criado remotamente. Portanto, G4 permanece pendente e a EV2.5 não está liberada.
 
 Executar staging, piloto, dual-write, produção ou promover qualquer alias requer autorização posterior e explícita; a autorização concedida para o canary EV2.3 não se transfere para esta fase.

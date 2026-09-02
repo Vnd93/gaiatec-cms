@@ -1,9 +1,10 @@
 # Gate G2 — experiência operacional e rascunho recuperável
 
-**Resultado atual:** CANARY TÉCNICO CORRIGIDO EM STAGING — SESSÃO HUMANA EM ANDAMENTO<br>
+**Resultado atual:** CANARY TÉCNICO EM STAGING CONCLUÍDO — SESSÃO HUMANA PENDENTE<br>
 **Escopo:** preview isolado e default-off; nenhuma alteração em produção
 **Commit candidato:** `55b549f6ed04518c2c86e6e25e52948bf206596c`<br>
-**CI:** [GitHub Actions — execução 33643008212](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33643008212)
+**CI do canary original:** [GitHub Actions — execução 33629916088](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33629916088)<br>
+**CI da correção:** [GitHub Actions — execução 33643008212](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33643008212)
 
 ## Critérios técnicos
 

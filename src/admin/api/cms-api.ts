@@ -91,6 +91,9 @@ export function issuePreview(session: Session, itemId: string, revisionId?: stri
 export function mediaCommand<T>(session: Session, body: Record<string, unknown>) {
   return invoke<T>(session, "cms-media", body);
 }
+export function damCommand<T>(session: Session, body: Record<string, unknown>, idempotencyKey?: string) {
+  return invoke<T>(session, "cms-media", body, idempotencyKey ?? false);
+}
 export function searchGovernanceCommand<T>(session: Session, body: Record<string, unknown>) {
   return invoke<T>(session, "cms-search-admin", body, true);
 }

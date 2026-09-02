@@ -8,6 +8,9 @@ import { editorialCommand, issuePreview } from "../api/cms-api";
 import { openExternalAfterAsync } from "../open-external-preview";
 import { useDraftBackup } from "../hooks/useDraftBackup";
 import { DraftBackupNotice } from "../components/DraftBackupNotice";
+import { DamPicker, type DamPickerSelection } from "../components/DamPicker";
+
+const DAM_CANDIDATE_ENABLED = import.meta.env.VITE_EV2_DAM_CANDIDATE === "true";
 
 type Loaded = {
   id: string;
@@ -485,49 +488,119 @@ export default function AdminEditorPage() {
           </label>
           <fieldset>
             <legend>Mídia nova e chamadas</legend>
-            <label>
-              Imagem principal opcional
-              <select
-                value={imageId}
-                onChange={(event) => {
-                  const selected = mediaOptions.find((item) => item.id === event.target.value);
-                  setImageId(event.target.value);
-                  if (selected) setImageAlt(selected.alt_text);
-                }}
-              >
-                <option value="">Sem imagem</option>
-                {mediaOptions.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.original_filename}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {imageId && (
-              <label>
-                Texto alternativo
-                <input value={imageAlt} onChange={(event) => setImageAlt(event.target.value)} />
-              </label>
-            )}
-            <fieldset>
-              <legend>Galeria opcional</legend>
-              {mediaOptions.map((item) => (
-                <label key={item.id}>
-                  <input
-                    type="checkbox"
-                    checked={galleryIds.includes(item.id)}
-                    onChange={() =>
-                      setGalleryIds((current) =>
-                        current.includes(item.id)
-                          ? current.filter((id) => id !== item.id)
-                          : [...current, item.id],
-                      )
-                    }
-                  />{" "}
-                  {item.original_filename}
+            {DAM_CANDIDATE_ENABLED ? (
+              <>
+                <DamPicker
+                  label="Imagem principal opcional"
+                  value={
+                    imageId
+                      ? [
+                          {
+                            id: imageId,
+                            originalFilename:
+                              mediaOptions.find((item) => item.id === imageId)?.original_filename ??
+                              "Imagem selecionada",
+                            altText: imageAlt,
+                            previewUrl: null,
+                          },
+                        ]
+                      : []
+                  }
+                  disabled={!can("cms:posts.edit") || busy}
+                  onChange={(selection) => {
+                    const asset = selection[0];
+                    setImageId(asset?.id ?? "");
+                    setImageAlt(asset?.altText ?? "");
+                    if (asset)
+                      setMediaOptions((current) => [
+                        ...current.filter((item) => item.id !== asset.id),
+                        {
+                          id: asset.id,
+                          original_filename: asset.originalFilename,
+                          alt_text: asset.altText,
+                        },
+                      ]);
+                  }}
+                />
+                {imageId && (
+                  <label>
+                    Texto alternativo no contexto deste conteúdo
+                    <input value={imageAlt} onChange={(event) => setImageAlt(event.target.value)} />
+                  </label>
+                )}
+                <DamPicker
+                  label="Galeria opcional"
+                  multiple
+                  value={galleryIds.map((assetId) => {
+                    const asset = mediaOptions.find((item) => item.id === assetId);
+                    return {
+                      id: assetId,
+                      originalFilename: asset?.original_filename ?? "Imagem selecionada",
+                      altText: asset?.alt_text ?? "",
+                      previewUrl: null,
+                    } satisfies DamPickerSelection;
+                  })}
+                  disabled={!can("cms:posts.edit") || busy}
+                  onChange={(selection) => {
+                    setGalleryIds(selection.map((asset) => asset.id));
+                    setMediaOptions((current) => [
+                      ...current.filter((item) => !selection.some((asset) => asset.id === item.id)),
+                      ...selection.map((asset) => ({
+                        id: asset.id,
+                        original_filename: asset.originalFilename,
+                        alt_text: asset.altText,
+                      })),
+                    ]);
+                  }}
+                />
+              </>
+            ) : (
+              <>
+                <label>
+                  Imagem principal opcional
+                  <select
+                    value={imageId}
+                    onChange={(event) => {
+                      const selected = mediaOptions.find((item) => item.id === event.target.value);
+                      setImageId(event.target.value);
+                      if (selected) setImageAlt(selected.alt_text);
+                    }}
+                  >
+                    <option value="">Sem imagem</option>
+                    {mediaOptions.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.original_filename}
+                      </option>
+                    ))}
+                  </select>
                 </label>
-              ))}
-            </fieldset>
+                {imageId && (
+                  <label>
+                    Texto alternativo
+                    <input value={imageAlt} onChange={(event) => setImageAlt(event.target.value)} />
+                  </label>
+                )}
+                <fieldset>
+                  <legend>Galeria opcional</legend>
+                  {mediaOptions.map((item) => (
+                    <label key={item.id}>
+                      <input
+                        type="checkbox"
+                        checked={galleryIds.includes(item.id)}
+                        onChange={() =>
+                          setGalleryIds((current) =>
+                            current.includes(item.id)
+                              ? current.filter((currentId) => currentId !== item.id)
+                              : [...current, item.id],
+                          )
+                        }
+                      />{" "}
+                      {item.original_filename}
+                    </label>
+                  ))}
+                </fieldset>
+              </>
+            )}
             <label>
               Rótulo da CTA opcional
               <input value={ctaLabel} onChange={(event) => setCtaLabel(event.target.value)} />

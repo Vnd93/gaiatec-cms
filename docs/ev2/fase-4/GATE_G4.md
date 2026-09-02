@@ -22,7 +22,7 @@
 | Lote real/decisões de fonte | aprovado            | 20 rascunhos; MPN/fabricante, GS1/ERP, ERP/fiscal e SKU/CMS definidos |
 | Completude/round-trip       | aprovado            | 97/100 campos críticos; 20/20 grafos; zero divergência crítica        |
 | Idempotência/rollback       | aprovado            | repetição criou 0 registros; operador suspenso e overrides desligados |
-| Entrega final               | aprovada            | SHA `25a17de`; três checks remotos verdes e canary `53a0a000`          |
+| Entrega final               | aprovada            | SHA `25a17de`; três checks remotos verdes e canary `53a0a000`         |
 
 ## Critérios objetivos para aprovação
 

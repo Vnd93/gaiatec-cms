@@ -1,6 +1,6 @@
 # EV2 — Evolução do CMS GAIATEC
 
-**Status:** Gates G0–G4 aprovados; EV2.5 liberada no branch; produção bloqueada<br>
+**Status:** Gates G0–G4 aprovados; candidato EV2.5 validado localmente; produção bloqueada<br>
 **Data-base:** 2 de setembro de 2026<br>
 **Fonte canônica:** Markdown versionado neste diretório
 **Branch de execução:** `ev2/desenvolvimento-fases-1-a-12`<br>
@@ -18,6 +18,7 @@
 8. [EV2.2 — experiência operacional](fase-2/README.md) — rascunhos progressivos, autosave, recuperação, picker e Gate G2.
 9. [EV2.3 — dados mestres](fase-3/README.md) — entidades, aliases, dependências N:N, migration e Gate G3.
 10. [EV2.4 — PIM e conteúdo principal](fase-4/README.md) — produto/modelo/variante/SKU, atributos, unidades, adapter v1 e Gate G4.
+11. [EV2.5 — mídia e documentos](fase-5/README.md) — DAM contextual, direitos, usos, substituição reversível e Gate G5.
 
 ## Escopo documental
 
@@ -34,4 +35,4 @@ O documento principal é a fonte de verdade para o desenvolvimento. O DOCX que o
 
 ## Estado da execução
 
-Os Gates G0–G4 foram aprovados com evidências reproduzíveis. A EV2.4 passou pelo canary sintético 32/32 e pelo piloto real de 20 produtos em staging. A carga atingiu 97% de completude crítica, zero divergência no adapter, busca por faixa correta e repetição idempotente sem novos registros. Os dados permanecem privados, as flags estão desligadas e o operador técnico foi suspenso após o rollback lógico. Produção, publicação do lote, dual-write, merge em `main` e promoção do staging estável continuam fora do escopo; EV2.5 está liberada.
+Os Gates G0–G4 foram aprovados com evidências reproduzíveis. A EV2.4 passou pelo canary sintético 32/32 e pelo piloto real de 20 produtos em staging. A carga atingiu 97% de completude crítica, zero divergência no adapter, busca por faixa correta e repetição idempotente sem novos registros. Os dados permanecem privados, as flags estão desligadas e o operador técnico foi suspenso após o rollback lógico. O candidato EV2.5 foi implementado e validado localmente; a migration `0043` também passou por execução transacional com `ROLLBACK` no staging identificado, confirmando sintaxe e dependências sem deixar schema, versão ou dados persistidos. O canary G5 ainda depende de autorização específica. Produção, publicação do lote, dual-write, merge em `main` e promoção do staging estável continuam fora do escopo.

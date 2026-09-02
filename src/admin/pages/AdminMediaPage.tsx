@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import AdminDamPage from "./AdminDamPage";
 import { useAdminAuth } from "../auth/AdminAuthContext";
 import { mediaCommand } from "../api/cms-api";
 import {
@@ -71,7 +72,13 @@ const initialUploadForm: UploadForm = {
   replacesAssetId: "",
 };
 
+const DAM_CANDIDATE_ENABLED = import.meta.env.VITE_EV2_DAM_CANDIDATE === "true";
+
 export default function AdminMediaPage() {
+  return DAM_CANDIDATE_ENABLED ? <AdminDamPage /> : <LegacyMediaPage />;
+}
+
+function LegacyMediaPage() {
   const { session, profile } = useAdminAuth();
   const [items, setItems] = useState<Media[]>([]);
   const [query, setQuery] = useState("");

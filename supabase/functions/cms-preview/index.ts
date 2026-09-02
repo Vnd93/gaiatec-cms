@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { z } from "npm:zod@4.4.3";
 import { authenticateCms } from "../_shared/cms-auth.ts";
 import { corsHeaders, isAllowedOrigin, json, readJsonLimited, sha256 } from "../_shared/security.ts";
+import { resolveMediaAssets } from "../_shared/cms-media-resolution.ts";
 
 const Issue = z.object({ itemId: z.uuid(), revisionId: z.uuid().nullish(), maxUses: z.number().int().min(1).max(50).default(10), minutes: z.number().int().min(1).max(30).default(15) }).strict();
 
@@ -19,7 +20,6 @@ Deno.serve(async (req) => {
     if (error) return json(req, { error: "Preview expirado ou indisponível." }, 410,
       { "X-Robots-Tag": "noindex, nofollow, noarchive", "Cache-Control": "private, no-store, max-age=0" });
     const payload = data?.payload;
-    const mediaUrls: Record<string, string> = {};
     const documentUrls: Record<string, string> = {};
     const media = payload?.media ?? [];
     const blockAssetIds = (payload?.blocks ?? []).flatMap((block: any) => [
@@ -29,26 +29,7 @@ Deno.serve(async (req) => {
     ].filter(Boolean));
     const assetIds = [...new Set([...media.map((entry: any) => entry.assetId), ...blockAssetIds, payload?.seo?.ogImageId].filter(Boolean))];
     const primaryId = media.find((entry: any) => entry.role === "primary")?.assetId;
-    const { data: assets } = assetIds.length
-      ? await admin.from("cms_media_assets").select("id,alt_text").in("id", assetIds)
-      : { data: [] };
-    const mediaAlt = Object.fromEntries((assets ?? []).map((asset: any) => [asset.id, asset.alt_text]));
-    const { data: variants } = assetIds.length
-      ? await admin.from("cms_media_variants").select("asset_id,variant_key,format,transform_path").in("asset_id", assetIds)
-      : { data: [] };
-    const paths = (variants ?? []).map((variant: any) => variant.transform_path);
-    const { data: signedVariants } = paths.length
-      ? await admin.storage.from("cms-media-private").createSignedUrls(paths, 1800)
-      : { data: [] };
-    const signedByPath = new Map((signedVariants ?? []).map((signed: any) => [signed.path, signed.signedUrl]));
-    for (const variant of variants ?? []) {
-      const signedUrl = signedByPath.get(variant.transform_path);
-      const variantKey = `${variant.variant_key}.${variant.format}`;
-      if (signedUrl) {
-        mediaUrls[`${variant.asset_id}:${variantKey}`] = signedUrl;
-        if (variant.asset_id === primaryId) mediaUrls[variantKey] = signedUrl;
-      }
-    }
+    const { mediaUrls, mediaAlt } = await resolveMediaAssets(admin, assetIds, primaryId, 1800);
     const documents = (payload?.documents ?? []).filter((document: any) => document.storagePath);
     const { data: signedDocuments } = documents.length
       ? await admin.storage.from("cms-documents-private").createSignedUrls(documents.map((document: any) => document.storagePath), 1800)

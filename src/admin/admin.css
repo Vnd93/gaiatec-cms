@@ -2406,6 +2406,64 @@
 .admin-media-usages ul {
   padding-left: 1.2rem;
 }
+.admin-media-detail-preview {
+  display: block;
+  width: min(100%, 32rem);
+  max-height: 24rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--admin-line);
+  object-fit: contain;
+  background: #f6f8fa;
+}
+.admin-dam-picker {
+  display: grid;
+  gap: 0.75rem;
+  border: 1px solid var(--admin-line);
+  border-radius: var(--admin-radius-md);
+  padding: 1rem;
+}
+.admin-dam-picker__selection,
+.admin-dam-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.admin-dam-picker__selection li,
+.admin-dam-picker__grid > button {
+  display: grid;
+  gap: 0.4rem;
+  align-content: start;
+  border: 1px solid var(--admin-line);
+  border-radius: var(--admin-radius-sm);
+  padding: 0.65rem;
+  background: var(--admin-surface);
+  text-align: left;
+}
+.admin-dam-picker__grid > button.is-selected {
+  border-color: var(--admin-blue);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--admin-blue) 18%, transparent);
+}
+.admin-dam-picker__selection img,
+.admin-dam-picker__grid img {
+  width: 100%;
+  height: 7rem;
+  object-fit: contain;
+  background: #f6f8fa;
+}
+.admin-dam-picker__panel,
+.admin-dam-picker__upload {
+  display: grid;
+  gap: 1rem;
+}
+.admin-dam-picker__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: end;
+}
 .admin-compact-roles {
   display: grid;
   gap: 0.35rem;

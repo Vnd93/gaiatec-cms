@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { containsInternalProductValue, sanitizePublicPayload, sanitizePublicSeo } from "../_shared/cms-public-projection.ts";
+import { resolveMediaAssets } from "../_shared/cms-media-resolution.ts";
 
 const headers = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "apikey, authorization, content-type, if-none-match, x-client-info", "Access-Control-Allow-Methods": "GET, OPTIONS", Vary: "Origin" };
 const json = (body: unknown, status = 200, extra: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { ...headers, "Content-Type": "application/json; charset=utf-8", ...extra } });
@@ -18,22 +19,11 @@ Deno.serve(async (req) => {
   const client = createClient(supabaseUrl, service ?? anon, { auth: { persistSession: false } });
   const enrichMedia = async (row: any) => {
     const payload = sanitizePublicPayload(row.payload);
-    const mediaUrls: Record<string, string> = {}, media = payload.media ?? [];
+    const media = payload.media ?? [];
     const blockAssetIds = (payload.blocks ?? []).flatMap((block: any) => [block.data?.assetId, ...(block.data?.assetIds ?? []), ...(block.data?.items ?? []).map((item: any) => item.assetId)].filter(Boolean));
     const assetIds = [...new Set([...media.map((entry: any) => entry.assetId), ...blockAssetIds, row.seo?.ogImageId].filter(Boolean))];
     const primaryId = media.find((entry: any) => entry.role === "primary")?.assetId;
-    const { data: assets } = assetIds.length
-      ? await client.from("cms_media_assets").select("id,alt_text").in("id", assetIds)
-      : { data: [] };
-    const mediaAlt = Object.fromEntries((assets ?? []).map((asset: any) => [asset.id, asset.alt_text]));
-    const { data: variants } = assetIds.length ? await client.from("cms_media_variants").select("asset_id,variant_key,format,transform_path").in("asset_id", assetIds) : { data: [] };
-    const paths = (variants ?? []).map((variant: any) => variant.transform_path);
-    const { data: signedVariants } = paths.length ? await client.storage.from("cms-media-private").createSignedUrls(paths, 3600) : { data: [] };
-    const signedByPath = new Map((signedVariants ?? []).map((signed: any) => [signed.path, signed.signedUrl]));
-    for (const variant of variants ?? []) {
-      const signedUrl = signedByPath.get(variant.transform_path), key = `${variant.variant_key}.${variant.format}`;
-      if (signedUrl) { mediaUrls[`${variant.asset_id}:${key}`] = signedUrl; if (variant.asset_id === primaryId) mediaUrls[key] = signedUrl; }
-    }
+    const { mediaUrls, mediaAlt } = await resolveMediaAssets(client, assetIds, primaryId, 3600);
     const documentUrls: Record<string, string> = {};
     const publicDocumentIds = new Set((payload.documents ?? []).map((document: any) => document.id));
     const documents = (row.payload?.documents ?? []).filter((document: any) => document.visibility === "public" && publicDocumentIds.has(document.id) && document.storagePath && !containsInternalProductValue(document.storagePath, row.payload));

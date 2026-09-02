@@ -1,6 +1,6 @@
 # EV2.2 — experiência operacional e rascunhos progressivos
 
-**Status:** canary técnico de staging aprovado; sessão humana do Gate G2 pendente<br>
+**Status:** Gate G2 aprovado; EV2.3 liberada no branch; produção bloqueada<br>
 **Escopo:** preview isolado, shadow storage e flag desligada por padrão
 
 ## Entregas
@@ -17,7 +17,7 @@
 
 O rascunho v2 não cria `cms_content_items`, revisão, publicação, projeção, sitemap, busca ou rota pública. O contrato v1 permanece como única fronteira publicável. A conversão de rascunho progressivo para payload editorial completo pertence ao gate de revisão e continuará bloqueada até as fases de dados mestres/PIM.
 
-Nenhuma flag é ativada persistentemente por esta entrega. O canary técnico usou override sintético e temporário, removido ao terminar. O acesso humano de `OP-01` terá override separado, iniciado somente durante a sessão e com TTL máximo de duas horas.
+Nenhuma flag é ativada persistentemente por esta entrega. O canary técnico usa override sintético e temporário, removido ao terminar. O acesso de `OP-01` usa override separado com TTL máximo de duas horas; capability indisponível retorna ao v1 com aviso explícito.
 
 ## Verificação
 

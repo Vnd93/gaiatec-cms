@@ -3,9 +3,9 @@
 **Data:** 2 de setembro de 2026<br>
 **Ambiente:** Supabase e Cloudflare Pages de staging<br>
 **Branch:** `ev2/desenvolvimento-fases-1-a-12`<br>
-**Commit/build:** `55b549f6ed04518c2c86e6e25e52948bf206596c`<br>
+**Commit/build final:** `af20bc75b48cae051e340fcbc585e9e91a7bb60e`<br>
 **Resultado técnico:** aprovado<br>
-**Gate G2:** sessão humana pendente
+**Gate G2:** aprovado sob protocolo reduzido por risco
 
 ## Limites da execução
 
@@ -42,27 +42,29 @@ Durante a primeira sessão humana, o candidato inicial expôs uma incompatibilid
 
 O reteste técnico no navegador autenticado salvou `G2-SYN-T01-V2-FIX`, confirmou `lock_version=3` no banco e recuperou o mesmo conteúdo depois de reabrir a rota. Não houve alerta de sincronização nem alteração no conteúdo público.
 
+Depois que a expiração do override demonstrou um fallback seguro porém opaco, o build `af20bc7` passou a avisar explicitamente quando a capability está indisponível. O ensaio final salvou e restaurou o título de referência, confirmou `lock_version=14`, desligou o override somente durante o teste, observou o alerta acessível e reativou o mesmo escopo/TTL. O canary sintético foi repetido com 15/15 aprovações e limpeza integral.
+
 ## Build e preview isolado
 
 - Alias permanente do canary: <https://ev2-g2-canary.gaiatec-cms-staging.pages.dev>
-- Deployment imutável corrigido: <https://6080940a.gaiatec-cms-staging.pages.dev>
+- Deployment imutável final: <https://bd5a80a3.gaiatec-cms-staging.pages.dev>
 - Formulário candidato: <https://ev2-g2-canary.gaiatec-cms-staging.pages.dev/admin/produtos/novo>
-- Manifesto remoto: release exato `55b549f6ed04518c2c86e6e25e52948bf206596c`, 1.418 arquivos e identidade de release com o manifesto local.
-- SHA-256 de `release-manifest.json`: `742185e2fcbb35fa32e3cffbeb06f19baa612b0f16469c6c611b97e6da5c3725`.
-- SHA-256 do pacote enviado: `0a01dc1c29b817c306cc0fa0249bb6bfb70be288655e8fdd8404e317ec61c0f0`.
+- Manifesto remoto: release exato `af20bc75b48cae051e340fcbc585e9e91a7bb60e`, 1.418 arquivos e identidade de release com o manifesto local.
+- SHA-256 de `release-manifest.json`: `551deeaed5050d3704d7959b0ca6d3d4393342121c9bc2c512bad22a95569dd5`.
+- SHA-256 do pacote enviado: `5cef262b0bf9eba3613d88c501ad7903ffd6685cd26add105d623ef74cd3d5db`.
 - Cabeçalho do preview: `X-Robots-Tag: noindex, nofollow, noarchive`.
 
 O Cloudflare registrou o candidato como `Preview`, source `ev2-g2-canary`. O deployment estável de staging permaneceu em `868f4382.gaiatec-cms-staging.pages.dev`, source `Remodelagem`; ele não foi promovido nem substituído.
 
 ## CI e revisão
 
-- [CI do pull request — execução 33643008212](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33643008212): aprovado.
-- [Preview do pull request — execução 33643007967](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33643007967): aprovado.
-- [CI do push — execução 33642983771](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33642983771): aprovado.
-- [Pull request draft #2](https://github.com/pedronishida/website_gaiatecsistemas/pull/2): sem merge antes da decisão humana do G2.
+- [CI do push final — execução 33662108812](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33662108812): aprovado.
+- [Preview do pull request final — execução 33662098836](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33662098836): aprovado.
+- [CI do pull request final — execução 33662098756](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33662098756): aprovado.
+- [Pull request draft #2](https://github.com/pedronishida/website_gaiatecsistemas/pull/2): permanece sem merge; nenhuma autorização de merge ou produção foi inferida da aprovação do G2.
 
-## Pendência humana e rollback
+## Decisão e rollback
 
-`OP-01` foi autenticado e o override temporário foi limitado ao próprio usuário. Para concluir o G2, ainda devem ser retomadas, com `REV-01`, as medições humanas válidas da baseline v1 de T01–T08 e da comparação v2 de T01. O reteste técnico da correção não será contabilizado como medição humana.
+`OP-01` concluiu duas repetições humanas v2 com recuperação clara, zero erro e zero ajuda; as duas tentativas v1 falharam antes de persistir o rascunho parcial. O responsável pelo produto autorizou o Codex a executar os cenários técnicos restantes e a reduzir repetições equivalentes. T02–T08 serão comparadas no gate da funcionalidade correspondente. Não há alegação quantitativa de ganho de tempo sem mediana v1 observada.
 
 O rollback permanece pronto em três camadas: desabilitar o override de `OP-01`, ativar o kill switch server-side se necessário e manter `VITE_EV2_DRAFT_V2_CANDIDATE=false` no build estável. Dados shadow não são publicados nem apagados pelo rollback.

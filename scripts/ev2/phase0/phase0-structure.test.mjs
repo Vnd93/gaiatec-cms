@@ -46,13 +46,14 @@ test("pilot stays inside the approved 20-50 products and 5-8 tasks", async () =>
   assert.match(pilot, /não autoriza importação automática/i);
 });
 
-test("human baseline is explicit and cannot be replaced by estimates", async () => {
+test("human baseline stays observed, incremental and free of estimates", async () => {
   const baseline = await read("docs/ev2/fase-0/BASELINE_TAREFAS.md");
   for (let index = 1; index <= 8; index += 1) {
     assert.match(baseline, new RegExp(`EV2-T${String(index).padStart(2, "0")}`));
   }
-  assert.match(baseline, /não houve sessão humana cronometrada/i);
-  assert.match(baseline, /bloqueia a aceitação do G2/i);
+  assert.match(baseline, /T01 recebeu duas tentativas humanas v1 e duas v2/i);
+  assert.match(baseline, /não existe mediana quantitativa válida/i);
+  assert.match(baseline, /T02–T08 recebem baseline e comparação no gate/i);
   assert.match(baseline, /mediana v1 observada/i);
 });
 

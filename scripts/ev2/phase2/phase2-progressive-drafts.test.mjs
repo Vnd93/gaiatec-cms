@@ -87,11 +87,12 @@ test("product adapter remains doubly gated and picker base is reusable", async (
   assert.match(picker, /aria-controls/);
 });
 
-test("G2 stays blocked until real human baseline and complete evidence exist", async () => {
+test("G2 approval is evidence-backed and keeps production blocked", async () => {
   const gate = await read("docs/ev2/fase-2/GATE_G2.md");
-  assert.match(gate, /CANARY TÉCNICO EM STAGING CONCLUÍDO — SESSÃO HUMANA PENDENTE/);
-  assert.match(gate, /não será aprovado sem a sessão humana/i);
-  assert.match(gate, /33629916088/);
+  assert.match(gate, /G2 APROVADO PARA INICIAR EV2\.3 — PRODUÇÃO CONTINUA BLOQUEADA/);
+  assert.match(gate, /2\/2 recuperaram o rascunho/);
+  assert.match(gate, /15\/15 cenários/);
+  assert.match(gate, /33662108812/);
   assert.match(gate, /não autoriza produção/i);
 });
 

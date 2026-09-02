@@ -1,10 +1,10 @@
 # Relatório do canary técnico EV2.2 em staging
 
-**Data:** 2 de setembro de 2026  
-**Ambiente:** Supabase e Cloudflare Pages de staging  
-**Branch:** `ev2/desenvolvimento-fases-1-a-12`  
-**Commit/build:** `70489c83ffa9c7e918ec083a134a8436f2f9b4bc`  
-**Resultado técnico:** aprovado  
+**Data:** 2 de setembro de 2026<br>
+**Ambiente:** Supabase e Cloudflare Pages de staging<br>
+**Branch:** `ev2/desenvolvimento-fases-1-a-12`<br>
+**Commit/build:** `70489c83ffa9c7e918ec083a134a8436f2f9b4bc`<br>
+**Resultado técnico:** aprovado<br>
 **Gate G2:** sessão humana pendente
 
 ## Limites da execução

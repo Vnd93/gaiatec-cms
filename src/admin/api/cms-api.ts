@@ -138,6 +138,12 @@ export function masterDataCommand<T>(
 ) {
   return invoke<T>(session, "cms-master-data", body, idempotencyKey ?? false);
 }
+export function pimCommand<T>(session: Session, body: Record<string, unknown>, idempotencyKey?: string) {
+  return invoke<T>(session, "cms-pim", body, idempotencyKey ?? false);
+}
+export function attributesCommand<T>(session: Session, body: Record<string, unknown>) {
+  return invoke<T>(session, "cms-attributes", body);
+}
 export function usersCommand<T>(session: Session, body: Record<string, unknown>) {
   return invoke<T>(session, "cms-users", body);
 }

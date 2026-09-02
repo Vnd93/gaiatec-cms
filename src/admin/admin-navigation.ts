@@ -134,6 +134,14 @@ export const adminNavigation: AdminNavigationGroup[] = [
         match: /^\/admin\/produtos\/importacao(?:\/.*)?$/,
       },
       {
+        to: "/admin/pim",
+        label: "PIM EV2",
+        description: "Produto, modelo, variante, SKU e proveniência normalizados.",
+        icon: Boxes,
+        permissions: ["cms:pim.read"],
+        match: /^\/admin\/pim(?:\/.*)?$/,
+      },
+      {
         to: "/admin/busca",
         label: "Busca e sinônimos",
         description: "Dicionário, consultas sem resultado e descoberta.",
@@ -313,6 +321,7 @@ export const administrativeRouteInventory = [
   { surface: "Visão geral", route: "/admin", permission: "sessão CMS ativa" },
   { surface: "Produtos", route: "/admin/produtos", permission: "cms:products.read" },
   { surface: "Cadastro em massa", route: "/admin/produtos/importacao", permission: "cms:products.edit" },
+  { surface: "PIM EV2", route: "/admin/pim", permission: "cms:pim.read" },
   { surface: "Conteúdo editorial", route: "/admin/conteudo", permission: "cms:posts.read" },
   { surface: "Serviços", route: "/admin/descoberta/service", permission: "cms:services.read" },
   { surface: "Indústrias", route: "/admin/descoberta/industry", permission: "cms:industries.read" },

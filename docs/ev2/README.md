@@ -17,6 +17,7 @@
 7. [EV2.1 — fundação arquitetural](fase-1/README.md) — contratos, flags, release vazio, segurança e evidências do Gate G1.
 8. [EV2.2 — experiência operacional](fase-2/README.md) — rascunhos progressivos, autosave, recuperação, picker e Gate G2.
 9. [EV2.3 — dados mestres](fase-3/README.md) — entidades, aliases, dependências N:N, migration e Gate G3.
+10. [EV2.4 — PIM e conteúdo principal](fase-4/README.md) — produto/modelo/variante/SKU, atributos, unidades, adapter v1 e Gate G4.
 
 ## Escopo documental
 
@@ -33,4 +34,4 @@ O documento principal é a fonte de verdade para o desenvolvimento. O DOCX que o
 
 ## Estado da execução
 
-Os Gates G0–G3 foram aprovados com evidências reproduzíveis. A EV2.2 passou nos gates técnicos locais/CI, no canary isolado de staging e em duas recuperações humanas. O protocolo reduzido por risco está registrado na ADR-021, sem inventar métrica de tempo. A EV2.3 passou por 185/185 testes pgTAP e por canary sintético 21/21 em staging, com zero resíduos e zero órfãos. Migration e função permanecem no staging, o build candidato está em alias isolado e a flag continua desligada. A EV2.4 está liberada somente para desenvolvimento no branch; produção, dados reais, merge em `main` e promoção do preview continuam fora do escopo.
+Os Gates G0–G3 foram aprovados com evidências reproduzíveis. A EV2.2 passou nos gates técnicos locais/CI, no canary isolado de staging e em duas recuperações humanas. O protocolo reduzido por risco está registrado na ADR-021, sem inventar métrica de tempo. A EV2.3 passou por 185/185 testes pgTAP e por canary sintético 21/21 em staging, com zero resíduos e zero órfãos. Migration e função permanecem no staging, o build candidato está em alias isolado e a flag continua desligada. A implementação candidata da EV2.4 está no branch, sem deploy; o Gate G4 permanece pendente. Produção, dados reais, merge em `main` e promoção de preview continuam fora do escopo.

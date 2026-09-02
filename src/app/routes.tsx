@@ -54,6 +54,7 @@ const AdminControlledVocabulariesPage = lazy(
   () => import("../admin/pages/AdminControlledVocabulariesPage"),
 );
 const AdminMasterDataPage = lazy(() => import("../admin/pages/AdminMasterDataPage"));
+const AdminPimPage = lazy(() => import("../admin/pages/AdminPimPage"));
 const AdminPagesPage = lazy(() => import("../admin/pages/AdminPagesPage"));
 const AdminPageBuilderPage = lazy(() => import("../admin/pages/AdminPageBuilderPage"));
 const AdminSiteConfigurationPage = lazy(() => import("../admin/pages/AdminSiteConfigurationPage"));
@@ -193,6 +194,7 @@ export const router = createBrowserRouter([
           { path: "busca", element: lazyWrap(AdminSearchGovernancePage) },
           { path: "listas-mestras", element: lazyWrap(AdminControlledVocabulariesPage) },
           { path: "dados-mestres", element: lazyWrap(AdminMasterDataPage) },
+          { path: "pim", element: lazyWrap(AdminPimPage) },
           { path: "paginas", element: lazyWrap(AdminPagesPage) },
           { path: "paginas/:id", element: lazyWrap(AdminPageBuilderPage) },
           { path: "site", element: lazyWrap(AdminSiteConfigurationPage) },

@@ -13,6 +13,7 @@ export const EngineeringSignalSchema = z
       "frontend.error",
       "feature_flag.evaluated",
       "release.command",
+      "draft_v2.command",
     ]),
     outcome: z.enum(["ok", "error"]),
     durationMs: z.number().nonnegative().finite().optional(),

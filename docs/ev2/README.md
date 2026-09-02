@@ -3,7 +3,8 @@
 **Status:** Gates G0 e G1 aprovados; EV2.2 liberada para implementação local<br>
 **Data-base:** 1 de setembro de 2026<br>
 **Fonte canônica:** Markdown versionado neste diretório
-**Branch:** `ev2/fase-0-documentacao-e-planejamento`
+**Branch de execução:** `ev2/desenvolvimento-fases-1-a-12`<br>
+**Branch documental preservado:** `ev2/fase-0-documentacao-e-planejamento`
 
 ## Ordem de leitura
 
@@ -14,6 +15,7 @@
 5. [ADR-015 — multisite preparado e ativação posterior](../adr/ADR-015-multisite-preparado-e-ativacao-posterior.md) — decisão arquitetural da primeira fase.
 6. [EV2.0 — diagnóstico e baseline](fase-0/README.md) — backlog executável, baseline técnico e operacional, threat model, estratégia de flags/rollback e decisão do Gate G0.
 7. [EV2.1 — fundação arquitetural](fase-1/README.md) — contratos, flags, release vazio, segurança e evidências do Gate G1.
+8. [EV2.2 — experiência operacional](fase-2/README.md) — rascunhos progressivos, autosave, recuperação, picker e Gate G2.
 
 ## Escopo documental
 

@@ -10,7 +10,7 @@ export function DraftBackupNotice<T>({ backup }: { backup: DraftBackupState<T> }
         <div>
           <strong>Cópia automática recuperável</strong>
           <span>
-            Salva nesta sessão às {time(backup.recoverable.savedAt)}. Restaure somente se reconhecer as
+            Salva neste navegador às {time(backup.recoverable.savedAt)}. Restaure somente se reconhecer as
             alterações.
           </span>
         </div>

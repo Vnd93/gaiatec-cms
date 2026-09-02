@@ -1,6 +1,36 @@
 import type { Session } from "@supabase/supabase-js";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabase";
 
+export class CmsApiError extends Error {
+  readonly status: number;
+  readonly code?: string;
+  readonly correlationId?: string;
+  readonly currentVersion?: number;
+  readonly diffRef?: string;
+  readonly preserved: boolean;
+
+  constructor(
+    message: string,
+    status: number,
+    details: {
+      code?: string;
+      correlationId?: string;
+      currentVersion?: number;
+      diffRef?: string;
+      preserved?: boolean;
+    },
+  ) {
+    super(message);
+    this.name = "CmsApiError";
+    this.status = status;
+    this.code = details.code;
+    this.correlationId = details.correlationId;
+    this.currentVersion = details.currentVersion;
+    this.diffRef = details.diffRef;
+    this.preserved = details.preserved ?? false;
+  }
+}
+
 async function invoke<T>(
   session: Session,
   fn: string,
@@ -19,8 +49,17 @@ async function invoke<T>(
     },
     body: JSON.stringify(body),
   });
-  const data = (await response.json().catch(() => ({}))) as T & { error?: string };
-  if (!response.ok) throw new Error(data.error ?? "Falha na operação administrativa.");
+  const data = (await response.json().catch(() => ({}))) as T & {
+    error?: string;
+    code?: string;
+    correlationId?: string;
+    currentVersion?: number;
+    diffRef?: string;
+    preserved?: boolean;
+  };
+  if (!response.ok) {
+    throw new CmsApiError(data.error ?? "Falha na operação administrativa.", response.status, data);
+  }
   return data;
 }
 
@@ -36,6 +75,10 @@ export type EditorialResult = {
 };
 export function editorialCommand(session: Session, body: Record<string, unknown>) {
   return invoke<EditorialResult>(session, "cms-content", body, true);
+}
+
+export function draftV2Command<T>(session: Session, body: Record<string, unknown>, idempotencyKey?: string) {
+  return invoke<T>(session, "cms-drafts-v2", body, idempotencyKey ?? false);
 }
 export function issuePreview(session: Session, itemId: string, revisionId?: string) {
   return invoke<{ path: string; expiresAt: string; remainingUses?: number }>(session, "cms-preview", {

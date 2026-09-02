@@ -31,8 +31,8 @@ test("all governed editors use namespaced recoverable draft backups", async () =
     assert.match(source, /backup\.clear\(\)/, `${name} must clear after persistence`);
   }
   const hook = await read("src/admin/hooks/useDraftBackup.ts");
-  assert.match(hook, /sessionStorage/);
-  assert.match(hook, /userId.*editorType.*itemKey/s);
+  assert.match(hook, /localStorage/);
+  assert.match(hook, /environment.*userId.*editorType.*itemKey/s);
   assert.match(hook, /DRAFT_BACKUP_TTL_MS/);
 });
 

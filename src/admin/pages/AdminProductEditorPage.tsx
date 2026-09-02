@@ -25,6 +25,12 @@ import { openExternalAfterAsync } from "../open-external-preview";
 import { useDraftBackup } from "../hooks/useDraftBackup";
 import { DraftBackupNotice } from "../components/DraftBackupNotice";
 import { ProductModelsEditor } from "../components/ProductModelsEditor";
+import { EntityPicker } from "../components/EntityPicker";
+import { useProgressiveDraftAutosave } from "../hooks/useProgressiveDraftAutosave";
+import { ProgressiveDraftStatus } from "../components/ProgressiveDraftStatus";
+
+const EV2_DRAFT_V2_CANDIDATE = import.meta.env.VITE_EV2_DRAFT_V2_CANDIDATE === "true";
+const CMS_ENVIRONMENT = import.meta.env.VITE_CMS_ENVIRONMENT === "staging" ? "staging" : "local";
 
 type Loaded = {
   id: string;
@@ -65,36 +71,21 @@ function ControlledTermSelect({
   onChange(option: ControlledVocabularyOption | undefined, input: string): void;
   disabled?: boolean;
 }) {
-  const listId = `controlled-${list?.list_key ?? label.replaceAll(" ", "-")}`;
   return (
-    <label>
-      {label}
-      <input
-        role="combobox"
-        aria-controls={listId}
-        aria-expanded="false"
-        list={listId}
-        value={value}
-        disabled={disabled || !list}
-        placeholder={list ? "Digite para pesquisar" : "Lista indisponível"}
-        onChange={(event) => {
-          const input = event.target.value;
-          onChange(
-            list?.options.find((option) => option.label === input || option.slug === input),
-            input,
-          );
-        }}
-      />
-      <datalist id={listId}>
-        {list?.options
-          .filter((option) => option.active)
-          .map((option) => (
-            <option key={option.id} value={option.label}>
-              {option.slug}
-            </option>
-          ))}
-      </datalist>
-    </label>
+    <EntityPicker
+      label={label}
+      value={value}
+      disabled={disabled || !list}
+      options={(list?.options ?? []).map((option) => ({
+        id: option.id,
+        label: option.label,
+        secondaryLabel: option.slug,
+        disabled: !option.active,
+      }))}
+      onChange={(option, input) =>
+        onChange(option ? list?.options.find((candidate) => candidate.id === option.id) : undefined, input)
+      }
+    />
   );
 }
 
@@ -218,6 +209,25 @@ export default function AdminProductEditorPage() {
       setActiveTab(stored.activeTab);
     },
   });
+  const progressiveValue = useMemo(() => ({ draft, activeTab }), [activeTab, draft]);
+  const progressiveDraft = useProgressiveDraftAutosave({
+    session,
+    enabled: EV2_DRAFT_V2_CANDIDATE && !loading && id === "novo",
+    environment: CMS_ENVIRONMENT,
+    contentType: "product",
+    value: progressiveValue,
+    workingTitle: draft.title,
+    onRestore: (stored) => {
+      setDraft(stored.draft);
+      setActiveTab(stored.activeTab);
+      setSavedSnapshot(JSON.stringify(stored.draft));
+      backup.clear();
+    },
+    onSynced: (stored) => {
+      setSavedSnapshot(JSON.stringify(stored.draft));
+      backup.clear();
+    },
+  });
   const list = (key: string) => vocabularies.find((entry) => entry.list_key === key);
   const setControlled = (
     prefix:
@@ -245,6 +255,16 @@ export default function AdminProductEditorPage() {
       if (!["create", "save"].includes(action) && dirty)
         throw new Error("Salve o produto antes de executar uma ação de revisão ou publicação.");
       if (action === "create" || action === "save") {
+        if (!loaded && progressiveDraft.active) {
+          const synced = await progressiveDraft.flush();
+          if (!synced) {
+            throw new Error("O rascunho foi preservado localmente, mas ainda não pôde ser sincronizado.");
+          }
+          setSavedSnapshot(currentSnapshot);
+          backup.clear();
+          setSuccess("Rascunho incompleto salvo de forma privada no fluxo EV2.");
+          return true;
+        }
         if (built.jsonErrors[0]) {
           setActiveTab(built.jsonErrors[0].tab);
           throw new Error(built.jsonErrors[0].message);
@@ -390,7 +410,12 @@ export default function AdminProductEditorPage() {
           <button
             type="button"
             className="admin-button"
-            disabled={busy || !can("cms:products.edit")}
+            disabled={
+              busy ||
+              !can("cms:products.edit") ||
+              progressiveDraft.status === "checking" ||
+              progressiveDraft.status === "creating"
+            }
             onClick={() => void run(loaded ? "save" : "create")}
           >
             Salvar rascunho
@@ -447,6 +472,7 @@ export default function AdminProductEditorPage() {
         </p>
       )}
       <DraftBackupNotice backup={backup} />
+      <ProgressiveDraftStatus draft={progressiveDraft} />
       <div className="admin-tabs" role="tablist" aria-label="Seções do produto">
         {tabs.map(([key, label], index) => (
           <button

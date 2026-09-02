@@ -45,18 +45,19 @@ describe("cópia recuperável de rascunho", () => {
     await user.type(screen.getByRole("textbox", { name: "Título" }), "Cópia local");
     await vi.advanceTimersByTimeAsync(600);
     const key = draftBackupKey("user-a", "product", "item-a");
-    expect(sessionStorage.getItem(key)).toContain("Cópia local");
+    expect(localStorage.getItem(key)).toContain("Cópia local");
     await user.click(screen.getByRole("button", { name: "Salvar" }));
-    expect(sessionStorage.getItem(key)).toBeNull();
+    expect(localStorage.getItem(key)).toBeNull();
     vi.useRealTimers();
   });
 
   it("oferece restauração explícita e elimina cópia expirada", async () => {
     const key = draftBackupKey("user-a", "product", "item-a");
-    sessionStorage.setItem(
+    localStorage.setItem(
       key,
       JSON.stringify({
-        version: 1,
+        version: 2,
+        environment: "local",
         userId: "user-a",
         editorType: "product",
         itemKey: "item-a",
@@ -70,10 +71,11 @@ describe("cópia recuperável de rascunho", () => {
     await user.click(await screen.findByRole("button", { name: "Restaurar alterações" }));
     expect(screen.getByRole("textbox", { name: "Título" })).toHaveValue("Recuperado");
     view.unmount();
-    sessionStorage.setItem(
+    localStorage.setItem(
       key,
       JSON.stringify({
-        version: 1,
+        version: 2,
+        environment: "local",
         userId: "user-a",
         editorType: "product",
         itemKey: "item-a",
@@ -84,6 +86,26 @@ describe("cópia recuperável de rascunho", () => {
     );
     render(<Harness />);
     expect(screen.queryByRole("button", { name: "Restaurar alterações" })).not.toBeInTheDocument();
-    expect(sessionStorage.getItem(key)).toBeNull();
+    expect(localStorage.getItem(key)).toBeNull();
+  });
+
+  it("rejeita metadados locais que não pertencem ao namespace atual", () => {
+    const key = draftBackupKey("user-a", "product", "item-a");
+    localStorage.setItem(
+      key,
+      JSON.stringify({
+        version: 2,
+        environment: "local",
+        userId: "different-user",
+        editorType: "product",
+        itemKey: "item-a",
+        savedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        value: { title: "Não restaurar" },
+      }),
+    );
+    render(<Harness />);
+    expect(screen.queryByRole("button", { name: "Restaurar alterações" })).not.toBeInTheDocument();
+    expect(localStorage.getItem(key)).toBeNull();
   });
 });

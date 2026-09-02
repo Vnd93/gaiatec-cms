@@ -12,6 +12,7 @@
 3. [Decisões e ações necessárias](DECISOES_E_ACOES_NECESSARIAS.md) — decisões resolvidas e entradas dos gates posteriores.
 4. [Gate de prontidão](GATE_DE_PRONTIDAO.md) — condição objetiva para iniciar o desenvolvimento e restrições do primeiro ciclo.
 5. [ADR-015 — multisite preparado e ativação posterior](../adr/ADR-015-multisite-preparado-e-ativacao-posterior.md) — decisão arquitetural da primeira fase.
+6. [EV2.0 — diagnóstico e baseline](fase-0/README.md) — backlog executável, baseline técnico e operacional, threat model, estratégia de flags/rollback e decisão do Gate G0.
 
 ## Escopo documental
 
@@ -26,6 +27,6 @@ O documento principal é a fonte de verdade para o desenvolvimento. O DOCX que o
 - [ADRs vigentes](../adr/)
 - [Evidências das fases 0–11](../)
 
-## Próximo passo autorizado
+## Estado da execução
 
-Iniciar a Fase EV2.0 usando o lote e as tarefas aprovados para medir o baseline, fechar os ADRs restantes, prototipar a UX e preparar a fundação de entrega segura. Capacidades novas permanecem desligadas por padrão. Esta documentação não autoriza deploy, migration remota, alteração de dados reais ou promoção para produção.
+A EV2.0 foi transformada em um gate verificável e libera a implementação local da fundação EV2.1. Capacidades novas permanecem desligadas por padrão. Esta documentação não autoriza deploy, migration remota, alteração de dados reais ou promoção para produção.

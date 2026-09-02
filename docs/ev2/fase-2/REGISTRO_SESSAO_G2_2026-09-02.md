@@ -7,8 +7,10 @@
 **Participantes:** `OP-01` e `REV-01`<br>
 **Dispositivo/rede:** mesmo computador Windows e mesma rede para v1/v2<br>
 **Navegador:** Chrome controlado pela sessão local do Codex<br>
-**Commit/build v2:** `70489c83ffa9c7e918ec083a134a8436f2f9b4bc`<br>
+**Commit/build v2 inicial:** `70489c83ffa9c7e918ec083a134a8436f2f9b4bc`<br>
+**Commit/build v2 corrigido:** `55b549f6ed04518c2c86e6e25e52948bf206596c`<br>
 **Preview v2:** <https://ev2-g2-canary.gaiatec-cms-staging.pages.dev><br>
+**Deployment corrigido:** <https://6080940a.gaiatec-cms-staging.pages.dev><br>
 **Staging v1:** <https://gaiatec-cms-staging.pages.dev><br>
 **Override:** `ev2.draft_v2`, somente `OP-01`, expiração 12:50 BRT<br>
 
@@ -22,6 +24,7 @@
 | Override amplo inexistente    | aprovado              |
 | Capability v2 pelo usuário    | aprovado              |
 | Autosave vazio server-side    | aprovado às 10:52 BRT |
+| Resume após correção          | aprovado às 11:43 BRT |
 | Produção fora do escopo       | preservado            |
 
 ## Ordem controlada
@@ -55,9 +58,21 @@ Para T01, a ordem intercala versões e repetições: `v1-R1`, `v2-R1`, `v1-R2`, 
 
 ## Achados e decisão
 
-| ID          | Severidade              | Evidência                                                                                                                 | Tratamento                                                                                                           |
-| ----------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `G2-INC-01` | esperado no controle v1 | `G2-SYN-T01-V1-R1` não gerou linha em `cms_content_drafts`; o editor v1 valida o contrato publicável antes de salvar      | registrar como limitação v1; repetir a medição com cronômetro após estabilizar o candidato                           |
-| `G2-INC-02` | bloqueante no candidato | o resume retornou HTTP 200 com timestamps PostgreSQL `+00:00`, rejeitados pelo contrato frontend que aceitava somente `Z` | corrigir o schema para timestamps com offset, cobrir por regressão e reimplantar o preview antes de retomar a sessão |
+| ID          | Severidade              | Evidência                                                                                                                 | Tratamento                                                                                              |
+| ----------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `G2-INC-01` | esperado no controle v1 | `G2-SYN-T01-V1-R1` não gerou linha em `cms_content_drafts`; o editor v1 valida o contrato publicável antes de salvar      | registrar como limitação v1; repetir a medição com cronômetro após estabilizar o candidato              |
+| `G2-INC-02` | corrigido no candidato  | o resume retornou HTTP 200 com timestamps PostgreSQL `+00:00`, rejeitados pelo contrato frontend que aceitava somente `Z` | schema corrigido no commit `55b549f`; regressão automatizada e novo preview verificado de ponta a ponta |
 
-Nenhuma decisão será registrada enquanto `G2-INC-02` não estiver corrigido e a sessão quantitativa não for repetida.
+## Correção e reteste técnico durante a sessão
+
+O contrato frontend passou a aceitar timestamps ISO com offset explícito, preservando a exigência de fuso horário. A suíte completa concluiu com sucesso, incluindo 91 testes Vitest, 21 testes estruturais EV2, 74 regressões por fase, typecheck e build. Os workflows `CI` e `Preview` do commit corrigido também foram aprovados.
+
+No preview corrigido, o teste sintético `G2-SYN-T01-V2-FIX` confirmou às 11:43 BRT:
+
+1. reconhecimento do rascunho existente retornado pelo servidor;
+2. restauração explícita da versão server-side;
+3. autosave do título, com confirmação visual sem alerta;
+4. persistência em `cms_content_drafts_v2`, `lock_version=3`;
+5. reabertura da rota e nova restauração com o mesmo título preservado.
+
+O reteste acima é evidência técnica de regressão, não substitui as medições humanas de ações, tempo ativo, ajuda e percepção. Nenhuma decisão de gate será registrada antes da retomada da sessão quantitativa com `OP-01` e `REV-01`.

@@ -1,6 +1,6 @@
 # EV2.3 — dados mestres, taxonomias e dependências
 
-**Status:** implementação local concluída; Gate G3 pendente de CI de banco e piloto autorizado<br>
+**Status:** implementação e CI de banco concluídas; Gate G3 pendente de canary/piloto autorizado<br>
 **Escopo:** F-003, RB-013, RB-014 e elemento monitorado N:N<br>
 **Rollout:** default-off; nenhuma alteração em staging ou produção
 

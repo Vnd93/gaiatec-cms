@@ -3,25 +3,41 @@ name: Preview
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: SHA exato aprovado para o canary EV2.2
+        required: true
+      ev2_draft_v2_candidate:
+        description: Habilitar o adapter cliente candidato EV2.2
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
   pull-requests: write
 
 concurrency:
-  group: preview-${{ github.event.pull_request.number }}
+  group: preview-${{ github.event_name == 'workflow_dispatch' && 'ev2-g2-canary' || github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   preview:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository ||
+      github.event_name == 'workflow_dispatch' &&
+      github.ref_name == 'ev2/desenvolvimento-fases-1-a-12'
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    environment: preview
+    environment: ${{ github.event_name == 'workflow_dispatch' && 'staging' || 'preview' }}
     env:
       CLOUDFLARE_CONFIGURED: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
     steps:
       - uses: actions/checkout@v4
+      - if: github.event_name == 'workflow_dispatch'
+        run: test "$(git rev-parse HEAD)" = "${{ inputs.expected_sha }}"
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
@@ -32,7 +48,8 @@ jobs:
         env:
           VITE_RELEASE: ${{ github.sha }}
           VITE_CMS_ENVIRONMENT: staging
-          VITE_EV2_DRAFT_V2_CANDIDATE: ${{ github.head_ref == 'ev2/desenvolvimento-fases-1-a-12' }}
+          VITE_EV2_DRAFT_V2_CANDIDATE: >-
+            ${{ github.event_name == 'workflow_dispatch' && inputs.ev2_draft_v2_candidate || github.head_ref == 'ev2/desenvolvimento-fases-1-a-12' }}
       - run: npm run artifact:manifest
         env:
           GITHUB_SHA: ${{ github.sha }}
@@ -54,10 +71,12 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name gaiatec-cms-staging --branch pr-${{ github.event.pull_request.number }}
+          command: >-
+            pages deploy dist --project-name gaiatec-cms-staging
+            --branch ${{ github.event_name == 'workflow_dispatch' && 'ev2-g2-canary' || format('pr-{0}', github.event.pull_request.number) }}
       - if: env.CLOUDFLARE_CONFIGURED == 'true'
         run: npm run smoke:http -- "${{ steps.deploy.outputs.deployment-url }}"
-      - if: env.CLOUDFLARE_CONFIGURED == 'true'
+      - if: env.CLOUDFLARE_CONFIGURED == 'true' && github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           script: |

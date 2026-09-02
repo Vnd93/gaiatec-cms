@@ -93,10 +93,14 @@ test("staging canary is explicit and rollback always disables the candidate adap
   assert.match(deploy, /VITE_CMS_ENVIRONMENT: staging/);
   assert.match(deploy, /VITE_EV2_DRAFT_V2_CANDIDATE: \$\{\{ inputs\.ev2_draft_v2_candidate \}\}/);
   assert.match(preview, /VITE_CMS_ENVIRONMENT: staging/);
+  assert.match(preview, /workflow_dispatch:[\s\S]+expected_sha:[\s\S]+ev2_draft_v2_candidate:/);
+  assert.match(preview, /github\.ref_name == 'ev2\/desenvolvimento-fases-1-a-12'/);
   assert.match(
     preview,
-    /VITE_EV2_DRAFT_V2_CANDIDATE: \$\{\{ github\.head_ref == 'ev2\/desenvolvimento-fases-1-a-12' \}\}/,
+    /environment: \$\{\{ github\.event_name == 'workflow_dispatch' && 'staging' \|\| 'preview' \}\}/,
   );
+  assert.match(preview, /git rev-parse HEAD.+inputs\.expected_sha/);
+  assert.match(preview, /--branch \$\{\{ github\.event_name == 'workflow_dispatch' && 'ev2-g2-canary'/);
   assert.match(rollback, /VITE_CMS_ENVIRONMENT: staging/);
   assert.match(rollback, /VITE_EV2_DRAFT_V2_CANDIDATE: ["']false["']/);
 });

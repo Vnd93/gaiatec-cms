@@ -903,7 +903,6 @@
 
 @keyframes catalog-search-reveal {
   from {
-    opacity: 0;
     transform: translateY(1.5rem);
   }
   to {

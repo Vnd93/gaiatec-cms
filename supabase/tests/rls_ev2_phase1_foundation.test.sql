@@ -40,9 +40,9 @@ values (
 insert into public.cms_user_roles (user_id, role_key)
 values ('41000000-0000-4000-8000-000000000001', 'super_admin');
 
-select results_eq(
-  $$
-    select relname::text
+select is(
+  (
+    select count(*)::integer
     from pg_class
     where oid in (
       'public.cms_feature_flags'::regclass,
@@ -51,15 +51,8 @@ select results_eq(
       'public.cms_release_command_receipts'::regclass,
       'public.cms_release_events'::regclass
     ) and relrowsecurity
-    order by relname
-  $$,
-  $$values
-    ('cms_feature_flag_overrides'::text),
-    ('cms_feature_flags'::text),
-    ('cms_release_command_receipts'::text),
-    ('cms_release_events'::text),
-    ('cms_release_packages'::text)
-  $$,
+  ),
+  5,
   'all EV2.1 tables enable RLS'
 );
 

@@ -1,5 +1,10 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
+import { mockCmsPublicFallbacks } from "./cms-public-mock";
+
+test.beforeEach(async ({ page, baseURL }) => {
+  if (!baseURL?.includes("pages.dev")) await mockCmsPublicFallbacks(page);
+});
 
 const routes = [
   { path: "/", status: 200 },

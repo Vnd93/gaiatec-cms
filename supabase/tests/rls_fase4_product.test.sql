@@ -30,10 +30,10 @@ select isnt(has_table_privilege('anon', 'public.cms_product_manufacturers', 'SEL
   'anonymous users cannot read draft manufacturer references');
 select isnt(has_table_privilege('authenticated', 'public.cms_product_projection', 'INSERT'), true,
   'authenticated clients cannot forge product projections');
-select ok(has_table_privilege('anon', 'public.cms_product_projection', 'SELECT'),
-  'anonymous consumers may read only the published product projection');
-select ok(has_table_privilege('anon', 'public.cms_product_document_projection', 'SELECT'),
-  'anonymous consumers may query the policy-filtered public document projection');
+select isnt(has_table_privilege('anon', 'public.cms_product_projection', 'SELECT'), true,
+  'anonymous consumers cannot bypass the sanitized cms-public Edge projection');
+select isnt(has_table_privilege('anon', 'public.cms_product_document_projection', 'SELECT'), true,
+  'anonymous consumers cannot query document projections directly');
 
 select is(public.cms_editorial_required_permission('product', 'approve'), 'cms:products.approve',
   'product approval has an explicit permission');

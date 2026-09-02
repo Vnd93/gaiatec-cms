@@ -86,9 +86,11 @@ test("admin UI is doubly gated and consumes server relation rules", async () => 
 });
 
 test("Gate G3 keeps database execution and remote rollout pending", async () => {
-  const [gate, databaseTest] = await Promise.all([
+  const [gate, databaseTest, canary, workflow] = await Promise.all([
     read("docs/ev2/fase-3/GATE_G3.md"),
     read("supabase/tests/rls_ev2_phase3_master_data.test.sql"),
+    read("scripts/ev2/phase3/staging-canary.ps1"),
+    read(".github/workflows/preview-ev2-phase3.yml"),
   ]);
   assert.match(databaseTest, /select plan\(37\)/);
   assert.match(databaseTest, /inactive values cannot receive new active compatibility links/);
@@ -96,4 +98,13 @@ test("Gate G3 keeps database execution and remote rollout pending", async () => 
   assert.match(gate, /G3 PENDENTE/);
   assert.match(gate, /não autorizada/i);
   assert.match(gate, /Docker Desktop ou Podman/i);
+  assert.match(canary, /glcqsosxwgmlhzgcsnzv/);
+  assert.match(canary, /@example\.invalid/);
+  assert.match(canary, /inactive_target_hidden_but_history_preserved/);
+  assert.match(canary, /anonymous_master_read_denied/);
+  assert.match(canary, /delete from public\.cms_master_entities where created_by/);
+  assert.match(workflow, /workflow_dispatch/);
+  assert.match(workflow, /VITE_EV2_MASTER_DATA_CANDIDATE: \$\{\{ inputs\.ev2_master_data_candidate \}\}/);
+  assert.match(workflow, /--branch ev2-g3-canary/);
+  assert.doesNotMatch(workflow, /on:\s+push:/);
 });

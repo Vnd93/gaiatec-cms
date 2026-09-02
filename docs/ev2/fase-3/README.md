@@ -21,6 +21,8 @@ A migration `0040` não contém catálogo real, backfill inferido, dual-write ou
 
 O preview normal da pull request compila a tela com a variável candidata ausente, portanto ela permanece inativa. Um canary EV2.3 exigirá autorização própria para migration, função, build, usuário steward, TTL e lote sintético.
 
+O workflow manual `EV2.3 Canary Preview` fixa o SHA e o alias `ev2-g3-canary`; ele não possui gatilho de push. O roteiro `scripts/ev2/phase3/staging-canary.ps1` valida o projeto de staging por ref/nome/região, usa usuário sintético com override individual de 30 minutos, cobre somente os riscos novos da fase e remove seus dados ao finalizar.
+
 ## Verificação
 
 ```bash

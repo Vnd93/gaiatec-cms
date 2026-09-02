@@ -85,7 +85,7 @@ test("admin UI is doubly gated and consumes server relation rules", async () => 
   assert.doesNotMatch(page, /category_technology.*targetType/s);
 });
 
-test("Gate G3 records database evidence and keeps remote rollout pending", async () => {
+test("Gate G3 records the approved canary without widening rollout", async () => {
   const [gate, databaseTest, canary, workflow] = await Promise.all([
     read("docs/ev2/fase-3/GATE_G3.md"),
     read("supabase/tests/rls_ev2_phase3_master_data.test.sql"),
@@ -95,8 +95,10 @@ test("Gate G3 records database evidence and keeps remote rollout pending", async
   assert.match(databaseTest, /select plan\(37\)/);
   assert.match(databaseTest, /inactive values cannot receive new active compatibility links/);
   assert.match(databaseTest, /a merge can be restored without reconstructing references/);
-  assert.match(gate, /G3 PENDENTE/);
-  assert.match(gate, /não autorizada/i);
+  assert.match(gate, /G3 APROVADO/);
+  assert.match(gate, /21\/21/);
+  assert.match(gate, /zero referências órfãs/i);
+  assert.match(gate, /nenhuma.*alteração em produção ocorreu/i);
   assert.match(gate, /185\/185 testes pgTAP/);
   assert.match(gate, /33666515308/);
   assert.match(canary, /glcqsosxwgmlhzgcsnzv/);
@@ -104,6 +106,8 @@ test("Gate G3 records database evidence and keeps remote rollout pending", async
   assert.match(canary, /inactive_target_hidden_but_history_preserved/);
   assert.match(canary, /anonymous_master_read_denied/);
   assert.match(canary, /delete from public\.cms_master_entities where created_by/);
+  assert.match(canary, /synthetic_cleanup_verified/);
+  assert.match(canary, /Canary funcional aprovado, mas limpeza sintética falhou/);
   assert.match(workflow, /workflow_dispatch/);
   assert.match(workflow, /VITE_EV2_MASTER_DATA_CANDIDATE: \$\{\{ inputs\.ev2_master_data_candidate \}\}/);
   assert.match(workflow, /--branch ev2-g3-canary/);

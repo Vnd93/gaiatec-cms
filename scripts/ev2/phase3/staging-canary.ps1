@@ -1,6 +1,5 @@
 param(
-  [Parameter(Mandatory = $true)]
-  [string]$SecretFile
+  [string]$SecretFile = ""
 )
 
 Set-StrictMode -Version Latest
@@ -13,17 +12,32 @@ $ProjectUrl = "https://$TargetRef.supabase.co"
 $ManagementUrl = "https://api.supabase.com/v1/projects/$TargetRef"
 $AllowedOrigin = "https://gaiatec-cms-staging.pages.dev"
 
-$tokenLines = @(Select-String -LiteralPath $SecretFile -Pattern '^SUPABASE_ACCESS_TOKEN=' | ForEach-Object { $_.Line })
-if ($tokenLines.Count -ne 1) { throw "Esperada exatamente uma linha SUPABASE_ACCESS_TOKEN." }
-$managementToken = (($tokenLines[0] -split '=', 2)[1]).Trim().Trim('"').Trim("'")
-if ([string]::IsNullOrWhiteSpace($managementToken)) { throw "SUPABASE_ACCESS_TOKEN vazio." }
-
-$managementHeaders = @{ Authorization = "Bearer $managementToken"; "Content-Type" = "application/json" }
-$project = Invoke-RestMethod -Method Get -Uri $ManagementUrl -Headers $managementHeaders
+$managementToken = $null
+$managementHeaders = $null
+if ($SecretFile) {
+  $tokenLines = @(Select-String -LiteralPath $SecretFile -Pattern '^SUPABASE_ACCESS_TOKEN=' | ForEach-Object { $_.Line })
+  if ($tokenLines.Count -ne 1) { throw "Esperada exatamente uma linha SUPABASE_ACCESS_TOKEN." }
+  $managementToken = (($tokenLines[0] -split '=', 2)[1]).Trim().Trim('"').Trim("'")
+  if ([string]::IsNullOrWhiteSpace($managementToken)) { throw "SUPABASE_ACCESS_TOKEN vazio." }
+  $managementHeaders = @{ Authorization = "Bearer $managementToken"; "Content-Type" = "application/json" }
+  $project = Invoke-RestMethod -Method Get -Uri $ManagementUrl -Headers $managementHeaders
+}
+else {
+  $projectsJson = (& npx supabase projects list --output json 2>$null | Out-String)
+  if ($LASTEXITCODE -ne 0) { throw "Supabase CLI não autenticado para validar o staging." }
+  $project = @($projectsJson | ConvertFrom-Json | Where-Object { $_.ref -eq $TargetRef })[0]
+}
 if ($project.ref -ne $TargetRef -or $project.name -ne $ExpectedName -or $project.region -ne $ExpectedRegion) {
   throw "ALVO RECUSADO: ref, nome ou região não correspondem ao staging autorizado."
 }
-$keys = Invoke-RestMethod -Method Get -Uri "$ManagementUrl/api-keys?reveal=true" -Headers $managementHeaders
+if ($managementHeaders) {
+  $keys = Invoke-RestMethod -Method Get -Uri "$ManagementUrl/api-keys?reveal=true" -Headers $managementHeaders
+}
+else {
+  $keysJson = (& npx supabase projects api-keys --project-ref $TargetRef --reveal --output json 2>$null | Out-String)
+  if ($LASTEXITCODE -ne 0) { throw "Não foi possível obter as chaves exclusivas do staging." }
+  $keys = $keysJson | ConvertFrom-Json
+}
 $anonKey = ($keys | Where-Object { $_.id -eq "anon" }).api_key
 $serviceKey = ($keys | Where-Object { $_.id -eq "service_role" }).api_key
 if ([string]::IsNullOrWhiteSpace($anonKey) -or [string]::IsNullOrWhiteSpace($serviceKey)) {
@@ -33,6 +47,7 @@ if ([string]::IsNullOrWhiteSpace($anonKey) -or [string]::IsNullOrWhiteSpace($ser
 $results = [System.Collections.Generic.List[object]]::new()
 $userId = $null
 $overrideId = $null
+$cleanupFailure = $null
 $entityIds = [System.Collections.Generic.List[string]]::new()
 $password = "Ev2!$([guid]::NewGuid().ToString('N'))"
 $email = "ev2-g3-$([guid]::NewGuid().ToString('N'))@example.invalid"
@@ -224,16 +239,54 @@ delete from public.cms_profiles where user_id = '$userId'::uuid;
 commit;
 "@
     try {
-      $null = Invoke-RestMethod -Method Post -Uri "$ManagementUrl/database/query" -Headers $managementHeaders -Body (
-        @{ query = $cleanupSql; read_only = $false } | ConvertTo-Json -Compress
-      )
-      $null = Invoke-Api -Method Delete -Uri "$ProjectUrl/auth/v1/admin/users/$userId" -Headers @{
+      if ($managementHeaders) {
+        $null = Invoke-RestMethod -Method Post -Uri "$ManagementUrl/database/query" -Headers $managementHeaders -Body (
+          @{ query = $cleanupSql; read_only = $false } | ConvertTo-Json -Compress
+        )
+      }
+      else {
+        $cleanupSqlArgument = $cleanupSql -replace '\s+', ' '
+        $cleanupOutput = (& npx supabase db query $cleanupSqlArgument --linked --output json 2>&1 | Out-String)
+        if ($LASTEXITCODE -ne 0 -or $cleanupOutput -match '"_tag"\s*:\s*"Error"') {
+          throw "Falha na limpeza SQL via Supabase CLI."
+        }
+      }
+      $deletedUser = Invoke-Api -Method Delete -Uri "$ProjectUrl/auth/v1/admin/users/$userId" -Headers @{
         apikey = $serviceKey; Authorization = "Bearer $serviceKey"
       }
+      if ($deletedUser.Status -ne 200) { throw "Falha ao remover o usuário sintético (HTTP $($deletedUser.Status))." }
+
+      $residueChecks = @(
+        @{ Table = "cms_master_data_command_receipts"; Filter = "actor_id" },
+        @{ Table = "cms_master_data_events"; Filter = "actor_id" },
+        @{ Table = "cms_master_compatibilities"; Filter = "created_by" },
+        @{ Table = "cms_master_entity_aliases"; Filter = "created_by" },
+        @{ Table = "cms_master_entities"; Filter = "created_by" },
+        @{ Table = "cms_audit_log"; Filter = "actor_id" },
+        @{ Table = "cms_feature_flag_overrides"; Filter = "created_by" },
+        @{ Table = "cms_user_roles"; Filter = "user_id" },
+        @{ Table = "cms_profiles"; Filter = "user_id" }
+      )
+      $residueCount = 0
+      foreach ($check in $residueChecks) {
+        $residue = Invoke-Api -Method Get -Uri "$ProjectUrl/rest/v1/$($check.Table)?$($check.Filter)=eq.$userId&select=*&limit=1" -Headers $serviceHeaders
+        if ($residue.Status -ne 200) { throw "Falha ao reconciliar $($check.Table) (HTTP $($residue.Status))." }
+        $residueCount += @($residue.Json).Count
+      }
+      $deletedUserLookup = Invoke-Api -Method Get -Uri "$ProjectUrl/auth/v1/admin/users/$userId" -Headers @{
+        apikey = $serviceKey; Authorization = "Bearer $serviceKey"
+      }
+      Assert-Check "synthetic_cleanup_verified" (
+        $residueCount -eq 0 -and $deletedUserLookup.Status -eq 404
+      ) "0 resíduos; usuário HTTP $($deletedUserLookup.Status)"
     }
-    catch { Write-Warning "A limpeza sintética exige auditoria manual." }
+    catch {
+      $cleanupFailure = $_
+      Write-Warning "A limpeza sintética exige auditoria manual: $($_.Exception.Message)"
+    }
   }
   $managementToken = $null; $anonKey = $null; $serviceKey = $null; $password = $null
 }
 
+if ($cleanupFailure) { throw "Canary funcional aprovado, mas limpeza sintética falhou." }
 $results | Format-Table -AutoSize

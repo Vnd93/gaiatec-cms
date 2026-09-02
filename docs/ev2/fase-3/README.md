@@ -1,8 +1,8 @@
 # EV2.3 — dados mestres, taxonomias e dependências
 
-**Status:** implementação e CI de banco concluídas; Gate G3 pendente de canary/piloto autorizado<br>
+**Status:** Gate G3 aprovado; EV2.4 liberada para desenvolvimento no branch<br>
 **Escopo:** F-003, RB-013, RB-014 e elemento monitorado N:N<br>
-**Rollout:** default-off; nenhuma alteração em staging ou produção
+**Rollout:** migration/função em staging e build em alias isolado; flag default-off; produção inalterada
 
 ## Entregas
 
@@ -19,9 +19,9 @@
 
 A migration `0040` não contém catálogo real, backfill inferido, dual-write ou alteração no modelo público. A EV2.3 não substitui automaticamente as listas controladas v1 e não muda produtos, publicação, busca, sitemap ou projeções. A função também recusa produção.
 
-O preview normal da pull request compila a tela com a variável candidata ausente, portanto ela permanece inativa. Um canary EV2.3 exigirá autorização própria para migration, função, build, usuário steward, TTL e lote sintético.
+O preview normal da pull request compila a tela com a variável candidata ausente, portanto ela permanece inativa. O canary autorizado usou um build separado, usuário sintético e override individual temporário; não habilitou a capacidade globalmente.
 
-O workflow manual `EV2.3 Canary Preview` fixa o SHA e o alias `ev2-g3-canary`; ele não possui gatilho de push. O roteiro `scripts/ev2/phase3/staging-canary.ps1` valida o projeto de staging por ref/nome/região, usa usuário sintético com override individual de 30 minutos, cobre somente os riscos novos da fase e remove seus dados ao finalizar.
+O workflow manual `EV2.3 Canary Preview` fixa o SHA e o alias `ev2-g3-canary`; ele não possui gatilho de push. Como o GitHub não disponibiliza para dispatch um workflow existente somente no branch, o mesmo build foi publicado pelo Wrangler autenticado no alias previsto. O roteiro `scripts/ev2/phase3/staging-canary.ps1` aceita token de gestão opcional ou sessão autenticada do Supabase CLI, valida o projeto por ref/nome/região, usa usuário sintético com override individual de 30 minutos, cobre somente os riscos novos da fase, remove seus dados e comprova ausência de resíduos ao finalizar.
 
 ## Verificação
 
@@ -32,6 +32,7 @@ npm run typecheck
 supabase db reset --local --no-seed
 supabase test db
 npm run check
+pwsh -File scripts/ev2/phase3/staging-canary.ps1
 ```
 
 Consulte o [contrato operacional](CONTRATO_E_OPERACAO.md), a [estratégia de migração](MIGRACAO_E_BACKFILL.md) e o [Gate G3](GATE_G3.md).

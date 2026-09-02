@@ -1,6 +1,6 @@
 # EV2 — Evolução do CMS GAIATEC
 
-**Status:** Gates G0 e G1 aprovados; EV2.2 liberada para implementação local<br>
+**Status:** Gates G0 e G1 aprovados; EV2.2 verde em CI e aguardando Gate G2 operacional<br>
 **Data-base:** 1 de setembro de 2026<br>
 **Fonte canônica:** Markdown versionado neste diretório
 **Branch de execução:** `ev2/desenvolvimento-fases-1-a-12`<br>
@@ -32,4 +32,4 @@ O documento principal é a fonte de verdade para o desenvolvimento. O DOCX que o
 
 ## Estado da execução
 
-Os Gates G0 e G1 foram aprovados com evidências reproduzíveis. A próxima unidade autorizada é a implementação local da EV2.2; capacidades novas permanecem desligadas por padrão. Esta documentação não autoriza deploy, migration remota, alteração de dados reais ou promoção para produção.
+Os Gates G0 e G1 foram aprovados com evidências reproduzíveis. A EV2.2 passou nos gates técnicos locais/CI e aguarda sessão humana/canary autorizado antes do G2; EV2.3 continua bloqueada pela dependência. Capacidades novas permanecem desligadas por padrão. Esta documentação não autoriza deploy, migration remota, alteração de dados reais ou promoção para produção.

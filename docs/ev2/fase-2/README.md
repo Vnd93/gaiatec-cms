@@ -1,6 +1,6 @@
 # EV2.2 — experiência operacional e rascunhos progressivos
 
-**Status:** implementação candidata ao Gate G2<br>
+**Status:** candidato validado em CI; Gate G2 operacional pendente<br>
 **Escopo:** código local aditivo, shadow storage e flag desligada por padrão
 
 ## Entregas
@@ -30,4 +30,4 @@ npm run test:e2e
 npm run check
 ```
 
-Consulte o [contrato operacional](CONTRATO_E_OPERACAO.md), os [cenários de resiliência](OFFLINE_CONFLITO_RECUPERACAO.md) e o [Gate G2](GATE_G2.md).
+Consulte o [contrato operacional](CONTRATO_E_OPERACAO.md), os [cenários de resiliência](OFFLINE_CONFLITO_RECUPERACAO.md), o [roteiro da sessão humana](ROTEIRO_SESSAO_HUMANA_G2.md) e o [Gate G2](GATE_G2.md).

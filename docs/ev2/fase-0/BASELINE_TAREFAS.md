@@ -4,13 +4,13 @@
 
 As oito tarefas e o lote foram aprovados, mas não houve sessão humana cronometrada e observada neste gate. Registrar números estimados como baseline distorceria o ganho de UX; por isso, os campos permanecem explicitamente `não medido`.
 
-Essa ausência não bloqueia a fundação EV2.1, que fica desligada e não muda a UX. Ela bloqueia a aceitação do G2: nenhuma alegação de redução de tempo, clique, erro ou retrabalho será aceita antes da rodada abaixo.
+Essa ausência não bloqueia a fundação EV2.1, que fica desligada e não muda a UX. Ela bloqueia a aceitação do G2: nenhuma alegação de redução de tempo, clique, erro ou retrabalho será aceita antes da rodada abaixo. Conforme a [ADR-021](../../adr/ADR-021-baseline-humano-incremental-por-gate.md), o G2 exige baseline v1 de T01–T08 e comparação v2 de T01; T02–T08 recebem comparação v2 no gate em que forem implementadas.
 
 ## Protocolo controlado
 
 - Participantes: ao menos um operador comercial/editorial e um revisor técnico.
 - Ambiente: staging isolado, mesmo dispositivo/rede por comparação e dados sintéticos do lote.
-- Repetições: duas por tarefa no fluxo v1 e duas no fluxo candidato v2; alternar a ordem para reduzir aprendizado.
+- Repetições: duas por tarefa no fluxo v1; duas no fluxo candidato v2 quando a respectiva funcionalidade existir; alternar a ordem para reduzir aprendizado.
 - Coleta: tempo ativo, espera, cliques/ações, erros, ajuda solicitada, abandono, recuperação e observação livre.
 - Privacidade: não gravar credenciais, PII ou tela com segredo; identificar pessoa apenas por código.
 - Evidência: exportar resultado anonimizado e vincular commit, build, flag, navegador e data.

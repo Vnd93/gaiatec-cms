@@ -21,6 +21,7 @@ const phaseAdrs = [
   "docs/adr/ADR-018-release-bundle-e-rollback.md",
   "docs/adr/ADR-019-rascunho-publicacao-e-concorrencia.md",
   "docs/adr/ADR-020-identidade-pim-e-proveniencia.md",
+  "docs/adr/ADR-021-baseline-humano-incremental-por-gate.md",
 ];
 
 test("EV2.0 has every required, versioned gate artifact", async () => {

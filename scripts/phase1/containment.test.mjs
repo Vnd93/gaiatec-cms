@@ -6,29 +6,45 @@ import worker from "../../cloudflare/_worker.js";
 const root = new URL("../../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
-test("worker returns real statuses and private/staging headers", async () => {
+test("unprepared worker fails closed and private/staging headers remain enforced", async () => {
   const env = {
     ASSETS: {
       fetch: async (request) => {
         const path = new URL(request.url).pathname;
-        if (path === "/") return new Response("<!doctype html><title>app</title>", { headers: { "Content-Type": "text/html" } });
+        if (path === "/")
+          return new Response("<!doctype html><title>app</title>", {
+            headers: { "Content-Type": "text/html" },
+          });
         return new Response("missing", { status: 404, headers: { "Content-Type": "text/plain" } });
       },
     },
   };
 
-  const valid = await worker.fetch(new Request("https://staging.example.com/servicos/medicoes-em-campo"), env);
-  assert.equal(valid.status, 200);
+  const valid = await worker.fetch(
+    new Request("https://staging.example.com/servicos/medicoes-em-campo"),
+    env,
+  );
+  assert.equal(valid.status, 503);
+  assert.match(valid.headers.get("x-robots-tag") ?? "", /noindex/);
 
-  const invalidEntity = await worker.fetch(new Request("https://staging.example.com/produtos/nao-existe"), env);
+  const invalidEntity = await worker.fetch(
+    new Request("https://staging.example.com/produtos/nao-existe"),
+    env,
+  );
   assert.equal(invalidEntity.status, 404);
   assert.match(invalidEntity.headers.get("x-robots-tag") ?? "", /noindex/);
 
-  const invalidPrivate = await worker.fetch(new Request("https://staging.example.com/relatorio-de-obra/inexistente"), env);
+  const invalidPrivate = await worker.fetch(
+    new Request("https://staging.example.com/relatorio-de-obra/inexistente"),
+    env,
+  );
   assert.equal(invalidPrivate.status, 404);
   assert.match(invalidPrivate.headers.get("cache-control") ?? "", /no-store/);
 
-  const privateRoute = await worker.fetch(new Request("https://staging.example.com/relatorio-de-obra/login"), env);
+  const privateRoute = await worker.fetch(
+    new Request("https://staging.example.com/relatorio-de-obra/login"),
+    env,
+  );
   assert.equal(privateRoute.status, 200);
   assert.match(privateRoute.headers.get("x-robots-tag") ?? "", /noindex/);
   assert.match(privateRoute.headers.get("cache-control") ?? "", /no-store/);

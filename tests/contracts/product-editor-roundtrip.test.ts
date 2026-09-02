@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildProductPayload, hydrateProductDraft } from "../../src/admin/product-editor-model";
+import {
+  buildProductPayload,
+  describeProductValidationIssue,
+  hydrateProductDraft,
+} from "../../src/admin/product-editor-model";
 import { CmsProductContentSchema } from "../../src/shared/contracts/cms-content";
 import { comprehensiveProductPayload } from "../fixtures/product-payload";
 
@@ -25,5 +29,14 @@ describe("product editor full-field round-trip", () => {
     draft.manufacturerReference = "KF700E";
     const rebuilt = CmsProductContentSchema.parse(buildProductPayload(draft).payload);
     expect(rebuilt.models[0]).toMatchObject({ model: "GATFLOW-B", manufacturerReference: "KF700E" });
+  });
+
+  it("explains an empty rich-text block using the visible editor field", () => {
+    expect(
+      describeProductValidationIssue({
+        path: ["blocks", 0, "data", "text"],
+        message: "Invalid input",
+      }),
+    ).toBe("Conteúdo comercial → Descrição completa: preencha este campo antes de salvar o rascunho.");
   });
 });

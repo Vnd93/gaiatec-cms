@@ -21,10 +21,11 @@ const row = (content_type: any, payload: any) => ({
 });
 describe("F5 field to consumer coverage", () => {
   it("renders every service commercial field", () => {
-    render(<DiscoveryEntityRenderer entity={row("service", servicePayload) as any} />);
+    const { container } = render(<DiscoveryEntityRenderer entity={row("service", servicePayload) as any} />);
     expect(screen.getByText("Escopo visível")).toBeInTheDocument();
     expect(screen.getByText("Entregável visível")).toBeInTheDocument();
     expect(screen.getByText("Etapa visível")).toBeInTheDocument();
+    expect(container.querySelector("main")).not.toBeInTheDocument();
   });
   it("renders industry challenges and evidence", () => {
     render(<DiscoveryEntityRenderer entity={row("industry", industryPayload) as any} />);

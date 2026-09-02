@@ -37,8 +37,8 @@ type Field = {
 };
 const newField = (): Field => ({
   id: crypto.randomUUID(),
-  key: "campo-sintetico",
-  label: "Campo sintético",
+  key: "campo",
+  label: "Novo campo",
   type: "text",
   required: true,
   maxLength: 200,
@@ -54,20 +54,20 @@ export default function AdminFormsPage() {
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [message, setMessage] = useState("");
-  const [key, setKey] = useState("formulario-sintetico"),
-    [title, setTitle] = useState("Formulário sintético descartável"),
-    [purpose, setPurpose] = useState("Validar localmente o contrato versionado sem dados reais."),
+  const [key, setKey] = useState(""),
+    [title, setTitle] = useState(""),
+    [purpose, setPurpose] = useState(""),
     [fields, setFields] = useState<Field[]>([newField()]),
     [consentText, setConsentText] = useState(
-      "Aceito o tratamento dos dados sintéticos para esta validação local.",
+      "Li e aceito o tratamento dos dados conforme a finalidade informada.",
     ),
-    [consentVersion, setConsentVersion] = useState("sintetico-v1"),
+    [consentVersion, setConsentVersion] = useState("v1"),
     [privacyPath, setPrivacyPath] = useState("/politica-de-privacidade"),
     [slaMinutes, setSlaMinutes] = useState(60),
     [retentionDays, setRetentionDays] = useState(30),
-    [submitLabel, setSubmitLabel] = useState("Enviar teste"),
-    [successMessage, setSuccessMessage] = useState("Solicitação sintética recebida."),
-    [reason, setReason] = useState("Nova versão sintética para validação da Fase 7");
+    [submitLabel, setSubmitLabel] = useState("Enviar"),
+    [successMessage, setSuccessMessage] = useState("Recebemos sua solicitação."),
+    [reason, setReason] = useState("Criação de nova versão do formulário");
   const load = () => {
     setError("");
     return supabase
@@ -182,8 +182,9 @@ export default function AdminFormsPage() {
             className="admin-button"
             onClick={() => {
               setSelected(null);
-              setKey(`formulario-sintetico-${Date.now()}`);
-              setTitle("Formulário sintético descartável");
+              setKey("");
+              setTitle("");
+              setPurpose("");
               setFields([newField()]);
             }}
           >
@@ -238,6 +239,9 @@ export default function AdminFormsPage() {
           <label>
             Chave
             <input
+              required
+              pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+              maxLength={120}
               value={key}
               disabled={Boolean(selected) || busy}
               onChange={(event) => setKey(event.target.value)}
@@ -246,6 +250,8 @@ export default function AdminFormsPage() {
           <label>
             Título
             <input
+              required
+              maxLength={180}
               value={title}
               disabled={!canEdit || busy}
               onChange={(event) => setTitle(event.target.value)}
@@ -254,6 +260,9 @@ export default function AdminFormsPage() {
           <label>
             Finalidade
             <textarea
+              required
+              minLength={3}
+              maxLength={500}
               value={purpose}
               disabled={!canEdit || busy}
               onChange={(event) => setPurpose(event.target.value)}
@@ -266,6 +275,9 @@ export default function AdminFormsPage() {
                 <label>
                   Chave
                   <input
+                    required
+                    pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+                    maxLength={120}
                     value={field.key}
                     onChange={(e) =>
                       setFields((current) =>
@@ -277,6 +289,8 @@ export default function AdminFormsPage() {
                 <label>
                   Rótulo
                   <input
+                    required
+                    maxLength={120}
                     value={field.label}
                     onChange={(e) =>
                       setFields((current) =>
@@ -310,6 +324,7 @@ export default function AdminFormsPage() {
                   <label>
                     Opções (uma por linha)
                     <textarea
+                      maxLength={6049}
                       value={field.options.join("\n")}
                       onChange={(e) =>
                         setFields((current) =>
@@ -390,15 +405,32 @@ export default function AdminFormsPage() {
           </fieldset>
           <label>
             Texto do consentimento
-            <textarea value={consentText} onChange={(e) => setConsentText(e.target.value)} />
+            <textarea
+              required
+              minLength={3}
+              maxLength={2000}
+              value={consentText}
+              onChange={(e) => setConsentText(e.target.value)}
+            />
           </label>
           <label>
             Versão do consentimento
-            <input value={consentVersion} onChange={(e) => setConsentVersion(e.target.value)} />
+            <input
+              required
+              maxLength={80}
+              value={consentVersion}
+              onChange={(e) => setConsentVersion(e.target.value)}
+            />
           </label>
           <label>
             Política de privacidade
-            <input value={privacyPath} onChange={(e) => setPrivacyPath(e.target.value)} />
+            <input
+              required
+              pattern="/(?:[a-z0-9]+(?:-[a-z0-9]+)*/?)*"
+              maxLength={300}
+              value={privacyPath}
+              onChange={(e) => setPrivacyPath(e.target.value)}
+            />
           </label>
           <div className="admin-inline-fields">
             <label>
@@ -406,6 +438,7 @@ export default function AdminFormsPage() {
               <input
                 type="number"
                 min={5}
+                max={525600}
                 value={slaMinutes}
                 onChange={(e) => setSlaMinutes(Number(e.target.value))}
               />
@@ -415,6 +448,7 @@ export default function AdminFormsPage() {
               <input
                 type="number"
                 min={1}
+                max={3650}
                 value={retentionDays}
                 onChange={(e) => setRetentionDays(Number(e.target.value))}
               />
@@ -422,15 +456,31 @@ export default function AdminFormsPage() {
           </div>
           <label>
             Botão
-            <input value={submitLabel} onChange={(e) => setSubmitLabel(e.target.value)} />
+            <input
+              required
+              maxLength={120}
+              value={submitLabel}
+              onChange={(e) => setSubmitLabel(e.target.value)}
+            />
           </label>
           <label>
             Confirmação
-            <textarea value={successMessage} onChange={(e) => setSuccessMessage(e.target.value)} />
+            <textarea
+              required
+              maxLength={500}
+              value={successMessage}
+              onChange={(e) => setSuccessMessage(e.target.value)}
+            />
           </label>
           <label>
             Motivo
-            <input value={reason} onChange={(e) => setReason(e.target.value)} />
+            <input
+              required
+              minLength={3}
+              maxLength={500}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
           </label>
           {canEdit && (
             <button className="admin-button" disabled={busy}>

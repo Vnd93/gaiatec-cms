@@ -35,13 +35,35 @@ export default function AdminProductsPage() {
     const timer = window.setTimeout(async () => {
       setLoading(true);
       setError("");
+      const normalizedQuery = query
+        .trim()
+        .slice(0, 120)
+        .replace(/[%_,()."'\\]/g, "");
       let request = supabase
         .from("cms_content_items")
         .select("id,slug,workflow_status,updated_at,cms_content_drafts(payload)")
         .eq("content_type", "product")
         .order("updated_at", { ascending: false });
       if (status !== "all") request = request.eq("workflow_status", status);
-      if (query.trim()) request = request.ilike("slug", `%${query.replace(/[%_]/g, "")}%`);
+      if (normalizedQuery) {
+        const titleMatches = await supabase
+          .from("cms_content_drafts")
+          .select("content_id")
+          .ilike("payload->>title", `%${normalizedQuery}%`)
+          .limit(50);
+        if (titleMatches.error) {
+          setError("Não foi possível pesquisar os títulos dos produtos.");
+          setItems([]);
+          setLoading(false);
+          return;
+        }
+        const matchingIds = (titleMatches.data ?? []).map((item) => item.content_id);
+        request = request.or(
+          [`slug.ilike.%${normalizedQuery}%`, matchingIds.length ? `id.in.(${matchingIds.join(",")})` : ""]
+            .filter(Boolean)
+            .join(","),
+        );
+      }
       const result = await request.limit(50);
       if (result.error) setError("Não foi possível carregar os produtos do CMS.");
       else setItems((result.data ?? []) as unknown as ProductItem[]);
@@ -83,6 +105,7 @@ export default function AdminProductsPage() {
           Buscar por endereço ou título
           <input
             type="search"
+            maxLength={120}
             value={query}
             placeholder="Ex.: medidor-de-vazao"
             onChange={(event) => setQuery(event.target.value)}

@@ -57,21 +57,21 @@ export default function CmsProductPage() {
   }, [slug]);
   if (error)
     return (
-      <main className="new-catalog">
+      <section className="new-catalog">
         <div className="new-catalog__state" role="alert">
           <h1>Produto não encontrado</h1>
           <p>{error}</p>
           <a href="/produtos">Voltar ao catálogo</a>
         </div>
-      </main>
+      </section>
     );
   if (!product)
     return (
-      <main className="new-catalog">
+      <section className="new-catalog">
         <div className="new-catalog__state" aria-busy="true">
           Carregando produto…
         </div>
-      </main>
+      </section>
     );
   return (
     <CmsProductRenderer

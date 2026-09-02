@@ -91,14 +91,16 @@ test("G6 is formally approved and the earlier F7 exception remains auditable", a
 });
 
 test("critical permissions, unpublishing and governed forms are fail-closed", async () => {
-  const [hardening, unpublishing, reopening, leadAudit, contact, footer] = await Promise.all([
-    read("supabase/migrations/0030_cms_critical_permissions_require_aal2.sql"),
-    read("supabase/migrations/0031_cms_archive_unpublishes_all_content.sql"),
-    read("supabase/migrations/0032_cms_reopen_all_published_content.sql"),
-    read("supabase/migrations/0033_cms_lead_audit_actions.sql"),
-    read("src/app/components/ContactSection.tsx"),
-    read("src/app/components/Footer.tsx"),
-  ]);
+  const [hardening, unpublishing, reopening, approvalPermissions, leadAudit, contact, footer] =
+    await Promise.all([
+      read("supabase/migrations/0030_cms_critical_permissions_require_aal2.sql"),
+      read("supabase/migrations/0031_cms_archive_unpublishes_all_content.sql"),
+      read("supabase/migrations/0032_cms_reopen_all_published_content.sql"),
+      read("supabase/migrations/0036_cms_restore_specific_approval_permissions.sql"),
+      read("supabase/migrations/0033_cms_lead_audit_actions.sql"),
+      read("src/app/components/ContactSection.tsx"),
+      read("src/app/components/Footer.tsx"),
+    ]);
   assert.match(hardening, /p_aal = 'aal2'/);
   assert.match(hardening, /permission\.critical/);
   assert.match(unpublishing, /delete from public\.cms_published_projection/);
@@ -108,6 +110,23 @@ test("critical permissions, unpublishing and governed forms are fail-closed", as
     reopening,
     /when p_action='archive' then public\.cms_content_permission\(p_content_type,'publish'\)/,
   );
+  for (const [contentType, permission] of [
+    ["product", "cms:products.approve"],
+    ["service", "cms:services.approve"],
+    ["industry", "cms:industries.approve"],
+    ["application", "cms:applications.approve"],
+    ["solution", "cms:solutions.approve"],
+    ["page", "cms:pages.approve"],
+    ["homepage", "cms:homepage.approve"],
+    ["navigation", "cms:navigation.approve"],
+    ["site_settings", "cms:settings.approve"],
+    ["placement", "cms:placements.approve"],
+  ]) {
+    assert.match(
+      approvalPermissions,
+      new RegExp(`p_content_type='${contentType}'.+'${permission.replace(".", "\\.")}'`),
+    );
+  }
   for (const action of ["cms:leads.update", "cms:leads.export", "cms:leads.anonymize"])
     assert.match(leadAudit, new RegExp(action.replace(".", "\\.")));
   assert.doesNotMatch(contact, /submit-contact/);

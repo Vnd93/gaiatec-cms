@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { leadCommand } from "../api/cms-api";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { ConfirmDialog } from "../components/AdminUI";
 
 type Lead = {
   id: string;
@@ -44,7 +45,8 @@ export default function AdminLeadsPage() {
     [exportReason, setExportReason] = useState("Exportação operacional autorizada"),
     [error, setError] = useState(""),
     [message, setMessage] = useState(""),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [pendingSensitiveAction, setPendingSensitiveAction] = useState<"export" | "anonymize" | null>(null);
   const load = useCallback(async () => {
     let request = supabase
       .from("cms_leads")
@@ -140,6 +142,12 @@ export default function AdminLeadsPage() {
       setBusy(false);
     }
   }
+  async function confirmSensitiveAction() {
+    const action = pendingSensitiveAction;
+    setPendingSensitiveAction(null);
+    if (action === "export") await exportCsv();
+    if (action === "anonymize") await anonymize();
+  }
   const canAssign = profile?.permissions.includes("cms:leads.assign"),
     canExport = profile?.permissions.includes("cms:leads.export"),
     canPrivacy = profile?.permissions.includes("cms:leads.privacy");
@@ -180,9 +188,20 @@ export default function AdminLeadsPage() {
           <>
             <label>
               Justificativa da exportação
-              <input value={exportReason} onChange={(e) => setExportReason(e.target.value)} />
+              <input
+                required
+                minLength={3}
+                maxLength={500}
+                value={exportReason}
+                onChange={(e) => setExportReason(e.target.value)}
+              />
             </label>
-            <button className="admin-button" disabled={busy} onClick={() => void exportCsv()}>
+            <button
+              type="button"
+              className="admin-button"
+              disabled={busy || exportReason.trim().length < 3}
+              onClick={() => setPendingSensitiveAction("export")}
+            >
               Exportar com auditoria
             </button>
           </>
@@ -234,7 +253,9 @@ export default function AdminLeadsPage() {
                       "Não atribuído"}
                   </td>
                   <td>
-                    <button onClick={() => choose(lead)}>Atender</button>
+                    <button type="button" onClick={() => choose(lead)}>
+                      Atender
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -302,21 +323,52 @@ export default function AdminLeadsPage() {
               </label>
               <label>
                 Motivo
-                <input value={reason} onChange={(e) => setReason(e.target.value)} />
+                <input
+                  required
+                  minLength={3}
+                  maxLength={500}
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                />
               </label>
-              <button className="admin-button" disabled={busy} onClick={() => void update()}>
+              <button
+                type="button"
+                className="admin-button"
+                disabled={busy || reason.trim().length < 3}
+                onClick={() => void update()}
+              >
                 Salvar atendimento
               </button>
             </>
           )}
           {canPrivacy && (
-            <button className="admin-danger-link" disabled={busy} onClick={() => void anonymize()}>
+            <button
+              type="button"
+              className="admin-danger-link"
+              disabled={busy || reason.trim().length < 3}
+              onClick={() => setPendingSensitiveAction("anonymize")}
+            >
               Anonimizar conforme LGPD
             </button>
           )}
-          <button onClick={() => setSelected(null)}>Fechar</button>
+          <button type="button" onClick={() => setSelected(null)}>
+            Fechar
+          </button>
         </section>
       )}
+      <ConfirmDialog
+        open={pendingSensitiveAction !== null}
+        title={pendingSensitiveAction === "anonymize" ? "Anonimizar este lead?" : "Exportar dados de leads?"}
+        description={
+          pendingSensitiveAction === "anonymize"
+            ? "A anonimização remove dados pessoais de forma irreversível e registra a justificativa na auditoria."
+            : "O arquivo contém dados pessoais. A exportação e sua justificativa serão registradas na auditoria."
+        }
+        confirmLabel={pendingSensitiveAction === "anonymize" ? "Anonimizar lead" : "Exportar arquivo"}
+        dangerous={pendingSensitiveAction === "anonymize"}
+        onConfirm={() => void confirmSensitiveAction()}
+        onCancel={() => setPendingSensitiveAction(null)}
+      />
     </section>
   );
 }

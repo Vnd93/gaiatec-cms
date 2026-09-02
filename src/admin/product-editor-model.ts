@@ -370,3 +370,11 @@ export function tabForProductPath(path: PropertyKey[]): ProductEditorTab {
   if (["provenance", "approval", "pilotState"].includes(root)) return "governanca";
   return "identificacao";
 }
+
+export function describeProductValidationIssue(issue: { path: PropertyKey[]; message: string }) {
+  const path = issue.path.map(String);
+  if (path[0] === "blocks" && path[2] === "data" && path[3] === "text") {
+    return "Conteúdo comercial → Descrição completa: preencha este campo antes de salvar o rascunho.";
+  }
+  return `${path.join(".")} — ${issue.message}`;
+}

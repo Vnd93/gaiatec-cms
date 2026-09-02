@@ -72,12 +72,16 @@ Deno.serve(async (req) => {
     auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
   });
   try {
+    // A resolução ocorre em toda inicialização segura do painel e também após
+    // renovações de token. Ela já exige um JWT válido e não deve compartilhar o
+    // limite mais restritivo reservado a desafios e recuperação.
+    const limit = action === "resolve" ? 300 : action === "mfa" || action === "recovery" ? 30 : 60;
     const allowed = await consumeRateLimit(
       admin,
       req,
       `cms_session_${action}`,
       `${authData.user.id}:${clientAddress(req)}`,
-      60,
+      limit,
       900,
     );
     if (!allowed) return json(req, { error: "Muitas tentativas. Aguarde e tente novamente." }, 429);

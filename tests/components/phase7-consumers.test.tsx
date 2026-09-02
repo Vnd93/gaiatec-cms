@@ -70,6 +70,8 @@ describe("F7 public consumers", () => {
       </MemoryRouter>,
     );
     expect(screen.getByRole("textbox", { name: /e-mail/i })).toBeRequired();
+    expect(screen.getByRole("textbox", { name: /e-mail/i })).toHaveAttribute("name", "email");
+    expect(screen.getByRole("textbox", { name: /e-mail/i })).toHaveAttribute("autocomplete", "email");
     expect(screen.getByRole("checkbox", { name: /aceito o tratamento/i })).toBeRequired();
     expect(screen.getByRole("button", { name: "Enviar" })).toBeVisible();
   });

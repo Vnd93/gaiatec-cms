@@ -15,6 +15,15 @@ type Props = {
   initialValues?: Record<string, LeadFieldValue>;
 };
 
+function fieldAutocomplete(key: string, type: string) {
+  if (type === "email") return "email";
+  if (type === "tel") return "tel";
+  if (["nome", "first-name", "given-name"].includes(key)) return "given-name";
+  if (["sobrenome", "last-name", "family-name"].includes(key)) return "family-name";
+  if (["empresa", "company", "organization"].includes(key)) return "organization";
+  return undefined;
+}
+
 export function CmsLeadForm({
   form,
   campaignId,
@@ -84,6 +93,7 @@ export function CmsLeadForm({
         <label>
           Website
           <input
+            name="website"
             tabIndex={-1}
             autoComplete="off"
             value={String(values.website ?? "")}
@@ -102,6 +112,7 @@ export function CmsLeadForm({
               <label className="cms-lead-form__checkbox" key={field.id} htmlFor={id}>
                 <input
                   id={id}
+                  name={field.key}
                   type="checkbox"
                   checked={Boolean(values[field.key])}
                   required={field.required}
@@ -119,6 +130,7 @@ export function CmsLeadForm({
               {field.type === "textarea" ? (
                 <textarea
                   id={id}
+                  name={field.key}
                   required={field.required}
                   maxLength={field.maxLength}
                   value={String(values[field.key] ?? "")}
@@ -129,6 +141,7 @@ export function CmsLeadForm({
               ) : field.type === "select" ? (
                 <select
                   id={id}
+                  name={field.key}
                   required={field.required}
                   value={String(values[field.key] ?? "")}
                   onChange={(event) =>
@@ -145,7 +158,9 @@ export function CmsLeadForm({
               ) : (
                 <input
                   id={id}
+                  name={field.key}
                   type={field.type}
+                  autoComplete={fieldAutocomplete(field.key, field.type)}
                   required={field.required}
                   maxLength={field.maxLength}
                   value={String(values[field.key] ?? "")}
@@ -159,6 +174,7 @@ export function CmsLeadForm({
         })}
       <label className="cms-lead-form__checkbox">
         <input
+          name="consent"
           type="checkbox"
           checked={consent}
           required

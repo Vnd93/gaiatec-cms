@@ -3,7 +3,14 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { SUPABASE_ANON_KEY, SUPABASE_URL, supabase } from "@/lib/supabase";
 
 export type AdminAuthStatus =
-  "loading" | "signed_out" | "password_update" | "unauthorized" | "mfa_enroll" | "mfa_challenge" | "ready";
+  | "loading"
+  | "signed_out"
+  | "password_update"
+  | "unauthorized"
+  | "temporarily_unavailable"
+  | "mfa_enroll"
+  | "mfa_challenge"
+  | "ready";
 
 type SessionSnapshot = {
   userId: string;
@@ -24,6 +31,7 @@ type AdminAuthValue = {
   user: User | null;
   status: AdminAuthStatus;
   profile: SessionSnapshot | null;
+  retryAccess(): Promise<void>;
   signIn(email: string, password: string): Promise<Result>;
   signOut(): Promise<void>;
   requestRecovery(email: string): Promise<Result>;
@@ -33,6 +41,20 @@ type AdminAuthValue = {
 };
 
 const AdminAuthContext = createContext<AdminAuthValue | null>(null);
+
+class SessionInvocationError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "SessionInvocationError";
+  }
+}
+
+function isTransientSessionError(error: unknown): boolean {
+  return !(error instanceof SessionInvocationError) || error.status === 429 || error.status >= 500;
+}
 
 function friendlyError(message: string): string {
   const normalized = message.toLowerCase();
@@ -54,7 +76,7 @@ async function invokeSession(session: Session, action: "resolve" | "mfa" | "reco
     body: JSON.stringify({ action }),
   });
   const body = (await response.json().catch(() => ({}))) as SessionSnapshot & { error?: string };
-  if (!response.ok) throw new Error(body.error ?? "SESSION_REJECTED");
+  if (!response.ok) throw new SessionInvocationError(body.error ?? "SESSION_REJECTED", response.status);
   return body;
 }
 
@@ -122,10 +144,10 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
           return;
         }
         updateStatus(verified ? "mfa_challenge" : "mfa_enroll");
-      } catch {
+      } catch (error) {
         if (currentRequest !== requestId.current) return;
         setProfile(null);
-        updateStatus("unauthorized");
+        updateStatus(isTransientSessionError(error) ? "temporarily_unavailable" : "unauthorized");
       }
     },
     [updateSession, updateStatus],
@@ -146,10 +168,11 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         // A renovação silenciosa só permanece silenciosa enquanto a autorização
         // efetiva continua válida. Qualquer downgrade volta ao fluxo completo.
         await resolveSession(nextSession);
-      } catch {
+      } catch (error) {
         if (currentRequest !== requestId.current) return;
+        if (statusRef.current === "ready" && isTransientSessionError(error)) return;
         setProfile(null);
-        updateStatus("unauthorized");
+        updateStatus(isTransientSessionError(error) ? "temporarily_unavailable" : "unauthorized");
       }
     },
     [resolveSession, updateSession, updateStatus],
@@ -197,6 +220,14 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
       user: session?.user ?? null,
       status,
       profile,
+      async retryAccess() {
+        const current = sessionRef.current;
+        if (!current) {
+          updateStatus("signed_out");
+          return;
+        }
+        await resolveSession(current);
+      },
       async signIn(email, password) {
         const { data, error } = await supabase.auth.signInWithPassword({
           email: email.trim().toLowerCase(),

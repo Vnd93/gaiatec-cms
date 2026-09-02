@@ -278,6 +278,7 @@ export default function AdminControlledVocabulariesPage() {
                       Rótulo
                       <input
                         required
+                        maxLength={160}
                         value={optionDraft.label}
                         onChange={(event) => setOptionDraft({ ...optionDraft, label: event.target.value })}
                       />
@@ -288,8 +289,19 @@ export default function AdminControlledVocabulariesPage() {
                         required
                         disabled={Boolean(optionDraft.id)}
                         pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+                        maxLength={120}
                         value={optionDraft.slug}
                         onChange={(event) => setOptionDraft({ ...optionDraft, slug: event.target.value })}
+                      />
+                    </label>
+                    <label>
+                      Descrição opcional
+                      <textarea
+                        maxLength={500}
+                        value={optionDraft.description}
+                        onChange={(event) =>
+                          setOptionDraft({ ...optionDraft, description: event.target.value })
+                        }
                       />
                     </label>
                     <label>
@@ -349,6 +361,8 @@ export default function AdminControlledVocabulariesPage() {
                     <input
                       required
                       disabled={Boolean(listDraft.id)}
+                      pattern="[a-z][a-z0-9_.-]{2,119}"
+                      maxLength={120}
                       value={listDraft.listKey}
                       onChange={(event) => setListDraft({ ...listDraft, listKey: event.target.value })}
                     />
@@ -358,6 +372,8 @@ export default function AdminControlledVocabulariesPage() {
                     <input
                       required
                       disabled={Boolean(listDraft.id)}
+                      pattern="[a-z][a-z0-9_-]{1,79}"
+                      maxLength={80}
                       value={listDraft.entityType}
                       onChange={(event) => setListDraft({ ...listDraft, entityType: event.target.value })}
                     />
@@ -367,6 +383,8 @@ export default function AdminControlledVocabulariesPage() {
                     <input
                       required
                       disabled={Boolean(listDraft.id)}
+                      pattern="[a-z][a-z0-9_-]{1,79}"
+                      maxLength={80}
                       value={listDraft.dimensionKey}
                       onChange={(event) => setListDraft({ ...listDraft, dimensionKey: event.target.value })}
                     />
@@ -375,8 +393,17 @@ export default function AdminControlledVocabulariesPage() {
                     Nome operacional
                     <input
                       required
+                      maxLength={120}
                       value={listDraft.label}
                       onChange={(event) => setListDraft({ ...listDraft, label: event.target.value })}
+                    />
+                  </label>
+                  <label>
+                    Descrição opcional
+                    <textarea
+                      maxLength={500}
+                      value={listDraft.description}
+                      onChange={(event) => setListDraft({ ...listDraft, description: event.target.value })}
                     />
                   </label>
                   <label>

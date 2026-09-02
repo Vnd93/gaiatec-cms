@@ -3,6 +3,7 @@ import { FilePlus2, Search } from "lucide-react";
 import { Link } from "react-router";
 import { supabase } from "@/lib/supabase";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { campaignWindowLabel } from "../campaign-window";
 
 type CampaignRow = {
   id: string;
@@ -81,6 +82,7 @@ export default function AdminMarketingPage() {
           <span className="admin-input-with-icon">
             <Search size={16} aria-hidden="true" />
             <input
+              maxLength={120}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Título ou URL"
@@ -125,11 +127,7 @@ export default function AdminMarketingPage() {
                     <td>
                       <code>{payload?.route?.path ?? `/campanhas/${item.slug}`}</code>
                     </td>
-                    <td>
-                      {payload?.window?.startsAt
-                        ? `${new Date(payload.window.startsAt).toLocaleDateString("pt-BR")} – ${new Date(payload.window.endsAt ?? "").toLocaleDateString("pt-BR")}`
-                        : "—"}
-                    </td>
+                    <td>{campaignWindowLabel(payload?.window)}</td>
                     <td>
                       <span className="admin-status">{item.workflow_status}</span>
                     </td>

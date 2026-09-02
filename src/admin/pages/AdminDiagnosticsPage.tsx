@@ -16,6 +16,7 @@ const discoveryLabels = {
 } as const;
 export default function AdminDiagnosticsPage() {
   const [events, setEvents] = useState<Event[]>([]),
+    [eventTotal, setEventTotal] = useState(0),
     [outbox, setOutbox] = useState(0),
     [discovery, setDiscovery] = useState<Record<keyof typeof discoveryLabels, number>>({
       service: 0,
@@ -30,7 +31,7 @@ export default function AdminDiagnosticsPage() {
     void Promise.all([
       supabase
         .from("cms_operational_events")
-        .select("id,event_type,error_code,correlation_id,created_at")
+        .select("id,event_type,error_code,correlation_id,created_at", { count: "exact" })
         .is("resolved_at", null)
         .order("created_at", { ascending: false })
         .limit(50),
@@ -45,6 +46,7 @@ export default function AdminDiagnosticsPage() {
         setError("Diagnóstico indisponível.");
       else {
         setEvents((eventResult.data ?? []) as Event[]);
+        setEventTotal(eventResult.count ?? 0);
         setOutbox(queueResult.count ?? 0);
         setDiscovery(
           (discoveryResult.data ?? []).reduce(
@@ -82,7 +84,7 @@ export default function AdminDiagnosticsPage() {
               <span>eventos pendentes/falhos</span>
             </article>
             <article>
-              <strong>{events.length}</strong>
+              <strong>{eventTotal}</strong>
               <span>alertas abertos</span>
             </article>
             {(Object.keys(discoveryLabels) as Array<keyof typeof discoveryLabels>).map((kind) => (
@@ -98,16 +100,23 @@ export default function AdminDiagnosticsPage() {
               description="Publicação, outbox e processamento não possuem alerta ativo."
             />
           ) : (
-            events.map((event) => (
-              <article className="admin-alert" key={event.id}>
-                <strong>{event.event_type}</strong>
-                <p>Código: {event.error_code ?? "—"}</p>
-                <small>
-                  Suporte {event.correlation_id.slice(0, 8)} ·{" "}
-                  {new Date(event.created_at).toLocaleString("pt-BR")}
-                </small>
-              </article>
-            ))
+            <>
+              {eventTotal > events.length && (
+                <p className="admin-help">
+                  Exibindo os {events.length} alertas mais recentes de {eventTotal} abertos.
+                </p>
+              )}
+              {events.map((event) => (
+                <article className="admin-alert" key={event.id}>
+                  <strong>{event.event_type}</strong>
+                  <p>Código: {event.error_code ?? "—"}</p>
+                  <small>
+                    Suporte {event.correlation_id.slice(0, 8)} ·{" "}
+                    {new Date(event.created_at).toLocaleString("pt-BR")}
+                  </small>
+                </article>
+              ))}
+            </>
           )}
         </>
       )}

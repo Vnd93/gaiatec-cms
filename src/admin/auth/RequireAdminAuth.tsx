@@ -3,7 +3,7 @@ import { useAdminAuth } from "./AdminAuthContext";
 import { AdminFrame } from "../components/AdminFrame";
 
 export function RequireAdminAuth({ children }: { children: React.ReactNode }) {
-  const { status, signOut } = useAdminAuth();
+  const { status, retryAccess, signOut } = useAdminAuth();
   const location = useLocation();
 
   if (status === "loading")
@@ -20,6 +20,18 @@ export function RequireAdminAuth({ children }: { children: React.ReactNode }) {
     );
   if (status === "password_update") return <Navigate to="/admin/definir-senha" replace />;
   if (status === "mfa_enroll" || status === "mfa_challenge") return <Navigate to="/admin/mfa" replace />;
+  if (status === "temporarily_unavailable") {
+    return (
+      <AdminFrame
+        title="Validação de acesso temporariamente indisponível"
+        description="Sua sessão não foi classificada como inválida. O serviço de autorização não respondeu e pode ser consultado novamente."
+      >
+        <button className="admin-button admin-button--primary" onClick={() => void retryAccess()}>
+          Tentar novamente
+        </button>
+      </AdminFrame>
+    );
+  }
   if (status === "unauthorized") {
     return (
       <AdminFrame

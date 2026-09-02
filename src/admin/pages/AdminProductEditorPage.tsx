@@ -5,6 +5,7 @@ import { CmsProductContentSchema } from "@/shared/contracts/cms-content";
 import {
   buildProductPayload,
   createInitialProductDraft,
+  describeProductValidationIssue,
   hydrateProductDraft,
   tabForProductPath,
   type GovernedJsonField,
@@ -251,7 +252,7 @@ export default function AdminProductEditorPage() {
         if (!validation?.success) {
           const first = contractIssues[0];
           setActiveTab(tabForProductPath(first.path));
-          throw new Error(`Cadastro incompleto: ${first.path.join(".")} — ${first.message}`);
+          throw new Error(`Cadastro incompleto: ${describeProductValidationIssue(first)}`);
         }
       }
       if (action === "save" && loaded?.workflow_status === "published") {
@@ -569,7 +570,7 @@ export default function AdminProductEditorPage() {
               {area("Proposta de valor", "valueProposition")}
               {area("Benefícios — um por linha", "benefits")}
               {area("Diferenciais — um por linha", "differentiators")}
-              {area("Descrição completa — espelha o primeiro bloco rich_text", "body", 7)}
+              {area("Descrição completa (obrigatória) — espelha o primeiro bloco rich_text", "body", 7)}
               <details className="admin-advanced-panel">
                 <summary>Área avançada — JSON dos blocos</summary>
                 {governedArea("Blocos completos", "blocksJson")}

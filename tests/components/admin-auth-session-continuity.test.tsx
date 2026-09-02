@@ -129,4 +129,38 @@ describe("continuidade segura da sessão administrativa", () => {
     act(() => authMock.emit("SIGNED_OUT", null));
     expect(await screen.findByRole("heading", { name: "Login seguro" })).toBeInTheDocument();
   });
+
+  it("preserva uma sessão já autorizada quando a renovação sofre falha transitória", async () => {
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Editor preservado" })).toBeInTheDocument();
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "Muitas tentativas." }), {
+        status: 429,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    act(() => authMock.emit("TOKEN_REFRESHED", authMock.session("user-a", "token-renovado")));
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("heading", { name: "Editor preservado" })).toBeInTheDocument();
+    expect(screen.queryByText("Acesso administrativo não autorizado")).not.toBeInTheDocument();
+  });
+
+  it("distingue indisponibilidade transitória de falta de permissão na validação inicial", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "Muitas tentativas." }), {
+        status: 429,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Validação de acesso temporariamente indisponível" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Tentar novamente" })).toBeInTheDocument();
+    expect(screen.queryByText("Acesso administrativo não autorizado")).not.toBeInTheDocument();
+  });
 });

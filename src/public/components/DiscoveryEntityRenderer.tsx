@@ -41,7 +41,7 @@ export function DiscoveryEntityRenderer({
   if (p.benefits) sections.push(["Benefícios comprováveis", p.benefits]);
   if (p.components) sections.push(["Componentes", p.components]);
   return (
-    <main className="new-catalog discovery-detail">
+    <section className="new-catalog discovery-detail">
       {preview && <div className="new-catalog__state">Preview privado — conteúdo não publicado.</div>}
       <p className="new-catalog__eyebrow">
         {labels[entity.content_type]} ·{" "}
@@ -125,6 +125,6 @@ export function DiscoveryEntityRenderer({
       <a className="discovery-detail__cta" href={p.cta?.href ?? "/contato"}>
         {p.cta?.label ?? "Falar com especialista"}
       </a>
-    </main>
+    </section>
   );
 }

@@ -135,7 +135,22 @@ Deno.serve(async (req) => {
     let query = identity.admin.from("cms_media_assets").select("id,original_filename,processing_status,scan_status,source_kind,license_name,owner_name,alt_text,width,height,version,created_at", { count: "exact" }).order("created_at", { ascending: false }).range(from, to);
     if (input.query) query = query.ilike("original_filename", "%" + input.query.replace(/[%_]/g, "") + "%");
     const { data, count, error } = await query; if (error) return json(req, { error: "Falha ao listar mídia." }, 500);
-    return json(req, { items: data, page: input.page, pageSize: input.pageSize, total: count ?? 0 });
+    const assetIds = (data ?? []).map((item) => item.id);
+    const previews = new Map<string, string>();
+    if (assetIds.length) {
+      const { data: variants } = await identity.admin.from("cms_media_variants")
+        .select("asset_id,transform_path").in("asset_id", assetIds)
+        .eq("variant_key", "thumbnail").eq("format", "webp");
+      if (variants?.length) {
+        const signed = await storage.createSignedUrls(variants.map((variant) => variant.transform_path), 900);
+        for (const [index, variant] of variants.entries()) {
+          const signedUrl = signed.data?.[index]?.signedUrl;
+          if (signedUrl) previews.set(variant.asset_id, signedUrl);
+        }
+      }
+    }
+    return json(req, { items: (data ?? []).map((item) => ({ ...item, preview_url: previews.get(item.id) ?? null })),
+      page: input.page, pageSize: input.pageSize, total: count ?? 0 });
   }
   if (input.action === "usages") {
     const { data, error } = await identity.admin.from("cms_media_usages").select("item_id,revision_id,block_id,usage_kind,created_at").eq("asset_id", input.assetId);

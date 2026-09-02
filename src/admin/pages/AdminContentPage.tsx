@@ -18,7 +18,8 @@ export default function AdminContentPage() {
     [status, setStatus] = useState("all");
   const [page, setPage] = useState(1),
     [loading, setLoading] = useState(true),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [retryNonce, setRetryNonce] = useState(0);
   const pageSize = 10;
   useEffect(() => {
     setQuery(searchParams.get("q") ?? "");
@@ -46,7 +47,7 @@ export default function AdminContentPage() {
       active = false;
       window.clearTimeout(timer);
     };
-  }, [page, query, status]);
+  }, [page, query, retryNonce, status]);
   const canEdit = profile?.permissions.includes("cms:posts.edit");
   return (
     <section>
@@ -65,6 +66,7 @@ export default function AdminContentPage() {
         <label>
           Buscar pelo identificador da URL
           <input
+            maxLength={120}
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -97,7 +99,9 @@ export default function AdminContentPage() {
       ) : error ? (
         <div className="admin-state admin-notice--error" role="alert">
           {error}
-          <button onClick={() => setPage((value) => value)}>Tentar novamente</button>
+          <button type="button" onClick={() => setRetryNonce((value) => value + 1)}>
+            Tentar novamente
+          </button>
         </div>
       ) : items.length === 0 ? (
         <div className="admin-state">

@@ -19,6 +19,7 @@ const createdUsers = [];
 const createdItems = [];
 const createdForms = [];
 const evidence = [];
+let controlledProductClassification = null;
 
 function assert(condition, message, details) {
   if (!condition) throw new Error(`${message}${details ? `: ${JSON.stringify(details)}` : ""}`);
@@ -272,6 +273,7 @@ function campaignPayload(slug, options = {}) {
   };
 }
 function productPayload(slug, title, manufacturerVisibility = "internal") {
+  assert(controlledProductClassification, "Listas mestras de produto não foram carregadas");
   return {
     schemaVersion: 1,
     consumerId: "cms.catalog-product.v1",
@@ -301,6 +303,7 @@ function productPayload(slug, title, manufacturerVisibility = "internal") {
       category: "Medição sintética",
       family: "Família sintética",
     },
+    controlledClassification: controlledProductClassification,
     commercial: {
       shortDescription: "Descrição sintética sem conteúdo legado.",
       valueProposition: "Proposta de valor sintética.",
@@ -407,6 +410,41 @@ async function publishFlow({ creator, approver, publisher, contentType, slug, pa
     revisionId: submitted.data.revisionId,
     published: published.data,
   };
+}
+
+async function loadControlledProductClassification() {
+  const dimensions = {
+    "product.category": "productCategory",
+    "product.application_magnitude": "applicationMagnitude",
+    "product.technology": "technology",
+    "product.installation_operation": "installationOperation",
+    "product.monitored_element": "monitoredElement",
+  };
+  const { data: lists, error: listsError } = await admin
+    .from("cms_controlled_lists")
+    .select("id,list_key")
+    .in("list_key", Object.keys(dimensions))
+    .eq("active", true);
+  if (listsError) throw listsError;
+  assert(lists.length === Object.keys(dimensions).length, "Listas mestras de produto incompletas", lists);
+  const { data: options, error: optionsError } = await admin
+    .from("cms_controlled_options")
+    .select("id,list_id,slug,label,sort_order")
+    .in(
+      "list_id",
+      lists.map((list) => list.id),
+    )
+    .eq("active", true)
+    .order("sort_order")
+    .order("label");
+  if (optionsError) throw optionsError;
+  const refs = {};
+  for (const list of lists) {
+    const option = options.find((candidate) => candidate.list_id === list.id);
+    assert(option, `Lista mestra sem opção ativa: ${list.list_key}`);
+    refs[dimensions[list.list_key]] = { id: option.id, slug: option.slug, label: option.label };
+  }
+  return refs;
 }
 
 async function run() {
@@ -825,6 +863,7 @@ async function run() {
   }
   record("Expiração de campanhas", { statuses: [301, 404, 410, 302] });
 
+  controlledProductClassification = await loadControlledProductClassification();
   const bulkSlugs = [`produto-lote-a-${shortTag}`, `produto-lote-b-${shortTag}`];
   const validRows = bulkSlugs.map((slug, index) => ({
     sourceRow: index + 2,
@@ -918,7 +957,7 @@ async function run() {
     reason: `Submissão produto ${runTag}`,
     publishAt: null,
   });
-  await editorial(adminActor, {
+  await editorial(reviewer, {
     action: "approve",
     itemId: productId,
     contentType: null,
@@ -998,7 +1037,7 @@ async function run() {
     reason: `Republicação produto ${runTag}`,
     publishAt: null,
   });
-  await editorial(adminActor, {
+  await editorial(reviewer, {
     action: "approve",
     itemId: productId,
     contentType: null,

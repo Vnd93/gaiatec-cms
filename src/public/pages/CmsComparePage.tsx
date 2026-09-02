@@ -38,7 +38,7 @@ export default function CmsComparePage() {
     ["monitoredElement", "Elemento monitorado"],
   ] as const;
   return (
-    <main className="new-catalog">
+    <section className="new-catalog">
       <p className="new-catalog__eyebrow">COMPARADOR</p>
       <h1>Comparar produtos</h1>
       <p className="new-catalog__lead">
@@ -99,6 +99,6 @@ export default function CmsComparePage() {
           </table>
         </div>
       )}
-    </main>
+    </section>
   );
 }

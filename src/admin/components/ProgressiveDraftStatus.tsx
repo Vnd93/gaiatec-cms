@@ -8,7 +8,15 @@ export function ProgressiveDraftStatus<T extends object>({
 }: {
   draft: ProgressiveDraftAutosaveState<T>;
 }) {
-  if (draft.status === "disabled") return null;
+  if (draft.status === "disabled") {
+    if (draft.fallbackReason !== "capability_unavailable") return null;
+    return (
+      <div className="admin-draft-indicator" role="alert" aria-live="polite">
+        A sessão de rascunho progressivo não está ativa ou expirou. O editor legado está ativo e exige todos
+        os campos obrigatórios para salvar. Reabra uma sessão autorizada para retomar o autosave.
+      </div>
+    );
+  }
   if (draft.recoverable) {
     return (
       <div className="admin-draft-recovery" role="status">

@@ -33,6 +33,7 @@ export type ProgressiveDraftRecovery<T> = {
 export type ProgressiveDraftAutosaveState<T> = {
   active: boolean;
   status: ProgressiveDraftSyncStatus;
+  fallbackReason: "capability_unavailable" | null;
   draftId: string | null;
   lockVersion: number | null;
   lastSavedAt: string | null;
@@ -79,6 +80,7 @@ export function useProgressiveDraftAutosave<T extends object>({
   debounceMs?: number;
 }): ProgressiveDraftAutosaveState<T> {
   const [status, setStatus] = useState<ProgressiveDraftSyncStatus>(enabled ? "checking" : "disabled");
+  const [fallbackReason, setFallbackReason] = useState<"capability_unavailable" | null>(null);
   const [draftId, setDraftId] = useState<string | null>(null);
   const [lockVersion, setLockVersion] = useState<number | null>(null);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
@@ -178,6 +180,7 @@ export function useProgressiveDraftAutosave<T extends object>({
 
   useEffect(() => {
     if (!enabled || !session) {
+      setFallbackReason(null);
       setStatus("disabled");
       return;
     }
@@ -191,9 +194,11 @@ export function useProgressiveDraftAutosave<T extends object>({
         });
         if (!active) return;
         if (!capability.enabled) {
+          setFallbackReason("capability_unavailable");
           setStatus("disabled");
           return;
         }
+        setFallbackReason(null);
         const resumed = await draftV2Command<QueryResult>(session, {
           action: "resume",
           envelope: envelope(environment),
@@ -269,6 +274,7 @@ export function useProgressiveDraftAutosave<T extends object>({
   return {
     active: status !== "disabled" && enabled,
     status,
+    fallbackReason,
     draftId,
     lockVersion,
     lastSavedAt,

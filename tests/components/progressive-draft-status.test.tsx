@@ -10,6 +10,7 @@ function state(
   return {
     active: true,
     status: "saved",
+    fallbackReason: null,
     draftId: crypto.randomUUID(),
     lockVersion: 2,
     lastSavedAt: "2026-09-02T12:00:00.000Z",
@@ -56,5 +57,26 @@ describe("progressive draft status", () => {
     await user.click(screen.getByRole("button", { name: "Restaurar versão do servidor" }));
     expect(restore).toHaveBeenCalledOnce();
     expect(keep).not.toHaveBeenCalled();
+  });
+
+  it("warns when the candidate falls back to the legacy editor", () => {
+    render(
+      <ProgressiveDraftStatus
+        draft={state({
+          active: false,
+          status: "disabled",
+          fallbackReason: "capability_unavailable",
+        })}
+      />,
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("não está ativa ou expirou");
+    expect(screen.getByRole("alert")).toHaveTextContent("editor legado está ativo");
+  });
+
+  it("stays silent when the candidate build is intentionally disabled", () => {
+    const { container } = render(
+      <ProgressiveDraftStatus draft={state({ active: false, status: "disabled", fallbackReason: null })} />,
+    );
+    expect(container).toBeEmptyDOMElement();
   });
 });

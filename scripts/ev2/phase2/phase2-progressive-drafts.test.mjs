@@ -70,6 +70,8 @@ test("autosave preserves local work and exposes recoverable states", async () =>
   assert.match(backup, /window\.localStorage/);
   assert.match(backup, /environment/);
   assert.match(status, /Nenhuma alteração foi\s+sobrescrita/);
+  assert.match(status, /não está ativa ou expirou/);
+  assert.match(status, /editor legado está ativo/);
   assert.match(status, /aria-live="polite"/);
 });
 

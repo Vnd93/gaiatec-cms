@@ -542,11 +542,25 @@ Deno.serve(async (req) => {
     logPim("info", "pim.command.completed", correlationId, { action: command.action, productId: data?.productId });
     return json(req, data);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const errorRecord = error && typeof error === "object" ? (error as Record<string, unknown>) : {};
+    const message =
+      typeof errorRecord.message === "string"
+        ? errorRecord.message
+        : error instanceof Error
+          ? error.message
+          : String(error);
+    const databaseCode = typeof errorRecord.code === "string" ? errorRecord.code : "";
     const forbidden = message.includes("FORBIDDEN") || message.includes("FEATURE_DISABLED");
     const notFound = message.includes("NOT_FOUND");
-    const conflict = message.includes("CONFLICT") || message.includes("DUPLICATE") || message.includes("40001") || message.includes("23505");
-    const invalid = message.includes("INVALID") || message.includes("REQUIRES") || message.includes("INACTIVE");
+    const conflict =
+      message.includes("CONFLICT") ||
+      message.includes("DUPLICATE") ||
+      ["P0001", "40001", "23505"].includes(databaseCode);
+    const invalid =
+      message.includes("INVALID") ||
+      message.includes("REQUIRES") ||
+      message.includes("INACTIVE") ||
+      ["22023", "23514"].includes(databaseCode);
     const status = forbidden ? 403 : notFound ? 404 : conflict ? 409 : invalid ? 422 : 500;
     const code = [
       "CMS_PIM_FEATURE_DISABLED", "CMS_PIM_FORBIDDEN", "CMS_PIM_NOT_FOUND", "CMS_PIM_CONFLICT",

@@ -106,5 +106,6 @@ test("Gate G3 keeps database execution and remote rollout pending", async () => 
   assert.match(workflow, /workflow_dispatch/);
   assert.match(workflow, /VITE_EV2_MASTER_DATA_CANDIDATE: \$\{\{ inputs\.ev2_master_data_candidate \}\}/);
   assert.match(workflow, /--branch ev2-g3-canary/);
+  assert.match(workflow, /inputs\.ev2_master_data_candidate \}\}" = "true"/);
   assert.doesNotMatch(workflow, /on:\s+push:/);
 });

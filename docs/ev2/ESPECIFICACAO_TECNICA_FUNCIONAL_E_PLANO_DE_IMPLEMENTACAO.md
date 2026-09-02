@@ -1739,6 +1739,8 @@ Caminho crítico: Baseline -> Fundação/release -> UX/drafts -> Dados mestres -
 | Futuro      | Experimentos A/B e personalização não sensível       | Product/Marketing    | Após estabilidade EV2        |
 | Futuro      | Engine de busca dedicada                             | Search/Architecture  | Somente se SLO/volume exigir |
 
+> **RESOLUÇÕES DA EV2.0** Os owners interinos, o lote de 20 produtos/8 tarefas e a estratégia de multisite foram definidos em 1 de setembro de 2026. Consulte [Lote piloto EV2.0](LOTE_PILOTO_EV2_0.md), [Decisões e ações necessárias](DECISOES_E_ACOES_NECESSARIAS.md) e [ADR-015](../adr/ADR-015-multisite-preparado-e-ativacao-posterior.md).
+
 > **CONCLUSÃO** A especificação transforma o plano consolidado em uma evolução executável e governada. O primeiro compromisso é preservar o que funciona; o segundo é remover fricção do operador; o terceiro é ampliar automação somente após evidência de segurança, integridade, usabilidade e rollback.
 
 <a id="fontes-locais-consultadas"></a>

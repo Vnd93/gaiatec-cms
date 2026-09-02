@@ -1,14 +1,17 @@
 # EV2 — Evolução do CMS GAIATEC
 
-**Status:** documentação organizada e aprovada para iniciar a Fase EV2.0<br>
+**Status:** documentação organizada, decisões iniciais resolvidas e Fase EV2.0 liberada<br>
 **Data-base:** 1 de setembro de 2026<br>
 **Fonte canônica:** Markdown versionado neste diretório
+**Branch:** `ev2/fase-0-documentacao-e-planejamento`
 
 ## Ordem de leitura
 
 1. [Especificação técnica, funcional e plano de implementação](ESPECIFICACAO_TECNICA_FUNCIONAL_E_PLANO_DE_IMPLEMENTACAO.md) — escopo completo, requisitos, regras de negócio, arquitetura, dados, APIs, segurança, testes, fases e rollback.
-2. [Decisões e ações necessárias](DECISOES_E_ACOES_NECESSARIAS.md) — entradas que dependem de direção, produto, PIM, UX, segurança, DevOps ou marketing.
-3. [Gate de prontidão](GATE_DE_PRONTIDAO.md) — condição objetiva para iniciar o desenvolvimento e restrições do primeiro ciclo.
+2. [Lote piloto e tarefas operacionais](LOTE_PILOTO_EV2_0.md) — amostra de 20 produtos, 8 tarefas, owners e critérios de uso.
+3. [Decisões e ações necessárias](DECISOES_E_ACOES_NECESSARIAS.md) — decisões resolvidas e entradas dos gates posteriores.
+4. [Gate de prontidão](GATE_DE_PRONTIDAO.md) — condição objetiva para iniciar o desenvolvimento e restrições do primeiro ciclo.
+5. [ADR-015 — multisite preparado e ativação posterior](../adr/ADR-015-multisite-preparado-e-ativacao-posterior.md) — decisão arquitetural da primeira fase.
 
 ## Escopo documental
 
@@ -25,4 +28,4 @@ O documento principal é a fonte de verdade para o desenvolvimento. O DOCX que o
 
 ## Próximo passo autorizado
 
-Abrir a Fase EV2.0 para baseline, ADRs, métricas de tarefa, protótipos e definição do lote piloto. Capacidades novas permanecem desligadas por padrão. Esta documentação não autoriza deploy, migration remota, alteração de dados reais ou promoção para produção.
+Iniciar a Fase EV2.0 usando o lote e as tarefas aprovados para medir o baseline, fechar os ADRs restantes, prototipar a UX e preparar a fundação de entrega segura. Capacidades novas permanecem desligadas por padrão. Esta documentação não autoriza deploy, migration remota, alteração de dados reais ou promoção para produção.

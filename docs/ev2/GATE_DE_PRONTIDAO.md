@@ -3,6 +3,7 @@
 **Decisão:** APROVADO PARA INICIAR A FASE EV2.0<br>
 **Escopo aprovado:** baseline, ADRs, métricas, protótipos, lote piloto e fundação de entrega segura<br>
 **Não aprovado por este gate:** deploy, migration remota, dados reais, ativação de feature ou produção
+**Branch de trabalho:** `ev2/fase-0-documentacao-e-planejamento`
 
 ## Evidências de entrada
 
@@ -21,9 +22,9 @@
 - Registrar decisões arquiteturais em ADR e manter requisitos, implementação, testes e aceite rastreáveis.
 - Impedir avanço quando houver regressão, divergência v1/v2, falha de autorização/isolamento, migration não reversível ou perda de integridade.
 
-## Pendências que não bloqueiam a abertura
+## Decisões iniciais concluídas
 
-As ações EV2-A01, EV2-A02 e EV2-D01 devem ser resolvidas durante a EV2.0 ou antes do gate indicado. As demais decisões possuem marcos posteriores e estão detalhadas em [Decisões e ações necessárias](DECISOES_E_ACOES_NECESSARIAS.md).
+EV2-A01, EV2-A02 e EV2-D01 foram resolvidas: owners interinos nomeados, lote de 20 produtos/8 tarefas selecionado e multisite definido como plataforma futura preparada, com ativação somente após os gates da EV2.9. As demais decisões possuem marcos posteriores e estão detalhadas em [Decisões e ações necessárias](DECISOES_E_ACOES_NECESSARIAS.md).
 
 ## Cuidados com o estado local
 

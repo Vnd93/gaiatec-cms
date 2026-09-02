@@ -1,16 +1,16 @@
 # Decisões e ações necessárias para EV2
 
-Este registro separa as ações imediatas das decisões que podem ser tomadas nos gates posteriores. A falta de uma decisão não deve ser escondida por uma suposição técnica.
+Este registro separa as resoluções iniciais das decisões que pertencem aos gates posteriores. A falta de uma decisão não deve ser escondida por uma suposição técnica.
 
-## Ações imediatas para concluir a Fase EV2.0
+## Ações iniciais resolvidas
 
-| ID      | Ação necessária                                                                    | Quem deve informar | Entrega esperada                                             | Prazo          |
-| ------- | ---------------------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------ | -------------- |
-| EV2-A01 | Nomear o data steward do PIM e os revisores por linha de produto.                  | Direção técnica    | Nome, papel e linha sob responsabilidade.                    | Durante EV2.0  |
-| EV2-A02 | Selecionar o lote piloto.                                                          | Product/PIM        | Lista de 20–50 produtos e 5–8 tarefas reais de operador.     | Durante EV2.0  |
-| EV2-D01 | Decidir se multisite integra o ciclo imediato ou permanece como plataforma futura. | Direção/Product    | `imediato` ou `futuro`, com justificativa e sites previstos. | Antes de EV2.1 |
+| ID      | Resolução                                                                                                                          | Evidência                                                                    | Estado    |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | --------- |
+| EV2-A01 | Data steward: Comercial GAIATEC Sistemas; revisão técnica: Pedro Nishida; revisão comercial/editorial: Comercial GAIATEC Sistemas. | [Lote piloto EV2.0](LOTE_PILOTO_EV2_0.md) e RACI aprovado do ciclo anterior. | Resolvido |
+| EV2-A02 | Selecionados 20 produtos de cinco segmentos e 8 tarefas operacionais.                                                              | [Lote piloto EV2.0](LOTE_PILOTO_EV2_0.md)                                    | Resolvido |
+| EV2-D01 | Multisite será preparado na arquitetura e ativado somente em fase posterior, a partir da EV2.9 e após gates de isolamento.         | [ADR-015](../adr/ADR-015-multisite-preparado-e-ativacao-posterior.md)        | Resolvido |
 
-Essas informações podem ser enviadas na tarefa do desenvolvimento ou registradas diretamente nesta seção. Elas não bloqueiam a abertura da EV2.0, mas bloqueiam seu encerramento ou o avanço indicado.
+Não há decisão organizacional pendente que impeça a abertura da EV2.0.
 
 ## Decisões por gate
 

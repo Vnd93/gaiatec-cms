@@ -114,3 +114,27 @@ test("Gate G4 remains pending until a separately authorized pilot", async () => 
   assert.match(gate, /não foi aplicada em staging/i);
   assert.match(gate, /nenhum dado real/i);
 });
+
+test("EV2.4 canary is SHA-pinned, synthetic, isolated and fail-closed", async () => {
+  const [script, workflow] = await Promise.all([
+    read("scripts/ev2/phase4/staging-canary.ps1"),
+    read(".github/workflows/preview-ev2-phase4.yml"),
+  ]);
+  for (const evidence of [
+    'ExpectedName = "GAIATEC CMS Staging"',
+    'ExpectedRegion = "us-east-2"',
+    'phase = "ev2-g4"',
+    'flag_key = "ev2.pim_v2"',
+    'scope_type = "user"',
+    "AddMinutes(30)",
+    'New-Envelope -Environment "production"',
+    "synthetic_cleanup_verified",
+    "Canary funcional aprovado, mas limpeza sintética falhou",
+  ]) {
+    assert.match(script, new RegExp(evidence.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+  assert.match(workflow, /expected_sha/);
+  assert.match(workflow, /VITE_EV2_PIM_CANDIDATE/);
+  assert.match(workflow, /pages deploy dist --project-name gaiatec-cms-staging --branch ev2-g4-canary/);
+  assert.doesNotMatch(workflow, /deploy-production|gaiatec-website/);
+});

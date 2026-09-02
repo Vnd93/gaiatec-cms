@@ -19,6 +19,14 @@ test("EV2.2 shadow storage is private, additive and outside public projection", 
   assert.doesNotMatch(sql, /drop table|drop column|truncate/i);
 });
 
+test("domain conflicts do not use the retriable serialization SQLSTATE", async () => {
+  const hotfix = await read("supabase/migrations/0039_ev2_draft_conflict_sqlstate.sql");
+  const databaseTest = await read("supabase/tests/rls_ev2_phase2_progressive_drafts.test.sql");
+  assert.match(hotfix, /expected 3 SQLSTATE occurrences/);
+  assert.match(hotfix, /ERRCODE = ''P0001''/);
+  assert.match(databaseTest, /'P0001',[\s\S]+CMS_DRAFT_V2_CONFLICT/);
+});
+
 test("draft boundary enforces server scope, flag, idempotency and safe conflict details", async () => {
   const edge = await read("supabase/functions/cms-drafts-v2/index.ts");
   for (const evidence of [
@@ -103,4 +111,18 @@ test("staging canary is explicit and rollback always disables the candidate adap
   assert.match(preview, /--branch \$\{\{ github\.event_name == 'workflow_dispatch' && 'ev2-g2-canary'/);
   assert.match(rollback, /VITE_CMS_ENVIRONMENT: staging/);
   assert.match(rollback, /VITE_EV2_DRAFT_V2_CANDIDATE: ["']false["']/);
+});
+
+test("remote canary is staging-pinned, synthetic, conflict-aware and self-cleaning", async () => {
+  const canary = await read("scripts/ev2/phase2/staging-canary.ps1");
+  assert.match(canary, /glcqsosxwgmlhzgcsnzv/);
+  assert.match(canary, /GAIATEC CMS Staging/);
+  assert.match(canary, /@example\.invalid/);
+  assert.match(canary, /empty_draft_created/);
+  assert.match(canary, /create_idempotent_replay/);
+  assert.match(canary, /stale_conflict_preserves_work/);
+  assert.match(canary, /anonymous_shadow_read_denied/);
+  assert.match(canary, /production_rejected/);
+  assert.match(canary, /scoped_kill_switch_effective/);
+  assert.match(canary, /delete from public\.cms_content_drafts_v2 where created_by/);
 });

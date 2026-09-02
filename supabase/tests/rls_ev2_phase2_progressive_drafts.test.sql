@@ -223,7 +223,7 @@ select throws_ok(
     '42000000-0000-4000-8000-000000000050', '42000000-0000-4000-8000-000000000051',
     repeat('f', 64), '42000000-0000-4000-8000-000000000052'
   )$$,
-  '40001',
+  'P0001',
   'CMS_DRAFT_V2_CONFLICT',
   'a stale editor never overwrites the newer draft'
 );

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   Ev2DraftCommandSchema,
+  Ev2DraftCommandResultSchema,
+  Ev2DraftRecordSchema,
   Ev2DraftSchema,
   Ev2PublishSchema,
   Ev2ReviewDraftSchema,
@@ -62,5 +64,53 @@ describe("EV2 progressive draft contracts", () => {
         ],
       }).success,
     ).toBe(true);
+  });
+
+  it("accepts PostgreSQL timestamps with an explicit UTC offset", () => {
+    const databaseTimestamp = "2026-09-02T13:52:10.993529+00:00";
+    const identifiers = {
+      commandId: crypto.randomUUID(),
+      correlationId: crypto.randomUUID(),
+      draftId: crypto.randomUUID(),
+    };
+
+    expect(
+      Ev2DraftRecordSchema.safeParse({
+        schemaVersion: 2,
+        contentType: "product",
+        workingTitle: "Produto sintético",
+        fields: { activeTab: "identificacao" },
+        draftId: identifiers.draftId,
+        status: "active",
+        lockVersion: 2,
+        fieldsHash: "a".repeat(64),
+        createdAt: databaseTimestamp,
+        updatedAt: databaseTimestamp,
+      }).success,
+    ).toBe(true);
+    expect(
+      Ev2DraftCommandResultSchema.safeParse({
+        schemaVersion: 1,
+        ...identifiers,
+        status: "active",
+        lockVersion: 2,
+        savedAt: databaseTimestamp,
+        replayed: false,
+      }).success,
+    ).toBe(true);
+    expect(
+      Ev2DraftRecordSchema.safeParse({
+        schemaVersion: 2,
+        contentType: "product",
+        workingTitle: "Produto sintético",
+        fields: {},
+        draftId: identifiers.draftId,
+        status: "active",
+        lockVersion: 1,
+        fieldsHash: "a".repeat(64),
+        createdAt: "2026-09-02T13:52:10",
+        updatedAt: databaseTimestamp,
+      }).success,
+    ).toBe(false);
   });
 });

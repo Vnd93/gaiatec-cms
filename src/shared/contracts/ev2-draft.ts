@@ -2,6 +2,8 @@ import { z } from "zod";
 import { CmsContentPayloadSchema } from "./cms-content";
 import { Ev2CommandEnvelopeSchema } from "./ev2-foundation";
 
+const DatabaseTimestampSchema = z.iso.datetime({ offset: true });
+
 export const Ev2DraftContentTypeSchema = z.enum([
   "product",
   "service",
@@ -141,8 +143,8 @@ export const Ev2DraftRecordSchema = Ev2DraftSchema.extend({
   status: z.enum(["active", "discarded"]),
   lockVersion: z.number().int().positive(),
   fieldsHash: z.string().regex(/^[0-9a-f]{64}$/),
-  createdAt: z.iso.datetime(),
-  updatedAt: z.iso.datetime(),
+  createdAt: DatabaseTimestampSchema,
+  updatedAt: DatabaseTimestampSchema,
 }).strict();
 
 export const Ev2DraftCommandResultSchema = z
@@ -153,7 +155,7 @@ export const Ev2DraftCommandResultSchema = z
     draftId: z.string().uuid(),
     status: z.enum(["active", "discarded"]),
     lockVersion: z.number().int().positive(),
-    savedAt: z.iso.datetime(),
+    savedAt: DatabaseTimestampSchema,
     replayed: z.boolean(),
   })
   .strict();

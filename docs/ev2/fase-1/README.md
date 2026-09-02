@@ -1,6 +1,6 @@
 # EV2.1 — fundação arquitetural
 
-**Status:** candidata ao Gate G1<br>
+**Status:** Gate G1 aprovado para implementação local da EV2.2<br>
 **Escopo:** implementação local, aditiva e desligada por padrão
 
 ## Entregas
@@ -28,3 +28,7 @@ npm run check
 ```
 
 Nenhum comando acima promove staging ou produção.
+
+## Decisão
+
+O Gate G1 foi aprovado em 2 de setembro de 2026, no commit `1ff4975`, após sucesso conjunto das jobs de qualidade, banco e navegador. Consulte a [decisão e as evidências](GATE_G1.md).

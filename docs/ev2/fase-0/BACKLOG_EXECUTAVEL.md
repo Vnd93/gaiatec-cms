@@ -5,8 +5,8 @@
 | Épico     | Fase   | Entrega mínima                                                  | Dependência | Evidência de saída                             | Rollback                                | Estado            |
 | --------- | ------ | --------------------------------------------------------------- | ----------- | ---------------------------------------------- | --------------------------------------- | ----------------- |
 | `EV2-E00` | EV2.0  | baseline, ADRs, threat model, pilotos, SLOs e gate              | nenhuma     | `test:ev2:phase0` e G0                         | preservar artefato anterior             | concluído         |
-| `EV2-E01` | EV2.1  | flags desligadas, command envelope, release vazio, policy/audit | E00         | contrato, RLS, idempotência, regressão v1 e G1 | desligar flags; manter tabelas aditivas | pronto            |
-| `EV2-E02` | EV2.2  | DraftSchema, autosave, recuperação, mensagens e picker base     | E01         | unitário, componente, a11y, conflito e G2      | desabilitar editor v2                   | bloqueado por E01 |
+| `EV2-E01` | EV2.1  | flags desligadas, command envelope, release vazio, policy/audit | E00         | contrato, RLS, idempotência, regressão v1 e G1 | desligar flags; manter tabelas aditivas | concluído         |
+| `EV2-E02` | EV2.2  | DraftSchema, autosave, recuperação, mensagens e picker base     | E01         | unitário, componente, a11y, conflito e G2      | desabilitar editor v2                   | pronto            |
 | `EV2-E03` | EV2.3  | taxonomias, unidades e dependências versionadas                 | E02         | matriz N:N, inativação e G3                    | flag e adapter v1                       | bloqueado por E02 |
 | `EV2-E04` | EV2.4  | produto, modelo, variante, SKU, atributos e proveniência        | E03         | piloto, roundtrip, identidade e G4             | leitura v1; desativar escrita v2        | bloqueado por E03 |
 | `EV2-E05` | EV2.5  | DAM, direitos, ALT, deduplicação e usos                         | E04         | upload/reuso/exclusão protegida e G5           | media picker anterior                   | bloqueado por E04 |

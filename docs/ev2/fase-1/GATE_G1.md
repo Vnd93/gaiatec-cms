@@ -1,7 +1,10 @@
 # Gate G1 — fundação arquitetural
 
-**Resultado atual:** CANDIDATO — aprovação depende da execução local completa<br>
+**Resultado atual:** APROVADO PARA EV2.2 LOCAL<br>
 **Escopo:** avanço local para EV2.2; nenhuma promoção remota
+**Data da decisão:** 2 de setembro de 2026<br>
+**Commit avaliado:** `1ff4975`<br>
+**CI:** [GitHub Actions — execução 33585955949](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33585955949)
 
 ## Critérios
 
@@ -18,6 +21,18 @@
 | Observabilidade        | `correlationId` ponta a ponta e logs sanitizados                                    |
 | Produção               | bloqueada no Edge, banco e documentação                                             |
 
-## Limite da decisão
+## Evidências executadas
 
-Quando todos os comandos listados no README passarem, o texto acima deverá mudar para `APROVADO PARA EV2.2 LOCAL` com commit e contagens. Este gate não autoriza staging, migration remota, conteúdo real, ativação persistente ou produção.
+| Gate      | Resultado | Evidência                                                                                |
+| --------- | --------- | ---------------------------------------------------------------------------------------- |
+| Qualidade | aprovado  | build, typecheck, formatação, lint sem erros, 79 Vitest, 12 estruturais e 74 legados     |
+| Banco     | aprovado  | reset integral das migrations e 119 asserções pgTAP/RLS, incluindo 22 específicas EV2.1  |
+| Navegador | aprovado  | 32 cenários Playwright aprovados e 8 cenários de staging corretamente ignorados          |
+| Regressão | aprovado  | contratos v1 preservados, catálogo público mockado no teste local e acessibilidade verde |
+| Reversão  | aprovado  | flag desligada, kill switch e transição auditável `rolled_back` cobertos por teste       |
+
+As três jobs obrigatórias (`quality`, `database` e `browser`) concluíram com sucesso no mesmo commit. As 46 advertências de lint e os chunks opcionais de Excel/PDF acima de 500 kB permanecem conhecidos e não são regressões deste gate; não há erro de lint, tipo ou build.
+
+## Decisão e limite
+
+O Gate G1 libera exclusivamente a implementação local da EV2.2. Não autoriza staging, migration remota, conteúdo real, ativação persistente ou produção. As capacidades EV2.1 continuam desligadas por padrão.

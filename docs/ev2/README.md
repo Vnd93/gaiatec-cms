@@ -1,6 +1,6 @@
 # EV2 — Evolução do CMS GAIATEC
 
-**Status:** documentação organizada, decisões iniciais resolvidas e Fase EV2.0 liberada<br>
+**Status:** Gates G0 e G1 aprovados; EV2.2 liberada para implementação local<br>
 **Data-base:** 1 de setembro de 2026<br>
 **Fonte canônica:** Markdown versionado neste diretório
 **Branch:** `ev2/fase-0-documentacao-e-planejamento`
@@ -13,6 +13,7 @@
 4. [Gate de prontidão](GATE_DE_PRONTIDAO.md) — condição objetiva para iniciar o desenvolvimento e restrições do primeiro ciclo.
 5. [ADR-015 — multisite preparado e ativação posterior](../adr/ADR-015-multisite-preparado-e-ativacao-posterior.md) — decisão arquitetural da primeira fase.
 6. [EV2.0 — diagnóstico e baseline](fase-0/README.md) — backlog executável, baseline técnico e operacional, threat model, estratégia de flags/rollback e decisão do Gate G0.
+7. [EV2.1 — fundação arquitetural](fase-1/README.md) — contratos, flags, release vazio, segurança e evidências do Gate G1.
 
 ## Escopo documental
 
@@ -29,4 +30,4 @@ O documento principal é a fonte de verdade para o desenvolvimento. O DOCX que o
 
 ## Estado da execução
 
-A EV2.0 foi transformada em um gate verificável e libera a implementação local da fundação EV2.1. Capacidades novas permanecem desligadas por padrão. Esta documentação não autoriza deploy, migration remota, alteração de dados reais ou promoção para produção.
+Os Gates G0 e G1 foram aprovados com evidências reproduzíveis. A próxima unidade autorizada é a implementação local da EV2.2; capacidades novas permanecem desligadas por padrão. Esta documentação não autoriza deploy, migration remota, alteração de dados reais ou promoção para produção.

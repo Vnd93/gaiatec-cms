@@ -90,6 +90,19 @@ O operador técnico não humano foi criado com marcação `synthetic=false` e fi
 
 O rollback lógico foi repetido e aprovado. Ele torna a EV2.4 inerte sem apagar identidades, eventos, proveniência ou reutilizar SKUs.
 
+## Evidências finais de entrega
+
+- commit funcional: `25a17de38b14727e704bd8fc732b40928bd0b1a1`;
+- [CI do push `33690367157`](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33690367157): aprovada;
+- [CI do pull request `33690371278`](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33690371278): aprovada;
+- [Preview do pull request `33690371305`](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33690371305): aprovado;
+- manifesto do build candidato: `ff354559eb1729861301639f2aa1cc5f10eba6d0e7291020679e52a39ef1f929`;
+- deployment imutável: `https://53a0a000.gaiatec-cms-staging.pages.dev`;
+- alias isolado: `https://ev2-g4-canary.gaiatec-cms-staging.pages.dev`;
+- smoke HTTP aprovado nas duas URLs, com `200` nas rotas válidas, `404` nas inexistentes e `noindex` em todas as respostas.
+
+O build foi compilado com `VITE_EV2_PIM_CANDIDATE=true` e as candidatas anteriores desligadas. O deploy foi direcionado somente ao branch `ev2-g4-canary` do projeto de staging; o alias estável de staging não foi promovido.
+
 ## Decisão
 
 O Gate G4 é aprovado porque o piloto atingiu 97% de completude nos campos críticos definidos, zero divergência crítica no adapter, busca por faixa correta, idempotência sem duplicação e rollback lógico íntegro. A EV2.5 pode iniciar em branch e staging.

@@ -22,6 +22,7 @@
 | Lote real/decisões de fonte | aprovado            | 20 rascunhos; MPN/fabricante, GS1/ERP, ERP/fiscal e SKU/CMS definidos |
 | Completude/round-trip       | aprovado            | 97/100 campos críticos; 20/20 grafos; zero divergência crítica        |
 | Idempotência/rollback       | aprovado            | repetição criou 0 registros; operador suspenso e overrides desligados |
+| Entrega final               | aprovada            | SHA `25a17de`; três checks remotos verdes e canary `53a0a000`          |
 
 ## Critérios objetivos para aprovação
 
@@ -48,10 +49,12 @@
 
 ## Estado e decisão
 
-O canary técnico do G4 está aprovado. As execuções finais [CI do push `33681484930`](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33681484930), [CI do PR `33681491734`](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33681491734) e [Preview `33681491801`](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33681491801) foram aprovadas no SHA `a0d185a`.
+O canary técnico do G4 está aprovado. As execuções de sua base — [CI do push `33681484930`](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33681484930), [CI do PR `33681491734`](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33681491734) e [Preview `33681491801`](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33681491801) — foram aprovadas no SHA `a0d185a`.
 
 Em 2 de setembro de 2026, o solicitante confirmou o lote, OP-01/REV-01 e a hierarquia de fontes. O dry-run e a carga real em staging criaram 20 rascunhos, 20 modelos, 18 SKUs, 45 entidades e 37 compatibilidades. A reconciliação foi 20/20, com 97% de completude crítica e zero divergência no adapter; a repetição idempotente criou zero registro adicional. A busca `0,1–0,3 g/L` → `100–300 mg/L` retornou somente `GAI-0007`.
 
 `GAI-0691` e `GAI-0696` continuam bloqueados pela inversão documental e sem SKU; `GAI-1130` permanece incompleto pelo fabricante desconhecido. As duas faixas documentais não estão homologadas e não alimentam facetas públicas. O rollback lógico preservou dados/eventos, suspendeu e baniu o operador técnico, removeu o papel e desligou os overrides. Os quatro conteúdos v1 não foram alterados.
 
 Com essas contenções, G4 está aprovado e EV2.5 pode iniciar. Dual-write, publicação do lote, produção, merge em `main`, promoção do staging estável e qualquer inferência dos campos ausentes continuam bloqueados. Consulte o [relatório do piloto operacional](RELATORIO_PILOTO_OPERACIONAL_STAGING_2026-09-02.md).
+
+A entrega consolidada no SHA `25a17de38b14727e704bd8fc732b40928bd0b1a1` também concluiu com [CI do push `33690367157`](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33690367157), [CI do PR `33690371278`](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33690371278) e [Preview `33690371305`](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33690371305) aprovados. O build PIM candidato, manifesto `ff354559eb1729861301639f2aa1cc5f10eba6d0e7291020679e52a39ef1f929`, foi publicado somente no deployment `53a0a000` e no alias isolado `ev2-g4-canary`; o smoke HTTP aprovou ambas as URLs.

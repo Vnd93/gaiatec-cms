@@ -1,6 +1,6 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
-test("product catalog preserves filters, cards and comparison flow", async ({ page }) => {
+async function mockProductCatalog(page: Page) {
   await page.route("**/functions/v1/cms-public?**", async (route) => {
     const url = new URL(route.request().url());
     if (url.searchParams.get("type") !== "products") return route.continue();
@@ -57,6 +57,10 @@ test("product catalog preserves filters, cards and comparison flow", async ({ pa
       }),
     });
   });
+}
+
+test("product catalog preserves filters, cards and comparison flow", async ({ page }) => {
+  await mockProductCatalog(page);
   await page.goto("/produtos", { waitUntil: "networkidle" });
 
   await expect(page.getByRole("heading", { name: /encontre o equipamento certo/i })).toBeVisible();
@@ -88,6 +92,7 @@ test("product catalog preserves filters, cards and comparison flow", async ({ pa
 
 test("product catalog remains usable on a narrow viewport", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile-chromium", "mobile layout");
+  await mockProductCatalog(page);
   await page.goto("/produtos", { waitUntil: "networkidle" });
 
   const card = page.locator(".catalog-product-card").first();

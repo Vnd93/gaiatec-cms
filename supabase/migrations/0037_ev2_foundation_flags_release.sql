@@ -428,7 +428,11 @@ begin
   ) values (
     v_release.id,
     p_actor_id,
-    case p_action when 'create' then 'created' else p_action end,
+    case p_action
+      when 'create' then 'created'
+      when 'rollback' then 'rolled_back'
+      else p_action
+    end,
     v_from_status,
     v_release.status,
     jsonb_build_object('empty', true, 'lockVersion', v_release.lock_version),

@@ -28,4 +28,4 @@ O adapter materializa identidade, classificação, modelos, variantes, SKU e esp
 
 ## Observabilidade e erro
 
-Mutação recebe `X-Idempotency-Key`, persiste recibo com hash do comando e devolve `replayed=true` em repetição idêntica. Conflito de versão ou identidade retorna 409; incompatibilidade retorna 422; ausência retorna 404; flag/permissão retorna 403. Falhas preservam o cadastro na interface e carregam `correlationId` sem registrar conteúdo técnico ou PII nos logs.
+Mutação recebe `X-Idempotency-Key`, persiste recibo com hash do comando e devolve `replayed=true` em repetição idêntica. Conflito de versão ou identidade usa SQLSTATE de domínio não retentável e retorna 409 imediatamente; incompatibilidade retorna 422; ausência retorna 404; flag/permissão retorna 403. Falhas preservam o cadastro na interface e carregam `correlationId` sem registrar conteúdo técnico ou PII nos logs.

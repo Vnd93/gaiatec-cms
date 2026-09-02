@@ -2,10 +2,10 @@
 
 ## Sequência autorizável
 
-1. Validar que o alvo é exclusivamente staging e que somente a migration `0041` está pendente.
-2. Aplicar o schema shadow aditivo, publicar `cms-pim` e `cms-attributes` e manter `ev2.pim_v2` desligada.
-3. Publicar build candidato em alias isolado, sem substituir o staging estável.
-4. Criar usuário sintético e override individual com expiração curta; executar testes de identidade, unidade, SKU, concorrência, RLS e limpeza.
+1. Validar que o alvo é exclusivamente staging e que somente a migration autorizada está pendente. **Concluído.**
+2. Aplicar o schema shadow aditivo e a correção `0042`, publicar `cms-pim` e `cms-attributes` e manter `ev2.pim_v2` desligada. **Concluído.**
+3. Publicar build candidato em alias isolado, sem substituir o staging estável. **Concluído.**
+4. Criar usuário sintético e overrides individuais com expiração curta; executar testes de identidade, unidade, SKU, concorrência, RLS e limpeza. **Concluído, 32/32 e zero resíduos.**
 5. Após decisão EV2-D02 e autorização de dados, mapear 20–50 produtos piloto sem inferir valores ausentes.
 6. Gerar a projeção v1, comparar campos críticos e devolver conflitos ao data steward.
 7. Só habilitar dual-write para o lote aprovado depois de zero divergência crítica e ao menos 95% de completude.

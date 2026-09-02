@@ -1,22 +1,25 @@
 # Gate G4 — PIM íntegro e compatível com v1
 
-**Resultado atual:** G4 PENDENTE — EV2.5 BLOQUEADA<br>
+**Resultado atual:** G4 PENDENTE — canary técnico aprovado; piloto operacional pendente; EV2.5 BLOQUEADA<br>
 **Produção:** bloqueada<br>
-**Staging EV2.4:** não iniciado
+**Staging EV2.4:** canary sintético concluído; migrations/funções ativas, flags desligadas e build restrito ao alias isolado
 
 ## Evidências disponíveis no branch
 
-| Critério             | Situação                  | Evidência                                          |
-| -------------------- | ------------------------- | -------------------------------------------------- |
-| Schema aditivo/RLS   | implementado localmente   | migration `0041_ev2_pim_core.sql`                  |
-| Contratos/API        | implementado localmente   | Zod, `cms-pim` e `cms-attributes`                  |
-| Editor guiado        | implementado localmente   | `/admin/pim`, gate duplo e testes de componente    |
-| Identidade/SKU       | coberto em teste          | unicidade, imutabilidade, idempotência e histórico |
-| Atributos/unidades   | coberto em teste          | attribute sets e conversão L/s → m³/h              |
-| Adapter v1           | coberto em teste unitário | projeção e comparação estrutural                   |
-| Banco integrado      | aprovado na CI            | 220/220 pgTAP; 35 asserções específicas da EV2.4   |
-| Qualidade/navegador  | aprovado na CI            | 112 Vitest, check, 32 Playwright e preview         |
-| Piloto/reconciliação | não executado             | exige autorização própria para staging e dados     |
+| Critério                    | Situação            | Evidência                                                             |
+| --------------------------- | ------------------- | --------------------------------------------------------------------- |
+| Schema aditivo/RLS          | aprovado em staging | migrations `0041` e corretiva fail-closed `0042`                      |
+| Contratos/API               | aprovado em staging | `cms-pim` v2 e `cms-attributes` v1, ambos com JWT                     |
+| Editor guiado               | aprovado no canary  | SHA `a0d185a`, alias `ev2-g4-canary`; staging estável não substituído |
+| Identidade/SKU              | aprovado no canary  | geração, formato, imutabilidade lógica, idempotência e histórico      |
+| Atributos/unidades          | aprovado no canary  | attribute set obrigatório e conversão 10 L/s → 36 m³/h                |
+| Adapter v1                  | aprovado no canary  | projeção reconciliada sem alertas                                     |
+| Concorrência/recuperação    | aprovado no canary  | update obsoleto HTTP 409 imediato com conteúdo preservado             |
+| Segurança/rollback          | aprovado no canary  | RLS 401, produção 403, kill switch individual e flags globais off     |
+| Limpeza                     | aprovada            | 32/32; zero resíduos em 20 escopos e reconciliação global             |
+| Banco integrado             | aprovado na CI      | 220/220 pgTAP; 35 asserções específicas da EV2.4                      |
+| Qualidade/navegador         | aprovado na CI      | 112 Vitest, check, 32 Playwright e preview                            |
+| Lote real/decisões de fonte | pendente            | exige autorização e responsáveis por ERP/MPN/GTIN/NCM                 |
 
 ## Critérios objetivos para aprovação
 
@@ -29,8 +32,20 @@
 - Busca por faixa demonstra conversão de unidade e interseção correta.
 - Rollback lógico testado com v1 operacional e v2 inerte.
 
+## Evidência do canary controlado — 2 de setembro de 2026
+
+- Alvo validado por ref `glcqsosxwgmlhzgcsnzv`, nome `GAIATEC CMS Staging` e região `us-east-2`.
+- Migration remota avançada de `0040` para `0041` e, após diagnóstico, para a corretiva `0042`; nenhuma migration de produção foi executada.
+- `cms-pim` v2 e `cms-attributes` v1 estão ativas com JWT obrigatório; `cms-master-data` v1 foi apenas consumida como dependência existente.
+- Build final do SHA `a0d185a14557ec52755d61feb43cc1a06564c6cb`, manifesto `6d99027a6ba9d7d996689128944798ae78130ae539a660fa412d386f41a5a250`, deployment `d64bde2f` e alias isolado `ev2-g4-canary`.
+- O primeiro ensaio encontrou retry indevido de conflito pelo SQLSTATE `40001`; a migration `0042` alterou somente os dois erros de domínio para `P0001`, preservando a `0041` imutável.
+- O segundo ensaio comprovou a resposta imediata, mas encontrou mapeamento HTTP 500 do objeto RPC; `cms-pim` v2 passou a preservar `message` e `code` e devolver HTTP 409.
+- O ensaio final aprovou 32/32 verificações, inclusive grafo normalizado, busca sem acento, conversão de unidade, SKU, replay, adapter v1, concorrência, RLS, produção, kill switch e flag global.
+- As três execuções utilizaram somente usuários e dados sintéticos descartáveis; todas terminaram com limpeza verificada. A reconciliação global final encontrou zero usuário, override, entidade mestre, produto, identificador, atributo ou proveniência G4.
+- `ev2.pim_v2` e `ev2.master_data` permanecem `default_enabled=false`, `kill_switch=false` e sem override G4. O staging estável `868f4382` não foi promovido nem substituído.
+
 ## Estado e decisão
 
-A implementação candidata foi validada na execução CI `33676699106`, referente ao commit funcional `a670f14`: migration recriada do zero, 220/220 testes pgTAP, qualidade, navegador e preview aprovados. Entretanto, a migration `0041` não foi aplicada em staging, as funções não foram publicadas e nenhum dado real ou sintético da EV2.4 foi criado remotamente. Portanto, G4 permanece pendente e a EV2.5 não está liberada.
+O canary técnico do G4 está aprovado. As execuções finais [CI do push `33681484930`](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33681484930), [CI do PR `33681491734`](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33681491734) e [Preview `33681491801`](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33681491801) foram aprovadas no SHA `a0d185a`.
 
-Executar staging, piloto, dual-write, produção ou promover qualquer alias requer autorização posterior e explícita; a autorização concedida para o canary EV2.3 não se transfere para esta fase.
+G4 permanece formalmente pendente somente porque a execução autorizada excluiu dados reais e não definiu as fontes ERP/MPN/GTIN/NCM nem o lote de 20–50 produtos. Portanto, EV2.5, dual-write, produção, merge em `main`, promoção do alias e ativação persistente continuam bloqueados até decisão operacional explícita.

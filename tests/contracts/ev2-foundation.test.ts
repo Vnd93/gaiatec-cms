@@ -14,6 +14,17 @@ const envelope = {
 };
 
 describe("EV2 foundation contracts", () => {
+  it("accepts PostgreSQL offsets in feature evaluation timestamps", () => {
+    expect(
+      Ev2FeatureFlagEvaluationSchema.safeParse({
+        schemaVersion: 1,
+        key: "ev2.master_data",
+        enabled: false,
+        source: "default",
+        evaluatedAt: "2026-09-02T17:41:41.59918+00:00",
+      }).success,
+    ).toBe(true);
+  });
   it("accepts a versioned empty release command", () => {
     expect(
       Ev2ReleaseCommandSchema.parse({ envelope, action: "create", reason: "Provar release vazio" }),

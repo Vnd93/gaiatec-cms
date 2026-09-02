@@ -1,6 +1,6 @@
 # EV2 — Evolução do CMS GAIATEC
 
-**Status:** Gates G0–G2 aprovados; EV2.3 liberada no branch; produção bloqueada<br>
+**Status:** Gates G0–G2 aprovados; EV2.3 implementada localmente e G3 pendente; produção bloqueada<br>
 **Data-base:** 2 de setembro de 2026<br>
 **Fonte canônica:** Markdown versionado neste diretório
 **Branch de execução:** `ev2/desenvolvimento-fases-1-a-12`<br>
@@ -16,6 +16,7 @@
 6. [EV2.0 — diagnóstico e baseline](fase-0/README.md) — backlog executável, baseline técnico e operacional, threat model, estratégia de flags/rollback e decisão do Gate G0.
 7. [EV2.1 — fundação arquitetural](fase-1/README.md) — contratos, flags, release vazio, segurança e evidências do Gate G1.
 8. [EV2.2 — experiência operacional](fase-2/README.md) — rascunhos progressivos, autosave, recuperação, picker e Gate G2.
+9. [EV2.3 — dados mestres](fase-3/README.md) — entidades, aliases, dependências N:N, migration e Gate G3.
 
 ## Escopo documental
 
@@ -32,4 +33,4 @@ O documento principal é a fonte de verdade para o desenvolvimento. O DOCX que o
 
 ## Estado da execução
 
-Os Gates G0–G2 foram aprovados com evidências reproduzíveis. A EV2.2 passou nos gates técnicos locais/CI, no canary isolado de staging e em duas recuperações humanas. O protocolo reduzido por risco está registrado na ADR-021, sem inventar métrica de tempo. EV2.3 está liberada somente no branch. Capacidades novas permanecem desligadas por padrão, e a autorização do canary não abrange produção, dados reais, merge ou promoção do preview.
+Os Gates G0–G2 foram aprovados com evidências reproduzíveis. A EV2.2 passou nos gates técnicos locais/CI, no canary isolado de staging e em duas recuperações humanas. O protocolo reduzido por risco está registrado na ADR-021, sem inventar métrica de tempo. A EV2.3 está implementada localmente, default-off e aguardando a validação de banco na CI e um canary próprio autorizado. Capacidades novas permanecem desligadas por padrão, e a autorização anterior não abrange produção, dados reais, migration/função EV2.3, merge de branches ou promoção do preview.

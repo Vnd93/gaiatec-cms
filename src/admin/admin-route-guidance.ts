@@ -97,6 +97,15 @@ const guidance: Array<{ match: RegExp; value: AdminRouteGuidance }> = [
     },
   },
   {
+    match: /^\/admin\/dados-mestres/,
+    value: {
+      task: "Normalize entidades, aliases e compatibilidades reutilizáveis.",
+      publicImpact: "A EV2.3 permanece isolada até migração e adoção aprovadas.",
+      internal: "Origem, versões, mesclagens e auditoria permanecem administrativas.",
+      nextStep: "Pesquise antes de criar e confirme dependências antes de inativar ou mesclar.",
+    },
+  },
+  {
     match: /^\/admin\/paginas\/[^/]+/,
     value: {
       task: "Monte a página com blocos governados.",

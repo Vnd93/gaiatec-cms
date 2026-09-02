@@ -68,7 +68,7 @@ export const Ev2FeatureFlagEvaluationSchema = z
     key: Ev2FeatureFlagKeySchema,
     enabled: z.boolean(),
     source: z.enum(["default", "override", "kill_switch", "unavailable"]),
-    evaluatedAt: z.iso.datetime(),
+    evaluatedAt: z.iso.datetime({ offset: true }),
   })
   .strict();
 

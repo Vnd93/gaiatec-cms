@@ -131,6 +131,13 @@ export type ControlledVocabularyList = {
 export function controlledVocabularyCommand<T>(session: Session, body: Record<string, unknown>) {
   return invoke<T>(session, "cms-controlled-vocabularies", body, true);
 }
+export function masterDataCommand<T>(
+  session: Session,
+  body: Record<string, unknown>,
+  idempotencyKey?: string,
+) {
+  return invoke<T>(session, "cms-master-data", body, idempotencyKey ?? false);
+}
 export function usersCommand<T>(session: Session, body: Record<string, unknown>) {
   return invoke<T>(session, "cms-users", body);
 }

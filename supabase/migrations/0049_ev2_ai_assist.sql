@@ -588,11 +588,11 @@ begin
     when p_action = 'record_eval' then 'cms:ai.eval'
     else 'cms:ai.read'
   end;
+  if p_aal <> 'aal2' then raise exception 'CMS_AI_MFA_REQUIRED' using errcode = '42501'; end if;
   perform private.cms_ai_assert_available(
     p_actor_id, v_permission, p_environment, p_site_key,
     p_aal, p_session_id, p_issued_at
   );
-  if p_aal <> 'aal2' then raise exception 'CMS_AI_MFA_REQUIRED' using errcode = '42501'; end if;
   if p_idempotency_key is null or char_length(p_idempotency_key) not between 8 and 200
      or p_request_hash !~ '^[0-9a-f]{64}$' then
     raise exception 'CMS_AI_IDEMPOTENCY_REQUIRED' using errcode = '22023';

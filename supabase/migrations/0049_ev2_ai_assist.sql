@@ -621,11 +621,10 @@ begin
     if coalesce(p_payload ->> 'mode', '') not in ('read', 'draft')
        or char_length(btrim(coalesce(p_payload ->> 'title', ''))) not between 3 and 160
        or coalesce(p_payload ->> 'dataClass', '') <> 'synthetic'
-       or case
-         when jsonb_typeof(p_payload -> 'tokenBudget') = 'number'
-           then (p_payload ->> 'tokenBudget')::integer not between 1 and 8000
-         else true
-       end then
+       or jsonb_typeof(p_payload -> 'tokenBudget') is distinct from 'number' then
+      raise exception 'CMS_AI_SESSION_INVALID' using errcode = '22023';
+    end if;
+    if (p_payload ->> 'tokenBudget')::integer not between 1 and 8000 then
       raise exception 'CMS_AI_SESSION_INVALID' using errcode = '22023';
     end if;
     insert into public.cms_ai_sessions (

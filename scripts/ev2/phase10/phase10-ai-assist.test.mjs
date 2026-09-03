@@ -46,6 +46,10 @@ test("EV2.10 migration is additive, private, synthetic and default-off", async (
   assert.match(sql, /CMS_AI_IDEMPOTENCY_CONFLICT/);
   assert.match(sql, /CMS_AI_REVIEWER_SEPARATION_REQUIRED/);
   assert.match(sql, /CMS_AI_LOW_CONFIDENCE_PENDING/);
+  assert.match(
+    sql,
+    /jsonb_typeof\(p_payload -> 'tokenBudget'\) is distinct from 'number' then[\s\S]+?if \(p_payload ->> 'tokenBudget'\)::integer not between 1 and 8000 then/,
+  );
   assert.match(sql, /'status', 'human_verified'/);
   assert.match(sql, /'applied', false, 'published', false/);
   assert.match(sql, /revoke all on table[\s\S]+from public, anon, authenticated/);

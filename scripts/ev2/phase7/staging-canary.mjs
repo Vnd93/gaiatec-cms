@@ -587,6 +587,16 @@ async function main() {
       allowed: [401],
     });
     check("anonymous_denied", anonymous.status === 401, "inbox privada");
+    const workerUnauthorized = await request(`${context.url}/functions/v1/cms-outbox-worker`, {
+      method: "POST",
+      headers: {
+        apikey: context.anonKey,
+        "X-Worker-Secret": `invalid-${randomUUID()}`,
+      },
+      body: {},
+      allowed: [401],
+    });
+    check("outbox_worker_secret_required", workerUnauthorized.status === 401, "segredo inválido recusado");
     const production = await invoke(
       context,
       operator,
@@ -878,6 +888,73 @@ async function main() {
         taskDetail.json.items[0].comments.length === 1 &&
         taskDetail.json.items[0].history.length >= 4,
       `task=${task.json.taskId}`,
+    );
+    const mentionEventId = mention.json[0].id;
+    await rest(context, "cms_collaboration_outbox", {
+      method: "PATCH",
+      query: `id=eq.${mentionEventId}`,
+      prefer: "return=minimal",
+      body: { status: "processing", attempts: 1, locked_at: new Date().toISOString() },
+    });
+    await request(`${context.url}/rest/v1/rpc/cms_finish_collaboration_outbox`, {
+      method: "POST",
+      headers: context.serviceHeaders,
+      body: { p_id: mentionEventId, p_success: true, p_error_code: null },
+      allowed: [200, 204],
+    });
+    const [completedMention, deliveredMention] = await Promise.all([
+      rest(context, "cms_collaboration_outbox", {
+        query: `id=eq.${mentionEventId}&select=status,completed_at,last_error_code`,
+      }),
+      rest(context, "cms_work_mentions", {
+        query: `comment_id=eq.${comment.json.commentId}&mentioned_user_id=eq.${reviewer.id}&select=delivery_status,delivered_at`,
+      }),
+    ]);
+    check(
+      "in_app_notification_delivered",
+      completedMention.json[0]?.status === "completed" &&
+        Boolean(completedMention.json[0]?.completed_at) &&
+        deliveredMention.json[0]?.delivery_status === "delivered" &&
+        Boolean(deliveredMention.json[0]?.delivered_at),
+      `outbox=${completedMention.json[0]?.status}; mention=${deliveredMention.json[0]?.delivery_status}`,
+    );
+
+    const failedNotificationId = randomUUID();
+    await rest(context, "cms_collaboration_outbox", {
+      method: "POST",
+      prefer: "return=minimal",
+      body: {
+        id: failedNotificationId,
+        task_id: task.json.taskId,
+        recipient_id: reviewer.id,
+        event_type: "release_failed",
+        channel: "email",
+        status: "processing",
+        attempts: 1,
+        locked_at: new Date().toISOString(),
+        correlation_id: randomUUID(),
+      },
+    });
+    await request(`${context.url}/rest/v1/rpc/cms_finish_collaboration_outbox`, {
+      method: "POST",
+      headers: context.serviceHeaders,
+      body: {
+        p_id: failedNotificationId,
+        p_success: false,
+        p_error_code: "synthetic_external_delivery_failure",
+      },
+      allowed: [200, 204],
+    });
+    const failedNotification = await rest(context, "cms_collaboration_outbox", {
+      query: `id=eq.${failedNotificationId}&select=status,completed_at,last_error_code,attempts`,
+    });
+    check(
+      "external_notification_failure_visible",
+      failedNotification.json[0]?.status === "failed" &&
+        failedNotification.json[0]?.completed_at === null &&
+        failedNotification.json[0]?.last_error_code === "synthetic_external_delivery_failure" &&
+        failedNotification.json[0]?.attempts === 1,
+      `status=${failedNotification.json[0]?.status}; code=${failedNotification.json[0]?.last_error_code}`,
     );
 
     let concurrencyRelease = await releaseCommand(context, operator, "create", {

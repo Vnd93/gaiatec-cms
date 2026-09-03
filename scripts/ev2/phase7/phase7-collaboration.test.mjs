@@ -135,6 +135,9 @@ test("candidate UI, worker and canary expose the governed workflow without chang
   assert.match(canary, /two_synthetic_mfa_actors/);
   assert.match(canary, /second_item_failure_zero_partial_change/);
   assert.match(canary, /bulk_change_after_dry_run_blocks_all_targets/);
+  assert.match(canary, /in_app_notification_delivered/);
+  assert.match(canary, /external_notification_failure_visible/);
+  assert.match(canary, /outbox_worker_secret_required/);
   assert.match(canary, /rollback_rpo0_under_5_minutes/);
   assert.match(canary, /productionMutations: 0/);
   assert.match(canary, /syntheticResidue: 0/);

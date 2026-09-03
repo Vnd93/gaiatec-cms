@@ -315,7 +315,7 @@ async function createContentFixture(context, operator, reviewer, fixture) {
       schema_version: 1,
       payload: fixture.payload,
       seo: fixture.seo,
-      provenance: { synthetic: true, phase: "ev2-g7" },
+      provenance: provenance(),
       source_draft_version: 1,
       reason: "Fixture sintética descartável do canary G7",
       created_by: operator.id,

@@ -243,6 +243,7 @@ async function createActor(context, legacyRole, label) {
 }
 
 async function installIndividualOverride(context, actorId, createdBy) {
+  const stagingNow = await authenticationClock(context);
   return rest(context, "cms_feature_flag_overrides", {
     method: "POST",
     prefer: "return=representation",
@@ -253,8 +254,8 @@ async function installIndividualOverride(context, actorId, createdBy) {
       scope_key: actorId,
       enabled: true,
       reason: "Canary sintético individual do Gate G8",
-      starts_at: new Date(Date.now() - 5_000).toISOString(),
-      expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+      starts_at: new Date(stagingNow - 5_000).toISOString(),
+      expires_at: new Date(stagingNow + 30 * 60_000).toISOString(),
       created_by: createdBy,
     },
   });
@@ -344,6 +345,7 @@ async function main() {
     const operator = await createActor(context, "super_admin", "op");
     const delegated = await createActor(context, "editor", "usr");
     const operatorAal1 = { ...operator, token: operator.aal1Token };
+    const bootstrapNow = await authenticationClock(context);
 
     const beforeOverride = await scopeCommand(context, operator, "capability", {}, { expectPolicy: false });
     check(
@@ -363,7 +365,7 @@ async function main() {
           environment: "staging",
           grant_type: "direct",
           reason: "Bootstrap sintético segregado do operador G8",
-          valid_from: new Date(Date.now() - 5_000).toISOString(),
+          valid_from: new Date(bootstrapNow - 5_000).toISOString(),
           granted_by: operator.id,
         },
         {
@@ -373,7 +375,7 @@ async function main() {
           environment: "staging",
           grant_type: "direct",
           reason: "Papel mínimo sintético para os testes negativos G8",
-          valid_from: new Date(Date.now() - 5_000).toISOString(),
+          valid_from: new Date(bootstrapNow - 5_000).toISOString(),
           granted_by: operator.id,
         },
       ],
@@ -490,7 +492,7 @@ async function main() {
       `concessões=${list.json.items.length}; papéis=${list.json.roles.length}`,
     );
 
-    const delegationExpiresAt = new Date(Date.now() + 15_000).toISOString();
+    const delegationExpiresAt = new Date((await authenticationClock(context)) + 15_000).toISOString();
     const delegationKey = randomUUID();
     const delegationEnvelope = envelope();
     const delegationBody = {
@@ -549,7 +551,7 @@ async function main() {
         targetUserId: delegated.id,
         roleKey: "super_admin",
         grantType: "delegated",
-        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        expiresAt: new Date((await authenticationClock(context)) + 60_000).toISOString(),
         reason: "Tentativa negativa de super admin temporário",
       },
       { allowed: [422], idempotencyKey: randomUUID() },
@@ -566,7 +568,10 @@ async function main() {
       beforeExpiry.json.allowed === true,
       beforeExpiry.json.reasonCode,
     );
-    const waitMilliseconds = Math.max(0, Date.parse(delegationExpiresAt) - Date.now() + 1_500);
+    const waitMilliseconds = Math.max(
+      0,
+      Date.parse(delegationExpiresAt) - (await authenticationClock(context)) + 1_500,
+    );
     await new Promise((resolve) => setTimeout(resolve, waitMilliseconds));
     const afterExpiry = await scopeCommand(context, delegated, "evaluate", {
       permissionKey: "cms:sessions.revoke",
@@ -635,6 +640,7 @@ async function main() {
     );
     check("expired_grant_is_not_active", expiredRevoke.status === 404, expiredRevoke.json.code);
 
+    const broadOverrideNow = await authenticationClock(context);
     const broad = await rest(context, "cms_feature_flag_overrides", {
       method: "POST",
       prefer: "return=representation",
@@ -645,8 +651,8 @@ async function main() {
         scope_key: fixturePrefix,
         enabled: true,
         reason: "Prova sintética fail-closed para ativação não individual",
-        starts_at: new Date(Date.now() - 5_000).toISOString(),
-        expires_at: new Date(Date.now() + 5 * 60_000).toISOString(),
+        starts_at: new Date(broadOverrideNow - 5_000).toISOString(),
+        expires_at: new Date(broadOverrideNow + 5 * 60_000).toISOString(),
         created_by: operator.id,
       },
     });

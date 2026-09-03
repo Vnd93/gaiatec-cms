@@ -1,13 +1,15 @@
 # Gate G8 — zero bypass e auditoria integral
 
-**Resultado atual:** PENDENTE — candidato ainda não promovido a staging<br>
+**Resultado atual:** G8 APROVADO PARA INICIAR EV2.9 — PRODUÇÃO CONTINUA BLOQUEADA<br>
 **Produção:** bloqueada<br>
 **Flag:** `ev2.rbac_scoped`, globalmente desligada<br>
 **Rollback imediato:** remover overrides individuais ou acionar kill switch<br>
-**Baseline funcional validada:** `570da8ab8d6977b5e8ba01568484489b3be482c6`<br>
-**CI do push:** [execução 33772888006](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33772888006)<br>
-**CI do pull request:** [execução 33772893589](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33772893589)<br>
-**Preview:** [execução 33772893576](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33772893576), artefato GitHub sem deploy remoto
+**SHA candidato executado:** `896d0c6019bf5f0e3d65d2dc527ae10d1da5dd9a`<br>
+**Deployment:** `385bb13e-9b0d-4cc0-9494-f43391eeb809`<br>
+**Alias:** <https://ev2-g8-canary.gaiatec-cms-staging.pages.dev><br>
+**CI do push:** [execução 33773724120](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33773724120)<br>
+**CI do pull request:** [execução 33773728566](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33773728566)<br>
+**Preview:** [execução 33773728731](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33773728731), artefato GitHub sem deploy remoto
 
 ## Critérios objetivos
 
@@ -31,4 +33,6 @@
 
 O Gate G8 será aprovado somente se todos os critérios passarem no mesmo SHA candidato, sem exceção manual, sem resíduo e sem alteração global. Qualquer bypass, falta de auditoria, acesso sem AAL2, mutação parcial ou falha de limpeza reprova o gate e aciona contenção.
 
-A condição de CI está cumprida, mas não substitui o canary de segurança em staging. Até a execução autorizada, o status permanece **pendente**. A evidência pré-canary está consolidada no [relatório de prontidão do candidato](RELATORIO_CANDIDATO_CI_2026-09-03.md).
+Todos os critérios do gate passaram no mesmo SHA candidato. O runner concluiu 27/27 verificações, correlacionou 15/15 decisões, reconciliou 3/3 mutações com recibos e auditoria e removeu integralmente os dados sintéticos. A reconciliação independente confirmou zero usuário, perfil, papel sintético, scope, decisão, recibo, override, conteúdo ou evento residual.
+
+G8 está aprovado e a EV2.9 pode iniciar. A aprovação não autoriza produção, dados reais, ativação global, merge em `main` ou promoção do staging estável. A evidência completa está no [relatório do canary](RELATORIO_CANARY_STAGING_2026-09-03.md).

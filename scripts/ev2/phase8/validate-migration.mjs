@@ -31,16 +31,30 @@ function runSupabase(args) {
 const migrationPath = "supabase/migrations/0047_ev2_scoped_rbac.sql";
 const migration = readFileSync(migrationPath, "utf8");
 const directory = mkdtempSync(path.join(process.cwd(), ".ev2-g8-migration-validation-"));
-const file = path.join(directory, "validate.sql");
-const cliFile = path.relative(process.cwd(), file).replaceAll("\\", "/");
+const beforeFile = path.join(directory, "before.sql");
+const rehearsalFile = path.join(directory, "rehearsal.sql");
+const afterFile = path.join(directory, "after.sql");
 
-const validation = `
-create temp table ev2_g8_before(function_name text primary key, definition_hash text not null);
-insert into ev2_g8_before(function_name, definition_hash)
-select 'cms_actor_authorized', md5(pg_get_functiondef('public.cms_actor_authorized(uuid,text,text,text,timestamp with time zone)'::regprocedure))
-union all
-select 'cms_has_permission', md5(pg_get_functiondef('private.cms_has_permission(text)'::regprocedure));
+function queryFile(file, sql) {
+  writeFileSync(file, sql, { encoding: "utf8", mode: 0o600 });
+  const cliFile = path.relative(process.cwd(), file).replaceAll("\\", "/");
+  const parsed = JSON.parse(
+    runSupabase(["db", "query", "--linked", "--file", cliFile, "--output-format", "json"]),
+  );
+  if (Array.isArray(parsed?.rows)) return parsed.rows;
+  if (Array.isArray(parsed?.result)) return parsed.result;
+  if (Array.isArray(parsed)) return parsed;
+  throw new Error(`Resposta SQL sem linhas: ${JSON.stringify(parsed)}`);
+}
 
+const authorizationHashes = `
+select json_build_object(
+  'cmsActorAuthorized', md5(pg_get_functiondef('public.cms_actor_authorized(uuid,text,text,text,timestamp with time zone)'::regprocedure)),
+  'cmsHasPermission', md5(pg_get_functiondef('private.cms_has_permission(text)'::regprocedure))
+) as hashes;
+`;
+
+const rehearsal = `
 begin;
 ${migration}
 do $$
@@ -60,7 +74,9 @@ begin
 end;
 $$;
 rollback;
+`;
 
+const afterValidation = `
 select json_build_object(
   'rolledBack',
     to_regclass('public.cms_scoped_role_assignments') is null
@@ -68,25 +84,32 @@ select json_build_object(
     and to_regclass('public.cms_scope_command_receipts') is null
     and not exists (select 1 from public.cms_roles where role_key in ('auditor', 'support'))
     and not exists (select 1 from public.cms_permissions where permission_key in ('cms:scopes.read', 'cms:scopes.manage', 'cms:policy_decisions.read')),
-  'authorizationRestored',
-    (select definition_hash from ev2_g8_before where function_name = 'cms_actor_authorized') =
-      md5(pg_get_functiondef('public.cms_actor_authorized(uuid,text,text,text,timestamp with time zone)'::regprocedure))
-    and (select definition_hash from ev2_g8_before where function_name = 'cms_has_permission') =
-      md5(pg_get_functiondef('private.cms_has_permission(text)'::regprocedure)),
+  'authorizationHashes', json_build_object(
+    'cmsActorAuthorized', md5(pg_get_functiondef('public.cms_actor_authorized(uuid,text,text,text,timestamp with time zone)'::regprocedure)),
+    'cmsHasPermission', md5(pg_get_functiondef('private.cms_has_permission(text)'::regprocedure))
+  ),
   'productionMutations', 0
 ) as evidence;
 `;
 
 try {
-  writeFileSync(file, validation, { encoding: "utf8", mode: 0o600 });
-  const output = runSupabase(["db", "query", "--linked", "--file", cliFile, "--output-format", "json"]);
-  const parsed = JSON.parse(output);
-  const evidence = parsed?.rows?.[0]?.evidence ?? parsed?.[0]?.evidence ?? parsed?.result?.[0]?.evidence;
-  if (evidence?.rolledBack !== true || evidence?.authorizationRestored !== true)
-    throw new Error(`Rollback não comprovado: ${output}`);
+  const before = queryFile(beforeFile, authorizationHashes)[0]?.hashes;
+  queryFile(rehearsalFile, rehearsal);
+  const evidence = queryFile(afterFile, afterValidation)[0]?.evidence;
+  const authorizationRestored =
+    before?.cmsActorAuthorized === evidence?.authorizationHashes?.cmsActorAuthorized &&
+    before?.cmsHasPermission === evidence?.authorizationHashes?.cmsHasPermission;
+  if (evidence?.rolledBack !== true || !authorizationRestored)
+    throw new Error(`Rollback não comprovado: ${JSON.stringify({ before, evidence })}`);
   console.log(
     JSON.stringify(
-      { outcome: "G8_MIGRATION_REHEARSAL_PASS", migration: migrationPath, ...evidence },
+      {
+        outcome: "G8_MIGRATION_REHEARSAL_PASS",
+        migration: migrationPath,
+        rolledBack: evidence.rolledBack,
+        authorizationRestored,
+        productionMutations: evidence.productionMutations,
+      },
       null,
       2,
     ),

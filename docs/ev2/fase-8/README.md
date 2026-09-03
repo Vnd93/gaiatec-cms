@@ -31,8 +31,8 @@ A fase implementa o candidato de F-014 de forma aditiva e `default-off`. O RBAC 
 
 ## Estado do Gate G8
 
-O candidato funcional foi concluído e validado no SHA `570da8ab8d6977b5e8ba01568484489b3be482c6`. CI de push, CI de pull request e Preview foram aprovados; o Gate G8 ainda não foi executado em staging. Nenhuma migration, função, flag, identidade, alias G8 ou build EV2.8 habilitado foi aplicada fora do repositório. O preview padrão foi preservado somente como artefato no GitHub, sem deploy remoto.
+O Gate G8 foi aprovado no SHA `896d0c6019bf5f0e3d65d2dc527ae10d1da5dd9a`. A migration `0047`, `cms-scopes` v1, `cms-session` v13 e o deployment `385bb13e` foram aplicados somente em staging. O build permanece no alias isolado `ev2-g8-canary`; staging estável e produção não foram alterados.
 
-Antes do canary será necessária autorização específica para: migration `0047`, funções `cms-scopes` e `cms-session`, build do SHA candidato no alias `ev2-g8-canary`, dois usuários sintéticos com MFA e overrides individuais de 30 minutos. Produção, staging estável, dados reais e ativação global permanecem bloqueados.
+O canary concluiu 27/27 verificações com dois usuários sintéticos MFA, fallback legado, RLS negativa, códigos 401/403/412, expiração, concorrência, idempotência, ativação ampla fail-closed, produção bloqueada, 15/15 decisões correlacionadas e 3/3 mutações com recibo/auditoria. A limpeza automática e a reconciliação independente confirmaram resíduo zero; a flag global terminou `default_enabled=false` e `kill_switch=false`.
 
-Consulte o [relatório de prontidão do candidato](RELATORIO_CANDIDATO_CI_2026-09-03.md), o [contrato e modelo operacional](CONTRATO_E_OPERACAO.md), os [critérios do Gate G8](GATE_G8.md) e o [plano de canary](PLANO_CANARY_STAGING.md).
+Consulte o [relatório do canary](RELATORIO_CANARY_STAGING_2026-09-03.md), o [relatório de prontidão do candidato](RELATORIO_CANDIDATO_CI_2026-09-03.md), o [contrato e modelo operacional](CONTRATO_E_OPERACAO.md), os [critérios do Gate G8](GATE_G8.md) e o [plano de canary](PLANO_CANARY_STAGING.md).

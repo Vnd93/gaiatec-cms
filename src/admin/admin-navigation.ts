@@ -33,6 +33,7 @@ export type AdminNavigationItem = {
   icon: LucideIcon;
   permissions?: string[];
   permissionMode?: "all" | "any";
+  candidate?: "visual-studio" | "multisite";
   match?: RegExp;
 };
 
@@ -79,6 +80,15 @@ export const adminNavigation: AdminNavigationGroup[] = [
         icon: LayoutTemplate,
         permissions: ["cms:pages.read", "cms:homepage.read"],
         match: /^\/admin\/paginas(?:\/.*)?$/,
+      },
+      {
+        to: "/admin/estudio-visual",
+        label: "Estúdio Visual",
+        description: "Componentes, branches e snapshots responsivos governados.",
+        icon: LayoutTemplate,
+        permissions: ["cms:visual.read"],
+        candidate: "visual-studio",
+        match: /^\/admin\/estudio-visual(?:\/.*)?$/,
       },
       {
         to: "/admin/conteudo",
@@ -250,6 +260,15 @@ export const adminNavigation: AdminNavigationGroup[] = [
         permissions: ["cms:media.read"],
         match: /^\/admin\/midia(?:\/.*)?$/,
       },
+      {
+        to: "/admin/sites",
+        label: "Sites e ambientes",
+        description: "Preparação multisite isolada, sem ativação operacional.",
+        icon: Building2,
+        permissions: ["cms:sites.read"],
+        candidate: "multisite",
+        match: /^\/admin\/sites(?:\/.*)?$/,
+      },
     ],
   },
   {
@@ -311,6 +330,7 @@ export function resolveAdminBreadcrumbs(pathname: string, search = ""): AdminBre
   const crumbs = [...root, { label: visibleItem.label, to: visibleItem.to }];
   const dynamicEditor =
     /^\/admin\/(?:conteudo|paginas|produtos)\/[^/]+$/.test(pathname) ||
+    /^\/admin\/estudio-visual\/[^/]+$/.test(pathname) ||
     /^\/admin\/descoberta\/[^/]+\/[^/]+$/.test(pathname) ||
     /^\/admin\/marketing\/campanhas\/[^/]+$/.test(pathname);
   if (dynamicEditor) {
@@ -360,6 +380,7 @@ export const administrativeRouteInventory = [
     route: "/admin/paginas",
     permission: "cms:pages.read ou cms:homepage.read",
   },
+  { surface: "Estúdio Visual", route: "/admin/estudio-visual/:itemId", permission: "cms:visual.read" },
   { surface: "Campanhas", route: "/admin/marketing", permission: "cms:campaigns.read" },
   { surface: "Formulários", route: "/admin/marketing/formularios", permission: "cms:forms.read" },
   { surface: "Leads", route: "/admin/leads", permission: "cms:leads.read" },
@@ -367,6 +388,7 @@ export const administrativeRouteInventory = [
   { surface: "Dados globais", route: "/admin/site?section=site_settings", permission: "cms:settings.read" },
   { surface: "Posicionamentos", route: "/admin/site?section=placement", permission: "cms:placements.read" },
   { surface: "Mídia", route: "/admin/midia", permission: "cms:media.read" },
+  { surface: "Sites e ambientes", route: "/admin/sites", permission: "cms:sites.read" },
   { surface: "Perfil e sessão", route: "/admin/perfil", permission: "sessão CMS ativa" },
   { surface: "Usuários e acessos", route: "/admin/usuarios", permission: "cms:users.read" },
   { surface: "Diagnósticos", route: "/admin/diagnosticos", permission: "cms:diagnostics.read" },

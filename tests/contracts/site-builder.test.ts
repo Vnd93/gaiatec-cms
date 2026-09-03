@@ -15,6 +15,7 @@ import {
 import { createSiteDocument } from "../../src/admin/site-document-model";
 
 const id = (suffix: number) => `60000000-0000-4000-8000-${String(suffix).padStart(12, "0")}`;
+const references = { assetId: id(901), relatedItemId: id(902) };
 const seo = {
   title: "Página de teste | GAIATEC",
   description: "Página sintética para validar o contrato governado do site builder GAIATEC.",
@@ -89,7 +90,8 @@ describe("F6 governed site builder contracts", () => {
     ] as const;
     for (const type of blockTypes) {
       expect(
-        CmsManagedPageContentSchema.safeParse({ ...draft, blocks: [createPageBlock(type)] }).success,
+        CmsManagedPageContentSchema.safeParse({ ...draft, blocks: [createPageBlock(type, references)] })
+          .success,
       ).toBe(true);
     }
   });
@@ -111,6 +113,24 @@ describe("F6 governed site builder contracts", () => {
     expect(duplicatePage.blocks.map((block) => block.id)).not.toEqual(
       originalPage.blocks.map((block) => block.id),
     );
+    expect(() =>
+      duplicateManagedPagePayload(
+        {
+          ...originalPage,
+          blocks: [createPageBlock("split_content", references)],
+          visual: {
+            schemaVersion: 1,
+            branchId: crypto.randomUUID(),
+            documentHash: "a".repeat(64),
+            registryVersion: 1,
+            themeKey: "gaiatec-default",
+            mode: "guided",
+            grid: { desktop: 12, tablet: 8, mobile: 4 },
+          },
+        },
+        "pagina-visual-copiada",
+      ),
+    ).toThrow("Páginas vinculadas ao Estúdio Visual não podem ser duplicadas pelo builder v1");
   });
 
   it("creates governed global navigation, settings and placement documents", () => {

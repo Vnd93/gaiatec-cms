@@ -5,7 +5,26 @@ export type ManagedPageType = "page" | "homepage";
 const id = () => crypto.randomUUID();
 const now = () => new Date().toISOString();
 
-export function createPageBlock(type: CmsPageBlock["type"]): CmsPageBlock {
+export type PageBlockReferences = {
+  assetId?: string;
+  relatedItemId?: string;
+};
+
+export function pageBlockReferenceRequirement(type: CmsPageBlock["type"]): "media" | "relation" | null {
+  if (["image", "gallery", "split_content", "logo_cloud"].includes(type)) return "media";
+  if (type === "related_content") return "relation";
+  return null;
+}
+
+function requiredReference(value: string | undefined, label: string) {
+  if (!value) throw new Error(`Selecione ao menos ${label} antes de adicionar este componente.`);
+  return value;
+}
+
+export function createPageBlock(
+  type: CmsPageBlock["type"],
+  references: PageBlockReferences = {},
+): CmsPageBlock {
   const base = { id: id(), hidden: false, width: "content" as const, tone: "light" as const };
   switch (type) {
     case "hero":
@@ -29,10 +48,23 @@ export function createPageBlock(type: CmsPageBlock["type"]): CmsPageBlock {
         ...base,
         type,
         width: "wide",
-        data: { assetId: id(), alt: "Descreva a imagem", fit: "cover" },
+        data: {
+          assetId: requiredReference(references.assetId, "uma mídia válida"),
+          alt: "Descreva a imagem",
+          fit: "cover",
+        },
       };
     case "gallery":
-      return { ...base, type, width: "wide", data: { heading: "Galeria", assetIds: [id()], columns: 3 } };
+      return {
+        ...base,
+        type,
+        width: "wide",
+        data: {
+          heading: "Galeria",
+          assetIds: [requiredReference(references.assetId, "uma mídia válida")],
+          columns: 3,
+        },
+      };
     case "benefit_grid":
       return {
         ...base,
@@ -109,7 +141,101 @@ export function createPageBlock(type: CmsPageBlock["type"]): CmsPageBlock {
         },
       };
     case "related_content":
-      return { ...base, type, data: { heading: "Veja também", itemIds: [id()], presentation: "cards" } };
+      return {
+        ...base,
+        type,
+        data: {
+          heading: "Veja também",
+          itemIds: [requiredReference(references.relatedItemId, "um conteúdo relacionado válido")],
+          presentation: "cards",
+        },
+      };
+    case "split_content":
+      return {
+        ...base,
+        type,
+        width: "wide",
+        data: {
+          eyebrow: "DESTAQUE",
+          heading: "Conteúdo em evidência",
+          text: "Apresente o contexto e a principal mensagem desta seção.",
+          assetId: requiredReference(references.assetId, "uma mídia válida"),
+          alt: "Descreva a imagem",
+          imagePosition: "left",
+        },
+      };
+    case "logo_cloud":
+      return {
+        ...base,
+        type,
+        width: "wide",
+        data: {
+          heading: "Marcas e parceiros",
+          items: [
+            {
+              id: id(),
+              assetId: requiredReference(references.assetId, "uma mídia válida"),
+              alt: "Nome da marca ou do parceiro",
+            },
+          ],
+        },
+      };
+    case "tabs":
+      return {
+        ...base,
+        type,
+        data: {
+          heading: "Informações organizadas",
+          items: [
+            { id: id(), label: "Visão geral", heading: "Visão geral", text: "Conteúdo da primeira aba." },
+            { id: id(), label: "Detalhes", heading: "Detalhes", text: "Conteúdo da segunda aba." },
+          ],
+        },
+      };
+    case "comparison_table":
+      return {
+        ...base,
+        type,
+        width: "wide",
+        data: {
+          heading: "Comparação",
+          caption: "Compare as opções disponíveis.",
+          columns: ["Opção A", "Opção B"],
+          rows: [{ id: id(), label: "Característica", values: ["Valor A", "Valor B"] }],
+        },
+      };
+    case "alert":
+      return {
+        ...base,
+        type,
+        tone: "muted",
+        data: {
+          heading: "Informação importante",
+          text: "Explique de forma objetiva o que o visitante precisa saber.",
+          severity: "info",
+        },
+      };
+    case "timeline":
+      return {
+        ...base,
+        type,
+        data: {
+          heading: "Linha do tempo",
+          items: [
+            { id: id(), label: "Etapa 1", title: "Primeiro marco", text: "Descrição do marco." },
+            { id: id(), label: "Etapa 2", title: "Segundo marco", text: "Descrição do marco." },
+          ],
+        },
+      };
+    case "link_list":
+      return {
+        ...base,
+        type,
+        data: {
+          heading: "Links úteis",
+          items: [{ id: id(), label: "Saiba mais", href: "/contato", description: "Descrição do destino." }],
+        },
+      };
   }
 }
 
@@ -188,9 +314,14 @@ export function movePageBlock(blocks: CmsPageBlock[], index: number, offset: -1 
 
 export function duplicateManagedPagePayload(payload: CmsPageContent, slug: string): CmsPageContent {
   if (payload.contentType !== "page") throw new Error("A homepage é única e não pode ser duplicada.");
+  if (payload.visual)
+    throw new Error(
+      "Páginas vinculadas ao Estúdio Visual não podem ser duplicadas pelo builder v1. Crie uma nova página e um novo branch visual.",
+    );
   const title = `${payload.title.slice(0, 170)} — cópia`;
+  const duplicated = structuredClone(payload);
   return {
-    ...structuredClone(payload),
+    ...duplicated,
     title,
     route: {
       path: `/${slug}`,

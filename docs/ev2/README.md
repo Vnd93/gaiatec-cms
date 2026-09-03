@@ -1,6 +1,6 @@
 # EV2 — Evolução do CMS GAIATEC
 
-**Status:** Gates G0–G8 aprovados; EV2.9 liberada para desenvolvimento; produção bloqueada<br>
+**Status:** Gates G0–G8 aprovados; candidato EV2.9 validado localmente; G9 e produção bloqueados<br>
 **Data-base:** 3 de setembro de 2026<br>
 **Fonte canônica:** Markdown versionado neste diretório
 **Branch de execução:** `ev2/desenvolvimento-fases-1-a-12`<br>
@@ -22,6 +22,7 @@
 12. [EV2.6 — busca, SEO e qualidade](fase-6/README.md) — índice sombra sanitizado, governança, Centro de Qualidade e orçamento de bundle.
 13. [EV2.7 — produtividade e colaboração](fase-7/README.md) — inbox contextual, release composto, massa com dry-run, rollback transacional e Gate G7 aprovado.
 14. [EV2.8 — usuários, permissões e auditoria](fase-8/README.md) — RBAC por site/ambiente, delegação temporária, decisões de política e plano do Gate G8.
+15. [EV2.9 — Estúdio Visual e preparação multisite](fase-9/README.md) — registry de 20 componentes, canvas governado, branches, snapshots, site registry sintético e plano do Gate G9.
 
 ## Escopo documental
 
@@ -38,4 +39,4 @@ O documento principal é a fonte de verdade para o desenvolvimento. O DOCX que o
 
 ## Estado da execução
 
-Os Gates G0–G8 foram aprovados com evidências reproduzíveis. A EV2.4 passou pelo canary sintético 32/32 e pelo piloto real de 20 produtos em staging. A EV2.5 concluiu 27/27 verificações de DAM com MFA/AAL2 e resíduo zero. A EV2.6 concluiu 34/34 verificações, com p95 público de 351 ms, p95 administrativo de servidor de 807 ms e indexação em 43.667 ms. Na EV2.7, as migrations aditivas `0045` e `0046` foram aplicadas somente em staging, o build `952bf75` foi isolado no alias `ev2-g7-canary` e o canary final passou 27/27 verificações. Na EV2.8, a migration `0047` e as funções `cms-scopes`/`cms-session` foram aplicadas somente em staging, o build `896d0c6` foi isolado no alias `ev2-g8-canary` e o canary passou 27/27 verificações com dois usuários MFA, 15/15 decisões correlacionadas, 3/3 mutações auditadas, flag global desligada, zero mutação real e zero resíduo sintético. A EV2.9 está liberada para desenvolvimento. Produção, publicação de lote real, ativação global, merge em `main` e promoção do staging estável continuam fora do escopo.
+Os Gates G0–G8 foram aprovados com evidências reproduzíveis. A EV2.4 passou pelo canary sintético 32/32 e pelo piloto real de 20 produtos em staging. A EV2.5 concluiu 27/27 verificações de DAM com MFA/AAL2 e resíduo zero. A EV2.6 concluiu 34/34 verificações, com p95 público de 351 ms, p95 administrativo de servidor de 807 ms e indexação em 43.667 ms. Na EV2.7, as migrations aditivas `0045` e `0046` foram aplicadas somente em staging, o build `952bf75` foi isolado no alias `ev2-g7-canary` e o canary final passou 27/27 verificações. Na EV2.8, a migration `0047` e as funções `cms-scopes`/`cms-session` foram aplicadas somente em staging, o build `896d0c6` foi isolado no alias `ev2-g8-canary` e o canary passou 27/27 verificações com dois usuários MFA, 15/15 decisões correlacionadas, 3/3 mutações auditadas, flag global desligada, zero mutação real e zero resíduo sintético. A EV2.9 possui agora candidato local `default-off`, com Estúdio Visual governado, 20 componentes exatos e preparação multisite limitada a fixtures sintéticas. A validação local completa passou, incluindo 145 testes Vitest, suítes estáticas EV2.0–EV2.9 e Fases 1–11, lint, tipos e build. O rehearsal e o canary G9 ainda não foram executados. Produção, dados reais, domínios reais, publicação de lote, ativação global, merge em `main` e promoção do staging estável continuam fora do escopo.

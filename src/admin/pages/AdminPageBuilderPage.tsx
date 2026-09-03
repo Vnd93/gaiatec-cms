@@ -16,6 +16,7 @@ import {
   duplicateManagedPagePayload,
   duplicatePageBlock,
   movePageBlock,
+  pageBlockReferenceRequirement,
   pageTypeMeta,
   type ManagedPageType,
 } from "../page-builder-model";
@@ -60,7 +61,31 @@ const blockLabels: Record<CmsPageBlock["type"], string> = {
   form: "Formulário",
   cta: "Chamada para ação",
   related_content: "Conteúdo relacionado",
+  split_content: "Conteúdo dividido",
+  logo_cloud: "Nuvem de marcas",
+  tabs: "Abas",
+  comparison_table: "Tabela comparativa",
+  alert: "Aviso",
+  timeline: "Linha do tempo",
+  link_list: "Lista de links",
 };
+
+const legacyBlockTypes = new Set<CmsPageBlock["type"]>([
+  "hero",
+  "rich_text",
+  "image",
+  "gallery",
+  "benefit_grid",
+  "content_grid",
+  "steps",
+  "metrics",
+  "testimonial",
+  "faq",
+  "form",
+  "cta",
+  "related_content",
+]);
+const VISUAL_STUDIO_CANDIDATE_ENABLED = import.meta.env.VITE_EV2_VISUAL_STUDIO_CANDIDATE === "true";
 
 export default function AdminPageBuilderPage() {
   const { id } = useParams();
@@ -93,6 +118,7 @@ export default function AdminPageBuilderPage() {
   const can = (action: "read" | "edit" | "approve" | "publish") =>
     profile?.permissions.includes(`${meta.permission}.${action}`) ?? false;
   const canHardDelete = profile?.permissions.includes("cms:content.hard_delete") ?? false;
+  const visualManaged = Boolean(payload.visual);
 
   const update = (patch: Record<string, unknown>) =>
     setPayload((current) => ({ ...current, ...patch }) as CmsPageContent);
@@ -218,6 +244,13 @@ export default function AdminPageBuilderPage() {
         const issue = validation.error.issues[0];
         throw new Error(`Página incompleta: ${issue.path.join(".")} — ${issue.message}`);
       }
+      if (action === "save" && visualManaged && loaded) {
+        const source = CmsPageContentSchema.parse(loaded.cms_content_drafts.payload);
+        if (JSON.stringify(source.blocks) !== JSON.stringify(payload.blocks))
+          throw new Error(
+            "Os blocos desta página são controlados pelo Estúdio Visual. Recarregue a página e faça a alteração no branch visual.",
+          );
+      }
       if (action === "save" && state === "published" && loaded) {
         await editorialCommand(session, {
           action: "reopen",
@@ -291,7 +324,7 @@ export default function AdminPageBuilderPage() {
   }
 
   async function duplicatePage() {
-    if (!session || !loaded || payload.contentType !== "page") return;
+    if (!session || !loaded || payload.contentType !== "page" || visualManaged) return;
     setBusy(true);
     setError("");
     setSuccess("");
@@ -345,7 +378,16 @@ export default function AdminPageBuilderPage() {
         </div>
         <div className="admin-heading-actions">
           {loaded && payload.contentType === "page" && can("edit") && (
-            <button type="button" onClick={() => void duplicatePage()} disabled={busy}>
+            <button
+              type="button"
+              onClick={() => void duplicatePage()}
+              disabled={busy || visualManaged}
+              title={
+                visualManaged
+                  ? "Crie uma nova página e um novo branch para manter a proveniência visual"
+                  : undefined
+              }
+            >
               <Copy size={16} aria-hidden="true" /> Duplicar página
             </button>
           )}
@@ -532,74 +574,101 @@ export default function AdminPageBuilderPage() {
 
         {activeTab === "content" && (
           <div>
-            <div className="admin-block-palette">
-              <label>
-                Adicionar bloco
-                <select
-                  value={blockType}
-                  onChange={(event) => setBlockType(event.target.value as CmsPageBlock["type"])}
-                >
-                  {Object.entries(blockLabels).map(([value, label]) => (
-                    <option value={value} key={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                type="button"
-                onClick={() => {
-                  const block = createPageBlock(blockType);
-                  update({ blocks: [...payload.blocks, block] });
-                  setSelectedBlockId(block.id);
-                }}
-              >
-                <Plus size={16} /> Adicionar ao final
-              </button>
-            </div>
-            <div className="admin-page-blocks">
-              {payload.blocks.map((block, index) => (
-                <div
-                  className={
-                    selectedBlock?.id === block.id
-                      ? "admin-block-selection is-selected"
-                      : "admin-block-selection"
-                  }
-                  key={block.id}
-                  onClick={() => setSelectedBlockId(block.id)}
-                  onFocusCapture={() => setSelectedBlockId(block.id)}
-                >
-                  <PageBlockEditor
-                    block={block}
-                    index={index}
-                    total={payload.blocks.length}
-                    media={media}
-                    relations={relations.filter((item) => item.id !== loaded?.id)}
-                    onChange={(next) =>
-                      update({ blocks: payload.blocks.map((item) => (item.id === block.id ? next : item)) })
-                    }
-                    onRemove={() => {
-                      if (!window.confirm(`Remover o bloco “${blockLabels[block.type]}” desta página?`))
-                        return;
-                      update({ blocks: payload.blocks.filter((item) => item.id !== block.id) });
-                      setSelectedBlockId(payload.blocks.find((item) => item.id !== block.id)?.id ?? null);
-                    }}
-                    onDuplicate={() => {
-                      const duplicate = duplicatePageBlock(block);
-                      update({
-                        blocks: [
-                          ...payload.blocks.slice(0, index + 1),
-                          duplicate,
-                          ...payload.blocks.slice(index + 1),
-                        ],
+            {visualManaged ? (
+              <div className="admin-notice" role="status">
+                <p>
+                  Os blocos e o hash visual desta página são versionados pelo Estúdio Visual. Metadados,
+                  relações, SEO e governança continuam editáveis aqui.
+                </p>
+                {loaded && VISUAL_STUDIO_CANDIDATE_ENABLED ? (
+                  <Link to={`/admin/estudio-visual/${loaded.id}`}>Abrir Estúdio Visual</Link>
+                ) : (
+                  <p>O Estúdio Visual não está habilitado neste build; os blocos ficam somente leitura.</p>
+                )}
+              </div>
+            ) : (
+              <>
+                <div className="admin-block-palette">
+                  <label>
+                    Adicionar bloco
+                    <select
+                      value={blockType}
+                      onChange={(event) => setBlockType(event.target.value as CmsPageBlock["type"])}
+                    >
+                      {Object.entries(blockLabels)
+                        .filter(([value]) => legacyBlockTypes.has(value as CmsPageBlock["type"]))
+                        .map(([value, label]) => (
+                          <option value={value} key={value}>
+                            {label}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const block = createPageBlock(blockType, {
+                        assetId: media[0]?.id,
+                        relatedItemId: relations[0]?.id,
                       });
-                      setSelectedBlockId(duplicate.id);
+                      update({ blocks: [...payload.blocks, block] });
+                      setSelectedBlockId(block.id);
                     }}
-                    onMove={(offset) => update({ blocks: movePageBlock(payload.blocks, index, offset) })}
-                  />
+                    disabled={
+                      (pageBlockReferenceRequirement(blockType) === "media" && media.length === 0) ||
+                      (pageBlockReferenceRequirement(blockType) === "relation" && relations.length === 0)
+                    }
+                  >
+                    <Plus size={16} /> Adicionar ao final
+                  </button>
                 </div>
-              ))}
-            </div>
+                <div className="admin-page-blocks">
+                  {payload.blocks.map((block, index) => (
+                    <div
+                      className={
+                        selectedBlock?.id === block.id
+                          ? "admin-block-selection is-selected"
+                          : "admin-block-selection"
+                      }
+                      key={block.id}
+                      onClick={() => setSelectedBlockId(block.id)}
+                      onFocusCapture={() => setSelectedBlockId(block.id)}
+                    >
+                      <PageBlockEditor
+                        block={block}
+                        index={index}
+                        total={payload.blocks.length}
+                        media={media}
+                        relations={relations.filter((item) => item.id !== loaded?.id)}
+                        onChange={(next) =>
+                          update({
+                            blocks: payload.blocks.map((item) => (item.id === block.id ? next : item)),
+                          })
+                        }
+                        onRemove={() => {
+                          if (!window.confirm(`Remover o bloco “${blockLabels[block.type]}” desta página?`))
+                            return;
+                          update({ blocks: payload.blocks.filter((item) => item.id !== block.id) });
+                          setSelectedBlockId(payload.blocks.find((item) => item.id !== block.id)?.id ?? null);
+                        }}
+                        onDuplicate={() => {
+                          const duplicate = duplicatePageBlock(block);
+                          update({
+                            blocks: [
+                              ...payload.blocks.slice(0, index + 1),
+                              duplicate,
+                              ...payload.blocks.slice(index + 1),
+                            ],
+                          });
+                          setSelectedBlockId(duplicate.id);
+                        }}
+                        onMove={(offset) => update({ blocks: movePageBlock(payload.blocks, index, offset) })}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         )}
 

@@ -59,7 +59,9 @@ const AdminMasterDataPage = lazy(() => import("../admin/pages/AdminMasterDataPag
 const AdminPimPage = lazy(() => import("../admin/pages/AdminPimPage"));
 const AdminPagesPage = lazy(() => import("../admin/pages/AdminPagesPage"));
 const AdminPageBuilderPage = lazy(() => import("../admin/pages/AdminPageBuilderPage"));
+const AdminVisualStudioPage = lazy(() => import("../admin/pages/AdminVisualStudioPage"));
 const AdminSiteConfigurationPage = lazy(() => import("../admin/pages/AdminSiteConfigurationPage"));
+const AdminSitesPage = lazy(() => import("../admin/pages/AdminSitesPage"));
 const AdminMarketingPage = lazy(() => import("../admin/pages/AdminMarketingPage"));
 const AdminCampaignEditorPage = lazy(() => import("../admin/pages/AdminCampaignEditorPage"));
 const AdminFormsPage = lazy(() => import("../admin/pages/AdminFormsPage"));
@@ -201,7 +203,10 @@ export const router = createBrowserRouter([
           { path: "pim", element: lazyWrap(AdminPimPage) },
           { path: "paginas", element: lazyWrap(AdminPagesPage) },
           { path: "paginas/:id", element: lazyWrap(AdminPageBuilderPage) },
+          { path: "estudio-visual", element: lazyWrap(AdminVisualStudioPage) },
+          { path: "estudio-visual/:itemId", element: lazyWrap(AdminVisualStudioPage) },
           { path: "site", element: lazyWrap(AdminSiteConfigurationPage) },
+          { path: "sites", element: lazyWrap(AdminSitesPage) },
           { path: "marketing", element: lazyWrap(AdminMarketingPage) },
           { path: "marketing/campanhas/:id", element: lazyWrap(AdminCampaignEditorPage) },
           { path: "marketing/formularios", element: lazyWrap(AdminFormsPage) },

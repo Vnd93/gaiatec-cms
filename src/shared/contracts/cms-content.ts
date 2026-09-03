@@ -531,12 +531,36 @@ export const CmsPostContentSchema = z
   })
   .strict();
 
+const visualSpan = (columns: number) =>
+  z
+    .object({
+      span: z.number().int().min(1).max(columns),
+      start: z.number().int().min(1).max(columns).optional(),
+      hidden: z.boolean(),
+    })
+    .strict()
+    .refine((value) => !value.start || value.start + value.span - 1 <= columns, {
+      message: `O componente precisa permanecer dentro das ${columns} colunas.`,
+    });
+
+export const CmsVisualLayoutSchema = z
+  .object({
+    desktop: visualSpan(12),
+    tablet: visualSpan(8),
+    mobile: visualSpan(4),
+  })
+  .strict();
+
 const PageBlockBase = {
   id: z.uuid(),
   hidden: z.boolean().default(false),
   anchor: CmsSlugSchema.optional(),
   width: z.enum(["content", "wide", "full"]).default("content"),
   tone: z.enum(["light", "muted", "dark", "brand"]).default("light"),
+  componentVersion: z.number().int().min(1).max(100).optional(),
+  layout: CmsVisualLayoutSchema.optional(),
+  groupId: z.uuid().optional(),
+  symbolId: z.uuid().optional(),
 };
 
 const PageInternalPathSchema = z
@@ -768,6 +792,158 @@ export const CmsPageBlockSchema = z.discriminatedUnion("type", [
         .strict(),
     })
     .strict(),
+  z
+    .object({
+      ...PageBlockBase,
+      type: z.literal("split_content"),
+      data: z
+        .object({
+          eyebrow: z.string().trim().max(120).optional(),
+          heading: RequiredText.max(220),
+          text: RequiredText.max(5000),
+          assetId: z.uuid(),
+          alt: RequiredText.max(300),
+          imagePosition: z.enum(["left", "right"]),
+          link: PageLinkSchema.optional(),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...PageBlockBase,
+      type: z.literal("logo_cloud"),
+      data: z
+        .object({
+          heading: z.string().trim().max(220).optional(),
+          items: z
+            .array(
+              z
+                .object({
+                  id: z.uuid(),
+                  assetId: z.uuid(),
+                  alt: RequiredText.max(300),
+                  href: PageHrefSchema.optional(),
+                })
+                .strict(),
+            )
+            .min(1)
+            .max(24),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...PageBlockBase,
+      type: z.literal("tabs"),
+      data: z
+        .object({
+          heading: z.string().trim().max(220).optional(),
+          items: z
+            .array(
+              z
+                .object({
+                  id: z.uuid(),
+                  label: RequiredText.max(80),
+                  heading: RequiredText.max(180),
+                  text: RequiredText.max(3000),
+                })
+                .strict(),
+            )
+            .min(2)
+            .max(8),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...PageBlockBase,
+      type: z.literal("comparison_table"),
+      data: z
+        .object({
+          heading: RequiredText.max(220),
+          caption: RequiredText.max(500),
+          columns: z.array(RequiredText.max(100)).min(2).max(5),
+          rows: z
+            .array(
+              z
+                .object({
+                  id: z.uuid(),
+                  label: RequiredText.max(160),
+                  values: z.array(z.string().trim().max(500)).min(2).max(5),
+                })
+                .strict(),
+            )
+            .min(1)
+            .max(30),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...PageBlockBase,
+      type: z.literal("alert"),
+      data: z
+        .object({
+          heading: RequiredText.max(180),
+          text: RequiredText.max(2000),
+          severity: z.enum(["info", "success", "warning"]),
+          link: PageLinkSchema.optional(),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...PageBlockBase,
+      type: z.literal("timeline"),
+      data: z
+        .object({
+          heading: RequiredText.max(220),
+          items: z
+            .array(
+              z
+                .object({
+                  id: z.uuid(),
+                  label: RequiredText.max(80),
+                  title: RequiredText.max(180),
+                  text: RequiredText.max(1500),
+                })
+                .strict(),
+            )
+            .min(2)
+            .max(20),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...PageBlockBase,
+      type: z.literal("link_list"),
+      data: z
+        .object({
+          heading: RequiredText.max(220),
+          items: z
+            .array(
+              z
+                .object({
+                  id: z.uuid(),
+                  label: RequiredText.max(160),
+                  href: PageHrefSchema,
+                  description: z.string().trim().max(500).optional(),
+                })
+                .strict(),
+            )
+            .min(1)
+            .max(30),
+        })
+        .strict(),
+    })
+    .strict(),
 ]);
 
 const ManagedPageBase = {
@@ -776,6 +952,18 @@ const ManagedPageBase = {
   summary: z.string().trim().max(500).optional(),
   pageKind: z.enum(["institutional", "thematic", "landing", "campaign", "home"]),
   templateKey: z.enum(["standard", "editorial", "landing", "technical", "home"]).default("standard"),
+  visual: z
+    .object({
+      schemaVersion: z.literal(1),
+      branchId: z.uuid(),
+      documentHash: Sha256,
+      registryVersion: z.literal(1),
+      themeKey: CmsSlugSchema,
+      mode: z.enum(["guided", "designer"]),
+      grid: z.object({ desktop: z.literal(12), tablet: z.literal(8), mobile: z.literal(4) }).strict(),
+    })
+    .strict()
+    .optional(),
   route: z
     .object({
       path: z
@@ -826,7 +1014,13 @@ function validateManagedPage(
     seo: { indexable: boolean; canonicalPath: string };
     retirement: { mode: string; destinationPath?: string };
     approval: { approvedAt?: string };
-    blocks: Array<{ type: string; data: unknown }>;
+    visual?: { schemaVersion: number };
+    blocks: Array<{
+      type: string;
+      data: unknown;
+      componentVersion?: number;
+      layout?: unknown;
+    }>;
   },
   context: z.RefinementCtx,
 ) {
@@ -881,6 +1075,36 @@ function validateManagedPage(
         path: ["blocks", index, "data", "alt"],
         message: "Hero com imagem exige texto alternativo.",
       });
+    const visualOnly = [
+      "split_content",
+      "logo_cloud",
+      "tabs",
+      "comparison_table",
+      "alert",
+      "timeline",
+      "link_list",
+    ];
+    if (visualOnly.includes(block.type) && !value.visual)
+      context.addIssue({
+        code: "custom",
+        path: ["blocks", index, "type"],
+        message: "Este componente exige um documento do Estúdio Visual.",
+      });
+    if (value.visual && (block.componentVersion !== 1 || !block.layout))
+      context.addIssue({
+        code: "custom",
+        path: ["blocks", index, "layout"],
+        message: "Documento visual exige versão e layout explícitos nos três breakpoints.",
+      });
+    if (block.type === "comparison_table") {
+      const table = block.data as { columns?: unknown[]; rows?: Array<{ values?: unknown[] }> };
+      if (table.rows?.some((row) => row.values?.length !== table.columns?.length))
+        context.addIssue({
+          code: "custom",
+          path: ["blocks", index, "data", "rows"],
+          message: "Cada linha da comparação deve ter um valor por coluna.",
+        });
+    }
   });
 }
 

@@ -31,7 +31,21 @@ insert into public.cms_audit_log (actor_id, action, target_type, target_id)
 values ('30000000-0000-0000-0000-000000000001', 'cms:users.invite', 'profile', 'synthetic');
 
 insert into fase3_test_results
-select 1, is((select count(*)::integer from public.cms_roles), 9, 'nine CMS roles are seeded');
+select 1, is(
+  (
+    select array_agg(role_key order by role_key)
+    from public.cms_roles
+    where role_key = any(array[
+      'admin', 'auditor', 'commercial', 'designer', 'editor', 'marketing',
+      'reviewer', 'site_pilot_manager', 'super_admin', 'support', 'technical'
+    ])
+  ),
+  array[
+    'admin', 'auditor', 'commercial', 'designer', 'editor', 'marketing',
+    'reviewer', 'site_pilot_manager', 'super_admin', 'support', 'technical'
+  ]::text[],
+  'all required CMS roles are seeded'
+);
 
 insert into fase3_test_results
 select 2, is(

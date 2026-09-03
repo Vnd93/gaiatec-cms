@@ -1,8 +1,22 @@
 import { ArrowDown, ArrowUp, Copy, Eye, EyeOff, GripVertical, Plus, Trash2 } from "lucide-react";
 import type { CmsPageBlock } from "@/shared/contracts/cms-content";
 
-export type BuilderMedia = { id: string; original_filename: string; alt_text: string };
-export type BuilderRelation = { id: string; content_type: string; label: string; slug: string };
+export type BuilderMedia = {
+  id: string;
+  original_filename: string;
+  alt_text: string;
+  preview_url?: string | null;
+  processing_status?: string;
+  scan_status?: string;
+};
+export type BuilderRelation = {
+  id: string;
+  content_type: string;
+  label: string;
+  slug: string;
+  path?: string;
+  summary?: string;
+};
 
 const uid = () => crypto.randomUUID();
 
@@ -529,6 +543,437 @@ export function PageBlockEditor({
                 />
               </label>
             </fieldset>
+          </>
+        )}
+
+        {block.type === "split_content" && (
+          <>
+            {field("Sobretítulo", "eyebrow")}
+            {field("Título", "heading")}
+            {field("Texto", "text", { textarea: true })}
+            <label>
+              Imagem
+              <select value={data.assetId} onChange={(event) => patchData({ assetId: event.target.value })}>
+                <option value="">Selecione uma imagem</option>
+                {media.map((asset) => (
+                  <option value={asset.id} key={asset.id}>
+                    {asset.original_filename}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {field("Texto alternativo", "alt")}
+            <label>
+              Posição da imagem
+              <select
+                value={data.imagePosition}
+                onChange={(event) => patchData({ imagePosition: event.target.value })}
+              >
+                <option value="left">À esquerda</option>
+                <option value="right">À direita</option>
+              </select>
+            </label>
+            <fieldset>
+              <legend>Link opcional</legend>
+              <label>
+                Rótulo
+                <input
+                  value={data.link?.label ?? ""}
+                  onChange={(event) =>
+                    patchData({
+                      link: event.target.value
+                        ? { label: event.target.value, href: data.link?.href ?? "/contato" }
+                        : undefined,
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Destino
+                <input
+                  value={data.link?.href ?? ""}
+                  disabled={!data.link}
+                  onChange={(event) => patchData({ link: { ...data.link, href: event.target.value } })}
+                />
+              </label>
+            </fieldset>
+          </>
+        )}
+
+        {block.type === "logo_cloud" && (
+          <>
+            {field("Título", "heading")}
+            <div className="admin-repeaters">
+              {data.items.map((item: any, itemIndex: number) => (
+                <fieldset key={item.id}>
+                  <legend>Marca {itemIndex + 1}</legend>
+                  <label>
+                    Imagem
+                    <select
+                      value={item.assetId}
+                      onChange={(event) => updateItem(itemIndex, { assetId: event.target.value })}
+                    >
+                      <option value="">Selecione uma imagem</option>
+                      {media.map((asset) => (
+                        <option value={asset.id} key={asset.id}>
+                          {asset.original_filename}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Nome acessível
+                    <input
+                      value={item.alt}
+                      onChange={(event) => updateItem(itemIndex, { alt: event.target.value })}
+                    />
+                  </label>
+                  <label>
+                    Link opcional
+                    <input
+                      value={item.href ?? ""}
+                      onChange={(event) => updateItem(itemIndex, { href: event.target.value || undefined })}
+                    />
+                  </label>
+                  <button type="button" className="admin-danger-link" onClick={() => removeItem(itemIndex)}>
+                    Remover marca
+                  </button>
+                </fieldset>
+              ))}
+            </div>
+            <button
+              type="button"
+              disabled={media.length === 0}
+              title={
+                media.length === 0 ? "Cadastre uma mídia válida antes de adicionar outra marca" : undefined
+              }
+              onClick={() =>
+                setItems([
+                  ...data.items,
+                  { id: uid(), assetId: media[0].id, alt: media[0].alt_text || "Nome da marca" },
+                ])
+              }
+            >
+              <Plus size={16} /> Adicionar marca
+            </button>
+          </>
+        )}
+
+        {block.type === "tabs" && (
+          <>
+            {field("Título", "heading")}
+            <div className="admin-repeaters">
+              {data.items.map((item: any, itemIndex: number) => (
+                <fieldset key={item.id}>
+                  <legend>Aba {itemIndex + 1}</legend>
+                  <label>
+                    Rótulo da aba
+                    <input
+                      value={item.label}
+                      onChange={(event) => updateItem(itemIndex, { label: event.target.value })}
+                    />
+                  </label>
+                  <label>
+                    Título do conteúdo
+                    <input
+                      value={item.heading}
+                      onChange={(event) => updateItem(itemIndex, { heading: event.target.value })}
+                    />
+                  </label>
+                  <label>
+                    Texto
+                    <textarea
+                      rows={4}
+                      value={item.text}
+                      onChange={(event) => updateItem(itemIndex, { text: event.target.value })}
+                    />
+                  </label>
+                  <button type="button" className="admin-danger-link" onClick={() => removeItem(itemIndex)}>
+                    Remover aba
+                  </button>
+                </fieldset>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                setItems([
+                  ...data.items,
+                  { id: uid(), label: "Nova aba", heading: "Novo conteúdo", text: "Descrição" },
+                ])
+              }
+            >
+              <Plus size={16} /> Adicionar aba
+            </button>
+          </>
+        )}
+
+        {block.type === "comparison_table" && (
+          <>
+            {field("Título", "heading")}
+            {field("Descrição acessível", "caption", { textarea: true })}
+            <div className="admin-repeaters">
+              {data.columns.map((column: string, columnIndex: number) => (
+                <fieldset key={`column-${columnIndex}`}>
+                  <legend>Coluna {columnIndex + 1}</legend>
+                  <label>
+                    Nome
+                    <input
+                      value={column}
+                      onChange={(event) =>
+                        patchData({
+                          columns: data.columns.map((value: string, current: number) =>
+                            current === columnIndex ? event.target.value : value,
+                          ),
+                        })
+                      }
+                    />
+                  </label>
+                  {data.columns.length > 2 && (
+                    <button
+                      type="button"
+                      className="admin-danger-link"
+                      onClick={() =>
+                        patchData({
+                          columns: data.columns.filter(
+                            (_: unknown, current: number) => current !== columnIndex,
+                          ),
+                          rows: data.rows.map((row: any) => ({
+                            ...row,
+                            values: row.values.filter(
+                              (_: unknown, current: number) => current !== columnIndex,
+                            ),
+                          })),
+                        })
+                      }
+                    >
+                      Remover coluna
+                    </button>
+                  )}
+                </fieldset>
+              ))}
+            </div>
+            {data.columns.length < 5 && (
+              <button
+                type="button"
+                onClick={() =>
+                  patchData({
+                    columns: [...data.columns, `Opção ${data.columns.length + 1}`],
+                    rows: data.rows.map((row: any) => ({ ...row, values: [...row.values, "Valor"] })),
+                  })
+                }
+              >
+                <Plus size={16} /> Adicionar coluna
+              </button>
+            )}
+            <div className="admin-repeaters">
+              {data.rows.map((row: any, rowIndex: number) => (
+                <fieldset key={row.id}>
+                  <legend>Linha {rowIndex + 1}</legend>
+                  <label>
+                    Característica
+                    <input
+                      value={row.label}
+                      onChange={(event) =>
+                        patchData({
+                          rows: data.rows.map((candidate: any, current: number) =>
+                            current === rowIndex ? { ...candidate, label: event.target.value } : candidate,
+                          ),
+                        })
+                      }
+                    />
+                  </label>
+                  {row.values.map((value: string, valueIndex: number) => (
+                    <label key={`${row.id}-${valueIndex}`}>
+                      {data.columns[valueIndex]}
+                      <input
+                        value={value}
+                        onChange={(event) =>
+                          patchData({
+                            rows: data.rows.map((candidate: any, current: number) =>
+                              current === rowIndex
+                                ? {
+                                    ...candidate,
+                                    values: candidate.values.map((entry: string, entryIndex: number) =>
+                                      entryIndex === valueIndex ? event.target.value : entry,
+                                    ),
+                                  }
+                                : candidate,
+                            ),
+                          })
+                        }
+                      />
+                    </label>
+                  ))}
+                  <button
+                    type="button"
+                    className="admin-danger-link"
+                    onClick={() =>
+                      patchData({
+                        rows: data.rows.filter((_: unknown, current: number) => current !== rowIndex),
+                      })
+                    }
+                  >
+                    Remover linha
+                  </button>
+                </fieldset>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                patchData({
+                  rows: [
+                    ...data.rows,
+                    { id: uid(), label: "Nova característica", values: data.columns.map(() => "Valor") },
+                  ],
+                })
+              }
+            >
+              <Plus size={16} /> Adicionar linha
+            </button>
+          </>
+        )}
+
+        {block.type === "alert" && (
+          <>
+            {field("Título", "heading")}
+            {field("Mensagem", "text", { textarea: true })}
+            <label>
+              Tipo de aviso
+              <select value={data.severity} onChange={(event) => patchData({ severity: event.target.value })}>
+                <option value="info">Informação</option>
+                <option value="success">Confirmação</option>
+                <option value="warning">Atenção</option>
+              </select>
+            </label>
+            <fieldset>
+              <legend>Link opcional</legend>
+              <label>
+                Rótulo
+                <input
+                  value={data.link?.label ?? ""}
+                  onChange={(event) =>
+                    patchData({
+                      link: event.target.value
+                        ? { label: event.target.value, href: data.link?.href ?? "/contato" }
+                        : undefined,
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Destino
+                <input
+                  value={data.link?.href ?? ""}
+                  disabled={!data.link}
+                  onChange={(event) => patchData({ link: { ...data.link, href: event.target.value } })}
+                />
+              </label>
+            </fieldset>
+          </>
+        )}
+
+        {block.type === "timeline" && (
+          <>
+            {field("Título", "heading")}
+            <div className="admin-repeaters">
+              {data.items.map((item: any, itemIndex: number) => (
+                <fieldset key={item.id}>
+                  <legend>Marco {itemIndex + 1}</legend>
+                  {[
+                    ["Rótulo", "label"],
+                    ["Título", "title"],
+                  ].map(([label, key]) => (
+                    <label key={key}>
+                      {label}
+                      <input
+                        value={item[key]}
+                        onChange={(event) => updateItem(itemIndex, { [key]: event.target.value })}
+                      />
+                    </label>
+                  ))}
+                  <label>
+                    Descrição
+                    <textarea
+                      rows={3}
+                      value={item.text}
+                      onChange={(event) => updateItem(itemIndex, { text: event.target.value })}
+                    />
+                  </label>
+                  <button type="button" className="admin-danger-link" onClick={() => removeItem(itemIndex)}>
+                    Remover marco
+                  </button>
+                </fieldset>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                setItems([
+                  ...data.items,
+                  {
+                    id: uid(),
+                    label: `Etapa ${data.items.length + 1}`,
+                    title: "Novo marco",
+                    text: "Descrição",
+                  },
+                ])
+              }
+            >
+              <Plus size={16} /> Adicionar marco
+            </button>
+          </>
+        )}
+
+        {block.type === "link_list" && (
+          <>
+            {field("Título", "heading")}
+            <div className="admin-repeaters">
+              {data.items.map((item: any, itemIndex: number) => (
+                <fieldset key={item.id}>
+                  <legend>Link {itemIndex + 1}</legend>
+                  <label>
+                    Rótulo
+                    <input
+                      value={item.label}
+                      onChange={(event) => updateItem(itemIndex, { label: event.target.value })}
+                    />
+                  </label>
+                  <label>
+                    Destino
+                    <input
+                      value={item.href}
+                      onChange={(event) => updateItem(itemIndex, { href: event.target.value })}
+                    />
+                  </label>
+                  <label>
+                    Descrição
+                    <textarea
+                      rows={2}
+                      value={item.description ?? ""}
+                      onChange={(event) =>
+                        updateItem(itemIndex, { description: event.target.value || undefined })
+                      }
+                    />
+                  </label>
+                  <button type="button" className="admin-danger-link" onClick={() => removeItem(itemIndex)}>
+                    Remover link
+                  </button>
+                </fieldset>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                setItems([
+                  ...data.items,
+                  { id: uid(), label: "Novo link", href: "/contato", description: "Descrição" },
+                ])
+              }
+            >
+              <Plus size={16} /> Adicionar link
+            </button>
           </>
         )}
 

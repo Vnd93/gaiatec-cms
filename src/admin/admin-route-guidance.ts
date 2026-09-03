@@ -124,6 +124,15 @@ const guidance: Array<{ match: RegExp; value: AdminRouteGuidance }> = [
     },
   },
   {
+    match: /^\/admin\/estudio-visual/,
+    value: {
+      task: "Componha uma página em um branch visual versionado.",
+      publicImpact: "Salvar e gerar snapshots não publica; aplicar altera somente o rascunho.",
+      internal: "Layout 12/8/4, bindings, símbolos e histórico permanecem governados no CMS.",
+      nextStep: "Salve, gere os três snapshots e aplique ao rascunho antes do preview editorial.",
+    },
+  },
+  {
     match: /^\/admin\/paginas\/[^/]+/,
     value: {
       task: "Monte a página com blocos governados.",
@@ -139,6 +148,15 @@ const guidance: Array<{ match: RegExp; value: AdminRouteGuidance }> = [
       publicImpact: "Somente versões publicadas alteram o site.",
       internal: "Rascunhos e histórico permanecem no CMS.",
       nextStep: "Abra a página certa ou crie uma rota autorizada.",
+    },
+  },
+  {
+    match: /^\/admin\/sites/,
+    value: {
+      task: "Valide o isolamento de sites, ambientes, domínios reservados e temas.",
+      publicImpact: "Nenhum segundo site ou domínio é ativado nesta fase.",
+      internal: "Somente fixtures g9x-* e domínios .invalid podem ser preparados.",
+      nextStep: "Use MFA, mantenha os ambientes bloqueados e colete as evidências negativas do Gate G9.",
     },
   },
   {

@@ -12,7 +12,12 @@ import { useAdminAuth } from "../auth/AdminAuthContext";
 import { UnsavedChangesGuard } from "../components/UnsavedChangesGuard";
 import { openExternalAfterAsync } from "../open-external-preview";
 import { PageBlockEditor, type BuilderMedia, type BuilderRelation } from "../components/PageBlockEditor";
-import { createPageBlock, duplicatePageBlock, movePageBlock } from "../page-builder-model";
+import {
+  createPageBlock,
+  duplicatePageBlock,
+  movePageBlock,
+  pageBlockReferenceRequirement,
+} from "../page-builder-model";
 import { useDraftBackup } from "../hooks/useDraftBackup";
 import { DraftBackupNotice } from "../components/DraftBackupNotice";
 
@@ -430,7 +435,21 @@ export default function AdminCampaignEditorPage() {
         <button
           type="button"
           className="admin-button admin-button--secondary"
-          onClick={() => patch({ blocks: [...payload.blocks, createPageBlock(blockType)] })}
+          disabled={
+            (pageBlockReferenceRequirement(blockType) === "media" && media.length === 0) ||
+            (pageBlockReferenceRequirement(blockType) === "relation" && relations.length === 0)
+          }
+          onClick={() =>
+            patch({
+              blocks: [
+                ...payload.blocks,
+                createPageBlock(blockType, {
+                  assetId: media[0]?.id,
+                  relatedItemId: relations[0]?.id,
+                }),
+              ],
+            })
+          }
         >
           <Plus size={16} /> Adicionar bloco
         </button>

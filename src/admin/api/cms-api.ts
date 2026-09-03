@@ -177,3 +177,15 @@ export function scopedAccessCommand<T>(
 ) {
   return invoke<T>(session, "cms-scopes", body, idempotencyKey ?? false);
 }
+
+export function visualStudioCommand<T>(
+  session: Session,
+  body: Record<string, unknown>,
+  idempotencyKey?: string,
+) {
+  return invoke<T>(session, "cms-visual", body, idempotencyKey ?? false);
+}
+
+export function sitesCommand<T>(session: Session, body: Record<string, unknown>, idempotencyKey?: string) {
+  return invoke<T>(session, "cms-sites", body, idempotencyKey ?? false);
+}

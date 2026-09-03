@@ -1,0 +1,266 @@
+.admin-visual-studio {
+  container-type: inline-size;
+}
+
+.admin-visual-safety {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  padding: 0.85rem 1rem;
+  margin-block: 1rem;
+  color: #18345a;
+  background: #eef5ff;
+  border: 1px solid #bdd6ff;
+  border-radius: 0.75rem;
+}
+
+.admin-visual-toolbar,
+.admin-visual-footer-actions,
+.admin-visual-breakpoints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.admin-visual-toolbar {
+  position: sticky;
+  z-index: 6;
+  top: 0;
+  padding: 0.75rem;
+  margin-block: 1rem;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #d9e1ec;
+  border-radius: 0.8rem;
+  box-shadow: 0 0.35rem 1rem rgba(24, 52, 90, 0.08);
+}
+
+.admin-visual-toolbar > span {
+  margin-inline-end: auto;
+  color: #4b5f79;
+  font-size: 0.85rem;
+}
+
+.admin-visual-toolbar label {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.admin-visual-workspace {
+  display: grid;
+  grid-template-columns: minmax(11rem, 0.7fr) minmax(22rem, 2.2fr) minmax(17rem, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.admin-visual-palette,
+.admin-visual-layers {
+  max-height: calc(100vh - 13rem);
+  padding: 0.85rem;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid #d9e1ec;
+  border-radius: 0.8rem;
+}
+
+.admin-visual-palette h2,
+.admin-visual-layers h2 {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+  margin-top: 0;
+  font-size: 1rem;
+}
+
+.admin-visual-palette > div {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.admin-visual-palette > div > button {
+  display: grid;
+  gap: 0.15rem;
+  justify-items: start;
+  width: 100%;
+  padding: 0.65rem;
+  text-align: left;
+  background: #f7f9fc;
+  border: 1px solid #d9e1ec;
+  border-radius: 0.55rem;
+}
+
+.admin-visual-palette small,
+.admin-visual-layers small {
+  color: #66768d;
+}
+
+.admin-visual-canvas-column {
+  min-width: 0;
+}
+
+.admin-visual-breakpoints {
+  justify-content: center;
+  padding: 0.65rem;
+  background: #f2f5f9;
+  border-radius: 0.75rem 0.75rem 0 0;
+}
+
+.admin-visual-breakpoints button[aria-pressed="true"] {
+  color: #fff;
+  background: #0057de;
+  border-color: #0057de;
+}
+
+.admin-visual-canvas {
+  position: relative;
+  width: 100%;
+  min-height: 34rem;
+  margin-inline: auto;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid #cdd7e4;
+  border-radius: 0 0 0.75rem 0.75rem;
+  box-shadow: 0 0.8rem 2.2rem rgba(24, 52, 90, 0.12);
+  transition: max-width 160ms ease;
+}
+
+.admin-visual-preview-note {
+  position: sticky;
+  z-index: 5;
+  bottom: 0;
+  margin: 0;
+  padding: 0.55rem 0.8rem;
+  color: #34445d;
+  background: rgb(238 245 255 / 96%);
+  border-top: 1px solid #bdd6ff;
+  font-size: 0.78rem;
+  text-align: center;
+}
+
+.admin-visual-conflict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.admin-visual-canvas[data-breakpoint="tablet"] {
+  max-width: 48rem;
+}
+
+.admin-visual-canvas[data-breakpoint="mobile"] {
+  max-width: 24rem;
+}
+
+.admin-visual-layers ol {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-visual-layers li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.admin-visual-layers li > button {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+}
+
+.admin-visual-layers li > button.is-selected {
+  color: #0057de;
+  background: #eef5ff;
+  border-color: #0057de;
+}
+
+.admin-visual-layer-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 2rem);
+  gap: 0.2rem;
+}
+
+.admin-visual-layer-actions button {
+  display: grid;
+  min-width: 2rem;
+  min-height: 2rem;
+  padding: 0;
+  place-items: center;
+}
+
+.admin-visual-properties {
+  padding-top: 0.8rem;
+  margin-top: 0.9rem;
+  border-top: 1px solid #d9e1ec;
+}
+
+.admin-visual-properties > label:not(.admin-checkbox) {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.35rem;
+}
+
+.admin-visual-properties input[type="range"] {
+  grid-column: 1 / -1;
+}
+
+.admin-visual-group-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-block: 0.75rem;
+}
+
+.admin-visual-editor-lock {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+
+.admin-visual-properties .admin-page-block {
+  margin-block: 0.8rem;
+}
+
+.admin-visual-properties .admin-page-block__drag {
+  display: none;
+}
+
+.admin-visual-footer-actions {
+  justify-content: flex-end;
+  padding-block: 1rem;
+}
+
+@container (max-width: 74rem) {
+  .admin-visual-workspace {
+    grid-template-columns: minmax(10rem, 0.65fr) minmax(22rem, 2fr);
+  }
+
+  .admin-visual-layers {
+    grid-column: 1 / -1;
+    max-height: none;
+  }
+}
+
+@container (max-width: 48rem) {
+  .admin-visual-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-visual-palette,
+  .admin-visual-layers {
+    max-height: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-visual-canvas {
+    transition: none;
+  }
+}

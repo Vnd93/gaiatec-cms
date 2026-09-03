@@ -22,6 +22,9 @@ export default function AdminPagesPage() {
   const [error, setError] = useState("");
   const canCreatePage = profile?.permissions.includes("cms:pages.edit") ?? false;
   const canCreateHome = profile?.permissions.includes("cms:homepage.edit") ?? false;
+  const canUseVisualStudio =
+    import.meta.env.VITE_EV2_VISUAL_STUDIO_CANDIDATE === "true" &&
+    (profile?.permissions.includes("cms:visual.read") ?? false);
 
   useEffect(() => {
     let active = true;
@@ -147,6 +150,12 @@ export default function AdminPagesPage() {
                     <td>{new Date(item.updated_at).toLocaleString("pt-BR")}</td>
                     <td>
                       <Link to={`/admin/paginas/${item.id}`}>Abrir builder</Link>
+                      {canUseVisualStudio && (
+                        <>
+                          {" · "}
+                          <Link to={`/admin/estudio-visual/${item.id}`}>Estúdio Visual</Link>
+                        </>
+                      )}
                     </td>
                   </tr>
                 );

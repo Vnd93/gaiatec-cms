@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { EmailProviderError, leadNotificationEmail, sendEmail } from "../_shared/email.ts";
+import { syncPublicSearchDocument } from "../_shared/cms-search-index.ts";
 
 Deno.serve(async (req) => {
   const expected = Deno.env.get("OUTBOX_WORKER_SECRET"), supplied = req.headers.get("X-Worker-Secret");
@@ -19,13 +20,20 @@ Deno.serve(async (req) => {
   for (const item of due.data ?? []) { const result = await admin.rpc("cms_publish_due_schedule", { p_item_id: item.id, p_correlation_id: crypto.randomUUID() }); if (!result.error) scheduled += 1; }
   const claimed = await admin.rpc("cms_claim_outbox", { p_limit: 20, p_worker_id: correlationId });
   if (claimed.error) return new Response(JSON.stringify({ error: "Falha ao reservar eventos.", correlationId }), { status: 503 });
-  let completed = 0, failed = 0;
+  let completed = 0, failed = 0, searchIndexed = 0, searchIndexFailed = 0;
   for (const event of claimed.data ?? []) {
     const simulate = req.headers.get("X-Simulate-Failure") === "true";
     const success = !simulate;
     const finish = await admin.rpc("cms_finish_outbox", { p_id: event.id, p_success: success,
       p_error_code: success ? null : "simulated_cache_failure", p_correlation_id: event.correlation_id });
-    if (!finish.error && success) completed += 1; else failed += 1;
+    if (!finish.error && success) {
+      completed += 1;
+      try { await syncPublicSearchDocument(admin, event.item_id); searchIndexed += 1; }
+      catch {
+        searchIndexFailed += 1;
+        await admin.from("cms_search_index_jobs").insert({ status: "pending", reason: `Sincronização pendente após outbox ${event.event_type}`, correlation_id: event.correlation_id }).then(() => undefined, () => undefined);
+      }
+    } else failed += 1;
   }
   const leadClaimed = await admin.rpc("cms_claim_lead_outbox", { p_limit: 20 });
   if (leadClaimed.error)
@@ -54,6 +62,6 @@ Deno.serve(async (req) => {
     const finish = await admin.rpc("cms_finish_lead_outbox", { p_id: event.id, p_success: success, p_error_code: errorCode });
     if (!finish.error && success) leadCompleted += 1; else leadFailed += 1;
   }
-  return new Response(JSON.stringify({ scheduled, expiredCampaigns: expiredCampaigns.data ?? 0, retainedLeads: retainedLeads.data ?? 0, breachedSlas: breachedSlas.data ?? 0, claimed: claimed.data?.length ?? 0, completed, failed, leadClaimed: leadClaimed.data?.length ?? 0, leadCompleted, leadFailed, leadSkipped, correlationId }),
+  return new Response(JSON.stringify({ scheduled, expiredCampaigns: expiredCampaigns.data ?? 0, retainedLeads: retainedLeads.data ?? 0, breachedSlas: breachedSlas.data ?? 0, claimed: claimed.data?.length ?? 0, completed, failed, searchIndexed, searchIndexFailed, leadClaimed: leadClaimed.data?.length ?? 0, leadCompleted, leadFailed, leadSkipped, correlationId }),
     { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
 });

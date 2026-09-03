@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { containsInternalProductValue, sanitizePublicPayload, sanitizePublicSeo } from "../_shared/cms-public-projection.ts";
 import { resolveMediaAssets } from "../_shared/cms-media-resolution.ts";
+import { deterministicSeoDefaults } from "../_shared/cms-seo-defaults.ts";
 
 const headers = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "apikey, authorization, content-type, if-none-match, x-client-info", "Access-Control-Allow-Methods": "GET, OPTIONS", Vary: "Origin" };
 const json = (body: unknown, status = 200, extra: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { ...headers, "Content-Type": "application/json; charset=utf-8", ...extra } });
@@ -29,8 +30,49 @@ Deno.serve(async (req) => {
     const documents = (row.payload?.documents ?? []).filter((document: any) => document.visibility === "public" && publicDocumentIds.has(document.id) && document.storagePath && !containsInternalProductValue(document.storagePath, row.payload));
     const { data: signedDocuments } = documents.length ? await client.storage.from("cms-documents-private").createSignedUrls(documents.map((document: any) => document.storagePath), 3600) : { data: [] };
     documents.forEach((document: any, index: number) => { const signedUrl = signedDocuments?.[index]?.signedUrl; if (signedUrl) documentUrls[document.id] = signedUrl; });
-    return { ...row, payload, seo: sanitizePublicSeo(row.seo, row.payload), path: routeFor(row), media_urls: mediaUrls, media_alt: mediaAlt, document_urls: documentUrls };
+    const path = routeFor(row);
+    return { ...row, payload, seo: deterministicSeoDefaults(sanitizePublicSeo(row.seo, row.payload), payload, path), path, media_urls: mediaUrls, media_alt: mediaAlt, document_urls: documentUrls };
   };
+  if (type === "search-v2") {
+    if (!service) return json({ error: "Busca técnica indisponível." }, 503, { "Cache-Control": "no-store" });
+    const query = (url.searchParams.get("q") ?? "").trim().slice(0, 300);
+    const contentTypes = (url.searchParams.get("contentTypes") ?? "").split(",").filter((value) => searchableTypes.includes(value));
+    const facets: Record<string, string[]> = {};
+    const ranges: Record<string, { min?: number; max?: number; unit?: string }> = {};
+    for (const [key, value] of url.searchParams) {
+      if (key.startsWith("facet.") && /^[a-z][a-zA-Z0-9]{1,63}$/.test(key.slice(6))) facets[key.slice(6)] = value.split("|").filter(Boolean).slice(0, 50);
+      if (key.startsWith("range.") && /^[a-z][a-zA-Z0-9_.-]{1,79}$/.test(key.slice(6))) {
+        const [minimum, maximum, unit] = value.split(":");
+        const min = minimum === "" ? undefined : Number(minimum), max = maximum === "" ? undefined : Number(maximum);
+        if ((min === undefined || Number.isFinite(min)) && (max === undefined || Number.isFinite(max)) && (min !== undefined || max !== undefined)) ranges[key.slice(6)] = { ...(min !== undefined ? { min } : {}), ...(max !== undefined ? { max } : {}), ...(unit ? { unit: unit.slice(0, 24) } : {}) };
+      }
+    }
+    const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 24, 1), 100);
+    const offset = Math.min(Math.max(Number(url.searchParams.get("offset")) || 0, 0), 10_000);
+    const normalizedQuery = normalize(query);
+    const { data: redirectRule } = normalizedQuery ? await client.from("cms_search_rules").select("redirect_path").eq("rule_kind", "redirect").eq("normalized_query", normalizedQuery).eq("active", true).lte("starts_at", new Date().toISOString()).gt("expires_at", new Date().toISOString()).maybeSingle() : { data: null };
+    if (redirectRule?.redirect_path) return json({ redirect: redirectRule.redirect_path, items: [], total: 0, facets: {}, groups: {}, query }, 200, { "Cache-Control": "private, no-store" });
+    const startedAt = performance.now();
+    const { data: matches, error: searchError } = await client.rpc("cms_search_v2", { p_query: normalizedQuery, p_content_types: contentTypes, p_facets: facets, p_ranges: ranges, p_limit: limit, p_offset: offset });
+    if (searchError) return json({ error: "Busca técnica temporariamente indisponível." }, 503, { "Cache-Control": "no-store" });
+    const ids = (matches ?? []).map((entry: any) => entry.item_id);
+    const { data: sourceRows, error: sourceError } = ids.length ? await client.from("cms_published_projection").select("item_id,revision_id,content_type,slug,schema_version,consumer_id,renderer_key,payload,seo,content_version,cache_tag,etag,published_at").in("item_id", ids) : { data: [], error: null };
+    if (sourceError) return json({ error: "Busca técnica temporariamente indisponível." }, 503, { "Cache-Control": "no-store" });
+    const rowById = new Map((sourceRows ?? []).map((row: any) => [row.item_id, row]));
+    const items = (await Promise.all((matches ?? []).map(async (match: any) => {
+      const row = rowById.get(match.item_id);
+      return row ? { ...(await enrichMedia(row)), score: match.score, matched_by: match.matched_by, explanation: { matchedBy: match.matched_by, missingTechnicalData: Object.keys(ranges).filter((key) => !(match.technical_ranges ?? {})[key]) } } : null;
+    }))).filter(Boolean);
+    const groups = searchableTypes.reduce((all, key) => { all[key] = items.filter((item: any) => item.content_type === key).length; return all; }, {} as Record<string, number>);
+    const availableFacets: Record<string, string[]> = {};
+    for (const match of matches ?? []) for (const [key, values] of Object.entries(match.facets ?? {})) {
+      const bucket = new Set(availableFacets[key] ?? []);
+      (Array.isArray(values) ? values : [values]).filter((value) => typeof value === "string").forEach((value) => bucket.add(value as string));
+      availableFacets[key] = [...bucket].sort();
+    }
+    if (query && service) await client.from("cms_search_events").insert({ normalized_query: normalizedQuery, result_count: Number(matches?.[0]?.total_count ?? 0), content_types: [...new Set(items.map((item: any) => item.content_type))], refinements: { contentTypes, facets, ranges, engine: "v2", latencyMs: Math.round(performance.now() - startedAt) }, correlation_id: crypto.randomUUID() });
+    return json({ items, total: Number(matches?.[0]?.total_count ?? 0), facets: availableFacets, groups, query, engine: "v2" }, 200, { "Cache-Control": "private, no-store", "Server-Timing": `search;dur=${Math.round(performance.now() - startedAt)}` });
+  }
   if (type === "redirect") {
     const path = url.searchParams.get("path") ?? "";
     const { data: routeRule } = await client.from("cms_route_rules").select("destination_path,status_code").eq("source_path", path).eq("active", true).maybeSingle();

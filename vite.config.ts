@@ -1,8 +1,8 @@
-import { defineConfig } from 'vite'
-import path from 'path'
-import tailwindcss from '@tailwindcss/vite'
-import react from '@vitejs/plugin-react'
-import viteCompression from 'vite-plugin-compression'
+import { defineConfig } from "vite";
+import path from "path";
+import tailwindcss from "@tailwindcss/vite";
+import react from "@vitejs/plugin-react";
+import viteCompression from "vite-plugin-compression";
 
 export default defineConfig({
   plugins: [
@@ -13,8 +13,8 @@ export default defineConfig({
 
     // Pre-compressão Gzip — Cloudflare serve direto sem precisar comprimir runtime
     viteCompression({
-      algorithm: 'gzip',
-      ext: '.gz',
+      algorithm: "gzip",
+      ext: ".gz",
       threshold: 10240, // só comprime arquivos > 10 KB
       deleteOriginFile: false, // mantém original para browsers sem suporte
       verbose: false,
@@ -22,8 +22,8 @@ export default defineConfig({
 
     // Pre-compressão Brotli — ~20% melhor que Gzip, suportado por todos browsers modernos
     viteCompression({
-      algorithm: 'brotliCompress',
-      ext: '.br',
+      algorithm: "brotliCompress",
+      ext: ".br",
       threshold: 10240,
       deleteOriginFile: false,
       verbose: false,
@@ -39,16 +39,18 @@ export default defineConfig({
   resolve: {
     alias: {
       // Alias @ to the src directory
-      '@': path.resolve(__dirname, './src'),
+      "@": path.resolve(__dirname, "./src"),
     },
   },
 
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
-  assetsInclude: ['**/*.svg', '**/*.csv'],
+  assetsInclude: ["**/*.svg", "**/*.csv"],
 
   build: {
+    // Consumido pelo orçamento EV2.6 para distinguir imports iniciais de lazy chunks.
+    manifest: true,
     // Modern browsers (smaller bundles via newer JS features)
-    target: 'es2020',
+    target: "es2020",
 
     // CSS code splitting (default true, but explicit)
     cssCodeSplit: true,
@@ -62,51 +64,51 @@ export default defineConfig({
         // Resultado: cache mais eficiente (vendor não muda) + paralelização de download
         manualChunks: {
           // React core (sempre necessário)
-          'react-vendor': ['react', 'react-dom', 'react-router'],
+          "react-vendor": ["react", "react-dom", "react-router"],
 
           // Animação (motion/framer) — usado em quase tudo
-          'motion-vendor': ['motion'],
+          "motion-vendor": ["motion"],
 
           // Radix UI primitives — só carrega quando necessário
-          'radix-vendor': [
-            '@radix-ui/react-accordion',
-            '@radix-ui/react-alert-dialog',
-            '@radix-ui/react-aspect-ratio',
-            '@radix-ui/react-avatar',
-            '@radix-ui/react-checkbox',
-            '@radix-ui/react-collapsible',
-            '@radix-ui/react-context-menu',
-            '@radix-ui/react-dialog',
-            '@radix-ui/react-dropdown-menu',
-            '@radix-ui/react-hover-card',
-            '@radix-ui/react-label',
-            '@radix-ui/react-menubar',
-            '@radix-ui/react-navigation-menu',
-            '@radix-ui/react-popover',
-            '@radix-ui/react-progress',
-            '@radix-ui/react-radio-group',
-            '@radix-ui/react-scroll-area',
-            '@radix-ui/react-select',
-            '@radix-ui/react-separator',
-            '@radix-ui/react-slider',
-            '@radix-ui/react-slot',
-            '@radix-ui/react-switch',
-            '@radix-ui/react-tabs',
-            '@radix-ui/react-toggle',
-            '@radix-ui/react-toggle-group',
-            '@radix-ui/react-tooltip',
+          "radix-vendor": [
+            "@radix-ui/react-accordion",
+            "@radix-ui/react-alert-dialog",
+            "@radix-ui/react-aspect-ratio",
+            "@radix-ui/react-avatar",
+            "@radix-ui/react-checkbox",
+            "@radix-ui/react-collapsible",
+            "@radix-ui/react-context-menu",
+            "@radix-ui/react-dialog",
+            "@radix-ui/react-dropdown-menu",
+            "@radix-ui/react-hover-card",
+            "@radix-ui/react-label",
+            "@radix-ui/react-menubar",
+            "@radix-ui/react-navigation-menu",
+            "@radix-ui/react-popover",
+            "@radix-ui/react-progress",
+            "@radix-ui/react-radio-group",
+            "@radix-ui/react-scroll-area",
+            "@radix-ui/react-select",
+            "@radix-ui/react-separator",
+            "@radix-ui/react-slider",
+            "@radix-ui/react-slot",
+            "@radix-ui/react-switch",
+            "@radix-ui/react-tabs",
+            "@radix-ui/react-toggle",
+            "@radix-ui/react-toggle-group",
+            "@radix-ui/react-tooltip",
           ],
 
           // Charts (recharts) — só carrega no EconomicSimulator
-          'charts-vendor': ['recharts'],
+          "charts-vendor": ["recharts"],
 
           // Supabase
-          'supabase-vendor': ['@supabase/supabase-js'],
+          "supabase-vendor": ["@supabase/supabase-js"],
 
           // Forms
-          'form-vendor': ['react-hook-form', 'react-day-picker'],
+          "form-vendor": ["react-hook-form", "react-day-picker"],
         },
       },
     },
   },
-})
+});

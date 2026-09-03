@@ -1,6 +1,6 @@
 # EV2 — Evolução do CMS GAIATEC
 
-**Status:** Gates G0–G5 aprovados; EV2.6 liberada para implementação; produção bloqueada<br>
+**Status:** Gates G0–G5 aprovados; candidato EV2.6 validado localmente e aguardando canary G6; produção bloqueada<br>
 **Data-base:** 2 de setembro de 2026<br>
 **Fonte canônica:** Markdown versionado neste diretório
 **Branch de execução:** `ev2/desenvolvimento-fases-1-a-12`<br>
@@ -19,6 +19,7 @@
 9. [EV2.3 — dados mestres](fase-3/README.md) — entidades, aliases, dependências N:N, migration e Gate G3.
 10. [EV2.4 — PIM e conteúdo principal](fase-4/README.md) — produto/modelo/variante/SKU, atributos, unidades, adapter v1 e Gate G4.
 11. [EV2.5 — mídia e documentos](fase-5/README.md) — DAM contextual, direitos, usos, substituição reversível e Gate G5.
+12. [EV2.6 — busca, SEO e qualidade](fase-6/README.md) — índice sombra sanitizado, governança, Centro de Qualidade e orçamento de bundle.
 
 ## Escopo documental
 
@@ -35,4 +36,4 @@ O documento principal é a fonte de verdade para o desenvolvimento. O DOCX que o
 
 ## Estado da execução
 
-Os Gates G0–G5 foram aprovados com evidências reproduzíveis. A EV2.4 passou pelo canary sintético 32/32 e pelo piloto real de 20 produtos em staging. A EV2.5 aplicou a migration aditiva `0043`, publicou `cms-media`, `cms-public` e `cms-preview` e isolou o build `405b84a` no alias `ev2-g5-canary`. Seu canary concluiu 27/27 verificações com MFA/AAL2, produção recusada, flags globais desligadas, zero mutação real e zero resíduo sintético. A EV2.6 está liberada para implementação local e para um futuro canary especificamente autorizado. Produção, publicação do lote, dual-write, merge em `main` e promoção do staging estável continuam fora do escopo.
+Os Gates G0–G5 foram aprovados com evidências reproduzíveis. A EV2.4 passou pelo canary sintético 32/32 e pelo piloto real de 20 produtos em staging. A EV2.5 aplicou a migration aditiva `0043`, publicou `cms-media`, `cms-public` e `cms-preview` e isolou o build `405b84a` no alias `ev2-g5-canary`. Seu canary concluiu 27/27 verificações com MFA/AAL2, produção recusada, flags globais desligadas, zero mutação real e zero resíduo sintético. O candidato EV2.6 implementa a migration `0044`, APIs e interfaces default-off, passou na suíte integral e aguarda autorização específica para o canary G6. Produção, publicação do lote, dual-write, merge em `main` e promoção do staging estável continuam fora do escopo.

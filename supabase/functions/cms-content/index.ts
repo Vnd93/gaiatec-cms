@@ -1,6 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { z } from "npm:zod@4.4.3";
 import { authenticateCms } from "../_shared/cms-auth.ts";
+import { evaluateQuality, qualityStatus } from "../_shared/cms-quality-rules.ts";
+import { syncPublicSearchDocument } from "../_shared/cms-search-index.ts";
 import { clientAddress, consumeRateLimit, corsHeaders, isAllowedOrigin, json, readJsonLimited } from "../_shared/security.ts";
 
 const Uuid = z.uuid();
@@ -85,14 +87,15 @@ Deno.serve(async (req) => {
     }
     return json(req, { ...data, correlationId });
   }
+  const editorial = EditorialCommand.parse(parsed);
   // Give API clients a deterministic conflict response before invoking the
   // transactional command. The database command repeats this check while
   // holding the draft row lock, so this is presentation logic, not the
   // concurrency boundary.
-  if (parsed.action === "save" && parsed.itemId && parsed.expectedLockVersion) {
+  if (editorial.action === "save" && editorial.itemId && editorial.expectedLockVersion) {
     const { data: draft } = await identity.admin.from("cms_content_drafts")
-      .select("lock_version").eq("item_id", parsed.itemId).maybeSingle();
-    if (draft && draft.lock_version !== parsed.expectedLockVersion) {
+      .select("lock_version").eq("item_id", editorial.itemId).maybeSingle();
+    if (draft && draft.lock_version !== editorial.expectedLockVersion) {
       return json(req, {
         error: "O conteúdo foi alterado em outra sessão.",
         code: "CMS_CONTENT_CONFLICT",
@@ -101,16 +104,16 @@ Deno.serve(async (req) => {
     }
   }
   const correlationId = crypto.randomUUID();
-  let effectivePayload = parsed.payload;
+  let effectivePayload = editorial.payload;
   if (
-    (parsed.action === "create" || parsed.action === "save") &&
-    parsed.payload &&
-    (parsed.payload.contentType === "product" || parsed.payload.contentType === "service")
+    (editorial.action === "create" || editorial.action === "save") &&
+    editorial.payload &&
+    (editorial.payload.contentType === "product" || editorial.payload.contentType === "service")
   ) {
-    const contentType = String(parsed.payload.contentType);
+    const contentType = String(editorial.payload.contentType);
     const { data: normalized, error: normalizationError } = await identity.admin.rpc(
       "cms_normalize_controlled_payload",
-      { p_content_type: contentType, p_payload: parsed.payload, p_require_active: true },
+      { p_content_type: contentType, p_payload: editorial.payload, p_require_active: true },
     );
     if (normalizationError) {
       return json(req, {
@@ -121,8 +124,8 @@ Deno.serve(async (req) => {
     }
     effectivePayload = normalized;
   }
-  if ((parsed.action === "create" || parsed.action === "save") && parsed.payload?.contentType === "post") {
-    const post = parsed.payload as Record<string, any>;
+  if ((editorial.action === "create" || editorial.action === "save") && editorial.payload?.contentType === "post") {
+    const post = editorial.payload as Record<string, any>;
     const tagSlugs = (post.tags ?? []).map((tag: any) => tag.slug).filter(Boolean);
     const [authorResult, categoryResult, tagResult] = await Promise.all([
       identity.admin.from("cms_blog_authors").select("id").eq("slug", post.author?.slug ?? "").maybeSingle(),
@@ -147,14 +150,14 @@ Deno.serve(async (req) => {
     });
     if (taxonomyError) return json(req, { error: "Autor ou taxonomia editorial inválidos.", code: "CMS_BLOG_TAXONOMY_INVALID", correlationId }, 422);
   }
-  if (parsed.action === "retire") {
-    if (!parsed.itemId || !parsed.payload || !parsed.expectedLockVersion) {
+  if (editorial.action === "retire") {
+    if (!editorial.itemId || !editorial.payload || !editorial.expectedLockVersion) {
       return json(req, { error: "Página, conteúdo e versão são obrigatórios." }, 400);
     }
     const { data, error } = await identity.admin.rpc("cms_retire_managed_page", {
-      p_actor_id: identity.user.id, p_item_id: parsed.itemId, p_slug: parsed.slug,
-      p_payload: parsed.payload, p_expected_lock_version: parsed.expectedLockVersion,
-      p_reason: parsed.reason ?? "Retirada governada de página",
+      p_actor_id: identity.user.id, p_item_id: editorial.itemId, p_slug: editorial.slug,
+      p_payload: editorial.payload, p_expected_lock_version: editorial.expectedLockVersion,
+      p_reason: editorial.reason ?? "Retirada governada de página",
       p_aal: identity.claims.aal, p_session_id: identity.claims.sessionId,
       p_issued_at: identity.claims.issuedAt, p_idempotency_key: idempotencyKey,
       p_correlation_id: correlationId,
@@ -173,12 +176,12 @@ Deno.serve(async (req) => {
     }
     return json(req, { ...data, correlationId });
   }
-  if (parsed.action === "hard_delete" || parsed.action === "reopen") {
-    if (!parsed.itemId) return json(req, { error: "Conteúdo obrigatório." }, 400);
-    const functionName = parsed.action === "hard_delete" ? "cms_hard_delete_draft" : "cms_reopen_site_builder";
+  if (editorial.action === "hard_delete" || editorial.action === "reopen") {
+    if (!editorial.itemId) return json(req, { error: "Conteúdo obrigatório." }, 400);
+    const functionName = editorial.action === "hard_delete" ? "cms_hard_delete_draft" : "cms_reopen_site_builder";
     const { data, error } = await identity.admin.rpc(functionName, {
-      p_actor_id: identity.user.id, p_item_id: parsed.itemId,
-      p_reason: parsed.reason ?? (parsed.action === "hard_delete" ? "Exclusão definitiva de rascunho nunca publicado" : "Abrir nova versão de conteúdo publicado"),
+      p_actor_id: identity.user.id, p_item_id: editorial.itemId,
+      p_reason: editorial.reason ?? (editorial.action === "hard_delete" ? "Exclusão definitiva de rascunho nunca publicado" : "Abrir nova versão de conteúdo publicado"),
       p_aal: identity.claims.aal, p_session_id: identity.claims.sessionId,
       p_issued_at: identity.claims.issuedAt, p_idempotency_key: idempotencyKey,
       p_correlation_id: correlationId,
@@ -196,11 +199,54 @@ Deno.serve(async (req) => {
     }
     return json(req, { ...data, correlationId });
   }
+  let searchQualityEnabled = false;
+  if (["publish", "schedule", "restore"].includes(editorial.action) && editorial.itemId) {
+    const environment = Deno.env.get("CMS_ENVIRONMENT");
+    if (environment && ["local", "staging"].includes(environment)) {
+      const { data: capability, error: capabilityError } = await identity.admin.rpc("cms_evaluate_feature_flag", {
+        p_actor_id: identity.user.id, p_flag_key: "ev2.search_quality", p_environment: environment,
+        p_site_key: "main", p_aal: identity.claims.aal, p_session_id: identity.claims.sessionId,
+        p_issued_at: identity.claims.issuedAt,
+      });
+      if (capabilityError) return json(req, { error: "Centro de Qualidade indisponível.", code: "CMS_QUALITY_UNAVAILABLE", correlationId }, 503);
+      if (capability?.enabled === true) {
+        searchQualityEnabled = true;
+        let revisionQuery = identity.admin.from("cms_content_revisions").select("id,payload,seo").eq("item_id", editorial.itemId).order("revision_number", { ascending: false }).limit(1);
+        if (editorial.revisionId) revisionQuery = revisionQuery.eq("id", editorial.revisionId);
+        const [{ data: revisions, error: revisionError }, { data: waivers, error: waiverError }] = await Promise.all([
+          revisionQuery,
+          identity.admin.from("cms_quality_waivers").select("rule_key").eq("item_id", editorial.itemId).gt("expires_at", new Date().toISOString()),
+        ]);
+        const revision = revisions?.[0];
+        if (revisionError || waiverError || !revision) return json(req, { error: "Qualidade não pôde ser verificada.", code: "CMS_QUALITY_UNAVAILABLE", correlationId }, 503);
+        const waivedRules = new Set((waivers ?? []).map((entry) => entry.rule_key));
+        const findings = evaluateQuality(revision.payload, revision.seo).map((entry) => ({ ...entry, waived: waivedRules.has(entry.ruleKey) }));
+        const effectiveFindings = findings.filter((entry) => !entry.waived);
+        const qualityState = qualityStatus(effectiveFindings);
+        const counts = {
+          errors: effectiveFindings.filter((entry) => entry.severity === "error").length,
+          warnings: effectiveFindings.filter((entry) => entry.severity === "warning").length,
+          recommendations: effectiveFindings.filter((entry) => entry.severity === "recommendation").length,
+          waived: findings.filter((entry) => entry.waived).length,
+        };
+        const { data: run, error: runError } = await identity.admin.rpc("cms_record_quality_run", {
+          p_item_id: editorial.itemId, p_revision_id: revision.id,
+          p_trigger_kind: editorial.action === "schedule" ? "schedule" : "publish", p_status: qualityState, p_counts: counts,
+          p_findings: findings, p_actor_id: identity.user.id, p_correlation_id: correlationId,
+        });
+        if (runError || !run) return json(req, { error: "Qualidade não pôde ser registrada.", code: "CMS_QUALITY_UNAVAILABLE", correlationId }, 503);
+        if (qualityState === "blocked") return json(req, {
+          error: "Publicação bloqueada pelo Centro de Qualidade.", code: "CMS_QUALITY_BLOCKED",
+          qualityRunId: run.runId, findings: effectiveFindings.filter((entry) => entry.severity === "error"), correlationId,
+        }, 422);
+      }
+    }
+  }
   const { data, error } = await identity.admin.rpc("cms_execute_editorial_command", {
-    p_actor_id: identity.user.id, p_action: parsed.action, p_item_id: parsed.itemId ?? null,
-    p_content_type: parsed.contentType ?? null, p_slug: parsed.slug ?? null, p_payload: effectivePayload ?? null,
-    p_expected_lock_version: parsed.expectedLockVersion ?? null, p_revision_id: parsed.revisionId ?? null,
-    p_reason: parsed.reason ?? "Operação editorial sintética", p_publish_at: parsed.publishAt ?? null,
+    p_actor_id: identity.user.id, p_action: editorial.action, p_item_id: editorial.itemId ?? null,
+    p_content_type: editorial.contentType ?? null, p_slug: editorial.slug ?? null, p_payload: effectivePayload ?? null,
+    p_expected_lock_version: editorial.expectedLockVersion ?? null, p_revision_id: editorial.revisionId ?? null,
+    p_reason: editorial.reason ?? "Operação editorial sintética", p_publish_at: editorial.publishAt ?? null,
     p_aal: identity.claims.aal, p_session_id: identity.claims.sessionId, p_issued_at: identity.claims.issuedAt,
     p_idempotency_key: idempotencyKey, p_correlation_id: correlationId,
   });
@@ -216,5 +262,13 @@ Deno.serve(async (req) => {
       code === 404 ? "Conteúdo não encontrado." : code === 422 ? "Transição ou conteúdo inválido." : "Falha editorial.",
       correlationId, code: knownCode ?? error.code, constraint }, code);
   }
-  return json(req, { ...data, correlationId });
+  let searchIndex: "not_requested" | "synced" | "removed" | "pending" = "not_requested";
+  if (searchQualityEnabled && editorial.itemId && ["publish", "restore"].includes(editorial.action)) {
+    try { searchIndex = await syncPublicSearchDocument(identity.admin, editorial.itemId); }
+    catch {
+      searchIndex = "pending";
+      await identity.admin.from("cms_search_index_jobs").insert({ status: "pending", reason: `Sincronização pendente após ${editorial.action}`, requested_by: identity.user.id, correlation_id: correlationId }).then(() => undefined, () => undefined);
+    }
+  }
+  return json(req, { ...data, correlationId, searchIndex });
 });

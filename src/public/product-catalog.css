@@ -1201,6 +1201,44 @@
   background: #10213a;
   color: #fff;
 }
+.unified-search__facets {
+  display: grid;
+  gap: 0.8rem;
+  margin: 0 0 1.5rem;
+  border: 1px solid #d9e1ec;
+  padding: 1rem;
+  background: #f7f9fc;
+}
+.unified-search__facets h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+.unified-search__facets fieldset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  border: 0;
+  padding: 0;
+}
+.unified-search__facets legend {
+  width: 100%;
+  margin-bottom: 0.35rem;
+  color: #526176;
+  font-size: 0.78rem;
+  font-weight: 750;
+  text-transform: capitalize;
+}
+.unified-search__facets button {
+  min-height: 44px;
+  border: 1px solid #9eb0c6;
+  padding: 0.55rem 0.75rem;
+  background: #fff;
+}
+.unified-search__facets button[aria-pressed="true"] {
+  border-color: #0057de;
+  background: #e9f2ff;
+  color: #003d9e;
+}
 .autocomplete-list {
   list-style: none;
   margin: 0.5rem 0 0;

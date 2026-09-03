@@ -150,6 +150,14 @@ export const adminNavigation: AdminNavigationGroup[] = [
         match: /^\/admin\/busca(?:\/.*)?$/,
       },
       {
+        to: "/admin/qualidade",
+        label: "Centro de Qualidade",
+        description: "SEO, acessibilidade, links, mídia, conteúdo e PIM.",
+        icon: ShieldCheck,
+        permissions: ["cms:quality.read"],
+        match: /^\/admin\/qualidade(?:\/.*)?$/,
+      },
+      {
         to: "/admin/listas-mestras",
         label: "Listas mestras",
         description: "Categorias e classificações padronizadas do CMS.",
@@ -309,8 +317,9 @@ export function adminPageTitle(pathname: string, search = ""): string {
   return `${current} | CMS GAIATEC`;
 }
 
-export function globalSearchTarget(query: string, permissions: readonly string[]): string {
+export function globalSearchTarget(query: string, permissions: readonly string[], unified = false): string {
   const encoded = encodeURIComponent(query.trim());
+  if (unified && permissions.includes("cms:search.read")) return `/admin/busca?q=${encoded}`;
   if (permissions.includes("cms:products.read")) return `/admin/produtos?q=${encoded}`;
   if (permissions.includes("cms:posts.read")) return `/admin/conteudo?q=${encoded}`;
   if (permissions.includes("cms:pages.read")) return `/admin/paginas?q=${encoded}`;
@@ -328,6 +337,7 @@ export const administrativeRouteInventory = [
   { surface: "Aplicações", route: "/admin/descoberta/application", permission: "cms:applications.read" },
   { surface: "Soluções", route: "/admin/descoberta/solution", permission: "cms:solutions.read" },
   { surface: "Busca e sinônimos", route: "/admin/busca", permission: "cms:search.read" },
+  { surface: "Centro de Qualidade", route: "/admin/qualidade", permission: "cms:quality.read" },
   { surface: "Listas mestras", route: "/admin/listas-mestras", permission: "cms:vocabularies.read" },
   { surface: "Dados mestres EV2", route: "/admin/dados-mestres", permission: "cms:masterdata.read" },
   {

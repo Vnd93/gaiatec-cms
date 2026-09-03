@@ -50,6 +50,7 @@ const AdminDiagnosticsPage = lazy(() => import("../admin/pages/AdminDiagnosticsP
 const AdminNotFoundPage = lazy(() => import("../admin/pages/AdminNotFoundPage"));
 const AdminDiscoveryPage = lazy(() => import("../admin/pages/AdminDiscoveryPage"));
 const AdminSearchGovernancePage = lazy(() => import("../admin/pages/AdminSearchGovernancePage"));
+const AdminQualityPage = lazy(() => import("../admin/pages/AdminQualityPage"));
 const AdminControlledVocabulariesPage = lazy(
   () => import("../admin/pages/AdminControlledVocabulariesPage"),
 );
@@ -192,6 +193,7 @@ export const router = createBrowserRouter([
           { path: "descoberta/:contentType", element: lazyWrap(AdminDiscoveryPage) },
           { path: "descoberta/:contentType/:id", element: lazyWrap(AdminDiscoveryPage) },
           { path: "busca", element: lazyWrap(AdminSearchGovernancePage) },
+          { path: "qualidade", element: lazyWrap(AdminQualityPage) },
           { path: "listas-mestras", element: lazyWrap(AdminControlledVocabulariesPage) },
           { path: "dados-mestres", element: lazyWrap(AdminMasterDataPage) },
           { path: "pim", element: lazyWrap(AdminPimPage) },

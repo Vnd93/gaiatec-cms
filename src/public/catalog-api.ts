@@ -94,9 +94,11 @@ export type UnifiedSearchResult = {
     | (PublishedPost & { content_type: "post"; matched_by?: string; score?: number })
   >;
   total: number;
-  facets: ProductCollection["facets"];
+  facets: Record<string, string[]>;
   groups: Record<"product" | DiscoveryType | SearchPageType | "post", number>;
   query: string;
+  redirect?: string;
+  engine?: "v2";
 };
 
 export type PublishedPage = Omit<PublishedProduct, "payload"> & {
@@ -161,8 +163,14 @@ export function getPublishedProducts(params: Record<string, string>) {
     new URLSearchParams({ type: "products", contentType: "product", ...params }),
   );
 }
-export function searchPublishedProducts(query: string) {
-  return catalogFetch<UnifiedSearchResult>(new URLSearchParams({ type: "search", q: query }));
+export function searchPublishedProducts(query: string, facets: Record<string, string[]> = {}) {
+  const candidate = import.meta.env.VITE_EV2_SEARCH_QUALITY_CANDIDATE === "true";
+  const params = new URLSearchParams({ type: candidate ? "search-v2" : "search", q: query });
+  if (candidate)
+    for (const [key, values] of Object.entries(facets)) {
+      if (values.length) params.set(`facet.${key}`, values.join("|"));
+    }
+  return catalogFetch<UnifiedSearchResult>(params);
 }
 export function comparePublishedProducts(slugs: string[]) {
   return catalogFetch<ProductCollection>(

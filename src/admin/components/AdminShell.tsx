@@ -119,7 +119,14 @@ export function AdminShell() {
             role="search"
             onSubmit={(event) => {
               event.preventDefault();
-              if (search.trim()) navigate(globalSearchTarget(search, permissions));
+              if (search.trim())
+                navigate(
+                  globalSearchTarget(
+                    search,
+                    permissions,
+                    import.meta.env.VITE_EV2_SEARCH_QUALITY_CANDIDATE === "true",
+                  ),
+                );
             }}
           >
             <label htmlFor="admin-global-search">Busca global no CMS — conteúdo permitido</label>

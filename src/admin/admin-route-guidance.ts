@@ -88,6 +88,15 @@ const guidance: Array<{ match: RegExp; value: AdminRouteGuidance }> = [
     },
   },
   {
+    match: /^\/admin\/qualidade/,
+    value: {
+      task: "Resolva achados determinísticos antes de publicar.",
+      publicImpact: "Erros ativos bloqueiam a publicação quando a EV2.6 está habilitada.",
+      internal: "Execuções, campos e exceções permanecem no CMS.",
+      nextStep: "Corrija o campo indicado ou registre uma exceção autorizada e temporária.",
+    },
+  },
+  {
     match: /^\/admin\/listas-mestras/,
     value: {
       task: "Mantenha classificações padronizadas e reutilizáveis.",

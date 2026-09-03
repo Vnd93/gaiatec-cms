@@ -97,6 +97,9 @@ export function damCommand<T>(session: Session, body: Record<string, unknown>, i
 export function searchGovernanceCommand<T>(session: Session, body: Record<string, unknown>) {
   return invoke<T>(session, "cms-search-admin", body, true);
 }
+export function qualityCommand<T>(session: Session, body: Record<string, unknown>, idempotent = false) {
+  return invoke<T>(session, "cms-quality", body, idempotent);
+}
 export function leadCommand<T>(session: Session, body: Record<string, unknown>) {
   return invoke<T>(session, "cms-leads", body, true);
 }

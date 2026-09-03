@@ -205,6 +205,8 @@ test("rehearsal, canary, preview workflow and Gate G9 are reproducible", async (
   assert.match(canary, /site_idempotency_and_conflict/);
   assert.match(canary, /tokens_are_versioned_per_site/);
   assert.match(canary, /syntheticResidue: residueZero \? 0 : 1/);
+  assert.match(canary, /cms_session_revocations[\s\S]{0,160}select=session_id_hash/);
+  assert.doesNotMatch(canary, /cms_session_revocations[\s\S]{0,160}select=id/);
   assert.match(workflow, /expected_sha/);
   assert.match(workflow, /VITE_EV2_VISUAL_STUDIO_CANDIDATE/);
   assert.match(workflow, /VITE_EV2_MULTISITE_CANDIDATE/);

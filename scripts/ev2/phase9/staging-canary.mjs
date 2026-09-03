@@ -423,7 +423,9 @@ async function verifyResidue(context) {
     rest(context, "cms_themes", { query: `created_by=in.(${actorFilter})&select=id` }),
     rest(context, "cms_audit_log", { query: `actor_id=in.(${actorFilter})&select=id` }),
     rest(context, "cms_login_events", { query: `user_id=in.(${actorFilter})&select=id` }),
-    rest(context, "cms_session_revocations", { query: `user_id=in.(${actorFilter})&select=id` }),
+    rest(context, "cms_session_revocations", {
+      query: `user_id=in.(${actorFilter})&select=session_id_hash`,
+    }),
     rest(context, "cms_user_roles", { query: `user_id=in.(${actorFilter})&select=user_id` }),
     ...actorIds.map((id) => rest(context, "cms_profiles", { query: `user_id=eq.${id}&select=user_id` })),
   ]);

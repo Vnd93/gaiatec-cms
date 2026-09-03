@@ -1,6 +1,6 @@
 # EV2.5 — Mídia e documentos
 
-**Status:** candidato local validado; Gate G5 ainda não aprovado<br>
+**Status:** Gate G5 aprovado; canary técnico encerrado com 27/27 verificações<br>
 **Escopo:** F-006 — DAM contextual e biblioteca avançada<br>
 **Rollout:** aditivo, privado e fail-closed pela flag `ev2.dam`
 
@@ -23,14 +23,16 @@
 - O upload/listagem v1 permanece disponível quando `VITE_EV2_DAM_CANDIDATE=false`.
 - O candidato depende simultaneamente de `VITE_EV2_DAM_CANDIDATE=true` e de um override server-side válido para `ev2.dam`.
 - A função recusa comandos v2 destinados a produção.
-- Nenhuma migration, função ou flag da EV2.5 foi aplicada remotamente nesta etapa de implementação.
+- Em staging, a migration `0043` e as três funções candidatas foram aplicadas sob autorização específica; produção permaneceu bloqueada e inalterada.
 
 ## Validação concluída
 
 - Testes de contrato, unidade e componentes, typecheck e análise das Edge Functions concluídos sem erro.
 - Migration `0043` executada integralmente em 2 de setembro de 2026 dentro de uma transação com `ROLLBACK`, após validar `glcqsosxwgmlhzgcsnzv / GAIATEC CMS Staging / us-east-2`.
 - Reconciliação posterior confirmou ausência de `cms_dam_collections`, da coluna `rights_expires_at` e do registro de versão `0043` no staging; portanto, o ensaio não deixou alteração persistente.
-- O runner `npm run canary:ev2:phase5` está preparado para MFA/AAL2, mídia gerada sinteticamente, override individual, GC isolado por job e limpeza reconciliada.
+- O runner `npm run canary:ev2:phase5` comprovou MFA/AAL2, mídia gerada sinteticamente, override individual, GC isolado por job e limpeza reconciliada.
+- O build `405b84a` foi publicado somente no alias `ev2-g5-canary`; deployment imutável `e154fd1a-e649-47de-b8f4-2d918010cf0e`.
+- O canary concluiu 27/27 verificações e a auditoria independente pós-execução confirmou zero resíduo sintético e flags globais inalteradas.
 
 ## Verificação prevista
 
@@ -42,6 +44,6 @@ npx deno check --node-modules-dir=none --no-lock supabase/functions/cms-media/in
 npm run check
 ```
 
-O pgTAP e o fluxo adversarial completo serão executados após a aplicação autorizada da migration no canary de staging.
+O pgTAP e o fluxo adversarial completo foram executados; o Gate G5 está aprovado e a EV2.6 pode iniciar sem ampliar o escopo para produção.
 
-Consulte o [Gate G5](GATE_G5.md) e o [plano de migration e rollback](MIGRACAO_E_ROLLBACK.md).
+Consulte o [Gate G5](GATE_G5.md), o [relatório do canary](RELATORIO_CANARY_STAGING_2026-09-02.md) e o [plano de migration e rollback](MIGRACAO_E_ROLLBACK.md).

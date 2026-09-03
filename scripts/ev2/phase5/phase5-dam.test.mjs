@@ -130,6 +130,6 @@ test("EV2.5 rollout artifacts remain isolated from production", async () => {
   assert.match(canary, /jobId: targetJobs\.json\[0\]\.id/);
   assert.match(canary, /syntheticResidue: 0/);
   assert.doesNotMatch(canary, /gaiatec-website|cms_environment.*production/i);
-  assert.match(gate, /G5 CANDIDATO VALIDADO/);
+  assert.match(gate, /G5 APROVADO/);
   assert.match(gate, /Produção:[\s*]+bloqueada/i);
 });

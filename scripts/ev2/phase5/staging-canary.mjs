@@ -1,6 +1,5 @@
 import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
@@ -20,11 +19,16 @@ const ids = {
 const results = [];
 let syntheticActorId = null;
 
+function quoteWindowsArgument(value) {
+  if (/^[A-Za-z0-9_./:\\=-]+$/.test(value)) return value;
+  return `"${value.replaceAll("%", "%%").replaceAll('"', '""')}"`;
+}
+
 function runSupabase(args) {
   const command = process.platform === "win32" ? (process.env.ComSpec ?? "cmd.exe") : "npx";
   const commandArgs =
     process.platform === "win32"
-      ? ["/d", "/s", "/c", `npx supabase ${args.join(" ")}`]
+      ? ["/d", "/s", "/c", ["npx", "supabase", ...args].map(quoteWindowsArgument).join(" ")]
       : ["supabase", ...args];
   const result = spawnSync(command, commandArgs, {
     cwd: process.cwd(),
@@ -33,7 +37,10 @@ function runSupabase(args) {
     maxBuffer: 10 * 1024 * 1024,
   });
   if (result.error || result.status !== 0) {
-    throw new Error(result.error?.message ?? result.stderr?.trim() ?? "Supabase CLI falhou.");
+    const details = [result.error?.message, result.stdout?.trim(), result.stderr?.trim()]
+      .filter(Boolean)
+      .join("\n");
+    throw new Error(details || "Supabase CLI falhou.");
   }
   return result.stdout;
 }
@@ -43,11 +50,25 @@ function supabaseJson(args) {
 }
 
 function executeCleanupSql(sql) {
-  const directory = mkdtempSync(path.join(tmpdir(), "ev2-g5-cleanup-"));
+  const directory = mkdtempSync(path.join(process.cwd(), ".ev2-g5-cleanup-"));
   const file = path.join(directory, "cleanup.sql");
+  const cliFile = path.relative(process.cwd(), file).replaceAll("\\", "/");
   try {
     writeFileSync(file, sql, { encoding: "utf8", mode: 0o600 });
-    runSupabase(["db", "query", "--linked", "--file", `"${file}"`, "--output-format", "json"]);
+    let lastError;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        runSupabase(["db", "query", "--linked", "--file", cliFile, "--output-format", "json"]);
+        return;
+      } catch (error) {
+        lastError = error;
+        if (attempt < 3) {
+          const waitBuffer = new Int32Array(new SharedArrayBuffer(4));
+          Atomics.wait(waitBuffer, 0, 0, attempt * 1_000);
+        }
+      }
+    }
+    throw lastError;
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -163,6 +184,21 @@ function totp(secret, at = Date.now()) {
   return String(code).padStart(6, "0");
 }
 
+async function authenticationClock(context) {
+  const startedAt = Date.now();
+  try {
+    const response = await fetch(`${context.url}/auth/v1/health`, {
+      headers: { apikey: context.anonKey },
+      signal: AbortSignal.timeout(10_000),
+    });
+    const serverDate = Date.parse(response.headers.get("date") ?? "");
+    if (Number.isFinite(serverDate)) return serverDate + Math.floor((Date.now() - startedAt) / 2);
+  } catch {
+    // A hora local ainda é uma alternativa válida quando o health check não responde.
+  }
+  return Date.now();
+}
+
 async function createActor(context) {
   const password = `Ev2!${randomBytes(24).toString("base64url")}`;
   const created = await request(`${context.url}/auth/v1/admin/users`, {
@@ -215,16 +251,21 @@ async function createActor(context) {
   if (signedIn.error) throw signedIn.error;
   const enrolled = await client.auth.mfa.enroll({ factorType: "totp", friendlyName: "EV2 G5 canary" });
   if (enrolled.error) throw enrolled.error;
-  const challenged = await client.auth.mfa.challenge({ factorId: enrolled.data.id });
-  if (challenged.error) throw challenged.error;
-  const verified = await client.auth.mfa.verify({
-    factorId: enrolled.data.id,
-    challengeId: challenged.data.id,
-    code: totp(enrolled.data.totp.secret),
-  });
-  const elevatedToken = verified.data?.session?.access_token ?? verified.data?.access_token;
-  if (verified.error || !elevatedToken) throw verified.error ?? new Error("Sessão AAL2 ausente.");
-  return { id: actorId, token: elevatedToken };
+  let lastVerificationError;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const challenged = await client.auth.mfa.challenge({ factorId: enrolled.data.id });
+    if (challenged.error) throw challenged.error;
+    const verified = await client.auth.mfa.verify({
+      factorId: enrolled.data.id,
+      challengeId: challenged.data.id,
+      code: totp(enrolled.data.totp.secret, await authenticationClock(context)),
+    });
+    const elevatedToken = verified.data?.session?.access_token ?? verified.data?.access_token;
+    if (!verified.error && elevatedToken) return { id: actorId, token: elevatedToken };
+    lastVerificationError = verified.error ?? new Error("Sessão AAL2 ausente.");
+    if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 1_000));
+  }
+  throw lastVerificationError;
 }
 
 async function fingerprint(buffer) {
@@ -715,6 +756,7 @@ async function main() {
     );
   } catch (error) {
     operationError = error;
+    console.error(`OPERAÇÃO G5 FALHOU: ${error instanceof Error ? error.message : String(error)}`);
   }
   let cleanupError;
   try {

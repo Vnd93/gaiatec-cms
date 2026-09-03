@@ -280,7 +280,9 @@ function contentPayload(valid) {
     consumerId: "cms.industry.v1",
     contentType: "industry",
     title: valid ? title : "",
-    summary: `Conteúdo sintético ${fixturePrefix} para validar busca, qualidade, governança e indexação sem dados reais.`,
+    summary: valid
+      ? `Conteúdo sintético ${fixturePrefix} para validar busca, qualidade, governança e indexação sem dados reais.`
+      : "",
     blocks: [
       {
         id: randomUUID(),

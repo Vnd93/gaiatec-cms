@@ -317,6 +317,8 @@ export function ConfirmDialog({
   confirmLabel,
   cancelLabel = "Cancelar",
   dangerous = false,
+  confirmDisabled = false,
+  children,
   onConfirm,
   onCancel,
 }: {
@@ -326,6 +328,8 @@ export function ConfirmDialog({
   confirmLabel: string;
   cancelLabel?: string;
   dangerous?: boolean;
+  confirmDisabled?: boolean;
+  children?: React.ReactNode;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -363,6 +367,7 @@ export function ConfirmDialog({
         </button>
         <h2 id="admin-confirm-title">{title}</h2>
         <p id="admin-confirm-description">{description}</p>
+        {children}
         <div className="admin-confirm-dialog__actions">
           <button
             ref={cancelRef}
@@ -375,6 +380,7 @@ export function ConfirmDialog({
           <button
             className={dangerous ? "admin-button admin-button--danger" : "admin-button"}
             type="button"
+            disabled={confirmDisabled}
             onClick={onConfirm}
           >
             {confirmLabel}

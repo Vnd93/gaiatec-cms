@@ -170,3 +170,10 @@ export function attributesCommand<T>(session: Session, body: Record<string, unkn
 export function usersCommand<T>(session: Session, body: Record<string, unknown>) {
   return invoke<T>(session, "cms-users", body);
 }
+export function scopedAccessCommand<T>(
+  session: Session,
+  body: Record<string, unknown>,
+  idempotencyKey?: string,
+) {
+  return invoke<T>(session, "cms-scopes", body, idempotencyKey ?? false);
+}

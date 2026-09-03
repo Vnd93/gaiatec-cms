@@ -21,6 +21,12 @@ type SessionSnapshot = {
   mfaVerified: boolean;
   accessGranted: boolean;
   activated: boolean;
+  rbacScoped?: boolean;
+  scope?: {
+    siteKey: "main";
+    environment: "local" | "staging";
+    effectiveUntil: string | null;
+  };
 };
 
 type Enrollment = { factorId: string; qrCode: string; secret: string };

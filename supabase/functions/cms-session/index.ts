@@ -105,5 +105,42 @@ Deno.serve(async (req) => {
       forbidden ? 403 : 500,
     );
   }
+
+  const configuredEnvironment = Deno.env.get("CMS_ENVIRONMENT");
+  if (configuredEnvironment === "local" || configuredEnvironment === "staging") {
+    const scope = {
+      p_actor_id: authData.user.id,
+      p_environment: configuredEnvironment,
+      p_site_key: "main",
+      p_aal: claims.aal,
+      p_session_id: claims.sessionId,
+      p_issued_at: claims.issuedAt,
+    };
+    const { data: capability, error: capabilityError } = await admin.rpc(
+      "cms_rbac_scope_capability",
+      scope,
+    );
+    if (
+      capabilityError &&
+      capabilityError.code !== "PGRST202" &&
+      capabilityError.code !== "42883"
+    )
+      return json(req, { error: "Não foi possível resolver a política de acesso." }, 503);
+    if (
+      !capabilityError &&
+      capability?.enabled !== true &&
+      ["scope_context_ambiguous", "scope_environment_mismatch"].includes(capability?.reasonCode)
+    )
+      return json(req, { error: "A política de acesso está em estado seguro de bloqueio." }, 403);
+    if (!capabilityError && capability?.enabled === true) {
+      const { data: scopedAccess, error: scopedError } = await admin.rpc(
+        "cms_resolve_scoped_access",
+        scope,
+      );
+      if (scopedError || !scopedAccess)
+        return json(req, { error: "Não foi possível resolver o acesso escopado." }, 503);
+      return json(req, { ...data, ...scopedAccess });
+    }
+  }
   return json(req, data);
 });

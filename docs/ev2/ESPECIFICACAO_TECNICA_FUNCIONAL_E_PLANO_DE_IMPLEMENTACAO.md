@@ -1221,7 +1221,7 @@ Os critérios específicos de cada F-001..F-018 constam nas fichas. Critérios s
 | F-011    | Estúdio Visual governado                                   | Visual documents             | T-011 unit/contract/E2E | Critério na ficha | Planejado                 |
 | F-012    | Fábrica de sites e multisite                               | Site registry/RLS            | T-012 unit/contract/E2E | Critério na ficha | Planejado                 |
 | F-013    | Operações em massa e importação/exportação                 | Bulk jobs                    | T-013 unit/contract/E2E | Critério na ficha | Implementado; G7 aprovado |
-| F-014    | Usuários, RBAC, auditoria e segregação                     | Scoped RBAC/audit            | T-014 unit/contract/E2E | Critério na ficha | Planejado                 |
+| F-014    | Usuários, RBAC, auditoria e segregação                     | Scoped RBAC/audit            | T-014 unit/contract/E2E | Critério na ficha | Implementado; G8 pendente |
 | F-015    | Copiloto IA de leitura e rascunho                          | AI gateway read/draft        | T-015 unit/contract/E2E | Critério na ficha | Planejado                 |
 | F-016    | IA transacional controlada                                 | AI execute/approvals         | T-016 unit/contract/E2E | Critério na ficha | Planejado                 |
 | F-017    | Conteúdo, marketing, formulários e leads integrados        | Integrated content workflows | T-017 unit/contract/E2E | Critério na ficha | Planejado                 |

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { usersCommand } from "../api/cms-api";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { ScopedAccessPanel } from "../components/ScopedAccessPanel";
 import {
   AdminAlert,
   Badge,
@@ -136,6 +137,8 @@ export default function AdminUsersPage() {
       {error && <AdminAlert tone="danger">{error}</AdminAlert>}
       {success && <AdminAlert tone="success">{success}</AdminAlert>}
 
+      <ScopedAccessPanel users={items} />
+
       {canInvite && (
         <SectionCard
           title="Convidar usuário"
@@ -243,7 +246,7 @@ export default function AdminUsersPage() {
                   <small>MFA: {item.mfa_enrolled_at ? "configurado" : "pendente"}</small>
                 </td>
                 <td>
-                  {canManage && !item.is_self ? (
+                  {canManage && !item.is_self && !profile?.rbacScoped ? (
                     <fieldset className="admin-compact-roles">
                       <legend className="admin-sr-only">Papéis de {item.display_name}</legend>
                       {roleOptions.map((role) => (
@@ -271,7 +274,10 @@ export default function AdminUsersPage() {
                       </button>
                     </fieldset>
                   ) : (
-                    item.roles.join(", ") || "Nenhum"
+                    <>
+                      {item.roles.join(", ") || "Nenhum"}
+                      {profile?.rbacScoped && <small>Referência legada; use Acesso por escopo.</small>}
+                    </>
                   )}
                 </td>
                 <td>{item.last_seen_at ? new Date(item.last_seen_at).toLocaleString("pt-BR") : "Nunca"}</td>

@@ -13,18 +13,19 @@ import {
 
 const Uuid = z.uuid();
 const Environment = z.enum(["local", "staging", "production"]);
+const ActorContext = z
+  .object({
+    environment: Environment,
+    siteKey: z.string().regex(/^[a-z][a-z0-9_-]{1,63}$/),
+  })
+  .strict();
 const Envelope = z
   .object({
     schemaVersion: z.literal(1),
     commandId: Uuid,
     correlationId: Uuid,
     occurredAt: z.iso.datetime(),
-    actorContext: z
-      .object({
-        environment: Environment,
-        siteKey: z.string().regex(/^[a-z][a-z0-9_-]{1,63}$/),
-      })
-      .strict(),
+    actorContext: ActorContext,
     expectedVersion: z.number().int().positive().optional(),
   })
   .strict();
@@ -51,6 +52,68 @@ const ReleaseCommand = z
       });
     }
   });
+
+const ComposedEnvelope = z
+  .object({
+    schemaVersion: z.literal(2),
+    commandId: Uuid,
+    correlationId: Uuid,
+    occurredAt: z.iso.datetime(),
+    actorContext: ActorContext,
+    expectedVersion: z.number().int().positive().optional(),
+  })
+  .strict();
+const ComposedReleaseCommand = z
+  .object({
+    envelope: ComposedEnvelope,
+    action: z.enum([
+      "list",
+      "status",
+      "create",
+      "add_item",
+      "validate",
+      "submit",
+      "approve",
+      "schedule",
+      "publish",
+      "cancel",
+      "rollback",
+    ]),
+    releaseId: Uuid.optional(),
+    title: z.string().trim().min(3).max(160).optional(),
+    reason: z.string().trim().min(3).max(500).optional(),
+    itemId: Uuid.optional(),
+    revisionId: Uuid.optional(),
+    dependencyIds: z.array(Uuid).max(100).default([]),
+    expiresAt: z.iso.datetime().optional(),
+    scheduledFor: z.iso.datetime().optional(),
+  })
+  .strict()
+  .superRefine((command, context) => {
+    if (command.action === "create" && (!command.title || !command.reason)) {
+      context.addIssue({ code: "custom", path: ["title"], message: "title and reason required" });
+    }
+    if (command.action === "add_item" && (!command.itemId || !command.revisionId)) {
+      context.addIssue({ code: "custom", path: ["itemId"], message: "item and revision required" });
+    }
+    if (command.action === "schedule" && !command.scheduledFor) {
+      context.addIssue({ code: "custom", path: ["scheduledFor"], message: "schedule required" });
+    }
+    if (command.action === "approve" && !command.reason) {
+      context.addIssue({ code: "custom", path: ["reason"], message: "reason required" });
+    }
+    if (!["list", "create"].includes(command.action) && !command.releaseId) {
+      context.addIssue({ code: "custom", path: ["releaseId"], message: "release required" });
+    }
+    if (!["list", "status", "create"].includes(command.action) && !command.envelope.expectedVersion) {
+      context.addIssue({
+        code: "custom",
+        path: ["envelope", "expectedVersion"],
+        message: "expectedVersion required",
+      });
+    }
+  });
+const ReleaseRequest = z.union([ReleaseCommand, ComposedReleaseCommand]);
 
 function canonicalize(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -90,16 +153,17 @@ Deno.serve(async (req) => {
   const identity = await authenticateCms(req);
   if (!identity) return json(req, { error: "Sessão inválida." }, 401);
 
-  const idempotencyKey = req.headers.get("X-Idempotency-Key");
-  if (!idempotencyKey || !Uuid.safeParse(idempotencyKey).success) {
-    return json(req, { error: "Chave idempotente obrigatória." }, 400);
-  }
-
-  let command: z.infer<typeof ReleaseCommand>;
+  let command: z.infer<typeof ReleaseRequest>;
   try {
-    command = ReleaseCommand.parse(await readJsonLimited(req, 32 * 1024));
+    command = ReleaseRequest.parse(await readJsonLimited(req, 32 * 1024));
   } catch {
     return json(req, { error: "Comando de release inválido.", code: "CMS_RELEASE_COMMAND_INVALID" }, 400);
+  }
+  const readOnly =
+    command.envelope.schemaVersion === 2 && ["list", "status"].includes(command.action);
+  const idempotencyKey = req.headers.get("X-Idempotency-Key");
+  if (!readOnly && (!idempotencyKey || !Uuid.safeParse(idempotencyKey).success)) {
+    return json(req, { error: "Chave idempotente obrigatória." }, 400);
   }
 
   const { environment, siteKey } = command.envelope.actorContext;
@@ -108,7 +172,10 @@ Deno.serve(async (req) => {
     logReleaseCommand("warn", "release.command.denied", correlationId, {
       action: command.action,
       environment,
-      reason: "production_not_available_in_ev2_1",
+      reason:
+        command.envelope.schemaVersion === 2
+          ? "production_not_available_in_ev2_7"
+          : "production_not_available_in_ev2_1",
     });
     return json(
       req,
@@ -162,6 +229,96 @@ Deno.serve(async (req) => {
     p_issued_at: identity.claims.issuedAt,
   };
 
+  if (command.envelope.schemaVersion === 2) {
+    let data: Record<string, unknown> | null = null;
+    let error: { message: string; code?: string } | null = null;
+    if (readOnly) {
+      const result = await identity.admin.rpc("cms_get_release_workspace", {
+        ...common,
+        p_release_id: command.releaseId ?? null,
+      });
+      data = result.data
+        ? {
+            ...(result.data as Record<string, unknown>),
+            commandId: command.envelope.commandId,
+            correlationId,
+          }
+        : null;
+      error = result.error;
+    } else {
+      const requestHash = await sha256(JSON.stringify(canonicalize(command)));
+      const result = await identity.admin.rpc("cms_execute_release_v2_command", {
+        ...common,
+        p_action: command.action,
+        p_payload: {
+          releaseId: command.releaseId,
+          expectedVersion: command.envelope.expectedVersion,
+          title: command.title,
+          reason: command.reason,
+          itemId: command.itemId,
+          revisionId: command.revisionId,
+          dependencyIds: command.dependencyIds,
+          expiresAt: command.expiresAt,
+          scheduledFor: command.scheduledFor,
+        },
+        p_command_id: command.envelope.commandId,
+        p_idempotency_key: idempotencyKey,
+        p_request_hash: requestHash,
+        p_correlation_id: correlationId,
+      });
+      data = result.data;
+      error = result.error;
+    }
+    if (error) {
+      const message = error.message ?? "";
+      const forbidden = message.includes("FORBIDDEN") || message.includes("FEATURE_DISABLED");
+      const notFound = message.includes("NOT_FOUND");
+      const conflict =
+        message.includes("CONFLICT") ||
+        message.includes("PLAN_CHANGED") ||
+        message.includes("IN_PROGRESS") ||
+        error.code === "40001";
+      const invalid =
+        message.includes("INVALID") ||
+        message.includes("REQUIRED") ||
+        message.includes("NOT_APPROVED") ||
+        message.includes("SEGREGATION") ||
+        error.code === "22023" ||
+        error.code === "23514";
+      const status = forbidden ? 403 : notFound ? 404 : conflict ? 409 : invalid ? 422 : 500;
+      const knownCode = message.match(/CMS_[A-Z0-9_]+/)?.[0] ?? "CMS_RELEASE_V2_FAILURE";
+      logReleaseCommand(status >= 500 ? "error" : "warn", "release.v2.command.failed", correlationId, {
+        action: command.action,
+        environment,
+        code: knownCode,
+        status,
+      });
+      return json(
+        req,
+        {
+          error: forbidden
+            ? "Capacidade indisponível ou sem permissão."
+            : notFound
+              ? "Release ou item não encontrado."
+              : conflict
+                ? "O pacote mudou; atualize antes de tentar novamente."
+                : invalid
+                  ? "O release não atende às regras desta transição."
+                  : "Falha no release composto.",
+          code: knownCode,
+          correlationId,
+        },
+        status,
+      );
+    }
+    logReleaseCommand("info", "release.v2.command.completed", correlationId, {
+      action: command.action,
+      environment,
+      status: data?.status,
+    });
+    return json(req, data);
+  }
+
   let data: Record<string, unknown> | null = null;
   let error: { message: string; code?: string } | null = null;
   if (command.action === "status") {
@@ -186,7 +343,7 @@ Deno.serve(async (req) => {
       p_expected_version: command.envelope.expectedVersion ?? null,
       p_reason: command.reason,
       p_command_id: command.envelope.commandId,
-      p_idempotency_key: idempotencyKey,
+      p_idempotency_key: idempotencyKey!,
       p_request_hash: requestHash,
       p_correlation_id: correlationId,
     });

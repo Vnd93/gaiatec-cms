@@ -70,6 +70,9 @@ export default function AdminHomePage() {
       )}
       <SectionCard title="Próximas ações" description="Escolha uma tarefa compatível com suas permissões.">
         <div className="admin-actions">
+          {profile?.permissions.some((permission) =>
+            ["cms:collaboration.read", "cms:releases.read", "cms:bulk.read"].includes(permission),
+          ) && <Link to="/admin/meu-trabalho">Abrir meu trabalho</Link>}
           {profile?.permissions.includes("cms:posts.edit") && (
             <Link to="/admin/conteudo/novo">Criar demonstração sintética</Link>
           )}

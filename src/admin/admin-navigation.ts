@@ -13,6 +13,7 @@ import {
   FormInput,
   Gauge,
   Image,
+  Inbox,
   Layers3,
   LayoutTemplate,
   Megaphone,
@@ -54,6 +55,15 @@ export const adminNavigation: AdminNavigationGroup[] = [
         description: "Indicadores, próximas ações e pendências operacionais.",
         icon: ChartNoAxesCombined,
         match: /^\/admin\/?$/,
+      },
+      {
+        to: "/admin/meu-trabalho",
+        label: "Meu trabalho",
+        description: "Inbox, releases compostos e operações em massa.",
+        icon: Inbox,
+        permissions: ["cms:collaboration.read", "cms:releases.read", "cms:bulk.read"],
+        permissionMode: "any",
+        match: /^\/admin\/meu-trabalho(?:\/.*)?$/,
       },
     ],
   },
@@ -328,6 +338,11 @@ export function globalSearchTarget(query: string, permissions: readonly string[]
 
 export const administrativeRouteInventory = [
   { surface: "Visão geral", route: "/admin", permission: "sessão CMS ativa" },
+  {
+    surface: "Meu trabalho",
+    route: "/admin/meu-trabalho",
+    permission: "cms:collaboration.read, cms:releases.read ou cms:bulk.read",
+  },
   { surface: "Produtos", route: "/admin/produtos", permission: "cms:products.read" },
   { surface: "Cadastro em massa", route: "/admin/produtos/importacao", permission: "cms:products.edit" },
   { surface: "PIM EV2", route: "/admin/pim", permission: "cms:pim.read" },

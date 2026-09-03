@@ -100,6 +100,23 @@ export function searchGovernanceCommand<T>(session: Session, body: Record<string
 export function qualityCommand<T>(session: Session, body: Record<string, unknown>, idempotent = false) {
   return invoke<T>(session, "cms-quality", body, idempotent);
 }
+export function releaseV2Command<T>(
+  session: Session,
+  body: Record<string, unknown>,
+  idempotencyKey?: string,
+) {
+  return invoke<T>(session, "cms-releases", body, idempotencyKey ?? false);
+}
+export function collaborationCommand<T>(
+  session: Session,
+  body: Record<string, unknown>,
+  idempotencyKey?: string,
+) {
+  return invoke<T>(session, "cms-collaboration", body, idempotencyKey ?? false);
+}
+export function bulkV2Command<T>(session: Session, body: Record<string, unknown>, idempotencyKey?: string) {
+  return invoke<T>(session, "cms-bulk", body, idempotencyKey ?? false);
+}
 export function leadCommand<T>(session: Session, body: Record<string, unknown>) {
   return invoke<T>(session, "cms-leads", body, true);
 }

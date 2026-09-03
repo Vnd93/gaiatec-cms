@@ -1,6 +1,6 @@
 # EV2 — Evolução do CMS GAIATEC
 
-**Status:** Gates G0–G6 aprovados; EV2.7 liberada para implementação; produção bloqueada<br>
+**Status:** Gates G0–G6 aprovados; candidato EV2.7 implementado localmente; G7 pendente; produção bloqueada<br>
 **Data-base:** 2 de setembro de 2026<br>
 **Fonte canônica:** Markdown versionado neste diretório
 **Branch de execução:** `ev2/desenvolvimento-fases-1-a-12`<br>
@@ -20,6 +20,7 @@
 10. [EV2.4 — PIM e conteúdo principal](fase-4/README.md) — produto/modelo/variante/SKU, atributos, unidades, adapter v1 e Gate G4.
 11. [EV2.5 — mídia e documentos](fase-5/README.md) — DAM contextual, direitos, usos, substituição reversível e Gate G5.
 12. [EV2.6 — busca, SEO e qualidade](fase-6/README.md) — índice sombra sanitizado, governança, Centro de Qualidade e orçamento de bundle.
+13. [EV2.7 — produtividade e colaboração](fase-7/README.md) — inbox contextual, release composto, massa com dry-run e rollback transacional.
 
 ## Escopo documental
 
@@ -36,4 +37,4 @@ O documento principal é a fonte de verdade para o desenvolvimento. O DOCX que o
 
 ## Estado da execução
 
-Os Gates G0–G6 foram aprovados com evidências reproduzíveis. A EV2.4 passou pelo canary sintético 32/32 e pelo piloto real de 20 produtos em staging. A EV2.5 concluiu 27/27 verificações de DAM com MFA/AAL2 e resíduo zero. A EV2.6 aplicou apenas a migration aditiva `0044`, publicou as cinco funções autorizadas e isolou o build `71a36aa` no alias `ev2-g6-canary`. Seu canary concluiu 34/34 verificações, com p95 público de 351 ms, p95 administrativo de servidor de 807 ms, indexação em 43.667 ms, produção recusada, flag global desligada, zero mutação real e zero resíduo sintético. A EV2.7 está liberada para implementação e posterior canary próprio. Produção, publicação de lote real, ativação global, merge em `main` e promoção do staging estável continuam fora do escopo.
+Os Gates G0–G6 foram aprovados com evidências reproduzíveis. A EV2.4 passou pelo canary sintético 32/32 e pelo piloto real de 20 produtos em staging. A EV2.5 concluiu 27/27 verificações de DAM com MFA/AAL2 e resíduo zero. A EV2.6 aplicou apenas a migration aditiva `0044`, publicou as cinco funções autorizadas e isolou o build `71a36aa` no alias `ev2-g6-canary`. Seu canary concluiu 34/34 verificações, com p95 público de 351 ms, p95 administrativo de servidor de 807 ms, indexação em 43.667 ms, produção recusada, flag global desligada, zero mutação real e zero resíduo sintético. O candidato EV2.7 está implementado localmente atrás de duas barreiras (`VITE_EV2_COLLABORATION_BULK_CANDIDATE` e `ev2.collaboration_bulk`) e aguarda autorização própria para migration rehearsal e canary G7. Produção, publicação de lote real, ativação global, merge em `main` e promoção do staging estável continuam fora do escopo.

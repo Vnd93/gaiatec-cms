@@ -16,6 +16,15 @@ const guidance: Array<{ match: RegExp; value: AdminRouteGuidance }> = [
     },
   },
   {
+    match: /^\/admin\/meu-trabalho/,
+    value: {
+      task: "Coordene pendências, releases e lotes validados.",
+      publicImpact: "Somente a publicação de release aprovado altera o estado público.",
+      internal: "Comentários, aprovações, dry-runs e recibos permanecem no CMS.",
+      nextStep: "Resolva a inbox ou avance o pacote conforme seu papel e a versão atual.",
+    },
+  },
+  {
     match: /^\/admin\/produtos\/importacao/,
     value: {
       task: "Valide uma planilha oficial de cadastros novos.",

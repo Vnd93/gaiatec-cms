@@ -18,6 +18,15 @@ Deno.serve(async (req) => {
   const due = await admin.from("cms_content_items").select("id").eq("workflow_status", "scheduled").lte("scheduled_for", new Date().toISOString()).limit(20);
   let scheduled = 0;
   for (const item of due.data ?? []) { const result = await admin.rpc("cms_publish_due_schedule", { p_item_id: item.id, p_correlation_id: crypto.randomUUID() }); if (!result.error) scheduled += 1; }
+  const dueReleases = await admin.rpc("cms_publish_due_releases", {
+    p_limit: 10,
+    p_correlation_id: correlationId,
+  });
+  if (dueReleases.error)
+    return new Response(JSON.stringify({ error: "Falha nos releases agendados.", correlationId }), {
+      status: 503,
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+    });
   const claimed = await admin.rpc("cms_claim_outbox", { p_limit: 20, p_worker_id: correlationId });
   if (claimed.error) return new Response(JSON.stringify({ error: "Falha ao reservar eventos.", correlationId }), { status: 503 });
   let completed = 0, failed = 0, searchIndexed = 0, searchIndexFailed = 0;
@@ -62,6 +71,26 @@ Deno.serve(async (req) => {
     const finish = await admin.rpc("cms_finish_lead_outbox", { p_id: event.id, p_success: success, p_error_code: errorCode });
     if (!finish.error && success) leadCompleted += 1; else leadFailed += 1;
   }
-  return new Response(JSON.stringify({ scheduled, expiredCampaigns: expiredCampaigns.data ?? 0, retainedLeads: retainedLeads.data ?? 0, breachedSlas: breachedSlas.data ?? 0, claimed: claimed.data?.length ?? 0, completed, failed, searchIndexed, searchIndexFailed, leadClaimed: leadClaimed.data?.length ?? 0, leadCompleted, leadFailed, leadSkipped, correlationId }),
+  const collaborationClaimed = await admin.rpc("cms_claim_collaboration_outbox", {
+    p_limit: 50,
+    p_worker_id: correlationId,
+  });
+  if (collaborationClaimed.error)
+    return new Response(JSON.stringify({ error: "Falha na fila de colaboração.", correlationId }), {
+      status: 503,
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+    });
+  let collaborationCompleted = 0, collaborationFailed = 0;
+  for (const event of collaborationClaimed.data ?? []) {
+    const success = event.channel === "in_app";
+    const finish = await admin.rpc("cms_finish_collaboration_outbox", {
+      p_id: event.id,
+      p_success: success,
+      p_error_code: success ? null : "collaboration_email_not_configured",
+    });
+    if (!finish.error && success) collaborationCompleted += 1;
+    else collaborationFailed += 1;
+  }
+  return new Response(JSON.stringify({ scheduled, dueReleases: dueReleases.data ?? { processed: 0, failed: 0, partialWrites: 0 }, expiredCampaigns: expiredCampaigns.data ?? 0, retainedLeads: retainedLeads.data ?? 0, breachedSlas: breachedSlas.data ?? 0, claimed: claimed.data?.length ?? 0, completed, failed, searchIndexed, searchIndexFailed, leadClaimed: leadClaimed.data?.length ?? 0, leadCompleted, leadFailed, leadSkipped, collaborationClaimed: collaborationClaimed.data?.length ?? 0, collaborationCompleted, collaborationFailed, correlationId }),
     { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
 });

@@ -30,7 +30,7 @@ const PRIVATE_ROUTE = /^\/(relatorio-de-obra|admin|preview|cms\/conteudo)(?:\/|$
 const RDO_ROUTES =
   /^\/relatorio-de-obra(?:\/(login|definir-senha|assinar\/[^/]+|arquivo|novo|relatorio\/[^/]+|equipe))?\/?$/;
 const ADMIN_ROUTES =
-  /^\/admin(?:\/(login|recuperar-senha|definir-senha|mfa|conteudo(?:\/novo|\/[0-9a-f-]{36})?|produtos(?:\/novo|\/importacao|\/[0-9a-f-]{36})?|descoberta\/(?:service|industry|application|solution)(?:\/[0-9a-f-]{36})?|busca|paginas(?:\/(?:novo|[0-9a-f-]{36}))?|site|marketing(?:\/campanhas\/(?:novo|[0-9a-f-]{36})|\/formularios)?|leads|midia|perfil|usuarios|diagnosticos))?\/?$/;
+  /^\/admin(?:\/(login|recuperar-senha|definir-senha|mfa|conteudo(?:\/novo|\/[0-9a-f-]{36})?|produtos(?:\/novo|\/importacao|\/[0-9a-f-]{36})?|descoberta\/(?:service|industry|application|solution)(?:\/[0-9a-f-]{36})?|busca|paginas(?:\/(?:novo|[0-9a-f-]{36}))?|estudio-visual(?:\/[0-9a-f-]{36})?|sites|site|marketing(?:\/campanhas\/(?:novo|[0-9a-f-]{36})|\/formularios)?|leads|midia|perfil|usuarios|diagnosticos))?\/?$/;
 const PREVIEW_ROUTES = /^\/preview\/[A-Za-z0-9_-]{43}\/?$/;
 const CMS_DEMO_ROUTES = /^\/cms\/conteudo\/[a-z0-9]+(?:-[a-z0-9]+)*\/?$/;
 const ASSET_PATH =

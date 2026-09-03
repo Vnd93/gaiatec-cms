@@ -210,6 +210,26 @@ test("edge serves managed pages with initial SEO and real retirement statuses", 
     assert.equal(bulkAdmin.status, 200);
     assert.match(bulkAdmin.headers.get("cache-control") ?? "", /no-store/);
 
+    const visualStudioAdmin = await module.default.fetch(
+      new Request("https://gaiatecsistemas.com.br/admin/estudio-visual/49000000-0000-4000-8000-000000000201"),
+      env,
+    );
+    assert.equal(visualStudioAdmin.status, 200);
+    assert.match(visualStudioAdmin.headers.get("cache-control") ?? "", /no-store/);
+
+    const sitesAdmin = await module.default.fetch(
+      new Request("https://gaiatecsistemas.com.br/admin/sites"),
+      env,
+    );
+    assert.equal(sitesAdmin.status, 200);
+    assert.match(sitesAdmin.headers.get("cache-control") ?? "", /no-store/);
+
+    const invalidVisualStudioAdmin = await module.default.fetch(
+      new Request("https://gaiatecsistemas.com.br/admin/estudio-visual/not-a-uuid"),
+      env,
+    );
+    assert.equal(invalidVisualStudioAdmin.status, 404);
+
     const workbook = await module.default.fetch(
       new Request("https://gaiatecsistemas.com.br/modelos/GAIATEC-CMS-Cadastro-em-Massa-v1.xlsx"),
       env,

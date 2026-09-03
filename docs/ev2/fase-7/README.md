@@ -24,7 +24,7 @@ A fase implementa um caminho candidato aditivo e `default-off`, sem alterar a pu
 
 | Camada      | Artefato                                                                |
 | ----------- | ----------------------------------------------------------------------- |
-| Dados/RLS   | `supabase/migrations/0045_ev2_collaboration_release_bulk.sql`           |
+| Dados/RLS   | `0045_ev2_collaboration_release_bulk.sql` + hardening corretivo `0046`  |
 | Release     | `supabase/functions/cms-releases/index.ts` — contrato v2 preservando v1 |
 | Colaboração | `supabase/functions/cms-collaboration/index.ts`                         |
 | Massa       | `supabase/functions/cms-bulk/index.ts`                                  |
@@ -43,10 +43,11 @@ A fase implementa um caminho candidato aditivo e `default-off`, sem alterar a pu
 6. Criar dois usuários sintéticos com MFA: operador/release manager e revisor segregado.
 7. Aplicar override individual de 30 minutos para ambos, nunca global.
 8. Executar o cenário G7, medir publicação e rollback, provar idempotência e zero mudança parcial.
-9. Limpar releases, tarefas, lotes, revisões, usuários e overrides sintéticos; fazer auditoria independente de resíduo.
+9. Se o rehearsal identificar conflito transportado como serialização, aplicar a `0046` somente após autorização específica e republicar as três APIs afetadas.
+10. Limpar releases, tarefas, lotes, revisões, usuários e overrides sintéticos; fazer auditoria independente de resíduo.
 
 Produção, staging estável, dados reais, flag global e promoção para `main` permanecem fora do escopo.
 
 ## Estado do Gate G7
 
-O candidato local está implementado e os testes de contrato passam. O gate permanece **pendente** até migration rehearsal, canary sintético segregado, rollback medido abaixo de cinco minutos e evidência de resíduo zero em staging. Consulte [GATE_G7.md](GATE_G7.md) e [PLANO_CANARY_STAGING.md](PLANO_CANARY_STAGING.md).
+O candidato foi publicado no alias isolado e as provas anteriores ao lote passaram, incluindo rollback abaixo de um segundo e resíduo zero. O gate está **pausado controladamente**: a correção aditiva `0046` passou no rehearsal com rollback, mas ainda depende de autorização para aplicação em staging e repetição integral do canary. Consulte [GATE_G7.md](GATE_G7.md) e [PLANO_CANARY_STAGING.md](PLANO_CANARY_STAGING.md).

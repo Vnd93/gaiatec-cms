@@ -93,6 +93,25 @@ test("bulk jobs enforce dry-run, item errors, idempotency and all-or-nothing exe
   assert.doesNotMatch(edge, /cms_published_projection/);
 });
 
+test("business conflicts use a non-retryable HTTP transport code", async () => {
+  const [migration, releases, collaboration, bulk] = await Promise.all([
+    read("supabase/migrations/0046_ev2_conflict_transport_hardening.sql"),
+    read("supabase/functions/cms-releases/index.ts"),
+    read("supabase/functions/cms-collaboration/index.ts"),
+    read("supabase/functions/cms-bulk/index.ts"),
+  ]);
+  for (const procedure of [
+    "cms_execute_release_v2_command",
+    "cms_execute_collaboration_command",
+    "cms_execute_bulk_command",
+  ])
+    assert.match(migration, new RegExp(procedure));
+  assert.match(migration, /pg_get_functiondef/);
+  assert.match(migration, /'''PT409'''/);
+  assert.doesNotMatch(migration, /drop function|default_enabled\s*=\s*true/i);
+  for (const edge of [releases, collaboration, bulk]) assert.match(edge, /error\.code === "PT409"/);
+});
+
 test("candidate UI, worker and canary expose the governed workflow without changing v1", async () => {
   const [page, routes, navigation, api, worker, canary, rehearsal] = await Promise.all([
     read("src/admin/pages/AdminWorkPage.tsx"),

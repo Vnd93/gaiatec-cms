@@ -28,6 +28,7 @@
     "test:ev2:phase6": "node --test scripts/ev2/phase6/*.test.mjs",
     "test:ev2:phase7": "node --test scripts/ev2/phase7/*.test.mjs",
     "canary:ev2:phase7:validate": "node scripts/ev2/phase7/validate-migration.mjs",
+    "canary:ev2:phase7:validate-hotfix": "node scripts/ev2/phase7/validate-conflict-hotfix.mjs",
     "canary:ev2:phase7": "node scripts/ev2/phase7/staging-canary.mjs",
     "canary:ev2:phase6:validate": "node scripts/ev2/phase6/validate-migration.mjs",
     "canary:ev2:phase6": "node scripts/ev2/phase6/staging-canary.mjs",

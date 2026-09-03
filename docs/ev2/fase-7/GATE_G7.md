@@ -1,6 +1,6 @@
 # Gate G7 — atomicidade, reexecução, segregação e rollback
 
-**Resultado atual:** CANDIDATO LOCAL IMPLEMENTADO — CANARY DE STAGING PENDENTE<br>
+**Resultado atual:** CANARY PAUSADO CONTROLADAMENTE — CORREÇÃO `0046` PRONTA, APLICAÇÃO PENDENTE<br>
 **Produção:** bloqueada<br>
 **Flag:** `ev2.collaboration_bulk`, globalmente desligada<br>
 **Rollback funcional imediato:** desligar a flag e cancelar jobs/releases não publicados
@@ -25,4 +25,6 @@
 
 ## Decisão
 
-O código pode seguir para revisão e preparação do artefato. Migration, funções e build EV2.7 não podem ser aplicados em staging sem autorização explícita do canary. O G7 só será aprovado com todas as evidências da tabela, testes integrais verdes e relatório versionado.
+Em 3 de setembro de 2026, o canary autorizado aplicou a `0045`, publicou as quatro funções e o build isolado, e passou pelos cenários de release, segregação, atomicidade, rollback, idempotência e colaboração. O cenário de concorrência do lote revelou que conflitos de negócio persistentes usavam `SQLSTATE 40001`, reservado a falhas de serialização retentáveis. A chamada foi abortada pelo timeout controlado, sem bloqueio PostgreSQL e com resíduo sintético zero confirmado pelo runner e por consulta independente.
+
+A correção aditiva `0046_ev2_conflict_transport_hardening.sql` substitui apenas esses códigos internos por `PT409`, preservando o rollback transacional e entregando HTTP 409 sem retry automático. O rehearsal da `0046` passou com rollback comprovado, e os testes EV2.7 estão 6/6. O G7 permanece pendente até autorização para aplicar a `0046` em staging, republicar `cms-releases`, `cms-collaboration` e `cms-bulk`, e repetir o canary sintético completo.

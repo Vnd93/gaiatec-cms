@@ -68,19 +68,45 @@ function executeCleanupSql(sql) {
 }
 
 function check(name, condition, detail) {
-  results.push({ name, result: condition ? "PASS" : "FAIL", detail });
+  const result = condition ? "PASS" : "FAIL";
+  results.push({ name, result, detail });
+  console.log(JSON.stringify({ event: "g7.check", name, result, detail }));
   if (!condition) throw new Error(`${name}: ${detail}`);
 }
 
 async function request(url, { method = "GET", headers = {}, body, allowed = [200] } = {}) {
   const startedAt = performance.now();
-  const response = await fetch(url, {
-    method,
-    headers: { ...headers, ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(60_000),
-  });
+  const endpoint = new URL(url).pathname;
+  const action = body && typeof body === "object" && "action" in body ? ` action=${body.action}` : "";
+  const traceRequest = endpoint.startsWith("/functions/v1/") && action;
+  if (traceRequest)
+    console.log(JSON.stringify({ event: "g7.request.started", method, endpoint, action: body.action }));
+  let response;
+  try {
+    response = await fetch(url, {
+      method,
+      headers: { ...headers, ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(60_000),
+    });
+  } catch (error) {
+    throw new Error(
+      `${method} ${endpoint}${action}: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
   const text = await response.text();
+  if (traceRequest)
+    console.log(
+      JSON.stringify({
+        event: "g7.request.completed",
+        method,
+        endpoint,
+        action: body.action,
+        status: response.status,
+        durationMs: Number((performance.now() - startedAt).toFixed(1)),
+      }),
+    );
   let json;
   try {
     json = text ? JSON.parse(text) : null;
@@ -88,7 +114,7 @@ async function request(url, { method = "GET", headers = {}, body, allowed = [200
     json = text;
   }
   if (!allowed.includes(response.status))
-    throw new Error(`${method} ${new URL(url).pathname}: HTTP ${response.status} ${JSON.stringify(json)}`);
+    throw new Error(`${method} ${endpoint}${action}: HTTP ${response.status} ${JSON.stringify(json)}`);
   return { status: response.status, json, durationMs: performance.now() - startedAt };
 }
 
@@ -404,7 +430,7 @@ async function assembleRelease(context, operator, reviewer, title, fixtures) {
       reason: "Tentativa negativa do próprio criador",
     },
     current.json.lockVersion,
-    [422],
+    [409],
   );
   check(
     `${title}_self_approval_denied`,
@@ -822,12 +848,6 @@ async function main() {
       },
       { idempotencyKey: randomUUID() },
     );
-    const taskDetail = await invoke(context, operator, "cms-collaboration", {
-      action: "list",
-      envelope: envelope(1),
-      taskId: task.json.taskId,
-      limit: 1,
-    });
     task = await invoke(
       context,
       operator,
@@ -841,6 +861,12 @@ async function main() {
       },
       { idempotencyKey: randomUUID() },
     );
+    const taskDetail = await invoke(context, operator, "cms-collaboration", {
+      action: "list",
+      envelope: envelope(1),
+      taskId: task.json.taskId,
+      limit: 1,
+    });
     const mention = await rest(context, "cms_collaboration_outbox", {
       query: `task_id=eq.${task.json.taskId}&recipient_id=eq.${reviewer.id}&event_type=eq.mentioned&select=id,status,comment_id`,
     });

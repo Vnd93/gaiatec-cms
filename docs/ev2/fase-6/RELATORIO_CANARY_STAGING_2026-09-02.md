@@ -1,11 +1,11 @@
 # Relatório do canary técnico EV2.6 em staging
 
-**Data:** 2 de setembro de 2026  
-**Ambiente:** Supabase e Cloudflare Pages de staging  
-**Branch:** `ev2/desenvolvimento-fases-1-a-12`  
-**Commit do canary operacional:** `f8d19d222f014ed58e066a38c052d1ebc0258f8a`  
-**Commit/build final:** `71a36aa338a13805fe0324a6e94239b57b50cd4b`  
-**Resultado técnico:** aprovado — 34/34 verificações  
+**Data:** 2 de setembro de 2026<br>
+**Ambiente:** Supabase e Cloudflare Pages de staging<br>
+**Branch:** `ev2/desenvolvimento-fases-1-a-12`<br>
+**Commit do canary operacional:** `f8d19d222f014ed58e066a38c052d1ebc0258f8a`<br>
+**Commit/build final:** `71a36aa338a13805fe0324a6e94239b57b50cd4b`<br>
+**Resultado técnico:** aprovado — 34/34 verificações<br>
 **Gate G6:** aprovado
 
 ## Limites da execução

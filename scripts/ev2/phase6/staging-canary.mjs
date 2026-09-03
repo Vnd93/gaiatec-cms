@@ -12,6 +12,7 @@ const TARGET = {
 };
 const suffix = randomUUID().replaceAll("-", "").slice(0, 12);
 const fixturePrefix = `g6x${suffix}`;
+const zeroQuery = `qzxv${randomBytes(16).toString("hex")}nomatch`;
 const email = `ev2-g6-${randomUUID()}@example.invalid`;
 const results = [];
 let syntheticActorId = null;
@@ -350,7 +351,9 @@ async function cleanup(context, actorId, itemId) {
   const itemPredicate = itemId ? `item_id = '${itemId}'::uuid` : "false";
   executeCleanupSql(`
 begin;
-delete from public.cms_search_events where normalized_query like '${fixturePrefix}%';
+delete from public.cms_search_events
+where normalized_query like '${fixturePrefix}%'
+   or normalized_query = '${zeroQuery}';
 delete from public.cms_search_rules where created_by = '${actorId}'::uuid;
 delete from public.cms_search_synonyms where created_by = '${actorId}'::uuid;
 delete from public.cms_search_index_jobs where requested_by = '${actorId}'::uuid;
@@ -771,14 +774,23 @@ async function main() {
       `${qualityList.json.items?.length} runs`,
     );
 
-    const zeroResult = await publicSearch(`${fixturePrefix}-zero`);
-    check("zero_result_recovery_payload", zeroResult.json.total === 0, "zero explícito sem erro técnico");
-    const zeroEvent = await rest(context, "cms_search_events", {
-      query: `normalized_query=eq.${fixturePrefix}-zero&select=id,result_count,refinements`,
-    });
+    const zeroResult = await publicSearch(zeroQuery);
+    check(
+      "zero_result_recovery_payload",
+      zeroResult.json.total === 0,
+      `total=${zeroResult.json.total}; zero explícito sem erro técnico`,
+    );
+    let zeroEvent;
+    for (let attempt = 1; attempt <= 10; attempt += 1) {
+      zeroEvent = await rest(context, "cms_search_events", {
+        query: `normalized_query=eq.${zeroQuery}&select=id,result_count,refinements`,
+      });
+      if (zeroEvent.json.length === 1) break;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
     check(
       "anonymous_zero_result_analytics",
-      zeroEvent.json.length === 1 && zeroEvent.json[0].result_count === 0,
+      zeroEvent?.json.length === 1 && zeroEvent.json[0].result_count === 0,
       "consulta, refinamentos e latência sem identidade",
     );
 

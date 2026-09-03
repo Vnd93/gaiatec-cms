@@ -57,6 +57,7 @@ test("public v2 search avoids full-projection scan and v1 remains available", as
   assert.match(edge, /type === "search-v2"/);
   assert.match(edge, /client\.rpc\("cms_search_v2"/);
   assert.match(edge, /cms_search_rules/);
+  assert.match(edge, /EdgeRuntime\.waitUntil\(analytics\)/);
   assert.match(edge, /type === "search"/);
   assert.match(edge, /sanitizePublicPayload/);
   assert.match(edge, /deterministicSeoDefaults/);

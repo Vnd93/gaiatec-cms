@@ -70,7 +70,12 @@ Deno.serve(async (req) => {
       (Array.isArray(values) ? values : [values]).filter((value) => typeof value === "string").forEach((value) => bucket.add(value as string));
       availableFacets[key] = [...bucket].sort();
     }
-    if (query && service) await client.from("cms_search_events").insert({ normalized_query: normalizedQuery, result_count: Number(matches?.[0]?.total_count ?? 0), content_types: [...new Set(items.map((item: any) => item.content_type))], refinements: { contentTypes, facets, ranges, engine: "v2", latencyMs: Math.round(performance.now() - startedAt) }, correlation_id: crypto.randomUUID() });
+    if (query && service) {
+      const analytics = client.from("cms_search_events").insert({ normalized_query: normalizedQuery, result_count: Number(matches?.[0]?.total_count ?? 0), content_types: [...new Set(items.map((item: any) => item.content_type))], refinements: { contentTypes, facets, ranges, engine: "v2", latencyMs: Math.round(performance.now() - startedAt) }, correlation_id: crypto.randomUUID() }).then(({ error }) => {
+        if (error) console.error(JSON.stringify({ event: "cms.search.analytics.failed", code: error.code }));
+      });
+      EdgeRuntime.waitUntil(analytics);
+    }
     return json({ items, total: Number(matches?.[0]?.total_count ?? 0), facets: availableFacets, groups, query, engine: "v2" }, 200, { "Cache-Control": "private, no-store", "Server-Timing": `search;dur=${Math.round(performance.now() - startedAt)}` });
   }
   if (type === "redirect") {

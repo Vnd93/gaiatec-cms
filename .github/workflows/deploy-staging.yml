@@ -46,7 +46,7 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy dist --project-name gaiatec-cms-staging --branch Remodelagem
       - run: npm run smoke:http -- "${{ steps.deploy.outputs.deployment-url }}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: staging-${{ github.sha }}
           path: dist

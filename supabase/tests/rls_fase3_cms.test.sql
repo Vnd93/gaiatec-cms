@@ -31,7 +31,7 @@ insert into public.cms_audit_log (actor_id, action, target_type, target_id)
 values ('30000000-0000-0000-0000-000000000001', 'cms:users.invite', 'profile', 'synthetic');
 
 insert into fase3_test_results
-select 1, is((select count(*)::integer from public.cms_roles), 7, 'seven CMS roles are seeded');
+select 1, is((select count(*)::integer from public.cms_roles), 9, 'nine CMS roles are seeded');
 
 insert into fase3_test_results
 select 2, is(

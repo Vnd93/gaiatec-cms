@@ -98,6 +98,7 @@ async function rebuildIndex(identity: Identity, reason: string, correlationId: s
 }
 
 Deno.serve(async (req) => {
+  const requestStartedAt = performance.now();
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders(req) });
   if (!isAllowedOrigin(req)) return json(req, { error: "Origem não autorizada." }, 403);
   if (req.method !== "POST") return json(req, { error: "Método não permitido." }, 405);
@@ -150,7 +151,7 @@ Deno.serve(async (req) => {
     const allowedTypes = requested.filter((_, index) => access[index + 2] === true);
     if (!allowedTypes.length) return json(req, { items: [], total: 0, correlationId });
     const { data, error } = await identity.admin.rpc("cms_search_v2", { p_query: normalize(command.query), p_content_types: allowedTypes, p_facets: {}, p_ranges: {}, p_limit: command.limit, p_offset: 0 });
-    return error ? json(req, { error: "Busca administrativa indisponível.", correlationId }, 503) : json(req, { items: data ?? [], total: Number(data?.[0]?.total_count ?? 0), correlationId });
+    return error ? json(req, { error: "Busca administrativa indisponível.", correlationId }, 503) : json(req, { items: data ?? [], total: Number(data?.[0]?.total_count ?? 0), correlationId }, 200, { "Server-Timing": `admin-search;dur=${Math.round(performance.now() - requestStartedAt)}` });
   }
   const { data: feature, error: featureError } = await capability(identity, environment);
   if (featureError) return json(req, { error: "Capacidade indisponível.", correlationId }, 503);

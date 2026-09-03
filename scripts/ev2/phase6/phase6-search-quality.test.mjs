@@ -45,6 +45,7 @@ test("search index is shadowed, governed and only accepts homologated technical 
   assert.match(edge, /readPermission/);
   assert.match(edge, /upsert_synonym/);
   assert.match(edge, /\[featureResult, access\] = await Promise\.all/);
+  assert.match(edge, /admin-search;dur=/);
   assert.match(edge, /\.range\(offset, offset \+ pageSize - 1\)/);
   assert.match(migration, /jsonb_array_elements_text[\s\S]+selected\.value/);
   assert.doesNotMatch(edge, /SUPABASE_SERVICE_ROLE_KEY\s*=/);

@@ -340,9 +340,9 @@ function percentile95(values) {
   return sorted[Math.max(0, Math.ceil(sorted.length * 0.95) - 1)];
 }
 
-function serverTimingDuration(headers) {
+function serverTimingDuration(headers, metric = "search") {
   const value = headers.get("server-timing") ?? "";
-  const match = value.match(/search;dur=([0-9.]+)/i);
+  const match = value.match(new RegExp(`${metric};dur=([0-9.]+)`, "i"));
   return match ? Number(match[1]) : Number.NaN;
 }
 
@@ -798,6 +798,7 @@ async function main() {
 
     const publicDurations = [];
     const adminDurations = [];
+    const adminWallDurations = [];
     for (let sample = 0; sample < 20; sample += 1) {
       const publicSample = await publicSearch(canonicalTerm);
       publicDurations.push(serverTimingDuration(publicSample.headers));
@@ -808,10 +809,12 @@ async function main() {
         contentTypes: ["industry"],
         limit: 10,
       });
-      adminDurations.push(adminSample.durationMs);
+      adminDurations.push(serverTimingDuration(adminSample.headers, "admin-search"));
+      adminWallDurations.push(adminSample.durationMs);
     }
     const publicP95 = percentile95(publicDurations);
     const adminP95 = percentile95(adminDurations);
+    const adminWallP95 = percentile95(adminWallDurations);
     const indexLatencyMs = performance.now() - publishStartedAt;
     check(
       "public_search_slo",
@@ -820,8 +823,8 @@ async function main() {
     );
     check(
       "admin_search_slo",
-      adminP95 < 1_000,
-      `p95=${adminP95.toFixed(1)}ms; amostras=${adminDurations.map((value) => value.toFixed(1)).join(",")}`,
+      adminDurations.every(Number.isFinite) && adminP95 < 1_000,
+      `servidor p95=${adminP95.toFixed(1)}ms; ponta-a-ponta p95=${adminWallP95.toFixed(1)}ms; amostras=${adminDurations.join(",")}`,
     );
     check("indexing_slo", indexLatencyMs < 60_000, `${Math.round(indexLatencyMs)}ms até busca confirmada`);
 

@@ -1,12 +1,16 @@
 # Gate G9 — acessibilidade, isolamento e compatibilidade v1
 
-**Resultado atual:** PENDENTE — VALIDAÇÃO LOCAL APROVADA; EVIDÊNCIAS REMOTAS NÃO EXECUTADAS<br>
+**Resultado atual:** G9 APROVADO PARA INICIAR EV2.10 — PRODUÇÃO CONTINUA BLOQUEADA<br>
 **Produção:** bloqueada<br>
 **Flags:** `ev2.visual_studio` e `ev2.multisite`, globalmente desligadas<br>
 **Multisite operacional:** bloqueado<br>
 **Rollback imediato:** remover overrides individuais ou acionar kill switch<br>
-**SHA candidato:** será fixado pela autorização e execução do canary após o versionamento<br>
-**Alias planejado:** `ev2-g9-canary`
+**SHA candidato executado:** `6954171ba60d923a923ac26ed3b491b6d9149817`<br>
+**Deployment:** `ca350fa8-27a0-451d-9887-159f9c5deae3`<br>
+**Alias:** <https://ev2-g9-canary.gaiatec-cms-staging.pages.dev><br>
+**CI do push:** [execução 33808207793](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33808207793)<br>
+**CI do pull request:** [execução 33808210806](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33808210806)<br>
+**Preview:** [execução 33808210772](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33808210772), artefato GitHub sem deploy remoto
 
 ## Critérios objetivos
 
@@ -33,4 +37,6 @@
 
 G9 somente será aprovado se todos os critérios passarem no mesmo SHA, com rehearsal transacional limpo, CI verde, dois usuários MFA, dois tenants sintéticos, zero exceção manual e zero resíduo. Qualquer tenant escape, bypass de MFA, aceitação de código/domínio real, publicação indireta, quebra v1 ou limpeza incompleta reprova o gate e aciona contenção.
 
-A aprovação futura de G9 autorizará apenas iniciar a EV2.10. Ela não autorizará produção, dados reais, ativação global, domínio real, merge em `main` nem promoção do staging estável.
+Todos os critérios passaram no mesmo SHA candidato. O runner concluiu 32/32 verificações, reconciliou 5/5 mutações visuais e 5/5 mutações de site com recibos e eventos, comprovou isolamento entre os dois tenants e removeu integralmente as fixtures. A consulta independente confirmou zero usuário, perfil, override, conteúdo, site, domínio, snapshot, recibo ou evento sintético residual.
+
+G9 está aprovado e a EV2.10 pode iniciar. A aprovação não autoriza produção, dados reais, ativação global, domínio real, merge em `main` nem promoção do staging estável. A evidência completa está no [relatório do canary](RELATORIO_CANARY_STAGING_2026-09-03.md).

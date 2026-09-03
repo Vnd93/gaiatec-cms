@@ -181,12 +181,13 @@ test("candidate UI exposes governed editor and site registry only behind build s
 });
 
 test("rehearsal, canary, preview workflow and Gate G9 are reproducible", async () => {
-  const [rehearsal, canary, workflow, gate, plan] = await Promise.all([
+  const [rehearsal, canary, workflow, gate, plan, report] = await Promise.all([
     read("scripts/ev2/phase9/validate-migration.mjs"),
     read("scripts/ev2/phase9/staging-canary.mjs"),
     read(".github/workflows/preview-ev2-phase9.yml"),
     read("docs/ev2/fase-9/GATE_G9.md"),
     read("docs/ev2/fase-9/PLANO_CANARY_STAGING.md"),
+    read("docs/ev2/fase-9/RELATORIO_CANARY_STAGING_2026-09-03.md"),
   ]);
   assert.match(rehearsal, /G9_MIGRATION_REHEARSAL_PASS/);
   assert.match(rehearsal, /ALVO RECUSADO/);
@@ -211,7 +212,10 @@ test("rehearsal, canary, preview workflow and Gate G9 are reproducible", async (
   assert.match(workflow, /VITE_EV2_VISUAL_STUDIO_CANDIDATE/);
   assert.match(workflow, /VITE_EV2_MULTISITE_CANDIDATE/);
   assert.match(workflow, /ev2-g9-canary/);
-  assert.match(gate, /PENDENTE/);
+  assert.match(gate, /G9 APROVADO PARA INICIAR EV2\.10/);
   assert.match(gate, /tenant escape/i);
   assert.match(plan, /nenhuma alteração em produção/i);
+  assert.match(report, /G9_CANARY_PASS/);
+  assert.match(report, /32\/32 verificações/);
+  assert.match(report, /synthetic_residue_zero|resíduo sintético zero/);
 });

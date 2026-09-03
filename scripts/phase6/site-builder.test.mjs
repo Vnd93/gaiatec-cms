@@ -223,6 +223,12 @@ test("edge serves managed pages with initial SEO and real retirement statuses", 
     );
     assert.equal(sitesAdmin.status, 200);
     assert.match(sitesAdmin.headers.get("cache-control") ?? "", /no-store/);
+    const aiAdmin = await module.default.fetch(
+      new Request("https://gaiatecsistemas.com.br/admin/assistente"),
+      env,
+    );
+    assert.equal(aiAdmin.status, 200);
+    assert.match(aiAdmin.headers.get("cache-control") ?? "", /no-store/);
 
     const invalidVisualStudioAdmin = await module.default.fetch(
       new Request("https://gaiatecsistemas.com.br/admin/estudio-visual/not-a-uuid"),

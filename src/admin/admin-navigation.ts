@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   BookOpenText,
+  Bot,
   Boxes,
   BriefcaseBusiness,
   Building2,
@@ -33,7 +34,7 @@ export type AdminNavigationItem = {
   icon: LucideIcon;
   permissions?: string[];
   permissionMode?: "all" | "any";
-  candidate?: "visual-studio" | "multisite";
+  candidate?: "visual-studio" | "multisite" | "ai-assist";
   match?: RegExp;
 };
 
@@ -65,6 +66,15 @@ export const adminNavigation: AdminNavigationGroup[] = [
         permissions: ["cms:collaboration.read", "cms:releases.read", "cms:bulk.read"],
         permissionMode: "any",
         match: /^\/admin\/meu-trabalho(?:\/.*)?$/,
+      },
+      {
+        to: "/admin/assistente",
+        label: "Assistente controlada",
+        description: "Localize, explique, extraia e prepare propostas com fonte e revisão humana.",
+        icon: Bot,
+        permissions: ["cms:ai.read"],
+        candidate: "ai-assist",
+        match: /^\/admin\/assistente(?:\/.*)?$/,
       },
     ],
   },
@@ -362,6 +372,11 @@ export const administrativeRouteInventory = [
     surface: "Meu trabalho",
     route: "/admin/meu-trabalho",
     permission: "cms:collaboration.read, cms:releases.read ou cms:bulk.read",
+  },
+  {
+    surface: "Assistente controlada",
+    route: "/admin/assistente",
+    permission: "cms:ai.read e override individual EV2.10",
   },
   { surface: "Produtos", route: "/admin/produtos", permission: "cms:products.read" },
   { surface: "Cadastro em massa", route: "/admin/produtos/importacao", permission: "cms:products.edit" },

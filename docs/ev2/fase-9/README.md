@@ -39,8 +39,13 @@ O catálogo detalhado, seus limites e as exclusões de segurança estão em [Dec
 
 ## Estado do Gate G9
 
-O candidato concluiu a validação local de engenharia: `npm run check` aprovou formatação, tipos, lint sem erros, 145 testes Vitest, todas as suítes estáticas EV2.0–EV2.9 e Fases 1–11 e o build de produção. O Gate G9 permanece **PENDENTE** até que o mesmo SHA passe pela CI remota, rehearsal transacional, canary sintético de dois tenants e verificação operacional de acessibilidade, isolamento e compatibilidade v1 em staging.
+O Gate G9 foi **APROVADO** no SHA `6954171ba60d923a923ac26ed3b491b6d9149817`.
+A migration `0048`, as funções `cms-visual`/`cms-sites` e o alias isolado
+`ev2-g9-canary` foram avaliados apenas em staging. O canary passou 32/32 verificações com dois
+usuários MFA, dois tenants sintéticos, reconciliação completa e resíduo zero.
 
-Nenhuma migration ou função desta fase foi aplicada em staging, nenhuma flag foi habilitada, nenhum dado real foi criado e produção não foi alterada por esta implementação local.
+As flags continuam globalmente desligadas. O staging estável e a produção permaneceram inalterados;
+nenhum domínio ou dado real foi usado. Consulte o
+[relatório do canary](RELATORIO_CANARY_STAGING_2026-09-03.md).
 
 Consulte o [contrato e modelo operacional](CONTRATO_E_OPERACAO.md), a [decisão do MVP](DECISAO_MVP_COMPONENTES.md), os [critérios do Gate G9](GATE_G9.md) e o [plano de canary](PLANO_CANARY_STAGING.md).

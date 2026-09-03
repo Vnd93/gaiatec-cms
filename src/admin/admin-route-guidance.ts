@@ -25,6 +25,15 @@ const guidance: Array<{ match: RegExp; value: AdminRouteGuidance }> = [
     },
   },
   {
+    match: /^\/admin\/assistente/,
+    value: {
+      task: "Localize, explique, extraia ou prepare uma proposta sintética com fonte.",
+      publicImpact: "Nenhuma resposta é aplicada ou publicada; a decisão humana apenas registra a revisão.",
+      internal: "Somente dados sintéticos redigidos, fontes, confiança, custo zero e auditoria são retidos.",
+      nextStep: "Confira fonte, versão, localizador, confiança e diff; depois use o editor manual.",
+    },
+  },
+  {
     match: /^\/admin\/produtos\/importacao/,
     value: {
       task: "Valide uma planilha oficial de cadastros novos.",

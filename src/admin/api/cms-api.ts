@@ -189,3 +189,7 @@ export function visualStudioCommand<T>(
 export function sitesCommand<T>(session: Session, body: Record<string, unknown>, idempotencyKey?: string) {
   return invoke<T>(session, "cms-sites", body, idempotencyKey ?? false);
 }
+
+export function aiAssistCommand<T>(session: Session, body: Record<string, unknown>, idempotencyKey?: string) {
+  return invoke<T>(session, "cms-ai", body, idempotencyKey ?? false);
+}

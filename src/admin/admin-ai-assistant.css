@@ -1,0 +1,194 @@
+.admin-ai {
+  display: grid;
+  gap: 1rem;
+}
+
+.admin-ai__safety,
+.admin-ai__warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  border: 1px solid #d1a700;
+  border-radius: 0.75rem;
+  background: #fff9dc;
+  color: #5e4900;
+  padding: 0.85rem 1rem;
+}
+
+.admin-ai__safety svg,
+.admin-ai__warning svg {
+  flex: 0 0 auto;
+  margin-top: 0.1rem;
+}
+
+.admin-ai__metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.75rem;
+}
+
+.admin-ai__metrics > div {
+  display: grid;
+  gap: 0.2rem;
+  border: 1px solid var(--admin-border, #dfe5ed);
+  border-radius: 0.75rem;
+  background: #fff;
+  padding: 0.85rem;
+}
+
+.admin-ai__metrics span,
+.admin-ai__budget,
+.admin-ai small {
+  color: var(--admin-muted, #5b6878);
+  font-size: 0.82rem;
+}
+
+.admin-ai__grid {
+  display: grid;
+  grid-template-columns: minmax(16rem, 0.8fr) minmax(22rem, 1.2fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.admin-ai .admin-editor-card {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.admin-ai .admin-editor-card h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+}
+
+.admin-ai .admin-editor-card label,
+.admin-ai .admin-editor-card fieldset {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.admin-ai .admin-editor-card fieldset {
+  border: 1px solid var(--admin-border, #dfe5ed);
+  border-radius: 0.75rem;
+  padding: 0.85rem;
+}
+
+.admin-ai__fields {
+  display: grid;
+  grid-template-columns: 1fr 0.5fr;
+  gap: 0.75rem;
+}
+
+.admin-ai__field {
+  display: grid;
+  gap: 0.55rem;
+  border: 1px solid var(--admin-border, #dfe5ed);
+  border-radius: 0.75rem;
+  padding: 0.85rem;
+}
+
+.admin-ai__field header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.admin-ai__field [data-confidence="pending"] {
+  color: #9a4d00;
+  font-weight: 700;
+}
+
+.admin-ai__field [data-confidence="supported"],
+.admin-ai__field [data-confidence="human_verified"] {
+  color: #176b40;
+  font-weight: 700;
+}
+
+.admin-ai__field dl > div {
+  display: grid;
+  grid-template-columns: 8rem 1fr;
+  gap: 0.5rem;
+}
+
+.admin-ai__field blockquote {
+  border-left: 0.25rem solid #0057de;
+  margin: 0.75rem 0 0;
+  padding-left: 0.85rem;
+}
+
+.admin-ai__diff {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.admin-ai__diff h3 {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
+}
+
+.admin-ai__diff > div {
+  min-width: 0;
+}
+
+.admin-ai__diff pre {
+  min-height: 4.5rem;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  border-radius: 0.65rem;
+  background: #f4f7fa;
+  padding: 0.75rem;
+}
+
+.admin-ai__decision {
+  display: grid;
+  gap: 0.75rem;
+  border-top: 1px solid var(--admin-border, #dfe5ed);
+  padding-top: 1rem;
+}
+
+.admin-ai__decision > div,
+.admin-ai__fallback nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.admin-ai__not-applied {
+  border-radius: 0.65rem;
+  background: #eef5ff;
+  color: #0a4aa3;
+  font-weight: 700;
+  padding: 0.7rem;
+}
+
+.admin-ai__quality {
+  border-radius: 0.65rem;
+  background: #f4f7fa;
+  color: var(--admin-muted, #445264);
+  padding: 0.7rem;
+}
+
+@media (max-width: 900px) {
+  .admin-ai__metrics,
+  .admin-ai__grid,
+  .admin-ai__diff {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-ai__diff h3 {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 540px) {
+  .admin-ai__fields {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-ai__field header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

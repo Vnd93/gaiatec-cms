@@ -41,7 +41,8 @@ export function AdminShell() {
               canAccessNavigationItem(item, permissions) &&
               (item.candidate !== "visual-studio" ||
                 import.meta.env.VITE_EV2_VISUAL_STUDIO_CANDIDATE === "true") &&
-              (item.candidate !== "multisite" || import.meta.env.VITE_EV2_MULTISITE_CANDIDATE === "true"),
+              (item.candidate !== "multisite" || import.meta.env.VITE_EV2_MULTISITE_CANDIDATE === "true") &&
+              (item.candidate !== "ai-assist" || import.meta.env.VITE_EV2_AI_ASSIST_CANDIDATE === "true"),
           ),
         }))
         .filter((group) => group.items.length > 0),

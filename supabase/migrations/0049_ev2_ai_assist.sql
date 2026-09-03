@@ -361,14 +361,23 @@ language sql
 immutable
 set search_path = public, pg_temp
 as $$
-  select coalesce(p_value::text ~* (
+  with normalized as (
+    select regexp_replace(
+      p_value::text,
+      '\y[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\y',
+      '<uuid>',
+      'gi'
+    ) as payload_text
+  )
+  select coalesce(payload_text ~* (
     '[a-z0-9.!#$%&''*+/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+' ||
     '|\y[0-9]{3}\.?[0-9]{3}\.?[0-9]{3}-?[0-9]{2}\y' ||
     '|(?:^|[^a-z0-9])(?:\+?55\s*)?(?:\(?[0-9]{2}\)?\s*)?9?[0-9]{4}[-\s]?[0-9]{4}(?:$|[^a-z0-9])' ||
     '|\y(?:bearer|api[_ -]?key|secret|password|senha)\s*[:=]\s*[^ ,;]{8,}' ||
     '|eyJ[a-zA-Z0-9_-]{8,}\.[a-zA-Z0-9_-]{8,}\.[a-zA-Z0-9_-]{8,}' ||
     '|-----BEGIN [A-Z ]*PRIVATE KEY-----'
-  ), false);
+  ), false)
+  from normalized;
 $$;
 
 create function public.cms_ai_capability(

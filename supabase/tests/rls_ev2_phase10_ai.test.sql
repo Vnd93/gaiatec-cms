@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
-select plan(43);
+select plan(45);
 
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -76,6 +76,21 @@ create function pg_temp.ai_command(
     p_request_hash
   );
 $$;
+
+select is(
+  private.cms_ai_contains_sensitive_text(
+    '{"sessionId":"12345678-1234-4234-8234-123456789012","prompt":"Conteúdo sintético seguro."}'::jsonb
+  ),
+  false,
+  'opaque UUIDs cannot be misclassified as phone numbers'
+);
+select is(
+  private.cms_ai_contains_sensitive_text(
+    '{"prompt":"Contato +55 (11) 99999-9999"}'::jsonb
+  ),
+  true,
+  'real phone numbers remain blocked by the database boundary'
+);
 
 select is(
   (select count(*)::integer from pg_class where oid in (

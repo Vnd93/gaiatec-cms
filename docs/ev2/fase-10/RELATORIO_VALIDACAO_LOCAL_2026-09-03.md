@@ -54,13 +54,13 @@
 
 ## Validações deliberadamente não executadas
 
-O arquivo pgTAP contém 43 verificações de RLS e domínio, mas `npm run test:rls` não pôde ser
+O arquivo pgTAP contém 45 verificações de RLS e domínio, mas `npm run test:rls` não pôde ser
 executado porque esta máquina não possui Docker, Podman nem PostgreSQL local. O rehearsal
 transacional, a migration `0049`, a função `cms-ai`, o preview remoto e o canary também não foram
 executados: dependem de autorização específica da EV2.10 e devem ocorrer somente em staging.
 
 Essa limitação não foi contornada com acesso remoto. O Gate G10 permanece pendente até que o mesmo
-SHA passe pela CI, pelo rehearsal com rollback, pelos 43 testes pgTAP e pelo canary sintético de dois
+SHA passe pela CI, pelo rehearsal com rollback, pelos 45 testes pgTAP e pelo canary sintético de dois
 usuários MFA com limpeza independente.
 
 ## Próximo gate

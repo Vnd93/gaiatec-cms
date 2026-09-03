@@ -55,7 +55,7 @@ test("EV2.10 migration is additive, private, synthetic and default-off", async (
   assert.match(sql, /revoke all on table[\s\S]+from public, anon, authenticated/);
   assert.match(sql, /grant all on table[\s\S]+to service_role/);
   assert.doesNotMatch(sql, /drop table|truncate|default_enabled\s*=\s*true/i);
-  assert.match(rls, /select plan\(43\)/);
+  assert.match(rls, /select plan\(45\)/);
 });
 
 test("tool catalog cannot execute critical or CMS-mutating actions", async () => {
@@ -165,6 +165,6 @@ test("rehearsal, canary, workflow and Gate G10 are reproducible but not self-aut
   assert.match(plan, /sem produção/i);
   assert.match(policy, /aprovação explícita do DPO\/Security/i);
   assert.match(localReport, /150\/150 testes/);
-  assert.match(localReport, /43 verificações de RLS/);
+  assert.match(localReport, /45 verificações de RLS/);
   assert.match(localReport, /G10 permanece pendente/);
 });

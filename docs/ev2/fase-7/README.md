@@ -50,4 +50,6 @@ Produção, staging estável, dados reais, flag global e promoção para `main` 
 
 ## Estado do Gate G7
 
-O candidato foi publicado no alias isolado e as provas anteriores ao lote passaram, incluindo rollback abaixo de um segundo e resíduo zero. O gate está **pausado controladamente**: a correção aditiva `0046` passou no rehearsal com rollback, mas ainda depende de autorização para aplicação em staging e repetição integral do canary. Consulte [GATE_G7.md](GATE_G7.md) e [PLANO_CANARY_STAGING.md](PLANO_CANARY_STAGING.md).
+O Gate G7 está **aprovado em staging**. A migration corretiva `0046` foi aplicada, as três APIs afetadas foram republicadas e o canary final do SHA `952bf75b4047ebeaa918767b9ab6cfe522bafb41` concluiu 27/27 verificações com dois usuários MFA, rollback RPO 0 em 739,4 ms, conflito de massa em HTTP 409, zero mutação real e zero resíduo sintético.
+
+Consulte a [decisão do Gate G7](GATE_G7.md), o [relatório completo do canary](RELATORIO_CANARY_STAGING_2026-09-03.md) e o [plano reproduzível](PLANO_CANARY_STAGING.md). Produção, staging estável e ativação global continuam bloqueados.

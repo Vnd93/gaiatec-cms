@@ -1,8 +1,10 @@
 # Plano de canary EV2.7 em staging
 
-## Escopo proposto para autorização
+**Execução:** concluída e aprovada em 3 de setembro de 2026; consulte o [relatório](RELATORIO_CANARY_STAGING_2026-09-03.md).
 
-- migration `0045_ev2_collaboration_release_bulk.sql`;
+## Escopo autorizado e executado
+
+- migrations aditivas `0045_ev2_collaboration_release_bulk.sql` e `0046_ev2_conflict_transport_hardening.sql`;
 - funções `cms-releases`, `cms-collaboration`, `cms-bulk` e `cms-outbox-worker`;
 - build candidato no alias `ev2-g7-canary`;
 - dois usuários exclusivamente sintéticos, ambos com MFA;

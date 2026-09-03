@@ -122,22 +122,29 @@ Deno.serve(async (req) => {
   const command = parsed.data, { environment } = command.envelope.actorContext, correlationId = command.envelope.correlationId;
   if (environment === "production") return json(req, { error: "Produção indisponível nesta fase.", code: "CMS_SEARCH_PRODUCTION_GATED", correlationId }, 403);
   if (Deno.env.get("CMS_ENVIRONMENT") !== environment) return json(req, { error: "Escopo não autorizado.", code: "CMS_SEARCH_SCOPE_MISMATCH", correlationId }, 403);
-  const { data: feature, error: featureError } = await capability(identity, environment);
-  if (featureError) return json(req, { error: "Capacidade indisponível.", correlationId }, 503);
-  if (command.action === "capability") return json(req, { ...feature, commandId: command.envelope.commandId, correlationId });
-  if (feature?.enabled !== true) return json(req, { error: "Busca v2 não habilitada.", code: "CMS_SEARCH_FEATURE_DISABLED", correlationId }, 403);
+  if (command.action === "capability") {
+    const { data: feature, error: featureError } = await capability(identity, environment);
+    if (featureError) return json(req, { error: "Capacidade indisponível.", correlationId }, 503);
+    return json(req, { ...feature, commandId: command.envelope.commandId, correlationId });
+  }
   if (command.action === "admin_search") {
     const requested = command.contentTypes.length ? command.contentTypes : Object.keys(readPermission);
+    let featureResult: Awaited<ReturnType<typeof capability>>;
     let access: (boolean | null)[];
     try {
-      access = await Promise.all([
-        consumeRateLimit(identity.admin, req, "cms_search_admin_search", `${identity.user.id}:${clientAddress(req)}`, 120, 900),
-        authorized(identity, "cms:search.read"),
-        ...requested.map(async (type) => await authorized(identity, readPermission[type]) ? true : null),
+      [featureResult, access] = await Promise.all([
+        capability(identity, environment),
+        Promise.all([
+          consumeRateLimit(identity.admin, req, "cms_search_admin_search", `${identity.user.id}:${clientAddress(req)}`, 120, 900),
+          authorized(identity, "cms:search.read"),
+          ...requested.map(async (type) => await authorized(identity, readPermission[type]) ? true : null),
+        ]),
       ]);
     } catch {
       return json(req, { error: "Proteção temporariamente indisponível.", correlationId }, 503);
     }
+    if (featureResult.error) return json(req, { error: "Capacidade indisponível.", correlationId }, 503);
+    if (featureResult.data?.enabled !== true) return json(req, { error: "Busca v2 não habilitada.", code: "CMS_SEARCH_FEATURE_DISABLED", correlationId }, 403);
     if (access[0] !== true) return json(req, { error: "Muitas operações. Aguarde.", correlationId }, 429);
     if (access[1] !== true) return json(req, { error: "Permissão insuficiente." }, 403);
     const allowedTypes = requested.filter((_, index) => access[index + 2] === true);
@@ -145,6 +152,9 @@ Deno.serve(async (req) => {
     const { data, error } = await identity.admin.rpc("cms_search_v2", { p_query: normalize(command.query), p_content_types: allowedTypes, p_facets: {}, p_ranges: {}, p_limit: command.limit, p_offset: 0 });
     return error ? json(req, { error: "Busca administrativa indisponível.", correlationId }, 503) : json(req, { items: data ?? [], total: Number(data?.[0]?.total_count ?? 0), correlationId });
   }
+  const { data: feature, error: featureError } = await capability(identity, environment);
+  if (featureError) return json(req, { error: "Capacidade indisponível.", correlationId }, 503);
+  if (feature?.enabled !== true) return json(req, { error: "Busca v2 não habilitada.", code: "CMS_SEARCH_FEATURE_DISABLED", correlationId }, 403);
   try { const allowed = await consumeRateLimit(identity.admin, req, `cms_search_${command.action}`, `${identity.user.id}:${clientAddress(req)}`, 40, 900); if (!allowed) return json(req, { error: "Muitas operações. Aguarde.", correlationId }, 429); }
   catch { return json(req, { error: "Proteção temporariamente indisponível.", correlationId }, 503); }
   if (command.action === "list_governance") {

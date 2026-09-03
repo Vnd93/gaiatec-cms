@@ -798,7 +798,7 @@ async function main() {
 
     const publicDurations = [];
     const adminDurations = [];
-    for (let sample = 0; sample < 7; sample += 1) {
+    for (let sample = 0; sample < 20; sample += 1) {
       const publicSample = await publicSearch(canonicalTerm);
       publicDurations.push(serverTimingDuration(publicSample.headers));
       const adminSample = await invoke(context, actor, "cms-search-admin", {
@@ -816,9 +816,13 @@ async function main() {
     check(
       "public_search_slo",
       publicDurations.every(Number.isFinite) && publicP95 < 400,
-      `p95=${publicP95.toFixed(1)}ms`,
+      `p95=${publicP95.toFixed(1)}ms; amostras=${publicDurations.join(",")}`,
     );
-    check("admin_search_slo", adminP95 < 1_000, `p95=${adminP95.toFixed(1)}ms`);
+    check(
+      "admin_search_slo",
+      adminP95 < 1_000,
+      `p95=${adminP95.toFixed(1)}ms; amostras=${adminDurations.map((value) => value.toFixed(1)).join(",")}`,
+    );
     check("indexing_slo", indexLatencyMs < 60_000, `${Math.round(indexLatencyMs)}ms até busca confirmada`);
 
     const globalAfter = await rest(context, "cms_feature_flags", {

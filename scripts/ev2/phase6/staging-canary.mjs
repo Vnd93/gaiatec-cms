@@ -348,6 +348,8 @@ function serverTimingDuration(headers) {
 
 async function cleanup(context, actorId, itemId) {
   if (!actorId) return;
+  // A telemetria pública usa waitUntil; aguarda a última escrita anônima antes da remoção.
+  await new Promise((resolve) => setTimeout(resolve, 1_000));
   const itemPredicate = itemId ? `item_id = '${itemId}'::uuid` : "false";
   executeCleanupSql(`
 begin;

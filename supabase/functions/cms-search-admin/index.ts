@@ -126,16 +126,27 @@ Deno.serve(async (req) => {
   if (featureError) return json(req, { error: "Capacidade indisponível.", correlationId }, 503);
   if (command.action === "capability") return json(req, { ...feature, commandId: command.envelope.commandId, correlationId });
   if (feature?.enabled !== true) return json(req, { error: "Busca v2 não habilitada.", code: "CMS_SEARCH_FEATURE_DISABLED", correlationId }, 403);
-  try { const allowed = await consumeRateLimit(identity.admin, req, `cms_search_${command.action}`, `${identity.user.id}:${clientAddress(req)}`, command.action === "admin_search" ? 120 : 40, 900); if (!allowed) return json(req, { error: "Muitas operações. Aguarde.", correlationId }, 429); }
-  catch { return json(req, { error: "Proteção temporariamente indisponível.", correlationId }, 503); }
   if (command.action === "admin_search") {
-    if (!(await authorized(identity, "cms:search.read"))) return json(req, { error: "Permissão insuficiente." }, 403);
     const requested = command.contentTypes.length ? command.contentTypes : Object.keys(readPermission);
-    const allowedTypes = (await Promise.all(requested.map(async (type) => await authorized(identity, readPermission[type]) ? type : null))).filter(Boolean) as string[];
+    let access: (boolean | null)[];
+    try {
+      access = await Promise.all([
+        consumeRateLimit(identity.admin, req, "cms_search_admin_search", `${identity.user.id}:${clientAddress(req)}`, 120, 900),
+        authorized(identity, "cms:search.read"),
+        ...requested.map(async (type) => await authorized(identity, readPermission[type]) ? true : null),
+      ]);
+    } catch {
+      return json(req, { error: "Proteção temporariamente indisponível.", correlationId }, 503);
+    }
+    if (access[0] !== true) return json(req, { error: "Muitas operações. Aguarde.", correlationId }, 429);
+    if (access[1] !== true) return json(req, { error: "Permissão insuficiente." }, 403);
+    const allowedTypes = requested.filter((_, index) => access[index + 2] === true);
     if (!allowedTypes.length) return json(req, { items: [], total: 0, correlationId });
     const { data, error } = await identity.admin.rpc("cms_search_v2", { p_query: normalize(command.query), p_content_types: allowedTypes, p_facets: {}, p_ranges: {}, p_limit: command.limit, p_offset: 0 });
     return error ? json(req, { error: "Busca administrativa indisponível.", correlationId }, 503) : json(req, { items: data ?? [], total: Number(data?.[0]?.total_count ?? 0), correlationId });
   }
+  try { const allowed = await consumeRateLimit(identity.admin, req, `cms_search_${command.action}`, `${identity.user.id}:${clientAddress(req)}`, 40, 900); if (!allowed) return json(req, { error: "Muitas operações. Aguarde.", correlationId }, 429); }
+  catch { return json(req, { error: "Proteção temporariamente indisponível.", correlationId }, 503); }
   if (command.action === "list_governance") {
     if (!(await authorized(identity, "cms:search.read"))) return json(req, { error: "Permissão insuficiente." }, 403);
     const [rules, synonyms, jobs] = await Promise.all([identity.admin.from("cms_search_rules").select("*").order("updated_at", { ascending: false }).limit(100), identity.admin.from("cms_search_synonyms").select("*").order("canonical_term"), identity.admin.from("cms_search_index_jobs").select("*").order("created_at", { ascending: false }).limit(10)]);

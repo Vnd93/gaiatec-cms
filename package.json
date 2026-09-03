@@ -26,6 +26,8 @@
     "test:ev2:phase4": "node --test scripts/ev2/phase4/*.test.mjs",
     "test:ev2:phase5": "node --test scripts/ev2/phase5/*.test.mjs",
     "test:ev2:phase6": "node --test scripts/ev2/phase6/*.test.mjs",
+    "canary:ev2:phase6:validate": "node scripts/ev2/phase6/validate-migration.mjs",
+    "canary:ev2:phase6": "node scripts/ev2/phase6/staging-canary.mjs",
     "canary:ev2:phase5": "node scripts/ev2/phase5/staging-canary.mjs",
     "test:unit": "vitest run tests/unit tests/contracts tests/components",
     "test:integration": "node --test scripts/phase2/*.test.mjs",

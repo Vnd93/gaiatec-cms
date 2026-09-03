@@ -98,16 +98,19 @@ test("quality is deterministic, idempotent and blocks candidate publication", as
   assert.match(content, /capability\?\.enabled === true/);
 });
 
-test("candidate UI exposes facets, governed search, quality and bundle controls", async () => {
-  const [publicSearch, adminSearch, qualityPage, routes, navigation, config, budget] = await Promise.all([
-    read("src/public/pages/CmsSearchPage.tsx"),
-    read("src/admin/pages/AdminSearchGovernancePage.tsx"),
-    read("src/admin/pages/AdminQualityPage.tsx"),
-    read("src/app/routes.tsx"),
-    read("src/admin/admin-navigation.ts"),
-    read("vite.config.ts"),
-    read("scripts/ev2/phase6/bundle-budget.mjs"),
-  ]);
+test("candidate UI exposes facets, governance, quality, bundle and isolated canary controls", async () => {
+  const [publicSearch, adminSearch, qualityPage, routes, navigation, config, budget, canary, rehearsal] =
+    await Promise.all([
+      read("src/public/pages/CmsSearchPage.tsx"),
+      read("src/admin/pages/AdminSearchGovernancePage.tsx"),
+      read("src/admin/pages/AdminQualityPage.tsx"),
+      read("src/app/routes.tsx"),
+      read("src/admin/admin-navigation.ts"),
+      read("vite.config.ts"),
+      read("scripts/ev2/phase6/bundle-budget.mjs"),
+      read("scripts/ev2/phase6/staging-canary.mjs"),
+      read("scripts/ev2/phase6/validate-migration.mjs"),
+    ]);
   assert.match(publicSearch, /Filtros técnicos disponíveis/);
   assert.match(adminSearch, /Relevância governada/);
   assert.match(qualityPage, /Centro de Qualidade/);
@@ -115,4 +118,8 @@ test("candidate UI exposes facets, governed search, quality and bundle controls"
   assert.match(navigation, /cms:quality\.read/);
   assert.match(config, /manifest: true/);
   assert.match(budget, /Excel\/PDF must remain outside every initial entry graph/);
+  assert.match(canary, /synthetic_mfa_aal2/);
+  assert.match(canary, /productionMutations: 0/);
+  assert.match(canary, /syntheticResidue: 0/);
+  assert.match(rehearsal, /G6_MIGRATION_REHEARSAL_PASS/);
 });

@@ -18,6 +18,15 @@ const labels: { [key in Tab]: string } = {
 };
 const contentTypeLabel = (contentType: UnifiedSearchResult["items"][number]["content_type"]) =>
   contentType === "homepage" ? labels.page : labels[contentType];
+const facetLabels: Record<string, string> = {
+  productCategory: "Categoria de produto",
+  applicationMagnitude: "Grandeza de aplicação",
+  technology: "Tecnologia",
+  installationOperation: "Instalação e operação",
+  monitoredElement: "Elemento monitorado",
+  serviceKind: "Tipo de serviço",
+  market: "Mercado",
+};
 export default function CmsSearchPage() {
   const [params, setParams] = useSearchParams(),
     navigate = useNavigate(),
@@ -183,35 +192,37 @@ export default function CmsSearchPage() {
           ))}
         </div>
       )}
-      {candidate && result && Object.keys(result.facets).length > 0 && (
+      {candidate && result && Object.values(result.facets).some((values) => values.length > 0) && (
         <aside className="unified-search__facets" aria-label="Filtros técnicos disponíveis">
           <h2>Refinar resultados</h2>
-          {Object.entries(result.facets).map(([key, values]) => (
-            <fieldset key={key}>
-              <legend>{key.replace(/([A-Z])/g, " $1")}</legend>
-              {values.map((value) => {
-                const active = selectedFacets[key]?.includes(value) ?? false;
-                return (
-                  <button
-                    type="button"
-                    key={value}
-                    aria-pressed={active}
-                    onClick={() => {
-                      const next = new URLSearchParams(params);
-                      const valuesForKey = new Set(selectedFacets[key] ?? []);
-                      if (active) valuesForKey.delete(value);
-                      else valuesForKey.add(value);
-                      if (valuesForKey.size) next.set(`f_${key}`, [...valuesForKey].join("|"));
-                      else next.delete(`f_${key}`);
-                      setParams(next);
-                    }}
-                  >
-                    {value}
-                  </button>
-                );
-              })}
-            </fieldset>
-          ))}
+          {Object.entries(result.facets)
+            .filter(([, values]) => values.length > 0)
+            .map(([key, values]) => (
+              <fieldset key={key}>
+                <legend>{facetLabels[key] ?? key.replace(/([A-Z])/g, " $1")}</legend>
+                {values.map((value) => {
+                  const active = selectedFacets[key]?.includes(value) ?? false;
+                  return (
+                    <button
+                      type="button"
+                      key={value}
+                      aria-pressed={active}
+                      onClick={() => {
+                        const next = new URLSearchParams(params);
+                        const valuesForKey = new Set(selectedFacets[key] ?? []);
+                        if (active) valuesForKey.delete(value);
+                        else valuesForKey.add(value);
+                        if (valuesForKey.size) next.set(`f_${key}`, [...valuesForKey].join("|"));
+                        else next.delete(`f_${key}`);
+                        setParams(next);
+                      }}
+                    >
+                      {value}
+                    </button>
+                  );
+                })}
+              </fieldset>
+            ))}
         </aside>
       )}
       {error ? (
@@ -221,6 +232,11 @@ export default function CmsSearchPage() {
       ) : !result ? (
         <div className="new-catalog__state" aria-busy="true">
           Buscando…
+        </div>
+      ) : !query.trim() ? (
+        <div className="new-catalog__state">
+          <h2>Encontre o conteúdo técnico certo</h2>
+          <p>Digite um modelo, unidade, tecnologia ou aplicação para iniciar a busca.</p>
         </div>
       ) : visible.length === 0 ? (
         <div className="new-catalog__state">

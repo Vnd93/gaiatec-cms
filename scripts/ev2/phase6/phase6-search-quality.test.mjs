@@ -115,6 +115,8 @@ test("candidate UI exposes facets, governance, quality, bundle and isolated cana
       read("scripts/ev2/phase6/validate-migration.mjs"),
     ]);
   assert.match(publicSearch, /Filtros técnicos disponíveis/);
+  assert.match(publicSearch, /Encontre o conteúdo técnico certo/);
+  assert.match(publicSearch, /Categoria de produto/);
   assert.match(adminSearch, /Relevância governada/);
   assert.match(qualityPage, /Centro de Qualidade/);
   assert.match(routes, /path: "qualidade"/);

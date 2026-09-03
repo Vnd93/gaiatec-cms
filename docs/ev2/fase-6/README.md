@@ -26,3 +26,9 @@ A fase implementa um caminho candidato aditivo e default-off. A busca v1 permane
 7. Limpar todos os dados sintéticos e expirar/remover o override.
 
 Produção e dados reais não fazem parte desta fase.
+
+## Resultado do Gate G6
+
+O canary controlado foi aprovado em staging com 34/34 verificações. A busca pública registrou p95 de servidor de 351 ms, a busca administrativa 807 ms e a indexação 43.667 ms. A flag global permaneceu desligada, a auditoria independente confirmou resíduo sintético zero e o build final `71a36aa` ficou isolado no alias `ev2-g6-canary`.
+
+Consulte o [relatório do canary](RELATORIO_CANARY_STAGING_2026-09-02.md) e a [decisão do Gate G6](GATE_G6.md). Produção, promoção do staging estável e ativação global continuam bloqueadas.

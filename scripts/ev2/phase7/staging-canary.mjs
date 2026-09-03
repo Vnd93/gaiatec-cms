@@ -517,7 +517,9 @@ async function main() {
     rest(context, "cms_feature_flags", {
       query: "flag_key=eq.ev2.collaboration_bulk&select=default_enabled,kill_switch",
     }),
-    rest(context, "cms_published_projection", { query: "content_type=eq.navigation&select=item_id" }),
+    rest(context, "cms_published_projection", {
+      query: "content_type=eq.navigation&select=item_id,revision_id,content_version,etag",
+    }),
   ]);
   check(
     "target_and_global_flag",
@@ -525,10 +527,11 @@ async function main() {
     `${context.project.name}/${context.project.region}`,
   );
   check(
-    "staging_has_no_navigation_fixture_conflict",
-    existingNavigation.json.length === 0,
-    "canary aborta antes de tocar navegação preexistente",
+    "existing_navigation_registered_as_read_only_sentinel",
+    existingNavigation.json.length === 1,
+    `item=${existingNavigation.json[0]?.item_id ?? "ausente"}; não será alterado`,
   );
+  const navigationSentinel = existingNavigation.json[0];
 
   let operator;
   let reviewer;
@@ -623,8 +626,8 @@ async function main() {
       context,
       operator,
       reviewer,
-      "G7 composto página e navegação",
-      fixtures.slice(0, 2),
+      "G7 composto com duas páginas sintéticas",
+      [fixtures[0], fixtures[2]],
     );
     const reviewerPublish = await releaseCommand(
       context,
@@ -645,10 +648,10 @@ async function main() {
     );
     const publishDurationMs = performance.now() - publishStarted;
     const projections = await rest(context, "cms_published_projection", {
-      query: `item_id=in.(${ids.page},${ids.navigation})&select=item_id,revision_id`,
+      query: `item_id=in.(${ids.page},${ids.atomicFirst})&select=item_id,revision_id`,
     });
     check(
-      "page_navigation_published_atomically",
+      "two_synthetic_pages_published_atomically",
       composed.json.status === "published" && projections.json.length === 2,
       `${publishDurationMs.toFixed(1)}ms`,
     );
@@ -662,7 +665,7 @@ async function main() {
     );
     const rollbackDurationMs = performance.now() - rollbackStarted;
     const afterRollback = await rest(context, "cms_published_projection", {
-      query: `item_id=in.(${ids.page},${ids.navigation})&select=item_id`,
+      query: `item_id=in.(${ids.page},${ids.atomicFirst})&select=item_id`,
     });
     check(
       "rollback_rpo0_under_5_minutes",
@@ -708,6 +711,36 @@ async function main() {
       "second_item_failure_zero_partial_change",
       failedPublish.status === 422 && atomicProjection.json.length === 0,
       `${failedPublish.json.code}; projeções=${atomicProjection.json.length}`,
+    );
+
+    let navigationPlan = await assembleRelease(
+      context,
+      operator,
+      reviewer,
+      "G7 plano página e navegação sintética",
+      fixtures.slice(0, 2),
+    );
+    navigationPlan = await releaseCommand(
+      context,
+      operator,
+      "cancel",
+      {
+        releaseId: navigationPlan.json.releaseId,
+        reason: "Plano sintético cancelado antes de tocar o singleton real",
+      },
+      navigationPlan.json.lockVersion,
+    );
+    const navigationAfterPlan = await rest(context, "cms_published_projection", {
+      query: "content_type=eq.navigation&select=item_id,revision_id,content_version,etag",
+    });
+    check(
+      "page_navigation_plan_validated_without_real_write",
+      navigationPlan.json.status === "canceled" &&
+        navigationAfterPlan.json.length === 1 &&
+        ["item_id", "revision_id", "content_version", "etag"].every(
+          (field) => navigationAfterPlan.json[0][field] === navigationSentinel[field],
+        ),
+      `singleton=${navigationAfterPlan.json[0]?.item_id ?? "ausente"}`,
     );
 
     const replayKey = randomUUID();

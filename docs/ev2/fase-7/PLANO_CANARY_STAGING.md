@@ -19,9 +19,9 @@
 5. Publicar o build isolado `ev2-g7-canary`; confirmar que os candidatos EV2.2–EV2.6 estão desligados.
 6. Criar OP-G7 e REV-G7 com MFA, papéis mínimos e overrides individuais.
 7. Validar 401 anônimo, produção recusada, origem inválida e flag ausente/desligada.
-8. Criar página e navegação sintéticas aprovadas, com a página antes da navegação no pacote.
+8. Registrar a navegação publicada existente apenas como sentinela de leitura; criar duas páginas e uma navegação sintéticas aprovadas.
 9. Provar que OP-G7 não aprova o próprio pacote e REV-G7 não publica sem permissão.
-10. Aprovar com REV-G7 e publicar com OP-G7; conferir as duas projeções e outbox.
+10. Aprovar com REV-G7 e publicar as duas páginas sintéticas; conferir projeções e outbox. Validar página+navegação como plano e cancelá-lo antes de tocar o singleton real.
 11. Montar pacote válido, inserir bloqueio sintético de qualidade no segundo item após a aprovação e conferir zero mudança pública ao publicar.
 12. Repetir comando com a mesma chave e depois com payload diferente; conferir replay/conflito.
 13. Criar tarefa e comentário ancorado; mencionar REV-G7, resolver e reabrir.
@@ -38,6 +38,10 @@
 - dry-run alterar domínio ou omitir erro de um alvo;
 - rollback exceder cinco minutos ou não restaurar projeção/workflow/redirect;
 - surgir qualquer indício de dado real, flag global ou mutação de produção.
+
+## Contenção do singleton de navegação
+
+O staging possui uma navegação publicada única. Como o canary foi autorizado sem dados reais, o runner não substitui nem republica esse singleton. A atomicidade positiva usa duas páginas sintéticas; o pacote página+navegação é validado, aprovado e cancelado antes da publicação. A navegação real é comparada antes e depois por `item_id`, `revision_id`, `content_version` e `etag`.
 
 ## Rollback operacional
 

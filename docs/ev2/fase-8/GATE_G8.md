@@ -3,7 +3,11 @@
 **Resultado atual:** PENDENTE — candidato ainda não promovido a staging<br>
 **Produção:** bloqueada<br>
 **Flag:** `ev2.rbac_scoped`, globalmente desligada<br>
-**Rollback imediato:** remover overrides individuais ou acionar kill switch
+**Rollback imediato:** remover overrides individuais ou acionar kill switch<br>
+**Baseline funcional validada:** `570da8ab8d6977b5e8ba01568484489b3be482c6`<br>
+**CI do push:** [execução 33772888006](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33772888006)<br>
+**CI do pull request:** [execução 33772893589](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33772893589)<br>
+**Preview:** [execução 33772893576](https://github.com/pedronishida/website_gaiatecsistemas/actions/runs/33772893576), artefato GitHub sem deploy remoto
 
 ## Critérios objetivos
 
@@ -27,4 +31,4 @@
 
 O Gate G8 será aprovado somente se todos os critérios passarem no mesmo SHA candidato, sem exceção manual, sem resíduo e sem alteração global. Qualquer bypass, falta de auditoria, acesso sem AAL2, mutação parcial ou falha de limpeza reprova o gate e aciona contenção.
 
-Até a execução autorizada, o status permanece **pendente**. Um build verde no CI é necessário, mas não substitui o canary de segurança em staging.
+A condição de CI está cumprida, mas não substitui o canary de segurança em staging. Até a execução autorizada, o status permanece **pendente**. A evidência pré-canary está consolidada no [relatório de prontidão do candidato](RELATORIO_CANDIDATO_CI_2026-09-03.md).

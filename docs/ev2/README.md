@@ -1,7 +1,7 @@
 # EV2 — Evolução do CMS GAIATEC
 
-**Status:** Gates G0–G10 aprovados; candidato local EV2.11 implementado; G11 pendente; produção e provider externo bloqueados<br>
-**Data-base:** 3 de setembro de 2026<br>
+**Status:** Gates G0–G10 aprovados; canary técnico EV2.11 aprovado; G11 pendente dos aceites humanos; produção e provider externo bloqueados<br>
+**Data-base:** 4 de setembro de 2026<br>
 **Fonte canônica:** Markdown versionado neste diretório
 **Branch de execução:** `ev2/desenvolvimento-fases-1-a-12`<br>
 **Branch documental preservado:** `ev2/fase-0-documentacao-e-planejamento`
@@ -41,4 +41,25 @@ O documento principal é a fonte de verdade para o desenvolvimento. O DOCX que o
 
 ## Estado da execução
 
-Os Gates G0–G10 foram aprovados com evidências reproduzíveis. A EV2.4 passou pelo canary sintético 32/32 e pelo piloto real de 20 produtos em staging. A EV2.5 concluiu 27/27 verificações de DAM com MFA/AAL2 e resíduo zero. A EV2.6 concluiu 34/34 verificações, com p95 público de 351 ms, p95 administrativo de servidor de 807 ms e indexação em 43.667 ms. Na EV2.7, as migrations aditivas `0045` e `0046` foram aplicadas somente em staging, o build `952bf75` foi isolado no alias `ev2-g7-canary` e o canary final passou 27/27 verificações. Na EV2.8, a migration `0047` e as funções `cms-scopes`/`cms-session` foram aplicadas somente em staging, o build `896d0c6` foi isolado no alias `ev2-g8-canary` e o canary passou 27/27 verificações com dois usuários MFA, 15/15 decisões correlacionadas, 3/3 mutações auditadas, flag global desligada, zero mutação real e zero resíduo sintético. Na EV2.9, a migration `0048` e as funções visuais/sites foram avaliadas no alias isolado `ev2-g9-canary`; o canary passou 32/32 verificações com dois usuários MFA, isolamento entre tenants e resíduo zero. Na EV2.10, a migration `0049`, a função `cms-ai` e o build `c2500c7` foram avaliados no alias isolado `ev2-g10-canary`; o canary passou 26/26 verificações com dois usuários MFA, adaptador sintético, custo zero e resíduo zero. O candidato local da EV2.11 implementa F-017/F-018, replay auditado de entrega, snapshot sistêmico, SLOs, carga e restore; o Gate G11 permanece pendente até validação integral, canary autorizado e UAT. Produção, dados reais, domínios reais, provedor externo, F-016, ativação global, merge em `main` e promoção do staging estável continuam fora do escopo; EV2-D04 permanece pendente.
+Os Gates G0–G10 foram aprovados com evidências reproduzíveis. A EV2.4 passou pelo canary sintético
+32/32 e pelo piloto real de 20 produtos em staging. A EV2.5 concluiu 27/27 verificações de DAM com
+MFA/AAL2 e resíduo zero. A EV2.6 concluiu 34/34 verificações, com p95 público de 351 ms, p95
+administrativo de servidor de 807 ms e indexação em 43.667 ms. Na EV2.7, as migrations aditivas
+`0045` e `0046` foram aplicadas somente em staging, o build `952bf75` foi isolado no alias
+`ev2-g7-canary` e o canary final passou 27/27 verificações. Na EV2.8, a migration `0047` e as funções
+`cms-scopes`/`cms-session` foram aplicadas somente em staging, o build `896d0c6` foi isolado no alias
+`ev2-g8-canary` e o canary passou 27/27 verificações com dois usuários MFA, 15/15 decisões
+correlacionadas, 3/3 mutações auditadas, flag global desligada, zero mutação real e zero resíduo
+sintético. Na EV2.9, a migration `0048` e as funções visuais/sites foram avaliadas no alias isolado
+`ev2-g9-canary`; o canary passou 32/32 verificações com dois usuários MFA, isolamento entre tenants
+e resíduo zero. Na EV2.10, a migration `0049`, a função `cms-ai` e o build `c2500c7` foram avaliados
+no alias isolado `ev2-g10-canary`; o canary passou 26/26 verificações com dois usuários MFA,
+adaptador sintético, custo zero e resíduo zero.
+
+Na EV2.11, as migrations aditivas `0050`–`0052`, `cms-system` v3 e `cms-leads` v12 foram avaliadas
+no SHA `8321f12`; `cms-outbox-worker` permaneceu na v22. O canary final passou 27/27 verificações,
+com disponibilidade 100%, SLOs de backend aprovados, auditoria 100%, restore RPO 0/RTO 5,642 s,
+acessibilidade critical/serious 0/0 e resíduo sintético zero. O Gate G11 permanece pendente somente
+dos aceites humanos previstos na matriz. Produção, dados reais, domínios reais, provedor externo,
+F-016, ativação global, merge em `main` e promoção do staging estável continuam fora do escopo;
+EV2-D04 permanece pendente.

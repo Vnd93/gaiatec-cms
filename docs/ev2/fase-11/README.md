@@ -1,6 +1,6 @@
 # EV2.11 — integração operacional e garantia sistêmica
 
-**Estado:** candidato versionado e CI verde; Gate G11 pendente<br>
+**Estado:** canary técnico 27/27 aprovado; Gate G11 pendente dos aceites humanos<br>
 **Escopo:** F-017 e F-018, com regressão sistêmica das entregas EV2.1–EV2.10<br>
 **Produção:** bloqueada<br>
 **Dados reais:** proibidos no canary<br>
@@ -21,7 +21,7 @@ pode registrar aceite técnico.
 
 ## Entregas
 
-- migration `0050_ev2_system_assurance.sql`, aditiva e com flag desligada por padrão;
+- migrations aditivas `0050`–`0052`, com flag desligada por padrão e rate limit transacional;
 - funções `cms-system`, `cms-leads` e `cms-outbox-worker` endurecidas;
 - permissão crítica e auditada para reprocessar entrega de lead;
 - fotografia das filas de publicação, leads e colaboração, incluindo lag e dead-letter;
@@ -39,11 +39,12 @@ pode registrar aceite técnico.
 4. [Plano do canary em staging](PLANO_CANARY_STAGING.md)
 5. [Runbook operacional e rollback](RUNBOOK_OPERACIONAL.md)
 6. [Relatório de validação local](RELATORIO_VALIDACAO_LOCAL_2026-09-03.md)
+7. [Relatório do canary em staging](RELATORIO_CANARY_STAGING_2026-09-04.md)
 
 ## Limite desta entrega
 
-Esta entrega não aplicou a migration, não publicou funções, não criou usuários, não atualizou alias e
-não tocou em staging ou produção. O G11 permanece pendente até autorização específica, execução do
-canary no SHA candidato, validação humana/UAT e anexação das evidências reais. O histórico de
-`docs/fase-11`, referente ao ciclo visual anterior, permanece preservado e independente desta fase
-EV2.11.
+O SHA `8321f1291860e9ca55d3e17e3c1ce36123d0d025` foi validado somente em staging. O canary passou
+27/27 verificações, com dois atores sintéticos MFA, zero dado real e resíduo zero; o staging estável,
+produção e `cms-outbox-worker` v22 permaneceram inalterados. O G11 ainda depende da validação
+humana/UAT e dos aceites Security/DPO previstos na matriz. O histórico de `docs/fase-11`, referente
+ao ciclo visual anterior, permanece preservado e independente desta fase EV2.11.

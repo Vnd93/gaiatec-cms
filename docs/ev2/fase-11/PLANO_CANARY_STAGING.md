@@ -2,7 +2,11 @@
 
 ## Estado
 
-Plano pronto, não executado. Este documento não concede autorização e não comprova aplicação remota.
+Executado em 4 de setembro de 2026 no SHA
+`8321f1291860e9ca55d3e17e3c1ce36123d0d025`. O resultado técnico foi aprovado em 27/27
+verificações e está registrado no
+[relatório do canary](RELATORIO_CANARY_STAGING_2026-09-04.md). Os aceites humanos continuam
+pendentes.
 
 ## Escopo mínimo
 
@@ -13,6 +17,9 @@ Plano pronto, não executado. Este documento não concede autorização e não c
 - dois usuários sintéticos com MFA, papéis separados e overrides individuais de até 30 minutos;
 - um lead estritamente sintético referenciando formulário já publicado, anonimizado ao final;
 - nenhuma ativação global, nenhum dado real, nenhuma produção e nenhuma promoção do staging estável.
+
+O endurecimento final aplicou somente `0052`, republicou `cms-system` e `cms-leads` e preservou
+`cms-outbox-worker` v22, conforme a autorização específica da repetição final.
 
 ## Pré-condições bloqueantes
 
@@ -56,7 +63,7 @@ Plano pronto, não executado. Este documento não concede autorização e não c
 Em qualquer condição, remover overrides, acionar kill switch se necessário, manter o registro para
 diagnóstico e não promover.
 
-## Autorização a solicitar após o SHA existir
+## Modelo de autorização utilizado
 
 > Autorizo o canary controlado da EV2.11 em staging, incluindo a migration 0050, as funções
 > cms-system, cms-leads e cms-outbox-worker, a configuração CMS_ENVIRONMENT=staging e o build

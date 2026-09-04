@@ -35,6 +35,7 @@
     "eval:ev2:phase11": "node scripts/ev2/phase11/run-evals.mjs",
     "canary:ev2:phase11:validate": "node scripts/ev2/phase11/validate-migration.mjs",
     "canary:ev2:phase11:validate-reconciliation": "node scripts/ev2/phase11/validate-projection-reconciliation.mjs",
+    "canary:ev2:phase11:validate-rate-limit": "node scripts/ev2/phase11/validate-rate-limit-fusion.mjs",
     "canary:ev2:phase11": "node scripts/ev2/phase11/staging-canary.mjs",
     "canary:ev2:phase10:validate": "node scripts/ev2/phase10/validate-migration.mjs",
     "canary:ev2:phase10": "node scripts/ev2/phase10/staging-canary.mjs",

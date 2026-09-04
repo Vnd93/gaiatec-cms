@@ -74,17 +74,21 @@ export function clientAddress(req: Request): string {
   return req.headers.get("CF-Connecting-IP") ?? req.headers.get("X-Forwarded-For")?.split(",")[0]?.trim() ?? "unknown";
 }
 
+export async function rateLimitKeyHash(action: string, identity: string): Promise<string> {
+  const salt = Deno.env.get("RATE_LIMIT_SALT");
+  if (!salt) throw new Error("RATE_LIMIT_SALT_NOT_CONFIGURED");
+  return sha256(`${salt}:${action}:${identity}`);
+}
+
 export async function consumeRateLimit(
   admin: SupabaseClient,
-  req: Request,
+  _req: Request,
   action: string,
   identity: string,
   limit: number,
   windowSeconds: number,
 ): Promise<boolean> {
-  const salt = Deno.env.get("RATE_LIMIT_SALT");
-  if (!salt) throw new Error("RATE_LIMIT_SALT_NOT_CONFIGURED");
-  const keyHash = await sha256(`${salt}:${action}:${identity}`);
+  const keyHash = await rateLimitKeyHash(action, identity);
   const { data, error } = await admin.rpc("consume_rate_limit", {
     p_key_hash: keyHash,
     p_action: action,

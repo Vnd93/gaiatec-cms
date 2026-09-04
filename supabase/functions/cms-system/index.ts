@@ -3,10 +3,10 @@ import { z } from "npm:zod@4.4.3";
 import { authenticateCms } from "../_shared/cms-auth.ts";
 import {
   clientAddress,
-  consumeRateLimit,
   corsHeaders,
   isAllowedOrigin,
   json,
+  rateLimitKeyHash,
   readJsonLimited,
   sha256,
 } from "../_shared/security.ts";
@@ -107,18 +107,21 @@ function errorResponse(req: Request, error: { message?: string; code?: string },
   const marker = error.message?.match(/CMS_[A-Z0-9_]+/)?.[0] ?? "CMS_SYSTEM_FAILURE";
   const notFound = marker.endsWith("NOT_FOUND") || error.code === "PT404";
   const conflict = marker.includes("CONFLICT") || marker.includes("NOT_REVIEWABLE") || error.code === "PT409";
+  const rateLimited = marker === "CMS_RATE_LIMIT_EXCEEDED" || error.code === "PT429";
   const forbidden = marker.includes("FORBIDDEN") || marker.includes("FEATURE_DISABLED") || error.code === "42501";
   const invalid = marker.includes("INVALID") || error.code === "22023" || error.code === "23514";
-  const status = notFound ? 404 : conflict ? 409 : forbidden ? 403 : invalid ? 422 : 500;
+  const status = notFound ? 404 : conflict ? 409 : rateLimited ? 429 : forbidden ? 403 : invalid ? 422 : 500;
   const message = notFound
     ? "Registro de garantia não encontrado."
     : conflict
       ? "A operação conflita com o estado atual ou exige outro revisor."
-      : forbidden
-        ? "Garantia sistêmica não habilitada ou permissão insuficiente."
-        : invalid
-          ? "Relatório ou comando de garantia inválido."
-          : "Falha na garantia sistêmica.";
+      : rateLimited
+        ? "Muitas operações. Aguarde."
+        : forbidden
+          ? "Garantia sistêmica não habilitada ou permissão insuficiente."
+          : invalid
+            ? "Relatório ou comando de garantia inválido."
+            : "Falha na garantia sistêmica.";
   return json(req, { error: message, code: marker, correlationId }, status);
 }
 
@@ -149,16 +152,12 @@ Deno.serve(async (req) => {
   if (Math.abs(Date.now() - Date.parse(command.envelope.occurredAt)) > 5 * 60 * 1000)
     return json(req, { error: "Envelope expirado.", code: "CMS_SYSTEM_ENVELOPE_EXPIRED", correlationId }, 409);
 
+  let rateLimitHash: string;
   try {
-    const allowed = await consumeRateLimit(
-      identity.admin,
-      req,
+    rateLimitHash = await rateLimitKeyHash(
       `cms_system_${command.action}`,
       `${identity.user.id}:${clientAddress(req)}`,
-      command.action === "capability" || command.action === "snapshot" ? 120 : 20,
-      900,
     );
-    if (!allowed) return json(req, { error: "Muitas operações. Aguarde.", correlationId }, 429);
   } catch {
     return json(req, { error: "Proteção temporariamente indisponível.", correlationId }, 503);
   }
@@ -170,17 +169,18 @@ Deno.serve(async (req) => {
     p_aal: identity.claims.aal,
     p_session_id: identity.claims.sessionId,
     p_issued_at: identity.claims.issuedAt,
+    p_rate_limit_key_hash: rateLimitHash,
   };
 
   if (command.action === "capability") {
-    const { data, error } = await identity.admin.rpc("cms_system_capability", common);
+    const { data, error } = await identity.admin.rpc("cms_system_capability_limited", common);
     if (error) return errorResponse(req, error, correlationId);
     return json(req, data, 200, {
       "Server-Timing": `admin-read;dur=${Math.round(performance.now() - requestStartedAt)}`,
     });
   }
   if (command.action === "snapshot") {
-    const { data, error } = await identity.admin.rpc("cms_get_system_snapshot", {
+    const { data, error } = await identity.admin.rpc("cms_get_system_snapshot_limited", {
       ...common,
       p_correlation_id: correlationId,
     });
@@ -200,7 +200,7 @@ Deno.serve(async (req) => {
   const payload = command.action === "record_run"
     ? command.report
     : { runId: command.runId, accept: command.accept, rationale: command.rationale };
-  const { data, error } = await identity.admin.rpc("cms_execute_system_command", {
+  const { data, error } = await identity.admin.rpc("cms_execute_system_command_limited", {
     ...common,
     p_action: command.action,
     p_payload: payload,

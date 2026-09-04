@@ -36,7 +36,7 @@ test("EV2.11 migration is additive, default-off, RLS protected and production ga
   assert.doesNotMatch(sql, /drop table|truncate|default_enabled\s*=\s*true/i);
   assert.match(sql, /create trigger cms_assurance_runs_guard/);
   assert.match(sql, /create trigger cms_system_command_receipts_guard/);
-  assert.match(rls, /select plan\(48\)/);
+  assert.match(rls, /select plan\(52\)/);
 });
 
 test("F-017 exposes delivery state and a controlled, durable replay path", async () => {
@@ -56,6 +56,8 @@ test("F-017 exposes delivery state and a controlled, durable replay path", async
   assert.match(edge, /retry_delivery/);
   assert.match(edge, /CMS_ENVIRONMENT/);
   assert.match(edge, /p_request_hash:await sha256/);
+  assert.match(edge, /cms_retry_lead_delivery_limited/);
+  assert.match(edge, /rateLimitKeyHash/);
   assert.match(edge, /Server-Timing.*command/);
   assert.match(page, /cms_lead_outbox\(/);
   assert.match(page, /Reprocessar entrega/);
@@ -82,7 +84,10 @@ test("F-018 exposes a read-only snapshot and two-person Gate G11 evidence", asyn
   assert.match(edge, /CMS_SYSTEM_PRODUCTION_GATED/);
   assert.match(edge, /Server-Timing.*admin-read/);
   assert.match(edge, /identity\.claims\.aal !== "aal2"/);
-  assert.match(edge, /consumeRateLimit/);
+  assert.match(edge, /cms_system_capability_limited/);
+  assert.match(edge, /cms_get_system_snapshot_limited/);
+  assert.match(edge, /cms_execute_system_command_limited/);
+  assert.match(edge, /rateLimitKeyHash/);
   assert.match(edge, /X-Idempotency-Key/);
   assert.doesNotMatch(edge, /SUPABASE_SERVICE_ROLE_KEY\s*=/);
   assert.match(contract, /gateDecision: z\.literal\("non_authoritative"\)/);
@@ -108,6 +113,32 @@ test("G11 projection reconciliation respects managed-content retirement", async 
   assert.doesNotMatch(sql, /drop table|truncate|delete from|default_enabled\s*=\s*true/i);
   assert.match(rls, /retired managed content preserves publication history/);
   assert.match(rls, /active publication without its public projection remains a real divergence/);
+});
+
+test("G11 fuses rate limiting with guarded operations without broadening access", async () => {
+  const [sql, shared, system, leads] = await Promise.all([
+    read("supabase/migrations/0052_ev2_system_assurance_rate_limit_fusion.sql"),
+    read("supabase/functions/_shared/security.ts"),
+    read("supabase/functions/cms-system/index.ts"),
+    read("supabase/functions/cms-leads/index.ts"),
+  ]);
+  for (const procedure of [
+    "cms_system_capability_limited",
+    "cms_get_system_snapshot_limited",
+    "cms_retry_lead_delivery_limited",
+    "cms_execute_system_command_limited",
+  ]) {
+    assert.match(sql, new RegExp(`create function public\\.${procedure}`));
+    assert.match(sql, new RegExp(`revoke all on function public\\.${procedure}`));
+    assert.match(sql, new RegExp(`grant execute on function public\\.${procedure}`));
+  }
+  assert.match(sql, /CMS_RATE_LIMIT_EXCEEDED/);
+  assert.match(sql, /errcode = 'PT429'/);
+  assert.match(sql, /to service_role/);
+  assert.doesNotMatch(sql, /drop table|truncate|delete from|default_enabled\s*=\s*true/i);
+  assert.match(shared, /export async function rateLimitKeyHash/);
+  assert.match(system, /p_rate_limit_key_hash: rateLimitHash/);
+  assert.match(leads, /p_rate_limit_key_hash:fusedRateLimitHash/);
 });
 
 test("G11 boundary rules fail closed without redundant scenario tests", () => {
@@ -165,22 +196,27 @@ test("load statistics use nearest-rank percentiles and strict evidence evaluatio
 });
 
 test("G11 operational artifacts remain reproducible and explicitly pending", async () => {
-  const [rehearsal, reconciliation, canary, workflow, gate, plan, matrix, runbook] = await Promise.all([
-    read("scripts/ev2/phase11/validate-migration.mjs"),
-    read("scripts/ev2/phase11/validate-projection-reconciliation.mjs"),
-    read("scripts/ev2/phase11/staging-canary.mjs"),
-    read(".github/workflows/preview-ev2-phase11.yml"),
-    read("docs/ev2/fase-11/GATE_G11.md"),
-    read("docs/ev2/fase-11/PLANO_CANARY_STAGING.md"),
-    read("docs/ev2/fase-11/MATRIZ_HOMOLOGACAO.md"),
-    read("docs/ev2/fase-11/RUNBOOK_OPERACIONAL.md"),
-  ]);
+  const [rehearsal, reconciliation, rateLimit, canary, workflow, gate, plan, matrix, runbook] =
+    await Promise.all([
+      read("scripts/ev2/phase11/validate-migration.mjs"),
+      read("scripts/ev2/phase11/validate-projection-reconciliation.mjs"),
+      read("scripts/ev2/phase11/validate-rate-limit-fusion.mjs"),
+      read("scripts/ev2/phase11/staging-canary.mjs"),
+      read(".github/workflows/preview-ev2-phase11.yml"),
+      read("docs/ev2/fase-11/GATE_G11.md"),
+      read("docs/ev2/fase-11/PLANO_CANARY_STAGING.md"),
+      read("docs/ev2/fase-11/MATRIZ_HOMOLOGACAO.md"),
+      read("docs/ev2/fase-11/RUNBOOK_OPERACIONAL.md"),
+    ]);
   assert.match(rehearsal, /G11_MIGRATION_REHEARSAL_PASS/);
   assert.match(rehearsal, /ALVO RECUSADO/);
   assert.match(rehearsal, /rollback;/i);
   assert.match(reconciliation, /G11_PROJECTION_RECONCILIATION_REHEARSAL_PASS/);
   assert.match(reconciliation, /snapshotHash/);
   assert.match(reconciliation, /rollback;/i);
+  assert.match(rateLimit, /G11_RATE_LIMIT_FUSION_REHEARSAL_PASS/);
+  assert.match(rateLimit, /rateLimitFailClosed: true/);
+  assert.match(rateLimit, /rollback;/i);
   assert.match(canary, /EV2_G11_EXPECTED_SHA/);
   assert.match(canary, /exact_candidate_sha/);
   assert.match(canary, /lead_preserved_after_delivery_failure/);

@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
-select plan(48);
+select plan(52);
 
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -100,6 +100,42 @@ select isnt(
   true,
   'authenticated users cannot bypass the system command boundary'
 );
+select isnt(
+  has_function_privilege(
+    'authenticated',
+    'public.cms_system_capability_limited(uuid,text,text,text,text,timestamp with time zone,text)',
+    'EXECUTE'
+  ),
+  true,
+  'authenticated users cannot bypass the fused capability boundary'
+);
+select isnt(
+  has_function_privilege(
+    'authenticated',
+    'public.cms_get_system_snapshot_limited(uuid,text,text,text,text,timestamp with time zone,uuid,text)',
+    'EXECUTE'
+  ),
+  true,
+  'authenticated users cannot bypass the fused snapshot boundary'
+);
+select isnt(
+  has_function_privilege(
+    'authenticated',
+    'public.cms_retry_lead_delivery_limited(uuid,uuid,text,text,text,text,text,timestamp with time zone,uuid,uuid,text,text)',
+    'EXECUTE'
+  ),
+  true,
+  'authenticated users cannot bypass the fused lead retry boundary'
+);
+select isnt(
+  has_function_privilege(
+    'authenticated',
+    'public.cms_execute_system_command_limited(uuid,text,jsonb,text,text,text,text,timestamp with time zone,uuid,uuid,uuid,text,text)',
+    'EXECUTE'
+  ),
+  true,
+  'authenticated users cannot bypass the fused system command boundary'
+);
 select ok(
   private.cms_system_metrics_safe(
     '{"availabilityPercent":99.9,"adminReadP95Ms":500,"commandP95Ms":800,"outboxLagP95Ms":60000,"auditCoveragePercent":100,"restoreRpoMinutes":0,"restoreRtoMinutes":15}'::jsonb
@@ -114,9 +150,9 @@ select isnt(
   'free text and personal data cannot enter system metrics'
 );
 select is(
-  (public.cms_system_capability(
+  (public.cms_system_capability_limited(
     '51100000-0000-4000-8000-000000000101', 'local', 'main', 'aal2',
-    'g11-operator-session', now() - interval '1 minute'
+    'g11-operator-session', now() - interval '1 minute', repeat('a', 64)
   ) ->> 'enabled')::boolean,
   true,
   'bounded individual override enables the candidate for the operator'
@@ -162,9 +198,9 @@ values (
 );
 
 create temporary table g11_snapshot as
-select public.cms_get_system_snapshot(
+select public.cms_get_system_snapshot_limited(
   '51100000-0000-4000-8000-000000000101', 'local', 'main', 'aal2',
-  'g11-operator-session', now() - interval '1 minute', gen_random_uuid()
+  'g11-operator-session', now() - interval '1 minute', gen_random_uuid(), repeat('b', 64)
 ) as payload;
 select is((select (payload ->> 'gateReady')::boolean from g11_snapshot), true, 'snapshot accepts an intentionally retired managed page');
 select is(
@@ -237,11 +273,11 @@ insert into public.cms_lead_outbox (
 );
 
 select is(
-  public.cms_retry_lead_delivery(
+  public.cms_retry_lead_delivery_limited(
     '51100000-0000-4000-8000-000000000101', '51100000-0000-4000-8000-000000000205',
     'Dependência sintética recuperada', 'local', 'main', 'aal2', 'g11-operator-session',
     now() - interval '1 minute', '51100000-0000-4000-8000-000000000208',
-    '51100000-0000-4000-8000-000000000209', repeat('d', 64)
+    '51100000-0000-4000-8000-000000000209', repeat('d', 64), repeat('c', 64)
   ) ->> 'status',
   'pending',
   'failed lead delivery can be requeued explicitly'
@@ -371,11 +407,11 @@ $$;
 
 create temporary table g11_run (id uuid) on commit drop;
 insert into g11_run
-select (public.cms_execute_system_command(
+select (public.cms_execute_system_command_limited(
   '51100000-0000-4000-8000-000000000101', 'record_run', pg_temp.good_report(),
   'local', 'main', 'aal2', 'g11-operator-session', now() - interval '1 minute',
   '51100000-0000-4000-8000-000000000301', '51100000-0000-4000-8000-000000000302',
-  '51100000-0000-4000-8000-000000000303', repeat('1', 64)
+  '51100000-0000-4000-8000-000000000303', repeat('1', 64), repeat('d', 64)
 ) ->> 'runId')::uuid;
 select is((select status from public.cms_assurance_runs where id = (select id from g11_run)), 'measured', 'passing measurement awaits independent review');
 select ok((select measurement_passed from public.cms_assurance_runs where id = (select id from g11_run)), 'all mandatory G11 thresholds pass at their boundary');

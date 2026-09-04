@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
-select plan(46);
+select plan(48);
 
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -138,15 +138,58 @@ select is(
   'production capability fails closed'
 );
 
+insert into public.cms_content_items (
+  id, content_type, slug, workflow_status, created_by, updated_by, archived_at
+) values (
+  '51100000-0000-4000-8000-000000000221', 'page', 'g11-retired-page', 'archived',
+  '51100000-0000-4000-8000-000000000101', '51100000-0000-4000-8000-000000000101', now()
+);
+insert into public.cms_content_revisions (
+  id, item_id, revision_number, schema_version, payload, seo, provenance,
+  source_draft_version, reason, created_by
+) values (
+  '51100000-0000-4000-8000-000000000222', '51100000-0000-4000-8000-000000000221',
+  1, 1, '{}'::jsonb, '{}'::jsonb,
+  '[{"sourceKind":"synthetic_test","rightsConfirmed":true}]'::jsonb,
+  1, 'Página sintética retirada',
+  '51100000-0000-4000-8000-000000000101'
+);
+insert into public.cms_publications (item_id, revision_id, cache_tag, published_by)
+values (
+  '51100000-0000-4000-8000-000000000221', '51100000-0000-4000-8000-000000000222',
+  'cms:page:51100000-0000-4000-8000-000000000221',
+  '51100000-0000-4000-8000-000000000101'
+);
+
 create temporary table g11_snapshot as
 select public.cms_get_system_snapshot(
   '51100000-0000-4000-8000-000000000101', 'local', 'main', 'aal2',
   'g11-operator-session', now() - interval '1 minute', gen_random_uuid()
 ) as payload;
-select is((select (payload ->> 'gateReady')::boolean from g11_snapshot), true, 'clean database snapshot is ready');
+select is((select (payload ->> 'gateReady')::boolean from g11_snapshot), true, 'snapshot accepts an intentionally retired managed page');
+select is(
+  (select (payload #>> '{metrics,projectionDivergence}')::integer from g11_snapshot),
+  0,
+  'retired managed content preserves publication history without requiring a public projection'
+);
 select is((select jsonb_array_length(payload -> 'queues') from g11_snapshot), 3, 'snapshot reconciles all three queues');
 select is((select jsonb_array_length(payload -> 'checks') from g11_snapshot), 6, 'snapshot exposes six database checks');
 select is((select (payload ->> 'containsPersonalData')::boolean from g11_snapshot), false, 'snapshot never exposes personal data');
+
+update public.cms_content_items
+set workflow_status = 'draft', archived_at = null
+where id = '51100000-0000-4000-8000-000000000221';
+select is(
+  (public.cms_get_system_snapshot(
+    '51100000-0000-4000-8000-000000000101', 'local', 'main', 'aal2',
+    'g11-operator-session', now() - interval '1 minute', gen_random_uuid()
+  ) #>> '{metrics,projectionDivergence}')::integer,
+  1,
+  'an active publication without its public projection remains a real divergence'
+);
+update public.cms_content_items
+set workflow_status = 'archived', archived_at = now()
+where id = '51100000-0000-4000-8000-000000000221';
 
 insert into public.cms_form_definitions (
   id, form_key, title, purpose, created_by, updated_by

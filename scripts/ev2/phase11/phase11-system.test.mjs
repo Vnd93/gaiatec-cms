@@ -31,7 +31,7 @@ test("EV2.11 migration is additive, default-off, RLS protected and production ga
   assert.doesNotMatch(sql, /drop table|truncate|default_enabled\s*=\s*true/i);
   assert.match(sql, /create trigger cms_assurance_runs_guard/);
   assert.match(sql, /create trigger cms_system_command_receipts_guard/);
-  assert.match(rls, /select plan\(46\)/);
+  assert.match(rls, /select plan\(48\)/);
 });
 
 test("F-017 exposes delivery state and a controlled, durable replay path", async () => {
@@ -85,6 +85,24 @@ test("F-018 exposes a read-only snapshot and two-person Gate G11 evidence", asyn
   assert.match(api, /systemAssuranceCommand/);
 });
 
+test("G11 projection reconciliation respects managed-content retirement", async () => {
+  const [sql, rls] = await Promise.all([
+    read("supabase/migrations/0051_ev2_system_assurance_projection_reconciliation.sql"),
+    read("supabase/tests/rls_ev2_phase11_system.test.sql"),
+  ]);
+  assert.match(sql, /create or replace function public\.cms_get_system_snapshot/);
+  assert.match(sql, /item\.workflow_status in \('archived', 'trashed'\)/);
+  assert.match(
+    sql,
+    /item\.content_type in \('page', 'homepage', 'navigation', 'site_settings', 'placement'\)/,
+  );
+  assert.match(sql, /join public\.cms_content_items item on item\.id = publication\.item_id/);
+  assert.match(sql, /join public\.cms_content_items item on item\.id = projection\.item_id/);
+  assert.doesNotMatch(sql, /drop table|truncate|delete from|default_enabled\s*=\s*true/i);
+  assert.match(rls, /retired managed content preserves publication history/);
+  assert.match(rls, /active publication without its public projection remains a real divergence/);
+});
+
 test("G11 boundary rules fail closed without redundant scenario tests", () => {
   const result = spawnSync(process.execPath, ["scripts/ev2/phase11/run-evals.mjs"], {
     cwd: process.cwd(),
@@ -135,8 +153,9 @@ test("load statistics use nearest-rank percentiles and strict evidence evaluatio
 });
 
 test("G11 operational artifacts remain reproducible and explicitly pending", async () => {
-  const [rehearsal, canary, workflow, gate, plan, matrix, runbook] = await Promise.all([
+  const [rehearsal, reconciliation, canary, workflow, gate, plan, matrix, runbook] = await Promise.all([
     read("scripts/ev2/phase11/validate-migration.mjs"),
+    read("scripts/ev2/phase11/validate-projection-reconciliation.mjs"),
     read("scripts/ev2/phase11/staging-canary.mjs"),
     read(".github/workflows/preview-ev2-phase11.yml"),
     read("docs/ev2/fase-11/GATE_G11.md"),
@@ -147,6 +166,9 @@ test("G11 operational artifacts remain reproducible and explicitly pending", asy
   assert.match(rehearsal, /G11_MIGRATION_REHEARSAL_PASS/);
   assert.match(rehearsal, /ALVO RECUSADO/);
   assert.match(rehearsal, /rollback;/i);
+  assert.match(reconciliation, /G11_PROJECTION_RECONCILIATION_REHEARSAL_PASS/);
+  assert.match(reconciliation, /snapshotHash/);
+  assert.match(reconciliation, /rollback;/i);
   assert.match(canary, /EV2_G11_EXPECTED_SHA/);
   assert.match(canary, /exact_candidate_sha/);
   assert.match(canary, /lead_preserved_after_delivery_failure/);

@@ -48,6 +48,9 @@ for (const route of routes) {
 }
 
 test("@a11y critical public journeys have no serious automated violations", async ({ page }) => {
+  // Six complete axe scans against the remote edge can legitimately exceed the
+  // default 30 s even after every route has rendered.
+  test.setTimeout(60_000);
   for (const route of [
     "/",
     "/contato",

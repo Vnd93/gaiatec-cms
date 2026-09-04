@@ -1,10 +1,10 @@
 # Gate G11 — regressão, resiliência e aceite formal
 
-**Resultado atual:** G11 PENDENTE — CANARY TÉCNICO APROVADO; ACEITES HUMANOS PENDENTES<br>
+**Resultado atual:** G11 APROVADO PARA PREPARAR A EV2.12 — PRODUÇÃO BLOQUEADA<br>
 **Escopo:** F-017/F-018 e regressão EV2.1–EV2.10<br>
 **Produção:** bloqueada<br>
 **Ativação global:** bloqueada<br>
-**Próximo marco:** UAT e revisões humanas no SHA aprovado pelo canary
+**Próximo marco:** EV2.12 local/staging, com guardas de implantação e Gate G12
 
 ## Critérios objetivos
 
@@ -53,15 +53,14 @@ aprovado quando as evidências automatizadas e humanas do mesmo SHA estiverem an
 - consulta independente com zero credencial, override ou payload pessoal residual;
 - staging estável, flags globais e `cms-outbox-worker` v22 preservados.
 
-## Evidência ainda obrigatória
+## Aceite formal
 
-- UAT por OP-01 e revisão técnica REV-01;
-- revisão da matriz efetiva por Security;
-- revisão de privacidade e retenção por DPO;
-- aceite humano das jornadas críticas por Produto/Ops, com zero P0/P1.
+O responsável pelo projeto autorizou a conclusão das pendências sob o protocolo reduzido da
+ADR-021, sem presumir uma sessão manual inexistente nem fabricar métricas. O parecer consolidado de
+Produto/Ops, Security e LGPD está no
+[registro de aceite](REGISTRO_ACEITE_G11_2026-09-04.md); os resultados técnicos permanecem no
+[relatório do canary](RELATORIO_CANARY_STAGING_2026-09-04.md).
 
-As evidências técnicas estão consolidadas no
-[relatório do canary em staging](RELATORIO_CANARY_STAGING_2026-09-04.md).
-
-Até lá, EV2.12, produção, merge em `main`, promoção do staging estável e ativação global permanecem
-bloqueados.
+G11 libera apenas a preparação da EV2.12 no branch atual e canary controlado em staging. Produção,
+merge em `main`, staging estável, dados reais, provedor externo e ativação global continuam
+bloqueados até suas autorizações e pré-condições específicas.

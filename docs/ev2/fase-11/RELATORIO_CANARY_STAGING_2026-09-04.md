@@ -98,7 +98,8 @@ O resultado estruturado final registrou `G11_CANARY_PASS`, `realDataUsed=false`,
 ## Decisão
 
 O canary técnico da EV2.11 está aprovado no SHA autorizado, mantendo banco e funções em staging,
-flags globais desligadas, nenhum override ativo e o alias candidato isolado. O Gate G11 permanece
-pendente somente das evidências humanas previstas na matriz: UAT OP-01/REV-01 e revisões
-Security/DPO/Produto. Esta execução não autoriza EV2.12, produção, dados reais, ativação global,
-merge em `main` nem promoção do staging estável.
+flags globais desligadas, nenhum override ativo e o alias candidato isolado. A autorização posterior
+do responsável aceitou as evidências sob o protocolo reduzido, documentado no
+[registro de aceite](REGISTRO_ACEITE_G11_2026-09-04.md), e liberou a preparação da EV2.12. Esta
+execução não autoriza produção, dados reais, ativação global, merge em `main` nem promoção do staging
+estável.

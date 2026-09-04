@@ -195,8 +195,8 @@ test("load statistics use nearest-rank percentiles and strict evidence evaluatio
   assert.equal(result.requiresIndependentReview, true);
 });
 
-test("G11 operational artifacts remain reproducible and explicitly pending", async () => {
-  const [rehearsal, reconciliation, rateLimit, canary, workflow, gate, plan, matrix, runbook] =
+test("G11 operational artifacts remain reproducible and release only EV2.12 preparation", async () => {
+  const [rehearsal, reconciliation, rateLimit, canary, workflow, gate, plan, matrix, runbook, acceptance] =
     await Promise.all([
       read("scripts/ev2/phase11/validate-migration.mjs"),
       read("scripts/ev2/phase11/validate-projection-reconciliation.mjs"),
@@ -207,6 +207,7 @@ test("G11 operational artifacts remain reproducible and explicitly pending", asy
       read("docs/ev2/fase-11/PLANO_CANARY_STAGING.md"),
       read("docs/ev2/fase-11/MATRIZ_HOMOLOGACAO.md"),
       read("docs/ev2/fase-11/RUNBOOK_OPERACIONAL.md"),
+      read("docs/ev2/fase-11/REGISTRO_ACEITE_G11_2026-09-04.md"),
     ]);
   assert.match(rehearsal, /G11_MIGRATION_REHEARSAL_PASS/);
   assert.match(rehearsal, /ALVO RECUSADO/);
@@ -230,9 +231,13 @@ test("G11 operational artifacts remain reproducible and explicitly pending", asy
   assert.match(canary, /activeCredentials/);
   assert.match(workflow, /ev2-g11-canary/);
   assert.match(workflow, /VITE_EV2_SYSTEM_ASSURANCE_CANDIDATE/);
-  assert.match(gate, /G11 PENDENTE/);
+  assert.match(gate, /G11 APROVADO PARA PREPARAR A EV2\.12/);
+  assert.match(gate, /PRODUÇÃO BLOQUEADA/);
   assert.match(plan, /sem produção/i);
   assert.match(matrix, /Operacional/);
   assert.match(matrix, /LGPD/);
   assert.match(runbook, /RPO 0/);
+  assert.match(acceptance, /não declara uma sessão manual que não ocorreu/i);
+  assert.match(acceptance, /EV2-D04/);
+  assert.match(acceptance, /Nenhuma dessas ações é concedida/);
 });

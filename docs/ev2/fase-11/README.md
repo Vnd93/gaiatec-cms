@@ -1,6 +1,6 @@
 # EV2.11 — integração operacional e garantia sistêmica
 
-**Estado:** canary técnico 27/27 aprovado; Gate G11 pendente dos aceites humanos<br>
+**Estado:** Gate G11 aprovado para preparar a EV2.12; produção bloqueada<br>
 **Escopo:** F-017 e F-018, com regressão sistêmica das entregas EV2.1–EV2.10<br>
 **Produção:** bloqueada<br>
 **Dados reais:** proibidos no canary<br>
@@ -40,11 +40,13 @@ pode registrar aceite técnico.
 5. [Runbook operacional e rollback](RUNBOOK_OPERACIONAL.md)
 6. [Relatório de validação local](RELATORIO_VALIDACAO_LOCAL_2026-09-03.md)
 7. [Relatório do canary em staging](RELATORIO_CANARY_STAGING_2026-09-04.md)
+8. [Registro de aceite do G11](REGISTRO_ACEITE_G11_2026-09-04.md)
 
 ## Limite desta entrega
 
 O SHA `8321f1291860e9ca55d3e17e3c1ce36123d0d025` foi validado somente em staging. O canary passou
 27/27 verificações, com dois atores sintéticos MFA, zero dado real e resíduo zero; o staging estável,
-produção e `cms-outbox-worker` v22 permaneceram inalterados. O G11 ainda depende da validação
-humana/UAT e dos aceites Security/DPO previstos na matriz. O histórico de `docs/fase-11`, referente
-ao ciclo visual anterior, permanece preservado e independente desta fase EV2.11.
+produção e `cms-outbox-worker` v22 permaneceram inalterados. O responsável autorizou o protocolo
+reduzido e aceitou a revisão consolidada sem atribuir métricas a uma sessão manual inexistente. G11
+libera somente a preparação da EV2.12 local/staging. O histórico de `docs/fase-11`, referente ao
+ciclo visual anterior, permanece preservado e independente desta fase EV2.11.

@@ -15,8 +15,8 @@
 | `EV2-E08` | EV2.8  | RBAC escopado, MFA, auditoria e permission evals                | E07         | testes negativos e 100% ações críticas e G8    | revogar grants/flags                    | concluído; G8 aprovado        |
 | `EV2-E09` | EV2.9  | Estúdio Visual e preparação multisite isolada                   | E08         | bindings, snapshots, tenant escape e G9        | flag; site único permanece              | concluído; G9 aprovado        |
 | `EV2-E10` | EV2.10 | IA assistiva com fonte, custo e aprovação humana                | E08/E09     | evals, red-team, fallback manual e G10         | desligar provider/flag                  | concluído; G10 aprovado       |
-| `EV2-E11` | EV2.11 | regressão, carga, restore, segurança e homologação              | E01–E10     | matriz completa e G11                          | corrigir sem promover                   | candidato local; G11 pendente |
-| `EV2-E12` | EV2.12 | canary, operação assistida, handover e encerramento             | E11         | autorização, telemetria, runbooks e G12        | artefato anterior + flags               | bloqueado por E11             |
+| `EV2-E11` | EV2.11 | regressão, carga, restore, segurança e homologação              | E01–E10     | matriz completa e G11                          | corrigir sem promover                   | concluído; G11 aprovado       |
+| `EV2-E12` | EV2.12 | canary, operação assistida, handover e encerramento             | E11         | autorização, telemetria, runbooks e G12        | artefato anterior + flags               | liberado para desenvolvimento |
 
 ## Primeira fatia da EV2.1
 

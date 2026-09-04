@@ -1,6 +1,6 @@
 # EV2 — Evolução do CMS GAIATEC
 
-**Status:** Gates G0–G10 aprovados; canary técnico EV2.11 aprovado; G11 pendente dos aceites humanos; produção e provider externo bloqueados<br>
+**Status:** Gates G0–G11 aprovados; EV2.12 liberada para preparação local/staging; produção e provider externo bloqueados<br>
 **Data-base:** 4 de setembro de 2026<br>
 **Fonte canônica:** Markdown versionado neste diretório
 **Branch de execução:** `ev2/desenvolvimento-fases-1-a-12`<br>
@@ -59,7 +59,7 @@ adaptador sintético, custo zero e resíduo zero.
 Na EV2.11, as migrations aditivas `0050`–`0052`, `cms-system` v3 e `cms-leads` v12 foram avaliadas
 no SHA `8321f12`; `cms-outbox-worker` permaneceu na v22. O canary final passou 27/27 verificações,
 com disponibilidade 100%, SLOs de backend aprovados, auditoria 100%, restore RPO 0/RTO 5,642 s,
-acessibilidade critical/serious 0/0 e resíduo sintético zero. O Gate G11 permanece pendente somente
-dos aceites humanos previstos na matriz. Produção, dados reais, domínios reais, provedor externo,
-F-016, ativação global, merge em `main` e promoção do staging estável continuam fora do escopo;
-EV2-D04 permanece pendente.
+acessibilidade critical/serious 0/0 e resíduo sintético zero. O responsável aprovou o protocolo
+reduzido e liberou a preparação local/staging da EV2.12, sem fabricar métricas humanas. Produção,
+dados reais, domínios reais, provedor externo, F-016, ativação global, merge em `main` e promoção do
+staging estável continuam fora do escopo; EV2-D04 permanece pendente.

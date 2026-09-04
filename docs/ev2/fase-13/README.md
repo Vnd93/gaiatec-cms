@@ -1,7 +1,7 @@
 # EV2.13 — hardening pré-produção e elegibilidade runtime
 
-**Estado:** implementada localmente; rehearsal e canary G13 pendentes<br>
-**Gate:** G13 não aprovado<br>
+**Estado:** implementação e canary de staging concluídos<br>
+**Gate:** G13 aprovado<br>
 **Produção:** bloqueada
 
 ## Objetivo
@@ -52,3 +52,4 @@ do G13; migration, funções, executor integrado e limpeza continuam obrigatóri
 - [Gate G13](GATE_G13.md)
 - [Plano do canary em staging](PLANO_CANARY_STAGING.md)
 - [Relatório de validação local](RELATORIO_VALIDACAO_LOCAL_2026-09-04.md)
+- [Relatório do canary G13 em staging](RELATORIO_CANARY_STAGING_2026-09-04.md)

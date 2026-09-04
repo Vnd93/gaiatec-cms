@@ -1,6 +1,6 @@
 # EV2 — Evolução do CMS GAIATEC
 
-**Status:** Gates G0–G11 aprovados; G12 produtivo pendente; EV2.13 em validação; produção e provider externo bloqueados<br>
+**Status:** Gates G0–G11 e G13 aprovados; G12 produtivo pendente; produção e provider externo bloqueados<br>
 **Data-base:** 4 de setembro de 2026<br>
 **Fonte canônica:** Markdown versionado neste diretório<br>
 **Branch de execução:** `ev2/fase-13-hardening-pre-producao`<br>
@@ -71,9 +71,9 @@ rollback foram preparados. O Gate G12 de produção nunca foi aprovado. A audito
 que o staging estável não expõe os contratos atuais de health/manifest, a evidência antiga não
 distingue resíduo ativo de tombstones e os controles de release precisavam de vínculo mais forte.
 
-Na EV2.13, o candidato endurece CI/deploy/rollback, valida a evidência por digest e conteúdo, fecha
-falsos positivos de health/manifest e move todas as decisões EV2 do build para um manifesto runtime
-individual e fail-closed. A migration `0053`, as funções `cms-session`/`cms-public`, o alias
-`ev2-g13-canary` e o canary reduzido ainda dependem da qualificação de staging pelo SHA final.
-Produção, dados reais, domínios reais, ativação global e promoção do staging estável permanecem fora
-do escopo.
+Na EV2.13, o SHA `518e8e5…` endureceu CI/deploy/rollback, vinculou evidência por digest e conteúdo,
+fechou falsos positivos de health/manifest e moveu todas as decisões EV2 do build para um manifesto
+runtime individual e fail-closed. A migration `0053`, `cms-session` v14, `cms-public` v34 e o alias
+isolado `ev2-g13-canary` passaram pelo canary reduzido 10/10, com revogação em 1.227 ms e zero resíduo
+ativo. O G13 foi aprovado sem promoção do staging estável. Produção, dados/domínios reais, ativação
+global e Gate G12 permanecem bloqueados.

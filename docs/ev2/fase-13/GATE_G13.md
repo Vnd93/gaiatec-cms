@@ -1,25 +1,25 @@
 # Gate G13 — hardening pré-produção e runtime
 
-**Decisão atual:** NÃO APROVADO<br>
-**Escopo liberado:** implementação e validação local<br>
-**Staging:** rehearsal/canary pendentes<br>
+**Decisão atual:** APROVADO<br>
+**Escopo aprovado:** hardening e elegibilidade runtime no canary isolado<br>
+**Staging:** canary G13 concluído; alias estável não promovido<br>
 **Produção:** bloqueada
 
 ## Critérios vinculantes
 
-| Critério      | Evidência exigida                                                              | Estado atual                              |
-| ------------- | ------------------------------------------------------------------------------ | ----------------------------------------- |
-| CI integral   | lint sem erro, typecheck, testes, evals, build e audit sem alta/crítica        | pendente do SHA final                     |
-| Migration     | `0053` aditiva, rehearsal com rollback e pgTAP                                 | implementação local concluída             |
-| Funções       | `cms-session` e `cms-public` com `deno check` e versões de staging registradas | typecheck local aprovado; deploy pendente |
-| Manifesto     | 13 capacidades, schema/ambiente/site/data válidos e fallback indisponível      | testes locais aprovados                   |
-| Identidade    | override único ≤30 min, sem amplo paralelo; isolamento entre atores            | canary pendente                           |
-| Revogação     | capacidade deixa de ser elegível em até 60 segundos                            | unidade aprovada; canary pendente         |
-| Negativos     | anônimo, escopo amplo, ambiente divergente e produção falham fechados          | local aprovado; staging pendente          |
-| Busca pública | v1 preservada; `search-v2` anônimo retorna 404                                 | local aprovado; staging pendente          |
-| Resíduo       | zero ator, credencial e override sintético ativos                              | canary pendente                           |
-| Release       | SHA completo igual em checkout, header, health e manifest                      | canary pendente                           |
-| Limites       | zero produção, dado/domínio real, ativação global e promoção estável           | obrigatório                               |
+| Critério      | Evidência exigida                                                              | Estado atual                        |
+| ------------- | ------------------------------------------------------------------------------ | ----------------------------------- |
+| CI integral   | lint sem erro, typecheck, testes, evals, build e audit sem alta/crítica        | aprovado no SHA `518e8e5…`          |
+| Migration     | `0053` aditiva, rehearsal com rollback e pgTAP                                 | aprovada e aplicada em staging      |
+| Funções       | `cms-session` e `cms-public` com `deno check` e versões de staging registradas | v14 e v34 ativas                    |
+| Manifesto     | 13 capacidades, schema/ambiente/site/data válidos e fallback indisponível      | aprovado                            |
+| Identidade    | override único ≤30 min, sem amplo paralelo; isolamento entre atores            | aprovado com dois usuários MFA      |
+| Revogação     | capacidade deixa de ser elegível em até 60 segundos                            | aprovada em 1.227 ms                |
+| Negativos     | anônimo, escopo amplo, ambiente divergente e produção falham fechados          | aprovado                            |
+| Busca pública | v1 preservada; `search-v2` anônimo retorna 404                                 | aprovado                            |
+| Resíduo       | zero ator, credencial e override sintético ativos                              | aprovado; dois tombstones separados |
+| Release       | SHA completo igual em checkout, header, health e manifest                      | aprovado                            |
+| Limites       | zero produção, dado/domínio real, ativação global e promoção estável           | atendido                            |
 
 ## Decisão
 
@@ -30,6 +30,8 @@ budget excedido ou qualquer mutação fora de staging produz `pause`.
 O workflow de candidate preview não é evidência suficiente do gate: migration `0053`, versões das
 funções, executor integrado e limpeza devem constar no relatório do mesmo SHA.
 
-Mesmo aprovado, G13 não equivale ao Gate G12 de produção. A evidência G12 histórica anterior ao
+O relatório vinculante é [RELATORIO_CANARY_STAGING_2026-09-04.md](RELATORIO_CANARY_STAGING_2026-09-04.md).
+
+G13 não equivale ao Gate G12 de produção. A evidência G12 histórica anterior ao
 hardening não satisfaz o novo vínculo criptográfico nem a semântica explícita de tombstones; uma
 requalificação controlada será necessária antes de qualquer pedido de produção.

@@ -1,7 +1,8 @@
 # Relatório de validação local EV2.13 — 4 de setembro de 2026
 
-**Estado:** validação local concluída; CI remoto e canary pendentes<br>
+**Estado:** validação local concluída; CI e canary final registrados no relatório de staging<br>
 **Branch:** `ev2/fase-13-hardening-pre-producao`<br>
+**SHA final qualificado:** `518e8e5df605264013d94a16998d00168d4d03c7`<br>
 **Produção:** nenhuma ação executada
 
 ## Escopo validado
@@ -31,9 +32,9 @@
 | Auditoria npm                     | zero vulnerabilidade                                                         |
 
 O ESLint mantém 46 avisos preexistentes, sem erro; a redução permanece registrada em `EV2-Q01` e não
-foi misturada ao hardening. O teste pgTAP está versionado e será executado pelo job de banco do CI,
-que dispõe do Docker ausente no host local. O SHA final e as métricas operacionais serão registrados
-somente depois do CI e do canary; nenhuma medição foi antecipada ou inferida.
+foi misturada ao hardening. O teste pgTAP versionado foi aprovado pelo job de banco do CI, que dispõe
+do Docker ausente no host local. O SHA final e as métricas medidas estão em
+`RELATORIO_CANARY_STAGING_2026-09-04.md`; nenhuma medição foi antecipada ou inferida.
 
 A revisão final endureceu a migration para exigir exatamente um override individual com janela total
 de até 30 minutos e ausência de qualquer override amplo ativo para a mesma capacidade/ambiente. O

@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "outcome": "G13_CANARY_PASS",
+  "suiteKey": "g13-runtime-eligibility-reduced-v1",
+  "environment": "staging",
+  "runId": "60b43d44-22fd-438a-abee-b5af597e40b9",
+  "candidateSha": "518e8e5df605264013d94a16998d00168d4d03c7",
+  "candidateOrigin": "https://ev2-g13-canary.gaiatec-cms-staging.pages.dev",
+  "stableOrigin": "https://gaiatec-cms-staging.pages.dev",
+  "startedAt": "2026-09-04T22:14:21.461Z",
+  "finishedAt": "2026-09-04T22:14:42.503Z",
+  "checks": 10,
+  "passed": 10,
+  "revocationLatencyMs": 1227,
+  "syntheticOnly": true,
+  "realDataUsed": false,
+  "realDomainsUsed": false,
+  "productionMutations": 0,
+  "globalActivationMutations": 0,
+  "stablePromoted": false,
+  "syntheticResidue": {
+    "activeActors": 0,
+    "activeCredentials": 0,
+    "activeOverrides": 0,
+    "personalPayloads": 0,
+    "retainedSyntheticActors": 2,
+    "semantics": "zero-active-residue; retained security tombstones counted separately"
+  },
+  "evidenceHash": "24ad3be65c81141842006b6a5e80322624c404913f7d55bdedc2755807fc81e0"
+}

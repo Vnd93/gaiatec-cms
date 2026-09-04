@@ -126,6 +126,7 @@ async function rpc(ctx, name, body) {
     method: "POST",
     headers: ctx.serviceHeaders,
     body,
+    allowed: [200, 204],
   });
 }
 

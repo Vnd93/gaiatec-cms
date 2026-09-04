@@ -150,6 +150,7 @@ test("G11 operational artifacts remain reproducible and explicitly pending", asy
   assert.match(canary, /EV2_G11_EXPECTED_SHA/);
   assert.match(canary, /exact_candidate_sha/);
   assert.match(canary, /lead_preserved_after_delivery_failure/);
+  assert.match(canary, /async function rpc[\s\S]*?allowed: \[200, 204\]/);
   assert.match(canary, /independent_review_required/);
   assert.match(canary, /synthetic_residue_zero/);
   assert.match(canary, /ban_duration: "876000h"/);

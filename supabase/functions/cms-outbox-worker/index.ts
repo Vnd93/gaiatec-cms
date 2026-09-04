@@ -4,6 +4,7 @@ import { EmailProviderError, leadNotificationEmail, sendEmail } from "../_shared
 import { syncPublicSearchDocument } from "../_shared/cms-search-index.ts";
 
 Deno.serve(async (req) => {
+  const startedAt = performance.now();
   const expected = Deno.env.get("OUTBOX_WORKER_SECRET"), supplied = req.headers.get("X-Worker-Secret");
   if (!expected || !supplied || supplied !== expected) return new Response(JSON.stringify({ error: "Não autorizado." }), { status: 401 });
   if (req.method !== "POST") return new Response(JSON.stringify({ error: "Método não permitido." }), { status: 405 });
@@ -91,6 +92,7 @@ Deno.serve(async (req) => {
     if (!finish.error && success) collaborationCompleted += 1;
     else collaborationFailed += 1;
   }
-  return new Response(JSON.stringify({ scheduled, dueReleases: dueReleases.data ?? { processed: 0, failed: 0, partialWrites: 0 }, expiredCampaigns: expiredCampaigns.data ?? 0, retainedLeads: retainedLeads.data ?? 0, breachedSlas: breachedSlas.data ?? 0, claimed: claimed.data?.length ?? 0, completed, failed, searchIndexed, searchIndexFailed, leadClaimed: leadClaimed.data?.length ?? 0, leadCompleted, leadFailed, leadSkipped, collaborationClaimed: collaborationClaimed.data?.length ?? 0, collaborationCompleted, collaborationFailed, correlationId }),
+  const degraded = failed > 0 || searchIndexFailed > 0 || leadFailed > 0 || collaborationFailed > 0;
+  return new Response(JSON.stringify({ status: degraded ? "degraded" : "ok", durationMs: Math.round(performance.now() - startedAt), leadDurability: true, scheduled, dueReleases: dueReleases.data ?? { processed: 0, failed: 0, partialWrites: 0 }, expiredCampaigns: expiredCampaigns.data ?? 0, retainedLeads: retainedLeads.data ?? 0, breachedSlas: breachedSlas.data ?? 0, claimed: claimed.data?.length ?? 0, completed, failed, searchIndexed, searchIndexFailed, leadClaimed: leadClaimed.data?.length ?? 0, leadCompleted, leadFailed, leadSkipped, collaborationClaimed: collaborationClaimed.data?.length ?? 0, collaborationCompleted, collaborationFailed, correlationId }),
     { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
 });

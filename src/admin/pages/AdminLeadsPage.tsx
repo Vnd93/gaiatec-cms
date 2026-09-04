@@ -2,7 +2,18 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { leadCommand } from "../api/cms-api";
 import { useAdminAuth } from "../auth/AdminAuthContext";
-import { ConfirmDialog } from "../components/AdminUI";
+import { Badge, ConfirmDialog } from "../components/AdminUI";
+
+type LeadDelivery = {
+  id: string;
+  event_type: string;
+  status: "pending" | "processing" | "completed" | "failed" | "dead_letter";
+  attempts: number;
+  available_at: string;
+  completed_at: string | null;
+  last_error_code: string | null;
+  created_at: string;
+};
 
 type Lead = {
   id: string;
@@ -29,9 +40,32 @@ type Lead = {
     reason: string;
     created_at: string;
   }>;
+  cms_lead_outbox: LeadDelivery[];
 };
 type Profile = { user_id: string; display_name: string };
 const statuses = ["new", "assigned", "in_service", "responded", "converted", "disqualified", "archived"];
+const deliveryLabels: Record<LeadDelivery["status"], string> = {
+  pending: "Aguardando entrega",
+  processing: "Processando",
+  completed: "Entregue",
+  failed: "Nova tentativa agendada",
+  dead_letter: "Ação necessária",
+};
+const deliveryTone: Record<LeadDelivery["status"], "neutral" | "info" | "success" | "warning" | "danger"> = {
+  pending: "info",
+  processing: "info",
+  completed: "success",
+  failed: "warning",
+  dead_letter: "danger",
+};
+
+function relevantDelivery(lead: Lead): LeadDelivery | undefined {
+  const priority: LeadDelivery["status"][] = ["dead_letter", "failed", "processing", "pending", "completed"];
+  return lead.cms_lead_outbox.slice().sort((left, right) => {
+    const byPriority = priority.indexOf(left.status) - priority.indexOf(right.status);
+    return byPriority || Date.parse(right.created_at) - Date.parse(left.created_at);
+  })[0];
+}
 
 export default function AdminLeadsPage() {
   const { session, profile } = useAdminAuth();
@@ -43,15 +77,19 @@ export default function AdminLeadsPage() {
     [assignee, setAssignee] = useState(""),
     [reason, setReason] = useState("Atualização do atendimento comercial"),
     [exportReason, setExportReason] = useState("Exportação operacional autorizada"),
+    [retryReason, setRetryReason] = useState("Reprocessamento operacional após verificação da dependência"),
+    [retryEvent, setRetryEvent] = useState<LeadDelivery | null>(null),
     [error, setError] = useState(""),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false),
-    [pendingSensitiveAction, setPendingSensitiveAction] = useState<"export" | "anonymize" | null>(null);
+    [pendingSensitiveAction, setPendingSensitiveAction] = useState<"export" | "anonymize" | "retry" | null>(
+      null,
+    );
   const load = useCallback(async () => {
     let request = supabase
       .from("cms_leads")
       .select(
-        "id,reference_code,status,origin_path,origin_source,assigned_to,sla_due_at,retention_until,created_at,payload,utm,cms_lead_consents(id,consent_version,policy_path,server_recorded_at),cms_lead_status_history(id,from_status,to_status,reason,created_at)",
+        "id,reference_code,status,origin_path,origin_source,assigned_to,sla_due_at,retention_until,created_at,payload,utm,cms_lead_consents(id,consent_version,policy_path,server_recorded_at),cms_lead_status_history(id,from_status,to_status,reason,created_at),cms_lead_outbox(id,event_type,status,attempts,available_at,completed_at,last_error_code,created_at)",
       )
       .order("created_at", { ascending: false })
       .limit(200);
@@ -142,15 +180,39 @@ export default function AdminLeadsPage() {
       setBusy(false);
     }
   }
+  async function retryDelivery() {
+    if (!session || !retryEvent) return;
+    setBusy(true);
+    setError("");
+    try {
+      const result = await leadCommand<{ correlationId: string }>(session, {
+        action: "retry_delivery",
+        eventId: retryEvent.id,
+        justification: retryReason,
+      });
+      setMessage(`Entrega recolocada na fila. Código ${result.correlationId.slice(0, 8)}.`);
+      await load();
+      setSelected(null);
+      setRetryEvent(null);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Falha ao reprocessar a entrega.");
+    } finally {
+      setBusy(false);
+    }
+  }
   async function confirmSensitiveAction() {
     const action = pendingSensitiveAction;
     setPendingSensitiveAction(null);
     if (action === "export") await exportCsv();
     if (action === "anonymize") await anonymize();
+    if (action === "retry") await retryDelivery();
   }
   const canAssign = profile?.permissions.includes("cms:leads.assign"),
     canExport = profile?.permissions.includes("cms:leads.export"),
-    canPrivacy = profile?.permissions.includes("cms:leads.privacy");
+    canPrivacy = profile?.permissions.includes("cms:leads.privacy"),
+    canRetry =
+      import.meta.env.VITE_EV2_SYSTEM_ASSURANCE_CANDIDATE === "true" &&
+      profile?.permissions.includes("cms:leads.retry_delivery");
   return (
     <section>
       <div className="admin-page-heading">
@@ -221,6 +283,7 @@ export default function AdminLeadsPage() {
                 <th>Status</th>
                 <th>Origem</th>
                 <th>SLA</th>
+                <th>Entrega</th>
                 <th>Responsável</th>
                 <th>Ação</th>
               </tr>
@@ -246,6 +309,15 @@ export default function AdminLeadsPage() {
                       <strong className="admin-notice--error">Vencido</strong>
                     ) : (
                       new Date(lead.sla_due_at).toLocaleString("pt-BR")
+                    )}
+                  </td>
+                  <td>
+                    {relevantDelivery(lead) ? (
+                      <Badge tone={deliveryTone[relevantDelivery(lead)!.status]}>
+                        {deliveryLabels[relevantDelivery(lead)!.status]}
+                      </Badge>
+                    ) : (
+                      <Badge tone="warning">Sem evento</Badge>
                     )}
                   </td>
                   <td>
@@ -298,6 +370,61 @@ export default function AdminLeadsPage() {
                 {item.to_status} · {item.reason}
               </p>
             ))}
+          <h3>Entrega e resiliência</h3>
+          {selected.cms_lead_outbox.length === 0 ? (
+            <p className="admin-notice admin-notice--error" role="alert">
+              Nenhum evento de entrega foi localizado. Abra Diagnósticos para reconciliar este lead.
+            </p>
+          ) : (
+            selected.cms_lead_outbox
+              .slice()
+              .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at))
+              .map((event) => (
+                <article className="admin-alert" key={event.id}>
+                  <p>
+                    <Badge tone={deliveryTone[event.status]}>{deliveryLabels[event.status]}</Badge> ·{" "}
+                    {event.event_type}
+                  </p>
+                  <p>
+                    Tentativas: {event.attempts} · criado em{" "}
+                    {new Date(event.created_at).toLocaleString("pt-BR")}
+                  </p>
+                  {event.status === "failed" && (
+                    <p>
+                      Próxima tentativa automática: {new Date(event.available_at).toLocaleString("pt-BR")}.
+                    </p>
+                  )}
+                  {event.last_error_code && <p>Código técnico: {event.last_error_code}</p>}
+                  {(event.status === "failed" || event.status === "dead_letter") && canRetry && (
+                    <button
+                      type="button"
+                      disabled={busy || retryReason.trim().length < 3}
+                      onClick={() => {
+                        setRetryEvent(event);
+                        setPendingSensitiveAction("retry");
+                      }}
+                    >
+                      Reprocessar entrega
+                    </button>
+                  )}
+                </article>
+              ))
+          )}
+          {canRetry &&
+            selected.cms_lead_outbox.some(
+              (event) => event.status === "failed" || event.status === "dead_letter",
+            ) && (
+              <label>
+                Justificativa do reprocessamento
+                <input
+                  required
+                  minLength={3}
+                  maxLength={500}
+                  value={retryReason}
+                  onChange={(event) => setRetryReason(event.target.value)}
+                />
+              </label>
+            )}
           {canAssign && (
             <>
               <label>
@@ -351,23 +478,46 @@ export default function AdminLeadsPage() {
               Anonimizar conforme LGPD
             </button>
           )}
-          <button type="button" onClick={() => setSelected(null)}>
+          <button
+            type="button"
+            onClick={() => {
+              setSelected(null);
+              setRetryEvent(null);
+            }}
+          >
             Fechar
           </button>
         </section>
       )}
       <ConfirmDialog
         open={pendingSensitiveAction !== null}
-        title={pendingSensitiveAction === "anonymize" ? "Anonimizar este lead?" : "Exportar dados de leads?"}
+        title={
+          pendingSensitiveAction === "anonymize"
+            ? "Anonimizar este lead?"
+            : pendingSensitiveAction === "retry"
+              ? "Reprocessar esta entrega?"
+              : "Exportar dados de leads?"
+        }
         description={
           pendingSensitiveAction === "anonymize"
             ? "A anonimização remove dados pessoais de forma irreversível e registra a justificativa na auditoria."
-            : "O arquivo contém dados pessoais. A exportação e sua justificativa serão registradas na auditoria."
+            : pendingSensitiveAction === "retry"
+              ? "A entrega será recolocada na fila com MFA, idempotência, justificativa e auditoria. O lead permanecerá intacto."
+              : "O arquivo contém dados pessoais. A exportação e sua justificativa serão registradas na auditoria."
         }
-        confirmLabel={pendingSensitiveAction === "anonymize" ? "Anonimizar lead" : "Exportar arquivo"}
+        confirmLabel={
+          pendingSensitiveAction === "anonymize"
+            ? "Anonimizar lead"
+            : pendingSensitiveAction === "retry"
+              ? "Reprocessar entrega"
+              : "Exportar arquivo"
+        }
         dangerous={pendingSensitiveAction === "anonymize"}
         onConfirm={() => void confirmSensitiveAction()}
-        onCancel={() => setPendingSensitiveAction(null)}
+        onCancel={() => {
+          setPendingSensitiveAction(null);
+          setRetryEvent(null);
+        }}
       />
     </section>
   );

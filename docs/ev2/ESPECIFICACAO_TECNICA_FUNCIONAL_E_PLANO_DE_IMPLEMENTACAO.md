@@ -1224,8 +1224,8 @@ Os critérios específicos de cada F-001..F-018 constam nas fichas. Critérios s
 | F-014    | Usuários, RBAC, auditoria e segregação                     | Scoped RBAC/audit            | T-014 unit/contract/E2E | Critério na ficha | Implementado; G8 aprovado     |
 | F-015    | Copiloto IA de leitura e rascunho                          | AI gateway read/draft        | T-015 unit/contract/E2E | Critério na ficha | Implementado; G10 aprovado    |
 | F-016    | IA transacional controlada                                 | AI execute/approvals         | T-016 unit/contract/E2E | Critério na ficha | Planejado                     |
-| F-017    | Conteúdo, marketing, formulários e leads integrados        | Integrated content workflows | T-017 unit/contract/E2E | Critério na ficha | Planejado                     |
-| F-018    | Performance, acessibilidade, observabilidade e resiliência | NFR platform                 | T-018 unit/contract/E2E | Critério na ficha | Planejado                     |
+| F-017    | Conteúdo, marketing, formulários e leads integrados        | Integrated content workflows | T-017 unit/contract/E2E | Critério na ficha | Candidato local; G11 pendente |
+| F-018    | Performance, acessibilidade, observabilidade e resiliência | NFR platform                 | T-018 unit/contract/E2E | Critério na ficha | Candidato local; G11 pendente |
 
 <a id="23-plano-de-implementacao"></a>
 

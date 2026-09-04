@@ -28,6 +28,7 @@ Ordem mais específica: usuário de teste -> organização/site -> ambiente -> g
 | `ev2.multisite`          | EV2.9                            | off e não ativável antes do G9 | tenant isolation               | sim                                     |
 | `ev2.ai_assist`          | EV2.10                           | off                            | G8 + evals                     | sim                                     |
 | `ev2.ai_execute`         | posterior à assistência aprovada | off                            | release + policy + confirmação | sim                                     |
+| `ev2.system_assurance`   | EV2.11                           | off                            | G10 + regressão + restore      | sim; somente override individual        |
 
 ## Sequência de rollout
 

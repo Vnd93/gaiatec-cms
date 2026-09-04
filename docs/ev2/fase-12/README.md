@@ -37,6 +37,7 @@ flags server-side e um backend produtivo aprovado.
 
 ## Documentos operacionais
 
+- [Evidências da implementação local](EVIDENCIAS_IMPLEMENTACAO_LOCAL_2026-09-04.md)
 - [Gate G12](GATE_G12.md)
 - [Plano de canary em staging](PLANO_CANARY_STAGING.md)
 - [Pré-requisitos de infraestrutura](PRE_REQUISITOS_INFRAESTRUTURA.md)

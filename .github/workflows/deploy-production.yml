@@ -40,17 +40,17 @@ jobs:
       PRODUCTION_SITE_ORIGIN: ${{ vars.PRODUCTION_SITE_ORIGIN }}
     steps:
       - name: Checkout release controls from main
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           path: control
       - name: Checkout exact candidate
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.candidate_sha }}
           fetch-depth: 0
           path: candidate
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: control/.nvmrc
           cache: npm
@@ -114,7 +114,7 @@ jobs:
           GITHUB_SHA: ${{ inputs.candidate_sha }}
       - name: Deploy the same artifact to an isolated production-project preview
         id: preflight
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -146,7 +146,7 @@ jobs:
           test "$LIVE_RELEASE" = "$APPROVED_RELEASE"
       - name: Promote the already-tested artifact
         id: promote
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -181,7 +181,7 @@ jobs:
         if: steps.production_probe.outcome == 'failure'
         run: exit 1
       - if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: production-release-${{ inputs.candidate_sha }}
           path: |

@@ -3,37 +3,190 @@ name: Deploy production
 on:
   workflow_dispatch:
     inputs:
-      git_ref:
-        description: Commit/tag imutável aprovado
+      candidate_sha:
+        description: SHA completo, imutável, aprovado e contido em main
+        required: true
+      approval_record:
+        description: Caminho docs/ev2/fase-12/approvals/G12_<sha>.json versionado em main
+        required: true
+      change_reference:
+        description: Identificador da mudança aprovado no G12
         required: true
       confirmation:
-        description: Digite DEPLOY-PRODUCTION
+        description: Digite AUTORIZO-G12-PRODUCAO
         required: true
 
 permissions:
   contents: read
 
+concurrency:
+  group: production
+  cancel-in-progress: false
+
 jobs:
   deploy:
-    if: github.ref_name == 'main' && inputs.confirmation == 'DEPLOY-PRODUCTION'
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'AUTORIZO-G12-PRODUCAO'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
     environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+      PRODUCTION_CLOUDFLARE_PROJECT: gaiatec-website
+      PRODUCTION_SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+      PRODUCTION_SUPABASE_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
+      PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+      PRODUCTION_SITE_ORIGIN: ${{ vars.PRODUCTION_SITE_ORIGIN }}
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout release controls from main
+        uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.git_ref }}
+          fetch-depth: 0
+          path: control
+      - name: Checkout exact candidate
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+          path: candidate
       - uses: actions/setup-node@v7
         with:
-          node-version-file: .nvmrc
+          node-version-file: control/.nvmrc
           cache: npm
-      - run: npm ci
-      - run: npm run check
-      - run: npm run artifact:manifest
+          cache-dependency-path: |
+            control/package-lock.json
+            candidate/package-lock.json
+      - name: Verify exact candidate belongs to main
         env:
-          GITHUB_SHA: ${{ inputs.git_ref }}
-      - uses: cloudflare/wrangler-action@v3
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          test "$(printf '%s' "$CANDIDATE_SHA" | grep -E '^[a-f0-9]{40}$')" = "$CANDIDATE_SHA"
+          test "$(git -C candidate rev-parse HEAD)" = "$CANDIDATE_SHA"
+          git -C control merge-base --is-ancestor "$CANDIDATE_SHA" origin/main
+      - name: Verify protected GitHub controls
+        working-directory: control
+        run: node scripts/ev2/phase12/check-github-controls.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_RELEASE_GUARD_TOKEN }}
+      - name: Verify production configuration is isolated
+        working-directory: control
+        run: node scripts/ev2/phase12/validate-production-config.mjs
+      - name: Verify immutable G12 approval
+        id: approval
+        working-directory: control
+        env:
+          APPROVAL_RECORD: ${{ inputs.approval_record }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CHANGE_REFERENCE: ${{ inputs.change_reference }}
+        run: >-
+          node scripts/ev2/phase12/verify-approval.mjs --file "$APPROVAL_RECORD"
+          --candidate "$CANDIDATE_SHA" --environment production --change-reference "$CHANGE_REFERENCE"
+      - name: Install and validate exact candidate
+        working-directory: candidate
+        run: |
+          npm ci
+          npm run check
+          npm audit --audit-level=high
+      - name: Build production shell with every EV2 candidate default-off
+        working-directory: candidate
+        run: npm run build
+        env:
+          VITE_RELEASE: ${{ inputs.candidate_sha }}
+          VITE_CMS_ENVIRONMENT: production
+          VITE_SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
+          VITE_EV2_DRAFT_V2_CANDIDATE: "false"
+          VITE_EV2_MASTER_DATA_CANDIDATE: "false"
+          VITE_EV2_PIM_CANDIDATE: "false"
+          VITE_EV2_DAM_CANDIDATE: "false"
+          VITE_EV2_SEARCH_QUALITY_CANDIDATE: "false"
+          VITE_EV2_COLLABORATION_BULK_CANDIDATE: "false"
+          VITE_EV2_RBAC_SCOPED_CANDIDATE: "false"
+          VITE_EV2_VISUAL_STUDIO_CANDIDATE: "false"
+          VITE_EV2_MULTISITE_CANDIDATE: "false"
+          VITE_EV2_AI_ASSIST_CANDIDATE: "false"
+          VITE_EV2_SYSTEM_ASSURANCE_CANDIDATE: "false"
+      - name: Seal release manifest
+        working-directory: candidate
+        run: npm run artifact:manifest
+        env:
+          GITHUB_SHA: ${{ inputs.candidate_sha }}
+      - name: Deploy the same artifact to an isolated production-project preview
+        id: preflight
+        uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name gaiatec-website --branch main
+          workingDirectory: candidate
+          command: >-
+            pages deploy dist --project-name gaiatec-website --branch ev2-g12-preflight
+            --commit-hash ${{ inputs.candidate_sha }} --commit-dirty=false
+      - name: Probe isolated production-project preview
+        working-directory: candidate
+        run: npm run probe:ev2:phase12
+        env:
+          EV2_G12_ORIGIN: ${{ steps.preflight.outputs.deployment-url }}
+          EV2_G12_EXPECTED_SHA: ${{ inputs.candidate_sha }}
+          EV2_G12_ENVIRONMENT: production-preview
+          EV2_G12_SAMPLE_COUNT: "5"
+          EV2_G12_REPORT_PATH: ../g12-preflight-probe.json
+      - name: Capture approved rollback baseline
+        id: baseline
+        working-directory: candidate
+        run: node scripts/ev2/phase12/cloudflare-pages.mjs latest-production
+      - name: Confirm live baseline equals the approved rollback target
+        env:
+          LIVE_DEPLOYMENT: ${{ steps.baseline.outputs.deployment_id }}
+          LIVE_RELEASE: ${{ steps.baseline.outputs.release }}
+          APPROVED_DEPLOYMENT: ${{ steps.approval.outputs.rollback_deployment_id }}
+          APPROVED_RELEASE: ${{ steps.approval.outputs.rollback_release }}
+        run: |
+          test "$LIVE_DEPLOYMENT" = "$APPROVED_DEPLOYMENT"
+          test "$LIVE_RELEASE" = "$APPROVED_RELEASE"
+      - name: Promote the already-tested artifact
+        id: promote
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: candidate
+          command: >-
+            pages deploy dist --project-name gaiatec-website --branch main
+            --commit-hash ${{ inputs.candidate_sha }} --commit-dirty=false
+      - name: Probe production after promotion
+        id: production_probe
+        continue-on-error: true
+        working-directory: candidate
+        run: npm run probe:ev2:phase12
+        env:
+          EV2_G12_ORIGIN: https://gaiatecsistemas.com.br
+          EV2_G12_EXPECTED_SHA: ${{ inputs.candidate_sha }}
+          EV2_G12_ENVIRONMENT: production
+          EV2_G12_PRODUCTION_AUTHORIZED: "true"
+          EV2_G12_SAMPLE_COUNT: "20"
+          EV2_G12_REPORT_PATH: ../g12-production-probe.json
+      - name: Automatically restore the approved prior production deployment
+        if: steps.production_probe.outcome == 'failure'
+        working-directory: candidate
+        run: node scripts/ev2/phase12/cloudflare-pages.mjs rollback
+        env:
+          CLOUDFLARE_DEPLOYMENT_ID: ${{ steps.baseline.outputs.deployment_id }}
+          CLOUDFLARE_EXPECTED_RELEASE: ${{ steps.baseline.outputs.release }}
+      - name: Confirm rollback routes after a failed production probe
+        if: steps.production_probe.outcome == 'failure'
+        working-directory: candidate
+        run: npm run smoke:http -- https://gaiatecsistemas.com.br
+      - name: Fail the release after automatic rollback
+        if: steps.production_probe.outcome == 'failure'
+        run: exit 1
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: production-release-${{ inputs.candidate_sha }}
+          path: |
+            candidate/dist/release-manifest.json
+            g12-preflight-probe.json
+            g12-production-probe.json
+          if-no-files-found: warn
+          retention-days: 90

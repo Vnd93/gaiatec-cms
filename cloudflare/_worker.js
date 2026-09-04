@@ -62,6 +62,43 @@ function withHeaders(response, options) {
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
+function deploymentEnvironment(requestUrl, env) {
+  const hostname = requestUrl.hostname.toLowerCase();
+  if (hostname === "127.0.0.1" || hostname === "localhost") return "local";
+  if (hostname === "gaiatec-cms-staging.pages.dev" || hostname.endsWith(".gaiatec-cms-staging.pages.dev"))
+    return "staging";
+  if (hostname === "gaiatec-website.pages.dev" || hostname.endsWith(".gaiatec-website.pages.dev"))
+    return "production-preview";
+  if (
+    (hostname === "gaiatecsistemas.com.br" || hostname === "www.gaiatecsistemas.com.br") &&
+    env.CF_PAGES_BRANCH === "main"
+  )
+    return "production";
+  return "unknown";
+}
+
+function healthResponse(request, env) {
+  const requestUrl = new URL(request.url);
+  const environment = deploymentEnvironment(requestUrl, env);
+  const release = env.CF_PAGES_COMMIT_SHA ?? "local";
+  const headers = securityHeaders(
+    new Headers({
+      "Cache-Control": "no-store, max-age=0",
+      "Content-Type": "application/json; charset=utf-8",
+    }),
+    { noindex: environment !== "production" },
+  );
+  return new Response(
+    JSON.stringify({
+      schemaVersion: 1,
+      status: environment === "unknown" ? "degraded" : "ready",
+      release,
+      environment,
+    }),
+    { status: environment === "unknown" ? 503 : 200, headers },
+  );
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -168,6 +205,8 @@ async function handleRequest(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
   const stagingHost = url.hostname.endsWith(".pages.dev");
+
+  if (path === "/healthz") return healthResponse(request, env);
 
   const normalizedPath = path.length > 1 ? path.replace(/\/$/, "") : path;
   const staticRedirect = STATIC_REDIRECTS.get(normalizedPath);
@@ -365,6 +404,7 @@ export default {
     }
 
     const headers = new Headers(response.headers);
+    headers.set("X-Release", env.CF_PAGES_COMMIT_SHA ?? "local");
     headers.set("X-Correlation-ID", id);
     headers.set("Server-Timing", `edge;dur=${Date.now() - startedAt}`);
     const finalResponse = new Response(response.body, {

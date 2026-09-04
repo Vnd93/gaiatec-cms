@@ -9,9 +9,12 @@ const TARGET = {
   ref: "glcqsosxwgmlhzgcsnzv",
   name: "GAIATEC CMS Staging",
   region: "us-east-2",
-  candidateOrigin: "https://ev2-g11-canary.gaiatec-cms-staging.pages.dev",
+  candidateOrigin:
+    process.env.EV2_G11_CANDIDATE_ORIGIN ?? "https://ev2-g11-canary.gaiatec-cms-staging.pages.dev",
   stableOrigin: "https://gaiatec-cms-staging.pages.dev",
 };
+if (!/^https:\/\/ev2-g(?:11|12)-canary\.gaiatec-cms-staging\.pages\.dev$/.test(TARGET.candidateOrigin))
+  throw new Error("ALVO RECUSADO: o canary G11 só pode operar nos aliases isolados G11/G12 de staging.");
 const expectedSha = process.env.EV2_G11_EXPECTED_SHA;
 if (!/^[0-9a-f]{40}$/.test(expectedSha ?? ""))
   throw new Error("Defina EV2_G11_EXPECTED_SHA com o SHA completo explicitamente autorizado.");
@@ -798,23 +801,23 @@ if (operationError || cleanupError)
     "Canary G11 falhou; consulte os erros operacional e de encerramento seguro.",
   );
 
-console.log(
-  JSON.stringify(
-    {
-      outcome: "G11_CANARY_PASS",
-      target: TARGET,
-      candidateSha: expectedSha,
-      checks: checks.length,
-      passed: checks.filter((item) => item.result === "PASS").length,
-      p0: 0,
-      p1: 0,
-      realDataUsed: false,
-      productionMutations: 0,
-      stablePromoted: false,
-      evidence: finalEvidence,
-      syntheticResidue: 0,
-    },
-    null,
-    2,
-  ),
-);
+const finalReport = {
+  outcome: "G11_CANARY_PASS",
+  target: TARGET,
+  candidateSha: expectedSha,
+  checks: checks.length,
+  passed: checks.filter((item) => item.result === "PASS").length,
+  p0: 0,
+  p1: 0,
+  realDataUsed: false,
+  productionMutations: 0,
+  stablePromoted: false,
+  evidence: finalEvidence,
+  syntheticResidue: 0,
+};
+if (process.env.EV2_G11_REPORT_PATH)
+  writeFileSync(process.env.EV2_G11_REPORT_PATH, `${JSON.stringify(finalReport, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: 0o600,
+  });
+console.log(JSON.stringify(finalReport, null, 2));

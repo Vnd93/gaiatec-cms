@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "gate": "G12",
+  "decision": "pending",
+  "candidateSha": null,
+  "environment": "production",
+  "requestedBy": null,
+  "changeReference": null,
+  "g11EvidenceRunId": "7466a0d3-021f-4c60-ad82-61e76b93844f",
+  "g12Evidence": {
+    "canaryRunId": null,
+    "candidateSha": null,
+    "reportSha256": null,
+    "healthyWindowIds": [],
+    "syntheticOnly": true,
+    "realDataUsed": false,
+    "productionMutations": 0
+  },
+  "productionAuthorized": false,
+  "productionAuthorizationText": null,
+  "dpoLegalStatus": "pending",
+  "target": {
+    "cloudflareProject": "gaiatec-website",
+    "domains": ["gaiatecsistemas.com.br", "www.gaiatecsistemas.com.br"]
+  },
+  "changeWindow": {
+    "startsAt": null,
+    "endsAt": null
+  },
+  "rollback": {
+    "deploymentId": null,
+    "release": null
+  },
+  "owners": {
+    "changeOwner": { "id": null, "approvedAt": null },
+    "technicalReviewer": { "id": null, "approvedAt": null },
+    "securityPrivacyOwner": { "id": null, "approvedAt": null },
+    "businessOwner": { "id": null, "approvedAt": null }
+  }
+}

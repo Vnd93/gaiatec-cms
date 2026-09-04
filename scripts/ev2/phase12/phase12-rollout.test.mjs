@@ -1,0 +1,304 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import test from "node:test";
+import worker from "../../../cloudflare/_worker.js";
+import {
+  evaluateGithubControls,
+  evaluateProbeWindow,
+  evaluateRolloutAdvance,
+  evaluateRolloutWindow,
+  validateApprovalRecord,
+  validateProductionConfig,
+} from "./release-guard-lib.mjs";
+
+const read = (path) => readFile(path, "utf8");
+const sha = "a".repeat(40);
+
+function rolloutWindow(offsetMinutes = 0) {
+  const startedAt = new Date(Date.UTC(2026, 8, 4, 10, offsetMinutes));
+  const endedAt = new Date(startedAt.getTime() + 5 * 60_000);
+  return {
+    candidateSha: sha,
+    environment: "staging",
+    stage: "staging-canary",
+    startedAt: startedAt.toISOString(),
+    endedAt: endedAt.toISOString(),
+    sampleCount: 20,
+    availabilityPercent: 100,
+    http5xxRatePercent: 0,
+    publicP95Ms: 500,
+    releaseHeadersExact: true,
+    healthContractValid: true,
+    manifestReleaseExact: true,
+    nonProductionNoindexValid: true,
+    p0Count: 0,
+    p1Count: 0,
+    securityIncidentCount: 0,
+    projectionDivergenceCount: 0,
+    accessibilityCriticalCount: 0,
+    accessibilitySeriousCount: 0,
+    securityReviewStatus: "passed",
+    privacyReviewStatus: "passed",
+    projectionComparisonStatus: "passed",
+    restoreStatus: "passed",
+    adminReadP95Ms: 400,
+    commandP95Ms: 650,
+    outboxLagP95Ms: 0,
+  };
+}
+
+function approvedRecord() {
+  return {
+    schemaVersion: 1,
+    gate: "G12",
+    decision: "approved",
+    candidateSha: sha,
+    environment: "production",
+    requestedBy: "OP-01",
+    changeReference: "CHG-EV2-12",
+    g11EvidenceRunId: "7466a0d3-021f-4c60-ad82-61e76b93844f",
+    g12Evidence: {
+      canaryRunId: "12345678-1234-4234-9234-123456789abc",
+      candidateSha: sha,
+      reportSha256: "c".repeat(64),
+      healthyWindowIds: [
+        "11111111-1111-4111-8111-111111111111",
+        "22222222-2222-4222-8222-222222222222",
+        "33333333-3333-4333-8333-333333333333",
+      ],
+      syntheticOnly: true,
+      realDataUsed: false,
+      productionMutations: 0,
+    },
+    productionAuthorized: true,
+    productionAuthorizationText: "AUTORIZO-G12-PRODUCAO",
+    dpoLegalStatus: "approved",
+    target: {
+      cloudflareProject: "gaiatec-website",
+      domains: ["gaiatecsistemas.com.br", "www.gaiatecsistemas.com.br"],
+    },
+    changeWindow: {
+      startsAt: "2026-09-04T09:00:00.000Z",
+      endsAt: "2026-09-04T12:00:00.000Z",
+    },
+    rollback: {
+      deploymentId: "ff2dbb65-2f8b-4840-a9a1-f2fde29e8ebf",
+      release: "b".repeat(40),
+    },
+    owners: {
+      changeOwner: { id: "OP-01", approvedAt: "2026-09-04T09:01:00.000Z" },
+      technicalReviewer: { id: "REV-01", approvedAt: "2026-09-04T09:02:00.000Z" },
+      securityPrivacyOwner: { id: "SEC-01", approvedAt: "2026-09-04T09:03:00.000Z" },
+      businessOwner: { id: "BUS-01", approvedAt: "2026-09-04T09:04:00.000Z" },
+    },
+  };
+}
+
+test("health endpoint exposes only immutable, non-cacheable release state", async () => {
+  const env = {
+    CF_PAGES_COMMIT_SHA: sha,
+    CF_PAGES_BRANCH: "ev2-g12-canary",
+    ASSETS: { fetch: async () => new Response("unexpected", { status: 500 }) },
+  };
+  const staging = await worker.fetch(
+    new Request("https://ev2-g12-canary.gaiatec-cms-staging.pages.dev/healthz"),
+    env,
+  );
+  assert.equal(staging.status, 200);
+  assert.equal(staging.headers.get("x-release"), sha);
+  assert.match(staging.headers.get("cache-control") ?? "", /no-store/);
+  assert.match(staging.headers.get("x-robots-tag") ?? "", /noindex/);
+  assert.deepEqual(await staging.json(), {
+    schemaVersion: 1,
+    status: "ready",
+    release: sha,
+    environment: "staging",
+  });
+
+  const production = await worker.fetch(new Request("https://gaiatecsistemas.com.br/healthz"), {
+    ...env,
+    CF_PAGES_BRANCH: "main",
+  });
+  assert.equal(production.status, 200);
+  assert.equal((await production.json()).environment, "production");
+  assert.equal(production.headers.has("x-robots-tag"), false);
+
+  const unknown = await worker.fetch(new Request("https://untrusted.example/healthz"), env);
+  assert.equal(unknown.status, 503);
+  assert.equal((await unknown.json()).status, "degraded");
+});
+
+test("probe and full rollout budgets fail closed", () => {
+  const healthy = rolloutWindow();
+  assert.equal(evaluateProbeWindow(healthy).healthy, true);
+  assert.equal(evaluateRolloutWindow(healthy).decision, "continue");
+  assert.equal(evaluateRolloutWindow({ ...healthy, p0Count: 1 }).decision, "pause");
+  assert.equal(evaluateRolloutWindow({ ...healthy, securityReviewStatus: "pending" }).healthy, false);
+  assert.equal(evaluateProbeWindow({ ...healthy, candidateSha: "a" }).healthy, false);
+});
+
+test("rollout needs three consecutive healthy windows and cannot skip a stage", () => {
+  const windows = [rolloutWindow(0), rolloutWindow(10), rolloutWindow(20)];
+  assert.equal(
+    evaluateRolloutAdvance({
+      candidateSha: sha,
+      currentStage: "staging-canary",
+      nextStage: "production-shell",
+      windows,
+    }).allowed,
+    true,
+  );
+  assert.equal(
+    evaluateRolloutAdvance({
+      candidateSha: sha,
+      currentStage: "staging-canary",
+      nextStage: "production-5",
+      windows,
+    }).decision,
+    "pause",
+  );
+  assert.equal(
+    evaluateRolloutAdvance({
+      candidateSha: sha,
+      currentStage: "staging-canary",
+      nextStage: "production-shell",
+      windows: windows.slice(0, 2),
+    }).allowed,
+    false,
+  );
+});
+
+test("G12 approval requires an exact candidate, live window and four distinct owners", () => {
+  const record = approvedRecord();
+  assert.equal(
+    validateApprovalRecord(record, {
+      expectedSha: sha,
+      expectedEnvironment: "production",
+      expectedChangeReference: "CHG-EV2-12",
+      now: "2026-09-04T10:00:00.000Z",
+    }).valid,
+    true,
+  );
+  const repeatedOwner = structuredClone(record);
+  repeatedOwner.owners.technicalReviewer.id = "OP-01";
+  assert.match(validateApprovalRecord(repeatedOwner).violations.join(","), /owner_separation_required/);
+  assert.match(
+    validateApprovalRecord({ ...record, productionAuthorized: false }).violations.join(","),
+    /production_not_authorized/,
+  );
+});
+
+test("production configuration refuses staging and GitHub controls require protection", () => {
+  assert.equal(
+    validateProductionConfig({
+      supabaseProjectRef: "abcdefghijklmnopqrst",
+      supabaseUrl: "https://abcdefghijklmnopqrst.supabase.co/",
+      supabaseAnonKey: "sb_publishable_example_key_with_safe_length",
+      siteOrigin: "https://gaiatecsistemas.com.br",
+      cloudflareProject: "gaiatec-website",
+    }).valid,
+    true,
+  );
+  assert.match(
+    validateProductionConfig({
+      supabaseProjectRef: "glcqsosxwgmlhzgcsnzv",
+      supabaseUrl: "https://glcqsosxwgmlhzgcsnzv.supabase.co/",
+      supabaseAnonKey: "sb_publishable_example_key_with_safe_length",
+      siteOrigin: "https://gaiatecsistemas.com.br",
+      cloudflareProject: "gaiatec-website",
+    }).violations.join(","),
+    /staging_project_ref_forbidden/,
+  );
+  const controls = evaluateGithubControls({
+    environment: {
+      protection_rules: [
+        {
+          type: "required_reviewers",
+          prevent_self_review: true,
+          reviewers: [{ id: 1 }, { id: 2 }],
+        },
+      ],
+      deployment_branch_policy: { protected_branches: true, custom_branch_policies: false },
+    },
+    branchProtection: {
+      required_pull_request_reviews: { required_approving_review_count: 1 },
+      enforce_admins: { enabled: true },
+      required_status_checks: { strict: true, contexts: ["quality", "database", "browser"] },
+      allow_force_pushes: { enabled: false },
+      allow_deletions: { enabled: false },
+    },
+  });
+  assert.equal(controls.valid, true);
+  assert.equal(evaluateGithubControls({ environment: {}, branchProtection: {} }).valid, false);
+});
+
+test("G12 boundary evals contain no false acceptance or remote mutation", () => {
+  const result = spawnSync(process.execPath, ["scripts/ev2/phase12/run-evals.mjs"], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.outcome, "G12_RULES_PASS");
+  assert.equal(report.scenarios, 18);
+  assert.equal(report.falseAcceptances, 0);
+  assert.equal(report.productionMutations, 0);
+  assert.equal(report.realDataUsed, false);
+});
+
+test("release workflows and reduced canary are immutable, staged and production fail-closed", async () => {
+  const [preview, production, rollback, cloudflare, canary, g11Canary, template] = await Promise.all([
+    read(".github/workflows/preview-ev2-phase12.yml"),
+    read(".github/workflows/deploy-production.yml"),
+    read(".github/workflows/rollback-production.yml"),
+    read("scripts/ev2/phase12/cloudflare-pages.mjs"),
+    read("scripts/ev2/phase12/staging-canary.mjs"),
+    read("scripts/ev2/phase11/staging-canary.mjs"),
+    read("docs/ev2/fase-12/G12_APPROVAL.template.json"),
+  ]);
+  assert.match(preview, /CANARY-G12-STAGING/);
+  assert.match(preview, /gaiatec-cms-staging --branch ev2-g12-canary/);
+  assert.doesNotMatch(preview, /project-name gaiatec-website/);
+  assert.match(production, /AUTORIZO-G12-PRODUCAO/);
+  assert.match(production, /git -C control merge-base --is-ancestor/);
+  assert.match(production, /check-github-controls\.mjs/);
+  assert.match(production, /validate-production-config\.mjs/);
+  assert.match(production, /ev2-g12-preflight/);
+  assert.match(production, /Confirm live baseline equals the approved rollback target/);
+  assert.match(production, /Automatically restore the approved prior production deployment/);
+  assert.ok(production.indexOf("ev2-g12-preflight") < production.indexOf("--branch main"));
+  assert.doesNotMatch(production, /VITE_EV2_[A-Z0-9_]+: ["']true["']/);
+  assert.match(rollback, /ROLLBACK-G12-PRODUCTION/);
+  assert.match(cloudflare, /target\?\.environment !== "production"/);
+  assert.match(cloudflare, /deployments\/\$\{deploymentId\}\/rollback/);
+  assert.match(canary, /g12-staging-integrated-reduced-v1/);
+  assert.match(canary, /scripts\/ev2\/phase11\/staging-canary\.mjs/);
+  assert.match(canary, /for \(let index = 0; index < 3; index \+= 1\)/);
+  assert.match(canary, /syntheticOnly: true/);
+  assert.match(canary, /productionMutations: 0/);
+  assert.match(g11Canary, /EV2_G11_CANDIDATE_ORIGIN/);
+  const approvalTemplate = JSON.parse(template);
+  assert.equal(approvalTemplate.decision, "pending");
+  assert.equal(approvalTemplate.productionAuthorized, false);
+  assert.equal(approvalTemplate.candidateSha, null);
+});
+
+test("phase documentation preserves blockers and does not claim G12", async () => {
+  const [readme, gate, infrastructure, rollout, runbook, training] = await Promise.all([
+    read("docs/ev2/fase-12/README.md"),
+    read("docs/ev2/fase-12/GATE_G12.md"),
+    read("docs/ev2/fase-12/PRE_REQUISITOS_INFRAESTRUTURA.md"),
+    read("docs/ev2/fase-12/MATRIZ_ROLLOUT.md"),
+    read("docs/ev2/fase-12/RUNBOOK_GO_LIVE_E_ROLLBACK.md"),
+    read("docs/ev2/fase-12/TREINAMENTO_E_HANDOVER.md"),
+  ]);
+  assert.match(readme, /G12 não aprovado/);
+  assert.match(readme, /produção.*bloqueada/i);
+  assert.match(gate, /NÃO APROVADO/);
+  assert.match(infrastructure, /ambiente (GitHub )?`production`/i);
+  assert.match(infrastructure, /Supabase de produção/);
+  assert.match(rollout, /três janelas consecutivas/i);
+  assert.match(runbook, /automaticamente a API de rollback/i);
+  assert.match(training, /identidades distintas/);
+});

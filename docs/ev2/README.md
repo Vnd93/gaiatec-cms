@@ -1,6 +1,6 @@
 # EV2 — Evolução do CMS GAIATEC
 
-**Status:** Gates G0–G11 aprovados; EV2.12 liberada para preparação local/staging; produção e provider externo bloqueados<br>
+**Status:** Gates G0–G11 aprovados; EV2.12 implementada localmente e aguardando canary G12; produção e provider externo bloqueados<br>
 **Data-base:** 4 de setembro de 2026<br>
 **Fonte canônica:** Markdown versionado neste diretório
 **Branch de execução:** `ev2/desenvolvimento-fases-1-a-12`<br>
@@ -25,6 +25,7 @@
 15. [EV2.9 — Estúdio Visual e preparação multisite](fase-9/README.md) — registry de 20 componentes, canvas governado, branches, snapshots, site registry sintético e plano do Gate G9.
 16. [EV2.10 — IA assistiva controlada](fase-10/README.md) — gateway F-015 provider-off, fontes, confiança, diff, aprovação humana, evals e plano do Gate G10.
 17. [EV2.11 — integração operacional e garantia sistêmica](fase-11/README.md) — F-017/F-018, resiliência de leads, SLOs, carga, restore, regressão e plano do Gate G11.
+18. [EV2.12 — implantação controlada](fase-12/README.md) — health/release, canary, error budget, aprovações segregadas, promoção imutável, handover e rollback.
 
 ## Escopo documental
 
@@ -63,3 +64,10 @@ acessibilidade critical/serious 0/0 e resíduo sintético zero. O responsável a
 reduzido e liberou a preparação local/staging da EV2.12, sem fabricar métricas humanas. Produção,
 dados reais, domínios reais, provedor externo, F-016, ativação global, merge em `main` e promoção do
 staging estável continuam fora do escopo; EV2-D04 permanece pendente.
+
+Na EV2.12, a implementação local adicionou contrato de saúde e release, probe reproduzível, regras
+fail-closed do G12, canary isolado e workflows de produção/rollback com preflight e restauração do
+deployment anterior. O Gate G12 continua não aprovado: o canary específico ainda não ocorreu, o
+GitHub não possui ambiente `production`/proteção de `main`, não foi localizado um Supabase produtivo
+dedicado e a elegibilidade frontend por runtime ainda precisa ser implementada antes de ativar
+funcionalidades EV2 por coorte. Nenhuma ação de produção foi executada.

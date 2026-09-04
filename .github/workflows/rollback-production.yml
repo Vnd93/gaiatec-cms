@@ -1,0 +1,64 @@
+name: Rollback production
+
+on:
+  workflow_dispatch:
+    inputs:
+      deployment_id:
+        description: UUID do deployment Production anterior no Cloudflare Pages
+        required: true
+      expected_release:
+        description: SHA completo do deployment que será restaurado
+        required: true
+      change_reference:
+        description: Identificador do incidente ou mudança
+        required: true
+      confirmation:
+        description: Digite ROLLBACK-G12-PRODUCTION
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'ROLLBACK-G12-PRODUCTION'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Verify protected GitHub controls
+        run: node scripts/ev2/phase12/check-github-controls.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_RELEASE_GUARD_TOKEN }}
+      - name: Validate immutable rollback inputs
+        env:
+          DEPLOYMENT_ID: ${{ inputs.deployment_id }}
+          EXPECTED_RELEASE: ${{ inputs.expected_release }}
+          CHANGE_REFERENCE: ${{ inputs.change_reference }}
+        run: |
+          test "$(printf '%s' "$DEPLOYMENT_ID" | grep -E '^[0-9a-f-]{36}$')" = "$DEPLOYMENT_ID"
+          test "$(printf '%s' "$EXPECTED_RELEASE" | grep -E '^[a-f0-9]{40}$')" = "$EXPECTED_RELEASE"
+          test -n "$CHANGE_REFERENCE"
+      - name: Restore exact prior production deployment
+        run: node scripts/ev2/phase12/cloudflare-pages.mjs rollback
+        env:
+          CLOUDFLARE_DEPLOYMENT_ID: ${{ inputs.deployment_id }}
+          CLOUDFLARE_EXPECTED_RELEASE: ${{ inputs.expected_release }}
+      - name: Verify restored public routes
+        run: npm run smoke:http -- https://gaiatecsistemas.com.br

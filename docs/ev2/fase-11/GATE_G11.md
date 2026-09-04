@@ -1,6 +1,6 @@
 # Gate G11 — regressão, resiliência e aceite formal
 
-**Resultado atual:** G11 PENDENTE — CANDIDATO LOCAL IMPLEMENTADO, STAGING NÃO ALTERADO<br>
+**Resultado atual:** G11 PENDENTE — CANDIDATO VERSIONADO E CI VERDE, STAGING NÃO ALTERADO<br>
 **Escopo:** F-017/F-018 e regressão EV2.1–EV2.10<br>
 **Produção:** bloqueada<br>
 **Ativação global:** bloqueada<br>
@@ -37,7 +37,9 @@ aprovado quando as evidências automatizadas e humanas do mesmo SHA estiverem an
 - validação local integral com 153/153 testes Vitest e todas as fases automatizadas verdes;
 - 32/32 cenários locais de navegador aprovados; 8 cenários remotos corretamente ignorados;
 - Edge Functions aprovadas no Deno check e auditoria npm com zero vulnerabilidade;
-- suíte pgTAP/RLS com 46 asserções e regras de limite preparadas;
+- CI do SHA `fa4fcd41` verde, com reset integral, 50 migrations, 461/461 asserções pgTAP e 46/46
+  asserções EV2.11;
+- preview isolado do mesmo SHA aprovado, com a flag candidata desligada;
 - harness real de carga HTTP e restore transacional;
 - workflow de build candidato isolado;
 - canary com dois usuários sintéticos MFA, anonimização, suspensão e banimento das credenciais;
@@ -45,7 +47,6 @@ aprovado quando as evidências automatizadas e humanas do mesmo SHA estiverem an
 
 ## Evidência ainda obrigatória
 
-- CI verde do SHA versionado, incluindo reset integral do banco e pgTAP;
 - migration rehearsal vinculada ao staging autorizado;
 - canary no alias `ev2-g11-canary`;
 - relatório de carga, axe, restore e reconciliação do ambiente;

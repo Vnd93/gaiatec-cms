@@ -1,6 +1,6 @@
 # EV2.11 — integração operacional e garantia sistêmica
 
-**Estado:** implementação candidata local; Gate G11 pendente<br>
+**Estado:** candidato versionado e CI verde; Gate G11 pendente<br>
 **Escopo:** F-017 e F-018, com regressão sistêmica das entregas EV2.1–EV2.10<br>
 **Produção:** bloqueada<br>
 **Dados reais:** proibidos no canary<br>
@@ -42,8 +42,8 @@ pode registrar aceite técnico.
 
 ## Limite desta entrega
 
-O código local não aplica a migration, não publica funções, não cria usuários, não atualiza alias e
-não toca em staging ou produção. O G11 permanece pendente até autorização específica, execução do
+Esta entrega não aplicou a migration, não publicou funções, não criou usuários, não atualizou alias e
+não tocou em staging ou produção. O G11 permanece pendente até autorização específica, execução do
 canary no SHA candidato, validação humana/UAT e anexação das evidências reais. O histórico de
 `docs/fase-11`, referente ao ciclo visual anterior, permanece preservado e independente desta fase
 EV2.11.

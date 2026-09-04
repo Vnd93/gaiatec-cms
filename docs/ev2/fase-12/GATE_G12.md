@@ -1,26 +1,26 @@
 # Gate G12 — implantação controlada
 
 **Decisão atual:** NÃO APROVADO<br>
-**Escopo liberado:** desenvolvimento e validação local<br>
-**Staging:** aguardando candidato imutável e autorização específica<br>
+**Escopo liberado:** desenvolvimento, validação local e canary isolado concluído<br>
+**Staging:** canary G12 aprovado tecnicamente para o SHA `8250db0d…`<br>
 **Produção:** bloqueada
 
 ## Critérios vinculantes
 
-| Critério          | Evidência exigida                                                                    | Estado atual                           |
-| ----------------- | ------------------------------------------------------------------------------------ | -------------------------------------- |
-| G11 válido        | aceite G11 e canary sintético rastreável                                             | atendido para preparar EV2.12          |
-| Artefato imutável | SHA completo igual em checkout, `X-Release`, `/healthz` e manifest                   | SHA `8250db0d…` qualificado localmente |
-| CI e segurança    | suíte integral, RLS, E2E, acessibilidade e audit sem vulnerabilidade alta            | checks do candidato aprovados          |
-| Canary G12        | alias isolado, dois usuários sintéticos MFA, overrides individuais de 30 minutos     | não executado                          |
-| Projeções         | comparação v1/candidato sem divergência                                              | não executado                          |
-| Error budget      | três janelas consecutivas saudáveis, com amostra, versão e ambiente                  | não iniciado                           |
-| Recuperação       | baseline produtiva e drill de rollback compatível com RPO 0/RTO <= 15 min            | workflow criado; drill pendente        |
-| GitHub            | `main` protegida e ambiente `production` com dois revisores e autoaprovação impedida | bloqueado                              |
-| Backend produtivo | Supabase exclusivo, backups, RLS, migrations e funções aprovadas                     | inexistente/não configurado            |
-| Privacidade/legal | EV2-D04 e tratamento dos fluxos com dados reais aprovados                            | pendente                               |
-| Operação          | owners, janela, comunicação, treinamento e on-call confirmados                       | pendente                               |
-| Autorização       | registro `G12_<sha>.json` aprovado e autorização explícita de produção               | ausente                                |
+| Critério          | Evidência exigida                                                                    | Estado atual                                    |
+| ----------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------- |
+| G11 válido        | aceite G11 e canary sintético rastreável                                             | atendido; assurance segregada aceita            |
+| Artefato imutável | SHA completo igual em checkout, `X-Release`, `/healthz` e manifest                   | SHA `8250db0d…` validado em staging             |
+| CI e segurança    | suíte integral, RLS, E2E, acessibilidade e audit sem vulnerabilidade alta            | checks e canary aprovados                       |
+| Canary G12        | alias isolado, dois usuários sintéticos MFA, overrides individuais de 30 minutos     | concluído; resíduo zero                         |
+| Projeções         | comparação v1/candidato sem divergência                                              | reconciliação zero; aceite final pendente       |
+| Error budget      | três janelas consecutivas saudáveis, com amostra, versão e ambiente                  | 3 de 3 janelas aprovadas                        |
+| Recuperação       | baseline produtiva e drill de rollback compatível com RPO 0/RTO <= 15 min            | restore RPO 0/RTO 1; drill produtivo pendente   |
+| GitHub            | `main` protegida e ambiente `production` com dois revisores e autoaprovação impedida | bloqueado                                       |
+| Backend produtivo | Supabase exclusivo, backups, RLS, migrations e funções aprovadas                     | inexistente/não configurado                     |
+| Privacidade/legal | EV2-D04 e tratamento dos fluxos com dados reais aprovados                            | pendente                                        |
+| Operação          | owners, janela, comunicação, treinamento e on-call confirmados                       | segregação do canary validada; go-live pendente |
+| Autorização       | registro `G12_<sha>.json` aprovado e autorização explícita de produção               | ausente                                         |
 
 ## Regra de decisão
 

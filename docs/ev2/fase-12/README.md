@@ -1,7 +1,7 @@
 # EV2.12 — implantação controlada
 
-**Estado:** implementação local em validação; canary G12 ainda não executado<br>
-**Gate:** G12 não aprovado<br>
+**Estado:** candidato qualificado; canary controlado G12 em staging concluído<br>
+**Gate:** G12 não aprovado para produção<br>
 **Produção:** bloqueada por controles técnicos e aprovações ausentes
 
 ## Objetivo
@@ -37,6 +37,7 @@ flags server-side e um backend produtivo aprovado.
 
 ## Documentos operacionais
 
+- [Evidências do canary G12 em staging](EVIDENCIAS_CANARY_G12_2026-09-04.md)
 - [Evidências da implementação local](EVIDENCIAS_IMPLEMENTACAO_LOCAL_2026-09-04.md)
 - [Gate G12](GATE_G12.md)
 - [Plano de canary em staging](PLANO_CANARY_STAGING.md)
@@ -48,5 +49,6 @@ flags server-side e um backend produtivo aprovado.
 
 ## Próxima decisão
 
-Depois de CI verde, o candidato deverá ser congelado por SHA e submetido a autorização específica do
-canary G12 em staging. Somente evidência real desse canary pode atualizar este documento e o gate.
+O canary de staging está concluído. A próxima etapa é eliminar os bloqueios produtivos, validar os
+controles com owners independentes e formar o registro de aprovação por SHA. Nenhuma preparação ou
+evidência parcial substitui a autorização específica de produção.

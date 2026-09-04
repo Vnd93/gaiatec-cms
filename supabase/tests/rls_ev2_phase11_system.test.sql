@@ -258,8 +258,8 @@ select throws_ok(
 );
 select throws_ok(
   $$update public.cms_lead_outbox_replays set justification = 'Mutação indevida'$$,
-  '55000',
-  'CMS_IMMUTABLE_RECORD',
+  '42501',
+  'CMS audit records are immutable',
   'lead replay evidence is immutable'
 );
 update public.cms_lead_outbox set status = 'processing', attempts = 20, locked_at = now()

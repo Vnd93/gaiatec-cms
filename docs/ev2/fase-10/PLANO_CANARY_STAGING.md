@@ -2,7 +2,11 @@
 
 ## Estado
 
-Planejado e não executado. Nenhuma etapa deste arquivo constitui autorização.
+Executado em 3 de setembro de 2026 no SHA
+`c2500c7de38fdb6c33f338232e858ef12a8fe0e5`, após autorização explícita. Resultado: 26/26
+verificações e resíduo zero. Consulte o
+[relatório do canary](RELATORIO_CANARY_STAGING_2026-09-03.md). Nenhuma etapa deste arquivo constitui
+autorização para repetição.
 
 ## Escopo estrito
 

@@ -2,7 +2,7 @@
 
 ## Estado
 
-**Implementação e validação local F-015 concluídas; Gate G10 pendente.**
+**F-015 concluída e Gate G10 aprovado em staging; EV2.11 liberada para desenvolvimento.**
 
 A fase introduz uma assistência de leitura e preparação de rascunhos com fonte, confiança, diff,
 orçamento e decisão humana. O candidato permanece `default-off`, opera exclusivamente com
@@ -27,7 +27,18 @@ acessos.
 | Evals       | golden set, adversarial, privacidade, permissão, fonte, custo e baixa confiança      |
 | Operação    | fallback manual, rehearsal transacional, canary sintético e limpeza verificável      |
 
-## Comandos locais
+## Resultado do Gate G10
+
+O canary controlado foi aprovado no SHA `c2500c7de38fdb6c33f338232e858ef12a8fe0e5` com 26/26
+verificações. A migration `0049`, a função `cms-ai` e o build no alias isolado `ev2-g10-canary`
+foram avaliados somente em staging, com dois usuários sintéticos MFA e overrides individuais. O
+adaptador permaneceu sintético, com zero chamada externa, zero dado real, zero mutação em produção e
+zero resíduo após a limpeza independente.
+
+As duas flags continuam globalmente desligadas, o staging estável não foi promovido e EV2-D04 segue
+pendente. Consulte o [relatório do canary](RELATORIO_CANARY_STAGING_2026-09-03.md).
+
+## Comandos de validação
 
 - `npm run test:ev2:phase10`
 - `npm run eval:ev2:phase10`

@@ -1206,26 +1206,26 @@ Os critérios específicos de cada F-001..F-018 constam nas fichas. Critérios s
 
 ## 22. Matriz de Rastreabilidade
 
-| **Req.** | **Funcionalidade**                                         | **Implementação**            | **Teste**               | **Aceite**        | **Status**                        |
-| -------- | ---------------------------------------------------------- | ---------------------------- | ----------------------- | ----------------- | --------------------------------- |
-| F-001    | Rascunho livre, autosave e validação progressiva           | Draft schemas/autosave       | T-001 unit/contract/E2E | Critério na ficha | Implementado; G2 aprovado         |
-| F-002    | Editor de produto orientado a tarefas                      | Editor PIM                   | T-002 unit/contract/E2E | Critério na ficha | Implementado; G4 aprovado         |
-| F-003    | Dados mestres e taxonomias dependentes                     | Master data                  | T-003 unit/contract/E2E | Critério na ficha | Implementado; G3 aprovado         |
-| F-004    | Produto, modelo, variante e SKU normalizados               | PIM entities/SKU             | T-004 unit/contract/E2E | Critério na ficha | Implementado; G4 aprovado         |
-| F-005    | Atributos técnicos, unidades e compatibilidades            | Attributes/units             | T-005 unit/contract/E2E | Critério na ficha | Implementado; G4 aprovado         |
-| F-006    | DAM contextual e biblioteca avançada                       | Media picker/DAM             | T-006 unit/contract/E2E | Critério na ficha | Implementado; G5 aprovado         |
-| F-007    | Busca unificada, técnica e relações assistidas             | Search index/facets          | T-007 unit/contract/E2E | Critério na ficha | Implementado; G6 aprovado         |
-| F-008    | SEO automático e Centro de Qualidade                       | Quality rules                | T-008 unit/contract/E2E | Critério na ficha | Implementado; G6 aprovado         |
-| F-009    | Release bundle e workflow de conteúdo                      | Release orchestrator         | T-009 unit/contract/E2E | Critério na ficha | Implementado; G7 aprovado         |
-| F-010    | Inbox, tarefas, comentários, histórico e diff              | Collaboration                | T-010 unit/contract/E2E | Critério na ficha | Implementado; G7 aprovado         |
-| F-011    | Estúdio Visual governado                                   | Visual documents             | T-011 unit/contract/E2E | Critério na ficha | Implementado; G9 aprovado         |
-| F-012    | Fábrica de sites e multisite                               | Site registry/RLS            | T-012 unit/contract/E2E | Critério na ficha | Piloto sintético; G9 aprovado     |
-| F-013    | Operações em massa e importação/exportação                 | Bulk jobs                    | T-013 unit/contract/E2E | Critério na ficha | Implementado; G7 aprovado         |
-| F-014    | Usuários, RBAC, auditoria e segregação                     | Scoped RBAC/audit            | T-014 unit/contract/E2E | Critério na ficha | Implementado; G8 aprovado         |
-| F-015    | Copiloto IA de leitura e rascunho                          | AI gateway read/draft        | T-015 unit/contract/E2E | Critério na ficha | Candidato sintético; G10 pendente |
-| F-016    | IA transacional controlada                                 | AI execute/approvals         | T-016 unit/contract/E2E | Critério na ficha | Planejado                         |
-| F-017    | Conteúdo, marketing, formulários e leads integrados        | Integrated content workflows | T-017 unit/contract/E2E | Critério na ficha | Planejado                         |
-| F-018    | Performance, acessibilidade, observabilidade e resiliência | NFR platform                 | T-018 unit/contract/E2E | Critério na ficha | Planejado                         |
+| **Req.** | **Funcionalidade**                                         | **Implementação**            | **Teste**               | **Aceite**        | **Status**                    |
+| -------- | ---------------------------------------------------------- | ---------------------------- | ----------------------- | ----------------- | ----------------------------- |
+| F-001    | Rascunho livre, autosave e validação progressiva           | Draft schemas/autosave       | T-001 unit/contract/E2E | Critério na ficha | Implementado; G2 aprovado     |
+| F-002    | Editor de produto orientado a tarefas                      | Editor PIM                   | T-002 unit/contract/E2E | Critério na ficha | Implementado; G4 aprovado     |
+| F-003    | Dados mestres e taxonomias dependentes                     | Master data                  | T-003 unit/contract/E2E | Critério na ficha | Implementado; G3 aprovado     |
+| F-004    | Produto, modelo, variante e SKU normalizados               | PIM entities/SKU             | T-004 unit/contract/E2E | Critério na ficha | Implementado; G4 aprovado     |
+| F-005    | Atributos técnicos, unidades e compatibilidades            | Attributes/units             | T-005 unit/contract/E2E | Critério na ficha | Implementado; G4 aprovado     |
+| F-006    | DAM contextual e biblioteca avançada                       | Media picker/DAM             | T-006 unit/contract/E2E | Critério na ficha | Implementado; G5 aprovado     |
+| F-007    | Busca unificada, técnica e relações assistidas             | Search index/facets          | T-007 unit/contract/E2E | Critério na ficha | Implementado; G6 aprovado     |
+| F-008    | SEO automático e Centro de Qualidade                       | Quality rules                | T-008 unit/contract/E2E | Critério na ficha | Implementado; G6 aprovado     |
+| F-009    | Release bundle e workflow de conteúdo                      | Release orchestrator         | T-009 unit/contract/E2E | Critério na ficha | Implementado; G7 aprovado     |
+| F-010    | Inbox, tarefas, comentários, histórico e diff              | Collaboration                | T-010 unit/contract/E2E | Critério na ficha | Implementado; G7 aprovado     |
+| F-011    | Estúdio Visual governado                                   | Visual documents             | T-011 unit/contract/E2E | Critério na ficha | Implementado; G9 aprovado     |
+| F-012    | Fábrica de sites e multisite                               | Site registry/RLS            | T-012 unit/contract/E2E | Critério na ficha | Piloto sintético; G9 aprovado |
+| F-013    | Operações em massa e importação/exportação                 | Bulk jobs                    | T-013 unit/contract/E2E | Critério na ficha | Implementado; G7 aprovado     |
+| F-014    | Usuários, RBAC, auditoria e segregação                     | Scoped RBAC/audit            | T-014 unit/contract/E2E | Critério na ficha | Implementado; G8 aprovado     |
+| F-015    | Copiloto IA de leitura e rascunho                          | AI gateway read/draft        | T-015 unit/contract/E2E | Critério na ficha | Implementado; G10 aprovado    |
+| F-016    | IA transacional controlada                                 | AI execute/approvals         | T-016 unit/contract/E2E | Critério na ficha | Planejado                     |
+| F-017    | Conteúdo, marketing, formulários e leads integrados        | Integrated content workflows | T-017 unit/contract/E2E | Critério na ficha | Planejado                     |
+| F-018    | Performance, acessibilidade, observabilidade e resiliência | NFR platform                 | T-018 unit/contract/E2E | Critério na ficha | Planejado                     |
 
 <a id="23-plano-de-implementacao"></a>
 

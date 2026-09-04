@@ -123,6 +123,7 @@ function errorResponse(req: Request, error: { message?: string; code?: string },
 }
 
 Deno.serve(async (req) => {
+  const requestStartedAt = performance.now();
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders(req) });
   if (!isAllowedOrigin(req)) return json(req, { error: "Origem não autorizada." }, 403);
   if (req.method !== "POST") return json(req, { error: "Método não permitido." }, 405);
@@ -174,7 +175,9 @@ Deno.serve(async (req) => {
   if (command.action === "capability") {
     const { data, error } = await identity.admin.rpc("cms_system_capability", common);
     if (error) return errorResponse(req, error, correlationId);
-    return json(req, data);
+    return json(req, data, 200, {
+      "Server-Timing": `admin-read;dur=${Math.round(performance.now() - requestStartedAt)}`,
+    });
   }
   if (command.action === "snapshot") {
     const { data, error } = await identity.admin.rpc("cms_get_system_snapshot", {
@@ -182,7 +185,9 @@ Deno.serve(async (req) => {
       p_correlation_id: correlationId,
     });
     if (error) return errorResponse(req, error, correlationId);
-    return json(req, data);
+    return json(req, data, 200, {
+      "Server-Timing": `admin-read;dur=${Math.round(performance.now() - requestStartedAt)}`,
+    });
   }
 
   if (identity.claims.aal !== "aal2")
@@ -205,5 +210,7 @@ Deno.serve(async (req) => {
     p_request_hash: requestHash,
   });
   if (error) return errorResponse(req, error, correlationId);
-  return json(req, data);
+  return json(req, data, 200, {
+    "Server-Timing": `command;dur=${Math.round(performance.now() - requestStartedAt)}`,
+  });
 });

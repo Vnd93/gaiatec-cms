@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
-import { evaluateSystemEvidence, percentile, summarizeDurations } from "./system-assurance-lib.mjs";
+import {
+  evaluateSystemEvidence,
+  percentile,
+  serverTimingDuration,
+  summarizeDurations,
+} from "./system-assurance-lib.mjs";
 
 const read = (path) => readFile(path, "utf8");
 
@@ -51,6 +56,7 @@ test("F-017 exposes delivery state and a controlled, durable replay path", async
   assert.match(edge, /retry_delivery/);
   assert.match(edge, /CMS_ENVIRONMENT/);
   assert.match(edge, /p_request_hash:await sha256/);
+  assert.match(edge, /Server-Timing.*command/);
   assert.match(page, /cms_lead_outbox\(/);
   assert.match(page, /Reprocessar entrega/);
   assert.match(page, /O lead permanecerá intacto/);
@@ -74,6 +80,7 @@ test("F-018 exposes a read-only snapshot and two-person Gate G11 evidence", asyn
   assert.match(sql, /outboxLagP95Ms/);
   assert.match(sql, /restoreRtoMinutes/);
   assert.match(edge, /CMS_SYSTEM_PRODUCTION_GATED/);
+  assert.match(edge, /Server-Timing.*admin-read/);
   assert.match(edge, /identity\.claims\.aal !== "aal2"/);
   assert.match(edge, /consumeRateLimit/);
   assert.match(edge, /X-Idempotency-Key/);
@@ -127,6 +134,11 @@ test("load statistics use nearest-rank percentiles and strict evidence evaluatio
     p99Ms: 4,
     maxMs: 4,
   });
+  assert.equal(
+    serverTimingDuration(new Headers({ "Server-Timing": "db;dur=4, admin-read;dur=123.5" }), "admin-read"),
+    123.5,
+  );
+  assert.equal(Number.isNaN(serverTimingDuration(new Headers(), "command")), true);
   const result = evaluateSystemEvidence({
     totalChecks: 1,
     passedChecks: 1,
@@ -172,6 +184,9 @@ test("G11 operational artifacts remain reproducible and explicitly pending", asy
   assert.match(canary, /EV2_G11_EXPECTED_SHA/);
   assert.match(canary, /exact_candidate_sha/);
   assert.match(canary, /lead_preserved_after_delivery_failure/);
+  assert.match(canary, /backend_server_timing_available/);
+  assert.match(canary, /adminReadWallP95Ms/);
+  assert.match(canary, /commandWallP95Ms/);
   assert.match(canary, /async function rpc[\s\S]*?allowed: \[200, 204\]/);
   assert.match(canary, /independent_review_required/);
   assert.match(canary, /synthetic_residue_zero/);

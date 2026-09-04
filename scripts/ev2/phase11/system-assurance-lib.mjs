@@ -37,6 +37,12 @@ export function summarizeDurations(durations) {
   };
 }
 
+export function serverTimingDuration(headers, metric) {
+  const value = headers?.get?.("server-timing") ?? "";
+  const match = value.match(new RegExp(`(?:^|,)\\s*${metric};dur=([0-9.]+)(?:,|$)`, "i"));
+  return match ? Number(match[1]) : Number.NaN;
+}
+
 export function evaluateSystemEvidence(evidence) {
   const metrics = evidence?.metrics ?? {};
   const checks = [

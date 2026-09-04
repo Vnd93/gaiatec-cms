@@ -16,6 +16,7 @@ const Command=z.discriminatedUnion("action",[
 ]);
 
 Deno.serve(async(req)=>{
+  const requestStartedAt=performance.now();
   if(req.method==="OPTIONS") return new Response(null,{headers:corsHeaders(req)});
   if(!isAllowedOrigin(req)) return json(req,{error:"Origem não autorizada."},403);
   if(req.method!=="POST") return json(req,{error:"Método não permitido."},405);
@@ -41,5 +42,5 @@ Deno.serve(async(req)=>{
   }
   const {data,error}=await identity.admin.rpc(rpc,args);
   if(error){const marker=error.message.match(/CMS_[A-Z0-9_]+/)?.[0],forbidden=error.message.includes("FORBIDDEN")||error.message.includes("FEATURE_DISABLED")||error.code==="42501",notFound=error.message.includes("NOT_FOUND")||error.code==="PT404",conflict=error.message.includes("CONFLICT")||error.message.includes("NOT_RETRYABLE")||error.code==="PT409",invalid=error.message.includes("INVALID")||error.code==="23514"||error.code==="22023";return json(req,{error:forbidden?"Permissão insuficiente ou recurso não habilitado.":notFound?"Registro não encontrado.":conflict?"A entrega não pode ser reprocessada no estado atual.":invalid?"Dados ou transição inválidos.":"Falha na operação.",code:marker,correlationId,preserved:input.action==="retry_delivery"},forbidden?403:notFound?404:conflict?409:invalid?422:500);}
-  return json(req,{...data,correlationId});
+  return json(req,{...data,correlationId},200,{"Server-Timing":`command;dur=${Math.round(performance.now()-requestStartedAt)}`});
 });

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
-import { percentile, runHttpLoadProbe } from "./system-assurance-lib.mjs";
+import { percentile, runHttpLoadProbe, serverTimingDuration } from "./system-assurance-lib.mjs";
 
 const TARGET = {
   ref: "glcqsosxwgmlhzgcsnzv",
@@ -565,10 +565,12 @@ try {
     justification: "Dependência sintética recuperada no canary G11",
   };
   const commandDurations = [];
+  const commandWallDurations = [];
   let retryCorrelationId;
   for (let index = 0; index < 10; index += 1) {
     const replay = await leads(context, operator, retryBody, { idempotencyKey: retryIdempotency });
-    commandDurations.push(replay.durationMs);
+    commandDurations.push(serverTimingDuration(replay.headers, "command"));
+    commandWallDurations.push(replay.durationMs);
     if (index === 0) {
       retryCorrelationId = replay.json.correlationId;
       check("failed_delivery_requeued", replay.json.status === "pending", JSON.stringify(replay.json));
@@ -655,12 +657,19 @@ try {
   broadOverrideId = undefined;
 
   const snapshotDurations = [];
+  const snapshotWallDurations = [];
   let latestSnapshot;
   for (let index = 0; index < 20; index += 1) {
     const response = await system(context, operator, "snapshot");
-    snapshotDurations.push(response.durationMs);
+    snapshotDurations.push(serverTimingDuration(response.headers, "admin-read"));
+    snapshotWallDurations.push(response.durationMs);
     latestSnapshot = response.json;
   }
+  check(
+    "backend_server_timing_available",
+    commandDurations.every(Number.isFinite) && snapshotDurations.every(Number.isFinite),
+    JSON.stringify({ commandSamples: commandDurations.length, adminReadSamples: snapshotDurations.length }),
+  );
   check("database_snapshot_ready", latestSnapshot.gateReady === true, JSON.stringify(latestSnapshot.metrics));
   check(
     "outbox_lag_within_budget",
@@ -697,6 +706,8 @@ try {
     availabilityPercent: publicLoad.availabilityPercent,
     adminReadP95Ms: Math.round(percentile(snapshotDurations, 95)),
     commandP95Ms: Math.round(percentile(commandDurations, 95)),
+    adminReadWallP95Ms: Math.round(percentile(snapshotWallDurations, 95)),
+    commandWallP95Ms: Math.round(percentile(commandWallDurations, 95)),
     outboxLagP95Ms: latestSnapshot.metrics.outboxWorstLagSeconds * 1000,
     auditCoveragePercent: latestSnapshot.metrics.auditCoveragePercent,
     restoreRpoMinutes: restore.rpoMinutes,

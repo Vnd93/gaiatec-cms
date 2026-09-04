@@ -9,10 +9,10 @@ import {
 } from "@/shared/contracts/ev2-visual";
 import { sitesCommand } from "../api/cms-api";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { cmsEnvironment, isEv2FeatureEnabled } from "../ev2-runtime";
 import "../admin-visual-studio.css";
 
-const CANDIDATE_ENABLED = import.meta.env.VITE_EV2_MULTISITE_CANDIDATE === "true";
-const CMS_ENVIRONMENT = import.meta.env.VITE_CMS_ENVIRONMENT === "staging" ? "staging" : "local";
+const CMS_ENVIRONMENT = cmsEnvironment();
 const defaultTokens = [
   { key: "color.brand", kind: "color" as const, value: "#0057de" },
   { key: "color.text", kind: "color" as const, value: "#13233a" },
@@ -34,8 +34,9 @@ function envelope() {
 
 export default function AdminSitesPage() {
   const { session, profile } = useAdminAuth();
+  const candidateEnabled = isEv2FeatureEnabled(profile, "ev2.multisite");
   const [capability, setCapability] = useState<"checking" | "enabled" | "disabled" | "error">(
-    CANDIDATE_ENABLED ? "checking" : "disabled",
+    candidateEnabled ? "checking" : "disabled",
   );
   const [sites, setSites] = useState<Ev2SiteSummary[]>([]);
   const [selectedKey, setSelectedKey] = useState("main");
@@ -51,7 +52,7 @@ export default function AdminSitesPage() {
   const selected = useMemo(() => sites.find((site) => site.key === selectedKey), [selectedKey, sites]);
 
   const load = useCallback(async () => {
-    if (!session || !CANDIDATE_ENABLED) return;
+    if (!session || !candidateEnabled) return;
     setError("");
     try {
       const result = Ev2SitesCapabilityResultSchema.parse(
@@ -73,7 +74,7 @@ export default function AdminSitesPage() {
       setCapability("error");
       setError(caught instanceof Error ? caught.message : "Registro de sites indisponível.");
     }
-  }, [session]);
+  }, [candidateEnabled, session]);
 
   useEffect(() => {
     void load();
@@ -105,12 +106,12 @@ export default function AdminSitesPage() {
     }
   }
 
-  if (!CANDIDATE_ENABLED) {
+  if (!candidateEnabled) {
     return (
       <section>
         <h1>Sites e ambientes</h1>
         <div role="status" className="admin-notice">
-          A preparação multisite EV2.9 não está incluída neste build. O site principal permanece único.
+          A preparação multisite EV2.9 não está elegível para esta sessão. O site principal permanece único.
         </div>
       </section>
     );

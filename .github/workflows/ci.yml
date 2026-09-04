@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [Remodelagem, "ev2/**"]
+    branches: [main, Remodelagem, "ev2/**"]
 
 permissions:
   contents: read
@@ -45,7 +45,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3
         with:
-          version: latest
+          version: 2.116.0
       - run: supabase start
       - run: supabase db reset --local --no-seed
       - run: supabase test db

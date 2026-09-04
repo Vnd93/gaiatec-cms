@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { leadCommand } from "../api/cms-api";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { isEv2FeatureEnabled } from "../ev2-runtime";
 import { Badge, ConfirmDialog } from "../components/AdminUI";
 
 type LeadDelivery = {
@@ -211,7 +212,7 @@ export default function AdminLeadsPage() {
     canExport = profile?.permissions.includes("cms:leads.export"),
     canPrivacy = profile?.permissions.includes("cms:leads.privacy"),
     canRetry =
-      import.meta.env.VITE_EV2_SYSTEM_ASSURANCE_CANDIDATE === "true" &&
+      isEv2FeatureEnabled(profile, "ev2.system_assurance") &&
       profile?.permissions.includes("cms:leads.retry_delivery");
   return (
     <section>

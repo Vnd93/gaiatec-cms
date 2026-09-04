@@ -80,7 +80,7 @@ test("product adapter remains doubly gated and picker base is reusable", async (
     read("src/admin/pages/AdminProductEditorPage.tsx"),
     read("src/admin/components/EntityPicker.tsx"),
   ]);
-  assert.match(editor, /VITE_EV2_DRAFT_V2_CANDIDATE/);
+  assert.match(editor, /isEv2FeatureEnabled\(profile, "ev2\.draft_v2"\)/);
   assert.match(editor, /useProgressiveDraftAutosave/);
   assert.match(editor, /ProgressiveDraftStatus/);
   assert.match(picker, /role="combobox"/);

@@ -101,7 +101,7 @@ test("quality is deterministic, idempotent and blocks candidate publication", as
   assert.match(content, /capability\?\.enabled === true/);
 });
 
-test("candidate UI exposes facets, governance, quality, bundle and isolated canary controls", async () => {
+test("admin runtime exposes governed search and quality while the public UI remains on v1", async () => {
   const [publicSearch, adminSearch, qualityPage, routes, navigation, config, budget, canary, rehearsal] =
     await Promise.all([
       read("src/public/pages/CmsSearchPage.tsx"),
@@ -114,10 +114,11 @@ test("candidate UI exposes facets, governance, quality, bundle and isolated cana
       read("scripts/ev2/phase6/staging-canary.mjs"),
       read("scripts/ev2/phase6/validate-migration.mjs"),
     ]);
-  assert.match(publicSearch, /Filtros técnicos disponíveis/);
   assert.match(publicSearch, /Encontre o conteúdo técnico certo/);
-  assert.match(publicSearch, /Categoria de produto/);
+  assert.match(publicSearch, /searchPublishedProducts\(query\)/);
+  assert.doesNotMatch(publicSearch, /Filtros técnicos disponíveis|Categoria de produto/);
   assert.match(adminSearch, /Relevância governada/);
+  assert.match(adminSearch, /isEv2FeatureEnabled\(profile, "ev2\.search_quality"\)/);
   assert.match(qualityPage, /Centro de Qualidade/);
   assert.match(routes, /path: "qualidade"/);
   assert.match(navigation, /cms:quality\.read/);

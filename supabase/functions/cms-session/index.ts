@@ -18,6 +18,74 @@ const ACTION_EVENT = {
 } as const;
 
 type Action = keyof typeof ACTION_EVENT;
+type Environment = "local" | "staging" | "production";
+
+const EV2_FEATURE_KEYS = [
+  "ev2.release_skeleton",
+  "ev2.draft_v2",
+  "ev2.master_data",
+  "ev2.pim_v2",
+  "ev2.dam",
+  "ev2.search_quality",
+  "ev2.collaboration_bulk",
+  "ev2.rbac_scoped",
+  "ev2.visual_studio",
+  "ev2.multisite",
+  "ev2.ai_assist",
+  "ev2.ai_execute",
+  "ev2.system_assurance",
+] as const;
+
+function unavailableManifest(environment: Environment | null) {
+  const evaluatedAt = new Date().toISOString();
+  return {
+    schemaVersion: 1,
+    status: environment === "production" ? "gated" : "unavailable",
+    environment,
+    siteKey: environment ? "main" : null,
+    evaluatedAt,
+    capabilities: Object.fromEntries(
+      EV2_FEATURE_KEYS.map((key) => [
+        key,
+        { schemaVersion: 1, key, enabled: false, source: "unavailable", evaluatedAt },
+      ]),
+    ),
+  };
+}
+
+function validManifest(value: unknown, environment: Environment): value is Record<string, unknown> {
+  if (!value || typeof value !== "object") return false;
+  const manifest = value as Record<string, unknown>;
+  const expectedStatus = environment === "production" ? "gated" : "ready";
+  if (
+    manifest.schemaVersion !== 1 ||
+    manifest.status !== expectedStatus ||
+    manifest.environment !== environment ||
+    manifest.siteKey !== "main" ||
+    !Number.isFinite(Date.parse(String(manifest.evaluatedAt))) ||
+    !manifest.capabilities ||
+    typeof manifest.capabilities !== "object"
+  )
+    return false;
+  const capabilities = manifest.capabilities as Record<string, unknown>;
+  const capabilityKeys = Object.keys(capabilities);
+  if (
+    capabilityKeys.length !== EV2_FEATURE_KEYS.length ||
+    capabilityKeys.some((key) => !EV2_FEATURE_KEYS.some((expected) => expected === key))
+  )
+    return false;
+  return EV2_FEATURE_KEYS.every((key) => {
+    const entry = capabilities[key] as Record<string, unknown> | undefined;
+    return (
+      entry?.schemaVersion === 1 &&
+      entry.key === key &&
+      typeof entry.enabled === "boolean" &&
+      ["default", "override", "kill_switch", "unavailable"].includes(String(entry.source)) &&
+      Number.isFinite(Date.parse(String(entry.evaluatedAt))) &&
+      (environment !== "production" || entry.enabled === false)
+    );
+  });
+}
 
 function verifiedClaims(authHeader: string) {
   try {
@@ -106,7 +174,10 @@ Deno.serve(async (req) => {
     );
   }
 
-  const configuredEnvironment = Deno.env.get("CMS_ENVIRONMENT");
+  const configured = Deno.env.get("CMS_ENVIRONMENT");
+  const configuredEnvironment: Environment | null =
+    configured === "local" || configured === "staging" || configured === "production" ? configured : null;
+  let resolvedData = data as Record<string, unknown>;
   if (configuredEnvironment === "local" || configuredEnvironment === "staging") {
     const scope = {
       p_actor_id: authData.user.id,
@@ -139,8 +210,24 @@ Deno.serve(async (req) => {
       );
       if (scopedError || !scopedAccess)
         return json(req, { error: "Não foi possível resolver o acesso escopado." }, 503);
-      return json(req, { ...data, ...scopedAccess });
+      resolvedData = { ...resolvedData, ...scopedAccess };
     }
   }
-  return json(req, data);
+
+  let ev2Capabilities: Record<string, unknown> = unavailableManifest(configuredEnvironment);
+  if (configuredEnvironment && resolvedData.accessGranted === true) {
+    const { data: manifest, error: manifestError } = await admin.rpc(
+      "cms_runtime_capability_manifest",
+      {
+        p_actor_id: authData.user.id,
+        p_environment: configuredEnvironment,
+        p_site_key: "main",
+        p_aal: claims.aal,
+        p_session_id: claims.sessionId,
+        p_issued_at: claims.issuedAt,
+      },
+    );
+    if (!manifestError && validManifest(manifest, configuredEnvironment)) ev2Capabilities = manifest;
+  }
+  return json(req, { ...resolvedData, ev2Capabilities });
 });

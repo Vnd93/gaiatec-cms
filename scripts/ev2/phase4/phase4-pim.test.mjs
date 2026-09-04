@@ -99,7 +99,7 @@ test("guided editor uses strict contracts, attribute sets and adapter v1", async
   assert.match(contract, /mode: z\.enum\(\["create", "update"\]\)/);
   assert.match(contract, /expectedVersion is required/);
   assert.match(contract, /Ev2PimAttributeCatalogResultSchema/);
-  assert.match(page, /VITE_EV2_PIM_CANDIDATE/);
+  assert.match(page, /isEv2FeatureEnabled\(profile, "ev2\.pim_v2"\)/);
   assert.match(page, /attributesCommand/);
   assert.match(page, /Especificações técnicas/);
   assert.match(page, /Preencha as especificações obrigatórias/);

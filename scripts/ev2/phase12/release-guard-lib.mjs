@@ -36,6 +36,54 @@ export function isFullSha(value) {
   return typeof value === "string" && FULL_SHA_PATTERN.test(value);
 }
 
+export function validateReleaseManifest(manifest, { expectedRelease } = {}) {
+  const violations = [];
+  if (manifest?.schemaVersion !== 1) violations.push("manifest_schema_invalid");
+  if (!isFullSha(manifest?.release)) violations.push("manifest_release_invalid");
+  else if (expectedRelease && manifest.release !== expectedRelease)
+    violations.push("manifest_release_mismatch");
+  if (!Array.isArray(manifest?.files) || manifest.files.length === 0) {
+    violations.push("manifest_files_invalid");
+  } else {
+    const paths = new Set();
+    for (const file of manifest.files) {
+      const pathValid =
+        typeof file?.path === "string" &&
+        file.path.length > 0 &&
+        !file.path.startsWith("/") &&
+        !file.path.includes("\\") &&
+        !file.path.split("/").includes("..");
+      if (
+        !pathValid ||
+        !Number.isSafeInteger(file?.bytes) ||
+        file.bytes < 0 ||
+        !/^[a-f0-9]{64}$/.test(file?.sha256 ?? "")
+      )
+        violations.push("manifest_file_entry_invalid");
+      if (pathValid) {
+        if (paths.has(file.path)) violations.push("manifest_file_path_duplicate");
+        paths.add(file.path);
+      }
+    }
+  }
+  const uniqueViolations = [...new Set(violations)];
+  return { valid: uniqueViolations.length === 0, violations: uniqueViolations };
+}
+
+export function validateHealthContract(health, { expectedRelease, expectedEnvironment } = {}) {
+  const violations = [];
+  if (health?.schemaVersion !== 1) violations.push("health_schema_invalid");
+  if (health?.status !== "ready") violations.push("health_status_invalid");
+  if (!isFullSha(health?.release)) violations.push("health_release_invalid");
+  else if (expectedRelease && health.release !== expectedRelease) violations.push("health_release_mismatch");
+  if (!["local", "staging", "production-preview", "production"].includes(health?.environment))
+    violations.push("health_environment_invalid");
+  else if (expectedEnvironment && health.environment !== expectedEnvironment)
+    violations.push("health_environment_mismatch");
+  const uniqueViolations = [...new Set(violations)];
+  return { valid: uniqueViolations.length === 0, violations: uniqueViolations };
+}
+
 export function percentile(values, percentileValue) {
   if (!Array.isArray(values) || values.length === 0) return Number.NaN;
   const sorted = values.filter(isFiniteNumber).toSorted((left, right) => left - right);
@@ -62,6 +110,7 @@ export function evaluateProbeWindow(evidence) {
   if (evidence?.releaseHeadersExact !== true) violations.push("release_header_mismatch");
   if (evidence?.healthContractValid !== true) violations.push("health_contract_invalid");
   if (evidence?.manifestReleaseExact !== true) violations.push("manifest_release_mismatch");
+  if (evidence?.routeBudgetsValid !== true) violations.push("route_latency_budget_exceeded");
   if (evidence?.nonProductionNoindexValid !== true) violations.push("noindex_boundary_invalid");
   return { healthy: violations.length === 0, violations };
 }
@@ -155,6 +204,11 @@ export function validateApprovalRecord(
     violations.push("g12_evidence_candidate_mismatch");
   if (!/^[a-f0-9]{64}$/.test(record?.g12Evidence?.reportSha256 ?? ""))
     violations.push("g12_evidence_digest_invalid");
+  if (
+    typeof record?.g12Evidence?.file !== "string" ||
+    !/^docs\/ev2\/fase-12\/evidencias\/G12_CANARY_[a-f0-9_-]+\.json$/.test(record.g12Evidence.file)
+  )
+    violations.push("g12_evidence_file_invalid");
   const healthyWindowIds = record?.g12Evidence?.healthyWindowIds;
   if (
     !Array.isArray(healthyWindowIds) ||
@@ -210,6 +264,92 @@ export function validateApprovalRecord(
       domains.some((domain) => domain.includes("pages.dev"))
     )
       violations.push("production_domains_invalid");
+  }
+
+  const uniqueViolations = [...new Set(violations)];
+  return { valid: uniqueViolations.length === 0, violations: uniqueViolations };
+}
+
+export function validateCanaryEvidenceBinding(record, evidence, { reportSha256 } = {}) {
+  const violations = [];
+  const expected = record?.g12Evidence;
+  if (!/^[a-f0-9]{64}$/.test(reportSha256 ?? "") || reportSha256 !== expected?.reportSha256)
+    violations.push("g12_evidence_digest_mismatch");
+  if (evidence?.schemaVersion !== 1) violations.push("g12_report_schema_invalid");
+  if (evidence?.outcome !== "G12_CANARY_PASS") violations.push("g12_report_outcome_invalid");
+  if (evidence?.suiteKey !== "g12-staging-integrated-reduced-v1") violations.push("g12_report_suite_invalid");
+  if (evidence?.environment !== "staging") violations.push("g12_report_environment_invalid");
+  if (evidence?.candidateSha !== record?.candidateSha) violations.push("g12_report_candidate_mismatch");
+  if (evidence?.canaryRunId !== expected?.canaryRunId) violations.push("g12_report_run_mismatch");
+  if (evidence?.g11AssuranceRunId !== record?.g11EvidenceRunId) violations.push("g11_report_run_mismatch");
+  if (
+    evidence?.candidateOrigin !== "https://ev2-g12-canary.gaiatec-cms-staging.pages.dev" ||
+    evidence?.stableOrigin !== "https://gaiatec-cms-staging.pages.dev"
+  )
+    violations.push("g12_report_origin_invalid");
+  if (
+    evidence?.syntheticOnly !== true ||
+    evidence?.realDataUsed !== false ||
+    evidence?.productionMutations !== 0 ||
+    evidence?.stablePromoted !== false
+  )
+    violations.push("g12_report_boundary_invalid");
+  if (
+    evidence?.p0Count !== 0 ||
+    evidence?.p1Count !== 0 ||
+    evidence?.securityStatus !== "passed" ||
+    evidence?.restoreStatus !== "passed"
+  )
+    violations.push("g12_report_assurance_invalid");
+  if (
+    !Number.isInteger(evidence?.inheritedG11Checks) ||
+    evidence.inheritedG11Checks <= 0 ||
+    evidence?.inheritedG11Passed !== evidence.inheritedG11Checks
+  )
+    violations.push("g11_inherited_checks_invalid");
+
+  const residue = evidence?.syntheticResidue;
+  if (
+    !residue ||
+    residue.activeActors !== 0 ||
+    residue.activeCredentials !== 0 ||
+    residue.activeOverrides !== 0 ||
+    residue.personalLeadPayloads !== 0
+  )
+    violations.push("g12_active_synthetic_residue_present");
+
+  const windows = Array.isArray(evidence?.healthyWindows) ? evidence.healthyWindows : [];
+  const expectedIds = Array.isArray(expected?.healthyWindowIds) ? expected.healthyWindowIds : [];
+  if (
+    windows.length !== 3 ||
+    expectedIds.length !== 3 ||
+    windows.some((window, index) => window?.id !== expectedIds[index])
+  )
+    violations.push("g12_window_binding_mismatch");
+  let previousEnd = 0;
+  for (const window of windows) {
+    const startedAt = Date.parse(window?.startedAt ?? "");
+    const endedAt = Date.parse(window?.endedAt ?? "");
+    if (
+      !UUID_PATTERN.test(window?.id ?? "") ||
+      window?.outcome !== "pass" ||
+      !Number.isInteger(window?.measuredResponses) ||
+      window.measuredResponses < 22 ||
+      !isFiniteNumber(window?.availabilityPercent) ||
+      window.availabilityPercent < G12_BUDGETS.availabilityPercent ||
+      !isFiniteNumber(window?.http5xxRatePercent) ||
+      window.http5xxRatePercent > G12_BUDGETS.http5xxRatePercent ||
+      !isFiniteNumber(window?.publicP95Ms) ||
+      window.publicP95Ms > G12_BUDGETS.publicP95Ms ||
+      !/^[a-f0-9]{64}$/.test(window?.evidenceHash ?? "") ||
+      !Number.isFinite(startedAt) ||
+      !Number.isFinite(endedAt) ||
+      endedAt <= startedAt
+    )
+      violations.push("g12_window_invalid");
+    if (previousEnd && (startedAt < previousEnd || startedAt - previousEnd > 60_000))
+      violations.push("g12_windows_not_consecutive");
+    if (Number.isFinite(endedAt)) previousEnd = endedAt;
   }
 
   const uniqueViolations = [...new Set(violations)];

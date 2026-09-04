@@ -96,7 +96,7 @@ test("contracts and UI expose source, confidence, diff, cost and manual fallback
   assert.match(contract, /sourceVersion/);
   assert.match(contract, /confidence/);
   assert.match(contract, /Ev2AiDiffSchema/);
-  assert.match(page, /VITE_EV2_AI_ASSIST_CANDIDATE/);
+  assert.match(page, /isEv2FeatureEnabled\(profile, "ev2\.ai_assist"\)/);
   assert.match(page, /Fonte sintética obrigatória/);
   assert.match(page, /Diff proposto/);
   assert.match(page, /Permissões efetivas/);
@@ -107,9 +107,9 @@ test("contracts and UI expose source, confidence, diff, cost and manual fallback
   assert.match(page, /selectedProposal\.hasPendingFields/);
   assert.match(page, /Operação manual sempre disponível/);
   assert.match(page, /R\$ 0,00/);
-  assert.match(navigation, /candidate: "ai-assist"/);
+  assert.match(navigation, /candidate: "ev2\.ai_assist"/);
   assert.match(routes, /path: "assistente"/);
-  assert.match(shell, /item\.candidate !== "ai-assist"/);
+  assert.match(shell, /!item\.candidate \|\| isEv2FeatureEnabled\(profile, item\.candidate\)/);
   assert.match(worker, /\|assistente\|/);
   assert.match(guidance, /Nenhuma resposta é aplicada ou publicada/);
 });

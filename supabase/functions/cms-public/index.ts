@@ -4,7 +4,11 @@ import { containsInternalProductValue, sanitizePublicPayload, sanitizePublicSeo 
 import { resolveMediaAssets } from "../_shared/cms-media-resolution.ts";
 import { deterministicSeoDefaults } from "../_shared/cms-seo-defaults.ts";
 
-const headers = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "apikey, authorization, content-type, if-none-match, x-client-info", "Access-Control-Allow-Methods": "GET, OPTIONS", Vary: "Origin" };
+declare const EdgeRuntime: {
+  waitUntil(promise: PromiseLike<unknown>): void;
+};
+
+const headers = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "apikey, authorization, content-type, if-none-match, x-client-info, x-ev2-search-canary", "Access-Control-Allow-Methods": "GET, OPTIONS", Vary: "Origin" };
 const json = (body: unknown, status = 200, extra: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { ...headers, "Content-Type": "application/json; charset=utf-8", ...extra } });
 const normalize = (value: unknown) => String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[₂]/g, "2").replace(/[–—]/g, "-").replace(/\bdn\s+(\d+)/g, "dn$1").replace(/4\s*-\s*20\s*ma/g, "4-20ma").replace(/[^a-z0-9%/.-]+/g, " ").trim();
 const publicTypes = ["product", "service", "industry", "application", "solution", "post", "campaign", "page", "homepage", "navigation", "site_settings", "placement"];
@@ -34,6 +38,13 @@ Deno.serve(async (req) => {
     return { ...row, payload, seo: deterministicSeoDefaults(sanitizePublicSeo(row.seo, row.payload), payload, path), path, media_urls: mediaUrls, media_alt: mediaAlt, document_urls: documentUrls };
   };
   if (type === "search-v2") {
+    const canaryToken = Deno.env.get("CMS_PUBLIC_SEARCH_V2_CANARY_TOKEN") ?? "";
+    if (
+      Deno.env.get("CMS_ENVIRONMENT") !== "staging" ||
+      canaryToken.length < 32 ||
+      req.headers.get("X-EV2-Search-Canary") !== canaryToken
+    )
+      return json({ error: "Não encontrado." }, 404, { "Cache-Control": "no-store" });
     if (!service) return json({ error: "Busca técnica indisponível." }, 503, { "Cache-Control": "no-store" });
     const query = (url.searchParams.get("q") ?? "").trim().slice(0, 300);
     const contentTypes = (url.searchParams.get("contentTypes") ?? "").split(",").filter((value) => searchableTypes.includes(value));

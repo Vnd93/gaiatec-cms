@@ -11,6 +11,7 @@ import {
 } from "../admin-navigation";
 import { useAdminAuth } from "../auth/AdminAuthContext";
 import { resolveAdminRouteGuidance } from "../admin-route-guidance";
+import { isEv2FeatureEnabled } from "../ev2-runtime";
 import "../admin.css";
 import "../admin-f11.css";
 
@@ -39,14 +40,11 @@ export function AdminShell() {
           items: group.items.filter(
             (item) =>
               canAccessNavigationItem(item, permissions) &&
-              (item.candidate !== "visual-studio" ||
-                import.meta.env.VITE_EV2_VISUAL_STUDIO_CANDIDATE === "true") &&
-              (item.candidate !== "multisite" || import.meta.env.VITE_EV2_MULTISITE_CANDIDATE === "true") &&
-              (item.candidate !== "ai-assist" || import.meta.env.VITE_EV2_AI_ASSIST_CANDIDATE === "true"),
+              (!item.candidate || isEv2FeatureEnabled(profile, item.candidate)),
           ),
         }))
         .filter((group) => group.items.length > 0),
-    [permissions],
+    [permissions, profile],
   );
   const activeGroupId = visibleGroups.find((group) =>
     group.items.some((item) => isNavigationItemActive(item, location.pathname, location.search)),
@@ -128,11 +126,7 @@ export function AdminShell() {
               event.preventDefault();
               if (search.trim())
                 navigate(
-                  globalSearchTarget(
-                    search,
-                    permissions,
-                    import.meta.env.VITE_EV2_SEARCH_QUALITY_CANDIDATE === "true",
-                  ),
+                  globalSearchTarget(search, permissions, isEv2FeatureEnabled(profile, "ev2.search_quality")),
                 );
             }}
           >

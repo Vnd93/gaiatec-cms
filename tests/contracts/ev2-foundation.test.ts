@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  Ev2CapabilityManifestSchema,
+  Ev2FeatureFlagKeySchema,
   Ev2FeatureFlagEvaluationSchema,
   Ev2ReleaseCommandResultSchema,
   Ev2ReleaseCommandSchema,
@@ -24,6 +26,38 @@ describe("EV2 foundation contracts", () => {
         evaluatedAt: "2026-09-02T17:41:41.59918+00:00",
       }).success,
     ).toBe(true);
+  });
+
+  it("requires a complete fail-closed runtime capability manifest", () => {
+    const evaluatedAt = "2026-09-04T20:00:00.000Z";
+    const capabilities = Object.fromEntries(
+      Ev2FeatureFlagKeySchema.options.map((key) => [
+        key,
+        { schemaVersion: 1, key, enabled: false, source: "unavailable", evaluatedAt },
+      ]),
+    );
+    expect(
+      Ev2CapabilityManifestSchema.safeParse({
+        schemaVersion: 1,
+        status: "ready",
+        environment: "staging",
+        siteKey: "main",
+        evaluatedAt,
+        capabilities,
+      }).success,
+    ).toBe(true);
+    const incomplete = { ...capabilities };
+    delete incomplete["ev2.system_assurance"];
+    expect(
+      Ev2CapabilityManifestSchema.safeParse({
+        schemaVersion: 1,
+        status: "ready",
+        environment: "staging",
+        siteKey: "main",
+        evaluatedAt,
+        capabilities: incomplete,
+      }).success,
+    ).toBe(false);
   });
   it("accepts a versioned empty release command", () => {
     expect(

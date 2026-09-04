@@ -9,8 +9,7 @@ import { openExternalAfterAsync } from "../open-external-preview";
 import { useDraftBackup } from "../hooks/useDraftBackup";
 import { DraftBackupNotice } from "../components/DraftBackupNotice";
 import { DamPicker, type DamPickerSelection } from "../components/DamPicker";
-
-const DAM_CANDIDATE_ENABLED = import.meta.env.VITE_EV2_DAM_CANDIDATE === "true";
+import { isEv2FeatureEnabled } from "../ev2-runtime";
 
 type Loaded = {
   id: string;
@@ -39,6 +38,7 @@ export default function AdminEditorPage() {
   const { id } = useParams(),
     navigate = useNavigate(),
     { session, profile, user } = useAdminAuth();
+  const damCandidateEnabled = isEv2FeatureEnabled(profile, "ev2.dam");
   const [loaded, setLoaded] = useState<Loaded | null>(null),
     [loading, setLoading] = useState(id !== "novo"),
     [busy, setBusy] = useState(false);
@@ -488,7 +488,7 @@ export default function AdminEditorPage() {
           </label>
           <fieldset>
             <legend>Mídia nova e chamadas</legend>
-            {DAM_CANDIDATE_ENABLED ? (
+            {damCandidateEnabled ? (
               <>
                 <DamPicker
                   label="Imagem principal opcional"

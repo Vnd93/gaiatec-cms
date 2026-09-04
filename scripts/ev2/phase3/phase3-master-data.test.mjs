@@ -75,7 +75,7 @@ test("admin UI is doubly gated and consumes server relation rules", async () => 
     read("src/app/routes.tsx"),
     read("src/admin/admin-navigation.ts"),
   ]);
-  assert.match(page, /VITE_EV2_MASTER_DATA_CANDIDATE/);
+  assert.match(page, /isEv2FeatureEnabled\(profile, "ev2\.master_data"\)/);
   assert.match(page, /action: "capability"/);
   assert.match(page, /action: "list_rules"/);
   assert.match(page, /action: "get_dependencies"/);

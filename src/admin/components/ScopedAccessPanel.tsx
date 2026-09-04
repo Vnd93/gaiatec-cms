@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { scopedAccessCommand } from "../api/cms-api";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { cmsEnvironment, isEv2FeatureEnabled } from "../ev2-runtime";
 import {
   AdminAlert,
   Badge,
@@ -32,8 +33,7 @@ type AdministrativeUser = {
   is_self: boolean;
 };
 
-const CANDIDATE_ENABLED = import.meta.env.VITE_EV2_RBAC_SCOPED_CANDIDATE === "true";
-const CMS_ENVIRONMENT = import.meta.env.VITE_CMS_ENVIRONMENT === "staging" ? "staging" : "local";
+const CMS_ENVIRONMENT = cmsEnvironment();
 
 function envelope() {
   return {
@@ -55,11 +55,12 @@ function reasonLabel(reasonCode: string): string {
 
 export function ScopedAccessPanel({ users }: { users: AdministrativeUser[] }) {
   const { session, profile } = useAdminAuth();
+  const candidateEnabled = isEv2FeatureEnabled(profile, "ev2.rbac_scoped");
   const [capability, setCapability] = useState<Ev2RbacCapability | null>(null);
   const [assignments, setAssignments] = useState<Ev2ScopedRoleAssignment[]>([]);
   const [roles, setRoles] = useState<Ev2RoleCatalogItem[]>([]);
   const [decisions, setDecisions] = useState<Ev2PolicyDecision[]>([]);
-  const [loading, setLoading] = useState(CANDIDATE_ENABLED);
+  const [loading, setLoading] = useState(candidateEnabled);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -81,7 +82,7 @@ export function ScopedAccessPanel({ users }: { users: AdministrativeUser[] }) {
   const eligibleUsers = useMemo(() => users.filter((user) => !user.is_self), [users]);
 
   const load = useCallback(async () => {
-    if (!CANDIDATE_ENABLED || !session) return;
+    if (!candidateEnabled || !session) return;
     setLoading(true);
     setError("");
     try {
@@ -115,7 +116,7 @@ export function ScopedAccessPanel({ users }: { users: AdministrativeUser[] }) {
     } finally {
       setLoading(false);
     }
-  }, [canRead, canReadDecisions, session]);
+  }, [canRead, canReadDecisions, candidateEnabled, session]);
 
   useEffect(() => {
     void load();
@@ -131,7 +132,7 @@ export function ScopedAccessPanel({ users }: { users: AdministrativeUser[] }) {
     setGrant((current) => ({ ...current, roleKey: roles[0].roleKey }));
   }, [grant.roleKey, roles]);
 
-  if (!CANDIDATE_ENABLED) return null;
+  if (!candidateEnabled) return null;
 
   async function submitGrant(event: React.FormEvent) {
     event.preventDefault();

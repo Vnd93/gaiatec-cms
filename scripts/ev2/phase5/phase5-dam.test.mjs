@@ -100,7 +100,7 @@ test("DAM UI is candidate-gated and picker works inside the editor", async () =>
     read("src/admin/pages/AdminEditorPage.tsx"),
     read("src/shared/contracts/ev2-dam.ts"),
   ]);
-  assert.match(legacyPage, /VITE_EV2_DAM_CANDIDATE/);
+  assert.match(legacyPage, /isEv2FeatureEnabled\(profile, "ev2\.dam"\)/);
   assert.match(page, /action: "capability"/);
   assert.match(page, /action: "match_asset"/);
   assert.match(page, /action: "preview_replacement"/);

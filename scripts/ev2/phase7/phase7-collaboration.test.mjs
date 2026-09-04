@@ -122,7 +122,7 @@ test("candidate UI, worker and canary expose the governed workflow without chang
     read("scripts/ev2/phase7/staging-canary.mjs"),
     read("scripts/ev2/phase7/validate-migration.mjs"),
   ]);
-  assert.match(page, /VITE_EV2_COLLABORATION_BULK_CANDIDATE/);
+  assert.match(page, /isEv2FeatureEnabled\(profile, "ev2\.collaboration_bulk"\)/);
   assert.match(page, /Validar sem alterar/);
   assert.match(page, /Publicar conjunto/);
   assert.match(page, /Reverter release/);

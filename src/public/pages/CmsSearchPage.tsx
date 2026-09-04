@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { autocompletePublished, searchPublishedProducts, type UnifiedSearchResult } from "../catalog-api";
 import { ProductCard } from "../components/ProductCard";
@@ -18,15 +18,6 @@ const labels: { [key in Tab]: string } = {
 };
 const contentTypeLabel = (contentType: UnifiedSearchResult["items"][number]["content_type"]) =>
   contentType === "homepage" ? labels.page : labels[contentType];
-const facetLabels: Record<string, string> = {
-  productCategory: "Categoria de produto",
-  applicationMagnitude: "Grandeza de aplicação",
-  technology: "Tecnologia",
-  installationOperation: "Instalação e operação",
-  monitoredElement: "Elemento monitorado",
-  serviceKind: "Tipo de serviço",
-  market: "Mercado",
-};
 export default function CmsSearchPage() {
   const [params, setParams] = useSearchParams(),
     navigate = useNavigate(),
@@ -36,22 +27,6 @@ export default function CmsSearchPage() {
     [error, setError] = useState(""),
     [activeSuggestion, setActiveSuggestion] = useState(-1),
     [tab, setTab] = useState<Tab>("all");
-  const candidate = import.meta.env.VITE_EV2_SEARCH_QUALITY_CANDIDATE === "true";
-  const facetQuery = [...params.entries()]
-    .filter(([key]) => key.startsWith("f_"))
-    .map(([key, value]) => `${key}=${value}`)
-    .sort()
-    .join("&");
-  const selectedFacets = useMemo(
-    () =>
-      Object.fromEntries(
-        [...new URLSearchParams(facetQuery).entries()].map(([key, value]) => [
-          key.slice(2),
-          value.split("|").filter(Boolean),
-        ]),
-      ),
-    [facetQuery],
-  );
   useEffect(() => {
     let active = true;
     applyCatalogSeo({
@@ -86,7 +61,7 @@ export default function CmsSearchPage() {
     }
     setResult(null);
     setError("");
-    void searchPublishedProducts(query, selectedFacets)
+    void searchPublishedProducts(query)
       .then((data) => {
         if (!active) return;
         if (data.redirect) navigate(data.redirect);
@@ -96,7 +71,7 @@ export default function CmsSearchPage() {
     return () => {
       active = false;
     };
-  }, [facetQuery, navigate, query, selectedFacets]);
+  }, [navigate, query]);
   useEffect(() => {
     let active = true;
     const timer = window.setTimeout(() => {
@@ -191,39 +166,6 @@ export default function CmsSearchPage() {
             </button>
           ))}
         </div>
-      )}
-      {candidate && result && Object.values(result.facets).some((values) => values.length > 0) && (
-        <aside className="unified-search__facets" aria-label="Filtros técnicos disponíveis">
-          <h2>Refinar resultados</h2>
-          {Object.entries(result.facets)
-            .filter(([, values]) => values.length > 0)
-            .map(([key, values]) => (
-              <fieldset key={key}>
-                <legend>{facetLabels[key] ?? key.replace(/([A-Z])/g, " $1")}</legend>
-                {values.map((value) => {
-                  const active = selectedFacets[key]?.includes(value) ?? false;
-                  return (
-                    <button
-                      type="button"
-                      key={value}
-                      aria-pressed={active}
-                      onClick={() => {
-                        const next = new URLSearchParams(params);
-                        const valuesForKey = new Set(selectedFacets[key] ?? []);
-                        if (active) valuesForKey.delete(value);
-                        else valuesForKey.add(value);
-                        if (valuesForKey.size) next.set(`f_${key}`, [...valuesForKey].join("|"));
-                        else next.delete(`f_${key}`);
-                        setParams(next);
-                      }}
-                    >
-                      {value}
-                    </button>
-                  );
-                })}
-              </fieldset>
-            ))}
-        </aside>
       )}
       {error ? (
         <div className="new-catalog__state" role="alert">

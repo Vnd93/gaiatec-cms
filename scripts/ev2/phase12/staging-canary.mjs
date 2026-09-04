@@ -67,6 +67,7 @@ try {
     schemaVersion: 1,
     outcome: "G12_CANARY_PASS",
     suiteKey: "g12-staging-integrated-reduced-v1",
+    environment: "staging",
     canaryRunId,
     candidateSha,
     candidateOrigin,

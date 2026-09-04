@@ -8,7 +8,25 @@ const mocks = vi.hoisted(() => ({
   capabilityEnabled: true,
   auth: {
     session: { access_token: "test-token" },
-    profile: { permissions: ["cms:media.read", "cms:media.upload", "cms:media.manage"] },
+    profile: {
+      permissions: ["cms:media.read", "cms:media.upload", "cms:media.manage"],
+      ev2Capabilities: {
+        schemaVersion: 1,
+        status: "ready",
+        environment: "local",
+        siteKey: "main",
+        evaluatedAt: new Date().toISOString(),
+        capabilities: {
+          "ev2.dam": {
+            schemaVersion: 1,
+            key: "ev2.dam",
+            enabled: true,
+            source: "override",
+            evaluatedAt: new Date().toISOString(),
+          },
+        },
+      },
+    },
   },
 }));
 

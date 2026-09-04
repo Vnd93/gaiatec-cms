@@ -28,9 +28,9 @@ import { ProductModelsEditor } from "../components/ProductModelsEditor";
 import { EntityPicker } from "../components/EntityPicker";
 import { useProgressiveDraftAutosave } from "../hooks/useProgressiveDraftAutosave";
 import { ProgressiveDraftStatus } from "../components/ProgressiveDraftStatus";
+import { cmsEnvironment, isEv2FeatureEnabled } from "../ev2-runtime";
 
-const EV2_DRAFT_V2_CANDIDATE = import.meta.env.VITE_EV2_DRAFT_V2_CANDIDATE === "true";
-const CMS_ENVIRONMENT = import.meta.env.VITE_CMS_ENVIRONMENT === "staging" ? "staging" : "local";
+const CMS_ENVIRONMENT = cmsEnvironment();
 
 type Loaded = {
   id: string;
@@ -108,6 +108,7 @@ export default function AdminProductEditorPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { session, profile } = useAdminAuth();
+  const draftV2Enabled = isEv2FeatureEnabled(profile, "ev2.draft_v2");
   const [draft, setDraft] = useState(createInitialProductDraft);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [activeTab, setActiveTab] = useState<ProductEditorTab>("identificacao");
@@ -212,7 +213,7 @@ export default function AdminProductEditorPage() {
   const progressiveValue = useMemo(() => ({ draft, activeTab }), [activeTab, draft]);
   const progressiveDraft = useProgressiveDraftAutosave({
     session,
-    enabled: EV2_DRAFT_V2_CANDIDATE && !loading && id === "novo",
+    enabled: draftV2Enabled && !loading && id === "novo",
     environment: CMS_ENVIRONMENT,
     contentType: "product",
     value: progressiveValue,

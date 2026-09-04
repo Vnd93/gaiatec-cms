@@ -14,10 +14,10 @@ import {
 } from "@/shared/contracts/ev2-ai";
 import { aiAssistCommand } from "../api/cms-api";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { cmsEnvironment, isEv2FeatureEnabled } from "../ev2-runtime";
 import "../admin-ai-assistant.css";
 
-const CANDIDATE_ENABLED = import.meta.env.VITE_EV2_AI_ASSIST_CANDIDATE === "true";
-const CMS_ENVIRONMENT = import.meta.env.VITE_CMS_ENVIRONMENT === "staging" ? "staging" : "local";
+const CMS_ENVIRONMENT = cmsEnvironment();
 
 function envelope() {
   return {
@@ -31,8 +31,9 @@ function envelope() {
 
 export default function AdminAiAssistantPage() {
   const { session, profile } = useAdminAuth();
+  const candidateEnabled = isEv2FeatureEnabled(profile, "ev2.ai_assist");
   const [capability, setCapability] = useState<"checking" | "enabled" | "disabled" | "error">(
-    CANDIDATE_ENABLED ? "checking" : "disabled",
+    candidateEnabled ? "checking" : "disabled",
   );
   const [workspace, setWorkspace] = useState<Ev2AiWorkspace | null>(null);
   const [selectedSessionId, setSelectedSessionId] = useState("");
@@ -71,7 +72,7 @@ export default function AdminAiAssistantPage() {
   );
 
   const loadWorkspace = useCallback(async () => {
-    if (!session || !CANDIDATE_ENABLED) return;
+    if (!session || !candidateEnabled) return;
     const result = Ev2AiWorkspaceSchema.parse(
       await aiAssistCommand(session, { action: "workspace", envelope: envelope() }),
     );
@@ -81,10 +82,10 @@ export default function AdminAiAssistantPage() {
         ? current
         : (result.sessions.find((item) => item.status === "active")?.id ?? result.sessions[0]?.id ?? ""),
     );
-  }, [session]);
+  }, [candidateEnabled, session]);
 
   const load = useCallback(async () => {
-    if (!session || !CANDIDATE_ENABLED) return;
+    if (!session || !candidateEnabled) return;
     setError("");
     try {
       const result = Ev2AiCapabilitySchema.parse(
@@ -100,7 +101,7 @@ export default function AdminAiAssistantPage() {
       setCapability("error");
       setError(caught instanceof Error ? caught.message : "Assistência indisponível.");
     }
-  }, [loadWorkspace, session]);
+  }, [candidateEnabled, loadWorkspace, session]);
 
   useEffect(() => {
     void load();
@@ -209,12 +210,12 @@ export default function AdminAiAssistantPage() {
     );
   }
 
-  if (!CANDIDATE_ENABLED) {
+  if (!candidateEnabled) {
     return (
       <section>
         <h1>Assistente controlada</h1>
         <div role="status" className="admin-notice">
-          A interface candidata EV2.10 não está incluída neste build. Todos os editores manuais continuam
+          A assistência EV2.10 não está elegível para esta sessão. Todos os editores manuais continuam
           disponíveis.
         </div>
       </section>

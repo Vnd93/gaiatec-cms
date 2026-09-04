@@ -148,7 +148,7 @@ test("multisite preparation remains synthetic, locked and non-production", async
   assert.match(contract, /productionEnabled: z\.literal\(false\)/);
 });
 
-test("candidate UI exposes governed editor and site registry only behind build switches", async () => {
+test("candidate UI exposes governed editor and site registry only for eligible runtime sessions", async () => {
   const [studio, sites, builder, shell, routes, renderer] = await Promise.all([
     read("src/admin/pages/AdminVisualStudioPage.tsx"),
     read("src/admin/pages/AdminSitesPage.tsx"),
@@ -157,7 +157,7 @@ test("candidate UI exposes governed editor and site registry only behind build s
     read("src/app/routes.tsx"),
     read("src/public/components/CmsPageRenderer.tsx"),
   ]);
-  assert.match(studio, /VITE_EV2_VISUAL_STUDIO_CANDIDATE/);
+  assert.match(studio, /isEv2FeatureEnabled\(profile, "ev2\.visual_studio"\)/);
   assert.match(studio, /Desfazer/);
   assert.match(studio, /Camadas/);
   assert.match(studio, /Gerar snapshots 12\/8\/4/);
@@ -165,13 +165,12 @@ test("candidate UI exposes governed editor and site registry only behind build s
   assert.match(studio, /Preparar substituição privilegiada/);
   assert.match(studio, /mediaUrls=\{previewMediaUrls\}/);
   assert.match(studio, /pageBlockReferenceRequirement/);
-  assert.match(sites, /VITE_EV2_MULTISITE_CANDIDATE/);
+  assert.match(sites, /isEv2FeatureEnabled\(profile, "ev2\.multisite"\)/);
   assert.match(sites, /create_candidate/);
   assert.match(sites, /\.invalid/);
   assert.match(builder, /Os blocos e o hash visual desta página são versionados/);
   assert.match(builder, /JSON\.stringify\(source\.blocks\) !== JSON\.stringify\(payload\.blocks\)/);
-  assert.match(shell, /item\.candidate !== "visual-studio"/);
-  assert.match(shell, /item\.candidate !== "multisite"/);
+  assert.match(shell, /!item\.candidate \|\| isEv2FeatureEnabled\(profile, item\.candidate\)/);
   assert.match(routes, /path: "estudio-visual\/:itemId"/);
   assert.match(routes, /path: "sites"/);
   assert.match(renderer, /data-hidden-desktop/);

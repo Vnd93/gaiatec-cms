@@ -74,6 +74,16 @@ jobs:
             pages deploy dist --project-name gaiatec-cms-staging --branch ev2-g16-csp-canary
             --commit-hash ${{ inputs.expected_sha }} --commit-dirty=false
       - if: env.CANARY_DEPLOY_CONFIGURED == 'true'
+        name: Stabilize the isolated edge before measurement
+        env:
+          CANARY_ORIGIN: ${{ steps.deploy.outputs.deployment-url }}
+        run: |
+          for attempt in 1 2; do
+            for route in / /produtos /contato /admin/login; do
+              curl --fail --silent --show-error --max-time 10 "${CANARY_ORIGIN}${route}" >/dev/null
+            done
+          done
+      - if: env.CANARY_DEPLOY_CONFIGURED == 'true'
         run: npm run probe:ev2:phase12
         env:
           EV2_G12_ORIGIN: ${{ steps.deploy.outputs.deployment-url }}

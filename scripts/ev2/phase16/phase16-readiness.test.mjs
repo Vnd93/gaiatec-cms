@@ -172,11 +172,12 @@ test("CSP is enforced only on production targets and contains the audited browse
   assert.doesNotMatch(enforced, /api\.resend\.com/);
 });
 
-test("backup and provider workflows retain only encrypted evidence and stay behind environments", async () => {
-  const [backup, email, deploy] = await Promise.all([
+test("production and canary workflows retain evidence and stay behind their boundaries", async () => {
+  const [backup, email, deploy, cspCanary] = await Promise.all([
     read(".github/workflows/backup-supabase-production.yml"),
     read(".github/workflows/verify-production-email.yml"),
     read(".github/workflows/deploy-production.yml"),
+    read(".github/workflows/preview-ev2-phase16.yml"),
   ]);
   assert.match(backup, /environment: production-backup/);
   assert.match(backup, /--symmetric --cipher-algo AES256/);
@@ -188,4 +189,8 @@ test("backup and provider workflows retain only encrypted evidence and stay behi
   assert.match(email, /environment: production/);
   assert.match(deploy, /AUTORIZO-G12-PRODUCAO:\{0\}/);
   assert.match(deploy, /CANDIDATE_SHA: \$\{\{ inputs\.candidate_sha \}\}/);
+  assert.match(cspCanary, /for attempt in 1 2/);
+  assert.match(cspCanary, /EV2_G12_CSP_MODE: enforce/);
+  assert.match(cspCanary, /--project-name gaiatec-cms-staging/);
+  assert.doesNotMatch(cspCanary, /--project-name gaiatec-website/);
 });

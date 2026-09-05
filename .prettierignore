@@ -1,0 +1,8 @@
+node_modules
+dist
+public/images
+public/assets
+supabase/functions
+src/app
+docs/fase-0
+docs/fase-1

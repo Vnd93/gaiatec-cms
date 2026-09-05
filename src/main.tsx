@@ -1,11 +1,5 @@
-import { createRoot } from "react-dom/client";
-import App from "./app/App.tsx";
-import { ServiceWorkerRegister } from "./app/components/ServiceWorkerRegister.tsx";
-import "./styles/index.css";
+import { mountPublicSite } from "./public/bootstrap";
 
-createRoot(document.getElementById("root")!).render(
-  <>
-    <App />
-    <ServiceWorkerRegister />
-  </>
-);
+const root = document.getElementById("root");
+if (!root) throw new Error("public-root-missing");
+mountPublicSite(root);

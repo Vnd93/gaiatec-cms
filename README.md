@@ -1,11 +1,22 @@
+# Website GAIATEC
 
-  # Website Gaiatec
+Site público e CMS da GAIATEC SISTEMAS. O projeto visual original está disponível no [Figma](https://www.figma.com/design/EizvpyUTWysoYovq7dP3TT/Website-Gaiatec).
 
-  This is a code bundle for Website Gaiatec. The original project is available at https://www.figma.com/design/EizvpyUTWysoYovq7dP3TT/Website-Gaiatec.
+## Documentação
 
-  ## Running the code
+- [Fonte canônica da documentação EV2](https://github.com/Vnd93/gaiatec-documentacao/tree/main/docs/ev2)
+- [Espelho técnico vinculado ao código](docs/README.md)
+- [Índice EV2 do espelho operacional](docs/ev2/README.md)
 
-  Run `npm i` to install the dependencies.
+## Desenvolvimento local
 
-  Run `npm run dev` to start the development server.
-  
+```bash
+npm ci
+npm run dev
+```
+
+Antes de enviar alterações, execute:
+
+```bash
+npm run check
+```

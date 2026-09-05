@@ -2,8 +2,9 @@ import { useState, useMemo } from "react";
 import { Link } from "react-router";
 import { AnimateOnScroll } from "../components/useScrollAnimation";
 import { useBlogPosts } from "../hooks/useSiteData";
-import { ChevronRight, Calendar, ArrowRight, Mail } from "lucide-react";
+import { ChevronRight, Calendar, Mail } from "lucide-react";
 import { optimizedBg, ResponsiveImage } from "../components/ResponsiveImage";
+import { SEO } from "../components/SEO";
 
 /* ────────────────────────────────────────────────────────
    IMAGES
@@ -74,7 +75,6 @@ const catMap: Record<string, string> = {
    ──────────────────────────────────────────────────────── */
 export default function BlogPage() {
   const [activeFilter, setActiveFilter] = useState("Todos");
-  const [email, setEmail] = useState("");
   const { posts: apiPosts } = useBlogPosts();
 
   const posts = useMemo(() => {
@@ -94,6 +94,11 @@ export default function BlogPage() {
 
   return (
     <>
+      <SEO
+        title="Conteúdo técnico"
+        description="Conteúdos técnicos e novidades da Gaiatec Sistemas. Publicações individuais permanecem em revisão editorial."
+        path="/blog"
+      />
       {/* ═══════════════════════════════════════════
           1) HERO
          ═══════════════════════════════════════════ */}
@@ -208,14 +213,9 @@ export default function BlogPage() {
                   <div className="flex items-center gap-2" style={{ fontSize: 12, color: "#666", marginBottom: 20 }}>
                     <Calendar size={13} /> {featured.date}
                   </div>
-                  <Link
-                    to="#"
-                    style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, color: "#32373c", textDecoration: "none", textTransform: "uppercase", letterSpacing: "0.04em", transition: "color 0.3s" }}
-                    onMouseEnter={(e) => { e.currentTarget.style.color = "#0057DE"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.color = "#32373c"; }}
-                  >
-                    Ler Artigo Completo <ArrowRight size={14} />
-                  </Link>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#666", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                    Conteúdo individual em revisão
+                  </span>
                 </div>
               </div>
             </AnimateOnScroll>
@@ -298,28 +298,11 @@ export default function BlogPage() {
                 Cadastre-se para receber artigos tecnicos, estudos de caso e novidades do setor diretamente no seu email.
               </p>
 
-              <div className="flex flex-col sm:flex-row gap-3" style={{ maxWidth: 480, margin: "0 auto" }}>
-                <input
-                  type="email"
-                  placeholder="Seu melhor email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+              <div style={{ maxWidth: 480, margin: "0 auto" }}>
+                <a
+                  href="#newsletter"
                   style={{
-                    flex: 1,
-                    backgroundColor: "#242424",
-                    border: "1px solid #444",
-                    color: "#fff",
-                    padding: "14px 18px",
-                    fontSize: 14,
-                    borderRadius: 4,
-                    outline: "none",
-                    transition: "border-color 0.3s",
-                  }}
-                  onFocus={(e) => { e.currentTarget.style.borderColor = "#0057DE"; }}
-                  onBlur={(e) => { e.currentTarget.style.borderColor = "#444"; }}
-                />
-                <button
-                  style={{
+                    display: "inline-block",
                     backgroundColor: "#0057DE",
                     color: "#fff",
                     padding: "14px 28px",
@@ -327,17 +310,13 @@ export default function BlogPage() {
                     fontSize: 13,
                     textTransform: "uppercase",
                     letterSpacing: "0.04em",
-                    border: "none",
-                    borderRadius: 4,
-                    cursor: "pointer",
+                    textDecoration: "none",
                     transition: "background-color 0.3s ease",
                     whiteSpace: "nowrap",
                   }}
-                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#e5b800"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#0057DE"; }}
                 >
-                  Inscrever-se
-                </button>
+                  Ir para inscrição segura
+                </a>
               </div>
             </div>
           </AnimateOnScroll>

@@ -37,23 +37,13 @@ export default function ServicoPage() {
     };
   }, [servico, slug]);
 
-  if (!loading && !service) return <Navigate to="/servicos" replace />;
-
-  // While loading with no cached data, show fallback or nothing
-  if (loading && !service) {
-    const fallback = getServiceBySlug(slug || "");
-    if (!fallback) return <Navigate to="/servicos" replace />;
-    // Will re-render when API data arrives; for now render with fallback
-  }
-
-  // Safe — at this point service is defined (either API or fallback)
-  const svc = service ?? getServiceBySlug(slug || "")!;
+  const resolvedService = service ?? getServiceBySlug(slug || "");
 
   /* Other services for cross-links (exclude current) */
   const related = useMemo(() => {
     if (servicos.length > 0) {
       return servicos
-        .filter((s) => s.slug !== svc.slug)
+        .filter((s) => s.slug !== resolvedService?.slug)
         .slice(0, 3)
         .map((s) => ({
           slug: s.slug,
@@ -65,8 +55,13 @@ export default function ServicoPage() {
           includes: [],
         }));
     }
-    return FALLBACK_SERVICES.filter((s) => s.slug !== svc.slug).slice(0, 3);
-  }, [servicos, svc.slug]);
+    return FALLBACK_SERVICES.filter((s) => s.slug !== resolvedService?.slug).slice(0, 3);
+  }, [servicos, resolvedService?.slug]);
+
+  if (!loading && !resolvedService) return <Navigate to="/servicos" replace />;
+  if (!resolvedService) return <Navigate to="/servicos" replace />;
+
+  const svc = resolvedService;
 
   /* Serviços sem conteúdo rico (8 dos 16) renderizam um detalhe enxuto:
      hero em gradiente brand, descrição curta como corpo, sem "O Que Inclui",

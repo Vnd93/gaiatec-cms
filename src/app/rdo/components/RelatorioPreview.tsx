@@ -1,13 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { Copy, Download, FileCheck2, Loader2, PenLine, Send, Upload, X } from "lucide-react";
+import { Copy, Download, FileCheck2, Loader2, PenLine, Send, X } from "lucide-react";
 import { toast } from "sonner";
-import { getRelatorio } from "../lib/relatorios";
-import { anexarPdfAssinadoEquipe, garantirToken, signedPdfUrl, signLinkUrl } from "../lib/assinatura";
+import { createCorrection, getRelatorio } from "../lib/relatorios";
+import { garantirToken, signedPdfUrl } from "../lib/assinatura";
 import { enviarLinkAssinaturaCliente } from "../lib/notify";
 import type { Relatorio } from "../lib/types";
 import { STATUS_LABEL } from "../lib/types";
-import { formatDate, formatDateTime } from "../lib/format";
+import { formatDateTime } from "../lib/format";
 import { StatusBadge } from "./StatusBadge";
 import { AssinaturaBadge } from "./AssinaturaBadge";
 import { LocationMaps } from "./LocationMaps";
@@ -28,8 +28,6 @@ export function RelatorioPreview({
   const [r, setR] = useState<Relatorio | null>(null);
   const [loading, setLoading] = useState(false);
   const [linkBusy, setLinkBusy] = useState(false);
-  const [anexando, setAnexando] = useState(false);
-  const anexoRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!id) {
@@ -58,8 +56,8 @@ export function RelatorioPreview({
     if (!r) return;
     setLinkBusy(true);
     try {
-      const token = r.assinatura_token || (await garantirToken(r));
-      await navigator.clipboard.writeText(signLinkUrl(token));
+      const link = await garantirToken(r);
+      await navigator.clipboard.writeText(link);
       toast.success("Link de assinatura copiado.");
     } catch {
       toast.error("Não foi possível copiar o link.");
@@ -72,8 +70,7 @@ export function RelatorioPreview({
     if (!r) return;
     setLinkBusy(true);
     try {
-      const token = r.assinatura_token || (await garantirToken(r));
-      await enviarLinkAssinaturaCliente(r, signLinkUrl(token));
+      await enviarLinkAssinaturaCliente(r);
       toast.success("Link reenviado ao cliente por e-mail.");
     } catch {
       toast.error("Não foi possível reenviar o e-mail.");
@@ -82,19 +79,16 @@ export function RelatorioPreview({
     }
   }
 
-  async function anexarAssinado(file: File) {
+  async function editOrCorrect() {
     if (!r) return;
-    if (file.type && file.type !== "application/pdf") return toast.error("O arquivo precisa ser um PDF.");
-    if (file.size > 14_000_000) return toast.error("PDF muito grande (máx. 14MB).");
-    setAnexando(true);
+    if (r.status === "rascunho" && r.assinatura_status === "nao_assinado") return onEdit(r.id);
+    const reason = window.prompt("Informe o motivo da versão corretiva (mínimo de 10 caracteres):")?.trim() ?? "";
+    if (reason.length < 10) return toast.error("Informe um motivo com pelo menos 10 caracteres.");
     try {
-      const atualizado = await anexarPdfAssinadoEquipe(r.id, file);
-      setR((prev) => (prev ? { ...prev, ...atualizado, fotos: prev.fotos } : atualizado));
-      toast.success("PDF assinado anexado.");
+      const correction = await createCorrection(r.id, reason);
+      onEdit(correction.id);
     } catch {
-      toast.error("Não foi possível anexar o PDF.");
-    } finally {
-      setAnexando(false);
+      toast.error("Não foi possível criar a versão corretiva.");
     }
   }
 
@@ -260,44 +254,13 @@ export function RelatorioPreview({
                   </button>
                 </>
               )}
-              {r.status === "finalizado" && r.assinatura_status === "nao_assinado" && (
-                <button
-                  onClick={() => onEdit(r.id)}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-[var(--rdo-blue)] bg-[var(--rdo-blue-soft)] px-3 py-2 text-[12.5px] font-semibold text-[var(--rdo-blue)] transition-colors hover:bg-[var(--rdo-blue)]/10"
-                >
-                  <PenLine size={14} /> Assinar
-                </button>
-              )}
-              {/* Equipe anexa um PDF assinado por fora (gov.br, certificado, etc.) */}
-              {r.status !== "arquivado" && (
-                <>
-                  <input
-                    ref={anexoRef}
-                    type="file"
-                    accept="application/pdf"
-                    hidden
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) anexarAssinado(f);
-                      e.target.value = "";
-                    }}
-                  />
-                  <button
-                    onClick={() => anexoRef.current?.click()}
-                    disabled={anexando}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-[var(--rdo-line)] bg-white px-3 py-2 text-[12.5px] font-medium text-[var(--rdo-ink)] transition-colors hover:border-[var(--rdo-ink-3)] disabled:opacity-55"
-                  >
-                    {anexando ? <Loader2 size={14} className="rdo-spin" /> : <Upload size={14} />} Anexar PDF assinado
-                  </button>
-                </>
-              )}
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => onEdit(r.id)}
+                onClick={editOrCorrect}
                 className="inline-flex items-center gap-2 rounded-md border border-[var(--rdo-line)] bg-white px-4 py-2 text-[13px] font-medium text-[var(--rdo-ink)] transition-colors hover:border-[var(--rdo-ink-3)]"
               >
-                <PenLine size={15} /> Editar
+                <PenLine size={15} /> {r.status === "rascunho" && r.assinatura_status === "nao_assinado" ? "Editar" : "Criar correção"}
               </button>
               <button
                 onClick={() => onDownload(r)}

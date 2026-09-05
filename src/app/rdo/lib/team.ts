@@ -4,19 +4,22 @@ export interface TeamUser {
   id: string;
   email: string;
   role: "admin" | "membro";
+  active: boolean;
   created_at: string | null;
   last_sign_in_at: string | null;
   invited_at: string | null;
   confirmed_at: string | null;
+  suspended_at: string | null;
   is_self: boolean;
 }
 
-export type UserStatus = "ativo" | "pendente" | "sem_acesso";
+export type UserStatus = "ativo" | "pendente" | "suspenso";
 
 export function statusOf(u: TeamUser): UserStatus {
+  if (!u.active) return "suspenso";
   if (u.last_sign_in_at) return "ativo";
   if (u.invited_at) return "pendente";
-  return "sem_acesso";
+  return "pendente";
 }
 
 /** Chama a função rdo-team com um corpo, tratando erros HTTP. */
@@ -50,9 +53,13 @@ export async function setUserRole(userId: string, role: "admin" | "membro"): Pro
   await callTeam({ action: "set_role", userId, role });
 }
 
-/** Revoga o acesso (remove o usuário). */
+/** Suspende/revoga o acesso preservando autoria e auditoria. */
 export async function deleteTeamUser(userId: string): Promise<void> {
-  await callTeam({ action: "delete", userId });
+  await callTeam({ action: "suspend", userId });
+}
+
+export async function reactivateTeamUser(userId: string): Promise<void> {
+  await callTeam({ action: "reactivate", userId });
 }
 
 /** Gera um novo link de acesso (definir senha) para reenviar a um usuário. */

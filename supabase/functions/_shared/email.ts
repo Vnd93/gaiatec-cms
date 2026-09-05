@@ -1,8 +1,48 @@
 // E-mails transacionais branded (Gaiatec Sistemas), enviados via Resend.
 // Usado pelas Edge Functions rdo-invite e rdo-team (não dependem do template do GoTrue).
 
-const FROM = "Gaiatec Sistemas <nao-responda@gaiatecsistemas.com>";
+const DEFAULT_FROM = "GAIATEC SISTEMAS <cms@gaiatecsistemas.com>";
 const LOGO = "https://gaiatecsistemas.com.br/logo-gaiatec.png";
+
+export class EmailProviderError extends Error {
+  readonly reason: string;
+  readonly status: number;
+
+  constructor(status: number, reason: string) {
+    super(`O provedor de e-mail recusou a solicitação com status ${status}.`);
+    this.name = "EmailProviderError";
+    this.reason = reason;
+    this.status = status;
+  }
+}
+
+function providerFailureReason(status: number, responseBody: string): string {
+  const message = responseBody.toLowerCase();
+  if (message.includes("domain is not verified") || message.includes("verify your domain")) {
+    return "domain_not_verified";
+  }
+  if (message.includes("only send testing emails")) return "testing_restriction";
+  if (message.includes("restricted") && message.includes("domain")) return "api_key_scope";
+  if (message.includes("not authorized") && message.includes("send")) return "sender_not_authorized";
+  if (status === 401) return "invalid_api_key";
+  if (status === 429) return "rate_limited";
+  if (status === 422) return "invalid_request";
+  return `provider_${status}`;
+}
+
+function senderAddress(): string {
+  return Deno.env.get("EMAIL_FROM")?.trim() || DEFAULT_FROM;
+}
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[char] ?? char));
+}
+
+function cleanSubject(value: unknown, fallback: string): string {
+  return String(value || fallback).replace(/[\r\n]+/g, " ").slice(0, 160);
+}
 
 function shell(opts: { heading: string; body: string; button: string; link: string; footer: string }): string {
   return `<!doctype html><html lang="pt-BR"><body style="margin:0;padding:0;background:#f4f4f5;">
@@ -75,7 +115,7 @@ export interface ResumoRelatorio {
 function resumoRows(r: ResumoRelatorio): string {
   const row = (label: string, value?: string) =>
     value && String(value).trim()
-      ? `<tr><td style="padding:8px 0;border-bottom:1px solid #f0f0f1;font-size:10.5px;color:#a1a1aa;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;width:44%;vertical-align:top;">${label}</td><td style="padding:8px 0;border-bottom:1px solid #f0f0f1;font-size:13px;color:#27272a;line-height:1.5;">${value}</td></tr>`
+      ? `<tr><td style="padding:8px 0;border-bottom:1px solid #f0f0f1;font-size:10.5px;color:#a1a1aa;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;width:44%;vertical-align:top;">${escapeHtml(label)}</td><td style="padding:8px 0;border-bottom:1px solid #f0f0f1;font-size:13px;color:#27272a;line-height:1.5;">${escapeHtml(value)}</td></tr>`
       : "";
   return [
     row("Contrato", r.contrato),
@@ -120,7 +160,7 @@ function resumoShell(opts: { badge: string; badgeBg: string; badgeColor: string;
 </table></td></tr></table></body></html>`;
 }
 
-/** E-mail ao admin quando um relatório é finalizado (PDF vai anexado). */
+/** E-mail ao admin quando um relatório é finalizado. */
 export function relatorioFinalizadoEmail(r: ResumoRelatorio) {
   const html = resumoShell({
     badge: "Finalizado",
@@ -128,14 +168,14 @@ export function relatorioFinalizadoEmail(r: ResumoRelatorio) {
     badgeColor: "#e2640b",
     badgeBorder: "#f87010",
     heading: "Relatório finalizado",
-    intro: "Um relatório foi finalizado no sistema. O <strong>PDF completo está anexado</strong> a este e-mail. Resumo abaixo.",
+    intro: "Um relatório foi finalizado no sistema. Consulte a versão imutável no ambiente autenticado. Resumo abaixo.",
     rows: resumoRows(r),
     footer: "Gaiatec Sistemas — Acompanhamento de Obra · Notificação automática de relatório finalizado.",
   });
-  return { subject: `RDO finalizado — ${r.contrato || "sem contrato"} · ${r.cliente || "sem cliente"}`, html };
+  return { subject: `RDO finalizado — ${cleanSubject(r.contrato, "sem contrato")} · ${cleanSubject(r.cliente, "sem cliente")}`, html };
 }
 
-/** E-mail (admins + cliente) quando o relatório é totalmente assinado (PDF anexado). */
+/** E-mail (admins + cliente) quando o relatório é totalmente assinado. */
 export function relatorioAssinadoEmail(r: ResumoRelatorio) {
   const html = resumoShell({
     badge: "Assinado",
@@ -143,20 +183,20 @@ export function relatorioAssinadoEmail(r: ResumoRelatorio) {
     badgeColor: "#1a7f43",
     badgeBorder: "#34a36a",
     heading: "Relatório assinado",
-    intro: "O relatório foi <strong>assinado eletronicamente</strong> por todas as partes. O <strong>PDF assinado está anexado</strong> a este e-mail. Resumo abaixo.",
+    intro: "O relatório foi <strong>assinado eletronicamente</strong> por todas as partes. Consulte a versão vinculada às evidências no ambiente seguro. Resumo abaixo.",
     rows: resumoRows(r),
     footer: "Gaiatec Sistemas — Acompanhamento de Obra · Assinatura eletrônica registrada (data, hora e identificação).",
   });
-  return { subject: `RDO assinado — ${r.contrato || "sem contrato"} · ${r.cliente || "sem cliente"}`, html };
+  return { subject: `RDO assinado — ${cleanSubject(r.contrato, "sem contrato")} · ${cleanSubject(r.cliente, "sem cliente")}`, html };
 }
 
 /** E-mail ao cliente com o link para assinar o relatório remotamente. */
 export function assinarClienteEmail(link: string, r: ResumoRelatorio) {
   return {
-    subject: `Assine o Relatório Diário de Obra — ${r.contrato || "Gaiatec Sistemas"}`,
+    subject: `Assine o Relatório Diário de Obra — ${cleanSubject(r.contrato, "Gaiatec Sistemas")}`,
     html: shell({
       heading: "Assine o relatório de obra",
-      body: `A <strong>Gaiatec Sistemas</strong> finalizou o Relatório Diário de Obra${r.contrato ? ` <strong>${r.contrato}</strong>` : ""}${r.cliente ? ` referente a <strong>${r.cliente}</strong>` : ""} e solicita a sua assinatura eletrônica. Clique no botão abaixo para revisar e assinar — é rápido e pode ser feito pelo celular.`,
+      body: `A <strong>Gaiatec Sistemas</strong> finalizou o Relatório Diário de Obra${r.contrato ? ` <strong>${escapeHtml(r.contrato)}</strong>` : ""}${r.cliente ? ` referente a <strong>${escapeHtml(r.cliente)}</strong>` : ""} e solicita a sua assinatura eletrônica. Clique no botão abaixo para revisar e assinar — é rápido e pode ser feito pelo celular.`,
       button: "Revisar e assinar",
       link,
       footer: "Se você não reconhece esta solicitação, pode ignorar este e-mail com segurança.",
@@ -188,6 +228,24 @@ export function otpEmail(code: string) {
   return { subject: `${code} é o seu código de acesso — Relatório Diário de Obra`, html };
 }
 
+export function leadNotificationEmail(reference: string, eventType: string, adminBaseUrl: string) {
+  const safeReference = escapeHtml(reference);
+  const safeEvent = escapeHtml(eventType.replace(/_/g, " "));
+  const adminUrl = new URL(adminBaseUrl);
+  if (adminUrl.protocol !== "https:") throw new Error("cms_admin_url_invalid");
+  const link = new URL("/admin/leads", adminUrl).toString();
+  return {
+    subject: `Lead ${cleanSubject(reference, "novo")} — Gaiatec Sistemas`,
+    html: shell({
+      heading: "Atualização no atendimento comercial",
+      body: `O lead <strong>${safeReference}</strong> recebeu o evento <strong>${safeEvent}</strong>. Dados pessoais não são enviados por e-mail; consulte o registro no CMS autenticado.`,
+      button: "Abrir módulo de leads",
+      link,
+      footer: "Notificação idempotente do novo CMS. Não responda com dados pessoais.",
+    }),
+  };
+}
+
 /** Envia um e-mail via Resend (1+ destinatários, com anexos opcionais). Lança em caso de falha. */
 export async function sendEmail(
   resendKey: string,
@@ -195,7 +253,7 @@ export async function sendEmail(
   msg: { subject: string; html: string; attachments?: { filename: string; content: string }[] },
 ): Promise<void> {
   const payload: Record<string, unknown> = {
-    from: FROM,
+    from: senderAddress(),
     to: Array.isArray(to) ? to : [to],
     subject: msg.subject,
     html: msg.html,
@@ -207,7 +265,7 @@ export async function sendEmail(
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`Resend ${res.status}: ${t.slice(0, 200)}`);
+    const responseBody = await res.text();
+    throw new EmailProviderError(res.status, providerFailureReason(res.status, responseBody));
   }
 }

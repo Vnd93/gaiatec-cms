@@ -79,7 +79,7 @@ export function CookieBanner() {
           </button>
           <button
             onClick={() => close("dismissed")}
-            className="text-gray-500 text-[13px] hover:text-gray-900 transition-colors"
+            className="text-gray-700 text-[13px] hover:text-gray-950 transition-colors"
           >
             Fechar
           </button>

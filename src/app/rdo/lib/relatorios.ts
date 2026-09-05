@@ -5,15 +5,12 @@ const TABLE = "rdo_relatorios";
 const FOTOS = "rdo_fotos";
 const BUCKET = "rdo-fotos";
 
-/** URL pública de uma foto no storage. */
-export function fotoUrl(path: string): string {
-  return supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
-}
-
-function withUrls(fotos: Foto[]): Foto[] {
-  return [...fotos]
-    .sort((a, b) => a.ordem - b.ordem)
-    .map((f) => ({ ...f, url: fotoUrl(f.storage_path) }));
+async function withSignedUrls(fotos: Foto[]): Promise<Foto[]> {
+  const sorted = [...fotos].sort((a, b) => a.ordem - b.ordem);
+  if (!sorted.length) return [];
+  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrls(sorted.map((foto) => foto.storage_path), 300);
+  if (error) return sorted.map((foto) => ({ ...foto, url: undefined }));
+  return sorted.map((foto, index) => ({ ...foto, url: data?.[index]?.signedUrl ?? undefined }));
 }
 
 /** Lista relatórios ativos (rascunho+finalizado) ou arquivados. */
@@ -46,7 +43,7 @@ export async function listFotos(relatorioId: string): Promise<Foto[]> {
     .eq("relatorio_id", relatorioId)
     .order("ordem", { ascending: true });
   if (error) return [];
-  return withUrls((data ?? []) as Foto[]);
+  return withSignedUrls((data ?? []) as Foto[]);
 }
 
 async function currentUserId(): Promise<string | null> {
@@ -83,13 +80,26 @@ export async function updateRelatorio(
 }
 
 export async function setStatus(id: string, status: RdoStatus): Promise<void> {
-  const payload: Record<string, unknown> = { status };
-  if (status === "finalizado") payload.finalized_at = new Date().toISOString();
-  const { error } = await supabase.from(TABLE).update(payload).eq("id", id);
+  if (status !== "arquivado" && status !== "rascunho" && status !== "finalizado") {
+    throw new Error("Status não permitido.");
+  }
+  const current = await getRelatorio(id);
+  if (!current) throw new Error("Relatório não encontrado.");
+  if (status !== "arquivado" && current.status !== "arquivado") {
+    throw new Error("Mudanças de etapa exigem o comando de finalização ou uma versão corretiva.");
+  }
+  const action = status === "arquivado" ? "archive" : "restore_archive";
+  const { error } = await supabase.functions.invoke("rdo-command", {
+    body: { action, reportId: id, idempotencyKey: crypto.randomUUID() },
+  });
   if (error) throw error;
 }
 
 export async function deleteRelatorio(id: string): Promise<void> {
+  const report = await getRelatorio(id);
+  if (!report || report.status !== "rascunho" || report.assinatura_status !== "nao_assinado") {
+    throw new Error("Somente rascunhos não assinados podem ser excluídos.");
+  }
   // fotos do storage
   const fotos = await listFotos(id);
   if (fotos.length) {
@@ -121,9 +131,18 @@ export async function uploadFotos(
       .select("*")
       .single();
     if (error) throw error;
-    out.push({ ...(data as Foto), url: fotoUrl(path) });
+    const signed = await supabase.storage.from(BUCKET).createSignedUrl(path, 300);
+    out.push({ ...(data as Foto), url: signed.data?.signedUrl ?? undefined });
   }
   return out;
+}
+
+export async function createCorrection(id: string, reason: string): Promise<Relatorio> {
+  const { data, error } = await supabase.functions.invoke("rdo-command", {
+    body: { action: "create_correction", reportId: id, reason, idempotencyKey: crypto.randomUUID() },
+  });
+  if (error || !data?.report) throw error ?? new Error("Não foi possível criar a versão corretiva.");
+  return data.report as Relatorio;
 }
 
 export async function deleteFoto(foto: Foto): Promise<void> {

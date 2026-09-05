@@ -8,6 +8,7 @@ import { useAuth } from "../AuthContext";
 import { inviteUser } from "../lib/invite";
 import {
   deleteTeamUser,
+  reactivateTeamUser,
   listTeam,
   reportCountsByUser,
   resendInvite,
@@ -21,7 +22,7 @@ import { formatDate } from "../lib/format";
 const STATUS_META: Record<UserStatus, { label: string; cls: string; dot: string }> = {
   ativo: { label: "Ativo", cls: "bg-emerald-50 text-emerald-700", dot: "bg-emerald-500" },
   pendente: { label: "Convite pendente", cls: "bg-amber-50 text-amber-700", dot: "bg-amber-500" },
-  sem_acesso: { label: "Sem acesso", cls: "bg-zinc-100 text-zinc-500", dot: "bg-zinc-400" },
+  suspenso: { label: "Suspenso", cls: "bg-zinc-100 text-zinc-500", dot: "bg-zinc-400" },
 };
 
 export default function EquipePage() {
@@ -96,14 +97,27 @@ export default function EquipePage() {
   }
 
   async function remover(u: TeamUser) {
-    if (!confirm(`Remover o acesso de ${u.email}? A pessoa não poderá mais entrar.`)) return;
+    if (!confirm(`Suspender o acesso RDO de ${u.email}? A autoria e o histórico serão preservados.`)) return;
     setBusyId(u.id);
     try {
       await deleteTeamUser(u.id);
-      toast.success("Acesso removido.");
-      setUsers((prev) => prev.filter((x) => x.id !== u.id));
+      toast.success("Acesso suspenso.");
+      setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, active: false, suspended_at: new Date().toISOString() } : x)));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Não foi possível remover.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function reativar(u: TeamUser) {
+    setBusyId(u.id);
+    try {
+      await reactivateTeamUser(u.id);
+      toast.success("Acesso reativado.");
+      setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, active: true, suspended_at: null } : x)));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Não foi possível reativar.");
     } finally {
       setBusyId(null);
     }
@@ -263,9 +277,11 @@ export default function EquipePage() {
                           </MenuItem>
                           {s === "pendente" && <MenuItem onSelect={() => reenviar(u)}>Reenviar convite</MenuItem>}
                           <Dropdown.Separator className="my-1 h-px bg-[var(--rdo-line)]" />
-                          <MenuItem danger onSelect={() => remover(u)}>
-                            Remover acesso
-                          </MenuItem>
+                          {u.active ? (
+                            <MenuItem danger onSelect={() => remover(u)}>Suspender acesso</MenuItem>
+                          ) : (
+                            <MenuItem onSelect={() => reativar(u)}>Reativar acesso</MenuItem>
+                          )}
                         </Dropdown.Content>
                       </Dropdown.Root>
                     )}

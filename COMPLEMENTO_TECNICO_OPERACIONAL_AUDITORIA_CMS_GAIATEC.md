@@ -2,6 +2,8 @@
 
 **Documento principal relacionado:** `AUDITORIA_CMS_GAIATEC.md`  
 **Procedimento de execução relacionado:** `PROCEDIMENTO_AJUSTES_E_DESENVOLVIMENTO_PAINEL_ADMINISTRATIVO_GAIATEC.md`  
+**Política de conteúdo relacionada:** `POLITICA_RECADASTRO_LIMPO_CONTEUDO_E_MIDIA_GAIATEC.md`
+**Planejamento executivo relacionado:** `PLANEJAMENTO_EXECUTIVO_DESENVOLVIMENTO_REMODELAGEM_CMS_GAIATEC.md`
 **Repositório examinado:** `website_gaiatecsistemas-main/website_gaiatecsistemas-main`  
 **Site relacionado:** <https://www.gaiatecsistemas.com.br>  
 **Data da consolidação:** 27 de agosto de 2026  
@@ -30,7 +32,7 @@ Consequências confirmadas:
 - existem fontes duplicadas para produtos e serviços;
 - existe um renderizador de blocos, mas ele não implementa todos os tipos previstos e ignora silenciosamente tipos desconhecidos;
 - não existe rota `/admin` no código atual;
-- o painel de marketing citado nos comentários fica em outro sistema/repositório, aparentemente no ERP, e não foi fornecido para esta auditoria;
+- o novo painel administrativo ainda precisa ser criado; qualquer administração externa ou anterior foi excluída da arquitetura-alvo e não será reutilizada;
 - o aplicativo de Relatório Diário de Obra compartilha Supabase e repositório com o site, mas possui regras de segurança e ciclo de vida que exigem correções próprias.
 
 ### 1.3 Decisão arquitetural
@@ -41,8 +43,24 @@ O site não deve ser refeito indiscriminadamente. A solução indicada é:
 2. criar contratos de conteúdo versionados;
 3. escolher uma única fonte canônica por domínio;
 4. implantar o CMS de modo modular;
-5. migrar cada área somente quando leitura, escrita, preview, publicação, cache, auditoria e testes estiverem completos;
-6. eliminar os fallbacks duplicados depois da homologação e de um período seguro de observação.
+5. recadastrar cada área no novo painel somente quando leitura, escrita, preview, publicação, cache, auditoria e testes estiverem completos;
+6. substituir os consumidores atuais depois da homologação, sem carregar o conteúdo antigo no CMS novo.
+
+O novo painel será a **única administração do site**. Ele será construído para a arquitetura definida nestes documentos e não deverá importar código, telas, autenticação, permissões ou regras do sistema administrativo anterior.
+
+### 1.4 Decisão de recadastro limpo
+
+Produtos, serviços, setores, aplicações, páginas, relações, imagens e documentos atuais são considerados inadequados para migração. O novo banco editorial começa vazio e será preenchido pelo novo painel, registro por registro, usando somente fontes técnicas e comerciais aprovadas.
+
+Não será permitido:
+
+- importar arrays hardcoded ou tabelas editoriais atuais;
+- copiar imagens atualmente publicadas para a biblioteca nova;
+- preservar automaticamente categoria, slug, especificação, relação ou texto atual;
+- usar comparação com o site atual como critério de correção do conteúdo novo;
+- consultar dados antigos como fallback editorial.
+
+O site atual será usado apenas para inventário de URLs, mapa de redirects, levantamento de falhas e continuidade temporária até o cutover. A última projeção **nova e aprovada** será o único fallback após o lançamento.
 
 “Poder mexer totalmente no site” deve significar **controle editorial e operacional amplo dentro de contratos seguros**, e não edição arbitrária de HTML, JavaScript ou CSS. Estrutura, comportamento, acessibilidade e responsividade continuam sob controle do código. Conteúdo, ordem, visibilidade, relações, mídia, SEO e presets aprovados passam a ser controlados pelo CMS.
 
@@ -66,7 +84,6 @@ Foram confrontados:
 
 Não foram fornecidos:
 
-- repositório do ERP/painel `/marketing/site` citado no código;
 - fonte da Edge Function `site-content` atualmente implantada;
 - schema completo do Supabase, além das migrations de RDO;
 - migrations da tabela `leads` e das tabelas de conteúdo;
@@ -136,14 +153,11 @@ SPA React/Vite ── conteúdo hardcoded/fallback
    |                    | hooks dinâmicos neutralizados
    |
    +── Supabase Auth ── aplicativo /relatorio-de-obra
-   +── Edge Function submit-contact ── tabela leads ── ERP
+   +── Edge Function submit-contact ── tabela leads
    +── Edge Functions rdo-* ── tabelas/buckets RDO + Resend
 
 API site-content implantada
    └── existe fora da fonte fornecida, mas o cliente atual não a consome
-
-ERP /marketing/site
-   └── mencionado em comentários, repositório e contrato não fornecidos
 ```
 
 ### 4.2 Frontend
@@ -199,9 +213,9 @@ A chave anônima do Supabase é, por natureza, utilizável no cliente público, 
 
 | ID | Achado | Efeito | Ação obrigatória |
 |---|---|---|---|
-| P0-01 | CMS desativado em `useSiteData.ts`. | Qualquer edição no banco pode não refletir no site. | Implementar leitura versionada, validar e migrar módulo por módulo. |
+| P0-01 | CMS desativado em `useSiteData.ts`. | Qualquer edição no banco pode não refletir no site. | Criar leitura versionada nova e realizar cutover por módulo após o recadastro. |
 | P0-02 | Edge Function `site-content` implantada não está versionada no pacote. | Produção não é reproduzível; contrato pode mudar sem revisão. | Trazer função, migrations e contrato para controle de versão. |
-| P0-03 | Conteúdo local e banco divergentes. | Publicação pode remover itens corretos ou reintroduzir dados de teste. | Reconciliar registro por registro e definir fonte canônica. |
+| P0-03 | Conteúdo local e banco divergentes. | Qualquer importação perpetuaria erros e registros de teste. | Não importar esses dados; iniciar banco editorial limpo e recadastrar por fontes aprovadas. |
 | P0-04 | OTP do RDO cria usuário para qualquer e-mail. | Cadastro aberto em aplicação operacional interna. | Fechar autoinscrição; usar convite/allowlist e revogação. |
 | P0-05 | Relatório assinado pode ser editado, reaberto e excluído. | Perda de integridade documental e jurídica. | Tornar versão assinada imutável e substituir exclusão por arquivamento. |
 | P0-06 | Fotos do RDO usam bucket público. | Imagens de obra podem ser acessadas sem autorização se a URL for conhecida. | Migrar para bucket privado e URLs assinadas curtas. |
@@ -305,7 +319,7 @@ O CI deve validar que todo `consumer_id` usado pelo painel está registrado e qu
 - publicação transacional com outbox para tarefas assíncronas;
 - cache por versão, nunca por esperança;
 - trilha de auditoria append-only;
-- isolamento de autorização entre CMS, ERP e RDO;
+- isolamento de autorização entre o novo CMS e o RDO;
 - staging equivalente à produção, com dados sanitizados.
 
 ### 7.2 Topologia proposta
@@ -331,7 +345,6 @@ Banco canônico
              Site público React
 
 RDO ── Auth/RBAC e schema próprios ── não reutiliza permissões globais do CMS
-ERP ── integra por contrato/API ── não lê tabelas internas sem governança
 ```
 
 ### 7.3 Onde hospedar o painel
@@ -341,9 +354,9 @@ Existem duas opções aceitáveis:
 1. `/admin` com build e cache separados do site público;
 2. `admin.gaiatecsistemas.com.br`, com isolamento adicional.
 
-O ERP existente também cita um painel `/marketing/site`. Antes de decidir, é obrigatório auditar o repositório `dzsystem`/ERP e verificar se ele já oferece autenticação, RBAC, auditoria e componentes que possam ser reutilizados. Construir um segundo painel sem essa verificação pode duplicar cadastros e permissões.
+Em ambas, trata-se do mesmo painel novo e exclusivo. A opção recomendada para iniciar é `/admin`, com entry point, chunks, headers, autenticação e cache separados da área pública. Um subdomínio poderá ser adotado apenas como decisão de hospedagem, sem trocar o sistema ou criar uma segunda administração.
 
-Independentemente da interface escolhida, o backend do CMS deve ser único e possuir contratos estáveis. O site público não deve depender diretamente do schema interno do ERP.
+O backend do novo CMS deve ser único e possuir contratos estáveis. Nenhum componente público, usuário, permissão ou fluxo editorial poderá depender do sistema administrativo retirado.
 
 ### 7.4 Estratégia de leitura pública
 
@@ -364,7 +377,7 @@ Cada resposta deve incluir:
 - dados validados;
 - cache policy explícita.
 
-Durante a migração, cada hook deve ter feature flag por módulo. Não usar uma chave única que troque todo o site de hardcoded para banco de uma vez.
+Durante o cutover, cada consumidor novo deve ter feature flag por módulo. Não reativar hooks antigos nem usar uma chave única que troque todo o site de uma vez.
 
 ---
 
@@ -399,7 +412,7 @@ Durante a migração, cada hook deve ter feature flag por módulo. Não usar uma
 | relações `product_*` | aplicações, setores, serviços, similares e complementares. |
 | `product_search_terms` | palavra, sinônimo, peso e origem. |
 
-Detecção de gases deve ser migrada para o catálogo comum apenas se o modelo suportar suas categorias, sensores, gases, faixas e galerias sem perda. Até lá, deve ser tratada como módulo especializado com contrato próprio, não como JSON opaco misturado a produtos genéricos.
+Detecção de gases deve ser cadastrada novamente no catálogo comum apenas se o modelo novo suportar suas categorias, sensores, gases, faixas e galerias sem perda. Caso contrário, deve nascer como módulo especializado com contrato próprio. Nenhum registro do catálogo atual será copiado.
 
 ### 8.3 Conteúdo
 
@@ -483,7 +496,7 @@ A publicação deve falhar quando:
 
 ### 9.3 Conteúdo rico
 
-O editor deve produzir AST/blocos sanitizados, não HTML arbitrário. Se HTML for necessário em migração, aplicar allowlist no servidor, CSP e sanitização consistente. Scripts, iframes livres, handlers `on*`, CSS arbitrário e URLs perigosas devem ser rejeitados.
+O editor deve produzir AST/blocos sanitizados, não HTML arbitrário. HTML do site atual não deve ser importado. Scripts, iframes livres, handlers `on*`, CSS arbitrário e URLs perigosas devem ser rejeitados.
 
 ---
 
@@ -569,16 +582,21 @@ Cada editor deve conter:
 
 Fluxo mínimo:
 
-1. validar MIME real, extensão, tamanho e dimensões;
-2. remover metadados sensíveis quando apropriado;
-3. calcular hash e sugerir reutilização de duplicata;
-4. armazenar original em área controlada;
-5. gerar thumbnail, médio, grande, WebP e AVIF;
-6. registrar ALT, legenda, crédito/licença e proprietário;
-7. disponibilizar variantes somente após processamento;
-8. mostrar todos os usos antes de substituir/excluir;
-9. bloquear deleção com referência publicada;
-10. registrar substituição e permitir rollback.
+1. iniciar a biblioteca vazia, sem importar arquivos atualmente publicados;
+2. receber original autorizado e registrar origem/proprietário;
+3. validar correspondência entre imagem e produto/serviço;
+4. validar MIME real, extensão, tamanho e dimensões;
+5. remover metadados sensíveis quando apropriado;
+6. calcular hash e sugerir reutilização apenas entre novos uploads aprovados;
+7. armazenar original em área controlada;
+8. gerar thumbnail, médio, grande, WebP e AVIF;
+9. registrar ALT, legenda, crédito/licença, finalidade e ponto focal;
+10. disponibilizar variantes somente após processamento e revisão;
+11. mostrar todos os usos antes de substituir/excluir;
+12. bloquear deleção com referência publicada;
+13. registrar substituição e permitir rollback.
+
+Nome de arquivo, pasta ou vínculo atual não prova que a imagem pertence ao item. A aprovação deve conferir modelo representado, qualidade, recorte, fundo, direitos e texto ALT.
 
 ### 10.5 Aparência
 
@@ -609,13 +627,13 @@ Esta matriz deve ser detalhada em tickets e testes durante a implementação.
 | Serviços | lista, detalhe e relações | `services` | páginas de serviço | Eliminar duplicidade `servicesList`/`services`; rota deve existir antes da publicação. |
 | Setores | conteúdo, stats, relações | `sectors` | lista/detalhe/header | Termo oficial único e slugs preservados/redirecionados. |
 | Aplicações | conteúdo, setor, produto, relação explicada | `applications` + joins | lista/filtros/detalhe | Filtros derivados das relações, nunca listas manuais divergentes. |
-| Detecção de gás | categorias, produtos, specs e galeria | módulo tipado | hub/categoria/detalhe | Contrato especializado ou migração sem perda para catálogo. |
+| Detecção de gás | categorias, produtos, specs e galeria | módulo tipado | hub/categoria/detalhe | Novo contrato especializado ou integração limpa ao catálogo mestre. |
 | Blog | artigo, autor, tags, agendamento, SEO | posts/revisions | home/lista/detalhe | Criar rota individual; agendamento executado server-side. |
 | Menus | árvore, rótulo, destino, ordem | menu/items | header/mobile/footer | Validador de rota; profundidade máxima; impedir ciclo e `#`. |
 | Contato | telefone, e-mail, endereço e redes | settings tipadas | header/footer/contato | Uma fonte global; formato e link derivados do mesmo valor. |
 | SEO | title, description, canonical, OG, robots | SEO por entidade | head/sitemap | Preview SERP; canonical único; privado sempre `noindex`. |
 | Redirects | origem, destino, código | redirects | edge/hosting | Impedir ciclo, cadeia longa, colisão com rota e wildcard perigoso. |
-| Leads | definição e submissões | forms/leads | ERP/CMS | Consentimento versionado, origem estruturada e entrega idempotente. |
+| Leads | definição, submissões e atendimento | forms/leads | novo CMS | Consentimento versionado, origem estruturada e processamento idempotente. |
 | Mídia | upload, ALT, variantes e usos | assets/variants/usages | todos | Sem uso órfão; URL estável; exclusão protegida. |
 | Aparência | tokens/presets | settings versionadas | CSS variables/componentes | Opções fechadas, validação de contraste e snapshot visual. |
 
@@ -830,7 +848,7 @@ O texto dos termos deve passar por validação jurídica. Citar a legislação n
 
 ---
 
-## 15. Formulários, leads e integração com ERP
+## 15. Formulários e leads no novo CMS
 
 ### 15.1 Estado atual
 
@@ -840,7 +858,7 @@ A Edge Function `submit-contact`:
 - valida campos mínimos, e-mail e consentimento;
 - insere em `leads` usando service role;
 - notifica por Resend;
-- monta link para `erp.gaiatecsistemas.com.br/comercial/leads/{id}`.
+- contém um encaminhamento administrativo externo legado que deverá ser removido durante o cutover para o novo módulo de leads.
 
 Não há migration da tabela `leads` no pacote. Também não há limites consistentes de tamanho, rate limit, CAPTCHA/honeypot, enumeração das origens ou armazenamento estruturado de evidência do consentimento. O remetente `onboarding@resend.dev` indica configuração não finalizada para produção.
 
@@ -855,7 +873,7 @@ Cada submissão deve armazenar:
 - data/hora do servidor;
 - evidência técnica necessária, segregada e com retenção;
 - status, responsável, SLA e histórico;
-- ID de integração no ERP;
+- ID interno imutável e histórico de atendimento no novo CMS;
 - chave idempotente e resultado de entrega.
 
 Proteções:
@@ -867,11 +885,11 @@ Proteções:
 - CORS restrito;
 - sanitização e escape de templates;
 - resposta pública genérica, sem detalhes internos desnecessários;
-- fila/outbox para ERP e e-mail;
+- fila/outbox para processamento e e-mail;
 - retentativa e tela de falhas;
 - política de retenção e direitos do titular.
 
-O CMS pode exibir leads, mas o ERP deve ser definido como sistema de registro comercial ou receber sincronização bidirecional por contrato. Não manter dois status independentes sem regra de reconciliação.
+O novo CMS será a fonte administrativa dos leads recebidos pelo site. Nome, empresa, contato, origem, consentimento, status, responsável e histórico devem ser geridos nele. O encaminhamento legado deverá ser desligado somente depois que persistência, notificações, permissões, exportação, retenção e diagnóstico do novo módulo tiverem sido homologados.
 
 ---
 
@@ -963,7 +981,7 @@ Adicionar e documentar:
 | Unidade | schemas, normalização, slugs, filtros, estados, permissões e formatadores. |
 | Contrato | payloads da API pública/admin, compatibilidade por versão e tipos de bloco. |
 | Banco/RLS | cada papel pode e não pode executar as ações previstas. |
-| Integração | publicação, outbox, mídia, busca, redirects, lead/ERP e e-mail. |
+| Integração | publicação, outbox, mídia, busca, redirects, leads do novo CMS e e-mail. |
 | Componentes | cada bloco, formulário e estado vazio/erro. |
 | E2E | login/MFA, produto completo, homepage, post, rollback, lead e RDO. |
 | Visual | desktop/tablet/mobile, temas/presets e regressão dos blocos. |
@@ -974,7 +992,7 @@ Adicionar e documentar:
 
 1. Criar produto → classificar → atributos → mídia/documento → relações → SEO → preview → revisão → publicação → confirmar lista, detalhe, busca, sitemap e rollback.
 2. Editar homepage → reordenar hero/destaques → validar mobile → publicar → confirmar cache.
-3. Criar campanha → formulário → agendar → publicar → submeter lead → confirmar ERP/outbox.
+3. Criar campanha → formulário → agendar → publicar → submeter lead → confirmar persistência, atribuição e outbox do novo CMS.
 4. Alterar menu → impedir link inválido → publicar → testar desktop/mobile/teclado.
 5. RDO: usuário não convidado negado; membro cria rascunho; finalização gera snapshot; assinatura remota consome token uma vez; documento assinado rejeita edição/exclusão.
 
@@ -1054,7 +1072,6 @@ Cada runbook deve conter proprietário, pré-condições, passos, validação, r
 
 ### Fase 0 — decisão e acesso
 
-- obter repositório do ERP/painel citado;
 - obter fonte da `site-content`, migrations completas e configurações de ambiente;
 - escolher hosting canônico;
 - criar repositório Git completo e proteger branches;
@@ -1090,37 +1107,39 @@ Cada runbook deve conter proprietário, pré-condições, passos, validação, r
 
 ### Fase 3 — catálogo piloto
 
-- reconciliar produtos estáticos e dados existentes;
+- definir fontes oficiais e primeiro lote de recadastro;
 - modelar hierarquia, atributos, mídia, documentos e relações;
 - implementar editor completo de produto;
-- migrar lista, detalhe, comparador, busca e SEO;
+- cadastrar novamente produtos e imagens no painel, com revisão técnica/comercial;
+- conectar lista, detalhe, comparador, busca e SEO exclusivamente à projeção nova;
 - feature flag e canary;
 - homologar critérios E2E.
 
-**Saída:** primeiro domínio totalmente canônico, sem duplicação ativa.
+**Saída:** primeiro domínio recadastrado e totalmente canônico, sem conteúdo atual importado.
 
 ### Fase 4 — serviços, setores e aplicações
 
-- unificar fontes duplicadas;
-- preservar slugs e redirects;
+- definir novos modelos, taxonomias e fontes oficiais;
+- recadastrar serviços, setores, aplicações, relações e imagens;
+- definir URLs novas e redirects independentes do conteúdo;
 - implementar relações explicativas;
-- migrar filtros, mega menu e páginas de detalhe;
-- decidir migração do módulo de detecção de gases.
+- conectar filtros, mega menu e páginas de detalhe à projeção nova;
+- decidir o novo modelo do módulo de detecção de gases.
 
 ### Fase 5 — homepage, páginas, menus e mídia
 
-- consolidar blocos existentes;
+- definir blocos e layouts da remodelagem;
 - implementar registro de blocos e presets;
-- migrar contato global, header e footer;
+- recadastrar contato, header, footer, páginas e todas as mídias aprovadas;
 - criar preview responsivo e agendamento;
-- retirar fallbacks somente após observação.
+- substituir as áreas públicas somente após homologação; não usar dados atuais como fallback editorial.
 
 ### Fase 6 — blog, campanhas, SEO e leads
 
 - rota individual de blog;
 - landing pages e formulários versionados;
 - redirects/sitemap/busca automáticos;
-- integração confiável com ERP;
+- módulo de leads completo no novo CMS e remoção do encaminhamento administrativo legado;
 - diagnóstico editorial.
 
 ### Fase 7 — hardening e lançamento
@@ -1128,7 +1147,7 @@ Cada runbook deve conter proprietário, pré-condições, passos, validação, r
 - testes de segurança e acessibilidade;
 - ensaio de rollback/restauração;
 - treinamento por perfil;
-- conteúdo reconciliado e aprovado;
+- conteúdo novo recadastrado e aprovado para o lote de lançamento;
 - canary, métricas e período de hiperacompanhamento;
 - desativar infraestrutura antiga somente após confirmação.
 
@@ -1207,8 +1226,8 @@ Um módulo está concluído apenas quando:
 8. auditoria e métricas estão ativas;
 9. testes unitários, integração, E2E, a11y e responsivos passam;
 10. documentação e runbook foram atualizados;
-11. conteúdo foi reconciliado e homologado;
-12. remoção do fallback antigo foi planejada ou executada com segurança.
+11. conteúdo foi recadastrado no novo painel a partir de fontes aprovadas e homologado;
+12. nenhuma importação ou fallback editorial do conteúdo atual permanece ativo.
 
 “Tela criada” ou “registro salvo no banco” não são critérios de conclusão.
 
@@ -1262,8 +1281,8 @@ README.md
 
 ### ADRs iniciais
 
-- ADR-001: fonte canônica e estratégia de migração;
-- ADR-002: painel no ERP, `/admin` ou subdomínio;
+- ADR-001: fonte canônica, recadastro limpo e estratégia de cutover;
+- ADR-002: novo painel exclusivo em `/admin` e eventual isolamento de hospedagem;
 - ADR-003: hosting canônico;
 - ADR-004: API pública e contratos versionados;
 - ADR-005: RBAC separado CMS/RDO;
@@ -1271,7 +1290,7 @@ README.md
 - ADR-007: publicação, outbox e cache;
 - ADR-008: assinatura e imutabilidade do RDO;
 - ADR-009: renderização SEO/prerender/SSR;
-- ADR-010: integração de leads com ERP.
+- ADR-010: gestão de formulários e leads no novo CMS.
 
 ---
 
@@ -1280,17 +1299,16 @@ README.md
 Antes de implementar:
 
 1. repositório completo com histórico Git;
-2. repositório do ERP/`dzsystem` e painel `/marketing/site`;
-3. projeto Supabase de staging e inventário de produção;
-4. fonte das Edge Functions implantadas, especialmente `site-content`;
-5. schema/migrations de conteúdo e `leads`;
-6. projeto Cloudflare/Vercel e decisão de origem;
-7. configuração Resend e autenticação dos domínios de e-mail — confirmar se `gaiatecsistemas.com` sem `.br` é intencional;
-8. lista de usuários e papéis esperados;
-9. política jurídica de RDO, assinatura e retenção;
-10. glossário oficial: setor × indústria × segmento × solução × aplicação;
-11. fonte mestre do catálogo e responsável por aprovar a reconciliação;
-12. requisitos de SLA, volume, backup e orçamento.
+2. projeto Supabase de staging e inventário de produção;
+3. fonte das Edge Functions implantadas, especialmente `site-content`;
+4. schema/migrations de conteúdo e `leads`;
+5. projeto Cloudflare/Vercel e decisão de origem;
+6. configuração Resend e autenticação dos domínios de e-mail — confirmar se `gaiatecsistemas.com` sem `.br` é intencional;
+7. lista de usuários e papéis esperados no novo painel;
+8. política jurídica de RDO, assinatura e retenção;
+9. glossário oficial: setor × indústria × segmento × solução × aplicação;
+10. fontes técnicas/comerciais oficiais e responsáveis por aprovar cada lote de recadastro;
+11. requisitos de SLA, volume, backup e orçamento.
 
 ---
 
@@ -1312,7 +1330,7 @@ Antes de implementar:
 | Edição e exclusão de relatórios | `src/app/rdo/lib/relatorios.ts` e `src/app/rdo/pages/FormPage.tsx` |
 | Reabertura e tokens de assinatura | `src/app/rdo/lib/assinatura.ts` |
 | Termos de assinatura | `src/app/rdo/lib/terms.ts` |
-| Integração de contato com leads/ERP | `supabase/functions/submit-contact/index.ts` |
+| Fluxo atual de contato/leads a ser internalizado no novo CMS | `supabase/functions/submit-contact/index.ts` |
 | Configurações paralelas de hosting/cache | `vercel.json`, `public/_redirects`, `public/_headers` |
 | Ausência de gates de qualidade | `package.json` e ausência de testes/CI/tsconfig no pacote |
 
@@ -1338,3 +1356,7 @@ As fases, gates, responsáveis, modelo de tickets, sequência de implementação
 **[Procedimento de ajustes e desenvolvimento do painel administrativo GAIATEC](./PROCEDIMENTO_AJUSTES_E_DESENVOLVIMENTO_PAINEL_ADMINISTRATIVO_GAIATEC.md)**
 
 Esse procedimento deve ser utilizado para transformar as recomendações deste documento em backlog e trabalho de desenvolvimento. Ele não substitui os contratos, ADRs e critérios aqui definidos; organiza sua execução.
+
+A preparação e aprovação de produtos, serviços, imagens e demais conteúdos devem seguir obrigatoriamente:
+
+**[Política de recadastro limpo de conteúdo e mídia GAIATEC](./POLITICA_RECADASTRO_LIMPO_CONTEUDO_E_MIDIA_GAIATEC.md)**

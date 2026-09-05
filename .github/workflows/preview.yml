@@ -1,0 +1,89 @@
+name: Preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: SHA exato aprovado para o canary EV2.2
+        required: true
+      ev2_draft_v2_candidate:
+        description: Habilitar o adapter cliente candidato EV2.2
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: preview-${{ github.event_name == 'workflow_dispatch' && 'ev2-g2-canary' || github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    if: >-
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.head.ref != 'ev2/fase-14-ia-transacional-controlada') ||
+      (github.event_name == 'workflow_dispatch' &&
+       github.ref_name == 'ev2/desenvolvimento-fases-1-a-12')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: ${{ github.event_name == 'workflow_dispatch' && 'staging' || 'preview' }}
+    env:
+      CLOUDFLARE_CONFIGURED: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - if: github.event_name == 'workflow_dispatch'
+        run: test "$(git rev-parse HEAD)" = "${{ inputs.expected_sha }}"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build:staging
+        env:
+          VITE_RELEASE: ${{ github.sha }}
+          VITE_CMS_ENVIRONMENT: staging
+          VITE_EV2_DRAFT_V2_CANDIDATE: >-
+            ${{ github.event_name == 'workflow_dispatch' && inputs.ev2_draft_v2_candidate || github.head_ref == 'ev2/desenvolvimento-fases-1-a-12' }}
+      - run: npm run artifact:manifest
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+      - if: env.CLOUDFLARE_CONFIGURED != 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: preview-${{ github.sha }}
+          path: dist
+          if-no-files-found: error
+          retention-days: 14
+      - if: env.CLOUDFLARE_CONFIGURED != 'true'
+        run: |
+          echo "::warning::Cloudflare credentials are not configured; the validated preview was preserved as a GitHub artifact."
+          echo "## Preview remoto" >> "$GITHUB_STEP_SUMMARY"
+          echo "Credenciais Cloudflare ausentes. O build validado foi preservado como artefato desta execução." >> "$GITHUB_STEP_SUMMARY"
+      - if: env.CLOUDFLARE_CONFIGURED == 'true'
+        id: deploy
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >-
+            pages deploy dist --project-name gaiatec-cms-staging
+            --branch ${{ github.event_name == 'workflow_dispatch' && 'ev2-g2-canary' || format('pr-{0}', github.event.pull_request.number) }}
+      - if: env.CLOUDFLARE_CONFIGURED == 'true'
+        run: npm run smoke:http -- "${{ steps.deploy.outputs.deployment-url }}"
+      - if: env.CLOUDFLARE_CONFIGURED == 'true' && github.event_name == 'pull_request'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `Preview não indexável: ${{ steps.deploy.outputs.deployment-url }}\n\nArtefato: \`${{ github.sha }}\``
+            })

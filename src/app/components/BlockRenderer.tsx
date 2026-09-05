@@ -13,7 +13,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
 import { usePagina } from "../hooks/useSiteData";
-import type { SiteBloco } from "../../lib/supabase";
+import type { SiteBloco } from "../legacy/site-content";
 
 const SITE_BASE = "https://gaiatecsistemas.com.br";
 

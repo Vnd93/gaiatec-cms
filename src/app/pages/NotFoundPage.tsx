@@ -2,6 +2,16 @@ import { Link } from "react-router";
 import { ChevronRight } from "lucide-react";
 
 export default function NotFoundPage() {
+  useEffect(() => {
+    const robots = document.querySelector<HTMLMetaElement>('meta[name="robots"]') ?? document.head.appendChild(document.createElement("meta"));
+    robots.name = "robots";
+    const previous = robots.content;
+    robots.content = "noindex, nofollow";
+    document.title = "Página não encontrada | GAIATEC";
+    return () => {
+      robots.content = previous || "index, follow";
+    };
+  }, []);
   return (
     <section
       className="min-h-[80vh] flex items-center justify-center"
@@ -30,3 +40,4 @@ export default function NotFoundPage() {
     </section>
   );
 }
+import { useEffect } from "react";

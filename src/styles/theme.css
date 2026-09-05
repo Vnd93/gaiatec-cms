@@ -1,6 +1,9 @@
 @custom-variant dark (&:is(.dark *));
 
-html {
+html,
+body,
+#root {
+  max-width: 100%;
   overflow-x: clip;
 }
 

@@ -1,153 +1,143 @@
-// supabase/functions/submit-contact/index.ts
-// Recebe POST do form de contato no site → salva em `leads` + envia email
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { cleanText, clientAddress, consumeRateLimit, corsHeaders, escapeHtml, isAllowedOrigin, json, readJsonLimited, sha256 } from "../_shared/security.ts";
 
-interface ContactPayload {
-  firstName: string;
-  lastName?: string;
-  email: string;
-  phone?: string;
-  company?: string;
-  enquiryType?: string;
-  message: string;
-  consent: boolean;
-  origem?: string; // ex: "/", "/produto/X"
+const CONSENT_VERSION = "privacy-contact-v1-2026-08";
+const CONSENT_TEXT = "Autorizo o tratamento dos dados enviados para responder a esta solicitação e declaro ter lido a Política de Privacidade.";
+const PRIVACY_URL = "https://gaiatecsistemas.com.br/politica-de-privacidade";
+const ENQUIRY_TYPES = new Set(["Orçamento", "Suporte Técnico", "Calibração", "Instrumentação", "Automação", "Proteção Catódica", "Outros", "Newsletter"]);
+const isEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+const isUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+
+async function verifyTurnstile(token: string, ip: string, idempotencyKey: string): Promise<boolean> {
+  const secret = Deno.env.get("TURNSTILE_SECRET_KEY");
+  if (!secret) return false;
+  const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ secret, response: token, remoteip: ip, idempotency_key: idempotencyKey }),
+  });
+  if (!response.ok) return false;
+  const result = await response.json() as { success?: boolean; hostname?: string };
+  return result.success === true;
 }
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, apikey",
-};
-
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-
-const escapeHtml = (s: string) =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
-  if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders(req) });
+  if (!isAllowedOrigin(req)) return json(req, { error: "Origem não autorizada." }, 403);
+  if (req.method !== "POST") return json(req, { error: "Método não permitido." }, 405);
 
+  const url = Deno.env.get("SUPABASE_URL");
+  const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !serviceRole) return json(req, { error: "Serviço temporariamente indisponível." }, 503);
+  const admin = createClient(url, serviceRole, { auth: { autoRefreshToken: false, persistSession: false } });
+
+  let body: Record<string, unknown>;
   try {
-    const body = (await req.json()) as ContactPayload;
-
-    // ─── Validação ───
-    if (!body.firstName || !body.email || !body.message) {
-      return json({ error: "Campos obrigatórios faltando: nome, email e mensagem." }, 400);
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)) {
-      return json({ error: "E-mail inválido." }, 400);
-    }
-    if (!body.consent) {
-      return json({ error: "Você precisa concordar com a Política de Privacidade." }, 400);
-    }
-
-    // ─── Insere em `leads` ───
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-    );
-
-    const fullName = `${body.firstName}${body.lastName ? " " + body.lastName : ""}`.trim();
-
-    const observacoes = [
-      body.enquiryType ? `Tipo: ${body.enquiryType}` : null,
-      body.origem ? `Origem: ${body.origem}` : null,
-      "",
-      "Mensagem:",
-      body.message.trim(),
-      "",
-      `Consentimento LGPD: ${body.consent ? "Sim" : "Não"}`,
-      `IP: ${req.headers.get("CF-Connecting-IP") ?? "—"}`,
-      `User-Agent: ${(req.headers.get("User-Agent") ?? "—").slice(0, 200)}`,
-    ]
-      .filter((l) => l !== null)
-      .join("\n");
-
-    const { data: lead, error: insertError } = await supabase
-      .from("leads")
-      .insert({
-        nome: fullName,
-        empresa: body.company?.trim() || null,
-        email: body.email.toLowerCase().trim(),
-        telefone: body.phone?.trim() || null,
-        fonte: "website",
-        status: "novo",
-        observacoes,
-      })
-      .select()
-      .single();
-
-    if (insertError) {
-      console.error("Insert error:", insertError);
-      return json({ error: "Erro ao registrar contato. Tente novamente." }, 500);
-    }
-
-    // ─── Envia email via Resend (não-bloqueante) ───
-    const resendKey = Deno.env.get("RESEND_API_KEY");
-    const notifyEmail = Deno.env.get("CONTACT_NOTIFY_EMAIL") || "contato@gaiatecsistemas.com.br";
-
-    if (resendKey) {
-      try {
-        const emailRes = await fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${resendKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            from: "Site Gaiatec <onboarding@resend.dev>",
-            to: [notifyEmail],
-            reply_to: body.email,
-            subject: `Novo contato no site — ${body.enquiryType || "Geral"} (${fullName})`,
-            html: `
-              <div style="font-family: Inter, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #0f172a;">
-                <div style="background: linear-gradient(135deg, #0057DE, #0046b3); padding: 24px 32px; color: white;">
-                  <h1 style="margin: 0; font-size: 22px;">📬 Novo contato pelo site</h1>
-                  <p style="margin: 4px 0 0; opacity: 0.9; font-size: 14px;">gaiatecsistemas.com.br</p>
-                </div>
-                <div style="padding: 32px; background: #ffffff; border: 1px solid #e2e8f0; border-top: none;">
-                  <table style="width: 100%; border-collapse: collapse;">
-                    <tr><td style="padding: 8px 0; color: #64748b; font-size: 13px; width: 130px;">Nome</td><td style="padding: 8px 0; font-weight: 600;">${escapeHtml(fullName)}</td></tr>
-                    <tr><td style="padding: 8px 0; color: #64748b; font-size: 13px;">Email</td><td style="padding: 8px 0;"><a href="mailto:${escapeHtml(body.email)}" style="color: #0057DE;">${escapeHtml(body.email)}</a></td></tr>
-                    <tr><td style="padding: 8px 0; color: #64748b; font-size: 13px;">Telefone</td><td style="padding: 8px 0;"><a href="tel:${escapeHtml(body.phone || "")}" style="color: #0057DE;">${escapeHtml(body.phone || "—")}</a></td></tr>
-                    <tr><td style="padding: 8px 0; color: #64748b; font-size: 13px;">Empresa</td><td style="padding: 8px 0;">${escapeHtml(body.company || "—")}</td></tr>
-                    <tr><td style="padding: 8px 0; color: #64748b; font-size: 13px;">Tipo</td><td style="padding: 8px 0;"><span style="background: #f1f5f9; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;">${escapeHtml(body.enquiryType || "Não informado")}</span></td></tr>
-                  </table>
-                  <h3 style="margin: 24px 0 12px; font-size: 14px; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">Mensagem</h3>
-                  <div style="padding: 16px; background: #f8fafc; border-left: 3px solid #0057DE; border-radius: 4px; line-height: 1.6;">
-                    ${escapeHtml(body.message).replace(/\n/g, "<br>")}
-                  </div>
-                  <div style="margin-top: 32px; padding-top: 24px; border-top: 1px solid #e2e8f0; text-align: center;">
-                    <a href="https://erp.gaiatecsistemas.com.br/comercial/leads/${lead.id}" style="display: inline-block; background: #0057DE; color: white; padding: 12px 32px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 14px;">Abrir no ERP →</a>
-                  </div>
-                </div>
-                <div style="padding: 16px 32px; background: #f8fafc; color: #94a3b8; font-size: 11px; text-align: center;">
-                  ID do lead: <code style="font-family: monospace;">${lead.id}</code>
-                </div>
-              </div>
-            `,
-          }),
-        });
-        if (!emailRes.ok) {
-          console.error("Email send failed:", emailRes.status, await emailRes.text());
-        }
-      } catch (e) {
-        console.error("Email error (non-critical):", e);
-      }
-    } else {
-      console.warn("RESEND_API_KEY not set — skipping email notification");
-    }
-
-    return json({ success: true, id: lead.id });
-  } catch (e) {
-    console.error("Unexpected error:", e);
-    return json({ error: "Erro inesperado. Tente novamente em alguns instantes." }, 500);
+    body = await readJsonLimited(req, 16_384);
+  } catch (error) {
+    return json(req, { error: error instanceof Error && error.message === "PAYLOAD_TOO_LARGE" ? "Corpo excede o limite permitido." : "Corpo inválido." }, error instanceof Error && error.message === "PAYLOAD_TOO_LARGE" ? 413 : 400);
   }
+
+  // Honeypot: resposta genérica para não ensinar o bot.
+  if (cleanText(body.website, 200)) return json(req, { success: true });
+
+  const idempotencyKey = cleanText(body.idempotencyKey ?? req.headers.get("X-Idempotency-Key"), 40);
+  const firstName = cleanText(body.firstName, 80);
+  const lastName = cleanText(body.lastName, 100);
+  const email = cleanText(body.email, 254).toLowerCase();
+  const phone = cleanText(body.phone, 40);
+  const company = cleanText(body.company, 160);
+  const enquiryType = cleanText(body.enquiryType, 80);
+  const message = cleanText(body.message, 4_000);
+  const originPath = cleanText(body.origem, 500);
+  if (!isUuid(idempotencyKey)) return json(req, { error: "Identificador da solicitação inválido." }, 400);
+  if (!firstName || !isEmail(email) || !message) return json(req, { error: "Preencha nome, e-mail e mensagem corretamente." }, 400);
+  if (body.consent !== true) return json(req, { error: "É necessário aceitar a Política de Privacidade." }, 400);
+  if (enquiryType && !ENQUIRY_TYPES.has(enquiryType)) return json(req, { error: "Tipo de solicitação inválido." }, 400);
+
+  const ip = clientAddress(req);
+  try {
+    const ipAllowed = await consumeRateLimit(admin, req, "contact_ip", ip, 8, 900);
+    const emailAllowed = await consumeRateLimit(admin, req, "contact_email", email, 4, 3600);
+    if (!ipAllowed || !emailAllowed) return json(req, { error: "Limite de envios atingido. Tente novamente mais tarde." }, 429, { "Retry-After": "900" });
+  } catch {
+    return json(req, { error: "Serviço de proteção temporariamente indisponível." }, 503);
+  }
+
+  const linkCount = (message.match(/https?:\/\//gi) ?? []).length;
+  const abuseScore = (linkCount > 2 ? 2 : 0) + (!req.headers.get("User-Agent") ? 1 : 0) + (message.length < 8 ? 1 : 0);
+  const requiresCaptcha = Deno.env.get("CONTACT_CAPTCHA_ALWAYS") === "true" || abuseScore >= 2;
+  if (requiresCaptcha) {
+    const captchaToken = cleanText(body.captchaToken, 4_096);
+    if (!captchaToken) return json(req, { error: "Confirme que você é uma pessoa para continuar.", captchaRequired: true }, 403);
+    if (!(await verifyTurnstile(captchaToken, ip, idempotencyKey))) return json(req, { error: "A verificação de segurança falhou. Tente novamente.", captchaRequired: true }, 403);
+  }
+
+  const evidenceSalt = Deno.env.get("EVIDENCE_SALT");
+  if (!evidenceSalt) return json(req, { error: "Serviço de evidência não configurado." }, 503);
+  const technicalEvidence = {
+    ipHash: await sha256(`${evidenceSalt}:${ip}`),
+    userAgentHash: await sha256(req.headers.get("User-Agent") ?? "unknown"),
+    origin: req.headers.get("Origin") ?? null,
+  };
+
+  const submissionPayload = {
+    idempotency_key: idempotencyKey,
+    first_name: firstName,
+    last_name: lastName || null,
+    email,
+    phone: phone || null,
+    company: company || null,
+    enquiry_type: enquiryType || null,
+    message,
+    origin_path: originPath || null,
+    consent_version: CONSENT_VERSION,
+    consent_text: CONSENT_TEXT,
+    privacy_policy_url: PRIVACY_URL,
+    abuse_score: abuseScore,
+    technical_evidence: technicalEvidence,
+  };
+
+  let submission: { id: string } | null = null;
+  const inserted = await admin.from("contact_submissions").insert(submissionPayload).select("id").single();
+  if (inserted.error?.code === "23505") {
+    const existing = await admin.from("contact_submissions").select("id").eq("idempotency_key", idempotencyKey).maybeSingle();
+    if (existing.data) return json(req, { success: true, id: existing.data.id, duplicate: true });
+  }
+  if (inserted.error || !inserted.data) return json(req, { error: "Não foi possível registrar o contato. Tente novamente." }, 500);
+  submission = inserted.data;
+
+  const outbox = await admin.from("contact_notification_outbox").insert({ submission_id: submission.id, status: "sending", attempt_count: 1 });
+  if (outbox.error) return json(req, { success: true, id: submission.id, notificationPending: true }, 202);
+
+  const resendKey = Deno.env.get("RESEND_API_KEY");
+  const notifyEmail = Deno.env.get("CONTACT_NOTIFY_EMAIL");
+  const fromEmail = Deno.env.get("CONTACT_FROM_EMAIL");
+  if (!resendKey || !notifyEmail || !fromEmail) {
+    await admin.from("contact_notification_outbox").update({ status: "failed", last_error: "email_not_configured" }).eq("submission_id", submission.id);
+    return json(req, { success: true, id: submission.id, notificationPending: true }, 202);
+  }
+
+  const fullName = `${firstName}${lastName ? ` ${lastName}` : ""}`;
+  try {
+    const emailResponse = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify({
+        from: fromEmail,
+        to: [notifyEmail],
+        reply_to: email,
+        subject: `Novo contato no site — ${enquiryType || "Geral"} (${fullName})`,
+        html: `<h1>Novo contato pelo site</h1><p><strong>ID:</strong> ${escapeHtml(submission.id)}</p><p><strong>Nome:</strong> ${escapeHtml(fullName)}</p><p><strong>E-mail:</strong> ${escapeHtml(email)}</p><p><strong>Telefone:</strong> ${escapeHtml(phone || "—")}</p><p><strong>Empresa:</strong> ${escapeHtml(company || "—")}</p><p><strong>Tipo:</strong> ${escapeHtml(enquiryType || "Não informado")}</p><p><strong>Mensagem:</strong><br>${escapeHtml(message).replace(/\n/g, "<br>")}</p><p><strong>Consentimento:</strong> ${escapeHtml(CONSENT_VERSION)} em ${escapeHtml(PRIVACY_URL)}</p>`,
+      }),
+    });
+    if (!emailResponse.ok) throw new Error(`resend_${emailResponse.status}`);
+    await admin.from("contact_notification_outbox").update({ status: "sent", sent_at: new Date().toISOString(), last_error: null }).eq("submission_id", submission.id);
+  } catch (error) {
+    await admin.from("contact_notification_outbox").update({ status: "failed", last_error: error instanceof Error ? error.message.slice(0, 500) : "send_failed" }).eq("submission_id", submission.id);
+    return json(req, { success: true, id: submission.id, notificationPending: true }, 202);
+  }
+
+  return json(req, { success: true, id: submission.id });
 });

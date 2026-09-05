@@ -1,0 +1,45 @@
+name: Rollback staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      git_ref:
+        description: Commit imutável anteriormente aprovado
+        required: true
+      confirmation:
+        description: Digite ROLLBACK-STAGING
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  rollback:
+    if: inputs.confirmation == 'ROLLBACK-STAGING'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: staging
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.git_ref }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build:staging
+        env:
+          VITE_RELEASE: ${{ inputs.git_ref }}
+          VITE_CMS_ENVIRONMENT: staging
+          VITE_EV2_DRAFT_V2_CANDIDATE: "false"
+      - run: npm run artifact:manifest
+        env:
+          GITHUB_SHA: ${{ inputs.git_ref }}
+      - id: deploy
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name gaiatec-cms-staging --branch Remodelagem
+      - run: npm run smoke:http -- "${{ steps.deploy.outputs.deployment-url }}"

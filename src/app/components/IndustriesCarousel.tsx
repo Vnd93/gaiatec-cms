@@ -56,11 +56,6 @@ const FALLBACK_INDUSTRIES: Industry[] = [
   },
 ];
 
-/* ────────────────────────────────────────────────────────
-   CAROUSEL CONSTANTS
-   ──────────────────────────────────────────────────────── */
-const SLIDE_GAP = 0; // columns are flush, divided by lines only
-
 export function IndustriesCarousel() {
   const { setores } = useSetores();
 
@@ -129,11 +124,6 @@ export function IndustriesCarousel() {
   /* ── Compute column width ── */
   const colWidthPercent = 100 / visibleCount;
   const translatePercent = -(scrollIndex * colWidthPercent);
-
-  /* ── Visible industries in current viewport ── */
-  const visibleIndices = Array.from({ length: visibleCount }, (_, i) => scrollIndex + i).filter(
-    (i) => i < industries.length
-  );
 
   return (
     <>
@@ -331,7 +321,7 @@ export function IndustriesCarousel() {
               >
                 Indústrias de Atuação
               </h2>
-              <a href="#" className="sec4-viewall-btn">
+              <a href="/setores" className="sec4-viewall-btn">
                 Ver todos os 11 setores <ArrowRight size={14} />
               </a>
             </AnimateOnScroll>
@@ -430,7 +420,7 @@ export function IndustriesCarousel() {
                       {/* ── ARROW BUTTON ── */}
                       <a
                         href={ind.href}
-                        onClick={(e) => e.preventDefault()}
+                        aria-label={`Conhecer soluções para ${ind.title}`}
                         className="sec4-arrow-box"
                         style={{
                           marginTop: isActive ? 10 : 6,

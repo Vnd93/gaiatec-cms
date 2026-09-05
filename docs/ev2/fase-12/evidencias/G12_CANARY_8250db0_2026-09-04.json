@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "outcome": "G12_CANARY_PASS",
+  "suiteKey": "g12-staging-integrated-reduced-v1",
+  "canaryRunId": "77576d45-c7ab-4968-b976-2a4dfa6c735d",
+  "candidateSha": "8250db0ddb221306a2621aa9c6004f45823ec532",
+  "candidateOrigin": "https://ev2-g12-canary.gaiatec-cms-staging.pages.dev",
+  "stableOrigin": "https://gaiatec-cms-staging.pages.dev",
+  "startedAt": "2026-09-04T15:05:52.387Z",
+  "finishedAt": "2026-09-04T15:07:44.804Z",
+  "inheritedG11Checks": 27,
+  "inheritedG11Passed": 27,
+  "g11AssuranceRunId": "bc348fa9-9944-4eec-b537-b2c140687459",
+  "p0Count": 0,
+  "p1Count": 0,
+  "securityStatus": "passed",
+  "restoreStatus": "passed",
+  "stablePromoted": false,
+  "syntheticOnly": true,
+  "realDataUsed": false,
+  "productionMutations": 0,
+  "syntheticResidue": 0,
+  "systemMetrics": {
+    "availabilityPercent": 100,
+    "adminReadP95Ms": 389,
+    "commandP95Ms": 406,
+    "adminReadWallP95Ms": 607,
+    "commandWallP95Ms": 688,
+    "outboxLagP95Ms": 0,
+    "auditCoveragePercent": 100,
+    "restoreRpoMinutes": 0,
+    "restoreRtoMinutes": 1
+  },
+  "healthyWindows": [
+    {
+      "id": "8a5a00ef-0626-4ab2-a86a-343966aa875d",
+      "startedAt": "2026-09-04T15:07:14.584Z",
+      "endedAt": "2026-09-04T15:07:24.579Z",
+      "outcome": "pass",
+      "measuredResponses": 22,
+      "availabilityPercent": 100,
+      "http5xxRatePercent": 0,
+      "publicP95Ms": 922.5959000000003,
+      "evidenceHash": "2ea38a2485d48027aa083260b99560702c56578343636d5693afff08c5ed2117"
+    },
+    {
+      "id": "f0412d92-a342-4151-8933-00a67b12ef36",
+      "startedAt": "2026-09-04T15:07:24.580Z",
+      "endedAt": "2026-09-04T15:07:34.858Z",
+      "outcome": "pass",
+      "measuredResponses": 22,
+      "availabilityPercent": 100,
+      "http5xxRatePercent": 0,
+      "publicP95Ms": 961.0204999999999,
+      "evidenceHash": "0dcbfd4efffc3b677af8c930f4a74d845f30752221b683768fb4829d38f4005f"
+    },
+    {
+      "id": "95693ce2-3f79-40c3-be90-5051c4e2e091",
+      "startedAt": "2026-09-04T15:07:34.858Z",
+      "endedAt": "2026-09-04T15:07:44.804Z",
+      "outcome": "pass",
+      "measuredResponses": 22,
+      "availabilityPercent": 100,
+      "http5xxRatePercent": 0,
+      "publicP95Ms": 937.7305999999999,
+      "evidenceHash": "ceb31ea07739564d9cec513e3c4f6124dbcce0e8b94ef4efc8f47649df8c5681"
+    }
+  ],
+  "evidenceHash": "7cc47e51c4dd0810cf7456649a939660f8c5d852b3b08e2c0b453b9210365b27"
+}

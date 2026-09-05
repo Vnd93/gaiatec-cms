@@ -1,0 +1,72 @@
+name: EV2.10 Canary Preview
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: SHA exato aprovado para o canary EV2.10
+        required: true
+      ev2_ai_assist_candidate:
+        description: Habilitar a interface assistiva sintética EV2.10
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ev2-g10-canary
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    if: github.ref_name == 'ev2/desenvolvimento-fases-1-a-12'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: staging
+    env:
+      CLOUDFLARE_CONFIGURED: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - run: test "$(git rev-parse HEAD)" = "${{ inputs.expected_sha }}"
+      - run: test "${{ inputs.ev2_ai_assist_candidate }}" = "true"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build:staging
+        env:
+          VITE_RELEASE: ${{ github.sha }}
+          VITE_CMS_ENVIRONMENT: staging
+          VITE_EV2_DRAFT_V2_CANDIDATE: "false"
+          VITE_EV2_MASTER_DATA_CANDIDATE: "false"
+          VITE_EV2_PIM_CANDIDATE: "false"
+          VITE_EV2_DAM_CANDIDATE: "false"
+          VITE_EV2_SEARCH_QUALITY_CANDIDATE: "false"
+          VITE_EV2_COLLABORATION_BULK_CANDIDATE: "false"
+          VITE_EV2_RBAC_SCOPED_CANDIDATE: "false"
+          VITE_EV2_VISUAL_STUDIO_CANDIDATE: "false"
+          VITE_EV2_MULTISITE_CANDIDATE: "false"
+          VITE_EV2_AI_ASSIST_CANDIDATE: ${{ inputs.ev2_ai_assist_candidate }}
+      - run: npm run artifact:manifest
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+      - if: env.CLOUDFLARE_CONFIGURED != 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ev2-g10-canary-${{ github.sha }}
+          path: dist
+          if-no-files-found: error
+          retention-days: 14
+      - if: env.CLOUDFLARE_CONFIGURED == 'true'
+        id: deploy
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name gaiatec-cms-staging --branch ev2-g10-canary
+      - if: env.CLOUDFLARE_CONFIGURED == 'true'
+        run: npm run smoke:http -- "${{ steps.deploy.outputs.deployment-url }}"

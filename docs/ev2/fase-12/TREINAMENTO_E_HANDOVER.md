@@ -10,8 +10,9 @@
 | owner de negócio            | aceita impacto, janela e critérios de interrupção    |
 | on-call primário/secundário | responde alertas e executa contenção/rollback        |
 
-Os quatro aprovadores do registro G12 devem ter identidades distintas. A proteção GitHub também
-impede autoaprovação do deployment.
+Os quatro aprovadores do registro G12 devem ter identidades distintas. A proteção GitHub exige dois
+reviews de PR distintos do autor. Required reviewers do ambiente são um reforço opcional quando o
+plano privado oferecer esse recurso.
 
 ## Conteúdo obrigatório
 
@@ -33,6 +34,9 @@ impede autoaprovação do deployment.
 - falha de probe leva ao rollback do deployment anterior;
 - preview informado como rollback é recusado;
 - operador localiza os runbooks e descreve RPO/RTO sem ajuda.
+- operador recupera o backup externo cifrado e prova o restore em alvo efêmero;
+- validação CSP no preview produtivo termina sem violação crítica;
+- teste sintético do Resend termina em evento de entrega.
 
 ## Evidência
 

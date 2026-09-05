@@ -1,0 +1,58 @@
+name: Verify production email provider
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: SHA completo do candidato contido em main
+        required: true
+      confirmation:
+        description: Digite VERIFY-RESEND-PRODUCTION:<SHA>
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-email-verification
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      inputs.confirmation == format('VERIFY-RESEND-PRODUCTION:{0}', inputs.candidate_sha)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .nvmrc
+      - name: Bind verification to an immutable candidate in main
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          test "$(printf '%s' "$CANDIDATE_SHA" | grep -E '^[a-f0-9]{40}$')" = "$CANDIDATE_SHA"
+          git merge-base --is-ancestor "$CANDIDATE_SHA" origin/main
+      - name: Verify domain and synthetic delivery without customer data
+        env:
+          EMAIL_PROVIDER: resend
+          EMAIL_SENDING_DOMAIN: gaiatecsistemas.com
+          EMAIL_FROM: ${{ vars.EMAIL_FROM }}
+          LEAD_NOTIFICATION_TO: ${{ vars.LEAD_NOTIFICATION_TO }}
+          EMAIL_SYNTHETIC_TO: ${{ vars.EMAIL_SYNTHETIC_TO }}
+          PRODUCTION_SITE_ORIGIN: https://gaiatecsistemas.com.br
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          EMAIL_EVIDENCE_PATH: production-email-evidence.json
+        run: node scripts/ev2/phase16/verify-email-provider.mjs
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: production-email-evidence-${{ inputs.candidate_sha }}
+          path: production-email-evidence.json
+          if-no-files-found: error
+          retention-days: 90

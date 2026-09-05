@@ -13,7 +13,7 @@ on:
         description: Identificador da mudança aprovado no G12
         required: true
       confirmation:
-        description: Digite AUTORIZO-G12-PRODUCAO
+        description: Digite AUTORIZO-G12-PRODUCAO:<SHA>
         required: true
 
 permissions:
@@ -25,7 +25,9 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'AUTORIZO-G12-PRODUCAO'
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      inputs.confirmation == format('AUTORIZO-G12-PRODUCAO:{0}', inputs.candidate_sha)
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: production
@@ -60,6 +62,7 @@ jobs:
         run: node scripts/ev2/phase12/check-github-controls.mjs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_RELEASE_GUARD_TOKEN }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
       - name: Verify production configuration is isolated
         working-directory: control
         run: node scripts/ev2/phase12/validate-production-config.mjs

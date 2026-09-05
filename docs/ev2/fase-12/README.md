@@ -26,9 +26,9 @@ migrations aditivas já homologadas até `0052` e preserva todas as flags EV2 de
 ## Limite desta entrega
 
 O G11 autorizou a preparação local/staging da EV2.12, não o go-live. O workflow de produção exige
-simultaneamente branch `main`, ambiente protegido, dois revisores, controles do branch, projeto
+simultaneamente branch `main`, ambiente protegido, dois reviews reais, controles do branch, projeto
 Supabase produtivo distinto, registro G12 aprovado e a confirmação literal
-`AUTORIZO-G12-PRODUCAO`. Na ausência de qualquer item, o fluxo falha antes do deploy.
+`AUTORIZO-G12-PRODUCAO:<SHA completo>`. Na ausência de qualquer item, o fluxo falha antes do deploy.
 
 O hardening posterior da EV2.13 removeu os switches `VITE_EV2_*_CANDIDATE` das decisões do frontend e
 introduziu elegibilidade individual em runtime. Produção continua explicitamente bloqueada pelo
@@ -48,6 +48,7 @@ produção.
 - [Runbook de go-live e rollback](RUNBOOK_GO_LIVE_E_ROLLBACK.md)
 - [Treinamento e handover](TREINAMENTO_E_HANDOVER.md)
 - [Modelo de aprovação](G12_APPROVAL.template.json)
+- [Controles finais EV2.16](../fase-16/README.md)
 
 ## Próxima decisão
 

@@ -1,0 +1,191 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+import worker, { CONTENT_SECURITY_POLICY } from "../../../cloudflare/_worker.js";
+import {
+  PRODUCTION_SUPABASE_PROJECT_REF,
+  validateBackupConfig,
+  validateEmailProviderConfig,
+  validateProductionReadinessControls,
+  validateResendDomainResponse,
+} from "./readiness-lib.mjs";
+
+const sha = "a".repeat(40);
+const read = (path) => readFile(path, "utf8");
+
+function readiness() {
+  return {
+    githubProtection: {
+      status: "verified",
+      candidateSha: sha,
+      requiredPullRequestApprovals: 2,
+      codeOwnersCount: 2,
+      branchProtected: true,
+      evidenceReference: "actions/github-controls-123",
+      verifiedAt: "2026-09-05T10:00:00.000Z",
+    },
+    backupRestore: {
+      status: "passed",
+      projectRef: PRODUCTION_SUPABASE_PROJECT_REF,
+      externalTarget: "github-actions-encrypted-artifact",
+      encryptedArchiveSha256: "b".repeat(64),
+      backupRunId: "backup-run-123",
+      restoreDrillRunId: "restore-run-123",
+      rpoMinutes: 1440,
+      rtoMinutes: 30,
+      evidenceReference: "actions/backup-restore-123",
+      completedAt: "2026-09-05T10:10:00.000Z",
+    },
+    dpoLegal: {
+      status: "approved",
+      approverId: "DPO-01",
+      scopeSha256: "c".repeat(64),
+      evidenceReference: "legal/DPO-EV2-G12",
+      approvedAt: "2026-09-05T10:20:00.000Z",
+    },
+    emailProvider: {
+      status: "verified",
+      provider: "resend",
+      sendingDomain: "gaiatecsistemas.com",
+      from: "GAIATEC SISTEMAS <cms@gaiatecsistemas.com>",
+      notificationTo: "comercial@gaiatecsistemas.com.br",
+      syntheticDeliveryStatus: "passed",
+      syntheticDeliveryId: "email-test-123",
+      realDataUsed: false,
+      evidenceReference: "actions/email-123",
+      verifiedAt: "2026-09-05T10:30:00.000Z",
+    },
+    csp: {
+      status: "passed",
+      mode: "enforce",
+      candidateSha: sha,
+      policySha256: createHash("sha256").update(CONTENT_SECURITY_POLICY).digest("hex"),
+      criticalViolations: 0,
+      evidenceReference: "actions/csp-123",
+      verifiedAt: "2026-09-05T10:40:00.000Z",
+    },
+  };
+}
+
+test("backup configuration binds encrypted off-platform copy to the exact production project", () => {
+  const base = {
+    projectRef: PRODUCTION_SUPABASE_PROJECT_REF,
+    databaseUrl: `postgresql://postgres:${"x".repeat(24)}@db.${PRODUCTION_SUPABASE_PROJECT_REF}.supabase.co:5432/postgres?sslmode=require`,
+    encryptionPassphrase: "correct-horse-battery-staple-archive-key",
+    target: "github-actions-encrypted-artifact",
+    gitRef: "refs/heads/main",
+  };
+  assert.equal(validateBackupConfig(base).valid, true);
+  assert.match(
+    validateBackupConfig({ ...base, projectRef: "glcqsosxwgmlhzgcsnzv" }).violations.join(","),
+    /production_project_ref_mismatch/,
+  );
+  assert.match(
+    validateBackupConfig({
+      ...base,
+      databaseUrl: base.databaseUrl.replace("sslmode=require", ""),
+    }).violations.join(","),
+    /database_tls_required/,
+  );
+  assert.match(
+    validateBackupConfig({ ...base, encryptionPassphrase: "short" }).violations.join(","),
+    /backup_encryption_passphrase_invalid/,
+  );
+});
+
+test("real email provider is Resend with verified sending and corporate recipient boundaries", () => {
+  const config = {
+    provider: "resend",
+    from: "GAIATEC SISTEMAS <cms@gaiatecsistemas.com>",
+    sendingDomain: "gaiatecsistemas.com",
+    siteOrigin: "https://gaiatecsistemas.com.br",
+    notificationTo: "comercial@gaiatecsistemas.com.br",
+    apiKey: `re_${"x".repeat(32)}`,
+  };
+  assert.equal(validateEmailProviderConfig(config).valid, true);
+  assert.equal(
+    validateResendDomainResponse({
+      data: [{ id: "domain-1", name: "gaiatecsistemas.com", status: "verified" }],
+    }).valid,
+    true,
+  );
+  assert.match(
+    validateEmailProviderConfig({ ...config, notificationTo: "external@example.net" }).violations.join(","),
+    /notification_recipient_invalid/,
+  );
+  assert.match(
+    validateResendDomainResponse({
+      data: [{ name: "gaiatecsistemas.com", status: "pending" }],
+    }).violations.join(","),
+    /resend_domain_not_verified/,
+  );
+});
+
+test("production readiness requires every independent, legal and operational control", () => {
+  const controls = readiness();
+  assert.equal(validateProductionReadinessControls(controls, { candidateSha: sha }).valid, true);
+  const repeatedGap = structuredClone(controls);
+  repeatedGap.githubProtection.requiredPullRequestApprovals = 1;
+  repeatedGap.backupRestore.rtoMinutes = 61;
+  repeatedGap.dpoLegal.status = "pending";
+  repeatedGap.emailProvider.syntheticDeliveryStatus = "accepted";
+  repeatedGap.csp.criticalViolations = 1;
+  const violations = validateProductionReadinessControls(repeatedGap, { candidateSha: sha }).violations.join(
+    ",",
+  );
+  assert.match(violations, /two_independent_reviews_required/);
+  assert.match(violations, /restore_rto_invalid/);
+  assert.match(violations, /dpo_legal_not_approved/);
+  assert.match(violations, /email_synthetic_delivery_not_verified/);
+  assert.match(violations, /csp_critical_violation_present/);
+});
+
+test("CSP is enforced only on production targets and contains the audited browser origins", async () => {
+  const env = {
+    CF_PAGES_COMMIT_SHA: sha,
+    CF_PAGES_BRANCH: "main",
+    ASSETS: { fetch: async () => new Response("unexpected", { status: 500 }) },
+  };
+  const preview = await worker.fetch(
+    new Request("https://ev2-g12-preflight.gaiatec-website.pages.dev/healthz"),
+    env,
+  );
+  const staging = await worker.fetch(
+    new Request("https://ev2-g16-csp.gaiatec-cms-staging.pages.dev/healthz"),
+    env,
+  );
+  const stagingEnforcementCanary = await worker.fetch(
+    new Request("https://ev2-g16-csp-canary.gaiatec-cms-staging.pages.dev/healthz"),
+    { ...env, CF_PAGES_BRANCH: "ev2-g16-csp-canary" },
+  );
+  const enforced = preview.headers.get("content-security-policy") ?? "";
+  const reportOnly = staging.headers.get("content-security-policy-report-only") ?? "";
+  assert.equal(enforced, CONTENT_SECURITY_POLICY);
+  assert.equal(preview.headers.has("content-security-policy-report-only"), false);
+  assert.equal(reportOnly, CONTENT_SECURITY_POLICY);
+  assert.equal(staging.headers.has("content-security-policy"), false);
+  assert.equal(stagingEnforcementCanary.headers.get("content-security-policy"), CONTENT_SECURITY_POLICY);
+  assert.equal(stagingEnforcementCanary.headers.has("content-security-policy-report-only"), false);
+  for (const origin of ["https://brasilapi.com.br", "https://nominatim.openstreetmap.org"])
+    assert.match(enforced, new RegExp(origin.replaceAll(".", "\\.")));
+  assert.doesNotMatch(enforced, /api\.resend\.com/);
+});
+
+test("backup and provider workflows retain only encrypted evidence and stay behind environments", async () => {
+  const [backup, email, deploy] = await Promise.all([
+    read(".github/workflows/backup-supabase-production.yml"),
+    read(".github/workflows/verify-production-email.yml"),
+    read(".github/workflows/deploy-production.yml"),
+  ]);
+  assert.match(backup, /environment: production-backup/);
+  assert.match(backup, /--symmetric --cipher-algo AES256/);
+  assert.match(backup, /supabase start/);
+  assert.match(backup, /diff -u/);
+  assert.match(backup, /path: \$\{\{ steps\.backup\.outputs\.artifact_dir \}\}/);
+  assert.doesNotMatch(backup, /path:.*plain_dir/);
+  assert.match(email, /VERIFY-RESEND-PRODUCTION:\{0\}/);
+  assert.match(email, /environment: production/);
+  assert.match(deploy, /AUTORIZO-G12-PRODUCAO:\{0\}/);
+  assert.match(deploy, /CANDIDATE_SHA: \$\{\{ inputs\.candidate_sha \}\}/);
+});

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "gate": "G12",
   "decision": "pending",
   "candidateSha": null,
@@ -19,7 +19,9 @@
   },
   "productionAuthorized": false,
   "productionAuthorizationText": null,
-  "dpoLegalStatus": "pending",
+  "productionAuthorizationSha": null,
+  "productionAuthorizedBy": null,
+  "productionAuthorizedAt": null,
   "target": {
     "cloudflareProject": "gaiatec-website",
     "domains": ["gaiatecsistemas.com.br", "www.gaiatecsistemas.com.br"]
@@ -32,10 +34,61 @@
     "deploymentId": null,
     "release": null
   },
+  "productionReadiness": {
+    "githubProtection": {
+      "status": "pending",
+      "candidateSha": null,
+      "requiredPullRequestApprovals": 2,
+      "codeOwnersCount": 0,
+      "branchProtected": false,
+      "evidenceReference": null,
+      "verifiedAt": null
+    },
+    "backupRestore": {
+      "status": "pending",
+      "projectRef": "chfuhctnhqgyjowkvllv",
+      "externalTarget": "github-actions-encrypted-artifact",
+      "encryptedArchiveSha256": null,
+      "backupRunId": null,
+      "restoreDrillRunId": null,
+      "rpoMinutes": null,
+      "rtoMinutes": null,
+      "evidenceReference": null,
+      "completedAt": null
+    },
+    "dpoLegal": {
+      "status": "pending",
+      "approverId": null,
+      "scopeSha256": null,
+      "evidenceReference": null,
+      "approvedAt": null
+    },
+    "emailProvider": {
+      "status": "pending",
+      "provider": "resend",
+      "sendingDomain": "gaiatecsistemas.com",
+      "from": "GAIATEC SISTEMAS <cms@gaiatecsistemas.com>",
+      "notificationTo": "comercial@gaiatecsistemas.com.br",
+      "syntheticDeliveryStatus": "pending",
+      "syntheticDeliveryId": null,
+      "realDataUsed": false,
+      "evidenceReference": null,
+      "verifiedAt": null
+    },
+    "csp": {
+      "status": "pending",
+      "mode": "enforce",
+      "candidateSha": null,
+      "policySha256": null,
+      "criticalViolations": null,
+      "evidenceReference": null,
+      "verifiedAt": null
+    }
+  },
   "owners": {
-    "changeOwner": { "id": null, "approvedAt": null },
-    "technicalReviewer": { "id": null, "approvedAt": null },
-    "securityPrivacyOwner": { "id": null, "approvedAt": null },
-    "businessOwner": { "id": null, "approvedAt": null }
+    "changeOwner": { "id": null, "approvedAt": null, "evidenceReference": null },
+    "technicalReviewer": { "id": null, "approvedAt": null, "evidenceReference": null },
+    "securityPrivacyOwner": { "id": null, "approvedAt": null, "evidenceReference": null },
+    "businessOwner": { "id": null, "approvedAt": null, "evidenceReference": null }
   }
 }

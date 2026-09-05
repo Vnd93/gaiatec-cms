@@ -55,7 +55,7 @@ function rolloutWindow(offsetMinutes = 0) {
 
 function approvedRecord() {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     gate: "G12",
     decision: "approved",
     candidateSha: sha,
@@ -78,8 +78,10 @@ function approvedRecord() {
       productionMutations: 0,
     },
     productionAuthorized: true,
-    productionAuthorizationText: "AUTORIZO-G12-PRODUCAO",
-    dpoLegalStatus: "approved",
+    productionAuthorizationText: `AUTORIZO-G12-PRODUCAO:${sha}`,
+    productionAuthorizationSha: sha,
+    productionAuthorizedBy: "BUS-01",
+    productionAuthorizedAt: "2026-09-04T09:05:00.000Z",
     target: {
       cloudflareProject: "gaiatec-website",
       domains: ["gaiatecsistemas.com.br", "www.gaiatecsistemas.com.br"],
@@ -92,11 +94,78 @@ function approvedRecord() {
       deploymentId: "ff2dbb65-2f8b-4840-a9a1-f2fde29e8ebf",
       release: "b".repeat(40),
     },
+    productionReadiness: {
+      githubProtection: {
+        status: "verified",
+        candidateSha: sha,
+        requiredPullRequestApprovals: 2,
+        codeOwnersCount: 2,
+        branchProtected: true,
+        evidenceReference: "actions/github-controls-123",
+        verifiedAt: "2026-09-04T08:30:00.000Z",
+      },
+      backupRestore: {
+        status: "passed",
+        projectRef: "chfuhctnhqgyjowkvllv",
+        externalTarget: "github-actions-encrypted-artifact",
+        encryptedArchiveSha256: "d".repeat(64),
+        backupRunId: "backup-run-123",
+        restoreDrillRunId: "restore-run-123",
+        rpoMinutes: 1440,
+        rtoMinutes: 30,
+        evidenceReference: "actions/backup-restore-123",
+        completedAt: "2026-09-04T08:35:00.000Z",
+      },
+      dpoLegal: {
+        status: "approved",
+        approverId: "DPO-01",
+        scopeSha256: "e".repeat(64),
+        evidenceReference: "legal/DPO-EV2-12",
+        approvedAt: "2026-09-04T08:40:00.000Z",
+      },
+      emailProvider: {
+        status: "verified",
+        provider: "resend",
+        sendingDomain: "gaiatecsistemas.com",
+        from: "GAIATEC SISTEMAS <cms@gaiatecsistemas.com>",
+        notificationTo: "comercial@gaiatecsistemas.com.br",
+        syntheticDeliveryStatus: "passed",
+        syntheticDeliveryId: "email-test-123",
+        realDataUsed: false,
+        evidenceReference: "actions/email-123",
+        verifiedAt: "2026-09-04T08:45:00.000Z",
+      },
+      csp: {
+        status: "passed",
+        mode: "enforce",
+        candidateSha: sha,
+        policySha256: "f".repeat(64),
+        criticalViolations: 0,
+        evidenceReference: "actions/csp-123",
+        verifiedAt: "2026-09-04T08:50:00.000Z",
+      },
+    },
     owners: {
-      changeOwner: { id: "OP-01", approvedAt: "2026-09-04T09:01:00.000Z" },
-      technicalReviewer: { id: "REV-01", approvedAt: "2026-09-04T09:02:00.000Z" },
-      securityPrivacyOwner: { id: "SEC-01", approvedAt: "2026-09-04T09:03:00.000Z" },
-      businessOwner: { id: "BUS-01", approvedAt: "2026-09-04T09:04:00.000Z" },
+      changeOwner: {
+        id: "OP-01",
+        approvedAt: "2026-09-04T09:01:00.000Z",
+        evidenceReference: "approval/OP-01",
+      },
+      technicalReviewer: {
+        id: "REV-01",
+        approvedAt: "2026-09-04T09:02:00.000Z",
+        evidenceReference: "approval/REV-01",
+      },
+      securityPrivacyOwner: {
+        id: "SEC-01",
+        approvedAt: "2026-09-04T09:03:00.000Z",
+        evidenceReference: "approval/SEC-01",
+      },
+      businessOwner: {
+        id: "BUS-01",
+        approvedAt: "2026-09-04T09:04:00.000Z",
+        evidenceReference: "approval/BUS-01",
+      },
     },
   };
 }
@@ -295,6 +364,17 @@ test("G12 approval requires an exact candidate, live window and four distinct ow
     validateApprovalRecord({ ...record, productionAuthorized: false }).violations.join(","),
     /production_not_authorized/,
   );
+  assert.match(
+    validateApprovalRecord({ ...record, productionAuthorizationSha: "b".repeat(40) }).violations.join(","),
+    /production_authorization_sha_mismatch/,
+  );
+  assert.match(
+    validateApprovalRecord({
+      ...record,
+      productionAuthorizationText: `AUTORIZO-G12-PRODUCAO:${"b".repeat(40)}`,
+    }).violations.join(","),
+    /production_authorization_text_invalid/,
+  );
 });
 
 test("G12 approval is cryptographically and semantically bound to its canary report", () => {
@@ -361,8 +441,8 @@ test("G12 approval is cryptographically and semantically bound to its canary rep
 test("production configuration refuses staging and GitHub controls require protection", () => {
   assert.equal(
     validateProductionConfig({
-      supabaseProjectRef: "abcdefghijklmnopqrst",
-      supabaseUrl: "https://abcdefghijklmnopqrst.supabase.co/",
+      supabaseProjectRef: "chfuhctnhqgyjowkvllv",
+      supabaseUrl: "https://chfuhctnhqgyjowkvllv.supabase.co/",
       supabaseAnonKey: "sb_publishable_example_key_with_safe_length",
       siteOrigin: "https://gaiatecsistemas.com.br",
       cloudflareProject: "gaiatec-website",
@@ -391,12 +471,31 @@ test("production configuration refuses staging and GitHub controls require prote
       deployment_branch_policy: { protected_branches: true, custom_branch_policies: false },
     },
     branchProtection: {
-      required_pull_request_reviews: { required_approving_review_count: 1 },
+      required_pull_request_reviews: {
+        required_approving_review_count: 2,
+        require_code_owner_reviews: true,
+        dismiss_stale_reviews: true,
+        require_last_push_approval: true,
+      },
       enforce_admins: { enabled: true },
       required_status_checks: { strict: true, contexts: ["quality", "database", "browser"] },
       allow_force_pushes: { enabled: false },
       allow_deletions: { enabled: false },
     },
+    codeOwners: [
+      "* @reviewer-one @reviewer-two",
+      "/.github/workflows/** @reviewer-one @reviewer-two",
+      "/docs/ev2/fase-12/approvals/** @reviewer-one @reviewer-two",
+    ].join("\n"),
+    pullRequest: {
+      merged_at: "2026-09-04T08:00:00.000Z",
+      base: { ref: "main" },
+      user: { login: "author" },
+    },
+    reviews: [
+      { id: 1, state: "APPROVED", user: { login: "reviewer-one" } },
+      { id: 2, state: "APPROVED", user: { login: "reviewer-two" } },
+    ],
   });
   assert.equal(controls.valid, true);
   assert.equal(evaluateGithubControls({ environment: {}, branchProtection: {} }).valid, false);
@@ -478,6 +577,9 @@ test("release workflows and reduced canary are immutable, staged and production 
   const approvalTemplate = JSON.parse(template);
   assert.equal(approvalTemplate.decision, "pending");
   assert.equal(approvalTemplate.productionAuthorized, false);
+  assert.equal(approvalTemplate.schemaVersion, 2);
+  assert.equal(approvalTemplate.productionAuthorizationSha, null);
+  assert.equal(approvalTemplate.productionReadiness.dpoLegal.status, "pending");
   assert.equal(approvalTemplate.candidateSha, null);
   assert.equal(approvalTemplate.g12Evidence.file, null);
 });

@@ -2,15 +2,20 @@ import { readFile, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
 const MANAGED_ROLE_SETTING = /^[\t ]*ALTER[\t ]+ROLE\b[^;]*\bSET\b[^;]*;[\t ]*(?:\r?\n|$)/gim;
+const MANAGED_SESSION_SETTING =
+  /^[\t ]*SET[\t ]+"?log_min_messages"?[\t ]*(?:TO|=)[^;]*;[\t ]*(?:\r?\n|$)/gim;
 
 export function prepareRoleRestore(source) {
   if (typeof source !== "string" || !source.trim()) throw new Error("ROLE_DUMP_EMPTY");
 
-  const removedStatements = source.match(MANAGED_ROLE_SETTING)?.length ?? 0;
-  const sql = source.replace(MANAGED_ROLE_SETTING, "");
-  if (MANAGED_ROLE_SETTING.test(sql)) throw new Error("MANAGED_ROLE_SETTING_REMAINED");
+  const removedRoleSettings = source.match(MANAGED_ROLE_SETTING)?.length ?? 0;
+  const withoutRoleSettings = source.replace(MANAGED_ROLE_SETTING, "");
+  const removedSessionSettings = withoutRoleSettings.match(MANAGED_SESSION_SETTING)?.length ?? 0;
+  const sql = withoutRoleSettings.replace(MANAGED_SESSION_SETTING, "");
+  if (MANAGED_ROLE_SETTING.test(sql) || MANAGED_SESSION_SETTING.test(sql))
+    throw new Error("MANAGED_ROLE_SETTING_REMAINED");
 
-  return { sql, removedStatements };
+  return { sql, removedRoleSettings, removedSessionSettings };
 }
 
 async function main() {
@@ -22,7 +27,8 @@ async function main() {
   console.log(
     JSON.stringify({
       event: "supabase.role_restore.prepared",
-      removedManagedSettings: result.removedStatements,
+      removedRoleSettings: result.removedRoleSettings,
+      removedSessionSettings: result.removedSessionSettings,
     }),
   );
 }

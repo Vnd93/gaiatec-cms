@@ -115,9 +115,9 @@ jobs:
           local_db_url="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
           psql "$local_db_url" --no-psqlrc -v ON_ERROR_STOP=1 -c \
             "drop schema if exists public cascade; create schema public; grant all on schema public to postgres, anon, authenticated, service_role;"
-          # Supabase role dumps include single-line and multiline platform-managed
-          # GUC assignments. Keep the encrypted source intact and sanitize only
-          # the ephemeral drill copy before applying all remaining SQL fail-closed.
+          # Supabase role dumps include single-line, multiline and session-level
+          # platform-managed GUC assignments. Keep the encrypted source intact and
+          # sanitize only the ephemeral drill copy before applying all remaining SQL.
           node scripts/ev2/phase16/prepare-role-restore.mjs \
             "$restore_dir/extracted/roles.sql" "$restore_dir/roles.restore.sql"
           psql "$local_db_url" --no-psqlrc -v ON_ERROR_STOP=1 -f "$restore_dir/roles.restore.sql"

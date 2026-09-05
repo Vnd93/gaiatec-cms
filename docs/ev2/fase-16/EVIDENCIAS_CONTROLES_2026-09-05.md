@@ -87,6 +87,12 @@ mesmo GUC. Texto puro removido e nenhum artefato publicado. A segunda correção
 Node testado que trata a instrução SQL completa, inclusive multilinha, sem atravessar `;`, e mantém
 inalterados `ALTER ROLE ... WITH`, `RESET`, grants, schema e dados.
 
+O [workflow `33996892845`](https://github.com/Vnd93/gaiatec-cms/actions/runs/33996892845)
+comprovou que as três instruções `ALTER ROLE ... SET` foram removidas, mas revelou um comando de
+sessão independente `SET log_min_messages`. O drill permaneceu fail-closed, removeu o texto puro e
+não publicou artefato. A terceira correção adiciona somente esse parâmetro à lista explícita de GUCs
+gerenciados; `SET search_path` e os demais comandos de sessão continuam preservados e testados.
+
 ## Evidências ainda inexistentes
 
 Não foram fabricados: backup real, restore real, chave Resend de produção, entrega sintética

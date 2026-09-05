@@ -116,6 +116,14 @@ contenha o identificador exato `log_min_messages`, preservando comentários, met
 do dump e todas as instruções sem esse identificador. A execução falhou fechada, limpou o texto puro
 e não publicou artefato.
 
+O [workflow `33999303916`](https://github.com/Vnd93/gaiatec-cms/actions/runs/33999303916),
+no SHA `804382ab10d54fc675b0de8ac22e9af9c6330658`, comprovou o avanço: roles e schema foram
+restaurados, e a carga de dados percorreu as tabelas até `storage.buckets_vectors`. Essa tabela
+interna, mantida pela plataforma, rejeitou escrita mesmo vazia (`COPY 0`). A correção exclui
+somente `storage.buckets_vectors` do dump de dados; todos os dados da aplicação e as demais tabelas
+continuam incluídos e sob restauração estrita. A tentativa limpou o texto puro e não publicou
+artefato incompleto.
+
 ## Evidências ainda inexistentes
 
 Não foram fabricados: backup real, restore real, chave Resend de produção, entrega sintética

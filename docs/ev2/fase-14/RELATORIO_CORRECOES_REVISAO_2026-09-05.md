@@ -3,7 +3,9 @@
 **Data:** 5 de setembro de 2026  
 **Branch:** `ev2/fase-14-ia-transacional-controlada`  
 **PR:** `Vnd93/gaiatec-cms#7`  
+**SHA funcional validado:** `ae2d216fb85acd7cfd6163af85b9a5251fe6bed0`  
 **Resultado local:** quatro achados corrigidos; validação integral aprovada  
+**Resultado remoto:** CI integral aprovado; preview de PR ignorado  
 **Gate G14:** pendente (`pause`)
 
 ## Correções concluídas
@@ -35,7 +37,18 @@ específica.
 | Tela G14 após correção               | JS 20,20 kB (gzip 6,69 kB); CSS 1,84 kB (gzip 0,62 kB)      |
 | Bundle budget EV2.6                  | aprovado; 4 chunks iniciais, 761.149 bytes; Excel/PDF lazy  |
 | `npm audit --audit-level=high`       | 0 vulnerabilidades                                          |
-| pgTAP declarado                      | 58 assertions; compilação no job `database` do CI pendente  |
+| PostgreSQL/pgTAP                     | jobs `database` aprovados; suite EV2.14 com 58 assertions   |
+
+## Evidência remota
+
+- [CI no evento push](https://github.com/Vnd93/gaiatec-cms/actions/runs/33967686012): `quality`,
+  `database` e `browser` aprovados;
+- [CI no pull request](https://github.com/Vnd93/gaiatec-cms/actions/runs/33967687284): `quality`,
+  `database` e `browser` aprovados;
+- [Preview no pull request](https://github.com/Vnd93/gaiatec-cms/actions/runs/33967687289): job
+  `preview` ignorado, sem implantação;
+- [Qualidade da documentação](https://github.com/Vnd93/gaiatec-documentacao/actions/runs/33967687799):
+  aprovada.
 
 ## Cobertura operacional acrescentada
 
@@ -48,11 +61,12 @@ específica.
 - bloqueio de novas mutações enquanto um resultado permanece ambíguo;
 - ausência de deploy automático ao sincronizar o PR.
 
-## Evidência ainda obrigatória
+## Evidência ainda obrigatória para o Gate G14
 
-O host local não possui Docker/PostgreSQL. Por isso, a migration e as 58 assertions pgTAP precisam
-passar no job isolado `database` do GitHub Actions. Rehearsal e canary em staging continuam fora desta
-correção e somente poderão ser executados mediante autorização específica vinculada ao SHA final.
+O host local não possui Docker/PostgreSQL; essa lacuna foi coberta pelos dois jobs isolados
+`database`, que aplicaram as migrations e concluíram `supabase test db` no SHA funcional acima.
+Rehearsal e canary em staging continuam fora desta correção e somente poderão ser executados mediante
+autorização específica vinculada ao SHA final.
 
 ## Impacto externo
 

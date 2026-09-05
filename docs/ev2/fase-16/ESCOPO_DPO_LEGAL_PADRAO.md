@@ -3,7 +3,7 @@
 **Versão:** 1.0<br>
 **Data:** 5 de setembro de 2026<br>
 **Aprovador operacional declarado:** `@Vnd93`, Administrador da GAIATEC SISTEMAS<br>
-**Estado:** conteúdo aprovado em princípio; confirmação cadastral do encarregado público pendente
+**Estado:** aprovado; dados cadastrais do encarregado público confirmados em 5 de setembro de 2026
 
 ## Identificação vigente
 
@@ -15,8 +15,8 @@
 - canal publicado para titulares: `vendas@gaiatecsistemas.com.br`;
 - responsável pela aprovação deste escopo e pela operação do projeto: `@Vnd93`.
 
-A identidade e o canal do encarregado já estão na Política de Privacidade. Antes do go-live, o
-responsável precisa apenas confirmar que continuam corretos ou informar a substituição. Não é
+A identidade e o canal do encarregado já estão na Política de Privacidade. `@Vnd93` confirmou em
+5 de setembro de 2026 que Marcelo Diaz e `vendas@gaiatecsistemas.com.br` continuam corretos. Não é
 necessário registrar CPF nem outro dado pessoal sem finalidade.
 
 ## Regras aprovadas

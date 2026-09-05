@@ -20,6 +20,9 @@
 - proteção exige PR de `@Vnd93`, CODEOWNERS exclusivo e checks reais no SHA;
 - G12 approval schema v2 exige DPO/legal, governança solo aceita, evidência para as quatro
   responsabilidades, todos os controles e autorização com SHA.
+- `@Vnd93` confirmou os dados do controlador sem alterações, Marcelo Diaz como encarregado e
+  `vendas@gaiatecsistemas.com.br` como canal público; o escopo aprovado está vinculado ao SHA-256
+  canônico `39fd74f255c9235c0d2148d791e6189dfe88ff977b5d92396c68ecd2a3191b9c`.
 
 Validação local do candidato:
 
@@ -60,7 +63,7 @@ nenhum limite foi aumentado e nenhuma tentativa reprovada foi descrita como apro
 
 ## Evidências ainda inexistentes
 
-Não foram fabricados: ruleset/proteção efetiva, backup real, restore real, confirmação cadastral do
-encarregado, chave Resend de produção, entrega sintética produtiva, preview CSP do SHA final de
-produção ou autorização literal do SHA final. O modelo solo e o risco foram registrados; esses itens
-externos continuam bloqueando G12.
+Não foram fabricados: ruleset/proteção efetiva, backup real, restore real, chave Resend de produção,
+entrega sintética produtiva, preview CSP do SHA final de produção ou autorização literal do SHA
+final. O DPO/legal, o modelo solo e o risco foram registrados; os demais itens externos continuam
+bloqueando G12.

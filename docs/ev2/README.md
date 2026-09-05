@@ -113,6 +113,6 @@ backup externo cifrado com restore comprovado, entrega sintética pelo Resend, C
 violação crítica, aceite DPO/legal identificado, governança de operador único com risco expresso e
 autorização literal contendo o SHA completo. A suíte integral local passou. O canary CSP isolado do
 SHA `7804d5b4…` passou 22/22 respostas HTTP e quatro rotas de navegador com zero violação crítica,
-sem tocar produção ou staging estável. O responsável declarou autoridade jurídica/DPO e aceitou o
-risco empresarial; a confirmação dos dados públicos do encarregado e os controles dependentes de
+sem tocar produção ou staging estável. O responsável declarou autoridade jurídica/DPO, confirmou
+Marcelo Diaz e o canal público, e aceitou o risco empresarial; os controles dependentes de
 plano/secrets continuam pendentes e nenhum resultado externo foi simulado.

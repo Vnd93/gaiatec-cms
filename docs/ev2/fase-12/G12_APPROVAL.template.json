@@ -68,11 +68,11 @@
       "completedAt": null
     },
     "dpoLegal": {
-      "status": "pending",
+      "status": "approved",
       "approverId": "Vnd93",
-      "scopeSha256": "30a7f659b3ae3f10d49140a5187e518cfc4276a4709d15b6da207d68e20593e8",
+      "scopeSha256": "39fd74f255c9235c0d2148d791e6189dfe88ff977b5d92396c68ecd2a3191b9c",
       "evidenceReference": "docs/ev2/fase-16/REGISTRO_DECLARACAO_GOVERNANCA_DPO_RISCO_2026-09-05.md",
-      "approvedAt": null
+      "approvedAt": "2026-09-05T19:13:23.900Z"
     },
     "emailProvider": {
       "status": "pending",

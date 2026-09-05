@@ -16,12 +16,13 @@ O responsável:
 - assume pessoalmente as quatro responsabilidades do registro G12: mudança, revisão técnica,
   segurança/privacidade e negócio;
 - aceita formalmente o risco empresarial da ausência de segregação humana;
-- aprova o uso do [escopo DPO/legal padrão](ESCOPO_DPO_LEGAL_PADRAO.md), condicionado apenas à
-  confirmação dos dados cadastrais públicos do encarregado;
+- aprova o uso do [escopo DPO/legal padrão](ESCOPO_DPO_LEGAL_PADRAO.md);
+- confirma, em 5 de setembro de 2026, 19:13:23 UTC, os dados do controlador sem alterações e
+  Marcelo Diaz como encarregado público no canal `vendas@gaiatecsistemas.com.br`;
 - manifesta intenção de autorizar a produção final vinculada ao SHA.
 
-O SHA-256 do escopo aprovado em princípio é
-`30a7f659b3ae3f10d49140a5187e518cfc4276a4709d15b6da207d68e20593e8`.
+O SHA-256 canônico, com quebras de linha normalizadas em LF, do escopo aprovado é
+`39fd74f255c9235c0d2148d791e6189dfe88ff977b5d92396c68ecd2a3191b9c`.
 
 ## Limite vinculante
 

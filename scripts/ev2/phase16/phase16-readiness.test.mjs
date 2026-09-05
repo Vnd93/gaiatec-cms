@@ -159,7 +159,8 @@ test("legal scope is hash-bound and the public privacy notice covers production 
   const canonicalScope = scope.replaceAll("\r\n", "\n");
   const scopeSha256 = createHash("sha256").update(canonicalScope).digest("hex");
   assert.equal(template.productionReadiness.dpoLegal.scopeSha256, scopeSha256);
-  assert.equal(template.productionReadiness.dpoLegal.status, "pending");
+  assert.equal(template.productionReadiness.dpoLegal.status, "approved");
+  assert.equal(template.productionReadiness.dpoLegal.approvedAt, "2026-09-05T19:13:23.900Z");
   assert.match(privacyNotice, /Marcelo Diaz/);
   assert.match(privacyNotice, /<strong>Resend<\/strong>/);
   assert.match(privacyNotice, /até 365 dias/);

@@ -26,9 +26,10 @@ somente de governança humana; MFA, menor privilégio e segregações críticas 
 - SHA-256 do pacote exato analisado: avisos de privacidade, termos, formulários, retenção,
   subprocessadores, DPA e fluxos RDO/leads.
 
-O responsável declarou autoridade interna e aprovou o escopo padrão. O registro permanece `pending`
-somente até confirmar se Marcelo Diaz e `vendas@gaiatecsistemas.com.br`, hoje publicados como
-encarregado e canal, continuam corretos. Se mudaram, basta informar o novo nome e e-mail público.
+O responsável declarou autoridade interna, aprovou o escopo padrão e confirmou Marcelo Diaz e
+`vendas@gaiatecsistemas.com.br` como encarregado e canal públicos vigentes. O controle DPO/legal
+está `approved`; qualquer mudança posterior de identidade, canal ou escopo exige nova aprovação e
+novo hash.
 
 ## Autorização vinculada ao SHA
 

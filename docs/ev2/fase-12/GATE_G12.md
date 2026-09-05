@@ -18,7 +18,7 @@
 | Recuperação       | baseline produtiva e drill de rollback compatível com RPO 0/RTO <= 15 min           | restore RPO 0/RTO 1; drill produtivo pendente                  |
 | GitHub            | `main` protegida, PR de `@Vnd93`, CODEOWNERS solo, CI estrita e ambiente segregado  | política pronta; bloqueado pelo plano Free                     |
 | Backend produtivo | Supabase exclusivo, backups, RLS, migrations e funções aprovadas                    | isolado e saudável; plano Free/backup/restore/schema pendentes |
-| Privacidade/legal | aceite identificado e hash do escopo dos fluxos com dados reais                     | escopo registrado; confirmação cadastral do DPO pendente       |
+| Privacidade/legal | aceite identificado e hash do escopo dos fluxos com dados reais                     | atendido; escopo e dados públicos do DPO aprovados             |
 | E-mail/CSP        | Resend entregue em teste sintético e CSP enforced sem violação crítica no mesmo SHA | automação pronta; execução pendente                            |
 | Operação          | `@Vnd93` nos quatro papéis, risco solo, janela, treinamento e canal de plantão      | modelo solo e risco aceitos; evidência da janela pendente      |
 | Autorização       | registro `G12_<sha>.json` v2 e `AUTORIZO-G12-PRODUCAO:<sha>`                        | intenção declarada; frase com SHA final ainda ausente          |

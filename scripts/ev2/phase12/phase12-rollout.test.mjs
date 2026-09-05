@@ -616,7 +616,7 @@ test("release workflows and reduced canary are immutable, staged and production 
   assert.equal(approvalTemplate.productionAuthorized, false);
   assert.equal(approvalTemplate.schemaVersion, 2);
   assert.equal(approvalTemplate.productionAuthorizationSha, null);
-  assert.equal(approvalTemplate.productionReadiness.dpoLegal.status, "pending");
+  assert.equal(approvalTemplate.productionReadiness.dpoLegal.status, "approved");
   assert.equal(approvalTemplate.productionReadiness.dpoLegal.approverId, "Vnd93");
   assert.match(approvalTemplate.productionReadiness.dpoLegal.scopeSha256, /^[a-f0-9]{64}$/);
   assert.equal(approvalTemplate.productionReadiness.githubProtection.governanceMode, "sole-maintainer");

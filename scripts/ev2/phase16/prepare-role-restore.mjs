@@ -3,7 +3,7 @@ import { pathToFileURL } from "node:url";
 
 const MANAGED_ROLE_SETTING = /^[\t ]*ALTER[\t ]+ROLE\b[^;]*\bSET\b[^;]*;[\t ]*(?:\r?\n|$)/gim;
 const MANAGED_SESSION_SETTING =
-  /^[\t ]*SET[\t ]+"?log_min_messages"?[\t ]*(?:TO|=)[^;]*;[\t ]*(?:\r?\n|$)/gim;
+  /^[\t ]*(?:SET[\t ]+(?:(?:SESSION|LOCAL)[\t ]+)?"?log_min_messages"?[\t ]*(?:TO|=)[^;]*|SELECT[\t ]+(?:pg_catalog\.)?set_config[\t ]*\([\t ]*['"]log_min_messages['"][^;]*\))[\t ]*;[\t ]*(?:\r?\n|$)/gim;
 
 export function prepareRoleRestore(source) {
   if (typeof source !== "string" || !source.trim()) throw new Error("ROLE_DUMP_EMPTY");

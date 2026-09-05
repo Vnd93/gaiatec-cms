@@ -22,13 +22,15 @@ ALTER ROLE postgres SET
 ALTER ROLE authenticator SET "statement_timeout" TO '8s';
 ALTER ROLE authenticated RESET statement_timeout;
 SET log_min_messages = warning;
+SET SESSION "log_min_messages" TO warning;
+SELECT pg_catalog.set_config('log_min_messages', 'warning', false);
 SET search_path = '';
 GRANT anon TO authenticator;
 `;
   const result = prepareRoleRestore(source);
 
   assert.equal(result.removedRoleSettings, 2);
-  assert.equal(result.removedSessionSettings, 1);
+  assert.equal(result.removedSessionSettings, 3);
   assert.doesNotMatch(result.sql, /log_min_messages|ALTER ROLE authenticator SET/);
   assert.match(result.sql, /ALTER ROLE postgres WITH SUPERUSER/);
   assert.match(result.sql, /ALTER ROLE authenticated RESET statement_timeout/);

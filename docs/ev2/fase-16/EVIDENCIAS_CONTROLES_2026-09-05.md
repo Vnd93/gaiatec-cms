@@ -32,7 +32,7 @@
 Validação local do candidato:
 
 - `npm run test:ev2:phase12`: 10/10;
-- `npm run test:ev2:phase16`: 6/6;
+- `npm run test:ev2:phase16`: 7/7;
 - `npm run check`: 51 arquivos/168 testes Vitest, todos os testes EV2 e legados, typecheck, lint,
   formatação, build e orçamento de bundle aprovados;
 - `npm audit --audit-level=high`: zero vulnerabilidades.
@@ -92,6 +92,13 @@ comprovou que as três instruções `ALTER ROLE ... SET` foram removidas, mas re
 sessão independente `SET log_min_messages`. O drill permaneceu fail-closed, removeu o texto puro e
 não publicou artefato. A terceira correção adiciona somente esse parâmetro à lista explícita de GUCs
 gerenciados; `SET search_path` e os demais comandos de sessão continuam preservados e testados.
+
+O [workflow `33997628222`](https://github.com/Vnd93/gaiatec-cms/actions/runs/33997628222),
+no SHA `d037b88342445e40937171a4126bd154144dc806`, confirmou que a representação restante usa
+uma atribuição de sessão de `log_min_messages` que o filtro anterior não reconheceu. A execução
+voltou a falhar fechada, removeu todo o texto puro e não publicou artefato. A quarta correção reconhece somente
+`log_min_messages` nas formas `SET`, `SET SESSION`, `SET LOCAL` e `pg_catalog.set_config`; os outros
+ajustes de sessão e todo o restante do restore continuam preservados e sob `ON_ERROR_STOP=1`.
 
 ## Evidências ainda inexistentes
 

@@ -108,6 +108,14 @@ vinculada ao banco. A correção seguinte trata exclusivamente `ALTER DATABASE .
 log_min_messages`, preserva outros parâmetros de banco e mantém a restauração estrita. O texto puro
 foi removido e nenhum artefato incompleto foi publicado.
 
+O [workflow `33998761317`](https://github.com/Vnd93/gaiatec-cms/actions/runs/33998761317),
+no SHA `7c87634e4204a8f93188f2a87dc581d1d82a0299`, mostrou contadores zero tanto para a forma de
+sessão quanto para a forma de banco, apesar do erro inequívoco no mesmo GUC. Em vez de continuar
+inferindo a sintaxe, o sanitizador passa a remover qualquer instrução SQL terminada por `;` que
+contenha o identificador exato `log_min_messages`, preservando comentários, metacomandos de proteção
+do dump e todas as instruções sem esse identificador. A execução falhou fechada, limpou o texto puro
+e não publicou artefato.
+
 ## Evidências ainda inexistentes
 
 Não foram fabricados: backup real, restore real, chave Resend de produção, entrega sintética

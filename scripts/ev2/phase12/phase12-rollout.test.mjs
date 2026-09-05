@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 import worker from "../../../cloudflare/_worker.js";
 import {
+  evaluateCodeOwners,
   evaluateGithubControls,
   evaluateProbeWindow,
   evaluateRolloutAdvance,
@@ -499,6 +500,20 @@ test("production configuration refuses staging and GitHub controls require prote
   });
   assert.equal(controls.valid, true);
   assert.equal(evaluateGithubControls({ environment: {}, branchProtection: {} }).valid, false);
+  assert.deepEqual(
+    evaluateCodeOwners(
+      [
+        "* @Reviewer-One @reviewer-one",
+        "/.github/workflows-backup/** @reviewer-one @reviewer-two",
+        "/docs/ev2/fase-12/approvals-old/** @reviewer-one @reviewer-two",
+      ].join("\n"),
+    ).violations,
+    [
+      "global_two_codeowners_required",
+      "workflow_two_codeowners_required",
+      "approval_record_two_codeowners_required",
+    ],
+  );
 });
 
 test("G12 boundary evals contain no false acceptance or remote mutation", () => {

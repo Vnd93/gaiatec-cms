@@ -439,16 +439,21 @@ export function evaluateCodeOwners(content) {
       const [pattern, ...tokens] = line.split(/\s+/);
       return {
         pattern,
-        owners: [...new Set(tokens.filter((token) => /^@[A-Za-z0-9-]+$/.test(token)))],
+        owners: [
+          ...new Set(
+            tokens.filter((token) => /^@[A-Za-z0-9-]+$/.test(token)).map((token) => token.toLowerCase()),
+          ),
+        ],
       };
     });
-  const covers = (matcher) => rules.some((rule) => matcher(rule.pattern) && rule.owners.length >= 2);
+  const normalizePattern = (pattern) => String(pattern ?? "").replace(/^\//, "");
+  const covers = (expectedPatterns) =>
+    rules.some((rule) => expectedPatterns.has(normalizePattern(rule.pattern)) && rule.owners.length >= 2);
   const violations = [];
-  if (!covers((pattern) => pattern === "*" || pattern === "/**"))
-    violations.push("global_two_codeowners_required");
-  if (!covers((pattern) => pattern.includes(".github/workflows")))
+  if (!covers(new Set(["*", "**"]))) violations.push("global_two_codeowners_required");
+  if (!covers(new Set([".github/workflows/*", ".github/workflows/**"])))
     violations.push("workflow_two_codeowners_required");
-  if (!covers((pattern) => pattern.includes("docs/ev2/fase-12/approvals")))
+  if (!covers(new Set(["docs/ev2/fase-12/approvals/*", "docs/ev2/fase-12/approvals/**"])))
     violations.push("approval_record_two_codeowners_required");
   return { valid: violations.length === 0, violations };
 }

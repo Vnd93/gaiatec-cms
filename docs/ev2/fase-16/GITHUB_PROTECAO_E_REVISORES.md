@@ -39,6 +39,11 @@ O guard de produção consulta a proteção pela API, lê CODEOWNERS e confere n
 dois approvals reais, atuais, distintos e diferentes do autor. Se required reviewers do ambiente
 forem configurados em um plano Enterprise, ele também exige dois revisores e `prevent_self_review`.
 
+Aplicar a mesma proteção em `main` no repositório `Vnd93/gaiatec-documentacao`: dois approvals
+independentes, CODEOWNERS, descarte de reviews obsoletos, aprovação do último push por terceiro,
+administradores incluídos, sem force-push/exclusão e check obrigatório `Documentation quality /
+quality`. Assim, a documentação que define o gate não pode ser alterada unilateralmente.
+
 ## Lacuna que não pode ser automatizada
 
 Dois usernames GitHub reais, distintos de `@Vnd93`, precisam receber acesso de revisão. Nenhuma

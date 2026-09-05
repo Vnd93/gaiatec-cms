@@ -25,8 +25,11 @@ try {
         routeViolations.push({ type: "console", text: text.slice(0, 500) });
     });
     page.on("pageerror", (error) => routeViolations.push({ type: "pageerror", text: error.message }));
-    const response = await page.goto(`${origin}${path}`, { waitUntil: "networkidle", timeout: 30_000 });
-    await page.waitForTimeout(1_000);
+    const response = await page.goto(`${origin}${path}`, {
+      waitUntil: "domcontentloaded",
+      timeout: 30_000,
+    });
+    await page.waitForTimeout(2_000);
     const policy = response?.headers()["content-security-policy"] ?? "";
     const reportOnly = response?.headers()["content-security-policy-report-only"] ?? "";
     const release = response?.headers()["x-release"] ?? "";

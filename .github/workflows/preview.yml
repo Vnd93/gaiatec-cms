@@ -25,10 +25,11 @@ concurrency:
 jobs:
   preview:
     if: >-
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.head.repo.full_name == github.repository ||
-      github.event_name == 'workflow_dispatch' &&
-      github.ref_name == 'ev2/desenvolvimento-fases-1-a-12'
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.head.ref != 'ev2/fase-14-ia-transacional-controlada') ||
+      (github.event_name == 'workflow_dispatch' &&
+       github.ref_name == 'ev2/desenvolvimento-fases-1-a-12')
     runs-on: ubuntu-latest
     timeout-minutes: 25
     environment: ${{ github.event_name == 'workflow_dispatch' && 'staging' || 'preview' }}

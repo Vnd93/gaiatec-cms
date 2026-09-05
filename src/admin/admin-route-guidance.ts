@@ -25,6 +25,16 @@ const guidance: Array<{ match: RegExp; value: AdminRouteGuidance }> = [
     },
   },
   {
+    match: /^\/admin\/assistente\/execucao/,
+    value: {
+      task: "Monte um plano sintético, confira o dry-run e encaminhe o hash para aprovação segregada.",
+      publicImpact:
+        "Nenhum alvo real é alcançável; execução e compensação operam somente referências g14x-*.",
+      internal: "Plano, decisão de política, aprovação, snapshots e correlação formam a trilha G14.",
+      nextStep: "Outro usuário sintético MFA aprova; o operador executa ou solicita compensação.",
+    },
+  },
+  {
     match: /^\/admin\/assistente/,
     value: {
       task: "Localize, explique, extraia ou prepare uma proposta sintética com fonte.",

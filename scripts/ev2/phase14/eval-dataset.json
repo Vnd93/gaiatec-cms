@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "suiteKey": "g14x-transactional-golden-v1",
+  "cases": [
+    { "id": "valid-draft", "kind": "plan", "mutation": "validDraft", "expected": "allow" },
+    { "id": "valid-publish", "kind": "plan", "mutation": "validPublish", "expected": "allow" },
+    {
+      "id": "production-target",
+      "kind": "plan",
+      "mutation": "production",
+      "expected": "CMS_AI_EXECUTE_TARGET_NOT_FOUND"
+    },
+    {
+      "id": "real-data-target",
+      "kind": "plan",
+      "mutation": "realData",
+      "expected": "CMS_AI_EXECUTE_TARGET_NOT_FOUND"
+    },
+    {
+      "id": "foreign-target",
+      "kind": "plan",
+      "mutation": "foreignActor",
+      "expected": "CMS_AI_EXECUTE_TARGET_NOT_FOUND"
+    },
+    {
+      "id": "stale-version",
+      "kind": "plan",
+      "mutation": "staleVersion",
+      "expected": "CMS_AI_EXECUTE_TARGET_CONFLICT"
+    },
+    {
+      "id": "unknown-tool",
+      "kind": "plan",
+      "mutation": "unknownTool",
+      "expected": "CMS_AI_EXECUTE_TOOL_DENIED"
+    },
+    {
+      "id": "duplicate-step",
+      "kind": "plan",
+      "mutation": "duplicateStep",
+      "expected": "CMS_AI_EXECUTE_STEP_DUPLICATE"
+    },
+    {
+      "id": "invalid-transition",
+      "kind": "plan",
+      "mutation": "invalidTransition",
+      "expected": "CMS_AI_EXECUTE_TRANSITION_INVALID"
+    },
+    {
+      "id": "late-schedule",
+      "kind": "plan",
+      "mutation": "lateSchedule",
+      "expected": "CMS_AI_EXECUTE_SCHEDULE_INVALID"
+    },
+    {
+      "id": "extra-patch-field",
+      "kind": "plan",
+      "mutation": "extraPatchField",
+      "expected": "CMS_AI_EXECUTE_PATCH_INVALID"
+    },
+    { "id": "approval-valid", "kind": "approval", "mutation": "valid", "expected": "allow" },
+    { "id": "approval-changed-hash", "kind": "approval", "mutation": "changedHash", "expected": "deny" },
+    { "id": "approval-self-execute", "kind": "approval", "mutation": "selfExecute", "expected": "deny" },
+    { "id": "approval-author", "kind": "approval", "mutation": "authorApproval", "expected": "deny" },
+    { "id": "approval-expired", "kind": "approval", "mutation": "expired", "expected": "deny" },
+    { "id": "compensation-valid", "kind": "compensation", "mutation": "valid", "expected": "allow" },
+    {
+      "id": "compensation-diverged",
+      "kind": "compensation",
+      "mutation": "diverged",
+      "expected": "CMS_AI_EXECUTE_COMPENSATION_CONFLICT"
+    }
+  ]
+}

@@ -32,6 +32,7 @@ function envelope() {
 export default function AdminAiAssistantPage() {
   const { session, profile } = useAdminAuth();
   const candidateEnabled = isEv2FeatureEnabled(profile, "ev2.ai_assist");
+  const executionCandidateEnabled = isEv2FeatureEnabled(profile, "ev2.ai_execute");
   const [capability, setCapability] = useState<"checking" | "enabled" | "disabled" | "error">(
     candidateEnabled ? "checking" : "disabled",
   );
@@ -254,11 +255,21 @@ export default function AdminAiAssistantPage() {
       <div className="admin-ai__safety" role="note">
         <LockKeyhole aria-hidden="true" size={20} />
         <span>
-          <strong>Provedor externo, dados reais e execução: bloqueados.</strong> A decisão EV2-D04 está
-          pendente; este candidato usa somente um adaptador determinístico, custo zero e fixtures{" "}
+          <strong>Provedor externo, dados reais e aplicação nesta superfície: bloqueados.</strong> A decisão
+          EV2-D04 está pendente; este candidato usa somente um adaptador determinístico, custo zero e fixtures{" "}
           <code>g10x-*</code>.
         </span>
       </div>
+
+      {executionCandidateEnabled &&
+        profile?.permissions.some((permission) =>
+          ["cms:ai.plan", "cms:ai.approve", "cms:ai.execute", "cms:ai.compensate"].includes(permission),
+        ) && (
+          <div className="admin-notice">
+            A execução G14 está disponível somente para alvos sintéticos.{" "}
+            <Link to="/admin/assistente/execucao">Abrir execução transacional controlada</Link>
+          </div>
+        )}
 
       {!profile?.mfaVerified && (
         <div role="status" className="admin-notice">

@@ -80,6 +80,13 @@ arquivo original dentro do backup cifrado. Todos os demais comandos de roles, sc
 continuam sob `ON_ERROR_STOP=1`. A tentativa não é contabilizada como backup ou restore aprovado;
 uma nova execução integral é obrigatória.
 
+O [workflow `33996304748`](https://github.com/Vnd93/gaiatec-cms/actions/runs/33996304748)
+preservou a segunda tentativa. Ele confirmou que o dump também representa o mesmo comando em várias
+linhas; o filtro inicial removeu apenas a variante em uma linha e a restauração voltou a bloquear no
+mesmo GUC. Texto puro removido e nenhum artefato publicado. A segunda correção usa um sanitizador
+Node testado que trata a instrução SQL completa, inclusive multilinha, sem atravessar `;`, e mantém
+inalterados `ALTER ROLE ... WITH`, `RESET`, grants, schema e dados.
+
 ## Evidências ainda inexistentes
 
 Não foram fabricados: backup real, restore real, chave Resend de produção, entrega sintética

@@ -48,18 +48,6 @@ export const EconomicSimulator: React.FC<EconomicSimulatorProps> = ({
     ? Math.ceil(implementationCost / reduction) 
     : 0;
 
-  // Dados para o gráfico
-  const chartData = [
-    {
-      name: 'Custo Atual',
-      valor: parseFloat(currentMonthlyCost.toFixed(2))
-    },
-    {
-      name: 'Após Solução',
-      valor: parseFloat(newMonthlyCost.toFixed(2))
-    }
-  ];
-
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',

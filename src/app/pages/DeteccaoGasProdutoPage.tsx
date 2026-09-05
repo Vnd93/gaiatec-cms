@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useParams, Navigate, Link, useNavigate, useLocation } from "react-router";
-import { X, ArrowRight, Check, Share2, CheckCircle2 } from "lucide-react";
+import { X, ArrowRight, Share2, CheckCircle2 } from "lucide-react";
 import { SEO, buildBreadcrumb } from "../components/SEO";
 import { DgProdutoMidia } from "../components/deteccao-gas/DgProdutoMidia";
 import { DG_GALERIA } from "../data/dgGaleria";

@@ -1,6 +1,6 @@
 import { Link } from "react-router";
 import { AnimateOnScroll } from "../components/useScrollAnimation";
-import { ChevronRight, ArrowRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { DynamicBlocks } from "../components/BlockRenderer";
 import { ResponsiveImage, optimizedBg } from "../components/ResponsiveImage";
 

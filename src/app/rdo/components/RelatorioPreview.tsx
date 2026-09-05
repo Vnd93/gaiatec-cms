@@ -7,7 +7,7 @@ import { garantirToken, signedPdfUrl } from "../lib/assinatura";
 import { enviarLinkAssinaturaCliente } from "../lib/notify";
 import type { Relatorio } from "../lib/types";
 import { STATUS_LABEL } from "../lib/types";
-import { formatDate, formatDateTime } from "../lib/format";
+import { formatDateTime } from "../lib/format";
 import { StatusBadge } from "./StatusBadge";
 import { AssinaturaBadge } from "./AssinaturaBadge";
 import { LocationMaps } from "./LocationMaps";

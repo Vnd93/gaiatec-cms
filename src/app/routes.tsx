@@ -40,6 +40,7 @@ const AdminMfaPage = lazy(() => import("../admin/pages/MfaPage"));
 const AdminHomePage = lazy(() => import("../admin/pages/AdminHomePage"));
 const AdminWorkPage = lazy(() => import("../admin/pages/AdminWorkPage"));
 const AdminAiAssistantPage = lazy(() => import("../admin/pages/AdminAiAssistantPage"));
+const AdminAiExecutionPage = lazy(() => import("../admin/pages/AdminAiExecutionPage"));
 const AdminContentPage = lazy(() => import("../admin/pages/AdminContentPage"));
 const AdminEditorPage = lazy(() => import("../admin/pages/AdminEditorPage"));
 const AdminProductsPage = lazy(() => import("../admin/pages/AdminProductsPage"));
@@ -191,6 +192,7 @@ export const router = createBrowserRouter([
           { index: true, element: lazyWrap(AdminHomePage) },
           { path: "meu-trabalho", element: lazyWrap(AdminWorkPage) },
           { path: "assistente", element: lazyWrap(AdminAiAssistantPage) },
+          { path: "assistente/execucao", element: lazyWrap(AdminAiExecutionPage) },
           { path: "conteudo", element: lazyWrap(AdminContentPage) },
           { path: "conteudo/:id", element: lazyWrap(AdminEditorPage) },
           { path: "produtos", element: lazyWrap(AdminProductsPage) },

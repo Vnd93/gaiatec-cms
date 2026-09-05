@@ -195,6 +195,14 @@ export function aiAssistCommand<T>(session: Session, body: Record<string, unknow
   return invoke<T>(session, "cms-ai", body, idempotencyKey ?? false);
 }
 
+export function aiExecuteCommand<T>(
+  session: Session,
+  body: Record<string, unknown>,
+  idempotencyKey?: string,
+) {
+  return invoke<T>(session, "cms-ai-execute", body, idempotencyKey ?? false);
+}
+
 export function systemAssuranceCommand<T>(
   session: Session,
   body: Record<string, unknown>,

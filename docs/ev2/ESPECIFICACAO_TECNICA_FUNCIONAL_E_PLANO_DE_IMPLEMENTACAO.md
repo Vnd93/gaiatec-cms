@@ -767,6 +767,11 @@ As fichas abaixo são a unidade de implementação. Campos específicos de produ
 
 > **CRITÉRIO DE ACEITE** DADO QUE o plano seja alterado após aprovação, QUANDO a IA tentar executar, ENTÃO a autorização anterior deverá ser invalidada e nova aprovação será exigida.
 
+> **ESTADO EV2.14** A fundação da F-016 foi implementada como candidato local exclusivamente
+> sintético: gateway separado, cinco tools fechadas, dry-run, hash/versão, segregação, MFA,
+> idempotência, transação atômica e compensação monotônica. G14, migration/função em staging e
+> qualquer integração com dados reais permanecem pendentes.
+
 <a id="f-017-conteudo-marketing-formularios-e-leads-integrados"></a>
 
 ### F-017 - Conteúdo, marketing, formulários e leads integrados
@@ -1223,7 +1228,7 @@ Os critérios específicos de cada F-001..F-018 constam nas fichas. Critérios s
 | F-013    | Operações em massa e importação/exportação                 | Bulk jobs                    | T-013 unit/contract/E2E | Critério na ficha | Implementado; G7 aprovado     |
 | F-014    | Usuários, RBAC, auditoria e segregação                     | Scoped RBAC/audit            | T-014 unit/contract/E2E | Critério na ficha | Implementado; G8 aprovado     |
 | F-015    | Copiloto IA de leitura e rascunho                          | AI gateway read/draft        | T-015 unit/contract/E2E | Critério na ficha | Implementado; G10 aprovado    |
-| F-016    | IA transacional controlada                                 | AI execute/approvals         | T-016 unit/contract/E2E | Critério na ficha | Planejado                     |
+| F-016    | IA transacional controlada                                 | AI execute/approvals         | T-016 unit/contract/E2E | Critério na ficha | Candidato local; G14 pendente |
 | F-017    | Conteúdo, marketing, formulários e leads integrados        | Integrated content workflows | T-017 unit/contract/E2E | Critério na ficha | Candidato local; G11 pendente |
 | F-018    | Performance, acessibilidade, observabilidade e resiliência | NFR platform                 | T-018 unit/contract/E2E | Critério na ficha | Candidato local; G11 pendente |
 
@@ -1418,7 +1423,7 @@ Os critérios específicos de cada F-001..F-018 constam nas fichas. Critérios s
 | **Item**               | **Definição**                                             |
 | ---------------------- | --------------------------------------------------------- |
 | Objetivo               | Adicionar produtividade com segurança                     |
-| Escopo/funcionalidades | F-015; F-016 somente subfase posterior                    |
+| Escopo/funcionalidades | F-015; F-016 na subfase sintética EV2.14                  |
 | Dependências           | Fases 7-9                                                 |
 | Arquivos/módulos       | AI gateway, tools, evals                                  |
 | Banco de dados         | AI sessions/proposals/calls                               |

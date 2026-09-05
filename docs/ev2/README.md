@@ -1,9 +1,9 @@
 # EV2 — Evolução do CMS GAIATEC
 
-**Status:** Gates G0–G11 e G13 aprovados; G12 produtivo pendente; produção e provider externo bloqueados<br>
+**Status:** Gates G0–G11 e G13 aprovados; G12/G14 pendentes; produção e provider externo bloqueados<br>
 **Data-base:** 4 de setembro de 2026<br>
 **Fonte canônica:** Markdown versionado neste diretório<br>
-**Branch de execução:** `ev2/fase-13-hardening-pre-producao`<br>
+**Branch de execução:** `ev2/fase-14-ia-transacional-controlada`<br>
 **Branch documental preservado:** `ev2/fase-0-documentacao-e-planejamento`
 
 ## Ordem de leitura
@@ -27,10 +27,11 @@
 17. [EV2.11 — integração operacional e garantia sistêmica](fase-11/README.md) — F-017/F-018, resiliência de leads, SLOs, carga, restore, regressão e plano do Gate G11.
 18. [EV2.12 — implantação controlada](fase-12/README.md) — health/release, canary, error budget, aprovações segregadas, promoção imutável, handover e rollback.
 19. [EV2.13 — hardening e elegibilidade runtime](fase-13/README.md) — isolamento de secrets, evidência vinculada, manifesto agregado, revogação e canary individual.
+20. [EV2.14 — IA transacional controlada](fase-14/README.md) — sandbox sintético, plano/dry-run, aprovação por hash, execução atômica, compensação e plano do Gate G14.
 
 ## Escopo documental
 
-Esta trilha converte o manual e a auditoria do CMS em requisitos implementáveis, testáveis, rastreáveis e reversíveis. Ela cobre EV2.0–EV2.13 sem substituir o histórico das fases anteriores.
+Esta trilha converte o manual e a auditoria do CMS em requisitos implementáveis, testáveis, rastreáveis e reversíveis. Ela cobre EV2.0–EV2.14 sem substituir o histórico das fases anteriores.
 
 O documento principal é a fonte de verdade para o desenvolvimento. O DOCX que originou esta versão permanece apenas como artefato editorial; mudanças futuras devem ser feitas primeiro no Markdown e revisadas por pull request.
 
@@ -63,8 +64,9 @@ no SHA `8321f12`; `cms-outbox-worker` permaneceu na v22. O canary final passou 2
 com disponibilidade 100%, SLOs de backend aprovados, auditoria 100%, restore RPO 0/RTO 5,642 s,
 acessibilidade critical/serious 0/0 e resíduo sintético zero. O responsável aprovou o protocolo
 reduzido e liberou a preparação local/staging da EV2.12, sem fabricar métricas humanas. Produção,
-dados reais, domínios reais, provedor externo, F-016, ativação global, merge em `main` e promoção do
-staging estável continuam fora do escopo; EV2-D04 permanece pendente.
+dados reais, domínios reais, provedor externo, ativação global, merge em `main` e promoção do
+staging estável continuam fora do escopo; EV2-D04 permanece pendente. A F-016 passou para candidato
+local estritamente sintético, sem autorizar operações reais.
 
 Na EV2.12, o canary isolado do SHA `8250db0d…` foi executado e os workflows de preflight, promoção e
 rollback foram preparados. O Gate G12 de produção nunca foi aprovado. A auditoria posterior mostrou
@@ -78,3 +80,10 @@ as decisões EV2 do build para um manifesto runtime individual e fail-closed. A 
 11/11, incluindo a busca v2 positiva autorizada, revogação em 1.240 ms e zero resíduo ativo. O G13
 foi aprovado sem promoção do staging estável e está pronto para revisão independente REV-01.
 Produção, dados/domínios reais, ativação global e Gate G12 permanecem bloqueados.
+
+Na EV2.14, a fundação da F-016 foi implementada localmente em um gateway separado e provider-off.
+A migration candidata `0054`, a função `cms-ai-execute`, a tela de execução, cinco tools sintéticas,
+aprovação vinculada a hash/versão, segregação, idempotência e compensação monotônica estão prontas
+para validação. O Gate G14 continua em `pause`: PostgreSQL/pgTAP, rehearsal, deploy no alias isolado,
+canary com dois usuários MFA, resíduo zero e revisão independente ainda precisam ser comprovados no
+mesmo SHA. Nenhuma alteração de staging ou produção foi realizada nesta fase local.

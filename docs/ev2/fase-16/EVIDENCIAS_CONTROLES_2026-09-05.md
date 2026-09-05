@@ -100,6 +100,14 @@ voltou a falhar fechada, removeu todo o texto puro e não publicou artefato. A q
 `log_min_messages` nas formas `SET`, `SET SESSION`, `SET LOCAL` e `pg_catalog.set_config`; os outros
 ajustes de sessão e todo o restante do restore continuam preservados e sob `ON_ERROR_STOP=1`.
 
+O [workflow `33998278506`](https://github.com/Vnd93/gaiatec-cms/actions/runs/33998278506),
+no SHA `333643f74d22456cdc70012b6d59e44e9245c8dd`, preservou a sexta tentativa. O relatório do
+sanitizador mostrou três atribuições de role removidas e nenhuma atribuição de sessão reconhecida,
+enquanto o PostgreSQL ainda bloqueou `log_min_messages`. Isso reduz o caso restante a uma atribuição
+vinculada ao banco. A correção seguinte trata exclusivamente `ALTER DATABASE ... SET
+log_min_messages`, preserva outros parâmetros de banco e mantém a restauração estrita. O texto puro
+foi removido e nenhum artefato incompleto foi publicado.
+
 ## Evidências ainda inexistentes
 
 Não foram fabricados: backup real, restore real, chave Resend de produção, entrega sintética

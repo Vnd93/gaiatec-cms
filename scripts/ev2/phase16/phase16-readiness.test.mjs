@@ -21,6 +21,8 @@ ALTER ROLE postgres SET
   "log_min_messages" TO 'fatal';
 ALTER ROLE authenticator SET "statement_timeout" TO '8s';
 ALTER ROLE authenticated RESET statement_timeout;
+ALTER DATABASE postgres SET "log_min_messages" TO 'fatal';
+ALTER DATABASE postgres SET statement_timeout TO '10s';
 SET log_min_messages = warning;
 SET SESSION "log_min_messages" TO warning;
 SELECT pg_catalog.set_config('log_min_messages', 'warning', false);
@@ -30,10 +32,12 @@ GRANT anon TO authenticator;
   const result = prepareRoleRestore(source);
 
   assert.equal(result.removedRoleSettings, 2);
+  assert.equal(result.removedDatabaseSettings, 1);
   assert.equal(result.removedSessionSettings, 3);
   assert.doesNotMatch(result.sql, /log_min_messages|ALTER ROLE authenticator SET/);
   assert.match(result.sql, /ALTER ROLE postgres WITH SUPERUSER/);
   assert.match(result.sql, /ALTER ROLE authenticated RESET statement_timeout/);
+  assert.match(result.sql, /ALTER DATABASE postgres SET statement_timeout/);
   assert.match(result.sql, /SET search_path = ''/);
   assert.match(result.sql, /GRANT anon TO authenticator/);
 });

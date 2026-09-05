@@ -6,6 +6,26 @@ const MANAGED_DATABASE_SETTING =
   /^[\t ]*ALTER[\t ]+DATABASE\b[^;]*\bSET[\t ]+"?log_min_messages\b"?[^;]*;[\t ]*(?:\r?\n|$)/gim;
 const MANAGED_SESSION_SETTING =
   /^[\t ]*(?:SET[\t ]+(?:(?:SESSION|LOCAL)[\t ]+)?"?log_min_messages"?[\t ]*(?:TO|=)[^;]*|SELECT[\t ]+(?:pg_catalog\.)?set_config[\t ]*\([\t ]*['"]log_min_messages['"][^;]*\))[\t ]*;[\t ]*(?:\r?\n|$)/gim;
+const MANAGED_GUC_NAME = /\blog_min_messages\b/i;
+const SQL_STATEMENT = /[^;]*;/gim;
+const LEADING_DUMP_TRIVIA = /^(?:(?:[\t ]*(?:--[^\r\n]*|\\[^\r\n]*))[\t ]*(?:\r?\n|$)|[\t ]*(?:\r?\n|$))*/;
+
+function removeRemainingManagedGucStatements(source) {
+  let removedManagedGucStatements = 0;
+  const sql = source.replace(SQL_STATEMENT, (statement) => {
+    const executable = statement.replace(/^[\t ]*--[^\r\n]*(?:\r?\n|$)/gm, "");
+    if (!MANAGED_GUC_NAME.test(executable)) return statement;
+
+    removedManagedGucStatements += 1;
+    const leadingTrivia = statement.match(LEADING_DUMP_TRIVIA)?.[0] ?? "";
+    return leadingTrivia;
+  });
+
+  if (MANAGED_GUC_NAME.test(sql.replace(/^[\t ]*--[^\r\n]*(?:\r?\n|$)/gm, "")))
+    throw new Error("MANAGED_GUC_REMAINED");
+
+  return { sql, removedManagedGucStatements };
+}
 
 export function prepareRoleRestore(source) {
   if (typeof source !== "string" || !source.trim()) throw new Error("ROLE_DUMP_EMPTY");
@@ -15,7 +35,8 @@ export function prepareRoleRestore(source) {
   const removedDatabaseSettings = withoutRoleSettings.match(MANAGED_DATABASE_SETTING)?.length ?? 0;
   const withoutDatabaseSettings = withoutRoleSettings.replace(MANAGED_DATABASE_SETTING, "");
   const removedSessionSettings = withoutDatabaseSettings.match(MANAGED_SESSION_SETTING)?.length ?? 0;
-  const sql = withoutDatabaseSettings.replace(MANAGED_SESSION_SETTING, "");
+  const withoutSessionSettings = withoutDatabaseSettings.replace(MANAGED_SESSION_SETTING, "");
+  const { sql, removedManagedGucStatements } = removeRemainingManagedGucStatements(withoutSessionSettings);
   if (
     MANAGED_ROLE_SETTING.test(sql) ||
     MANAGED_DATABASE_SETTING.test(sql) ||
@@ -23,7 +44,13 @@ export function prepareRoleRestore(source) {
   )
     throw new Error("MANAGED_ROLE_SETTING_REMAINED");
 
-  return { sql, removedRoleSettings, removedDatabaseSettings, removedSessionSettings };
+  return {
+    sql,
+    removedRoleSettings,
+    removedDatabaseSettings,
+    removedSessionSettings,
+    removedManagedGucStatements,
+  };
 }
 
 async function main() {
@@ -38,6 +65,7 @@ async function main() {
       removedRoleSettings: result.removedRoleSettings,
       removedDatabaseSettings: result.removedDatabaseSettings,
       removedSessionSettings: result.removedSessionSettings,
+      removedManagedGucStatements: result.removedManagedGucStatements,
     }),
   );
 }

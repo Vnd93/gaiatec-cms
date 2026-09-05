@@ -2,6 +2,7 @@
 
 **Estado:** implementação e canary de staging concluídos<br>
 **Gate:** G13 aprovado<br>
+**Revisão independente:** pacote pronto para REV-01<br>
 **Produção:** bloqueada
 
 ## Objetivo
@@ -23,8 +24,8 @@ runtime.
 | Resíduo sintético   | ativos e credenciais são separados de tombstones retidos para auditoria                        |
 | Runtime             | migration `0053`, manifesto agregado em `cms-session` e helper frontend fail-closed            |
 | Isolamento          | um override individual de até 30 min, sem amplo paralelo; produção segue bloqueada             |
-| Busca pública       | cliente público permanece em v1; `search-v2` técnico exige ambiente staging e token canary     |
-| Canary              | alias `ev2-g13-canary`, dois atores sintéticos MFA, duas capacidades distintas e limpeza ativa |
+| Busca pública       | v1 preservada; `search-v2` prova 404 anônimo e 200/v2 com token temporário de staging          |
+| Canary              | alias `ev2-g13-canary`, dois atores MFA, 11/11 checks e limpeza por identidade                 |
 
 ## Limites
 
@@ -53,3 +54,4 @@ do G13; migration, funções, executor integrado e limpeza continuam obrigatóri
 - [Plano do canary em staging](PLANO_CANARY_STAGING.md)
 - [Relatório de validação local](RELATORIO_VALIDACAO_LOCAL_2026-09-04.md)
 - [Relatório do canary G13 em staging](RELATORIO_CANARY_STAGING_2026-09-04.md)
+- [Pacote para revisão independente REV-01](PACOTE_REVISAO_REV01_2026-09-04.md)

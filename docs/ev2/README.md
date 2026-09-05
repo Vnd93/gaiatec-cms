@@ -30,7 +30,7 @@
 
 ## Escopo documental
 
-Esta trilha converte o manual e a auditoria do CMS em requisitos implementáveis, testáveis, rastreáveis e reversíveis. Ela cobre EV2.0–EV2.12 sem substituir o histórico das fases anteriores.
+Esta trilha converte o manual e a auditoria do CMS em requisitos implementáveis, testáveis, rastreáveis e reversíveis. Ela cobre EV2.0–EV2.13 sem substituir o histórico das fases anteriores.
 
 O documento principal é a fonte de verdade para o desenvolvimento. O DOCX que originou esta versão permanece apenas como artefato editorial; mudanças futuras devem ser feitas primeiro no Markdown e revisadas por pull request.
 
@@ -71,9 +71,10 @@ rollback foram preparados. O Gate G12 de produção nunca foi aprovado. A audito
 que o staging estável não expõe os contratos atuais de health/manifest, a evidência antiga não
 distingue resíduo ativo de tombstones e os controles de release precisavam de vínculo mais forte.
 
-Na EV2.13, o SHA `518e8e5…` endureceu CI/deploy/rollback, vinculou evidência por digest e conteúdo,
-fechou falsos positivos de health/manifest e moveu todas as decisões EV2 do build para um manifesto
-runtime individual e fail-closed. A migration `0053`, `cms-session` v14, `cms-public` v34 e o alias
-isolado `ev2-g13-canary` passaram pelo canary reduzido 10/10, com revogação em 1.227 ms e zero resíduo
-ativo. O G13 foi aprovado sem promoção do staging estável. Produção, dados/domínios reais, ativação
-global e Gate G12 permanecem bloqueados.
+Na EV2.13, o SHA `a1b170e…` endureceu CI/deploy/rollback e passou a vincular cada janela G12 ao probe
+completo revalidado e ao respectivo hash. A fase fechou falsos positivos de health/manifest e moveu
+as decisões EV2 do build para um manifesto runtime individual e fail-closed. A migration `0053`,
+`cms-session` v16, `cms-public` v36 e o alias isolado `ev2-g13-canary` passaram pelo canary reduzido
+11/11, incluindo a busca v2 positiva autorizada, revogação em 1.240 ms e zero resíduo ativo. O G13
+foi aprovado sem promoção do staging estável e está pronto para revisão independente REV-01.
+Produção, dados/domínios reais, ativação global e Gate G12 permanecem bloqueados.

@@ -11,7 +11,7 @@ Este diretório concentra especificações, decisões arquiteturais, evidências
 
 | Caminho                     | Finalidade                                                       |
 | --------------------------- | ---------------------------------------------------------------- |
-| `ev2/`                      | Fonte canônica do novo ciclo EV2.0–EV2.12.                       |
+| `ev2/`                      | Fonte canônica do novo ciclo EV2.0–EV2.13.                       |
 | `adr/`                      | Decisões arquiteturais permanentes e suas consequências.         |
 | `fase-0/` a `fase-11/`      | Histórico e evidências do ciclo anterior já executado.           |
 | `auditoria-cms-2026-09-01/` | Relatório e matriz da auditoria de fechamento do ciclo anterior. |

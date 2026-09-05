@@ -7,19 +7,19 @@
 
 ## Critérios vinculantes
 
-| Critério      | Evidência exigida                                                              | Estado atual                        |
-| ------------- | ------------------------------------------------------------------------------ | ----------------------------------- |
-| CI integral   | lint sem erro, typecheck, testes, evals, build e audit sem alta/crítica        | aprovado no SHA `518e8e5…`          |
-| Migration     | `0053` aditiva, rehearsal com rollback e pgTAP                                 | aprovada e aplicada em staging      |
-| Funções       | `cms-session` e `cms-public` com `deno check` e versões de staging registradas | v14 e v34 ativas                    |
-| Manifesto     | 13 capacidades, schema/ambiente/site/data válidos e fallback indisponível      | aprovado                            |
-| Identidade    | override único ≤30 min, sem amplo paralelo; isolamento entre atores            | aprovado com dois usuários MFA      |
-| Revogação     | capacidade deixa de ser elegível em até 60 segundos                            | aprovada em 1.227 ms                |
-| Negativos     | anônimo, escopo amplo, ambiente divergente e produção falham fechados          | aprovado                            |
-| Busca pública | v1 preservada; `search-v2` anônimo retorna 404                                 | aprovado                            |
-| Resíduo       | zero ator, credencial e override sintético ativos                              | aprovado; dois tombstones separados |
-| Release       | SHA completo igual em checkout, header, health e manifest                      | aprovado                            |
-| Limites       | zero produção, dado/domínio real, ativação global e promoção estável           | atendido                            |
+| Critério      | Evidência exigida                                                         | Estado atual                     |
+| ------------- | ------------------------------------------------------------------------- | -------------------------------- |
+| CI integral   | lint sem erro, typecheck, testes, evals, build e audit sem alta/crítica   | aprovado no SHA `a1b170e…`       |
+| Migration     | `0053` aditiva, rehearsal com rollback e pgTAP                            | aprovada e aplicada em staging   |
+| Funções       | `cms-session` e `cms-public` verificadas e versões de staging registradas | v16 e v36 ativas                 |
+| Manifesto     | 13 capacidades, schema/ambiente/site/data válidos e fallback indisponível | aprovado                         |
+| Identidade    | override único ≤30 min, sem amplo paralelo; isolamento entre atores       | aprovado com dois usuários MFA   |
+| Revogação     | capacidade deixa de ser elegível em até 60 segundos                       | aprovada em 1.240 ms             |
+| Negativos     | anônimo, escopo amplo, ambiente divergente e produção falham fechados     | aprovado                         |
+| Busca pública | v1 preservada; `search-v2` anônimo 404 e canary autenticado 200/v2        | aprovado                         |
+| Resíduo       | zero ator, credencial, override e evento sintético ativos                 | aprovado; 4 tombstones separados |
+| Release       | SHA completo igual em checkout, header, health e manifest                 | aprovado                         |
+| Limites       | zero produção, dado/domínio real, ativação global e promoção estável      | atendido                         |
 
 ## Decisão
 

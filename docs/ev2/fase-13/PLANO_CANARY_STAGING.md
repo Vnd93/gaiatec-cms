@@ -26,9 +26,11 @@ site/ambiente/global e qualquer default global ligado.
 6. Confirmar contrato exato em `/healthz`, `X-Release` e `release-manifest.json`, smoke,
    acessibilidade e budget HTTP.
 7. Executar `npm run canary:ev2:phase13` no host autenticado: criar dois atores MFA, conceder duas
-   flags diferentes, provar isolamento, produção bloqueada, busca v2 anônima fechada e v1 íntegra.
+   flags diferentes, provar isolamento, produção bloqueada, busca v2 anônima fechada, busca v2
+   autorizada em `200`/`engine=v2` com consulta sintética única e v1 íntegra.
 8. Remover um override e medir desativação em até 60 segundos.
-9. Encerrar todos os overrides, suspender credenciais sintéticas e confirmar zero resíduo ativo.
+9. Encerrar overrides por ID e por identidade, remover a telemetria da consulta sintética, suspender
+   credenciais sintéticas e confirmar zero resíduo ativo mesmo após resposta parcial/timeout.
 10. Versionar o relatório sem tokens, chaves, senhas, e-mails reais ou payload pessoal.
 
 O gate G13 só pode ser declarado após a sequência completa dos passos 2 a 10. Artefato, build ou

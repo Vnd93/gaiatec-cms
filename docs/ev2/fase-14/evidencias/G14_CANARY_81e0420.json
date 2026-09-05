@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "gate": "G14",
+  "outcome": "G14_CANARY_FAIL",
+  "target": {
+    "ref": "glcqsosxwgmlhzgcsnzv",
+    "name": "GAIATEC CMS Staging",
+    "region": "us-east-2",
+    "candidateOrigin": "https://ev2-g14-canary.gaiatec-cms-staging.pages.dev",
+    "stableOrigin": "https://gaiatec-cms-staging.pages.dev"
+  },
+  "candidateSha": "81e042070775062faf8e13505894b8d31a5931ca",
+  "startedAt": "2026-09-05T14:00:11.418Z",
+  "completedAt": "2026-09-05T14:00:20.723Z",
+  "checks": 2,
+  "passed": 2,
+  "checkResults": [
+    {
+      "name": "flags_default_off",
+      "result": "PASS",
+      "detail": "[{\"flag_key\":\"ev2.ai_assist\",\"default_enabled\":false,\"kill_switch\":false},{\"flag_key\":\"ev2.ai_execute\",\"default_enabled\":false,\"kill_switch\":false}]"
+    },
+    {
+      "name": "synthetic_residue_zero",
+      "result": "PASS",
+      "detail": 0
+    }
+  ],
+  "providerMode": "synthetic",
+  "externalProviderCalls": 0,
+  "realDataUsed": false,
+  "productionMutations": 0,
+  "stableState": null,
+  "syntheticResidue": 0,
+  "failures": {
+    "operation": "G14_CANARY_OPERATION_FAILED",
+    "cleanup": null
+  }
+}

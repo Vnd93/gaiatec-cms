@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import worker from "../../../cloudflare/_worker.js";
 
 const read = (path) => readFileSync(new URL(`../../../${path}`, import.meta.url), "utf8");
 
@@ -75,6 +76,58 @@ test("frontend requires both runtime capabilities and exposes no real target inp
   assert.match(page, /Executar compensação/);
   assert.match(runtime, /environment === "production"/);
   assert.doesNotMatch(page, /contentId|itemId|domain|production target/i);
+});
+
+test("edge serves the complete administrative inventory as private SPA routes", async () => {
+  const env = {
+    ASSETS: {
+      fetch: async () =>
+        new Response("<!doctype html><title>CMS</title>", {
+          headers: { "Content-Type": "text/html" },
+        }),
+    },
+  };
+  const validRoutes = [
+    "/admin",
+    "/admin/login",
+    "/admin/meu-trabalho",
+    "/admin/assistente",
+    "/admin/assistente/execucao",
+    "/admin/conteudo",
+    "/admin/produtos",
+    "/admin/produtos/importacao",
+    "/admin/descoberta/service",
+    "/admin/busca",
+    "/admin/qualidade",
+    "/admin/listas-mestras",
+    "/admin/dados-mestres",
+    "/admin/pim",
+    "/admin/paginas",
+    "/admin/estudio-visual",
+    "/admin/site",
+    "/admin/sites",
+    "/admin/marketing",
+    "/admin/marketing/formularios",
+    "/admin/leads",
+    "/admin/midia",
+    "/admin/perfil",
+    "/admin/usuarios",
+    "/admin/diagnosticos",
+  ];
+
+  for (const route of validRoutes) {
+    const response = await worker.fetch(new Request(`https://staging.example${route}`), env);
+    assert.equal(response.status, 200, route);
+    assert.match(response.headers.get("cache-control") ?? "", /private, no-store/, route);
+    assert.match(response.headers.get("x-robots-tag") ?? "", /noindex/, route);
+  }
+
+  const invalid = await worker.fetch(
+    new Request("https://staging.example/admin/assistente/inexistente"),
+    env,
+  );
+  assert.equal(invalid.status, 404);
+  assert.match(invalid.headers.get("cache-control") ?? "", /private, no-store/);
 });
 
 test("the immutable contract fixes closed tools and non-production policy", () => {

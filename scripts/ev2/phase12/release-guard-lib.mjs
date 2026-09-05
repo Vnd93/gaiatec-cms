@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 export const FULL_SHA_PATTERN = /^[a-f0-9]{40}$/;
 export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -277,7 +279,7 @@ export function validateCanaryEvidenceBinding(record, evidence, { reportSha256 }
     violations.push("g12_evidence_digest_mismatch");
   if (evidence?.schemaVersion !== 1) violations.push("g12_report_schema_invalid");
   if (evidence?.outcome !== "G12_CANARY_PASS") violations.push("g12_report_outcome_invalid");
-  if (evidence?.suiteKey !== "g12-staging-integrated-reduced-v1") violations.push("g12_report_suite_invalid");
+  if (evidence?.suiteKey !== "g12-staging-integrated-reduced-v2") violations.push("g12_report_suite_invalid");
   if (evidence?.environment !== "staging") violations.push("g12_report_environment_invalid");
   if (evidence?.candidateSha !== record?.candidateSha) violations.push("g12_report_candidate_mismatch");
   if (evidence?.canaryRunId !== expected?.canaryRunId) violations.push("g12_report_run_mismatch");
@@ -330,6 +332,69 @@ export function validateCanaryEvidenceBinding(record, evidence, { reportSha256 }
   for (const window of windows) {
     const startedAt = Date.parse(window?.startedAt ?? "");
     const endedAt = Date.parse(window?.endedAt ?? "");
+    const probe = window?.probe;
+    const probeIsObject = probe !== null && typeof probe === "object" && !Array.isArray(probe);
+    let probeHash = "";
+    if (probeIsObject) {
+      try {
+        probeHash = createHash("sha256").update(JSON.stringify(probe)).digest("hex");
+      } catch {
+        violations.push("g12_window_probe_invalid");
+      }
+    } else {
+      violations.push("g12_window_probe_missing");
+    }
+    if (probeHash !== window?.evidenceHash) violations.push("g12_window_probe_hash_mismatch");
+
+    const probeEvaluation = probeIsObject ? evaluateProbeWindow(probe) : { healthy: false };
+    const routeMetrics = probe?.routeMetrics;
+    const requiredRoutes = ["/", "/produtos", "/contato", "/admin/login"];
+    const routeMetricsValid =
+      routeMetrics !== null &&
+      typeof routeMetrics === "object" &&
+      !Array.isArray(routeMetrics) &&
+      Object.keys(routeMetrics).length === requiredRoutes.length &&
+      requiredRoutes.every((route) => {
+        const metric = routeMetrics[route];
+        return (
+          Number.isInteger(metric?.samples) &&
+          metric.samples >= 5 &&
+          isFiniteNumber(metric?.availabilityPercent) &&
+          metric.availabilityPercent >= G12_BUDGETS.availabilityPercent &&
+          isFiniteNumber(metric?.p95Ms) &&
+          metric.p95Ms <= G12_BUDGETS.publicP95Ms
+        );
+      });
+    if (
+      !probeEvaluation.healthy ||
+      probe?.schemaVersion !== 1 ||
+      probe?.event !== "g12.rollout.probe" ||
+      probe?.outcome !== "pass" ||
+      !Array.isArray(probe?.violations) ||
+      probe.violations.length !== 0 ||
+      probe?.sampleCount !== probe?.measuredResponses ||
+      requiredRoutes.reduce((total, route) => total + (routeMetrics?.[route]?.samples ?? 0), 0) + 2 !==
+        probe?.measuredResponses ||
+      !Number.isInteger(probe?.requestTimeoutMs) ||
+      probe.requestTimeoutMs < 1_000 ||
+      probe.requestTimeoutMs > 30_000 ||
+      !routeMetricsValid
+    )
+      violations.push("g12_window_probe_invalid");
+    if (
+      probe?.candidateSha !== record?.candidateSha ||
+      probe?.environment !== "staging" ||
+      probe?.origin !== evidence?.candidateOrigin
+    )
+      violations.push("g12_window_probe_binding_mismatch");
+    if (
+      window?.outcome !== probe?.outcome ||
+      window?.measuredResponses !== probe?.measuredResponses ||
+      window?.availabilityPercent !== probe?.availabilityPercent ||
+      window?.http5xxRatePercent !== probe?.http5xxRatePercent ||
+      window?.publicP95Ms !== probe?.publicP95Ms
+    )
+      violations.push("g12_window_summary_mismatch");
     if (
       !UUID_PATTERN.test(window?.id ?? "") ||
       window?.outcome !== "pass" ||

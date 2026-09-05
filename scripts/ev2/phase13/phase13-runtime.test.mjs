@@ -88,10 +88,15 @@ test("the reduced G13 canary is immutable, identity-scoped and staging-only", as
   ]);
   assert.match(canary, /ev2-g13-canary\.gaiatec-cms-staging\.pages\.dev/);
   assert.match(canary, /same_build_identity_isolation/);
+  assert.match(canary, /authorized_search_v2_healthy/);
+  assert.match(canary, /EV2_G13_SEARCH_CANARY_TOKEN/);
+  assert.match(canary, /"X-EV2-Search-Canary": searchCanaryToken/);
+  assert.match(canary, /scope_type=eq\.user&scope_key=in\./);
   assert.match(canary, /individual_revocation_within_60s/);
   assert.match(canary, /globalActivationMutations: 0/);
   assert.match(canary, /productionMutations: 0/);
   assert.match(canary, /synthetic_active_residue_zero/);
+  assert.match(canary, /syntheticSearchEvents === 0/);
   assert.match(rehearsal, /G13_MIGRATION_REHEARSAL_PASS/);
   assert.match(rehearsal, /supabase@2\.116\.0/);
   assert.match(rehearsal, /EV2_G13_PARALLEL_BROAD_OVERRIDE_NOT_CLOSED/);

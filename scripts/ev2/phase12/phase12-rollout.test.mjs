@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
@@ -104,7 +105,7 @@ function boundCanaryEvidence(record) {
   return {
     schemaVersion: 1,
     outcome: "G12_CANARY_PASS",
-    suiteKey: "g12-staging-integrated-reduced-v1",
+    suiteKey: "g12-staging-integrated-reduced-v2",
     environment: "staging",
     canaryRunId: record.g12Evidence.canaryRunId,
     candidateSha: record.candidateSha,
@@ -129,17 +130,47 @@ function boundCanaryEvidence(record) {
       retainedSyntheticActors: 2,
       retainedAnonymizedLeads: 1,
     },
-    healthyWindows: record.g12Evidence.healthyWindowIds.map((id, index) => ({
-      id,
-      startedAt: new Date(Date.UTC(2026, 8, 4, 10, index * 5)).toISOString(),
-      endedAt: new Date(Date.UTC(2026, 8, 4, 10, index * 5 + 5)).toISOString(),
-      outcome: "pass",
-      measuredResponses: 22,
-      availabilityPercent: 100,
-      http5xxRatePercent: 0,
-      publicP95Ms: 500,
-      evidenceHash: "d".repeat(64),
-    })),
+    healthyWindows: record.g12Evidence.healthyWindowIds.map((id, index) => {
+      const routeMetrics = Object.fromEntries(
+        ["/", "/produtos", "/contato", "/admin/login"].map((route) => [
+          route,
+          { samples: 5, availabilityPercent: 100, p50Ms: 250, p95Ms: 500, maxMs: 500 },
+        ]),
+      );
+      const probe = {
+        schemaVersion: 1,
+        event: "g12.rollout.probe",
+        origin: "https://ev2-g12-canary.gaiatec-cms-staging.pages.dev",
+        candidateSha: record.candidateSha,
+        environment: "staging",
+        measuredResponses: 22,
+        sampleCount: 22,
+        availabilityPercent: 100,
+        http5xxRatePercent: 0,
+        publicP95Ms: 500,
+        requestTimeoutMs: 10_000,
+        routeMetrics,
+        routeBudgetsValid: true,
+        releaseHeadersExact: true,
+        healthContractValid: true,
+        manifestReleaseExact: true,
+        nonProductionNoindexValid: true,
+        outcome: "pass",
+        violations: [],
+      };
+      return {
+        id,
+        startedAt: new Date(Date.UTC(2026, 8, 4, 10, index * 5)).toISOString(),
+        endedAt: new Date(Date.UTC(2026, 8, 4, 10, index * 5 + 5)).toISOString(),
+        outcome: probe.outcome,
+        measuredResponses: probe.measuredResponses,
+        availabilityPercent: probe.availabilityPercent,
+        http5xxRatePercent: probe.http5xxRatePercent,
+        publicP95Ms: probe.publicP95Ms,
+        evidenceHash: createHash("sha256").update(JSON.stringify(probe)).digest("hex"),
+        probe,
+      };
+    }),
   };
 }
 
@@ -295,6 +326,36 @@ test("G12 approval is cryptographically and semantically bound to its canary rep
     }).violations.join(","),
     /g12_window_invalid/,
   );
+  const tamperedProbe = structuredClone(evidence);
+  tamperedProbe.healthyWindows[0].probe.publicP95Ms = 501;
+  assert.match(
+    validateCanaryEvidenceBinding(record, tamperedProbe, {
+      reportSha256: record.g12Evidence.reportSha256,
+    }).violations.join(","),
+    /g12_window_probe_hash_mismatch|g12_window_summary_mismatch/,
+  );
+  const forgedProbe = structuredClone(evidence);
+  forgedProbe.healthyWindows[0].probe.healthContractValid = false;
+  forgedProbe.healthyWindows[0].evidenceHash = createHash("sha256")
+    .update(JSON.stringify(forgedProbe.healthyWindows[0].probe))
+    .digest("hex");
+  assert.match(
+    validateCanaryEvidenceBinding(record, forgedProbe, {
+      reportSha256: record.g12Evidence.reportSha256,
+    }).violations.join(","),
+    /g12_window_probe_invalid/,
+  );
+  const reboundProbe = structuredClone(evidence);
+  reboundProbe.healthyWindows[0].probe.candidateSha = "b".repeat(40);
+  reboundProbe.healthyWindows[0].evidenceHash = createHash("sha256")
+    .update(JSON.stringify(reboundProbe.healthyWindows[0].probe))
+    .digest("hex");
+  assert.match(
+    validateCanaryEvidenceBinding(record, reboundProbe, {
+      reportSha256: record.g12Evidence.reportSha256,
+    }).violations.join(","),
+    /g12_window_probe_binding_mismatch/,
+  );
 });
 
 test("production configuration refuses staging and GitHub controls require protection", () => {
@@ -403,7 +464,8 @@ test("release workflows and reduced canary are immutable, staged and production 
   assert.doesNotMatch(rollback, /npm ci|actions\/setup-node/);
   assert.match(cloudflare, /target\?\.environment !== "production"/);
   assert.match(cloudflare, /deployments\/\$\{deploymentId\}\/rollback/);
-  assert.match(canary, /g12-staging-integrated-reduced-v1/);
+  assert.match(canary, /g12-staging-integrated-reduced-v2/);
+  assert.match(canary, /probe,/);
   assert.match(canary, /scripts\/ev2\/phase11\/staging-canary\.mjs/);
   assert.match(canary, /for \(let index = 0; index < 3; index \+= 1\)/);
   assert.match(canary, /syntheticOnly: true/);

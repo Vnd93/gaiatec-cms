@@ -14,10 +14,13 @@ const TARGET = {
   stableOrigin: "https://gaiatec-cms-staging.pages.dev",
 };
 const expectedSha = process.env.EV2_G13_EXPECTED_SHA ?? "";
+const searchCanaryToken = process.env.EV2_G13_SEARCH_CANARY_TOKEN ?? "";
 if (TARGET.candidateOrigin !== "https://ev2-g13-canary.gaiatec-cms-staging.pages.dev")
   throw new Error("ALVO RECUSADO: o G13 opera somente no alias isolado ev2-g13-canary.");
 if (!/^[a-f0-9]{40}$/.test(expectedSha))
   throw new Error("Defina EV2_G13_EXPECTED_SHA com o SHA completo explicitamente autorizado.");
+if (searchCanaryToken.length < 32)
+  throw new Error("Defina EV2_G13_SEARCH_CANARY_TOKEN com o segredo temporário do canary de staging.");
 
 const FEATURE_KEYS = [
   "ev2.release_skeleton",
@@ -36,6 +39,7 @@ const FEATURE_KEYS = [
 ];
 const startedAt = new Date().toISOString();
 const runId = randomUUID();
+const searchProbeQuery = `ev2-g13-${runId}`;
 const checks = [];
 const actorIds = [];
 const overrideIds = [];
@@ -285,6 +289,16 @@ async function closeSyntheticResidue(ctx) {
       method: "DELETE",
       query: `id=in.(${overrideIds.join(",")})`,
     });
+  if (actorIds.length)
+    await rest(ctx, "cms_feature_flag_overrides", {
+      method: "DELETE",
+      query: `scope_type=eq.user&scope_key=in.(${actorIds.join(",")})`,
+    });
+  await new Promise((resolve) => setTimeout(resolve, 1_000));
+  await rest(ctx, "cms_search_events", {
+    method: "DELETE",
+    query: `normalized_query=eq.${encodeURIComponent(searchProbeQuery)}`,
+  });
   if (!actorIds.length) return;
   const now = new Date().toISOString();
   for (const actorId of actorIds)
@@ -303,7 +317,7 @@ async function closeSyntheticResidue(ctx) {
 }
 
 async function residue(ctx) {
-  const [profiles, overrides, authUsers, retainedActors] = await Promise.all([
+  const [profiles, overrides, authUsers, retainedActors, searchEvents] = await Promise.all([
     actorIds.length
       ? rest(ctx, "cms_profiles", {
           query: `user_id=in.(${actorIds.join(",")})&status=eq.active&select=user_id`,
@@ -325,6 +339,9 @@ async function residue(ctx) {
     rest(ctx, "cms_profiles", {
       query: "display_email=like.ev2-g13-*@example.invalid&select=user_id",
     }),
+    rest(ctx, "cms_search_events", {
+      query: `normalized_query=eq.${encodeURIComponent(searchProbeQuery)}&select=id`,
+    }),
   ]);
   return {
     activeActors: profiles.json.length,
@@ -334,6 +351,7 @@ async function residue(ctx) {
       return !Number.isFinite(bannedUntil) || bannedUntil <= Date.now();
     }).length,
     activeOverrides: overrides.json.length,
+    syntheticSearchEvents: searchEvents.json.length,
     personalPayloads: 0,
     retainedSyntheticActors: retainedActors.json.length,
     semantics: "zero-active-residue; retained security tombstones counted separately",
@@ -427,15 +445,47 @@ try {
     JSON.stringify(production.json),
   );
 
-  const deniedSearch = await request(`${context.url}/functions/v1/cms-public?type=search-v2&q=g13`, {
+  const searchParams = new URLSearchParams({ type: "search-v2", q: searchProbeQuery });
+  const deniedSearch = await request(`${context.url}/functions/v1/cms-public?${searchParams}`, {
     headers: { apikey: context.anonKey, Origin: TARGET.candidateOrigin },
     allowed: [404],
   });
   check("anonymous_search_v2_closed", deniedSearch.status === 404, deniedSearch.status);
-  const publicV1 = await request(`${context.url}/functions/v1/cms-public?type=search&q=g13`, {
+  const authorizedSearch = await request(`${context.url}/functions/v1/cms-public?${searchParams}`, {
+    headers: {
+      apikey: context.anonKey,
+      Origin: TARGET.candidateOrigin,
+      "X-EV2-Search-Canary": searchCanaryToken,
+    },
+  });
+  check(
+    "authorized_search_v2_healthy",
+    authorizedSearch.status === 200 &&
+      authorizedSearch.json?.engine === "v2" &&
+      Array.isArray(authorizedSearch.json?.items) &&
+      authorizedSearch.json.items.length === 0 &&
+      authorizedSearch.json?.total === 0 &&
+      authorizedSearch.headers.get("cache-control")?.includes("no-store"),
+    JSON.stringify({
+      status: authorizedSearch.status,
+      engine: authorizedSearch.json?.engine,
+      items: authorizedSearch.json?.items?.length,
+      total: authorizedSearch.json?.total,
+    }),
+  );
+  const publicV1Params = new URLSearchParams({ type: "search", q: searchProbeQuery });
+  const publicV1 = await request(`${context.url}/functions/v1/cms-public?${publicV1Params}`, {
     headers: { apikey: context.anonKey, Origin: TARGET.candidateOrigin },
   });
-  check("public_search_v1_preserved", Array.isArray(publicV1.json?.items), publicV1.status);
+  check(
+    "public_search_v1_preserved",
+    Array.isArray(publicV1.json?.items) && publicV1.json.items.length === 0 && publicV1.json?.total === 0,
+    JSON.stringify({
+      status: publicV1.status,
+      items: publicV1.json?.items?.length,
+      total: publicV1.json?.total,
+    }),
+  );
 
   const revokedAt = performance.now();
   const operatorOverride = overrideIds[0];
@@ -468,6 +518,7 @@ try {
         finalResidue.activeActors === 0 &&
           finalResidue.activeCredentials === 0 &&
           finalResidue.activeOverrides === 0 &&
+          finalResidue.syntheticSearchEvents === 0 &&
           finalResidue.personalPayloads === 0,
         JSON.stringify(finalResidue),
       );

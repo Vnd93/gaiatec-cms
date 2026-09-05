@@ -1,11 +1,16 @@
 # Evidências dos controles de prontidão — 5 de setembro de 2026
 
-## Verificações externas sem mutação
+## Verificações externas e configuração controlada
 
-- GitHub `Vnd93/gaiatec-cms`: privado, rulesets não aplicáveis no plano atual, sem ruleset e somente
-  ambiente `preview`;
+- GitHub Pro confirmado para `@Vnd93`; `main` protegida em `Vnd93/gaiatec-cms` com PR obrigatório,
+  zero approvals, checks `quality`, `database` e `browser`, atualização estrita, conversas resolvidas,
+  histórico linear, administradores incluídos, sem bypass, force-push ou exclusão;
+- `main` protegida em `Vnd93/gaiatec-documentacao` com a mesma política solo e check `quality`;
+- ambientes `production` e `production-backup` criados no repositório executável, sem required
+  reviewers e limitados às branches protegidas;
 - Supabase `GAIATEC CMS Production`: ref. `chfuhctnhqgyjowkvllv`, região `us-east-2`, plano Free,
-  estado `ACTIVE_HEALTHY`, sem migrations, funções, dados ou secrets;
+  estado `ACTIVE_HEALTHY`, sem migrations, funções ou dados; senha redefinida por API oficial,
+  conexão TLS pelo pooler IPv4 comprovada e valores armazenados apenas nos ambientes protegidos;
 - staging `glcqsosxwgmlhzgcsnzv`: preservado e saudável;
 - Resend: integração existente confirmada no código; nenhuma credencial produtiva lida ou copiada.
 - Cloudflare staging: alias isolado `ev2-g16-csp-canary` atualizado para o SHA `7804d5b4…`, com
@@ -63,7 +68,7 @@ nenhum limite foi aumentado e nenhuma tentativa reprovada foi descrita como apro
 
 ## Evidências ainda inexistentes
 
-Não foram fabricados: ruleset/proteção efetiva, backup real, restore real, chave Resend de produção,
-entrega sintética produtiva, preview CSP do SHA final de produção ou autorização literal do SHA
-final. O DPO/legal, o modelo solo e o risco foram registrados; os demais itens externos continuam
-bloqueando G12.
+Não foram fabricados: backup real, restore real, chave Resend de produção, entrega sintética
+produtiva, preview CSP do SHA final de produção ou autorização literal do SHA final. Proteções,
+ambientes, DPO/legal, governança solo, risco e credenciais Supabase foram comprovados; os itens
+restantes continuam bloqueando G12.

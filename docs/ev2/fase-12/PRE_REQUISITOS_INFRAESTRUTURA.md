@@ -5,20 +5,20 @@ ou substituído por confirmação verbal.
 
 ## Estado encontrado
 
-| Controle                       | Estado                                                                                     | Condição para liberar                                                      |
-| ------------------------------ | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
-| Cloudflare produção            | projeto `gaiatec-website` ativo e com histórico recuperável                                | manter token de Pages com menor privilégio e validar baseline na janela    |
-| Deployment produtivo observado | `ff2dbb65-2f8b-4840-a9a1-f2fde29e8ebf`, release `ba1131060177cdc602448ba4e9aeccf7afc298a5` | reconfirmar automaticamente; o valor pode mudar                            |
-| Ambiente GitHub `production`   | não configurado; somente `preview` existe                                                  | habilitar plano compatível e criar ambiente restrito à branch protegida    |
-| Branch `main`                  | sem proteção efetiva no plano Free                                                         | exigir PR de `@Vnd93`, CODEOWNERS solo, admins e checks estritos da CI     |
-| Secrets/variables Actions      | ausentes                                                                                   | cadastrar somente no ambiente protegido conforme lista abaixo              |
-| Supabase de produção           | projeto isolado `chfuhctnhqgyjowkvllv` saudável, mas no plano Free e ainda vazio           | backup externo, restore drill, migrations, funções e revisão RLS aprovados |
-| Edge Functions EV2             | guardas ainda recusam produção por desenho                                                 | criar release produtiva separada e homologá-la antes de qualquer ativação  |
-| Elegibilidade frontend         | switches candidatos são de build                                                           | implementar avaliação runtime antes de rollout por coorte em produção      |
-| Privacidade/legal              | EV2-D04 pendente                                                                           | aprovação DPO/legal para dados reais e textos/retenção                     |
-| Provider externo               | Resend definido; produção sem credencial ou evidência                                      | domínio e entrega sintética por SHA, custo e DPA aprovados                 |
-| CSP                            | enforcement implementado para preview/produto; staging em Report-Only                      | canary no SHA final com zero violação crítica                              |
-| Alertas/on-call                | canal e escala não registrados                                                             | owner primário/secundário e comunicação de incidente testados              |
+| Controle                       | Estado                                                                                     | Condição para liberar                                                       |
+| ------------------------------ | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| Cloudflare produção            | projeto `gaiatec-website` ativo e com histórico recuperável                                | manter token de Pages com menor privilégio e validar baseline na janela     |
+| Deployment produtivo observado | `ff2dbb65-2f8b-4840-a9a1-f2fde29e8ebf`, release `ba1131060177cdc602448ba4e9aeccf7afc298a5` | reconfirmar automaticamente; o valor pode mudar                             |
+| Ambientes GitHub               | `production` e `production-backup` criados e limitados a branches protegidas               | manter sem bypass e completar apenas os secrets externos pendentes          |
+| Branch `main`                  | protegida nos repositórios executável e documental                                         | manter PR, zero approvals, checks estritos, admins e histórico linear       |
+| Secrets/variables Actions      | Supabase, backup e variáveis operacionais cadastrados nos environments                     | adicionar tokens mínimos de Cloudflare, guard GitHub e Resend               |
+| Supabase de produção           | projeto isolado `chfuhctnhqgyjowkvllv` saudável, mas no plano Free e ainda vazio           | backup externo, restore drill, migrations, funções e revisão RLS aprovados  |
+| Edge Functions EV2             | guardas ainda recusam produção por desenho                                                 | criar release produtiva separada e homologá-la antes de qualquer ativação   |
+| Elegibilidade frontend         | switches candidatos são de build                                                           | implementar avaliação runtime antes de rollout por coorte em produção       |
+| Privacidade/legal              | escopo padrão aprovado por `@Vnd93`, DPO Marcelo Diaz e canal público registrados          | manter provedor externo de IA desligado; anexar a aprovação ao registro G12 |
+| Provider externo               | Resend definido; produção sem credencial ou evidência                                      | domínio e entrega sintética por SHA, custo e DPA aprovados                  |
+| CSP                            | enforcement implementado para preview/produto; staging em Report-Only                      | canary no SHA final com zero violação crítica                               |
+| Alertas/on-call                | canal e escala não registrados                                                             | owner primário/secundário e comunicação de incidente testados               |
 
 ## Configuração mínima no ambiente GitHub `production`
 
@@ -53,7 +53,9 @@ placeholder, URL divergente ou projeto incorreto.
 
 Em 4 de setembro de 2026, o projeto `GAIATEC CMS Production` foi provisionado na organização
 `GAIATEC Production`, ref. `chfuhctnhqgyjowkvllv`, região `us-east-2`, distinto do staging
-`glcqsosxwgmlhzgcsnzv`. Ele permanece sem migrations, funções, dados ou integração GitHub.
+`glcqsosxwgmlhzgcsnzv`. Ele permanece sem migrations, funções ou dados. Em 5 de setembro, a senha
+foi redefinida por API oficial, a conexão TLS pelo pooler IPv4 foi validada e as credenciais foram
+armazenadas somente nos environments protegidos do GitHub.
 
 Por decisão do responsável, a organização usa o plano Free. Esse plano não inclui backups
 automáticos ou PITR e pode pausar projetos após uma semana de baixa atividade. Assim, o projeto
@@ -76,11 +78,10 @@ mas não faz deploy. A execução local autenticada continua possível somente a
 
 ## Plano e mantenedor necessário
 
-A sessão `@Vnd93` tem acesso administrativo, mas o repositório privado está no GitHub Free. Branch
-protection e environment secrets privados exigem GitHub Pro, Team ou Enterprise. A decisão vigente
-adota `@Vnd93` como único mantenedor humano e usa zero approvals, PR obrigatório, CODEOWNERS solo,
-checks reais no SHA, proteção de administradores e ausência de bypass. O Codex fornece revisão
-técnica automatizada, sem ser tratado como segunda conta ou pessoa responsável.
+O GitHub Pro está ativo para `@Vnd93`. A decisão vigente adota `@Vnd93` como único mantenedor humano
+e usa zero approvals, PR obrigatório, CODEOWNERS solo, checks reais no SHA, proteção de
+administradores e ausência de bypass. O Codex fornece revisão técnica automatizada, sem ser tratado
+como segunda conta ou pessoa responsável.
 
 Nenhum secret foi movido para escopo desprotegido e nenhuma identidade fictícia foi criada. O risco
 de mantenedor único deve ser aceito explicitamente no registro G12. Detalhes:

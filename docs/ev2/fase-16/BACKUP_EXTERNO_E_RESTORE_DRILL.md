@@ -42,8 +42,12 @@ Variable:
 
 - `PRODUCTION_SUPABASE_PROJECT_REF=chfuhctnhqgyjowkvllv`.
 
-A primeira execução real está pendente porque o GitHub Free não fornece environment secrets para o
-repositório privado. Não se deve mover a URL do banco para secret de repositório como atalho.
+Em 5 de setembro de 2026, o GitHub Pro foi confirmado, o ambiente `production-backup` foi criado e
+limitado a branches protegidas. A senha produtiva foi redefinida por canal oficial, e a URL do
+pooler TLS/IPv4 e a frase aleatória de criptografia foram cadastradas somente como environment
+secrets. A conexão autenticada pelo mesmo pooler foi comprovada sem expor valores. A primeira
+execução real e o primeiro drill continuam pendentes até o workflow entrar em `main`; nenhum secret
+foi movido para escopo de repositório.
 
 ## Risco residual
 

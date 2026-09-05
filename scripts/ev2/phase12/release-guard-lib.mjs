@@ -29,6 +29,7 @@ const OWNER_ROLES = Object.freeze([
   "securityPrivacyOwner",
   "businessOwner",
 ]);
+const OPERATIONAL_GOVERNANCE_MODE = "sole-operator";
 
 const isFiniteNumber = (value) => typeof value === "number" && Number.isFinite(value);
 const isIsoDate = (value) => typeof value === "string" && Number.isFinite(Date.parse(value));
@@ -201,6 +202,8 @@ export function validateApprovalRecord(
     violations.push("change_reference_mismatch");
   if (!UUID_PATTERN.test(record?.g11EvidenceRunId ?? "")) violations.push("g11_evidence_invalid");
   if (!isMeaningful(record?.requestedBy)) violations.push("requester_invalid");
+  else if (record.requestedBy.trim().toLowerCase() !== GITHUB_SOLE_MAINTAINER)
+    violations.push("requester_must_match_sole_operator");
   if (!UUID_PATTERN.test(record?.g12Evidence?.canaryRunId ?? ""))
     violations.push("g12_canary_evidence_invalid");
   if (record?.g12Evidence?.candidateSha !== record?.candidateSha)
@@ -225,16 +228,28 @@ export function validateApprovalRecord(
   if (record?.g12Evidence?.productionMutations !== 0)
     violations.push("g12_canary_production_boundary_invalid");
 
-  const ownerIds = [];
+  const operationalGovernance = record?.operationalGovernance;
+  if (operationalGovernance?.mode !== OPERATIONAL_GOVERNANCE_MODE)
+    violations.push("operational_governance_mode_invalid");
+  if (
+    String(operationalGovernance?.responsibleId ?? "")
+      .trim()
+      .toLowerCase() !== GITHUB_SOLE_MAINTAINER
+  )
+    violations.push("operational_responsible_invalid");
+  if (operationalGovernance?.riskAccepted !== true) violations.push("sole_operator_risk_not_accepted");
+  if (!isIsoDate(operationalGovernance?.acceptedAt)) violations.push("sole_operator_acceptance_time_invalid");
+  if (!isMeaningful(operationalGovernance?.evidenceReference))
+    violations.push("sole_operator_evidence_invalid");
+
   for (const role of OWNER_ROLES) {
     const owner = record?.owners?.[role];
     if (!isMeaningful(owner?.id)) violations.push(`${role}_invalid`);
-    else ownerIds.push(owner.id.trim().toLowerCase());
+    else if (owner.id.trim().toLowerCase() !== GITHUB_SOLE_MAINTAINER)
+      violations.push(`${role}_must_match_sole_operator`);
     if (!isIsoDate(owner?.approvedAt)) violations.push(`${role}_approval_time_invalid`);
     if (!isMeaningful(owner?.evidenceReference)) violations.push(`${role}_evidence_invalid`);
   }
-  if (ownerIds.length === OWNER_ROLES.length && new Set(ownerIds).size !== OWNER_ROLES.length)
-    violations.push("owner_separation_required");
 
   if (!UUID_PATTERN.test(record?.rollback?.deploymentId ?? ""))
     violations.push("rollback_deployment_invalid");
@@ -259,6 +274,8 @@ export function validateApprovalRecord(
     if (record?.productionAuthorizationText !== `AUTORIZO-G12-PRODUCAO:${record?.candidateSha}`)
       violations.push("production_authorization_text_invalid");
     if (!isMeaningful(record?.productionAuthorizedBy)) violations.push("production_authorizer_invalid");
+    else if (record.productionAuthorizedBy.trim().toLowerCase() !== GITHUB_SOLE_MAINTAINER)
+      violations.push("production_authorizer_must_match_sole_operator");
     if (!isIsoDate(record?.productionAuthorizedAt)) violations.push("production_authorization_time_invalid");
     if (record?.target?.cloudflareProject !== "gaiatec-website")
       violations.push("production_project_invalid");

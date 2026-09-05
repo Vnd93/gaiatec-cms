@@ -7,7 +7,7 @@
 ## Objetivo
 
 Promover um artefato imutável com identificação de release, preflight, observabilidade, decisão por
-error budget, segregação de aprovadores e rollback recuperável. A fase não cria migration: utiliza as
+error budget, responsabilidades aprovadas e rollback recuperável. A fase não cria migration: utiliza as
 migrations aditivas já homologadas até `0052` e preserva todas as flags EV2 desligadas por padrão.
 
 ## Entregas
@@ -18,7 +18,7 @@ migrations aditivas já homologadas até `0052` e preserva todas as flags EV2 de
 | Canary isolado    | workflow `EV2.12 Canary Preview`, projeto `gaiatec-cms-staging`, alias `ev2-g12-canary`          |
 | Gate automatizado | probe HTTP, budgets, três janelas consecutivas e pausa diante de P0/P1, segurança ou divergência |
 | Canary integrado  | executor reduzido reaproveita a garantia G11, usa dois atores MFA e encerra com resíduo zero     |
-| Aprovação formal  | registro G12 por SHA, quatro owners distintos, janela e rollback previamente identificados       |
+| Aprovação formal  | registro G12 por SHA, quatro responsabilidades de `@Vnd93`, janela e rollback identificados      |
 | Promoção          | preflight do mesmo `dist`, flags candidatas desligadas, baseline capturada antes do deploy       |
 | Recuperação       | rollback automático ou manual somente para deployment `Production` e SHA previamente conferidos  |
 | Operação          | runbook, matriz de rollout, treinamento/handover e inventário de pré-requisitos                  |
@@ -53,5 +53,5 @@ produção.
 ## Próxima decisão
 
 O canary de staging está concluído. A próxima etapa é eliminar os bloqueios produtivos, validar os
-controles com owners independentes e formar o registro de aprovação por SHA. Nenhuma preparação ou
+controles com evidências por responsabilidade e formar o registro de aprovação por SHA. Nenhuma preparação ou
 evidência parcial substitui a autorização específica de produção.

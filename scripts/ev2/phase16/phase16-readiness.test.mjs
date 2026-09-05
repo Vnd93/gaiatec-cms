@@ -43,7 +43,7 @@ function readiness() {
     },
     dpoLegal: {
       status: "approved",
-      approverId: "DPO-01",
+      approverId: "Vnd93",
       scopeSha256: "c".repeat(64),
       evidenceReference: "legal/DPO-EV2-G12",
       approvedAt: "2026-09-05T10:20:00.000Z",
@@ -134,6 +134,7 @@ test("production readiness requires sole-maintainer, legal and operational contr
   repeatedGap.githubProtection.soleMaintainerRiskAccepted = false;
   repeatedGap.backupRestore.rtoMinutes = 61;
   repeatedGap.dpoLegal.status = "pending";
+  repeatedGap.dpoLegal.approverId = "another-user";
   repeatedGap.emailProvider.syntheticDeliveryStatus = "accepted";
   repeatedGap.csp.criticalViolations = 1;
   const violations = validateProductionReadinessControls(repeatedGap, { candidateSha: sha }).violations.join(
@@ -143,8 +144,26 @@ test("production readiness requires sole-maintainer, legal and operational contr
   assert.match(violations, /github_sole_maintainer_risk_not_accepted/);
   assert.match(violations, /restore_rto_invalid/);
   assert.match(violations, /dpo_legal_not_approved/);
+  assert.match(violations, /dpo_legal_approver_must_match_sole_maintainer/);
   assert.match(violations, /email_synthetic_delivery_not_verified/);
   assert.match(violations, /csp_critical_violation_present/);
+});
+
+test("legal scope is hash-bound and the public privacy notice covers production email", async () => {
+  const [scope, templateText, privacyNotice] = await Promise.all([
+    read("docs/ev2/fase-16/ESCOPO_DPO_LEGAL_PADRAO.md"),
+    read("docs/ev2/fase-12/G12_APPROVAL.template.json"),
+    read("src/app/pages/PoliticaPrivacidadePage.tsx"),
+  ]);
+  const template = JSON.parse(templateText);
+  const canonicalScope = scope.replaceAll("\r\n", "\n");
+  const scopeSha256 = createHash("sha256").update(canonicalScope).digest("hex");
+  assert.equal(template.productionReadiness.dpoLegal.scopeSha256, scopeSha256);
+  assert.equal(template.productionReadiness.dpoLegal.status, "pending");
+  assert.match(privacyNotice, /Marcelo Diaz/);
+  assert.match(privacyNotice, /<strong>Resend<\/strong>/);
+  assert.match(privacyNotice, /até 365 dias/);
+  assert.match(privacyNotice, /até 730 dias/);
 });
 
 test("CSP is enforced only on production targets and contains the audited browser origins", async () => {

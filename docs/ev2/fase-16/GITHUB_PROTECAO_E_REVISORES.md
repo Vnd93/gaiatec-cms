@@ -45,6 +45,8 @@ CODEOWNERS `@Vnd93`, histórico linear, conversas resolvidas e check `Documentat
 ## Risco aceito e compensações
 
 O modelo não oferece segregação humana de funções. Por isso, o registro G12 exige
-`soleMaintainerRiskAccepted=true`, evidência técnica automatizada, backup/restore comprovado, CSP,
-teste real do e-mail, DPO/legal e autorização final de `@Vnd93` ligada ao SHA completo. Sem GitHub
-Pro ou sem qualquer compensação, produção permanece bloqueada.
+`soleMaintainerRiskAccepted=true`, `operationalGovernance.mode=sole-operator`, evidência técnica
+automatizada, backup/restore comprovado, CSP, teste real do e-mail, DPO/legal e autorização final de
+`@Vnd93` ligada ao SHA completo. Sem GitHub Pro, os controles nativos acima não funcionam em
+repositório privado; adotar GitHub Free exigirá uma decisão explícita por controles compensatórios de
+menor garantia.

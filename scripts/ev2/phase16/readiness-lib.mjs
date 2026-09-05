@@ -125,6 +125,8 @@ export function validateProductionReadinessControls(readiness, { candidateSha } 
   const dpoLegal = readiness?.dpoLegal;
   if (dpoLegal?.status !== "approved") violations.push("dpo_legal_not_approved");
   if (!isMeaningful(dpoLegal?.approverId)) violations.push("dpo_legal_approver_invalid");
+  else if (dpoLegal.approverId.trim().toLowerCase() !== GITHUB_SOLE_MAINTAINER)
+    violations.push("dpo_legal_approver_must_match_sole_maintainer");
   if (!SHA256_PATTERN.test(dpoLegal?.scopeSha256 ?? "")) violations.push("dpo_legal_scope_invalid");
   evidence(dpoLegal, "dpo_legal");
 

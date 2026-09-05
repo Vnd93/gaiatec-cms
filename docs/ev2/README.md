@@ -28,7 +28,7 @@
 15. [EV2.9 — Estúdio Visual e preparação multisite](fase-9/README.md) — registry de 20 componentes, canvas governado, branches, snapshots, site registry sintético e plano do Gate G9.
 16. [EV2.10 — IA assistiva controlada](fase-10/README.md) — gateway F-015 provider-off, fontes, confiança, diff, aprovação humana, evals e plano do Gate G10.
 17. [EV2.11 — integração operacional e garantia sistêmica](fase-11/README.md) — F-017/F-018, resiliência de leads, SLOs, carga, restore, regressão e plano do Gate G11.
-18. [EV2.12 — implantação controlada](fase-12/README.md) — health/release, canary, error budget, aprovações segregadas, promoção imutável, handover e rollback.
+18. [EV2.12 — implantação controlada](fase-12/README.md) — health/release, canary, error budget, responsabilidades rastreáveis, promoção imutável, handover e rollback.
 19. [EV2.13 — hardening e elegibilidade runtime](fase-13/README.md) — isolamento de secrets, evidência vinculada, manifesto agregado, revogação e canary individual.
 20. [EV2.14 — IA transacional controlada](fase-14/README.md) — sandbox sintético, plano/dry-run, aprovação por hash, execução atômica, compensação e plano do Gate G14.
 21. [EV2.15 — fechamento técnico e integração segura](fase-15/README.md) — zero avisos acionáveis, regressões finais, hash G14 multiplataforma, preview efêmero e consolidação ordenada dos PRs.
@@ -110,7 +110,9 @@ conhecido no escopo validado. O Gate G12 e todos os limites de produção perman
 
 Na EV2.16, o repositório executável passou a recusar produção sem PR e CODEOWNERS de `@Vnd93`,
 backup externo cifrado com restore comprovado, entrega sintética pelo Resend, CSP enforced sem
-violação crítica, parecer DPO/legal identificado, quatro responsáveis distintos e autorização
-literal contendo o SHA completo. A suíte integral local passou. O canary CSP em staging e todos os
-controles que dependem de plano, secrets ou identidades reais continuam pendentes; nenhum deles foi
-simulado ou marcado como aprovado.
+violação crítica, aceite DPO/legal identificado, governança de operador único com risco expresso e
+autorização literal contendo o SHA completo. A suíte integral local passou. O canary CSP isolado do
+SHA `7804d5b4…` passou 22/22 respostas HTTP e quatro rotas de navegador com zero violação crítica,
+sem tocar produção ou staging estável. O responsável declarou autoridade jurídica/DPO e aceitou o
+risco empresarial; a confirmação dos dados públicos do encarregado e os controles dependentes de
+plano/secrets continuam pendentes e nenhum resultado externo foi simulado.

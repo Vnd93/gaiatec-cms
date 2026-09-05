@@ -22,6 +22,13 @@
   "productionAuthorizationSha": null,
   "productionAuthorizedBy": null,
   "productionAuthorizedAt": null,
+  "operationalGovernance": {
+    "mode": "sole-operator",
+    "responsibleId": "Vnd93",
+    "riskAccepted": true,
+    "acceptedAt": "2026-09-05T18:26:30.434Z",
+    "evidenceReference": "docs/ev2/fase-16/REGISTRO_DECLARACAO_GOVERNANCA_DPO_RISCO_2026-09-05.md"
+  },
   "target": {
     "cloudflareProject": "gaiatec-website",
     "domains": ["gaiatecsistemas.com.br", "www.gaiatecsistemas.com.br"]
@@ -62,9 +69,9 @@
     },
     "dpoLegal": {
       "status": "pending",
-      "approverId": null,
-      "scopeSha256": null,
-      "evidenceReference": null,
+      "approverId": "Vnd93",
+      "scopeSha256": "30a7f659b3ae3f10d49140a5187e518cfc4276a4709d15b6da207d68e20593e8",
+      "evidenceReference": "docs/ev2/fase-16/REGISTRO_DECLARACAO_GOVERNANCA_DPO_RISCO_2026-09-05.md",
       "approvedAt": null
     },
     "emailProvider": {
@@ -90,9 +97,9 @@
     }
   },
   "owners": {
-    "changeOwner": { "id": null, "approvedAt": null, "evidenceReference": null },
-    "technicalReviewer": { "id": null, "approvedAt": null, "evidenceReference": null },
-    "securityPrivacyOwner": { "id": null, "approvedAt": null, "evidenceReference": null },
-    "businessOwner": { "id": null, "approvedAt": null, "evidenceReference": null }
+    "changeOwner": { "id": "Vnd93", "approvedAt": null, "evidenceReference": null },
+    "technicalReviewer": { "id": "Vnd93", "approvedAt": null, "evidenceReference": null },
+    "securityPrivacyOwner": { "id": "Vnd93", "approvedAt": null, "evidenceReference": null },
+    "businessOwner": { "id": "Vnd93", "approvedAt": null, "evidenceReference": null }
   }
 }

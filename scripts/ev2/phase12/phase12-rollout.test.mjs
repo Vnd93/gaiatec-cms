@@ -61,7 +61,7 @@ function approvedRecord() {
     decision: "approved",
     candidateSha: sha,
     environment: "production",
-    requestedBy: "OP-01",
+    requestedBy: "Vnd93",
     changeReference: "CHG-EV2-12",
     g11EvidenceRunId: "7466a0d3-021f-4c60-ad82-61e76b93844f",
     g12Evidence: {
@@ -81,7 +81,7 @@ function approvedRecord() {
     productionAuthorized: true,
     productionAuthorizationText: `AUTORIZO-G12-PRODUCAO:${sha}`,
     productionAuthorizationSha: sha,
-    productionAuthorizedBy: "BUS-01",
+    productionAuthorizedBy: "Vnd93",
     productionAuthorizedAt: "2026-09-04T09:05:00.000Z",
     target: {
       cloudflareProject: "gaiatec-website",
@@ -123,7 +123,7 @@ function approvedRecord() {
       },
       dpoLegal: {
         status: "approved",
-        approverId: "DPO-01",
+        approverId: "Vnd93",
         scopeSha256: "e".repeat(64),
         evidenceReference: "legal/DPO-EV2-12",
         approvedAt: "2026-09-04T08:40:00.000Z",
@@ -150,26 +150,33 @@ function approvedRecord() {
         verifiedAt: "2026-09-04T08:50:00.000Z",
       },
     },
+    operationalGovernance: {
+      mode: "sole-operator",
+      responsibleId: "Vnd93",
+      riskAccepted: true,
+      acceptedAt: "2026-09-04T08:55:00.000Z",
+      evidenceReference: "docs/ev2/fase-16/REGISTRO_DECLARACAO_GOVERNANCA_DPO_RISCO_2026-09-05.md",
+    },
     owners: {
       changeOwner: {
-        id: "OP-01",
+        id: "Vnd93",
         approvedAt: "2026-09-04T09:01:00.000Z",
-        evidenceReference: "approval/OP-01",
+        evidenceReference: "approval/Vnd93/change",
       },
       technicalReviewer: {
-        id: "REV-01",
+        id: "Vnd93",
         approvedAt: "2026-09-04T09:02:00.000Z",
-        evidenceReference: "approval/REV-01",
+        evidenceReference: "approval/Vnd93/technical",
       },
       securityPrivacyOwner: {
-        id: "SEC-01",
+        id: "Vnd93",
         approvedAt: "2026-09-04T09:03:00.000Z",
-        evidenceReference: "approval/SEC-01",
+        evidenceReference: "approval/Vnd93/security-privacy",
       },
       businessOwner: {
-        id: "BUS-01",
+        id: "Vnd93",
         approvedAt: "2026-09-04T09:04:00.000Z",
-        evidenceReference: "approval/BUS-01",
+        evidenceReference: "approval/Vnd93/business",
       },
     },
   };
@@ -351,7 +358,7 @@ test("rollout needs three consecutive healthy windows and cannot skip a stage", 
   );
 });
 
-test("G12 approval requires an exact candidate, live window and four distinct owners", () => {
+test("G12 approval requires an exact candidate, live window and the declared sole operator", () => {
   const record = approvedRecord();
   assert.equal(
     validateApprovalRecord(record, {
@@ -362,9 +369,18 @@ test("G12 approval requires an exact candidate, live window and four distinct ow
     }).valid,
     true,
   );
-  const repeatedOwner = structuredClone(record);
-  repeatedOwner.owners.technicalReviewer.id = "OP-01";
-  assert.match(validateApprovalRecord(repeatedOwner).violations.join(","), /owner_separation_required/);
+  const foreignOwner = structuredClone(record);
+  foreignOwner.owners.technicalReviewer.id = "another-user";
+  assert.match(
+    validateApprovalRecord(foreignOwner).violations.join(","),
+    /technicalReviewer_must_match_sole_operator/,
+  );
+  const unacceptedRisk = structuredClone(record);
+  unacceptedRisk.operationalGovernance.riskAccepted = false;
+  assert.match(
+    validateApprovalRecord(unacceptedRisk).violations.join(","),
+    /sole_operator_risk_not_accepted/,
+  );
   assert.match(
     validateApprovalRecord({ ...record, productionAuthorized: false }).violations.join(","),
     /production_not_authorized/,
@@ -601,9 +617,14 @@ test("release workflows and reduced canary are immutable, staged and production 
   assert.equal(approvalTemplate.schemaVersion, 2);
   assert.equal(approvalTemplate.productionAuthorizationSha, null);
   assert.equal(approvalTemplate.productionReadiness.dpoLegal.status, "pending");
+  assert.equal(approvalTemplate.productionReadiness.dpoLegal.approverId, "Vnd93");
+  assert.match(approvalTemplate.productionReadiness.dpoLegal.scopeSha256, /^[a-f0-9]{64}$/);
   assert.equal(approvalTemplate.productionReadiness.githubProtection.governanceMode, "sole-maintainer");
   assert.equal(approvalTemplate.productionReadiness.githubProtection.maintainerLogin, "Vnd93");
   assert.equal(approvalTemplate.productionReadiness.githubProtection.requiredPullRequestApprovals, 0);
+  assert.equal(approvalTemplate.operationalGovernance.mode, "sole-operator");
+  assert.equal(approvalTemplate.operationalGovernance.responsibleId, "Vnd93");
+  assert.equal(approvalTemplate.operationalGovernance.riskAccepted, true);
   assert.equal(approvalTemplate.candidateSha, null);
   assert.equal(approvalTemplate.g12Evidence.file, null);
 });
@@ -624,5 +645,5 @@ test("phase documentation preserves blockers and does not claim G12", async () =
   assert.match(infrastructure, /Supabase de produção/);
   assert.match(rollout, /três janelas consecutivas/i);
   assert.match(runbook, /automaticamente a API de rollback/i);
-  assert.match(training, /identidades distintas/);
+  assert.match(training, /único responsável humano/i);
 });

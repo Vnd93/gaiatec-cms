@@ -1,18 +1,19 @@
 # Responsáveis, DPO/legal e autorização final
 
-## Quatro responsáveis operacionais
+## Um responsável, quatro responsabilidades
 
-O registro G12 v2 exige quatro identidades reais e distintas:
+`@Vnd93` é o único responsável humano e assume os quatro campos do registro G12:
 
-| Campo                  | Responsabilidade                                    | Não pode ser substituído por     |
-| ---------------------- | --------------------------------------------------- | -------------------------------- |
-| `changeOwner`          | janela, comunicação, execução e encerramento        | nome de equipe ou placeholder    |
-| `technicalReviewer`    | SHA, CI, arquitetura, backup e rollback             | autor sem revisão independente   |
-| `securityPrivacyOwner` | segurança, CSP, RLS, secrets e incidentes           | confirmação verbal sem evidência |
-| `businessOwner`        | impacto, atendimento, conteúdo e decisão de negócio | conta técnica genérica           |
+| Campo                  | Responsabilidade                                    | Evidência mínima                       |
+| ---------------------- | --------------------------------------------------- | -------------------------------------- |
+| `changeOwner`          | janela, comunicação, execução e encerramento        | horário, workflow e decisão            |
+| `technicalReviewer`    | SHA, CI, arquitetura, backup e rollback             | checks e relatórios automatizados      |
+| `securityPrivacyOwner` | segurança, CSP, RLS, secrets e incidentes           | varreduras, escopo legal e rastreio    |
+| `businessOwner`        | impacto, atendimento, conteúdo e decisão de negócio | aceite de risco e autorização pelo SHA |
 
-Cada owner informa `id`, `approvedAt` e `evidenceReference`. Duplicação de identidade em qualquer
-par é recusada.
+Cada owner informa `id=Vnd93`, `approvedAt` e `evidenceReference`. Outro identificador, ausência da
+aceitação de risco ou tentativa de apresentar o Codex como segunda pessoa são recusados. A exceção é
+somente de governança humana; MFA, menor privilégio e segregações críticas do CMS permanecem ativas.
 
 ## DPO/legal
 
@@ -25,8 +26,9 @@ par é recusada.
 - SHA-256 do pacote exato analisado: avisos de privacidade, termos, formulários, retenção,
   subprocessadores, DPA e fluxos RDO/leads.
 
-O sistema não pode criar uma aprovação jurídica. O template permanece `pending` até que o responsável
-real emita e referencie o parecer.
+O responsável declarou autoridade interna e aprovou o escopo padrão. O registro permanece `pending`
+somente até confirmar se Marcelo Diaz e `vendas@gaiatecsistemas.com.br`, hoje publicados como
+encarregado e canal, continuam corretos. Se mudaram, basta informar o novo nome e e-mail público.
 
 ## Autorização vinculada ao SHA
 

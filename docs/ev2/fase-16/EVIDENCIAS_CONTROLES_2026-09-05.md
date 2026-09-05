@@ -8,6 +8,8 @@
   estado `ACTIVE_HEALTHY`, sem migrations, funções, dados ou secrets;
 - staging `glcqsosxwgmlhzgcsnzv`: preservado e saudável;
 - Resend: integração existente confirmada no código; nenhuma credencial produtiva lida ou copiada.
+- Cloudflare staging: alias isolado `ev2-g16-csp-canary` atualizado para o SHA `7804d5b4…`, com
+  deployment imutável `017e2a7b`; staging estável e projeto produtivo não foram promovidos.
 
 ## Alterações técnicas verificadas
 
@@ -16,16 +18,49 @@
 - backup externo cifra antes do upload e restaura o mesmo ciphertext em ambiente efêmero;
 - provider check vincula domínio e entrega sintética ao SHA;
 - proteção exige PR de `@Vnd93`, CODEOWNERS exclusivo e checks reais no SHA;
-- G12 approval schema v2 exige DPO/legal, quatro owners, todos os controles e autorização com SHA.
+- G12 approval schema v2 exige DPO/legal, governança solo aceita, evidência para as quatro
+  responsabilidades, todos os controles e autorização com SHA.
 
-Validação inicial:
+Validação local do candidato:
 
 - `npm run test:ev2:phase12`: 10/10;
-- `npm run test:ev2:phase16`: 5/5;
+- `npm run test:ev2:phase16`: 6/6;
+- `npm run check`: 51 arquivos/168 testes Vitest, todos os testes EV2 e legados, typecheck, lint,
+  formatação, build e orçamento de bundle aprovados;
+- `npm audit --audit-level=high`: zero vulnerabilidades.
+- CI remoto no SHA exato: [push](https://github.com/Vnd93/gaiatec-cms/actions/runs/33983191194)
+  `quality`, `database` e `browser`; [pull request](https://github.com/Vnd93/gaiatec-cms/actions/runs/33983193678)
+  com os mesmos três checks; [preview](https://github.com/Vnd93/gaiatec-cms/actions/runs/33983193675);
+  e [qualidade documental](https://github.com/Vnd93/gaiatec-documentacao/actions/runs/33983193664):
+  sete de sete checks do CMS e um de um da documentação aprovados.
 - produção, dados reais, domínio real e staging estável: zero mutações.
+
+## Canary CSP G16 em staging
+
+Candidato: `7804d5b44786941e4fa1f4c6ad5626cb26bee802`.
+
+- deployment imutável: `https://017e2a7b.gaiatec-cms-staging.pages.dev`;
+- HTTP aprovado: 22/22 respostas, 100% de disponibilidade, 0% de 5xx, p95 público 1.384,756 ms,
+  orçamentos por rota aprovados e nenhum desvio de release/health/manifest/noindex/CSP;
+- navegador: quatro rotas, quatro status 200, CSP enforced, SHA exato e zero violação crítica;
+- relatórios brutos: [HTTP aprovado](evidencias/G16_CSP_HTTP_7804d5b.json),
+  [navegador aprovado](evidencias/G16_CSP_BROWSER_7804d5b.json) e
+  [primeira janela em pausa](evidencias/G16_CSP_HTTP_7804d5b_ATTEMPT1_PAUSE.json).
+
+A primeira janela do candidato atual ficou em `pause` porque `/produtos` atingiu 1.797,458 ms,
+acima do limite por rota, apesar de 100% de disponibilidade, zero 5xx e contratos corretos. A
+tentativa foi preservada, cinco ciclos adicionais de aquecimento foram executados e a repetição
+passou sem elevar limites: `/produtos` 1.384,756 ms, `/contato` 1.457,435 ms e p95 público
+1.384,756 ms.
+
+O candidato anterior `3433aebb…` teve duas janelas HTTP em `pause` somente por latência de
+aquecimento (p95 1.608,260 ms e 1.510,146 ms), seguidas por uma janela aprovada de 1.007,746 ms e
+canary de navegador sem violações. O achado originou aquecimento explícito e testado no workflow;
+nenhum limite foi aumentado e nenhuma tentativa reprovada foi descrita como aprovação.
 
 ## Evidências ainda inexistentes
 
-Não foram fabricados: ruleset/proteção efetiva, backup real, restore real,
-parecer DPO/legal, chave Resend de produção, entrega sintética produtiva, canary CSP do SHA final,
-quatro identidades operacionais ou autorização de produção. Esses itens continuam bloqueando G12.
+Não foram fabricados: ruleset/proteção efetiva, backup real, restore real, confirmação cadastral do
+encarregado, chave Resend de produção, entrega sintética produtiva, preview CSP do SHA final de
+produção ou autorização literal do SHA final. O modelo solo e o risco foram registrados; esses itens
+externos continuam bloqueando G12.

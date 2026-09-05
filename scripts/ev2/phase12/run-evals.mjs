@@ -124,7 +124,7 @@ const scenarios = [
       ).valid,
   ],
   [
-    "self_approval_refused",
+    "incomplete_legacy_approval_refused",
     false,
     () =>
       validateApprovalRecord(

@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { hashDatasetText } from "./dataset-hash.mjs";
 import { approvalValid, compensateSnapshots, simulatePlan } from "./execution-policy.mjs";
 
 const datasetText = readFileSync(new URL("./eval-dataset.json", import.meta.url), "utf8");
@@ -123,7 +123,7 @@ const metrics = {
   schemaVersion: 1,
   gate: "G14",
   suiteKey: dataset.suiteKey,
-  datasetHash: createHash("sha256").update(datasetText).digest("hex"),
+  datasetHash: hashDatasetText(datasetText),
   cases: dataset.cases.length,
   passed,
   failed: failures.length,

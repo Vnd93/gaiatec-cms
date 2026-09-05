@@ -124,6 +124,15 @@ somente `storage.buckets_vectors` do dump de dados; todos os dados da aplicaçã
 continuam incluídos e sob restauração estrita. A tentativa limpou o texto puro e não publicou
 artefato incompleto.
 
+O [workflow `33999766926`](https://github.com/Vnd93/gaiatec-cms/actions/runs/33999766926),
+no SHA `e908e9a3364317f09327547ac96725211b6a1826`, avançou além de `buckets_vectors` e falhou
+fechado na outra tabela do mesmo recurso, `storage.vector_indexes`. A
+[migração oficial do Supabase Storage](https://github.com/supabase/storage/blob/master/migrations/tenant/0045-vector-buckets.sql)
+confirma que o recurso Vector Storage cria esse par de tabelas internas. Ambas ficam excluídas do
+dump de dados restaurável; `storage.buckets`, `storage.objects`, autenticação, dados do CMS e todas
+as outras tabelas permanecem incluídos. O texto puro foi limpo e nenhum artefato incompleto foi
+publicado.
+
 ## Evidências ainda inexistentes
 
 Não foram fabricados: backup real, restore real, chave Resend de produção, entrega sintética

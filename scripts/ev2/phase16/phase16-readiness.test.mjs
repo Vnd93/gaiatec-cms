@@ -240,6 +240,7 @@ test("production and canary workflows retain evidence and stay behind their boun
   assert.match(backup, /supabase start/);
   assert.match(backup, /prepare-role-restore\.mjs/);
   assert.match(backup, /roles\.restore\.sql/);
+  assert.match(backup, /--exclude storage\.buckets_vectors/);
   assert.doesNotMatch(backup, /ON_ERROR_STOP=0/);
   assert.match(backup, /diff -u/);
   assert.match(backup, /path: \$\{\{ steps\.backup\.outputs\.artifact_dir \}\}/);

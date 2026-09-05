@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import worker, { CONTENT_SECURITY_POLICY } from "../../../cloudflare/_worker.js";
+import { prepareRoleRestore } from "./prepare-role-restore.mjs";
 import {
   PRODUCTION_SUPABASE_PROJECT_REF,
   validateBackupConfig,
@@ -13,6 +14,23 @@ import {
 
 const sha = "a".repeat(40);
 const read = (path) => readFile(path, "utf8");
+
+test("role restore omits only platform-managed GUC assignments", () => {
+  const source = `ALTER ROLE postgres WITH SUPERUSER;
+ALTER ROLE postgres SET
+  "log_min_messages" TO 'fatal';
+ALTER ROLE authenticator SET "statement_timeout" TO '8s';
+ALTER ROLE authenticated RESET statement_timeout;
+GRANT anon TO authenticator;
+`;
+  const result = prepareRoleRestore(source);
+
+  assert.equal(result.removedStatements, 2);
+  assert.doesNotMatch(result.sql, /log_min_messages|ALTER ROLE authenticator SET/);
+  assert.match(result.sql, /ALTER ROLE postgres WITH SUPERUSER/);
+  assert.match(result.sql, /ALTER ROLE authenticated RESET statement_timeout/);
+  assert.match(result.sql, /GRANT anon TO authenticator/);
+});
 
 function readiness() {
   return {
@@ -208,7 +226,7 @@ test("production and canary workflows retain evidence and stay behind their boun
   assert.match(backup, /environment: production-backup/);
   assert.match(backup, /--symmetric --cipher-algo AES256/);
   assert.match(backup, /supabase start/);
-  assert.match(backup, /\^ALTER ROLE \.\* SET/);
+  assert.match(backup, /prepare-role-restore\.mjs/);
   assert.match(backup, /roles\.restore\.sql/);
   assert.doesNotMatch(backup, /ON_ERROR_STOP=0/);
   assert.match(backup, /diff -u/);

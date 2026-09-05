@@ -25,6 +25,7 @@ export const CounterStats: React.FC<CounterStatsProps> = ({
   const sectionRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const observedSection = sectionRef.current;
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting && !isVisible) {
@@ -34,13 +35,13 @@ export const CounterStats: React.FC<CounterStatsProps> = ({
       { threshold: 0.3 }
     );
 
-    if (sectionRef.current) {
-      observer.observe(sectionRef.current);
+    if (observedSection) {
+      observer.observe(observedSection);
     }
 
     return () => {
-      if (sectionRef.current) {
-        observer.unobserve(sectionRef.current);
+      if (observedSection) {
+        observer.unobserve(observedSection);
       }
     };
   }, [isVisible]);

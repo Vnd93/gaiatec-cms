@@ -1,6 +1,6 @@
 import { Link } from "react-router";
 import { AnimateOnScroll } from "../components/useScrollAnimation";
-import { ChevronRight, Flame, Zap, Trash2, Factory, Beaker, Fuel, Wind, ClipboardCheck, Settings, Users } from "lucide-react";
+import { ChevronRight, Flame, Zap, Trash2, Factory, Beaker, Fuel, ClipboardCheck, Settings, Users } from "lucide-react";
 import { optimizedBg } from "../components/ResponsiveImage";
 
 /* ────────────────────────────────────────────────────────

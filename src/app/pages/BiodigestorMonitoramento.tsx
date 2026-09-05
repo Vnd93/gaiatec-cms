@@ -1,6 +1,6 @@
 import { Link } from "react-router";
 import { AnimateOnScroll } from "../components/useScrollAnimation";
-import { ChevronRight, AlertTriangle, ArrowRight } from "lucide-react";
+import { ChevronRight, AlertTriangle } from "lucide-react";
 import { ResponsiveImage, optimizedBg } from "../components/ResponsiveImage";
 
 /* ────────────────────────────────────────────────────────

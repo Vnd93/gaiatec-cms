@@ -21,6 +21,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [access, setAccess] = useState<{ active: boolean; role: "rdo_admin" | "rdo_member" } | null>(null);
   const [accessLoading, setAccessLoading] = useState(false);
+  const userId = session?.user.id;
 
   useEffect(() => {
     const robots = document.querySelector<HTMLMetaElement>('meta[name="robots"]') ?? document.head.appendChild(document.createElement("meta"));
@@ -57,7 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    if (!session?.user) {
+    if (!userId) {
       setAccess(null);
       setAccessLoading(false);
       return;
@@ -66,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     supabase
       .from("rdo_user_access")
       .select("active,role")
-      .eq("user_id", session.user.id)
+      .eq("user_id", userId)
       .maybeSingle()
       .then(({ data, error }) => {
         if (cancelled) return;
@@ -76,7 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [session?.user?.id]);
+  }, [userId]);
 
   async function signIn(email: string, password: string) {
     const { error } = await supabase.auth.signInWithPassword({

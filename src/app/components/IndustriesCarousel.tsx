@@ -56,11 +56,6 @@ const FALLBACK_INDUSTRIES: Industry[] = [
   },
 ];
 
-/* ────────────────────────────────────────────────────────
-   CAROUSEL CONSTANTS
-   ──────────────────────────────────────────────────────── */
-const SLIDE_GAP = 0; // columns are flush, divided by lines only
-
 export function IndustriesCarousel() {
   const { setores } = useSetores();
 
@@ -129,11 +124,6 @@ export function IndustriesCarousel() {
   /* ── Compute column width ── */
   const colWidthPercent = 100 / visibleCount;
   const translatePercent = -(scrollIndex * colWidthPercent);
-
-  /* ── Visible industries in current viewport ── */
-  const visibleIndices = Array.from({ length: visibleCount }, (_, i) => scrollIndex + i).filter(
-    (i) => i < industries.length
-  );
 
   return (
     <>

@@ -14,7 +14,6 @@ import {
 
 const KNOCKOUT = "'Knockout HTF68', sans-serif";
 const BRAND = "#0057DE";
-const BRAND_GRADIENT = "linear-gradient(135deg, #0057DE 0%, #0a2540 60%, #050b18 100%)";
 
 export default function DeteccaoGasCategoriaPage() {
   const { categoria } = useParams();

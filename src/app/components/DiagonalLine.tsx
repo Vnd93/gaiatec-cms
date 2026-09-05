@@ -5,7 +5,12 @@ interface DiagonalLineProps {
 
 export function DiagonalLine({ topColor, bottomColor }: DiagonalLineProps) {
   return (
-    <div className="relative w-full" style={{ height: "60px" }}>
-    </div>
+    <div
+      aria-hidden="true"
+      className="relative h-[60px] w-full"
+      style={{
+        background: `linear-gradient(to bottom right, ${topColor} 0 49.5%, ${bottomColor} 50.5% 100%)`,
+      }}
+    />
   );
 }

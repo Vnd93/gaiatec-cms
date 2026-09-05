@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { Link } from "react-router";
 import { AnimateOnScroll } from "../components/useScrollAnimation";
 import { useBlogPosts } from "../hooks/useSiteData";
-import { ChevronRight, Calendar, ArrowRight, Mail } from "lucide-react";
+import { ChevronRight, Calendar, Mail } from "lucide-react";
 import { optimizedBg, ResponsiveImage } from "../components/ResponsiveImage";
 import { SEO } from "../components/SEO";
 

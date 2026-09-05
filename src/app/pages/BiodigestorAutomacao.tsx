@@ -269,7 +269,7 @@ export default function BiodigestorAutomacao() {
 
           <AnimateOnScroll delay={0.15}>
             <div className="flex flex-wrap justify-center gap-4">
-              {advancedTags.map((tag, i) => (
+              {advancedTags.map((tag) => (
                 <span
                   key={tag}
                   style={{

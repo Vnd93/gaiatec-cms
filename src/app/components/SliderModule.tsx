@@ -5,7 +5,6 @@ import { optimizedBg } from "./ResponsiveImage";
 /* ────────────────────────────────────────────────────────
    FONTS
    ──────────────────────────────────────────────────────── */
-const KNOCKOUT = "'Knockout HTF68', sans-serif";
 const BODY_FONT = "Arial, sans-serif";
 
 /* ────────────────────────────────────────────────────────
@@ -162,12 +161,6 @@ export function SliderModule() {
       setCurrent((c) => c - 1);
     }
   }, [visibleIndex]);
-
-  const goTo = useCallback((index: number) => {
-    setTransitionEnabled(true);
-    setProgress(0);
-    setCurrent(((index % TOTAL) + TOTAL) % TOTAL);
-  }, []);
 
   // Auto-play with progress bar
   useEffect(() => {

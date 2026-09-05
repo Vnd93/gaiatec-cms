@@ -3,6 +3,8 @@ export const PRODUCTION_EMAIL_PROVIDER = "resend";
 export const PRODUCTION_EMAIL_DOMAIN = "gaiatecsistemas.com";
 export const PRODUCTION_EMAIL_FROM = "cms@gaiatecsistemas.com";
 export const PRODUCTION_SITE_ORIGIN = "https://gaiatecsistemas.com.br";
+export const GITHUB_GOVERNANCE_MODE = "sole-maintainer";
+export const GITHUB_SOLE_MAINTAINER = "vnd93";
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const FULL_SHA_PATTERN = /^[a-f0-9]{40}$/;
@@ -96,9 +98,15 @@ export function validateProductionReadinessControls(readiness, { candidateSha } 
   const github = readiness?.githubProtection;
   if (github?.status !== "verified") violations.push("github_protection_not_verified");
   if (github?.candidateSha !== candidateSha) violations.push("github_protection_sha_mismatch");
-  if (github?.requiredPullRequestApprovals < 2) violations.push("two_independent_reviews_required");
-  if (github?.codeOwnersCount < 2) violations.push("two_independent_codeowners_required");
+  if (github?.governanceMode !== GITHUB_GOVERNANCE_MODE) violations.push("github_governance_mode_invalid");
+  if (String(github?.maintainerLogin ?? "").toLowerCase() !== GITHUB_SOLE_MAINTAINER)
+    violations.push("github_sole_maintainer_invalid");
+  if (github?.requiredPullRequestApprovals !== 0) violations.push("github_solo_review_count_must_be_zero");
+  if (github?.codeOwnersCount !== 1) violations.push("github_single_codeowner_required");
   if (github?.branchProtected !== true) violations.push("main_branch_not_protected");
+  if (github?.requiredChecksPassed !== true) violations.push("github_required_checks_not_verified");
+  if (github?.soleMaintainerRiskAccepted !== true)
+    violations.push("github_sole_maintainer_risk_not_accepted");
   evidence(github, "github_protection");
 
   const backup = readiness?.backupRestore;

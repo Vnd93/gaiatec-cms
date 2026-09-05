@@ -16,7 +16,7 @@
 | Projeções         | comparação v1/candidato sem divergência                                             | reconciliação zero; aceite final pendente                      |
 | Error budget      | três janelas consecutivas saudáveis, com amostra, versão e ambiente                 | 3 de 3 janelas aprovadas                                       |
 | Recuperação       | baseline produtiva e drill de rollback compatível com RPO 0/RTO <= 15 min           | restore RPO 0/RTO 1; drill produtivo pendente                  |
-| GitHub            | `main` protegida, dois reviews reais, CODEOWNERS e ambiente segregado               | bloqueado por plano/identidades                                |
+| GitHub            | `main` protegida, PR de `@Vnd93`, CODEOWNERS solo, CI estrita e ambiente segregado  | política pronta; bloqueado pelo plano Free                     |
 | Backend produtivo | Supabase exclusivo, backups, RLS, migrations e funções aprovadas                    | isolado e saudável; plano Free/backup/restore/schema pendentes |
 | Privacidade/legal | parecer identificado e hash do escopo dos fluxos com dados reais                    | pendente                                                       |
 | E-mail/CSP        | Resend entregue em teste sintético e CSP enforced sem violação crítica no mesmo SHA | automação pronta; execução pendente                            |

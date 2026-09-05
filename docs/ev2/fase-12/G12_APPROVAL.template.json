@@ -38,9 +38,13 @@
     "githubProtection": {
       "status": "pending",
       "candidateSha": null,
-      "requiredPullRequestApprovals": 2,
-      "codeOwnersCount": 0,
+      "governanceMode": "sole-maintainer",
+      "maintainerLogin": "Vnd93",
+      "requiredPullRequestApprovals": 0,
+      "codeOwnersCount": 1,
       "branchProtected": false,
+      "requiredChecksPassed": false,
+      "soleMaintainerRiskAccepted": false,
       "evidenceReference": null,
       "verifiedAt": null
     },

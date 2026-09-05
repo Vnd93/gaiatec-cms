@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { validateProductionReadinessControls } from "../phase16/readiness-lib.mjs";
+import { GITHUB_SOLE_MAINTAINER, validateProductionReadinessControls } from "../phase16/readiness-lib.mjs";
 
 export const FULL_SHA_PATTERN = /^[a-f0-9]{40}$/;
 export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -448,24 +448,31 @@ export function evaluateCodeOwners(content) {
     });
   const normalizePattern = (pattern) => String(pattern ?? "").replace(/^\//, "");
   const covers = (expectedPatterns) =>
-    rules.some((rule) => expectedPatterns.has(normalizePattern(rule.pattern)) && rule.owners.length >= 2);
+    rules.some(
+      (rule) =>
+        expectedPatterns.has(normalizePattern(rule.pattern)) &&
+        rule.owners.length === 1 &&
+        rule.owners[0] === `@${GITHUB_SOLE_MAINTAINER}`,
+    );
   const violations = [];
-  if (!covers(new Set(["*", "**"]))) violations.push("global_two_codeowners_required");
+  if (!covers(new Set(["*", "**"]))) violations.push("global_vnd93_codeowner_required");
   if (!covers(new Set([".github/workflows/*", ".github/workflows/**"])))
-    violations.push("workflow_two_codeowners_required");
+    violations.push("workflow_vnd93_codeowner_required");
   if (!covers(new Set(["docs/ev2/fase-12/approvals/*", "docs/ev2/fase-12/approvals/**"])))
-    violations.push("approval_record_two_codeowners_required");
+    violations.push("approval_record_vnd93_codeowner_required");
   return { valid: violations.length === 0, violations };
 }
 
-export function evaluateGithubControls({ environment, branchProtection, codeOwners, pullRequest, reviews }) {
+export function evaluateGithubControls({
+  environment,
+  branchProtection,
+  codeOwners,
+  pullRequest,
+  checkRuns,
+}) {
   const violations = [];
   const reviewerRule = environment?.protection_rules?.find((rule) => rule.type === "required_reviewers");
-  if (reviewerRule) {
-    if (!Array.isArray(reviewerRule.reviewers) || reviewerRule.reviewers.length < 2)
-      violations.push("two_environment_reviewers_required_when_enabled");
-    if (reviewerRule.prevent_self_review !== true) violations.push("prevent_self_review_required");
-  }
+  if (reviewerRule) violations.push("environment_reviewer_incompatible_with_sole_maintainer");
   if (
     environment?.deployment_branch_policy?.protected_branches !== true ||
     environment?.deployment_branch_policy?.custom_branch_policies !== false
@@ -474,11 +481,16 @@ export function evaluateGithubControls({ environment, branchProtection, codeOwne
   if (branchProtection?.required_status_checks?.strict !== true)
     violations.push("strict_status_checks_required");
   const pullReviewRule = branchProtection?.required_pull_request_reviews;
-  if (pullReviewRule?.required_approving_review_count < 2)
-    violations.push("two_pull_request_reviews_required");
-  if (pullReviewRule?.require_code_owner_reviews !== true) violations.push("code_owner_reviews_required");
-  if (pullReviewRule?.dismiss_stale_reviews !== true) violations.push("dismiss_stale_reviews_required");
-  if (pullReviewRule?.require_last_push_approval !== true) violations.push("last_push_approval_required");
+  if (!pullReviewRule) violations.push("pull_request_rule_required");
+  if (pullReviewRule?.required_approving_review_count !== 0)
+    violations.push("pull_request_approvals_must_be_zero_in_sole_mode");
+  if (pullReviewRule?.require_code_owner_reviews === true)
+    violations.push("code_owner_review_incompatible_with_sole_maintainer");
+  if (pullReviewRule?.require_last_push_approval === true)
+    violations.push("last_push_approval_incompatible_with_sole_maintainer");
+  const bypass = pullReviewRule?.bypass_pull_request_allowances;
+  if ([...(bypass?.users ?? []), ...(bypass?.teams ?? []), ...(bypass?.apps ?? [])].length > 0)
+    violations.push("pull_request_bypass_forbidden");
   if (branchProtection?.enforce_admins?.enabled !== true) violations.push("admin_enforcement_required");
   const contexts = new Set([
     ...(branchProtection?.required_status_checks?.contexts ?? []),
@@ -489,23 +501,34 @@ export function evaluateGithubControls({ environment, branchProtection, codeOwne
   if (branchProtection?.allow_force_pushes?.enabled !== false) violations.push("force_push_must_be_disabled");
   if (branchProtection?.allow_deletions?.enabled !== false)
     violations.push("branch_deletion_must_be_disabled");
+  if (branchProtection?.required_conversation_resolution?.enabled !== true)
+    violations.push("conversation_resolution_required");
+  if (branchProtection?.required_linear_history?.enabled !== true) violations.push("linear_history_required");
   const codeOwnerResult = evaluateCodeOwners(codeOwners);
   violations.push(...codeOwnerResult.violations);
 
-  if (!pullRequest?.merged_at || pullRequest?.base?.ref !== "main")
+  if (
+    !pullRequest?.merged_at ||
+    pullRequest?.base?.ref !== "main" ||
+    String(pullRequest?.user?.login ?? "").toLowerCase() !== GITHUB_SOLE_MAINTAINER
+  )
     violations.push("candidate_pull_request_invalid");
-  const latestByReviewer = new Map();
-  for (const review of Array.isArray(reviews) ? reviews : []) {
-    const login = review?.user?.login?.toLowerCase();
-    if (!login || !["APPROVED", "CHANGES_REQUESTED", "DISMISSED"].includes(review?.state)) continue;
-    const previous = latestByReviewer.get(login);
-    if (!previous || Number(review.id) > Number(previous.id)) latestByReviewer.set(login, review);
+
+  const latestChecks = new Map();
+  for (const run of Array.isArray(checkRuns) ? checkRuns : []) {
+    const name = String(run?.name ?? "")
+      .toLowerCase()
+      .replace(/^.*\/\s*/, "")
+      .replace(/\s+\((?:push|pull_request)\)$/, "");
+    if (!name) continue;
+    const previous = latestChecks.get(name);
+    if (!previous || Number(run.id) > Number(previous.id)) latestChecks.set(name, run);
   }
-  const author = pullRequest?.user?.login?.toLowerCase();
-  const independentApprovals = [...latestByReviewer.entries()].filter(
-    ([login, review]) => login !== author && review.state === "APPROVED",
-  );
-  if (independentApprovals.length < 2) violations.push("two_actual_independent_approvals_required");
+  for (const required of ["quality", "database", "browser"]) {
+    const run = latestChecks.get(required);
+    if (run?.status !== "completed" || run?.conclusion !== "success")
+      violations.push(`actual_check_${required}_not_successful`);
+  }
   return { valid: violations.length === 0, violations };
 }
 

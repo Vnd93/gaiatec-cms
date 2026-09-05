@@ -10,9 +10,10 @@
 | owner de negócio            | aceita impacto, janela e critérios de interrupção    |
 | on-call primário/secundário | responde alertas e executa contenção/rollback        |
 
-Os quatro aprovadores do registro G12 devem ter identidades distintas. A proteção GitHub exige dois
-reviews de PR distintos do autor. Required reviewers do ambiente são um reforço opcional quando o
-plano privado oferecer esse recurso.
+Os quatro aprovadores operacionais do registro G12 ainda devem ter identidades distintas. No GitHub,
+`@Vnd93` é o único mantenedor humano: o PR não exige approval, mas só pode avançar com CODEOWNERS
+solo, branch protegida e checks estritos no SHA. A revisão do Codex é evidência técnica automatizada,
+não uma segunda identidade responsável.
 
 ## Conteúdo obrigatório
 

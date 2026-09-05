@@ -99,9 +99,13 @@ function approvedRecord() {
       githubProtection: {
         status: "verified",
         candidateSha: sha,
-        requiredPullRequestApprovals: 2,
-        codeOwnersCount: 2,
+        governanceMode: "sole-maintainer",
+        maintainerLogin: "Vnd93",
+        requiredPullRequestApprovals: 0,
+        codeOwnersCount: 1,
         branchProtected: true,
+        requiredChecksPassed: true,
+        soleMaintainerRiskAccepted: true,
         evidenceReference: "actions/github-controls-123",
         verifiedAt: "2026-09-04T08:30:00.000Z",
       },
@@ -439,7 +443,7 @@ test("G12 approval is cryptographically and semantically bound to its canary rep
   );
 });
 
-test("production configuration refuses staging and GitHub controls require protection", () => {
+test("production configuration refuses staging and solo GitHub controls remain strict", () => {
   assert.equal(
     validateProductionConfig({
       supabaseProjectRef: "chfuhctnhqgyjowkvllv",
@@ -460,58 +464,60 @@ test("production configuration refuses staging and GitHub controls require prote
     }).violations.join(","),
     /staging_project_ref_forbidden/,
   );
-  const controls = evaluateGithubControls({
+  const controlInput = {
     environment: {
-      protection_rules: [
-        {
-          type: "required_reviewers",
-          prevent_self_review: true,
-          reviewers: [{ id: 1 }, { id: 2 }],
-        },
-      ],
+      protection_rules: [],
       deployment_branch_policy: { protected_branches: true, custom_branch_policies: false },
     },
     branchProtection: {
       required_pull_request_reviews: {
-        required_approving_review_count: 2,
-        require_code_owner_reviews: true,
-        dismiss_stale_reviews: true,
-        require_last_push_approval: true,
+        required_approving_review_count: 0,
+        require_code_owner_reviews: false,
+        require_last_push_approval: false,
+        bypass_pull_request_allowances: { users: [], teams: [], apps: [] },
       },
       enforce_admins: { enabled: true },
       required_status_checks: { strict: true, contexts: ["quality", "database", "browser"] },
       allow_force_pushes: { enabled: false },
       allow_deletions: { enabled: false },
+      required_conversation_resolution: { enabled: true },
+      required_linear_history: { enabled: true },
     },
-    codeOwners: [
-      "* @reviewer-one @reviewer-two",
-      "/.github/workflows/** @reviewer-one @reviewer-two",
-      "/docs/ev2/fase-12/approvals/** @reviewer-one @reviewer-two",
-    ].join("\n"),
+    codeOwners: ["* @Vnd93", "/.github/workflows/** @Vnd93", "/docs/ev2/fase-12/approvals/** @Vnd93"].join(
+      "\n",
+    ),
     pullRequest: {
       merged_at: "2026-09-04T08:00:00.000Z",
       base: { ref: "main" },
-      user: { login: "author" },
+      user: { login: "Vnd93" },
     },
-    reviews: [
-      { id: 1, state: "APPROVED", user: { login: "reviewer-one" } },
-      { id: 2, state: "APPROVED", user: { login: "reviewer-two" } },
+    checkRuns: [
+      { id: 1, name: "quality", status: "completed", conclusion: "success" },
+      { id: 2, name: "database", status: "completed", conclusion: "success" },
+      { id: 3, name: "browser", status: "completed", conclusion: "success" },
     ],
-  });
+  };
+  const controls = evaluateGithubControls(controlInput);
   assert.equal(controls.valid, true);
   assert.equal(evaluateGithubControls({ environment: {}, branchProtection: {} }).valid, false);
+  const failedCheck = structuredClone(controlInput);
+  failedCheck.checkRuns[0].conclusion = "failure";
+  assert.match(evaluateGithubControls(failedCheck).violations.join(","), /actual_check_quality/);
+  const wrongMaintainer = structuredClone(controlInput);
+  wrongMaintainer.pullRequest.user.login = "another-user";
+  assert.match(evaluateGithubControls(wrongMaintainer).violations.join(","), /candidate_pull_request/);
   assert.deepEqual(
     evaluateCodeOwners(
       [
-        "* @Reviewer-One @reviewer-one",
-        "/.github/workflows-backup/** @reviewer-one @reviewer-two",
-        "/docs/ev2/fase-12/approvals-old/** @reviewer-one @reviewer-two",
+        "* @Vnd93 @another-user",
+        "/.github/workflows-backup/** @Vnd93",
+        "/docs/ev2/fase-12/approvals-old/** @Vnd93",
       ].join("\n"),
     ).violations,
     [
-      "global_two_codeowners_required",
-      "workflow_two_codeowners_required",
-      "approval_record_two_codeowners_required",
+      "global_vnd93_codeowner_required",
+      "workflow_vnd93_codeowner_required",
+      "approval_record_vnd93_codeowner_required",
     ],
   );
 });
@@ -595,6 +601,9 @@ test("release workflows and reduced canary are immutable, staged and production 
   assert.equal(approvalTemplate.schemaVersion, 2);
   assert.equal(approvalTemplate.productionAuthorizationSha, null);
   assert.equal(approvalTemplate.productionReadiness.dpoLegal.status, "pending");
+  assert.equal(approvalTemplate.productionReadiness.githubProtection.governanceMode, "sole-maintainer");
+  assert.equal(approvalTemplate.productionReadiness.githubProtection.maintainerLogin, "Vnd93");
+  assert.equal(approvalTemplate.productionReadiness.githubProtection.requiredPullRequestApprovals, 0);
   assert.equal(approvalTemplate.candidateSha, null);
   assert.equal(approvalTemplate.g12Evidence.file, null);
 });

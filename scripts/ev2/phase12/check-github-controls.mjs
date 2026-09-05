@@ -22,20 +22,20 @@ async function github(path) {
 const environment = await github("/environments/production");
 const branchProtection = await github("/branches/main/protection");
 const associatedPulls = await github(`/commits/${candidateSha}/pulls`);
+const checkRunsPayload = await github(`/commits/${candidateSha}/check-runs?filter=latest&per_page=100`);
 const pullRequest = associatedPulls.find(
   (item) =>
     item?.merged_at &&
     item?.base?.ref === "main" &&
     (item?.merge_commit_sha === candidateSha || item?.head?.sha === candidateSha),
 );
-const reviews = pullRequest ? await github(`/pulls/${pullRequest.number}/reviews?per_page=100`) : [];
 const codeOwners = await readFile(".github/CODEOWNERS", "utf8").catch(() => "");
 const result = evaluateGithubControls({
   environment,
   branchProtection,
   codeOwners,
   pullRequest,
-  reviews,
+  checkRuns: checkRunsPayload?.check_runs,
 });
 if (!result.valid) throw new Error(`G12_GITHUB_CONTROLS_BLOCKED:${result.violations.join(",")}`);
 console.log(
@@ -45,6 +45,9 @@ console.log(
     branch: "main",
     candidateSha,
     pullRequest: pullRequest.number,
-    independentApprovals: 2,
+    governanceMode: "sole-maintainer",
+    maintainerLogin: "Vnd93",
+    independentApprovals: 0,
+    requiredChecks: ["quality", "database", "browser"],
   }),
 );

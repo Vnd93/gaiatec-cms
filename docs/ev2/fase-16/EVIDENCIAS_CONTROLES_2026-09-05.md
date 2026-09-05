@@ -15,7 +15,7 @@
 - origens BrasilAPI e Nominatim adicionadas e Resend removido do browser;
 - backup externo cifra antes do upload e restaura o mesmo ciphertext em ambiente efêmero;
 - provider check vincula domínio e entrega sintética ao SHA;
-- proteção exige duas revisões reais e CODEOWNERS;
+- proteção exige PR de `@Vnd93`, CODEOWNERS exclusivo e checks reais no SHA;
 - G12 approval schema v2 exige DPO/legal, quatro owners, todos os controles e autorização com SHA.
 
 Validação inicial:
@@ -26,6 +26,6 @@ Validação inicial:
 
 ## Evidências ainda inexistentes
 
-Não foram fabricados: ruleset/proteção efetiva, reviewers, CODEOWNERS, backup real, restore real,
+Não foram fabricados: ruleset/proteção efetiva, backup real, restore real,
 parecer DPO/legal, chave Resend de produção, entrega sintética produtiva, canary CSP do SHA final,
 quatro identidades operacionais ou autorização de produção. Esses itens continuam bloqueando G12.

@@ -32,7 +32,7 @@
 19. [EV2.13 — hardening e elegibilidade runtime](fase-13/README.md) — isolamento de secrets, evidência vinculada, manifesto agregado, revogação e canary individual.
 20. [EV2.14 — IA transacional controlada](fase-14/README.md) — sandbox sintético, plano/dry-run, aprovação por hash, execução atômica, compensação e plano do Gate G14.
 21. [EV2.15 — fechamento técnico e integração segura](fase-15/README.md) — zero avisos acionáveis, regressões finais, hash G14 multiplataforma, preview efêmero e consolidação ordenada dos PRs.
-22. [EV2.16 — controles vinculantes de prontidão](fase-16/README.md) — revisão independente, backup/restore externo, Resend, CSP, DPO/legal, quatro owners e autorização vinculada ao SHA.
+22. [EV2.16 — controles vinculantes de prontidão](fase-16/README.md) — governança solo `@Vnd93`, backup/restore externo, Resend, CSP, DPO/legal, owners e autorização vinculada ao SHA.
 
 ## Escopo documental
 
@@ -108,7 +108,7 @@ e smoke HTTP 6/6. Os PRs de código #6–#9 foram integrados em ordem no head `e
 consolidado, e os PRs documentais #5–#9 foram integrados em `main`. Não há bloqueador P0/P1
 conhecido no escopo validado. O Gate G12 e todos os limites de produção permanecem inalterados.
 
-Na EV2.16, o repositório executável passou a recusar produção sem dois reviews reais, CODEOWNERS,
+Na EV2.16, o repositório executável passou a recusar produção sem PR e CODEOWNERS de `@Vnd93`,
 backup externo cifrado com restore comprovado, entrega sintética pelo Resend, CSP enforced sem
 violação crítica, parecer DPO/legal identificado, quatro responsáveis distintos e autorização
 literal contendo o SHA completo. A suíte integral local passou. O canary CSP em staging e todos os

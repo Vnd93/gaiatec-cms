@@ -19,9 +19,13 @@ function readiness() {
     githubProtection: {
       status: "verified",
       candidateSha: sha,
-      requiredPullRequestApprovals: 2,
-      codeOwnersCount: 2,
+      governanceMode: "sole-maintainer",
+      maintainerLogin: "Vnd93",
+      requiredPullRequestApprovals: 0,
+      codeOwnersCount: 1,
       branchProtected: true,
+      requiredChecksPassed: true,
+      soleMaintainerRiskAccepted: true,
       evidenceReference: "actions/github-controls-123",
       verifiedAt: "2026-09-05T10:00:00.000Z",
     },
@@ -122,11 +126,12 @@ test("real email provider is Resend with verified sending and corporate recipien
   );
 });
 
-test("production readiness requires every independent, legal and operational control", () => {
+test("production readiness requires sole-maintainer, legal and operational controls", () => {
   const controls = readiness();
   assert.equal(validateProductionReadinessControls(controls, { candidateSha: sha }).valid, true);
   const repeatedGap = structuredClone(controls);
-  repeatedGap.githubProtection.requiredPullRequestApprovals = 1;
+  repeatedGap.githubProtection.maintainerLogin = "another-user";
+  repeatedGap.githubProtection.soleMaintainerRiskAccepted = false;
   repeatedGap.backupRestore.rtoMinutes = 61;
   repeatedGap.dpoLegal.status = "pending";
   repeatedGap.emailProvider.syntheticDeliveryStatus = "accepted";
@@ -134,7 +139,8 @@ test("production readiness requires every independent, legal and operational con
   const violations = validateProductionReadinessControls(repeatedGap, { candidateSha: sha }).violations.join(
     ",",
   );
-  assert.match(violations, /two_independent_reviews_required/);
+  assert.match(violations, /github_sole_maintainer_invalid/);
+  assert.match(violations, /github_sole_maintainer_risk_not_accepted/);
   assert.match(violations, /restore_rto_invalid/);
   assert.match(violations, /dpo_legal_not_approved/);
   assert.match(violations, /email_synthetic_delivery_not_verified/);

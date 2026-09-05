@@ -10,7 +10,7 @@ ou substituído por confirmação verbal.
 | Cloudflare produção            | projeto `gaiatec-website` ativo e com histórico recuperável                                | manter token de Pages com menor privilégio e validar baseline na janela    |
 | Deployment produtivo observado | `ff2dbb65-2f8b-4840-a9a1-f2fde29e8ebf`, release `ba1131060177cdc602448ba4e9aeccf7afc298a5` | reconfirmar automaticamente; o valor pode mudar                            |
 | Ambiente GitHub `production`   | não configurado; somente `preview` existe                                                  | habilitar plano compatível e criar ambiente restrito à branch protegida    |
-| Branch `main`                  | sem proteção efetiva no plano Free                                                         | exigir PR, dois approvals, CODEOWNERS, admins e checks estritos da CI      |
+| Branch `main`                  | sem proteção efetiva no plano Free                                                         | exigir PR de `@Vnd93`, CODEOWNERS solo, admins e checks estritos da CI     |
 | Secrets/variables Actions      | ausentes                                                                                   | cadastrar somente no ambiente protegido conforme lista abaixo              |
 | Supabase de produção           | projeto isolado `chfuhctnhqgyjowkvllv` saudável, mas no plano Free e ainda vazio           | backup externo, restore drill, migrations, funções e revisão RLS aprovados |
 | Edge Functions EV2             | guardas ainda recusam produção por desenho                                                 | criar release produtiva separada e homologá-la antes de qualquer ativação  |
@@ -24,9 +24,10 @@ ou substituído por confirmação verbal.
 
 Proteções:
 
-- dois approvals reais e distintos do autor no PR associado ao SHA;
-- CODEOWNERS com dois owners globais e para workflows/registros de aprovação;
-- descartar approvals obsoletos e exigir aprovação do último push por outra pessoa;
+- PR obrigatório criado e integrado por `@Vnd93`, sem aprovação humana impossível de satisfazer;
+- CODEOWNERS exclusivo `@Vnd93` globalmente e para workflows/registros de aprovação;
+- checks reais `quality`, `database` e `browser` concluídos com sucesso no SHA exato;
+- conversas resolvidas e histórico linear;
 - permitir deployment somente a partir de branch protegida;
 - `main` protegida, sem force-push/delete, com checks estritos `quality`, `database`, `browser`;
 - nenhuma execução concorrente de deploy/rollback.
@@ -36,7 +37,7 @@ Secrets:
 - `CLOUDFLARE_API_TOKEN` — Pages Write somente na conta/projeto necessários;
 - `CLOUDFLARE_ACCOUNT_ID`;
 - `GITHUB_RELEASE_GUARD_TOKEN` — token fine-grained somente leitura de administração/metadados para
-  verificar ambiente, proteção, PR e reviews;
+  verificar ambiente, proteção, PR e check-runs;
 - `PRODUCTION_SUPABASE_URL`;
 - `PRODUCTION_SUPABASE_ANON_KEY` — chave pública, ainda assim segregada do build de staging.
 
@@ -73,15 +74,16 @@ nele `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `STAGING_SUPABASE_URL` e
 `STAGING_SUPABASE_ANON_KEY`. Enquanto faltar qualquer valor, o workflow valida e preserva o artefato,
 mas não faz deploy. A execução local autenticada continua possível somente após autorização do SHA.
 
-## Plano e identidades necessários
+## Plano e mantenedor necessário
 
 A sessão `@Vnd93` tem acesso administrativo, mas o repositório privado está no GitHub Free. Branch
-protection e environment secrets privados exigem GitHub Pro, Team ou Enterprise. Required reviewers
-do ambiente privado exigem Enterprise; no desenho mínimo Pro/Team, a segregação é obtida por dois
-approvals obrigatórios no PR, CODEOWNERS, revisão do último push e quatro aprovadores no registro G12.
+protection e environment secrets privados exigem GitHub Pro, Team ou Enterprise. A decisão vigente
+adota `@Vnd93` como único mantenedor humano e usa zero approvals, PR obrigatório, CODEOWNERS solo,
+checks reais no SHA, proteção de administradores e ausência de bypass. O Codex fornece revisão
+técnica automatizada, sem ser tratado como segunda conta ou pessoa responsável.
 
-Também são necessárias duas contas GitHub revisoras distintas. Nenhum secret foi movido para o
-escopo desprotegido e nenhuma identidade fictícia foi criada. Detalhes:
+Nenhum secret foi movido para escopo desprotegido e nenhuma identidade fictícia foi criada. O risco
+de mantenedor único deve ser aceito explicitamente no registro G12. Detalhes:
 [proteção GitHub EV2.16](../fase-16/GITHUB_PROTECAO_E_REVISORES.md).
 
 Evidência detalhada: [infraestrutura produtiva de 4 de setembro de 2026](EVIDENCIAS_INFRAESTRUTURA_PRODUCAO_2026-09-04.md).

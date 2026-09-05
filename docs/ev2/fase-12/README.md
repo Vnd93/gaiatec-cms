@@ -26,7 +26,7 @@ migrations aditivas já homologadas até `0052` e preserva todas as flags EV2 de
 ## Limite desta entrega
 
 O G11 autorizou a preparação local/staging da EV2.12, não o go-live. O workflow de produção exige
-simultaneamente branch `main`, ambiente protegido, dois reviews reais, controles do branch, projeto
+simultaneamente branch `main`, ambiente protegido, PR de `@Vnd93`, controles automáticos do branch, projeto
 Supabase produtivo distinto, registro G12 aprovado e a confirmação literal
 `AUTORIZO-G12-PRODUCAO:<SHA completo>`. Na ausência de qualquer item, o fluxo falha antes do deploy.
 

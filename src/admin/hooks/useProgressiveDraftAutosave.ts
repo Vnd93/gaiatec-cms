@@ -12,7 +12,7 @@ import {
   type ProgressiveDraftSyncStatus,
 } from "../progressive-draft-sync";
 
-type Environment = "local" | "staging";
+type Environment = "local" | "staging" | "production";
 
 type CapabilityResult = { enabled: boolean };
 type QueryResult = { draft: Ev2DraftRecord | null };

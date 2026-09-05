@@ -4,6 +4,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
 import { percentile, runHttpLoadProbe, serverTimingDuration } from "./system-assurance-lib.mjs";
+import { validateHealthContract, validateReleaseManifest } from "../phase12/release-guard-lib.mjs";
 
 const TARGET = {
   ref: "glcqsosxwgmlhzgcsnzv",
@@ -291,13 +292,44 @@ async function installOverride(ctx, actorId, createdBy) {
 }
 
 async function baseline(ctx) {
-  const [stableManifest, candidateManifest, flags] = await Promise.all([
+  const [stableHealth, stableManifest, candidateHealth, candidateManifest, flags] = await Promise.all([
+    request(TARGET.stableOrigin + "/healthz"),
     request(TARGET.stableOrigin + "/release-manifest.json"),
+    request(TARGET.candidateOrigin + "/healthz"),
     request(TARGET.candidateOrigin + "/release-manifest.json"),
     rest(ctx, "cms_feature_flags", {
       query: "flag_key=like.ev2.*&select=flag_key,default_enabled,kill_switch&order=flag_key",
     }),
   ]);
+  const contracts = [
+    [
+      "stable_health",
+      stableHealth,
+      validateHealthContract(stableHealth.json, { expectedEnvironment: "staging" }),
+    ],
+    ["stable_manifest", stableManifest, validateReleaseManifest(stableManifest.json)],
+    [
+      "candidate_health",
+      candidateHealth,
+      validateHealthContract(candidateHealth.json, {
+        expectedRelease: expectedSha,
+        expectedEnvironment: "staging",
+      }),
+    ],
+    [
+      "candidate_manifest",
+      candidateManifest,
+      validateReleaseManifest(candidateManifest.json, { expectedRelease: expectedSha }),
+    ],
+  ];
+  for (const [name, response, validation] of contracts) {
+    if (!response.headers.get("content-type")?.includes("application/json") || !validation.valid)
+      throw new Error(`${name}_contract_invalid:${validation.violations.join(",")}`);
+  }
+  if (stableHealth.json.release !== stableManifest.json.release)
+    throw new Error("stable_release_contract_mismatch");
+  if (candidateHealth.json.release !== candidateManifest.json.release)
+    throw new Error("candidate_release_contract_mismatch");
   return {
     stableRelease: stableManifest.json.release,
     candidateRelease: candidateManifest.json.release,
@@ -457,26 +489,36 @@ async function closeSyntheticResidue(ctx) {
 }
 
 async function residue(ctx) {
-  if (!actorIds.length)
-    return { activeActors: 0, activeCredentials: 0, activeOverrides: 0, personalLeadPayloads: 0 };
-  const [profiles, overrides, leadsResult, authUsers] = await Promise.all([
-    rest(ctx, "cms_profiles", {
-      query: "user_id=in.(" + actorIds.join(",") + ")&status=eq.active&select=user_id",
-    }),
-    rest(ctx, "cms_feature_flag_overrides", {
-      query: "flag_key=eq.ev2.system_assurance&scope_key=in.(" + actorIds.join(",") + ")&select=id",
-    }),
+  const [profiles, overrides, leadsResult, authUsers, retainedActors, retainedLeads] = await Promise.all([
+    actorIds.length
+      ? rest(ctx, "cms_profiles", {
+          query: "user_id=in.(" + actorIds.join(",") + ")&status=eq.active&select=user_id",
+        })
+      : Promise.resolve({ json: [] }),
+    actorIds.length
+      ? rest(ctx, "cms_feature_flag_overrides", {
+          query: "flag_key=eq.ev2.system_assurance&scope_key=in.(" + actorIds.join(",") + ")&select=id",
+        })
+      : Promise.resolve({ json: [] }),
     leadId
       ? rest(ctx, "cms_leads", { query: "id=eq." + leadId + "&anonymized_at=is.null&select=id" })
       : Promise.resolve({ json: [] }),
-    Promise.all(
-      actorIds.map((actorId) =>
-        request(ctx.url + "/auth/v1/admin/users/" + actorId, {
-          headers: ctx.serviceHeaders,
-          allowed: [200, 404],
-        }),
-      ),
-    ),
+    actorIds.length
+      ? Promise.all(
+          actorIds.map((actorId) =>
+            request(ctx.url + "/auth/v1/admin/users/" + actorId, {
+              headers: ctx.serviceHeaders,
+              allowed: [200, 404],
+            }),
+          ),
+        )
+      : Promise.resolve([]),
+    rest(ctx, "cms_profiles", {
+      query: "display_email=like.ev2-g11-*@example.invalid&select=user_id",
+    }),
+    rest(ctx, "cms_leads", {
+      query: "origin_source=eq.ev2-g11-canary&anonymized_at=not.is.null&select=id",
+    }),
   ]);
   return {
     activeActors: profiles.json.length,
@@ -487,12 +529,16 @@ async function residue(ctx) {
     }).length,
     activeOverrides: overrides.json.length,
     personalLeadPayloads: leadsResult.json.length,
+    retainedSyntheticActors: retainedActors.json.length,
+    retainedAnonymizedLeads: retainedLeads.json.length,
+    semantics: "zero-active-residue; retained tombstones are counted separately",
   };
 }
 
 let operationError;
 let cleanupError;
 let finalEvidence;
+let finalResidue;
 
 try {
   context = await loadContext();
@@ -781,8 +827,9 @@ try {
     if (context) {
       await closeSyntheticResidue(context);
       const remaining = await residue(context);
+      finalResidue = remaining;
       check(
-        "synthetic_residue_zero",
+        "synthetic_active_residue_zero",
         remaining.activeActors === 0 &&
           remaining.activeCredentials === 0 &&
           remaining.activeOverrides === 0 &&
@@ -813,7 +860,7 @@ const finalReport = {
   productionMutations: 0,
   stablePromoted: false,
   evidence: finalEvidence,
-  syntheticResidue: 0,
+  syntheticResidue: finalResidue,
 };
 if (process.env.EV2_G11_REPORT_PATH)
   writeFileSync(process.env.EV2_G11_REPORT_PATH, `${JSON.stringify(finalReport, null, 2)}\n`, {

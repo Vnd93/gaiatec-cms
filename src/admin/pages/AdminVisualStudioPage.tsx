@@ -29,6 +29,7 @@ import type { CmsPageBlock, CmsPageContent } from "@/shared/contracts/cms-conten
 import { CmsPageRenderer } from "@/public/components/CmsPageRenderer";
 import { CmsApiError, mediaCommand, visualStudioCommand } from "../api/cms-api";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { cmsEnvironment, isEv2FeatureEnabled } from "../ev2-runtime";
 import { pageBlockReferenceRequirement } from "../page-builder-model";
 import {
   appendVisualComponent,
@@ -47,8 +48,7 @@ import {
 import { PageBlockEditor, type BuilderMedia, type BuilderRelation } from "../components/PageBlockEditor";
 import "../admin-visual-studio.css";
 
-const CANDIDATE_ENABLED = import.meta.env.VITE_EV2_VISUAL_STUDIO_CANDIDATE === "true";
-const CMS_ENVIRONMENT = import.meta.env.VITE_CMS_ENVIRONMENT === "staging" ? "staging" : "local";
+const CMS_ENVIRONMENT = cmsEnvironment();
 type Breakpoint = "desktop" | "tablet" | "mobile";
 type ConflictReplacement = {
   strategy: "replace_remote";
@@ -70,8 +70,9 @@ export default function AdminVisualStudioPage() {
   const { itemId } = useParams();
   const navigate = useNavigate();
   const { session, profile } = useAdminAuth();
+  const candidateEnabled = isEv2FeatureEnabled(profile, "ev2.visual_studio");
   const [capability, setCapability] = useState<"checking" | "enabled" | "disabled" | "error">(
-    CANDIDATE_ENABLED ? "checking" : "disabled",
+    candidateEnabled ? "checking" : "disabled",
   );
   const [catalog, setCatalog] = useState<Ev2VisualCatalog | null>(null);
   const [loaded, setLoaded] = useState<Ev2VisualDocumentResult | null>(null);
@@ -176,7 +177,7 @@ export default function AdminVisualStudioPage() {
   }, [itemId, session]);
 
   const load = useCallback(async () => {
-    if (!session || !itemId || !CANDIDATE_ENABLED) return;
+    if (!session || !itemId || !candidateEnabled) return;
     setError("");
     try {
       const capabilityResult = Ev2VisualCapabilityResultSchema.parse(
@@ -224,7 +225,7 @@ export default function AdminVisualStudioPage() {
       setCapability("error");
       setError(caught instanceof Error ? caught.message : "Estúdio Visual indisponível.");
     }
-  }, [itemId, loadSupportingData, session]);
+  }, [candidateEnabled, itemId, loadSupportingData, session]);
 
   useEffect(() => {
     void load();
@@ -572,12 +573,12 @@ export default function AdminVisualStudioPage() {
     }
   }
 
-  if (!CANDIDATE_ENABLED) {
+  if (!candidateEnabled) {
     return (
       <section>
         <h1>Estúdio Visual</h1>
         <div role="status" className="admin-notice">
-          O candidato EV2.9 não está incluído neste build. O site builder v1 permanece inalterado.
+          O Estúdio Visual EV2.9 não está elegível para esta sessão. O site builder v1 permanece inalterado.
         </div>
       </section>
     );

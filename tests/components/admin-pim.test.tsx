@@ -11,7 +11,25 @@ const mocks = vi.hoisted(() => ({
   savedProduct: null as Record<string, unknown> | null,
   auth: {
     session: { access_token: "test-token" },
-    profile: { permissions: ["cms:pim.read", "cms:pim.manage", "cms:pim.archive"] },
+    profile: {
+      permissions: ["cms:pim.read", "cms:pim.manage", "cms:pim.archive"],
+      ev2Capabilities: {
+        schemaVersion: 1,
+        status: "ready",
+        environment: "local",
+        siteKey: "main",
+        evaluatedAt: new Date().toISOString(),
+        capabilities: {
+          "ev2.pim_v2": {
+            schemaVersion: 1,
+            key: "ev2.pim_v2",
+            enabled: true,
+            source: "override",
+            evaluatedAt: new Date().toISOString(),
+          },
+        },
+      },
+    },
   },
 }));
 

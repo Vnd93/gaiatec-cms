@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { damCommand } from "../api/cms-api";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { cmsEnvironment } from "../ev2-runtime";
 import { fingerprintMediaFile } from "../dam-model";
 import {
   mediaVariantSlots,
@@ -30,7 +31,7 @@ import {
   StatePanel,
 } from "../components/AdminUI";
 
-const CMS_ENVIRONMENT = import.meta.env.VITE_CMS_ENVIRONMENT === "staging" ? "staging" : "local";
+const CMS_ENVIRONMENT = cmsEnvironment();
 
 function envelope(expectedVersion?: number) {
   return {
@@ -356,7 +357,7 @@ export default function AdminDamPage() {
       <StatePanel
         kind="forbidden"
         title="DAM EV2.5 desativado"
-        description="O build candidato está disponível, mas a flag server-side continua desligada para este usuário."
+        description="A sessão foi elegível no manifesto, mas a API específica manteve a capacidade desligada."
       />
     );
   if (capability === "checking" && loading) return <LoadingSkeleton label="Validando DAM EV2.5" rows={5} />;

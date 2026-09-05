@@ -30,10 +30,11 @@ simultaneamente branch `main`, ambiente protegido, dois revisores, controles do 
 Supabase produtivo distinto, registro G12 aprovado e a confirmação literal
 `AUTORIZO-G12-PRODUCAO`. Na ausência de qualquer item, o fluxo falha antes do deploy.
 
-Os switches `VITE_EV2_*_CANDIDATE` continuam sendo de build. Portanto, a promoção inicial só pode
-levar o _shell_ compatível com v1 e todos os candidatos em `false`. A ampliação das funcionalidades
-EV2 em produção permanece bloqueada até existir elegibilidade de frontend em runtime alinhada às
-flags server-side e um backend produtivo aprovado.
+O hardening posterior da EV2.13 removeu os switches `VITE_EV2_*_CANDIDATE` das decisões do frontend e
+introduziu elegibilidade individual em runtime. Produção continua explicitamente bloqueada pelo
+manifesto, e o CMS v1 permanece disponível quando a avaliação falta, expira ou falha. A evidência
+histórica G12 precisa ser requalificada sob o novo verificador antes de poder compor uma aprovação de
+produção.
 
 ## Documentos operacionais
 

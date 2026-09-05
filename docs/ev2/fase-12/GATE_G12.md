@@ -12,7 +12,7 @@
 | G11 válido        | aceite G11 e canary sintético rastreável                                             | atendido; assurance segregada aceita                           |
 | Artefato imutável | SHA completo igual em checkout, `X-Release`, `/healthz` e manifest                   | SHA `8250db0d…` validado em staging                            |
 | CI e segurança    | suíte integral, RLS, E2E, acessibilidade e audit sem vulnerabilidade alta            | checks e canary aprovados                                      |
-| Canary G12        | alias isolado, dois usuários sintéticos MFA, overrides individuais de 30 minutos     | concluído; resíduo zero                                        |
+| Canary G12        | alias isolado, dois usuários sintéticos MFA, overrides individuais de 30 minutos     | histórico concluído; requalificação pós-hardening necessária   |
 | Projeções         | comparação v1/candidato sem divergência                                              | reconciliação zero; aceite final pendente                      |
 | Error budget      | três janelas consecutivas saudáveis, com amostra, versão e ambiente                  | 3 de 3 janelas aprovadas                                       |
 | Recuperação       | baseline produtiva e drill de rollback compatível com RPO 0/RTO <= 15 min            | restore RPO 0/RTO 1; drill produtivo pendente                  |

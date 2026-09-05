@@ -1,6 +1,7 @@
 import type { Session, User } from "@supabase/supabase-js";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { SUPABASE_ANON_KEY, SUPABASE_URL, supabase } from "@/lib/supabase";
+import type { Ev2CapabilityManifest } from "@/shared/contracts/ev2-foundation";
 
 export type AdminAuthStatus =
   | "loading"
@@ -12,7 +13,7 @@ export type AdminAuthStatus =
   | "mfa_challenge"
   | "ready";
 
-type SessionSnapshot = {
+export type SessionSnapshot = {
   userId: string;
   status: "invited" | "active" | "suspended";
   roles: string[];
@@ -21,6 +22,7 @@ type SessionSnapshot = {
   mfaVerified: boolean;
   accessGranted: boolean;
   activated: boolean;
+  ev2Capabilities?: Ev2CapabilityManifest;
   rbacScoped?: boolean;
   scope?: {
     siteKey: "main";
@@ -80,6 +82,7 @@ async function invokeSession(session: Session, action: "resolve" | "mfa" | "reco
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ action }),
+    signal: AbortSignal.timeout(10_000),
   });
   const body = (await response.json().catch(() => ({}))) as SessionSnapshot & { error?: string };
   if (!response.ok) throw new SessionInvocationError(body.error ?? "SESSION_REJECTED", response.status);
@@ -91,6 +94,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<AdminAuthStatus>("loading");
   const [profile, setProfile] = useState<SessionSnapshot | null>(null);
   const requestId = useRef(0);
+  const capabilityRefreshInFlight = useRef(false);
   const sessionRef = useRef<Session | null>(null);
   const statusRef = useRef<AdminAuthStatus>("loading");
 
@@ -176,7 +180,10 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         await resolveSession(nextSession);
       } catch (error) {
         if (currentRequest !== requestId.current) return;
-        if (statusRef.current === "ready" && isTransientSessionError(error)) return;
+        if (statusRef.current === "ready" && isTransientSessionError(error)) {
+          setProfile((current) => (current ? { ...current, ev2Capabilities: undefined } : current));
+          return;
+        }
         setProfile(null);
         updateStatus(isTransientSessionError(error) ? "temporarily_unavailable" : "unauthorized");
       }
@@ -219,6 +226,27 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
       data.subscription.unsubscribe();
     };
   }, [refreshSameUserInBackground, resolveSession, updateSession, updateStatus]);
+
+  useEffect(() => {
+    if (status !== "ready") return;
+    const refreshCapabilities = () => {
+      const current = sessionRef.current;
+      if (!current || capabilityRefreshInFlight.current) return;
+      capabilityRefreshInFlight.current = true;
+      void refreshSameUserInBackground(current).finally(() => {
+        capabilityRefreshInFlight.current = false;
+      });
+    };
+    const interval = window.setInterval(refreshCapabilities, 30_000);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") refreshCapabilities();
+    };
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [refreshSameUserInBackground, status]);
 
   const value = useMemo<AdminAuthValue>(
     () => ({

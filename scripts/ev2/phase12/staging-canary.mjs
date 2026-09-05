@@ -59,6 +59,7 @@ try {
       http5xxRatePercent: probe.http5xxRatePercent,
       publicP95Ms: probe.publicP95Ms,
       evidenceHash: createHash("sha256").update(JSON.stringify(probe)).digest("hex"),
+      probe,
     });
   }
 
@@ -66,7 +67,8 @@ try {
   const evidence = {
     schemaVersion: 1,
     outcome: "G12_CANARY_PASS",
-    suiteKey: "g12-staging-integrated-reduced-v1",
+    suiteKey: "g12-staging-integrated-reduced-v2",
+    environment: "staging",
     canaryRunId,
     candidateSha,
     candidateOrigin,

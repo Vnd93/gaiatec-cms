@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { attributesCommand, pimCommand, masterDataCommand } from "../api/cms-api";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { cmsEnvironment, isEv2FeatureEnabled } from "../ev2-runtime";
 import {
   Ev2PimCapabilityResultSchema,
   Ev2PimAttributeCatalogResultSchema,
@@ -27,8 +28,7 @@ import {
   withGeneratedSlug,
 } from "../pim-editor-model";
 
-const CANDIDATE_ENABLED = import.meta.env.VITE_EV2_PIM_CANDIDATE === "true";
-const CMS_ENVIRONMENT = import.meta.env.VITE_CMS_ENVIRONMENT === "staging" ? "staging" : "local";
+const CMS_ENVIRONMENT = cmsEnvironment();
 
 type LoadedPimProduct = Ev2PimProductInput & { lockVersion: number; skus: Ev2PimSku[] };
 
@@ -198,8 +198,9 @@ function TechnicalAttributeField({
 
 export default function AdminPimPage() {
   const { session, profile } = useAdminAuth();
+  const candidateEnabled = isEv2FeatureEnabled(profile, "ev2.pim_v2");
   const [capability, setCapability] = useState<"checking" | "enabled" | "disabled" | "error">(
-    CANDIDATE_ENABLED ? "checking" : "disabled",
+    candidateEnabled ? "checking" : "disabled",
   );
   const [products, setProducts] = useState<Ev2PimProductSummary[]>([]);
   const [masters, setMasters] = useState<Ev2MasterEntity[]>([]);
@@ -216,7 +217,7 @@ export default function AdminPimPage() {
   const canArchive = profile?.permissions.includes("cms:pim.archive") ?? false;
 
   const load = useCallback(async () => {
-    if (!session || !CANDIDATE_ENABLED) return;
+    if (!session || !candidateEnabled) return;
     try {
       const capabilityResult = Ev2PimCapabilityResultSchema.parse(
         await pimCommand(session, { action: "capability", envelope: envelope() }),
@@ -246,7 +247,7 @@ export default function AdminPimPage() {
       setCapability("error");
       setError(caught instanceof Error ? caught.message : "PIM indisponível.");
     }
-  }, [session]);
+  }, [candidateEnabled, session]);
 
   useEffect(() => {
     void load();
@@ -449,12 +450,12 @@ export default function AdminPimPage() {
     });
   }
 
-  if (!CANDIDATE_ENABLED)
+  if (!candidateEnabled)
     return (
       <section>
         <h1>PIM EV2</h1>
         <div role="status" className="admin-notice">
-          O candidato EV2.4 não está incluído neste build. O editor de produtos v1 permanece ativo.
+          O PIM EV2.4 não está elegível para esta sessão. O editor de produtos v1 permanece ativo.
         </div>
       </section>
     );

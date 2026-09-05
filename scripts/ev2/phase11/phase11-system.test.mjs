@@ -91,7 +91,7 @@ test("F-018 exposes a read-only snapshot and two-person Gate G11 evidence", asyn
   assert.match(edge, /X-Idempotency-Key/);
   assert.doesNotMatch(edge, /SUPABASE_SERVICE_ROLE_KEY\s*=/);
   assert.match(contract, /gateDecision: z\.literal\("non_authoritative"\)/);
-  assert.match(page, /VITE_EV2_SYSTEM_ASSURANCE_CANDIDATE/);
+  assert.match(page, /isEv2FeatureEnabled\(profile, "ev2\.system_assurance"\)/);
   assert.match(page, /não o aprova isoladamente/);
   assert.match(page, /Filas transacionais verificadas/);
   assert.match(api, /systemAssuranceCommand/);
@@ -226,7 +226,8 @@ test("G11 operational artifacts remain reproducible and release only EV2.12 prep
   assert.match(canary, /commandWallP95Ms/);
   assert.match(canary, /async function rpc[\s\S]*?allowed: \[200, 204\]/);
   assert.match(canary, /independent_review_required/);
-  assert.match(canary, /synthetic_residue_zero/);
+  assert.match(canary, /synthetic_active_residue_zero/);
+  assert.match(canary, /retainedSyntheticActors/);
   assert.match(canary, /ban_duration: "876000h"/);
   assert.match(canary, /activeCredentials/);
   assert.match(workflow, /ev2-g11-canary/);

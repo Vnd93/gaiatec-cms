@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { cmsEnvironment, isEv2FeatureEnabled } from "../ev2-runtime";
 import { searchGovernanceCommand } from "../api/cms-api";
 import { AdminAlert, ConfirmDialog } from "../components/AdminUI";
 type Synonym = {
@@ -29,16 +30,16 @@ type SearchRule = {
   expires_at: string;
   active: boolean;
 };
-const environment = () => (import.meta.env.VITE_CMS_ENVIRONMENT === "staging" ? "staging" : "local");
 const envelope = () => ({
   schemaVersion: 1 as const,
   commandId: crypto.randomUUID(),
   correlationId: crypto.randomUUID(),
   occurredAt: new Date().toISOString(),
-  actorContext: { environment: environment(), siteKey: "main" },
+  actorContext: { environment: cmsEnvironment(), siteKey: "main" },
 });
 export default function AdminSearchGovernancePage() {
   const { session, profile } = useAdminAuth(),
+    candidateEnabled = isEv2FeatureEnabled(profile, "ev2.search_quality"),
     [params, setParams] = useSearchParams(),
     [items, setItems] = useState<Synonym[]>([]),
     [zeros, setZeros] = useState<any[]>([]),
@@ -79,7 +80,7 @@ export default function AdminSearchGovernancePage() {
         });
         setZeros(analytics.zeroResults);
       }
-      if (import.meta.env.VITE_EV2_SEARCH_QUALITY_CANDIDATE === "true") {
+      if (candidateEnabled) {
         const capability = await searchGovernanceCommand<{ enabled: boolean }>(session, {
           action: "capability",
           envelope: envelope(),
@@ -99,7 +100,7 @@ export default function AdminSearchGovernancePage() {
     } finally {
       setLoading(false);
     }
-  }, [profile?.permissions, session]);
+  }, [candidateEnabled, profile?.permissions, session]);
   useEffect(() => {
     void load();
   }, [load]);

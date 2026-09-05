@@ -8,6 +8,7 @@
   "changeReference": null,
   "g11EvidenceRunId": "7466a0d3-021f-4c60-ad82-61e76b93844f",
   "g12Evidence": {
+    "file": null,
     "canaryRunId": null,
     "candidateSha": null,
     "reportSha256": null,

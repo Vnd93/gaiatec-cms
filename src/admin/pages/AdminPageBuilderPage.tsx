@@ -6,6 +6,7 @@ import { CmsPageContentSchema, type CmsPageBlock, type CmsPageContent } from "@/
 import { PageBlockEditor, type BuilderMedia, type BuilderRelation } from "../components/PageBlockEditor";
 import { UnsavedChangesGuard } from "../components/UnsavedChangesGuard";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { isEv2FeatureEnabled } from "../ev2-runtime";
 import { editorialCommand, issuePreview } from "../api/cms-api";
 import { openExternalAfterAsync } from "../open-external-preview";
 import { useDraftBackup } from "../hooks/useDraftBackup";
@@ -85,13 +86,12 @@ const legacyBlockTypes = new Set<CmsPageBlock["type"]>([
   "cta",
   "related_content",
 ]);
-const VISUAL_STUDIO_CANDIDATE_ENABLED = import.meta.env.VITE_EV2_VISUAL_STUDIO_CANDIDATE === "true";
-
 export default function AdminPageBuilderPage() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { session, profile } = useAdminAuth();
+  const visualStudioEnabled = isEv2FeatureEnabled(profile, "ev2.visual_studio");
   const requestedType = searchParams.get("type") === "homepage" ? "homepage" : "page";
   const [payload, setPayload] = useState<CmsPageContent>(() => createInitialPagePayload(requestedType));
   const [slug, setSlug] = useState(() =>
@@ -580,10 +580,10 @@ export default function AdminPageBuilderPage() {
                   Os blocos e o hash visual desta página são versionados pelo Estúdio Visual. Metadados,
                   relações, SEO e governança continuam editáveis aqui.
                 </p>
-                {loaded && VISUAL_STUDIO_CANDIDATE_ENABLED ? (
+                {loaded && visualStudioEnabled ? (
                   <Link to={`/admin/estudio-visual/${loaded.id}`}>Abrir Estúdio Visual</Link>
                 ) : (
-                  <p>O Estúdio Visual não está habilitado neste build; os blocos ficam somente leitura.</p>
+                  <p>O Estúdio Visual não está elegível nesta sessão; os blocos ficam somente leitura.</p>
                 )}
               </div>
             ) : (

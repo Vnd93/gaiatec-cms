@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
@@ -9,7 +10,10 @@ import {
   evaluateRolloutAdvance,
   evaluateRolloutWindow,
   validateApprovalRecord,
+  validateCanaryEvidenceBinding,
+  validateHealthContract,
   validateProductionConfig,
+  validateReleaseManifest,
 } from "./release-guard-lib.mjs";
 
 const read = (path) => readFile(path, "utf8");
@@ -31,6 +35,7 @@ function rolloutWindow(offsetMinutes = 0) {
     releaseHeadersExact: true,
     healthContractValid: true,
     manifestReleaseExact: true,
+    routeBudgetsValid: true,
     nonProductionNoindexValid: true,
     p0Count: 0,
     p1Count: 0,
@@ -59,6 +64,7 @@ function approvedRecord() {
     changeReference: "CHG-EV2-12",
     g11EvidenceRunId: "7466a0d3-021f-4c60-ad82-61e76b93844f",
     g12Evidence: {
+      file: `docs/ev2/fase-12/evidencias/G12_CANARY_${sha}.json`,
       canaryRunId: "12345678-1234-4234-9234-123456789abc",
       candidateSha: sha,
       reportSha256: "c".repeat(64),
@@ -92,6 +98,79 @@ function approvedRecord() {
       securityPrivacyOwner: { id: "SEC-01", approvedAt: "2026-09-04T09:03:00.000Z" },
       businessOwner: { id: "BUS-01", approvedAt: "2026-09-04T09:04:00.000Z" },
     },
+  };
+}
+
+function boundCanaryEvidence(record) {
+  return {
+    schemaVersion: 1,
+    outcome: "G12_CANARY_PASS",
+    suiteKey: "g12-staging-integrated-reduced-v2",
+    environment: "staging",
+    canaryRunId: record.g12Evidence.canaryRunId,
+    candidateSha: record.candidateSha,
+    candidateOrigin: "https://ev2-g12-canary.gaiatec-cms-staging.pages.dev",
+    stableOrigin: "https://gaiatec-cms-staging.pages.dev",
+    g11AssuranceRunId: record.g11EvidenceRunId,
+    inheritedG11Checks: 27,
+    inheritedG11Passed: 27,
+    p0Count: 0,
+    p1Count: 0,
+    securityStatus: "passed",
+    restoreStatus: "passed",
+    stablePromoted: false,
+    syntheticOnly: true,
+    realDataUsed: false,
+    productionMutations: 0,
+    syntheticResidue: {
+      activeActors: 0,
+      activeCredentials: 0,
+      activeOverrides: 0,
+      personalLeadPayloads: 0,
+      retainedSyntheticActors: 2,
+      retainedAnonymizedLeads: 1,
+    },
+    healthyWindows: record.g12Evidence.healthyWindowIds.map((id, index) => {
+      const routeMetrics = Object.fromEntries(
+        ["/", "/produtos", "/contato", "/admin/login"].map((route) => [
+          route,
+          { samples: 5, availabilityPercent: 100, p50Ms: 250, p95Ms: 500, maxMs: 500 },
+        ]),
+      );
+      const probe = {
+        schemaVersion: 1,
+        event: "g12.rollout.probe",
+        origin: "https://ev2-g12-canary.gaiatec-cms-staging.pages.dev",
+        candidateSha: record.candidateSha,
+        environment: "staging",
+        measuredResponses: 22,
+        sampleCount: 22,
+        availabilityPercent: 100,
+        http5xxRatePercent: 0,
+        publicP95Ms: 500,
+        requestTimeoutMs: 10_000,
+        routeMetrics,
+        routeBudgetsValid: true,
+        releaseHeadersExact: true,
+        healthContractValid: true,
+        manifestReleaseExact: true,
+        nonProductionNoindexValid: true,
+        outcome: "pass",
+        violations: [],
+      };
+      return {
+        id,
+        startedAt: new Date(Date.UTC(2026, 8, 4, 10, index * 5)).toISOString(),
+        endedAt: new Date(Date.UTC(2026, 8, 4, 10, index * 5 + 5)).toISOString(),
+        outcome: probe.outcome,
+        measuredResponses: probe.measuredResponses,
+        availabilityPercent: probe.availabilityPercent,
+        http5xxRatePercent: probe.http5xxRatePercent,
+        publicP95Ms: probe.publicP95Ms,
+        evidenceHash: createHash("sha256").update(JSON.stringify(probe)).digest("hex"),
+        probe,
+      };
+    }),
   };
 }
 
@@ -136,6 +215,35 @@ test("probe and full rollout budgets fail closed", () => {
   assert.equal(evaluateRolloutWindow({ ...healthy, p0Count: 1 }).decision, "pause");
   assert.equal(evaluateRolloutWindow({ ...healthy, securityReviewStatus: "pending" }).healthy, false);
   assert.equal(evaluateProbeWindow({ ...healthy, candidateSha: "a" }).healthy, false);
+  assert.equal(evaluateProbeWindow({ ...healthy, routeBudgetsValid: false }).healthy, false);
+});
+
+test("health and release manifests reject HTML, incomplete entries and mismatched releases", () => {
+  const manifest = {
+    schemaVersion: 1,
+    release: sha,
+    files: [{ path: "index.html", bytes: 123, sha256: "f".repeat(64) }],
+  };
+  assert.equal(validateReleaseManifest(manifest, { expectedRelease: sha }).valid, true);
+  assert.match(
+    validateReleaseManifest({ ...manifest, files: [] }, { expectedRelease: sha }).violations.join(","),
+    /manifest_files_invalid/,
+  );
+  assert.match(
+    validateReleaseManifest(
+      { ...manifest, release: "b".repeat(40) },
+      { expectedRelease: sha },
+    ).violations.join(","),
+    /manifest_release_mismatch/,
+  );
+  assert.equal(
+    validateHealthContract(
+      { schemaVersion: 1, status: "ready", release: sha, environment: "staging" },
+      { expectedRelease: sha, expectedEnvironment: "staging" },
+    ).valid,
+    true,
+  );
+  assert.match(validateHealthContract("<!doctype html>").violations.join(","), /health_schema_invalid/);
 });
 
 test("rollout needs three consecutive healthy windows and cannot skip a stage", () => {
@@ -186,6 +294,67 @@ test("G12 approval requires an exact candidate, live window and four distinct ow
   assert.match(
     validateApprovalRecord({ ...record, productionAuthorized: false }).violations.join(","),
     /production_not_authorized/,
+  );
+});
+
+test("G12 approval is cryptographically and semantically bound to its canary report", () => {
+  const record = approvedRecord();
+  const evidence = boundCanaryEvidence(record);
+  assert.equal(
+    validateCanaryEvidenceBinding(record, evidence, { reportSha256: record.g12Evidence.reportSha256 }).valid,
+    true,
+  );
+  assert.match(
+    validateCanaryEvidenceBinding(
+      record,
+      { ...evidence, candidateSha: "b".repeat(40) },
+      {
+        reportSha256: record.g12Evidence.reportSha256,
+      },
+    ).violations.join(","),
+    /g12_report_candidate_mismatch/,
+  );
+  assert.match(
+    validateCanaryEvidenceBinding(record, evidence, { reportSha256: "e".repeat(64) }).violations.join(","),
+    /g12_evidence_digest_mismatch/,
+  );
+  const forgedWindow = structuredClone(evidence);
+  forgedWindow.healthyWindows[1].outcome = "pause";
+  assert.match(
+    validateCanaryEvidenceBinding(record, forgedWindow, {
+      reportSha256: record.g12Evidence.reportSha256,
+    }).violations.join(","),
+    /g12_window_invalid/,
+  );
+  const tamperedProbe = structuredClone(evidence);
+  tamperedProbe.healthyWindows[0].probe.publicP95Ms = 501;
+  assert.match(
+    validateCanaryEvidenceBinding(record, tamperedProbe, {
+      reportSha256: record.g12Evidence.reportSha256,
+    }).violations.join(","),
+    /g12_window_probe_hash_mismatch|g12_window_summary_mismatch/,
+  );
+  const forgedProbe = structuredClone(evidence);
+  forgedProbe.healthyWindows[0].probe.healthContractValid = false;
+  forgedProbe.healthyWindows[0].evidenceHash = createHash("sha256")
+    .update(JSON.stringify(forgedProbe.healthyWindows[0].probe))
+    .digest("hex");
+  assert.match(
+    validateCanaryEvidenceBinding(record, forgedProbe, {
+      reportSha256: record.g12Evidence.reportSha256,
+    }).violations.join(","),
+    /g12_window_probe_invalid/,
+  );
+  const reboundProbe = structuredClone(evidence);
+  reboundProbe.healthyWindows[0].probe.candidateSha = "b".repeat(40);
+  reboundProbe.healthyWindows[0].evidenceHash = createHash("sha256")
+    .update(JSON.stringify(reboundProbe.healthyWindows[0].probe))
+    .digest("hex");
+  assert.match(
+    validateCanaryEvidenceBinding(record, reboundProbe, {
+      reportSha256: record.g12Evidence.reportSha256,
+    }).violations.join(","),
+    /g12_window_probe_binding_mismatch/,
   );
 });
 
@@ -248,15 +417,20 @@ test("G12 boundary evals contain no false acceptance or remote mutation", () => 
 });
 
 test("release workflows and reduced canary are immutable, staged and production fail-closed", async () => {
-  const [preview, production, rollback, cloudflare, canary, g11Canary, template] = await Promise.all([
-    read(".github/workflows/preview-ev2-phase12.yml"),
-    read(".github/workflows/deploy-production.yml"),
-    read(".github/workflows/rollback-production.yml"),
-    read("scripts/ev2/phase12/cloudflare-pages.mjs"),
-    read("scripts/ev2/phase12/staging-canary.mjs"),
-    read("scripts/ev2/phase11/staging-canary.mjs"),
-    read("docs/ev2/fase-12/G12_APPROVAL.template.json"),
-  ]);
+  const [ci, preview, production, rollback, cloudflare, canary, g11Canary, verifier, template] =
+    await Promise.all([
+      read(".github/workflows/ci.yml"),
+      read(".github/workflows/preview-ev2-phase12.yml"),
+      read(".github/workflows/deploy-production.yml"),
+      read(".github/workflows/rollback-production.yml"),
+      read("scripts/ev2/phase12/cloudflare-pages.mjs"),
+      read("scripts/ev2/phase12/staging-canary.mjs"),
+      read("scripts/ev2/phase11/staging-canary.mjs"),
+      read("scripts/ev2/phase12/verify-approval.mjs"),
+      read("docs/ev2/fase-12/G12_APPROVAL.template.json"),
+    ]);
+  assert.match(ci, /branches: \[main, Remodelagem, "ev2\/\*\*"\]/);
+  assert.match(ci, /version: 2\.116\.0/);
   assert.match(preview, /CANARY-G12-STAGING/);
   assert.match(preview, /gaiatec-cms-staging --branch ev2-g12-canary/);
   assert.doesNotMatch(preview, /project-name gaiatec-website/);
@@ -269,19 +443,43 @@ test("release workflows and reduced canary are immutable, staged and production 
   assert.match(production, /Automatically restore the approved prior production deployment/);
   assert.ok(production.indexOf("ev2-g12-preflight") < production.indexOf("--branch main"));
   assert.doesNotMatch(production, /VITE_EV2_[A-Z0-9_]+: ["']true["']/);
+  const deployJobPreamble = production.slice(
+    production.indexOf("  deploy:"),
+    production.indexOf("    steps:"),
+  );
+  assert.doesNotMatch(deployJobPreamble, /secrets\.|CLOUDFLARE_|PRODUCTION_SUPABASE_/);
+  const candidateValidation = production.slice(
+    production.indexOf("Install and validate exact candidate"),
+    production.indexOf("Build production shell"),
+  );
+  assert.doesNotMatch(candidateValidation, /secrets\.|CLOUDFLARE_|PRODUCTION_SUPABASE_/);
+  assert.doesNotMatch(production, /workingDirectory: candidate/);
+  assert.match(
+    production,
+    /working-directory: control\r?\n\s+run: node scripts\/ev2\/phase12\/rollout-probe\.mjs/,
+  );
   assert.match(rollback, /ROLLBACK-G12-PRODUCTION/);
+  const rollbackJobPreamble = rollback.slice(rollback.indexOf("  rollback:"), rollback.indexOf("    steps:"));
+  assert.doesNotMatch(rollbackJobPreamble, /secrets\.|CLOUDFLARE_/);
+  assert.doesNotMatch(rollback, /npm ci|actions\/setup-node/);
   assert.match(cloudflare, /target\?\.environment !== "production"/);
   assert.match(cloudflare, /deployments\/\$\{deploymentId\}\/rollback/);
-  assert.match(canary, /g12-staging-integrated-reduced-v1/);
+  assert.match(canary, /g12-staging-integrated-reduced-v2/);
+  assert.match(canary, /probe,/);
   assert.match(canary, /scripts\/ev2\/phase11\/staging-canary\.mjs/);
   assert.match(canary, /for \(let index = 0; index < 3; index \+= 1\)/);
   assert.match(canary, /syntheticOnly: true/);
   assert.match(canary, /productionMutations: 0/);
   assert.match(g11Canary, /EV2_G11_CANDIDATE_ORIGIN/);
+  assert.match(g11Canary, /validateReleaseManifest/);
+  assert.match(g11Canary, /stable_release_contract_mismatch/);
+  assert.match(verifier, /createHash\("sha256"\)/);
+  assert.match(verifier, /validateCanaryEvidenceBinding/);
   const approvalTemplate = JSON.parse(template);
   assert.equal(approvalTemplate.decision, "pending");
   assert.equal(approvalTemplate.productionAuthorized, false);
   assert.equal(approvalTemplate.candidateSha, null);
+  assert.equal(approvalTemplate.g12Evidence.file, null);
 });
 
 test("phase documentation preserves blockers and does not claim G12", async () => {

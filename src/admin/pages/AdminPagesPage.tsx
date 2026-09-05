@@ -3,6 +3,7 @@ import { FilePlus2, Home, Search } from "lucide-react";
 import { Link } from "react-router";
 import { supabase } from "@/lib/supabase";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { isEv2FeatureEnabled } from "../ev2-runtime";
 
 type PageRow = {
   id: string;
@@ -23,7 +24,7 @@ export default function AdminPagesPage() {
   const canCreatePage = profile?.permissions.includes("cms:pages.edit") ?? false;
   const canCreateHome = profile?.permissions.includes("cms:homepage.edit") ?? false;
   const canUseVisualStudio =
-    import.meta.env.VITE_EV2_VISUAL_STUDIO_CANDIDATE === "true" &&
+    isEv2FeatureEnabled(profile, "ev2.visual_studio") &&
     (profile?.permissions.includes("cms:visual.read") ?? false);
 
   useEffect(() => {

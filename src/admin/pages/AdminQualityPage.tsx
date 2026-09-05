@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { qualityCommand } from "../api/cms-api";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { cmsEnvironment, isEv2FeatureEnabled } from "../ev2-runtime";
 import { AdminAlert } from "../components/AdminUI";
 
 type QualityRun = {
@@ -13,17 +14,17 @@ type QualityRun = {
   checked_at: string;
 };
 
-const environment = () => (import.meta.env.VITE_CMS_ENVIRONMENT === "staging" ? "staging" : "local");
 const envelope = () => ({
   schemaVersion: 1 as const,
   commandId: crypto.randomUUID(),
   correlationId: crypto.randomUUID(),
   occurredAt: new Date().toISOString(),
-  actorContext: { environment: environment(), siteKey: "main" },
+  actorContext: { environment: cmsEnvironment(), siteKey: "main" },
 });
 
 export default function AdminQualityPage() {
   const { session, profile } = useAdminAuth();
+  const candidateEnabled = isEv2FeatureEnabled(profile, "ev2.search_quality");
   const [runs, setRuns] = useState<QualityRun[]>([]),
     [findings, setFindings] = useState<
       Array<{
@@ -46,7 +47,7 @@ export default function AdminQualityPage() {
   const canRun = profile?.permissions.includes("cms:quality.run") ?? false;
   const canWaive = profile?.permissions.includes("cms:quality.waive") ?? false;
   const load = useCallback(async () => {
-    if (!session || import.meta.env.VITE_EV2_SEARCH_QUALITY_CANDIDATE !== "true") return;
+    if (!session || !candidateEnabled) return;
     setError("");
     try {
       const capability = await qualityCommand<{ enabled: boolean }>(session, {
@@ -64,7 +65,7 @@ export default function AdminQualityPage() {
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Centro de Qualidade indisponível.");
     }
-  }, [session]);
+  }, [candidateEnabled, session]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -127,11 +128,11 @@ export default function AdminQualityPage() {
     }
   }
 
-  if (import.meta.env.VITE_EV2_SEARCH_QUALITY_CANDIDATE !== "true")
+  if (!candidateEnabled)
     return (
       <section>
         <h1>Centro de Qualidade</h1>
-        <div className="admin-state">Capacidade disponível somente no build candidato EV2.6.</div>
+        <div className="admin-state">Capacidade EV2.6 não elegível para esta sessão.</div>
       </section>
     );
   return (

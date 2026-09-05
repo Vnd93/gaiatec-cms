@@ -38,15 +38,18 @@ vi.mock("@/lib/supabase", () => ({
   supabase: authMock.supabase,
 }));
 
-import { AdminAuthProvider } from "@/admin/auth/AdminAuthContext";
+import { AdminAuthProvider, useAdminAuth } from "@/admin/auth/AdminAuthContext";
+import { isEv2FeatureEnabled } from "@/admin/ev2-runtime";
 import { RequireAdminAuth } from "@/admin/auth/RequireAdminAuth";
 
 function EditorHarness() {
   const location = useLocation();
+  const { profile } = useAdminAuth();
   return (
     <div>
       <h1>Editor preservado</h1>
       <span data-testid="route">{location.pathname}</span>
+      <span data-testid="ev2-dam">{isEv2FeatureEnabled(profile, "ev2.dam") ? "enabled" : "disabled"}</span>
       <label>
         Nome
         <input />
@@ -98,6 +101,22 @@ describe("continuidade segura da sessão administrativa", () => {
               mfaVerified: true,
               accessGranted: true,
               activated: false,
+              ev2Capabilities: {
+                schemaVersion: 1,
+                status: "ready",
+                environment: "local",
+                siteKey: "main",
+                evaluatedAt: new Date().toISOString(),
+                capabilities: {
+                  "ev2.dam": {
+                    schemaVersion: 1,
+                    key: "ev2.dam",
+                    enabled: true,
+                    source: "override",
+                    evaluatedAt: new Date().toISOString(),
+                  },
+                },
+              },
             }),
             { status: 200, headers: { "Content-Type": "application/json" } },
           ),
@@ -145,6 +164,7 @@ describe("continuidade segura da sessão administrativa", () => {
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
     expect(screen.getByRole("heading", { name: "Editor preservado" })).toBeInTheDocument();
     expect(screen.queryByText("Acesso administrativo não autorizado")).not.toBeInTheDocument();
+    expect(screen.getByTestId("ev2-dam")).toHaveTextContent("disabled");
   });
 
   it("distingue indisponibilidade transitória de falta de permissão na validação inicial", async () => {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { masterDataCommand } from "../api/cms-api";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { cmsEnvironment, isEv2FeatureEnabled } from "../ev2-runtime";
 import {
   Ev2MasterCapabilityResultSchema,
   Ev2MasterDependencyResultSchema,
@@ -14,8 +15,7 @@ import {
   type Ev2MasterRelationRule,
 } from "@/shared/contracts/ev2-master-data";
 
-const CANDIDATE_ENABLED = import.meta.env.VITE_EV2_MASTER_DATA_CANDIDATE === "true";
-const CMS_ENVIRONMENT = import.meta.env.VITE_CMS_ENVIRONMENT === "staging" ? "staging" : "local";
+const CMS_ENVIRONMENT = cmsEnvironment();
 const entityTypes = Object.keys(ev2MasterEntityLabels) as Ev2MasterEntityType[];
 
 type EntityDraft = {
@@ -42,8 +42,9 @@ function envelope(expectedVersion?: number) {
 
 export default function AdminMasterDataPage() {
   const { session, profile } = useAdminAuth();
+  const candidateEnabled = isEv2FeatureEnabled(profile, "ev2.master_data");
   const [capability, setCapability] = useState<"checking" | "enabled" | "disabled" | "error">(
-    CANDIDATE_ENABLED ? "checking" : "disabled",
+    candidateEnabled ? "checking" : "disabled",
   );
   const [entities, setEntities] = useState<Ev2MasterEntity[]>([]);
   const [rules, setRules] = useState<Ev2MasterRelationRule[]>([]);
@@ -65,7 +66,7 @@ export default function AdminMasterDataPage() {
   const canMerge = profile?.permissions.includes("cms:masterdata.merge") ?? false;
 
   const load = useCallback(async () => {
-    if (!session || !CANDIDATE_ENABLED) return;
+    if (!session || !candidateEnabled) return;
     setError("");
     try {
       const capabilityResult = Ev2MasterCapabilityResultSchema.parse(
@@ -94,7 +95,7 @@ export default function AdminMasterDataPage() {
       setCapability("error");
       setError(caught instanceof Error ? caught.message : "Dados mestres indisponíveis.");
     }
-  }, [session]);
+  }, [candidateEnabled, session]);
 
   useEffect(() => {
     void load();
@@ -167,13 +168,13 @@ export default function AdminMasterDataPage() {
     }
   }
 
-  if (!CANDIDATE_ENABLED) {
+  if (!candidateEnabled) {
     return (
       <section>
         <h1>Dados mestres EV2</h1>
         <div role="status" className="admin-notice">
-          O candidato EV2.3 não está incluído neste build. As listas mestras atuais continuam disponíveis sem
-          alteração.
+          Dados mestres EV2.3 não estão elegíveis para esta sessão. As listas mestras atuais continuam
+          disponíveis sem alteração.
         </div>
       </section>
     );

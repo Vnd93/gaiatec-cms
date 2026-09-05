@@ -10,6 +10,22 @@ const mocks = vi.hoisted(() => ({
     session: { access_token: "test-token" },
     profile: {
       permissions: ["cms:masterdata.read", "cms:masterdata.manage", "cms:masterdata.merge"],
+      ev2Capabilities: {
+        schemaVersion: 1,
+        status: "ready",
+        environment: "local",
+        siteKey: "main",
+        evaluatedAt: new Date().toISOString(),
+        capabilities: {
+          "ev2.master_data": {
+            schemaVersion: 1,
+            key: "ev2.master_data",
+            enabled: true,
+            source: "override",
+            evaluatedAt: new Date().toISOString(),
+          },
+        },
+      },
     },
   },
 }));

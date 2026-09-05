@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { damCommand } from "../api/cms-api";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { cmsEnvironment } from "../ev2-runtime";
 import { fingerprintMediaFile } from "../dam-model";
 import {
   mediaVariantSlots,
@@ -18,7 +19,7 @@ import {
   type Ev2DamCollection,
 } from "@/shared/contracts/ev2-dam";
 
-const CMS_ENVIRONMENT = import.meta.env.VITE_CMS_ENVIRONMENT === "staging" ? "staging" : "local";
+const CMS_ENVIRONMENT = cmsEnvironment();
 
 function envelope() {
   return {

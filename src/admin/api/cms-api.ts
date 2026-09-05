@@ -1,5 +1,6 @@
 import type { Session } from "@supabase/supabase-js";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabase";
+import { cmsEnvironment } from "../ev2-runtime";
 
 export class CmsApiError extends Error {
   readonly status: number;
@@ -192,11 +193,6 @@ export function sitesCommand<T>(session: Session, body: Record<string, unknown>,
 
 export function aiAssistCommand<T>(session: Session, body: Record<string, unknown>, idempotencyKey?: string) {
   return invoke<T>(session, "cms-ai", body, idempotencyKey ?? false);
-}
-
-function cmsEnvironment(): "local" | "staging" | "production" {
-  const configured = import.meta.env.VITE_CMS_ENVIRONMENT;
-  return configured === "staging" || configured === "production" ? configured : "local";
 }
 
 export function systemAssuranceCommand<T>(

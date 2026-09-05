@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import AdminDamPage from "./AdminDamPage";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { isEv2FeatureEnabled } from "../ev2-runtime";
 import { mediaCommand } from "../api/cms-api";
 import {
   mediaVariantSlots,
@@ -72,10 +73,9 @@ const initialUploadForm: UploadForm = {
   replacesAssetId: "",
 };
 
-const DAM_CANDIDATE_ENABLED = import.meta.env.VITE_EV2_DAM_CANDIDATE === "true";
-
 export default function AdminMediaPage() {
-  return DAM_CANDIDATE_ENABLED ? <AdminDamPage /> : <LegacyMediaPage />;
+  const { profile } = useAdminAuth();
+  return isEv2FeatureEnabled(profile, "ev2.dam") ? <AdminDamPage /> : <LegacyMediaPage />;
 }
 
 function LegacyMediaPage() {

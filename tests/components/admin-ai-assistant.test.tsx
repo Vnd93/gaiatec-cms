@@ -20,6 +20,22 @@ const mocks = vi.hoisted(() => ({
     profile: {
       mfaVerified: true,
       permissions: ["cms:ai.read", "cms:ai.review"],
+      ev2Capabilities: {
+        schemaVersion: 1,
+        status: "ready",
+        environment: "staging",
+        siteKey: "main",
+        evaluatedAt: new Date().toISOString(),
+        capabilities: {
+          "ev2.ai_assist": {
+            schemaVersion: 1,
+            key: "ev2.ai_assist",
+            enabled: true,
+            source: "override",
+            evaluatedAt: new Date().toISOString(),
+          },
+        },
+      },
     },
   },
 }));

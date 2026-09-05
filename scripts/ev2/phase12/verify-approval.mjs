@@ -1,6 +1,7 @@
+import { createHash } from "node:crypto";
 import { appendFile, readFile } from "node:fs/promises";
 import { resolve, sep } from "node:path";
-import { validateApprovalRecord } from "./release-guard-lib.mjs";
+import { validateApprovalRecord, validateCanaryEvidenceBinding } from "./release-guard-lib.mjs";
 
 function argument(name) {
   const index = process.argv.indexOf(`--${name}`);
@@ -33,6 +34,17 @@ const result = validateApprovalRecord(record, {
 });
 if (!result.valid) throw new Error(`G12_APPROVAL_REFUSED:${result.violations.join(",")}`);
 
+const evidenceRoot = resolve("docs/ev2/fase-12/evidencias");
+const evidencePath = resolve(record.g12Evidence.file);
+if (!evidencePath.startsWith(`${evidenceRoot}${sep}`))
+  throw new Error("G12_EVIDENCE_PATH_REFUSED: evidence must be versioned under fase-12/evidencias.");
+const evidenceBytes = await readFile(evidencePath);
+const evidence = JSON.parse(evidenceBytes.toString("utf8"));
+const binding = validateCanaryEvidenceBinding(record, evidence, {
+  reportSha256: createHash("sha256").update(evidenceBytes).digest("hex"),
+});
+if (!binding.valid) throw new Error(`G12_EVIDENCE_REFUSED:${binding.violations.join(",")}`);
+
 if (process.env.GITHUB_OUTPUT)
   await appendFile(
     process.env.GITHUB_OUTPUT,
@@ -48,5 +60,7 @@ console.log(
     environment: record.environment,
     changeReference: record.changeReference,
     owners: Object.keys(record.owners).length,
+    evidenceFile: record.g12Evidence.file,
+    evidenceBound: true,
   }),
 );

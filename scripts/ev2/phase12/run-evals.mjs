@@ -19,6 +19,7 @@ const baseWindow = {
   releaseHeadersExact: true,
   healthContractValid: true,
   manifestReleaseExact: true,
+  routeBudgetsValid: true,
   nonProductionNoindexValid: true,
   p0Count: 0,
   p1Count: 0,

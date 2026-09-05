@@ -7,6 +7,7 @@ import {
 } from "@/shared/contracts/ev2-system";
 import { systemAssuranceCommand } from "../api/cms-api";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { isEv2FeatureEnabled } from "../ev2-runtime";
 import {
   AdminAlert,
   Badge,
@@ -25,7 +26,6 @@ type Event = {
   created_at: string;
 };
 
-const CANDIDATE_ENABLED = import.meta.env.VITE_EV2_SYSTEM_ASSURANCE_CANDIDATE === "true";
 const discoveryLabels = {
   service: "serviços publicados",
   industry: "indústrias publicadas",
@@ -54,7 +54,8 @@ const unitLabels = {
 } as const;
 
 export default function AdminDiagnosticsPage() {
-  const { session } = useAdminAuth();
+  const { session, profile } = useAdminAuth();
+  const candidateEnabled = isEv2FeatureEnabled(profile, "ev2.system_assurance");
   const [events, setEvents] = useState<Event[]>([]),
     [eventTotal, setEventTotal] = useState(0),
     [outbox, setOutbox] = useState(0),
@@ -66,7 +67,7 @@ export default function AdminDiagnosticsPage() {
     }),
     [snapshot, setSnapshot] = useState<Ev2SystemSnapshot | null>(null),
     [candidateState, setCandidateState] = useState<"off" | "loading" | "unavailable" | "ready" | "error">(
-      CANDIDATE_ENABLED ? "loading" : "off",
+      candidateEnabled ? "loading" : "off",
     ),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
@@ -88,7 +89,7 @@ export default function AdminDiagnosticsPage() {
       supabase.from("cms_discovery_projection").select("content_type"),
     ]);
     const assurance = async () => {
-      if (!CANDIDATE_ENABLED || !session) return null;
+      if (!candidateEnabled || !session) return null;
       const capability = Ev2SystemCapabilitySchema.parse(
         await systemAssuranceCommand(session, { action: "capability" }),
       );
@@ -119,7 +120,7 @@ export default function AdminDiagnosticsPage() {
           );
         }
       }
-      if (CANDIDATE_ENABLED) {
+      if (candidateEnabled) {
         if (assuranceResult.status === "rejected") setCandidateState("error");
         else if (assuranceResult.value === false || assuranceResult.value === null)
           setCandidateState("unavailable");
@@ -133,7 +134,7 @@ export default function AdminDiagnosticsPage() {
     return () => {
       active = false;
     };
-  }, [refreshKey, session]);
+  }, [candidateEnabled, refreshKey, session]);
 
   const deadLetters = snapshot?.queues.reduce((total, queue) => total + queue.deadLetter, 0) ?? 0;
 
@@ -149,7 +150,7 @@ export default function AdminDiagnosticsPage() {
             onClick={() => {
               setLoading(true);
               setError("");
-              if (CANDIDATE_ENABLED) {
+              if (candidateEnabled) {
                 setCandidateState("loading");
                 setSnapshot(null);
               }
@@ -189,8 +190,8 @@ export default function AdminDiagnosticsPage() {
           )}
           {candidateState === "unavailable" && (
             <AdminAlert title="EV2.11 protegida" tone="info">
-              O build candidato está presente, mas este usuário não possui override individual ativo. O
-              diagnóstico estável permanece disponível.
+              A capacidade avançada não está autorizada para esta identidade. O diagnóstico estável permanece
+              disponível.
             </AdminAlert>
           )}
           {candidateState === "error" && (

@@ -15,6 +15,7 @@ export const Ev2FeatureFlagKeySchema = z.enum([
   "ev2.multisite",
   "ev2.ai_assist",
   "ev2.ai_execute",
+  "ev2.system_assurance",
 ]);
 
 export const Ev2CommandActorContextSchema = z
@@ -72,6 +73,17 @@ export const Ev2FeatureFlagEvaluationSchema = z
   })
   .strict();
 
+export const Ev2CapabilityManifestSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    status: z.enum(["ready", "gated", "unavailable"]),
+    environment: Ev2EnvironmentSchema.nullable(),
+    siteKey: z.literal("main").nullable(),
+    evaluatedAt: z.iso.datetime({ offset: true }),
+    capabilities: z.record(Ev2FeatureFlagKeySchema, Ev2FeatureFlagEvaluationSchema),
+  })
+  .strict();
+
 export const Ev2ReleaseCommandResultSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -85,5 +97,9 @@ export const Ev2ReleaseCommandResultSchema = z
   .strict();
 
 export type Ev2CommandEnvelope = z.infer<typeof Ev2CommandEnvelopeSchema>;
+export type Ev2Environment = z.infer<typeof Ev2EnvironmentSchema>;
+export type Ev2FeatureFlagKey = z.infer<typeof Ev2FeatureFlagKeySchema>;
+export type Ev2FeatureFlagEvaluation = z.infer<typeof Ev2FeatureFlagEvaluationSchema>;
+export type Ev2CapabilityManifest = z.infer<typeof Ev2CapabilityManifestSchema>;
 export type Ev2ReleaseCommand = z.infer<typeof Ev2ReleaseCommandSchema>;
 export type Ev2ReleaseCommandResult = z.infer<typeof Ev2ReleaseCommandResultSchema>;

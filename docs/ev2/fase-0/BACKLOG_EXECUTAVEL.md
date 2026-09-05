@@ -17,6 +17,7 @@
 | `EV2-E10` | EV2.10 | IA assistiva com fonte, custo e aprovação humana                | E08/E09     | evals, red-team, fallback manual e G10         | desligar provider/flag                  | concluído; G10 aprovado                       |
 | `EV2-E11` | EV2.11 | regressão, carga, restore, segurança e homologação              | E01–E10     | matriz completa e G11                          | corrigir sem promover                   | concluído; G11 aprovado                       |
 | `EV2-E12` | EV2.12 | canary, operação assistida, handover e encerramento             | E11         | autorização, telemetria, runbooks e G12        | artefato anterior + flags               | canary G12 concluído; gate produtivo pendente |
+| `EV2-E13` | EV2.13 | hardening de release e elegibilidade individual em runtime      | E12         | CI, rehearsal, isolamento, revogação e G13     | manifesto off + funções anteriores      | concluído; G13 aprovado em staging            |
 
 ## Primeira fatia da EV2.1
 

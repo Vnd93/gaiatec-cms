@@ -16,6 +16,7 @@ import {
 } from "@/shared/contracts/ev2-collaboration";
 import { bulkV2Command, collaborationCommand, releaseV2Command } from "../api/cms-api";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { cmsEnvironment, isEv2FeatureEnabled } from "../ev2-runtime";
 import {
   AdminAlert,
   Badge,
@@ -41,14 +42,12 @@ type BulkResult = Ev2BulkJob & {
   }>;
 };
 
-const CLIENT_CANDIDATE = import.meta.env.VITE_EV2_COLLABORATION_BULK_CANDIDATE === "true";
-const environment = () => (import.meta.env.VITE_CMS_ENVIRONMENT === "staging" ? "staging" : "local");
 const envelope = <T extends 1 | 2>(schemaVersion: T, expectedVersion?: number) => ({
   schemaVersion,
   commandId: crypto.randomUUID(),
   correlationId: crypto.randomUUID(),
   occurredAt: new Date().toISOString(),
-  actorContext: { environment: environment(), siteKey: "main" as const },
+  actorContext: { environment: cmsEnvironment(), siteKey: "main" as const },
   ...(expectedVersion ? { expectedVersion } : {}),
 });
 
@@ -78,15 +77,16 @@ function statusTone(status: string): "neutral" | "info" | "success" | "warning" 
 
 export default function AdminWorkPage() {
   const { session, profile } = useAdminAuth();
+  const clientCandidate = isEv2FeatureEnabled(profile, "ev2.collaboration_bulk");
   const [tab, setTab] = useState<WorkTab>("inbox");
   const [capability, setCapability] = useState<"checking" | "enabled" | "disabled" | "error">(
-    CLIENT_CANDIDATE ? "checking" : "disabled",
+    clientCandidate ? "checking" : "disabled",
   );
   const [tasks, setTasks] = useState<Ev2WorkTask[]>([]);
   const [releases, setReleases] = useState<Ev2ReleaseSummary[]>([]);
   const [bulkJobs, setBulkJobs] = useState<Ev2BulkJob[]>([]);
   const [selectedRelease, setSelectedRelease] = useState<Ev2ReleaseDetail | null>(null);
-  const [loading, setLoading] = useState(CLIENT_CANDIDATE);
+  const [loading, setLoading] = useState(clientCandidate);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -126,7 +126,7 @@ export default function AdminWorkPage() {
   const canExecuteBulk = permissions.includes("cms:bulk.execute");
 
   const load = useCallback(async () => {
-    if (!session || !CLIENT_CANDIDATE) return;
+    if (!session || !clientCandidate) return;
     setLoading(true);
     setError("");
     try {
@@ -155,7 +155,7 @@ export default function AdminWorkPage() {
     } finally {
       setLoading(false);
     }
-  }, [canReadBulk, canReadReleases, permissions, session]);
+  }, [canReadBulk, canReadReleases, clientCandidate, permissions, session]);
 
   useEffect(() => {
     void load();
@@ -347,13 +347,13 @@ export default function AdminWorkPage() {
     [activeTaskDetail, activeTaskId, tasks],
   );
 
-  if (!CLIENT_CANDIDATE)
+  if (!clientCandidate)
     return (
       <section>
         <PageHeader
           eyebrow="EV2.7 · DEFAULT-OFF"
           title="Meu trabalho"
-          description="A superfície candidata está ausente deste build; o fluxo administrativo anterior permanece intacto."
+          description="A superfície EV2 não está elegível para esta sessão; o fluxo administrativo anterior permanece intacto."
         />
       </section>
     );

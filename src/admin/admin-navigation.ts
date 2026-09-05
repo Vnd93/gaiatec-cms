@@ -1,4 +1,5 @@
 import type { LucideIcon } from "lucide-react";
+import type { Ev2FeatureFlagKey } from "@/shared/contracts/ev2-foundation";
 import {
   BookOpenText,
   Bot,
@@ -34,7 +35,7 @@ export type AdminNavigationItem = {
   icon: LucideIcon;
   permissions?: string[];
   permissionMode?: "all" | "any";
-  candidate?: "visual-studio" | "multisite" | "ai-assist";
+  candidate?: Ev2FeatureFlagKey;
   match?: RegExp;
 };
 
@@ -65,6 +66,7 @@ export const adminNavigation: AdminNavigationGroup[] = [
         icon: Inbox,
         permissions: ["cms:collaboration.read", "cms:releases.read", "cms:bulk.read"],
         permissionMode: "any",
+        candidate: "ev2.collaboration_bulk",
         match: /^\/admin\/meu-trabalho(?:\/.*)?$/,
       },
       {
@@ -73,7 +75,7 @@ export const adminNavigation: AdminNavigationGroup[] = [
         description: "Localize, explique, extraia e prepare propostas com fonte e revisão humana.",
         icon: Bot,
         permissions: ["cms:ai.read"],
-        candidate: "ai-assist",
+        candidate: "ev2.ai_assist",
         match: /^\/admin\/assistente(?:\/.*)?$/,
       },
     ],
@@ -97,7 +99,7 @@ export const adminNavigation: AdminNavigationGroup[] = [
         description: "Componentes, branches e snapshots responsivos governados.",
         icon: LayoutTemplate,
         permissions: ["cms:visual.read"],
-        candidate: "visual-studio",
+        candidate: "ev2.visual_studio",
         match: /^\/admin\/estudio-visual(?:\/.*)?$/,
       },
       {
@@ -169,6 +171,7 @@ export const adminNavigation: AdminNavigationGroup[] = [
         description: "Produto, modelo, variante, SKU e proveniência normalizados.",
         icon: Boxes,
         permissions: ["cms:pim.read"],
+        candidate: "ev2.pim_v2",
         match: /^\/admin\/pim(?:\/.*)?$/,
       },
       {
@@ -185,6 +188,7 @@ export const adminNavigation: AdminNavigationGroup[] = [
         description: "SEO, acessibilidade, links, mídia, conteúdo e PIM.",
         icon: ShieldCheck,
         permissions: ["cms:quality.read"],
+        candidate: "ev2.search_quality",
         match: /^\/admin\/qualidade(?:\/.*)?$/,
       },
       {
@@ -201,6 +205,7 @@ export const adminNavigation: AdminNavigationGroup[] = [
         description: "Entidades, aliases e compatibilidades versionadas.",
         icon: Database,
         permissions: ["cms:masterdata.read"],
+        candidate: "ev2.master_data",
         match: /^\/admin\/dados-mestres(?:\/.*)?$/,
       },
     ],
@@ -276,7 +281,7 @@ export const adminNavigation: AdminNavigationGroup[] = [
         description: "Preparação multisite isolada, sem ativação operacional.",
         icon: Building2,
         permissions: ["cms:sites.read"],
-        candidate: "multisite",
+        candidate: "ev2.multisite",
         match: /^\/admin\/sites(?:\/.*)?$/,
       },
     ],

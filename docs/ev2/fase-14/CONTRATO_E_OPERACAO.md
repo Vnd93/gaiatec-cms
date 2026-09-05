@@ -11,6 +11,7 @@
 5. Toda mutação exige AAL2, autorização por permissão e chave idempotente.
 6. A execução e a compensação ocorrem em uma única transação PostgreSQL; qualquer divergência
    aborta o comando inteiro.
+7. Operações concorrentes adquirem locks na ordem global `plan -> run -> approval -> targets`.
 
 ## Papéis e segregação
 
@@ -70,7 +71,14 @@ ativas. O plano vence em até 30 minutos; a aprovação vence em até dez.
 
 Cada comando usa `commandId`, `correlationId`, `occurredAt`, contexto de ator e
 `X-Idempotency-Key`. Repetir a mesma requisição devolve o mesmo recibo; reutilizar a chave ou o
-comando com conteúdo diferente produz conflito.
+comando com conteúdo diferente produz conflito. Se a resposta HTTP for ambígua, a interface repete
+automaticamente uma vez e mantém o comando pendente com o envelope e a chave originais. Enquanto o
+resultado não for confirmado, nenhuma nova mutação pode ser iniciada; o operador usa **Repetir
+comando pendente** para consultar/executar novamente o mesmo recibo sem duplicar o plano. A
+navegação ou recarga acidental também é protegida enquanto houver operação pendente.
+
+A criação concorrente da mesma fixture é atômica: há um único vencedor e as demais requisições
+recebem `CMS_AI_EXECUTE_TARGET_CONFLICT`/HTTP 409, nunca violação SQL exposta como erro 500.
 
 ## Estado e compensação
 
@@ -84,6 +92,11 @@ plan:   ready -> approved -> executing -> executed -> compensated
 Cada etapa grava snapshots anterior e posterior. A compensação restaura o primeiro snapshot de
 cada alvo somente se o estado ainda corresponder ao último snapshot da execução. A versão nunca
 retrocede: ela aumenta uma vez na restauração para impedir ABA e sobrescrita silenciosa.
+
+Há no máximo uma aprovação ativa por plano e finalidade. Uma aprovação de compensação que vence
+antes do uso é marcada como `expired` sob lock e pode ser renovada por revisor autorizado; cada
+aprovação permanece como registro histórico independente. Aprovação ativa duplicada falha com
+conflito explícito.
 
 ## Falha segura e fallback
 

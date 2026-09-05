@@ -563,22 +563,37 @@ try {
   );
   check("personal_data_denied", unsafe.json.code === "CMS_AI_EXECUTE_INPUT_DENIED", unsafe.json.code);
 
-  const createdTarget = await ai(
-    context,
-    operator,
-    "create_target",
-    {
-      targetRef,
-      targetTitle: "Alvo sintético do canary G14",
-      targetSummary: "Estado sintético inicial do canary.",
-    },
-    { idempotencyKey: randomUUID() },
+  const targetCreationAttempts = [
+    { envelope: envelope(), idempotencyKey: randomUUID() },
+    { envelope: envelope(), idempotencyKey: randomUUID() },
+  ];
+  const targetCreations = await Promise.all(
+    targetCreationAttempts.map((attempt) =>
+      ai(
+        context,
+        operator,
+        "create_target",
+        {
+          targetRef,
+          targetTitle: "Alvo sintético do canary G14",
+          targetSummary: "Estado sintético inicial do canary.",
+        },
+        { ...attempt, allowed: [200, 409] },
+      ),
+    ),
   );
+  const createdTarget = targetCreations.find((response) => response.status === 200);
+  const targetConflict = targetCreations.find((response) => response.status === 409);
   check(
-    "synthetic_target_created",
-    createdTarget.json.targetRef === targetRef && createdTarget.json.applied === false,
-    createdTarget.json.status,
+    "concurrent_target_creation_single_winner",
+    targetCreations.filter((response) => response.status === 200).length === 1 &&
+      targetCreations.filter((response) => response.status === 409).length === 1 &&
+      createdTarget?.json.targetRef === targetRef &&
+      createdTarget?.json.applied === false &&
+      targetConflict?.json.code === "CMS_AI_EXECUTE_TARGET_CONFLICT",
+    targetCreations.map((response) => `${response.status}:${response.json.code ?? "created"}`).join(","),
   );
+  if (!createdTarget) throw new Error("Criação concorrente do alvo G14 ficou sem vencedor.");
 
   const steps = [
     {
@@ -778,6 +793,51 @@ try {
     compensationApproval.json.status,
   );
 
+  const approvalClock = await authenticationClock(context);
+  await rest(context, "cms_ai_execution_approvals", {
+    method: "PATCH",
+    query: `plan_id=eq.${planId}&purpose=eq.compensate&status=eq.active`,
+    prefer: "return=minimal",
+    body: {
+      created_at: new Date(approvalClock - 10 * 60_000).toISOString(),
+      expires_at: new Date(approvalClock - 1_000).toISOString(),
+    },
+  });
+  const expiredCompensationWorkspace = await ai(context, operator, "workspace");
+  const expiredCompensationPlan = expiredCompensationWorkspace.json.plans.find((plan) => plan.id === planId);
+  check(
+    "expired_compensation_approval_closed",
+    expiredCompensationPlan?.runs[0]?.compensationApproved === false &&
+      expiredCompensationPlan?.compensatable === false,
+    JSON.stringify({
+      compensationApproved: expiredCompensationPlan?.runs[0]?.compensationApproved,
+      compensatable: expiredCompensationPlan?.compensatable,
+    }),
+  );
+
+  const renewedCompensationApproval = await ai(
+    context,
+    reviewer,
+    "approve_compensation",
+    {
+      runId,
+      expectedPlanHash: planHash,
+      rationale: "Renovação sintética após expiração conferida.",
+    },
+    { idempotencyKey: randomUUID() },
+  );
+  const compensationApprovalHistory = await rest(context, "cms_ai_execution_approvals", {
+    query: `plan_id=eq.${planId}&purpose=eq.compensate&select=status`,
+  });
+  check(
+    "expired_compensation_approval_renewed",
+    renewedCompensationApproval.json.status === "compensation_approved" &&
+      compensationApprovalHistory.json.length === 2 &&
+      compensationApprovalHistory.json.filter((approval) => approval.status === "expired").length === 1 &&
+      compensationApprovalHistory.json.filter((approval) => approval.status === "active").length === 1,
+    compensationApprovalHistory.json.map((approval) => approval.status).join(","),
+  );
+
   const reviewerCompensation = await ai(
     context,
     reviewer,
@@ -793,12 +853,33 @@ try {
     reviewerCompensation.json.code,
   );
 
-  const compensated = await ai(
-    context,
-    operator,
-    "compensate_run",
-    { runId, expectedPlanHash: planHash },
-    { idempotencyKey: randomUUID() },
+  const [duplicateCompensationApproval, compensated] = await Promise.all([
+    ai(
+      context,
+      reviewer,
+      "approve_compensation",
+      {
+        runId,
+        expectedPlanHash: planHash,
+        rationale: "Tentativa concorrente com aprovação ativa.",
+      },
+      { idempotencyKey: randomUUID(), allowed: [404, 409] },
+    ),
+    ai(
+      context,
+      operator,
+      "compensate_run",
+      { runId, expectedPlanHash: planHash },
+      { idempotencyKey: randomUUID() },
+    ),
+  ]);
+  check(
+    "concurrent_recovery_has_no_deadlock",
+    compensated.status === 200 &&
+      ["CMS_AI_EXECUTE_APPROVAL_CONFLICT", "CMS_AI_EXECUTE_RUN_NOT_FOUND"].includes(
+        duplicateCompensationApproval.json.code,
+      ),
+    `${compensated.status}/${duplicateCompensationApproval.status}:${duplicateCompensationApproval.json.code}`,
   );
   const postCompensation = await ai(context, operator, "workspace");
   const restoredTarget = postCompensation.json.targets.find((target) => target.reference === targetRef);

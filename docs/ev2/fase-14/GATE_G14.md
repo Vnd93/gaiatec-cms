@@ -16,9 +16,9 @@
 | Candidato    | SHA completo no alias `ev2-g14-canary`, health/manifest exatos         | pendente                         |
 | Identidade   | dois usuários sintéticos MFA, sem credenciais persistentes             | executor preparado               |
 | Segregação   | autor não aprova; aprovador não executa; hash e TTL exatos             | local aprovado; remoto pendente  |
-| Atomicidade  | falha em qualquer etapa deixa zero aplicação parcial                   | pgTAP/canary pendentes           |
-| Idempotência | replay igual devolve o mesmo run; payload divergente falha             | local aprovado; remoto pendente  |
-| Compensação  | snapshot íntegro, conflito detectado, versão monotônica                | local aprovado; remoto pendente  |
+| Atomicidade  | falha deixa zero aplicação parcial; locks seguem ordem global          | local aprovado; remoto pendente  |
+| Idempotência | replay e resposta ambígua reutilizam comando/chave; divergência falha  | local aprovado; remoto pendente  |
+| Compensação  | snapshot íntegro, renovação após expiração e versão monotônica         | local aprovado; remoto pendente  |
 | Negativos    | produção, dado real, PII, injeção, tool/escopo amplo recusados         | local aprovado; remoto pendente  |
 | Resíduo      | zero usuário, override, credencial e fixture sintética                 | pendente                         |
 | Limites      | zero mutação real/produção/staging estável e zero chamada externa      | pendente                         |

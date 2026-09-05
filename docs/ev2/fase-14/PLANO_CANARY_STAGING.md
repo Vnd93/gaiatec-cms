@@ -38,6 +38,8 @@ promoção ficam fora do escopo.
 3. Publicar somente `cms-ai-execute`, preservando verificação JWT e
    `CMS_AI_EXTERNAL_PROVIDER_ENABLED=false`.
 4. Disparar `EV2.14 Candidate Preview (not a gate)` com `PREVIEW-G14-STAGING` no SHA exato.
+   O workflow genérico de PR ignora esta branch; portanto, nenhum push ou sincronização do PR cria
+   preview automaticamente.
 5. Verificar health, manifest, release header, rotas privadas, no-store, smoke, a11y e budgets.
 6. Executar o canary integrado:
 
@@ -52,10 +54,11 @@ promoção ficam fora do escopo.
    ```
 
 7. Confirmar, com os dois atores, os casos positivos e negativos: dupla flag, MFA, catálogo,
-   criação de fixture, dry-run, autoaprovação bloqueada, hash divergente bloqueado, aprovação
-   segregada, replay idempotente, publicação sintética, aprovação/execução segregadas da
-   compensação e produção/PII recusados. O canary apenas comprova que não existe ativação ampla; a
-   recusa desse estado é exercitada no pgTAP transacional, sem confirmar o override.
+   criação concorrente de fixture com vencedor único/409, dry-run, autoaprovação bloqueada, hash
+   divergente bloqueado, aprovação segregada, replay idempotente, publicação sintética, expiração e
+   renovação da aprovação de compensação, recovery concorrente sem deadlock e produção/PII
+   recusados. O canary apenas comprova que não existe ativação ampla; a recusa desse estado é
+   exercitada no pgTAP transacional, sem confirmar o override.
 8. Comparar staging estável, revisões, outbox e defaults antes/depois.
 9. Limpar em ordem dependente as etapas, runs, aprovações, planos, alvos, decisões, recibos,
    overrides, papéis, perfis e usuários; confirmar resíduo zero.

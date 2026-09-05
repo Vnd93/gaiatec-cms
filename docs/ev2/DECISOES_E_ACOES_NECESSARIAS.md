@@ -29,8 +29,8 @@ Não há decisão organizacional pendente que impeça a abertura da EV2.0.
 - Experimentos A/B e personalização não sensível: somente após estabilidade comprovada da EV2.
 - Engine de busca dedicada: somente quando volume ou SLO medido justificar sair de Postgres FTS/`pg_trgm`.
 - IA transacional: candidato local sintético implementado na EV2.14; permanece operacionalmente
-  desabilitada até migration, gateway, avaliações, aprovação humana, compensação, kill switch e
-  fallback manual passarem no Gate G14.
+  desabilitada até migration, gateway, avaliações, aprovação humana renovável, recuperação
+  idempotente, compensação, kill switch e fallback manual passarem no Gate G14.
 
 ## Modelo de registro
 

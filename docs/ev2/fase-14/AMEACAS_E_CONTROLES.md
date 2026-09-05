@@ -20,7 +20,10 @@
 | G14-T14 | mutação sem MFA                           | AAL2 verificado antes da resposta genérica de flag           | static, component, canary     |
 | G14-T15 | rate limiter falha aberto                 | indisponibilidade do controle retorna 503                    | static e integração           |
 | G14-T16 | evidência contém credencial               | relatório sanitizado; tokens/senhas nunca entram nos checks  | revisão do artefato           |
-| G14-T17 | candidato altera staging estável          | alias `ev2-g14-canary` fixo e baseline antes/depois          | workflow e canary             |
+| G14-T17 | candidato altera staging estável          | preview genérico excluído; alias G14 manual e baseline       | workflow e canary             |
+| G14-T18 | resposta perdida leva a comando duplicado | envelope/chave preservados, retry único e bloqueio da UI     | component e canary replay     |
+| G14-T19 | aprovação expirada impede compensação     | histórico renovável e uma única aprovação ativa              | pgTAP, rehearsal e canary     |
+| G14-T20 | recovery concorrente entra em deadlock    | ordem global `plan -> run -> approval -> targets`            | static e canary concorrente   |
 
 ## Fronteiras de confiança
 

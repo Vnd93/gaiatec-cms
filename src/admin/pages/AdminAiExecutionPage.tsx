@@ -28,10 +28,16 @@ import {
 } from "../ai-execution-model";
 import { aiExecuteCommand } from "../api/cms-api";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { UnsavedChangesGuard } from "../components/UnsavedChangesGuard";
 import { cmsEnvironment, isEv2FeatureEnabled } from "../ev2-runtime";
 import "../admin-ai-execution.css";
 
 type ToolKey = Ev2AiExecutionStep["toolKey"];
+type PendingMutation = {
+  body: Record<string, unknown>;
+  idempotencyKey: string;
+  message: string;
+};
 const CMS_ENVIRONMENT = cmsEnvironment();
 
 function envelope() {
@@ -46,6 +52,12 @@ function envelope() {
 
 function shortHash(value: string) {
   return `${value.slice(0, 10)}…${value.slice(-8)}`;
+}
+
+function isDefinitiveMutationFailure(caught: unknown): boolean {
+  if (!caught || typeof caught !== "object") return false;
+  const failure = caught as { status?: unknown; preserved?: unknown };
+  return typeof failure.status === "number" && (failure.status < 500 || failure.preserved === true);
 }
 
 export default function AdminAiExecutionPage() {
@@ -75,6 +87,7 @@ export default function AdminAiExecutionPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [pendingMutation, setPendingMutation] = useState<PendingMutation | null>(null);
 
   const selectedPlan = useMemo(
     () => workspace?.plans.find((plan) => plan.id === selectedPlanId) ?? workspace?.plans[0] ?? null,
@@ -85,6 +98,7 @@ export default function AdminAiExecutionPage() {
     [selectedTargetRef, workspace?.targets],
   );
   const currentRisk = useMemo(() => planRisk(steps, workspace?.tools ?? []), [steps, workspace?.tools]);
+  const mutationsBlocked = busy || pendingMutation !== null;
 
   const loadWorkspace = useCallback(async () => {
     if (!session || !candidateEnabled) return;
@@ -125,7 +139,7 @@ export default function AdminAiExecutionPage() {
     void load();
   }, [load]);
 
-  async function mutate(body: Record<string, unknown>, message: string) {
+  async function executeMutation(operation: PendingMutation) {
     if (!session) {
       setError("Sua sessão expirou. Entre novamente antes de continuar.");
       return null;
@@ -138,10 +152,19 @@ export default function AdminAiExecutionPage() {
     setError("");
     setSuccess("");
     try {
-      const result = Ev2AiExecutionMutationResultSchema.parse(
-        await aiExecuteCommand(session, body, crypto.randomUUID()),
-      );
-      setSuccess(message + ` Correlação: ${result.correlationId}`);
+      const send = async () =>
+        Ev2AiExecutionMutationResultSchema.parse(
+          await aiExecuteCommand(session, operation.body, operation.idempotencyKey),
+        );
+      let result: Awaited<ReturnType<typeof send>>;
+      try {
+        result = await send();
+      } catch (caught) {
+        if (isDefinitiveMutationFailure(caught)) throw caught;
+        result = await send();
+      }
+      setPendingMutation(null);
+      setSuccess(operation.message + ` Correlação: ${result.correlationId}`);
       try {
         await loadWorkspace();
       } catch {
@@ -151,11 +174,37 @@ export default function AdminAiExecutionPage() {
       }
       return result;
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "A operação foi recusada com segurança.");
+      if (isDefinitiveMutationFailure(caught)) {
+        setPendingMutation(null);
+        setError(caught instanceof Error ? caught.message : "A operação foi recusada com segurança.");
+      } else {
+        setPendingMutation(operation);
+        setError(
+          "Resultado ainda não confirmado. O comando original e a mesma chave idempotente foram preservados. Use “Repetir comando pendente”; não crie outra operação.",
+        );
+      }
       return null;
     } finally {
       setBusy(false);
     }
+  }
+
+  async function mutate(body: Record<string, unknown>, message: string) {
+    if (!session) {
+      setError("Sua sessão expirou. Entre novamente antes de continuar.");
+      return null;
+    }
+    if (profile?.mfaVerified !== true) {
+      setError("Confirme o MFA antes de executar uma operação transacional.");
+      return null;
+    }
+    if (pendingMutation) {
+      setError("Resolva o comando pendente antes de iniciar outra operação.");
+      return null;
+    }
+    const operation = { body, message, idempotencyKey: crypto.randomUUID() };
+    setPendingMutation(operation);
+    return executeMutation(operation);
   }
 
   async function createTarget() {
@@ -336,6 +385,7 @@ export default function AdminAiExecutionPage() {
 
   return (
     <section className="admin-ai-exec" aria-labelledby="ai-exec-title">
+      <UnsavedChangesGuard dirty={pendingMutation !== null} />
       <header className="admin-ai-exec__header">
         <div>
           <p className="admin-eyebrow">EV2.14 · Gate G14</p>
@@ -361,6 +411,17 @@ export default function AdminAiExecutionPage() {
       {success && (
         <div role="status" className="admin-alert admin-alert--success">
           {success}
+        </div>
+      )}
+      {pendingMutation && (
+        <div role="status" className="admin-notice">
+          <p>
+            Há um comando com resultado ambíguo. A repetição segura reutiliza exatamente o mesmo envelope e a
+            mesma chave idempotente.
+          </p>
+          <button type="button" onClick={() => void executeMutation(pendingMutation)} disabled={busy}>
+            Repetir comando pendente
+          </button>
         </div>
       )}
 
@@ -396,7 +457,10 @@ export default function AdminAiExecutionPage() {
               required
             />
           </label>
-          <button type="submit" disabled={busy || !workspace.permissions.canPlan || !profile?.mfaVerified}>
+          <button
+            type="submit"
+            disabled={mutationsBlocked || !workspace.permissions.canPlan || !profile?.mfaVerified}
+          >
             Criar alvo de ensaio
           </button>
         </form>
@@ -448,7 +512,11 @@ export default function AdminAiExecutionPage() {
               />
             </label>
           )}
-          <button type="button" onClick={addStep} disabled={busy || !workspace.permissions.canPlan}>
+          <button
+            type="button"
+            onClick={addStep}
+            disabled={mutationsBlocked || !workspace.permissions.canPlan}
+          >
             Adicionar ao plano
           </button>
 
@@ -482,7 +550,9 @@ export default function AdminAiExecutionPage() {
           <button
             type="button"
             onClick={() => void savePlan()}
-            disabled={busy || !steps.length || !workspace.permissions.canPlan || !profile?.mfaVerified}
+            disabled={
+              mutationsBlocked || !steps.length || !workspace.permissions.canPlan || !profile?.mfaVerified
+            }
           >
             {editingPlanId
               ? "Salvar nova versão e invalidar aprovação"
@@ -531,10 +601,18 @@ export default function AdminAiExecutionPage() {
             <div className="admin-ai-exec__actions">
               {selectedPlan.owned && ["ready", "approved", "rejected"].includes(selectedPlan.status) && (
                 <>
-                  <button type="button" onClick={() => loadForRevision(selectedPlan)} disabled={busy}>
+                  <button
+                    type="button"
+                    onClick={() => loadForRevision(selectedPlan)}
+                    disabled={mutationsBlocked}
+                  >
                     Revisar plano
                   </button>
-                  <button type="button" onClick={() => void cancelPlan(selectedPlan)} disabled={busy}>
+                  <button
+                    type="button"
+                    onClick={() => void cancelPlan(selectedPlan)}
+                    disabled={mutationsBlocked}
+                  >
                     <XCircle aria-hidden="true" size={17} /> Cancelar
                   </button>
                 </>
@@ -544,21 +622,25 @@ export default function AdminAiExecutionPage() {
                   <button
                     type="button"
                     onClick={() => void decidePlan(selectedPlan, "approved")}
-                    disabled={busy}
+                    disabled={mutationsBlocked}
                   >
                     <CheckCircle2 aria-hidden="true" size={17} /> Aprovar por 10 minutos
                   </button>
                   <button
                     type="button"
                     onClick={() => void decidePlan(selectedPlan, "rejected")}
-                    disabled={busy}
+                    disabled={mutationsBlocked}
                   >
                     <XCircle aria-hidden="true" size={17} /> Rejeitar
                   </button>
                 </>
               )}
               {selectedPlan.executable && selectedPlan.approvals[0]?.approvedBy !== profile?.userId && (
-                <button type="button" onClick={() => void executePlan(selectedPlan)} disabled={busy}>
+                <button
+                  type="button"
+                  onClick={() => void executePlan(selectedPlan)}
+                  disabled={mutationsBlocked}
+                >
                   <Play aria-hidden="true" size={17} /> Executar plano aprovado
                 </button>
               )}
@@ -569,7 +651,11 @@ export default function AdminAiExecutionPage() {
                   selectedPlan.approvals.find(
                     (approval) => approval.purpose === "compensate" && approval.status === "active",
                   )?.approvedBy !== profile?.userId && (
-                    <button type="button" onClick={() => void compensate(selectedPlan)} disabled={busy}>
+                    <button
+                      type="button"
+                      onClick={() => void compensate(selectedPlan)}
+                      disabled={mutationsBlocked}
+                    >
                       <CornerUpLeft aria-hidden="true" size={17} /> Executar compensação
                     </button>
                   )
@@ -578,7 +664,7 @@ export default function AdminAiExecutionPage() {
                   <button
                     type="button"
                     onClick={() => void approveCompensation(selectedPlan)}
-                    disabled={busy}
+                    disabled={mutationsBlocked}
                   >
                     <ClipboardCheck aria-hidden="true" size={17} /> Aprovar compensação
                   </button>

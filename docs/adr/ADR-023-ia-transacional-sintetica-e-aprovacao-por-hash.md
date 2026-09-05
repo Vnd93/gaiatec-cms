@@ -33,7 +33,9 @@ e referências `g14x-*`. Produção, dados reais e provider externo não fazem p
 
 Positivas: fronteira auditável, negação segura, repetição determinística, revisão humana explícita e
 ensaio sem impacto editorial. Negativas: mais tabelas/estados, necessidade de dois atores MFA e uma
-segunda aprovação para compensar; após expiração ou revisão, um novo dry-run/aprovação é obrigatório.
+segunda aprovação para compensar. A aprovação de execução exige novo dry-run após expiração; a
+aprovação de compensação pode ser renovada sobre o mesmo run/hash, preservando o histórico e no
+máximo uma aprovação ativa.
 
 ## Condição para expansão
 

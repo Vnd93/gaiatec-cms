@@ -83,7 +83,8 @@ Produção, dados/domínios reais, ativação global e Gate G12 permanecem bloqu
 
 Na EV2.14, a fundação da F-016 foi implementada localmente em um gateway separado e provider-off.
 A migration candidata `0054`, a função `cms-ai-execute`, a tela de execução, cinco tools sintéticas,
-aprovação vinculada a hash/versão, segregação, idempotência e compensação monotônica estão prontas
-para validação. O Gate G14 continua em `pause`: PostgreSQL/pgTAP, rehearsal, deploy no alias isolado,
-canary com dois usuários MFA, resíduo zero e revisão independente ainda precisam ser comprovados no
-mesmo SHA. Nenhuma alteração de staging ou produção foi realizada nesta fase local.
+aprovação vinculada a hash/versão, segregação, retry idempotente, locks ordenados e compensação
+monotônica reautorizável estão prontas para validação. O Gate G14 continua em `pause`:
+PostgreSQL/pgTAP, rehearsal, deploy no alias isolado, canary com dois usuários MFA, resíduo zero e
+revisão independente ainda precisam ser comprovados no mesmo SHA. Nenhuma alteração de staging ou
+produção foi realizada nesta fase local.

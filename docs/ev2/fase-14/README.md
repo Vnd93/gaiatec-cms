@@ -33,6 +33,8 @@ aprovada por outro ator.
 - MFA/AAL2 em toda mutação;
 - dois atores: criador/executor e revisor; o aprovador não executa a ação que aprovou;
 - aprovação de dez minutos vinculada ao hash e à versão exatos do plano;
+- compensação reautorizável após expiração, com histórico preservado e uma única aprovação ativa;
+- resposta ambígua repete o mesmo comando/chave e bloqueia nova mutação até reconciliação;
 - mudança do plano invalida a aprovação anterior;
 - nenhum acesso às tabelas editoriais, domínios reais, produção ou rede externa;
 - nenhuma promoção do staging estável.
@@ -44,7 +46,8 @@ aprovada por outro ator.
 3. [Gate G14](GATE_G14.md)
 4. [Plano do canary em staging](PLANO_CANARY_STAGING.md)
 5. [Relatório de validação local](RELATORIO_VALIDACAO_LOCAL_2026-09-04.md)
-6. [ADR-023](../../adr/ADR-023-ia-transacional-sintetica-e-aprovacao-por-hash.md)
+6. [Correções da revisão técnica](RELATORIO_CORRECOES_REVISAO_2026-09-05.md)
+7. [ADR-023](../../adr/ADR-023-ia-transacional-sintetica-e-aprovacao-por-hash.md)
 
 ## Verificação local
 

@@ -201,6 +201,25 @@ begin
     'staging', 'main', 'aal2', 'g14-rehearsal-reviewer', now() - interval '1 minute',
     gen_random_uuid(), gen_random_uuid(), 'g14-rehearsal-compensation-approval', repeat('6', 64)
   );
+  update public.cms_ai_execution_approvals
+  set created_at = now() - interval '10 minutes',
+      expires_at = now() - interval '1 second'
+  where plan_id = (v_plan ->> 'planId')::uuid and purpose = 'compensate' and status = 'active';
+  perform public.cms_execute_ai_transaction_command(
+    v_reviewer, 'approve_compensation',
+    jsonb_build_object('runId', v_run ->> 'runId', 'expectedPlanHash', v_plan ->> 'planHash',
+      'rationale', 'Compensação sintética renovada após expiração'),
+    'staging', 'main', 'aal2', 'g14-rehearsal-reviewer', now() - interval '1 minute',
+    gen_random_uuid(), gen_random_uuid(), 'g14-rehearsal-compensation-renewal', repeat('8', 64)
+  );
+  if (select count(*) from public.cms_ai_execution_approvals
+      where plan_id = (v_plan ->> 'planId')::uuid and purpose = 'compensate') <> 2
+     or (select count(*) from public.cms_ai_execution_approvals
+         where plan_id = (v_plan ->> 'planId')::uuid and purpose = 'compensate' and status = 'expired') <> 1
+     or (select count(*) from public.cms_ai_execution_approvals
+         where plan_id = (v_plan ->> 'planId')::uuid and purpose = 'compensate' and status = 'active') <> 1 then
+    raise exception 'EV2_G14_COMPENSATION_RENEWAL_FAILED';
+  end if;
   v_result := public.cms_execute_ai_transaction_command(
     v_operator, 'compensate_run',
     jsonb_build_object('runId', v_run ->> 'runId', 'expectedPlanHash', v_plan ->> 'planHash'),
@@ -239,6 +258,7 @@ try {
         rolledBack,
         twoPersonApproval: true,
         atomicExecution: true,
+        renewableCompensation: true,
         monotonicCompensation: true,
         productionMutations: 0,
         realDataUsed: false,

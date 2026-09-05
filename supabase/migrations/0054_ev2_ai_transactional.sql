@@ -139,13 +139,14 @@ create table public.cms_ai_execution_approvals (
   expires_at timestamptz not null,
   created_at timestamptz not null default now(),
   consumed_at timestamptz,
-  unique (plan_id, plan_hash, purpose),
   check (expires_at > created_at and expires_at <= created_at + interval '10 minutes'),
   check ((decision = 'rejected' and status = 'rejected') or decision = 'approved')
 );
 
 create index cms_ai_execution_approvals_expiry_idx
   on public.cms_ai_execution_approvals (expires_at, id) where status = 'active';
+create unique index cms_ai_execution_approvals_one_active_idx
+  on public.cms_ai_execution_approvals (plan_id, purpose) where status = 'active';
 
 create table public.cms_ai_execution_runs (
   id uuid primary key default gen_random_uuid(),
@@ -697,18 +698,16 @@ begin
        or char_length(btrim(coalesce(p_payload #>> '{payload,summary}', ''))) not between 3 and 3000 then
       raise exception 'CMS_AI_EXECUTE_TARGET_INVALID' using errcode = '22023';
     end if;
-    if exists (
-      select 1 from public.cms_ai_synthetic_targets
-      where target_ref = p_payload ->> 'targetRef'
-    ) then
-      raise exception 'CMS_AI_EXECUTE_TARGET_CONFLICT' using errcode = 'PT409';
-    end if;
     insert into public.cms_ai_synthetic_targets (
       target_ref, title, environment, site_key, payload, created_by, updated_by
     ) values (
       p_payload ->> 'targetRef', p_payload ->> 'title', p_environment, p_site_key,
       p_payload -> 'payload', p_actor_id, p_actor_id
-    ) returning * into v_target;
+    ) on conflict (target_ref) do nothing
+    returning * into v_target;
+    if not found then
+      raise exception 'CMS_AI_EXECUTE_TARGET_CONFLICT' using errcode = 'PT409';
+    end if;
     v_response := jsonb_build_object(
       'schemaVersion', 1, 'action', p_action, 'targetRef', v_target.target_ref,
       'planId', null, 'runId', null, 'status', v_target.lifecycle, 'planHash', null,
@@ -954,18 +953,36 @@ begin
     );
 
   elsif p_action = 'approve_compensation' then
+    -- Ordem global de locks G14: plan -> run -> approval -> targets.
     select p.* into v_plan from public.cms_ai_execution_plans p
     join public.cms_ai_execution_runs r on r.plan_id = p.id
     where r.id = (p_payload ->> 'runId')::uuid
       and p.environment = p_environment and p.site_key = p_site_key and r.status = 'succeeded'
     for update of p;
     if not found then raise exception 'CMS_AI_EXECUTE_RUN_NOT_FOUND' using errcode = 'PT404'; end if;
-    select * into v_run from public.cms_ai_execution_runs where plan_id = v_plan.id for update;
-    if v_run.executed_by = p_actor_id or v_plan.plan_hash <> p_payload ->> 'expectedPlanHash' then
+    select * into v_run from public.cms_ai_execution_runs
+    where id = (p_payload ->> 'runId')::uuid and plan_id = v_plan.id and status = 'succeeded'
+    for update;
+    if not found then raise exception 'CMS_AI_EXECUTE_RUN_NOT_FOUND' using errcode = 'PT404'; end if;
+    if v_run.executed_by = p_actor_id then
       raise exception 'CMS_AI_EXECUTE_REVIEWER_SEPARATION_REQUIRED' using errcode = 'PT409';
+    end if;
+    if v_plan.plan_hash <> p_payload ->> 'expectedPlanHash' then
+      raise exception 'CMS_AI_EXECUTE_PLAN_CONFLICT' using errcode = 'PT409';
     end if;
     if char_length(btrim(coalesce(p_payload ->> 'rationale', ''))) not between 3 and 1000 then
       raise exception 'CMS_AI_EXECUTE_APPROVAL_INVALID' using errcode = '22023';
+    end if;
+    update public.cms_ai_execution_approvals
+    set status = 'expired'
+    where plan_id = v_plan.id and purpose = 'compensate'
+      and status = 'active' and expires_at <= now();
+    if exists (
+      select 1 from public.cms_ai_execution_approvals
+      where plan_id = v_plan.id and purpose = 'compensate'
+        and status = 'active' and expires_at > now()
+    ) then
+      raise exception 'CMS_AI_EXECUTE_APPROVAL_CONFLICT' using errcode = 'PT409';
     end if;
     insert into public.cms_ai_execution_approvals (
       plan_id, purpose, decision, status, plan_hash, plan_version, risk_class,
@@ -991,13 +1008,17 @@ begin
     );
 
   elsif p_action = 'compensate_run' then
-    select r.* into v_run from public.cms_ai_execution_runs r
-    join public.cms_ai_execution_plans p on p.id = r.plan_id
+    -- Mantém a mesma ordem de locks de approve_compensation para impedir deadlocks.
+    select p.* into v_plan from public.cms_ai_execution_plans p
+    join public.cms_ai_execution_runs r on r.plan_id = p.id
     where r.id = (p_payload ->> 'runId')::uuid
       and p.environment = p_environment and p.site_key = p_site_key and r.status = 'succeeded'
-    for update of r;
+    for update of p;
     if not found then raise exception 'CMS_AI_EXECUTE_RUN_NOT_FOUND' using errcode = 'PT404'; end if;
-    select * into v_plan from public.cms_ai_execution_plans where id = v_run.plan_id for update;
+    select * into v_run from public.cms_ai_execution_runs
+    where id = (p_payload ->> 'runId')::uuid and plan_id = v_plan.id and status = 'succeeded'
+    for update;
+    if not found then raise exception 'CMS_AI_EXECUTE_RUN_NOT_FOUND' using errcode = 'PT404'; end if;
     if v_plan.plan_hash <> p_payload ->> 'expectedPlanHash' then
       raise exception 'CMS_AI_EXECUTE_PLAN_CONFLICT' using errcode = 'PT409';
     end if;

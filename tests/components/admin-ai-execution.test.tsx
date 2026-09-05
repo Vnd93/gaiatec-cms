@@ -1,7 +1,7 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComponentType } from "react";
-import { MemoryRouter } from "react-router";
+import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const ACTOR_ID = "51400000-0000-4000-8000-000000000101";
@@ -46,6 +46,19 @@ vi.mock("@/admin/api/cms-api", () => ({ aiExecuteCommand: mocks.command }));
 vi.mock("@/admin/auth/AdminAuthContext", () => ({ useAdminAuth: () => mocks.auth }));
 
 let AdminAiExecutionPage: ComponentType;
+
+function renderPage() {
+  const router = createMemoryRouter(
+    [
+      {
+        path: "*",
+        element: <AdminAiExecutionPage />,
+      },
+    ],
+    { initialEntries: ["/admin/ia-execution"] },
+  );
+  return render(<RouterProvider router={router} />);
+}
 
 const tools = [
   ["draft.apply_patch", "Aplicar patch sintético", "draft", "cms:ai.execute"],
@@ -185,11 +198,7 @@ describe("EV2.14 transactional AI surface", () => {
 
   it("builds an expected-version plan without exposing raw JSON", async () => {
     const user = userEvent.setup();
-    render(
-      <MemoryRouter>
-        <AdminAiExecutionPage />
-      </MemoryRouter>,
-    );
+    renderPage();
 
     await waitFor(() =>
       expect(screen.getByRole("heading", { name: "Execução transacional controlada" })).toBeVisible(),
@@ -224,11 +233,7 @@ describe("EV2.14 transactional AI surface", () => {
 
   it("offers approval only for another planner and sends the immutable hash", async () => {
     const user = userEvent.setup();
-    render(
-      <MemoryRouter>
-        <AdminAiExecutionPage />
-      </MemoryRouter>,
-    );
+    renderPage();
 
     expect(await screen.findByRole("option", { name: /Plano segregado para revisão/i })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Aprovar por 10 minutos" }));
@@ -253,13 +258,47 @@ describe("EV2.14 transactional AI surface", () => {
     expect(screen.getByText(/outro usuário sintético com mfa/i)).toBeVisible();
   });
 
+  it("reuses the original command and idempotency key after an ambiguous response", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "Execução transacional controlada" })).toBeVisible(),
+    );
+    let mutationAttempts = 0;
+    mocks.command.mockImplementation((_session, body: Record<string, unknown>) => {
+      if (body.action === "create_plan" && mutationAttempts < 2) {
+        mutationAttempts += 1;
+        return Promise.reject(new TypeError("resposta de rede ausente"));
+      }
+      return Promise.resolve(responseFor(body));
+    });
+
+    await user.click(screen.getByRole("button", { name: "Adicionar ao plano" }));
+    await user.click(screen.getByRole("button", { name: "Validar dry-run e solicitar revisão" }));
+
+    const retry = await screen.findByRole("button", { name: "Repetir comando pendente" });
+    const initialAttempts = mocks.command.mock.calls.filter(([, body]) => body.action === "create_plan");
+    expect(initialAttempts).toHaveLength(2);
+    expect(initialAttempts[1][1]).toEqual(initialAttempts[0][1]);
+    expect(initialAttempts[1][2]).toBe(initialAttempts[0][2]);
+    expect(screen.getByRole("button", { name: "Validar dry-run e solicitar revisão" })).toBeDisabled();
+
+    await user.click(retry);
+    expect(await screen.findByText(/dry-run validado e plano sintético criado/i)).toBeVisible();
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Repetir comando pendente" })).toBeNull(),
+    );
+
+    const recoveredAttempts = mocks.command.mock.calls.filter(([, body]) => body.action === "create_plan");
+    expect(recoveredAttempts).toHaveLength(3);
+    expect(new Set(recoveredAttempts.map(([, body]) => JSON.stringify(body))).size).toBe(1);
+    expect(new Set(recoveredAttempts.map(([, , key]) => key)).size).toBe(1);
+  });
+
   it("does not report a confirmed mutation as refused when only the refresh fails", async () => {
     const user = userEvent.setup();
-    render(
-      <MemoryRouter>
-        <AdminAiExecutionPage />
-      </MemoryRouter>,
-    );
+    renderPage();
 
     await waitFor(() =>
       expect(screen.getByRole("heading", { name: "Execução transacional controlada" })).toBeVisible(),

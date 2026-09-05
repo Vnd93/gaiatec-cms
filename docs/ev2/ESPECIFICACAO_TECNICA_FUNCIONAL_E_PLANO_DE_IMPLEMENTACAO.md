@@ -769,8 +769,9 @@ As fichas abaixo são a unidade de implementação. Campos específicos de produ
 
 > **ESTADO EV2.14** A fundação da F-016 foi implementada como candidato local exclusivamente
 > sintético: gateway separado, cinco tools fechadas, dry-run, hash/versão, segregação, MFA,
-> idempotência, transação atômica e compensação monotônica. G14, migration/função em staging e
-> qualquer integração com dados reais permanecem pendentes.
+> idempotência com recuperação de resposta ambígua, transação atômica, locks ordenados e
+> compensação monotônica reautorizável após expiração. G14, migration/função em staging e qualquer
+> integração com dados reais permanecem pendentes.
 
 <a id="f-017-conteudo-marketing-formularios-e-leads-integrados"></a>
 

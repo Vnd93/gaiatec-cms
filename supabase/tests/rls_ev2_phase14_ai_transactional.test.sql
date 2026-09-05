@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
-select plan(52);
+select plan(58);
 
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -313,7 +313,54 @@ select is(
     '51400000-0000-4000-8000-000000000102'
   ) ->> 'status',
   'compensation_approved',
-  'distinct reviewer approves compensation'
+  'distinct reviewer approves compensation before the renewal rehearsal'
+);
+update public.cms_ai_execution_approvals
+set created_at = now() - interval '10 minutes',
+    expires_at = now() - interval '1 second'
+where plan_id = (select plan_id from g14_state) and purpose = 'compensate' and status = 'active';
+select is(
+  (select count(*)::integer from public.cms_ai_execution_approvals
+   where plan_id = (select plan_id from g14_state) and purpose = 'compensate'
+     and status = 'active' and expires_at > now()),
+  0,
+  'expired compensation approval is no longer executable'
+);
+select is(
+  pg_temp.g14_command(
+    'approve_compensation',
+    jsonb_build_object('runId',(select run_id from g14_state),'expectedPlanHash',(select plan_hash from g14_state),'rationale','Renovação após expiração conferida'),
+    '51400000-0000-4000-8000-000000000102'
+  ) ->> 'status',
+  'compensation_approved',
+  'an expired compensation approval can be renewed without changing the executed plan'
+);
+select is(
+  (select count(*)::integer from public.cms_ai_execution_approvals
+   where plan_id = (select plan_id from g14_state) and purpose = 'compensate'),
+  2,
+  'compensation renewal preserves the complete approval history'
+);
+select is(
+  (select count(*)::integer from public.cms_ai_execution_approvals
+   where plan_id = (select plan_id from g14_state) and purpose = 'compensate' and status = 'expired'),
+  1,
+  'renewal marks the previous compensation approval as expired'
+);
+select is(
+  (select count(*)::integer from public.cms_ai_execution_approvals
+   where plan_id = (select plan_id from g14_state) and purpose = 'compensate' and status = 'active'),
+  1,
+  'renewal leaves exactly one active compensation approval'
+);
+select throws_ok(
+  $$select pg_temp.g14_command(
+    'approve_compensation',
+    jsonb_build_object('runId',(select run_id from g14_state),'expectedPlanHash',(select plan_hash from g14_state),'rationale','Aprovação concorrente recusada'),
+    '51400000-0000-4000-8000-000000000102'
+  )$$,
+  'PT409', 'CMS_AI_EXECUTE_APPROVAL_CONFLICT',
+  'a second active compensation approval fails as an explicit conflict'
 );
 select is(
   (select (item ->> 'compensatable')::boolean

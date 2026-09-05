@@ -223,9 +223,11 @@ function errorResponse(req: Request, error: { message?: string; code?: string },
                 ? "O alvo mudou; revise o plano antes de executar."
                 : marker === "CMS_AI_EXECUTE_APPROVAL_REQUIRED"
                   ? "A aprovação válida é obrigatória."
-                  : marker === "CMS_AI_EXECUTE_FEATURE_DISABLED"
-                    ? "A execução transacional individual está desligada."
-                    : "A operação foi recusada com segurança.";
+                  : marker === "CMS_AI_EXECUTE_APPROVAL_CONFLICT"
+                    ? "Já existe uma aprovação válida para esta compensação. Atualize o workspace."
+                    : marker === "CMS_AI_EXECUTE_FEATURE_DISABLED"
+                      ? "A execução transacional individual está desligada."
+                      : "A operação foi recusada com segurança.";
   return json(req, { error: safeMessage, code: marker, correlationId, preserved: true }, status);
 }
 

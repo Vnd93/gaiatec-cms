@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { GITHUB_SOLE_MAINTAINER, validateProductionReadinessControls } from "../phase16/readiness-lib.mjs";
 
 export const FULL_SHA_PATTERN = /^[a-f0-9]{40}$/;
 export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -28,6 +29,7 @@ const OWNER_ROLES = Object.freeze([
   "securityPrivacyOwner",
   "businessOwner",
 ]);
+const OPERATIONAL_GOVERNANCE_MODE = "sole-operator";
 
 const isFiniteNumber = (value) => typeof value === "number" && Number.isFinite(value);
 const isIsoDate = (value) => typeof value === "string" && Number.isFinite(Date.parse(value));
@@ -187,7 +189,7 @@ export function validateApprovalRecord(
   { expectedSha, expectedEnvironment, expectedChangeReference, now } = {},
 ) {
   const violations = [];
-  if (record?.schemaVersion !== 1) violations.push("schema_version_invalid");
+  if (record?.schemaVersion !== 2) violations.push("schema_version_invalid");
   if (record?.gate !== "G12") violations.push("gate_invalid");
   if (record?.decision !== "approved") violations.push("decision_not_approved");
   if (!isFullSha(record?.candidateSha)) violations.push("candidate_sha_invalid");
@@ -200,6 +202,8 @@ export function validateApprovalRecord(
     violations.push("change_reference_mismatch");
   if (!UUID_PATTERN.test(record?.g11EvidenceRunId ?? "")) violations.push("g11_evidence_invalid");
   if (!isMeaningful(record?.requestedBy)) violations.push("requester_invalid");
+  else if (record.requestedBy.trim().toLowerCase() !== GITHUB_SOLE_MAINTAINER)
+    violations.push("requester_must_match_sole_operator");
   if (!UUID_PATTERN.test(record?.g12Evidence?.canaryRunId ?? ""))
     violations.push("g12_canary_evidence_invalid");
   if (record?.g12Evidence?.candidateSha !== record?.candidateSha)
@@ -224,15 +228,28 @@ export function validateApprovalRecord(
   if (record?.g12Evidence?.productionMutations !== 0)
     violations.push("g12_canary_production_boundary_invalid");
 
-  const ownerIds = [];
+  const operationalGovernance = record?.operationalGovernance;
+  if (operationalGovernance?.mode !== OPERATIONAL_GOVERNANCE_MODE)
+    violations.push("operational_governance_mode_invalid");
+  if (
+    String(operationalGovernance?.responsibleId ?? "")
+      .trim()
+      .toLowerCase() !== GITHUB_SOLE_MAINTAINER
+  )
+    violations.push("operational_responsible_invalid");
+  if (operationalGovernance?.riskAccepted !== true) violations.push("sole_operator_risk_not_accepted");
+  if (!isIsoDate(operationalGovernance?.acceptedAt)) violations.push("sole_operator_acceptance_time_invalid");
+  if (!isMeaningful(operationalGovernance?.evidenceReference))
+    violations.push("sole_operator_evidence_invalid");
+
   for (const role of OWNER_ROLES) {
     const owner = record?.owners?.[role];
     if (!isMeaningful(owner?.id)) violations.push(`${role}_invalid`);
-    else ownerIds.push(owner.id.trim().toLowerCase());
+    else if (owner.id.trim().toLowerCase() !== GITHUB_SOLE_MAINTAINER)
+      violations.push(`${role}_must_match_sole_operator`);
     if (!isIsoDate(owner?.approvedAt)) violations.push(`${role}_approval_time_invalid`);
+    if (!isMeaningful(owner?.evidenceReference)) violations.push(`${role}_evidence_invalid`);
   }
-  if (ownerIds.length === OWNER_ROLES.length && new Set(ownerIds).size !== OWNER_ROLES.length)
-    violations.push("owner_separation_required");
 
   if (!UUID_PATTERN.test(record?.rollback?.deploymentId ?? ""))
     violations.push("rollback_deployment_invalid");
@@ -252,9 +269,14 @@ export function validateApprovalRecord(
 
   if (record?.environment === "production") {
     if (record?.productionAuthorized !== true) violations.push("production_not_authorized");
-    if (record?.productionAuthorizationText !== "AUTORIZO-G12-PRODUCAO")
+    if (record?.productionAuthorizationSha !== record?.candidateSha)
+      violations.push("production_authorization_sha_mismatch");
+    if (record?.productionAuthorizationText !== `AUTORIZO-G12-PRODUCAO:${record?.candidateSha}`)
       violations.push("production_authorization_text_invalid");
-    if (record?.dpoLegalStatus !== "approved") violations.push("dpo_legal_not_approved");
+    if (!isMeaningful(record?.productionAuthorizedBy)) violations.push("production_authorizer_invalid");
+    else if (record.productionAuthorizedBy.trim().toLowerCase() !== GITHUB_SOLE_MAINTAINER)
+      violations.push("production_authorizer_must_match_sole_operator");
+    if (!isIsoDate(record?.productionAuthorizedAt)) violations.push("production_authorization_time_invalid");
     if (record?.target?.cloudflareProject !== "gaiatec-website")
       violations.push("production_project_invalid");
     const domains = record?.target?.domains;
@@ -266,6 +288,10 @@ export function validateApprovalRecord(
       domains.some((domain) => domain.includes("pages.dev"))
     )
       violations.push("production_domains_invalid");
+    const readiness = validateProductionReadinessControls(record?.productionReadiness, {
+      candidateSha: record?.candidateSha,
+    });
+    violations.push(...readiness.violations.map((item) => `readiness_${item}`));
   }
 
   const uniqueViolations = [...new Set(violations)];
@@ -421,12 +447,49 @@ export function validateCanaryEvidenceBinding(record, evidence, { reportSha256 }
   return { valid: uniqueViolations.length === 0, violations: uniqueViolations };
 }
 
-export function evaluateGithubControls({ environment, branchProtection }) {
+export function evaluateCodeOwners(content) {
+  const rules = String(content ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#"))
+    .map((line) => {
+      const [pattern, ...tokens] = line.split(/\s+/);
+      return {
+        pattern,
+        owners: [
+          ...new Set(
+            tokens.filter((token) => /^@[A-Za-z0-9-]+$/.test(token)).map((token) => token.toLowerCase()),
+          ),
+        ],
+      };
+    });
+  const normalizePattern = (pattern) => String(pattern ?? "").replace(/^\//, "");
+  const covers = (expectedPatterns) =>
+    rules.some(
+      (rule) =>
+        expectedPatterns.has(normalizePattern(rule.pattern)) &&
+        rule.owners.length === 1 &&
+        rule.owners[0] === `@${GITHUB_SOLE_MAINTAINER}`,
+    );
+  const violations = [];
+  if (!covers(new Set(["*", "**"]))) violations.push("global_vnd93_codeowner_required");
+  if (!covers(new Set([".github/workflows/*", ".github/workflows/**"])))
+    violations.push("workflow_vnd93_codeowner_required");
+  if (!covers(new Set(["docs/ev2/fase-12/approvals/*", "docs/ev2/fase-12/approvals/**"])))
+    violations.push("approval_record_vnd93_codeowner_required");
+  return { valid: violations.length === 0, violations };
+}
+
+export function evaluateGithubControls({
+  environment,
+  branchProtection,
+  codeOwners,
+  pullRequest,
+  checkRuns,
+}) {
   const violations = [];
   const reviewerRule = environment?.protection_rules?.find((rule) => rule.type === "required_reviewers");
-  if (!reviewerRule || !Array.isArray(reviewerRule.reviewers) || reviewerRule.reviewers.length < 2)
-    violations.push("two_environment_reviewers_required");
-  if (reviewerRule?.prevent_self_review !== true) violations.push("prevent_self_review_required");
+  if (reviewerRule) violations.push("environment_reviewer_incompatible_with_sole_maintainer");
   if (
     environment?.deployment_branch_policy?.protected_branches !== true ||
     environment?.deployment_branch_policy?.custom_branch_policies !== false
@@ -434,8 +497,17 @@ export function evaluateGithubControls({ environment, branchProtection }) {
     violations.push("environment_protected_branches_only_required");
   if (branchProtection?.required_status_checks?.strict !== true)
     violations.push("strict_status_checks_required");
-  if (branchProtection?.required_pull_request_reviews?.required_approving_review_count < 1)
-    violations.push("pull_request_review_required");
+  const pullReviewRule = branchProtection?.required_pull_request_reviews;
+  if (!pullReviewRule) violations.push("pull_request_rule_required");
+  if (pullReviewRule?.required_approving_review_count !== 0)
+    violations.push("pull_request_approvals_must_be_zero_in_sole_mode");
+  if (pullReviewRule?.require_code_owner_reviews === true)
+    violations.push("code_owner_review_incompatible_with_sole_maintainer");
+  if (pullReviewRule?.require_last_push_approval === true)
+    violations.push("last_push_approval_incompatible_with_sole_maintainer");
+  const bypass = pullReviewRule?.bypass_pull_request_allowances;
+  if ([...(bypass?.users ?? []), ...(bypass?.teams ?? []), ...(bypass?.apps ?? [])].length > 0)
+    violations.push("pull_request_bypass_forbidden");
   if (branchProtection?.enforce_admins?.enabled !== true) violations.push("admin_enforcement_required");
   const contexts = new Set([
     ...(branchProtection?.required_status_checks?.contexts ?? []),
@@ -446,6 +518,34 @@ export function evaluateGithubControls({ environment, branchProtection }) {
   if (branchProtection?.allow_force_pushes?.enabled !== false) violations.push("force_push_must_be_disabled");
   if (branchProtection?.allow_deletions?.enabled !== false)
     violations.push("branch_deletion_must_be_disabled");
+  if (branchProtection?.required_conversation_resolution?.enabled !== true)
+    violations.push("conversation_resolution_required");
+  if (branchProtection?.required_linear_history?.enabled !== true) violations.push("linear_history_required");
+  const codeOwnerResult = evaluateCodeOwners(codeOwners);
+  violations.push(...codeOwnerResult.violations);
+
+  if (
+    !pullRequest?.merged_at ||
+    pullRequest?.base?.ref !== "main" ||
+    String(pullRequest?.user?.login ?? "").toLowerCase() !== GITHUB_SOLE_MAINTAINER
+  )
+    violations.push("candidate_pull_request_invalid");
+
+  const latestChecks = new Map();
+  for (const run of Array.isArray(checkRuns) ? checkRuns : []) {
+    const name = String(run?.name ?? "")
+      .toLowerCase()
+      .replace(/^.*\/\s*/, "")
+      .replace(/\s+\((?:push|pull_request)\)$/, "");
+    if (!name) continue;
+    const previous = latestChecks.get(name);
+    if (!previous || Number(run.id) > Number(previous.id)) latestChecks.set(name, run);
+  }
+  for (const required of ["quality", "database", "browser"]) {
+    const run = latestChecks.get(required);
+    if (run?.status !== "completed" || run?.conclusion !== "success")
+      violations.push(`actual_check_${required}_not_successful`);
+  }
   return { valid: violations.length === 0, violations };
 }
 
@@ -454,6 +554,8 @@ export function validateProductionConfig(config) {
   const stagingRef = "glcqsosxwgmlhzgcsnzv";
   if (!/^[a-z]{20}$/.test(config?.supabaseProjectRef ?? "")) violations.push("supabase_project_ref_invalid");
   if (config?.supabaseProjectRef === stagingRef) violations.push("staging_project_ref_forbidden");
+  if (config?.supabaseProjectRef !== "chfuhctnhqgyjowkvllv")
+    violations.push("production_project_ref_mismatch");
   let supabaseHostname = "";
   try {
     const url = new URL(config?.supabaseUrl);

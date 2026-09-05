@@ -1,0 +1,159 @@
+name: Backup Supabase production
+
+on:
+  workflow_dispatch:
+    inputs:
+      restore_drill:
+        description: Decriptar e restaurar o backup em Supabase local efêmero
+        required: true
+        type: boolean
+        default: true
+  schedule:
+    - cron: "17 3 * * *"
+    - cron: "47 3 * * 0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: production-backup
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .nvmrc
+      - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3
+        with:
+          version: 2.116.0
+      - name: Select scheduled mode
+        id: mode
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_RESTORE_DRILL: ${{ inputs.restore_drill }}
+          SCHEDULE_EXPRESSION: ${{ github.event.schedule }}
+        run: |
+          restore_drill=false
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$MANUAL_RESTORE_DRILL" = "true" ]; then
+            restore_drill=true
+          elif [ "$EVENT_NAME" = "schedule" ] && [ "$SCHEDULE_EXPRESSION" = "47 3 * * 0" ]; then
+            restore_drill=true
+          fi
+          echo "restore_drill=$restore_drill" >> "$GITHUB_OUTPUT"
+      - name: Validate fail-closed backup configuration
+        env:
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          PRODUCTION_SUPABASE_DB_URL: ${{ secrets.PRODUCTION_SUPABASE_DB_URL }}
+          BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
+          BACKUP_EXTERNAL_TARGET: github-actions-encrypted-artifact
+        run: node scripts/ev2/phase16/validate-backup-config.mjs
+      - name: Create logical dump and encrypted external bundle
+        id: backup
+        env:
+          PRODUCTION_SUPABASE_DB_URL: ${{ secrets.PRODUCTION_SUPABASE_DB_URL }}
+          BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
+          RESTORE_DRILL: ${{ steps.mode.outputs.restore_drill }}
+        run: |
+          set -euo pipefail
+          plain_dir="$RUNNER_TEMP/gaiatec-supabase-$GITHUB_RUN_ID/plain"
+          artifact_dir="$RUNNER_TEMP/gaiatec-backup-artifact-$GITHUB_RUN_ID"
+          mkdir -p "$plain_dir" "$artifact_dir"
+
+          supabase db dump --db-url "$PRODUCTION_SUPABASE_DB_URL" --file "$plain_dir/roles.sql" --role-only
+          supabase db dump --db-url "$PRODUCTION_SUPABASE_DB_URL" --file "$plain_dir/schema.sql"
+          supabase db dump --db-url "$PRODUCTION_SUPABASE_DB_URL" --file "$plain_dir/data.sql" --data-only --use-copy
+          psql "$PRODUCTION_SUPABASE_DB_URL" --no-psqlrc -v ON_ERROR_STOP=1 -Atc \
+            "select schemaname || '.' || tablename from pg_tables where schemaname = 'public' order by 1" \
+            > "$plain_dir/source-public-tables.txt"
+          : > "$plain_dir/source-public-row-counts.tsv"
+          if [ "$RESTORE_DRILL" = "true" ]; then
+            psql "$PRODUCTION_SUPABASE_DB_URL" --no-psqlrc -v ON_ERROR_STOP=1 -At > "$plain_dir/source-public-row-counts.tsv" <<'SQL'
+          select format(
+            'select %L || chr(9) || count(*)::text from %I.%I;',
+            schemaname || '.' || tablename,
+            schemaname,
+            tablename
+          )
+          from pg_tables
+          where schemaname = 'public'
+          order by 1
+          \gexec
+          SQL
+          fi
+
+          archive="$RUNNER_TEMP/gaiatec-supabase-$GITHUB_RUN_ID/backup.tar.gz"
+          encrypted="$artifact_dir/supabase-production-$GITHUB_RUN_ID.tar.gz.gpg"
+          tar -C "$plain_dir" -czf "$archive" \
+            roles.sql schema.sql data.sql source-public-tables.txt source-public-row-counts.tsv
+          printf '%s' "$BACKUP_ENCRYPTION_PASSPHRASE" | gpg --batch --yes --pinentry-mode loopback \
+            --passphrase-fd 0 --symmetric --cipher-algo AES256 --output "$encrypted" "$archive"
+          rm -f -- "$archive"
+
+          echo "archive=$encrypted" >> "$GITHUB_OUTPUT"
+          echo "artifact_dir=$artifact_dir" >> "$GITHUB_OUTPUT"
+      - name: Prove decryption and restore in an ephemeral Supabase
+        if: steps.mode.outputs.restore_drill == 'true'
+        env:
+          BACKUP_ARCHIVE_PATH: ${{ steps.backup.outputs.archive }}
+          BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          restore_dir="$RUNNER_TEMP/gaiatec-supabase-$GITHUB_RUN_ID/restore"
+          mkdir -p "$restore_dir/extracted"
+          printf '%s' "$BACKUP_ENCRYPTION_PASSPHRASE" | gpg --batch --yes --pinentry-mode loopback \
+            --passphrase-fd 0 --decrypt --output "$restore_dir/backup.tar.gz" "$BACKUP_ARCHIVE_PATH"
+          tar -C "$restore_dir/extracted" -xzf "$restore_dir/backup.tar.gz"
+
+          supabase start
+          local_db_url="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+          psql "$local_db_url" --no-psqlrc -v ON_ERROR_STOP=1 -c \
+            "drop schema if exists public cascade; create schema public; grant all on schema public to postgres, anon, authenticated, service_role;"
+          psql "$local_db_url" --no-psqlrc -v ON_ERROR_STOP=1 -f "$restore_dir/extracted/roles.sql"
+          psql "$local_db_url" --no-psqlrc -v ON_ERROR_STOP=1 -f "$restore_dir/extracted/schema.sql"
+          psql "$local_db_url" --no-psqlrc -v ON_ERROR_STOP=1 -f "$restore_dir/extracted/data.sql"
+          psql "$local_db_url" --no-psqlrc -v ON_ERROR_STOP=1 -Atc \
+            "select schemaname || '.' || tablename from pg_tables where schemaname = 'public' order by 1" \
+            > "$restore_dir/restored-public-tables.txt"
+          psql "$local_db_url" --no-psqlrc -v ON_ERROR_STOP=1 -At > "$restore_dir/restored-public-row-counts.tsv" <<'SQL'
+          select format(
+            'select %L || chr(9) || count(*)::text from %I.%I;',
+            schemaname || '.' || tablename,
+            schemaname,
+            tablename
+          )
+          from pg_tables
+          where schemaname = 'public'
+          order by 1
+          \gexec
+          SQL
+          diff -u "$restore_dir/extracted/source-public-tables.txt" "$restore_dir/restored-public-tables.txt"
+          diff -u "$restore_dir/extracted/source-public-row-counts.tsv" "$restore_dir/restored-public-row-counts.tsv"
+      - name: Seal non-sensitive backup evidence
+        env:
+          BACKUP_ARCHIVE_PATH: ${{ steps.backup.outputs.archive }}
+          BACKUP_MANIFEST_PATH: ${{ steps.backup.outputs.artifact_dir }}/manifest.json
+          RESTORE_DRILL_PERFORMED: ${{ steps.mode.outputs.restore_drill }}
+          RESTORE_DRILL_PASSED: ${{ steps.mode.outputs.restore_drill }}
+        run: node scripts/ev2/phase16/write-backup-manifest.mjs
+      - name: Remove all plaintext dump material
+        if: always()
+        run: |
+          target="$RUNNER_TEMP/gaiatec-supabase-$GITHUB_RUN_ID"
+          case "$target" in
+            "$RUNNER_TEMP"/gaiatec-supabase-*) rm -rf -- "$target" ;;
+            *) exit 1 ;;
+          esac
+          supabase stop --no-backup || true
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: supabase-production-backup-${{ github.run_id }}
+          path: ${{ steps.backup.outputs.artifact_dir }}
+          if-no-files-found: error
+          retention-days: 90

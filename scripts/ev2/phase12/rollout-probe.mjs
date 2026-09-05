@@ -14,6 +14,9 @@ const environment = process.env.EV2_G12_ENVIRONMENT ?? "";
 const sampleCount = Number(process.env.EV2_G12_SAMPLE_COUNT ?? (environment === "production" ? 20 : 5));
 const requestTimeoutMs = Number(process.env.EV2_G12_REQUEST_TIMEOUT_MS ?? 10_000);
 const reportPath = process.env.EV2_G12_REPORT_PATH;
+const expectedCspMode =
+  process.env.EV2_G12_CSP_MODE ??
+  (environment === "production" || environment === "production-preview" ? "enforce" : "report-only");
 
 if (
   !origin ||
@@ -34,6 +37,8 @@ const allowedOrigin = {
 }[environment];
 if (!allowedOrigin?.test(origin))
   throw new Error("G12_PROBE_TARGET_REFUSED: origin does not match environment.");
+if (!new Set(["enforce", "report-only"]).has(expectedCspMode))
+  throw new Error("G12_CSP_MODE_REFUSED: expected CSP mode is invalid.");
 if (environment === "production" && process.env.EV2_G12_PRODUCTION_AUTHORIZED !== "true")
   throw new Error("G12_PRODUCTION_PROBE_REFUSED: explicit workflow authorization is absent.");
 
@@ -62,6 +67,8 @@ async function request(path, expectedStatus, category = "route") {
       release: response.headers.get("x-release"),
       robots: response.headers.get("x-robots-tag") ?? "",
       contentType: response.headers.get("content-type") ?? "",
+      contentSecurityPolicy: response.headers.get("content-security-policy") ?? "",
+      contentSecurityPolicyReportOnly: response.headers.get("content-security-policy-report-only") ?? "",
     });
     return response;
   } catch (error) {
@@ -114,6 +121,14 @@ const routeMetrics = Object.fromEntries(
   }),
 );
 const requiresNoindex = environment === "staging" || environment === "production-preview";
+const requiresCspEnforcement = expectedCspMode === "enforce";
+const requiredCspFragments = [
+  "default-src 'self'",
+  "object-src 'none'",
+  "script-src-attr 'none'",
+  "https://brasilapi.com.br",
+  "https://nominatim.openstreetmap.org",
+];
 const jsonContentType = (response) => response?.headers.get("content-type")?.includes("application/json");
 const evidence = {
   candidateSha: expectedSha,
@@ -148,8 +163,22 @@ const evidence = {
     validateReleaseManifest(manifest, { expectedRelease: expectedSha }).valid,
   nonProductionNoindexValid:
     !requiresNoindex || observations.every((item) => item.robots.includes("noindex")),
+  cspPolicyValid: observations.every((item) => {
+    const activePolicy =
+      (requiresCspEnforcement ? item.contentSecurityPolicy : item.contentSecurityPolicyReportOnly) ?? "";
+    const inactivePolicy =
+      (requiresCspEnforcement ? item.contentSecurityPolicyReportOnly : item.contentSecurityPolicy) ?? "";
+    return (
+      activePolicy.length > 0 &&
+      inactivePolicy.length === 0 &&
+      !activePolicy.includes("https://api.resend.com") &&
+      requiredCspFragments.every((fragment) => activePolicy.includes(fragment))
+    );
+  }),
 };
-const evaluation = evaluateProbeWindow(evidence);
+const baseEvaluation = evaluateProbeWindow(evidence);
+const violations = [...baseEvaluation.violations];
+if (!evidence.cspPolicyValid) violations.push("csp_policy_invalid");
 const report = {
   schemaVersion: 1,
   event: "g12.rollout.probe",
@@ -158,10 +187,10 @@ const report = {
   environment,
   measuredResponses: measured,
   ...evidence,
-  outcome: evaluation.healthy ? "pass" : "pause",
-  violations: evaluation.violations,
+  outcome: violations.length === 0 ? "pass" : "pause",
+  violations,
 };
 
 if (reportPath) await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
 console.log(JSON.stringify(report));
-if (!evaluation.healthy) process.exitCode = 1;
+if (violations.length > 0) process.exitCode = 1;

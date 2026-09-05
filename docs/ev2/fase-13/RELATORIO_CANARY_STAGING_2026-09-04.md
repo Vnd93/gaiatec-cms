@@ -80,4 +80,5 @@ atual.
 O G13 está aprovado para a fronteira de elegibilidade runtime em staging. A aprovação confirma o
 hardening e encerra esta fase técnica, mas não promove o alias, não ativa flags de forma ampla e não
 autoriza produção. O Gate G12 deve ser requalificado com evidência vinculada ao novo verificador,
-owners segregados e autorização produtiva expressa antes de qualquer mudança de produção.
+responsabilidades operacionais registradas conforme a governança vigente e autorização produtiva
+expressa antes de qualquer mudança de produção.

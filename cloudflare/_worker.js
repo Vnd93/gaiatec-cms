@@ -6,6 +6,24 @@ const STATIC_PUBLIC_ROUTES = [
 const CMS_PUBLIC_API = "__CMS_PUBLIC_API__";
 const CMS_PUBLIC_ANON_KEY = "__CMS_PUBLIC_ANON_KEY__";
 
+export const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'self'",
+  "script-src 'self' https://challenges.cloudflare.com",
+  "script-src-attr 'none'",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data: https://fonts.gstatic.com",
+  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://challenges.cloudflare.com https://brasilapi.com.br https://nominatim.openstreetmap.org",
+  "frame-src https://challenges.cloudflare.com https://www.google.com https://www.openstreetmap.org",
+  "worker-src 'self' blob:",
+  "manifest-src 'self'",
+  "form-action 'self'",
+  "upgrade-insecure-requests",
+].join("; ");
+
 const STATIC_REDIRECTS = new Map([
   ["/servicos/calibracao-rbc-laboratorio", "/servicos/calibracao-de-instrumentos"],
   ["/setores", "/industrias"],
@@ -48,10 +66,6 @@ function securityHeaders(headers, { noindex = false, privateRoute = false } = {}
   );
   headers.set("Strict-Transport-Security", "max-age=31536000");
   headers.set("Cross-Origin-Opener-Policy", "same-origin");
-  headers.set(
-    "Content-Security-Policy-Report-Only",
-    "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://challenges.cloudflare.com https://api.resend.com; frame-src https://challenges.cloudflare.com https://www.google.com https://www.openstreetmap.org; form-action 'self'",
-  );
   if (noindex) headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
   if (privateRoute) headers.set("Cache-Control", "private, no-store, max-age=0");
   return headers;
@@ -75,6 +89,19 @@ function deploymentEnvironment(requestUrl, env) {
   )
     return "production";
   return "unknown";
+}
+
+function applyContentSecurityPolicy(headers, environment, env) {
+  const enforce =
+    environment === "production" ||
+    environment === "production-preview" ||
+    (environment === "staging" && env.CF_PAGES_BRANCH === "ev2-g16-csp-canary");
+  headers.delete(enforce ? "Content-Security-Policy-Report-Only" : "Content-Security-Policy");
+  headers.set(
+    enforce ? "Content-Security-Policy" : "Content-Security-Policy-Report-Only",
+    CONTENT_SECURITY_POLICY,
+  );
+  return headers;
 }
 
 function healthResponse(request, env) {
@@ -404,6 +431,7 @@ export default {
     }
 
     const headers = new Headers(response.headers);
+    applyContentSecurityPolicy(headers, deploymentEnvironment(url, env), env);
     headers.set("X-Release", env.CF_PAGES_COMMIT_SHA ?? "local");
     headers.set("X-Correlation-ID", id);
     headers.set("Server-Timing", `edge;dur=${Date.now() - startedAt}`);

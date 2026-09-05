@@ -1,9 +1,9 @@
 # EV2 — Evolução do CMS GAIATEC
 
-**Status do espelho:** Gates G0–G11 e G13 aprovados; G12/G14 pendentes no momento desta sincronização<br>
-**Data-base do espelho:** 4 de setembro de 2026<br>
+**Status do espelho:** Gates G0–G11 e G13–G14 aprovados; EV2.15 qualificada; controles EV2.16 implementados; G12 pendente; produção bloqueada<br>
+**Data-base do espelho:** 5 de setembro de 2026<br>
 **Fonte canônica atual:** [`Vnd93/gaiatec-documentacao`](https://github.com/Vnd93/gaiatec-documentacao/tree/main/docs/ev2)<br>
-**Branch de execução:** `ev2/fase-14-ia-transacional-controlada`<br>
+**Branch de execução:** `ev2/fase-16-prontidao-producao-g12`<br>
 **Branch documental preservado:** `ev2/fase-0-documentacao-e-planejamento`
 
 > Este índice é um espelho operacional preso ao histórico do código. Para decisões vigentes,
@@ -28,13 +28,17 @@
 15. [EV2.9 — Estúdio Visual e preparação multisite](fase-9/README.md) — registry de 20 componentes, canvas governado, branches, snapshots, site registry sintético e plano do Gate G9.
 16. [EV2.10 — IA assistiva controlada](fase-10/README.md) — gateway F-015 provider-off, fontes, confiança, diff, aprovação humana, evals e plano do Gate G10.
 17. [EV2.11 — integração operacional e garantia sistêmica](fase-11/README.md) — F-017/F-018, resiliência de leads, SLOs, carga, restore, regressão e plano do Gate G11.
-18. [EV2.12 — implantação controlada](fase-12/README.md) — health/release, canary, error budget, aprovações segregadas, promoção imutável, handover e rollback.
+18. [EV2.12 — implantação controlada](fase-12/README.md) — health/release, canary, error budget, responsabilidades rastreáveis, promoção imutável, handover e rollback.
 19. [EV2.13 — hardening e elegibilidade runtime](fase-13/README.md) — isolamento de secrets, evidência vinculada, manifesto agregado, revogação e canary individual.
 20. [EV2.14 — IA transacional controlada](fase-14/README.md) — sandbox sintético, plano/dry-run, aprovação por hash, execução atômica, compensação e plano do Gate G14.
+21. [EV2.15 — fechamento técnico e integração segura](fase-15/README.md) — zero avisos acionáveis, regressões finais, hash G14 multiplataforma, preview efêmero e consolidação ordenada dos PRs.
+22. [EV2.16 — controles vinculantes de prontidão](fase-16/README.md) — governança solo `@Vnd93`, backup/restore externo, Resend, CSP, DPO/legal, owners e autorização vinculada ao SHA.
 
 ## Escopo documental
 
-Esta trilha converte o manual e a auditoria do CMS em requisitos implementáveis, testáveis, rastreáveis e reversíveis. Ela cobre EV2.0–EV2.14 sem substituir o histórico das fases anteriores.
+Esta trilha converte o manual e a auditoria do CMS em requisitos implementáveis, testáveis,
+rastreáveis e reversíveis. Ela cobre as entregas funcionais EV2.0–EV2.14, o fechamento técnico
+EV2.15 e os controles de prontidão EV2.16 sem substituir o histórico das fases anteriores.
 
 O documento principal deste espelho preserva a especificação usada pelo código. A fonte de verdade
 atual é o Markdown do repositório documental oficial. O DOCX que originou esta versão permanece
@@ -87,10 +91,28 @@ as decisões EV2 do build para um manifesto runtime individual e fail-closed. A 
 foi aprovado sem promoção do staging estável e está pronto para revisão independente REV-01.
 Produção, dados/domínios reais, ativação global e Gate G12 permanecem bloqueados.
 
-Na EV2.14, a fundação da F-016 foi implementada localmente em um gateway separado e provider-off.
-A migration candidata `0054`, a função `cms-ai-execute`, a tela de execução, cinco tools sintéticas,
-aprovação vinculada a hash/versão, segregação, retry idempotente, locks ordenados e compensação
-monotônica reautorizável estão prontas para validação. O Gate G14 continua em `pause`:
-PostgreSQL/pgTAP, rehearsal, deploy no alias isolado, canary com dois usuários MFA, resíduo zero e
-revisão independente ainda precisam ser comprovados no mesmo SHA. Nenhuma alteração de staging ou
-produção foi realizada nesta fase local.
+Na EV2.14, o REV-01 aprovou o SHA `64cea11e…`, a migration `0054` e `cms-ai-execute` permaneceram
+restritas a staging e o build foi publicado somente no alias `ev2-g14-canary`. O canary final passou
+35/35 verificações com dois usuários MFA, segregação, concorrência, idempotência, compensação,
+100% de disponibilidade na sonda ampliada, zero chamada externa, zero dado real e zero resíduo. O
+G14 foi aprovado apenas para o sandbox sintético. As flags seguem default-off; produção,
+dados/domínios reais, provider externo, ativação global, merge, promoção do staging estável e o
+Gate G12 continuam bloqueados.
+
+Na EV2.15, o SHA `36c5cae…` eliminou os 46 avisos acionáveis remanescentes, corrigiu o ciclo de vida
+de um observador, restaurou uma transição visual e tornou o carregador em grade acessível. O SHA
+final `aa1b646…` também tornou o hash do dataset G14 estável em LF/CRLF e apontou a fonte documental
+canônica. O pipeline local passou com 51 arquivos e 168/168 testes; CIs de push e PR aprovaram
+qualidade, banco e navegador; o alias efêmero `ev2-final-rc` confirmou health/manifest no SHA exato
+e smoke HTTP 6/6. Os PRs de código #6–#9 foram integrados em ordem no head `e92632c…` do ramo EV2
+consolidado, e os PRs documentais #5–#9 foram integrados em `main`. Não há bloqueador P0/P1
+conhecido no escopo validado. O Gate G12 e todos os limites de produção permanecem inalterados.
+
+Na EV2.16, o repositório executável passou a recusar produção sem PR e CODEOWNERS de `@Vnd93`,
+backup externo cifrado com restore comprovado, entrega sintética pelo Resend, CSP enforced sem
+violação crítica, aceite DPO/legal identificado, governança de operador único com risco expresso e
+autorização literal contendo o SHA completo. A suíte integral local passou. O canary CSP isolado do
+SHA `7804d5b4…` passou 22/22 respostas HTTP e quatro rotas de navegador com zero violação crítica,
+sem tocar produção ou staging estável. O responsável declarou autoridade jurídica/DPO, confirmou
+Marcelo Diaz e o canal público, e aceitou o risco empresarial; os controles dependentes de
+plano/secrets continuam pendentes e nenhum resultado externo foi simulado.

@@ -28,7 +28,7 @@ const ENCARREGADO = {
   email: "vendas@gaiatecsistemas.com.br",
 };
 
-const ATUALIZADO_EM = "4 de agosto de 2026";
+const ATUALIZADO_EM = "5 de setembro de 2026";
 
 /* ────────────────────────────────────────────────────────
    COMPONENTES DE APOIO
@@ -203,6 +203,7 @@ export default function PoliticaPrivacidadePage() {
               itens={[
                 <><strong>Supabase</strong> — armazenamento e processamento das mensagens do formulário.</>,
                 <><strong>Cloudflare</strong> — hospedagem, rede de distribuição de conteúdo e segurança.</>,
+                <><strong>Resend</strong> — envio das notificações e mensagens transacionais necessárias.</>,
                 <><strong>Google Fonts</strong> — entrega das fontes tipográficas do site.</>,
               ]}
             />
@@ -222,10 +223,10 @@ export default function PoliticaPrivacidadePage() {
 
           <Secao n="07" titulo="Por quanto tempo guardamos">
             <p>
-              Mensagens de contato são mantidas pelo tempo necessário ao atendimento da solicitação e ao
-              relacionamento comercial dela decorrente. Registros de acesso são mantidos pelo prazo legal
-              aplicável. Encerradas as finalidades, os dados são eliminados ou anonimizados, salvo
-              hipóteses de guarda obrigatória previstas em lei.
+              Mensagens de contato são mantidas por até 365 dias. Inscrições em newsletter são mantidas
+              por até 730 dias ou até a revogação, o que ocorrer primeiro. Registros de acesso são mantidos
+              pelo prazo legal aplicável. Encerradas as finalidades, os dados são eliminados ou
+              anonimizados, salvo hipóteses de guarda obrigatória previstas em lei.
             </p>
           </Secao>
 

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "gate": "G12",
   "decision": "pending",
   "candidateSha": null,
@@ -19,7 +19,16 @@
   },
   "productionAuthorized": false,
   "productionAuthorizationText": null,
-  "dpoLegalStatus": "pending",
+  "productionAuthorizationSha": null,
+  "productionAuthorizedBy": null,
+  "productionAuthorizedAt": null,
+  "operationalGovernance": {
+    "mode": "sole-operator",
+    "responsibleId": "Vnd93",
+    "riskAccepted": true,
+    "acceptedAt": "2026-09-05T18:26:30.434Z",
+    "evidenceReference": "docs/ev2/fase-16/REGISTRO_DECLARACAO_GOVERNANCA_DPO_RISCO_2026-09-05.md"
+  },
   "target": {
     "cloudflareProject": "gaiatec-website",
     "domains": ["gaiatecsistemas.com.br", "www.gaiatecsistemas.com.br"]
@@ -32,10 +41,65 @@
     "deploymentId": null,
     "release": null
   },
+  "productionReadiness": {
+    "githubProtection": {
+      "status": "pending",
+      "candidateSha": null,
+      "governanceMode": "sole-maintainer",
+      "maintainerLogin": "Vnd93",
+      "requiredPullRequestApprovals": 0,
+      "codeOwnersCount": 1,
+      "branchProtected": false,
+      "requiredChecksPassed": false,
+      "soleMaintainerRiskAccepted": false,
+      "evidenceReference": null,
+      "verifiedAt": null
+    },
+    "backupRestore": {
+      "status": "pending",
+      "projectRef": "chfuhctnhqgyjowkvllv",
+      "externalTarget": "github-actions-encrypted-artifact",
+      "encryptedArchiveSha256": null,
+      "backupRunId": null,
+      "restoreDrillRunId": null,
+      "rpoMinutes": null,
+      "rtoMinutes": null,
+      "evidenceReference": null,
+      "completedAt": null
+    },
+    "dpoLegal": {
+      "status": "approved",
+      "approverId": "Vnd93",
+      "scopeSha256": "39fd74f255c9235c0d2148d791e6189dfe88ff977b5d92396c68ecd2a3191b9c",
+      "evidenceReference": "docs/ev2/fase-16/REGISTRO_DECLARACAO_GOVERNANCA_DPO_RISCO_2026-09-05.md",
+      "approvedAt": "2026-09-05T19:13:23.900Z"
+    },
+    "emailProvider": {
+      "status": "pending",
+      "provider": "resend",
+      "sendingDomain": "gaiatecsistemas.com",
+      "from": "GAIATEC SISTEMAS <cms@gaiatecsistemas.com>",
+      "notificationTo": "comercial@gaiatecsistemas.com.br",
+      "syntheticDeliveryStatus": "pending",
+      "syntheticDeliveryId": null,
+      "realDataUsed": false,
+      "evidenceReference": null,
+      "verifiedAt": null
+    },
+    "csp": {
+      "status": "pending",
+      "mode": "enforce",
+      "candidateSha": null,
+      "policySha256": null,
+      "criticalViolations": null,
+      "evidenceReference": null,
+      "verifiedAt": null
+    }
+  },
   "owners": {
-    "changeOwner": { "id": null, "approvedAt": null },
-    "technicalReviewer": { "id": null, "approvedAt": null },
-    "securityPrivacyOwner": { "id": null, "approvedAt": null },
-    "businessOwner": { "id": null, "approvedAt": null }
+    "changeOwner": { "id": "Vnd93", "approvedAt": null, "evidenceReference": null },
+    "technicalReviewer": { "id": "Vnd93", "approvedAt": null, "evidenceReference": null },
+    "securityPrivacyOwner": { "id": "Vnd93", "approvedAt": null, "evidenceReference": null },
+    "businessOwner": { "id": "Vnd93", "approvedAt": null, "evidenceReference": null }
   }
 }

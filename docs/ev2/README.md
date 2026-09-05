@@ -1,10 +1,13 @@
 # EV2 — Evolução do CMS GAIATEC
 
-**Status:** Gates G0–G11 e G13 aprovados; G12/G14 pendentes; produção e provider externo bloqueados<br>
-**Data-base:** 4 de setembro de 2026<br>
-**Fonte canônica:** Markdown versionado neste diretório<br>
+**Status do espelho:** Gates G0–G11 e G13 aprovados; G12/G14 pendentes no momento desta sincronização<br>
+**Data-base do espelho:** 4 de setembro de 2026<br>
+**Fonte canônica atual:** [`Vnd93/gaiatec-documentacao`](https://github.com/Vnd93/gaiatec-documentacao/tree/main/docs/ev2)<br>
 **Branch de execução:** `ev2/fase-14-ia-transacional-controlada`<br>
 **Branch documental preservado:** `ev2/fase-0-documentacao-e-planejamento`
+
+> Este índice é um espelho operacional preso ao histórico do código. Para decisões vigentes,
+> relatórios finais e evidências posteriores ao SHA local, use sempre a fonte canônica acima.
 
 ## Ordem de leitura
 
@@ -33,7 +36,10 @@
 
 Esta trilha converte o manual e a auditoria do CMS em requisitos implementáveis, testáveis, rastreáveis e reversíveis. Ela cobre EV2.0–EV2.14 sem substituir o histórico das fases anteriores.
 
-O documento principal é a fonte de verdade para o desenvolvimento. O DOCX que originou esta versão permanece apenas como artefato editorial; mudanças futuras devem ser feitas primeiro no Markdown e revisadas por pull request.
+O documento principal deste espelho preserva a especificação usada pelo código. A fonte de verdade
+atual é o Markdown do repositório documental oficial. O DOCX que originou esta versão permanece
+apenas como artefato editorial; mudanças futuras devem ser feitas primeiro no repositório canônico,
+revisadas por pull request e sincronizadas aqui somente quando um teste ou runbook exigir.
 
 ## Relação com o ciclo anterior
 

@@ -4,8 +4,9 @@ Site público e CMS da GAIATEC SISTEMAS. O projeto visual original está dispon�
 
 ## Documentação
 
-- [Índice da documentação técnica](docs/README.md)
-- [Especificação e prontidão da evolução EV2 do CMS](docs/ev2/README.md)
+- [Fonte canônica da documentação EV2](https://github.com/Vnd93/gaiatec-documentacao/tree/main/docs/ev2)
+- [Espelho técnico vinculado ao código](docs/README.md)
+- [Índice EV2 do espelho operacional](docs/ev2/README.md)
 
 ## Desenvolvimento local
 

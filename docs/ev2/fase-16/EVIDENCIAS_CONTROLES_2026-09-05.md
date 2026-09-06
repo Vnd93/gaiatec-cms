@@ -209,6 +209,7 @@ saudáveis, a baseline de rollback e os controles acima foram vinculados ao regi
 `docs/ev2/fase-12/approvals/G12_e52b25d903251cf538918d89049a58524c3c9911.json`, validado pelo
 verificador local.
 
-Esta atualização documental não executa deploy. Até este registro, nenhuma migration, função, dado
-real, domínio real ou promoção de produção foi alterado pelo fluxo G12. A evidência de implantação
-será anexada somente após a conclusão do workflow protegido.
+O deploy protegido foi concluído em 6 de setembro de 2026 pelo run `34039654304`, controlado pelo SHA
+`aee6d8d55bd1bb4abc8e9495811affd2e36490e9` de `main` e promovendo exclusivamente o candidato
+`e52b25d903251cf538918d89049a58524c3c9911`. O probe produtivo passou e o rollback não foi acionado.
+A evidência detalhada está em `docs/ev2/fase-12/EVIDENCIAS_PRODUCAO_G12_2026-09-06.md`.

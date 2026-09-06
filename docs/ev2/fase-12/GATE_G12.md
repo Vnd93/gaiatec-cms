@@ -1,9 +1,9 @@
 # Gate G12 — implantação controlada
 
-**Decisão atual:** APROVADO PARA EXECUÇÃO CONTROLADA<br>
-**Escopo liberado:** implantação do candidato imutável `e52b25d9…` pelo workflow protegido<br>
+**Decisão atual:** APROVADO E CONCLUÍDO<br>
+**Escopo executado:** implantação do candidato imutável `e52b25d9…` pelo workflow protegido<br>
 **Staging:** canary G12 e revalidação pós-hardening aprovados para o SHA exato<br>
-**Produção:** autorizada, mas ainda não executada
+**Produção:** promovida e verificada pelo run `34039654304`
 
 ## Critérios vinculantes
 
@@ -43,8 +43,8 @@ Qualquer uma das condições abaixo produz decisão `pause` e impede ampliação
 
 ## Limites da autorização
 
-A aprovação está vinculada exclusivamente ao SHA
-`e52b25d903251cf538918d89049a58524c3c9911` e ao fluxo protegido. Ela não comprova que o go-live já
-ocorreu. O workflow ainda deve reconfirmar a baseline, aplicar o backend, validar os contratos e só
-então promover o frontend. Qualquer alteração no candidato, na baseline ou nos controles interrompe a
-execução e exige nova decisão.
+A aprovação e o go-live concluído estão vinculados exclusivamente ao SHA
+`e52b25d903251cf538918d89049a58524c3c9911` e ao fluxo protegido. O run `34039654304` reconfirmou a
+baseline, aplicou e verificou o backend, publicou o conteúdo e os formulários governados, promoveu o
+frontend e aprovou o probe produtivo. Qualquer implantação futura exige uma nova decisão vinculada ao
+novo candidato.

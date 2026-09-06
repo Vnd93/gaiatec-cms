@@ -1,8 +1,8 @@
 # EV2.12 — implantação controlada
 
-**Estado:** candidato qualificado; canary controlado G12 e controles finais concluídos<br>
-**Gate:** G12 aprovado para execução controlada do SHA `e52b25d9…`<br>
-**Produção:** autorizada, ainda sem execução ou promoção
+**Estado:** release produtiva concluída e verificada<br>
+**Gate:** G12 aprovado e encerrado para o SHA `e52b25d9…`<br>
+**Produção:** promovida em 6 de setembro de 2026 pelo workflow protegido
 
 ## Objetivo
 
@@ -53,8 +53,9 @@ saudáveis e evidências vinculadas ao registro de aprovação.
 - [Modelo de aprovação](G12_APPROVAL.template.json)
 - [Controles finais EV2.16](../fase-16/README.md)
 
-## Próxima execução
+## Encerramento da implantação
 
-Concluir a rotação e o armazenamento protegido das chaves Turnstile, integrar em `main` o registro
-G12 verificado e disparar o workflow de produção com os quatro parâmetros exatos da aprovação. A
-promoção do site só ocorre depois que todas as etapas anteriores do workflow forem aprovadas.
+O workflow `Deploy production` run `34039654304` concluiu todos os gates e promoveu o candidato
+imutável `e52b25d903251cf538918d89049a58524c3c9911`. O probe pós-promoção passou, o rollback não foi
+acionado e as rotas reais foram verificadas no Edge. A evidência está em
+[EVIDENCIAS_PRODUCAO_G12_2026-09-06.md](EVIDENCIAS_PRODUCAO_G12_2026-09-06.md).

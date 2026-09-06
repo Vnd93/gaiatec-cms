@@ -16,6 +16,7 @@ const sampleCount = Number(process.env.EV2_G12_SAMPLE_COUNT ?? (environment === 
 const requestTimeoutMs = Number(process.env.EV2_G12_REQUEST_TIMEOUT_MS ?? 10_000);
 const readinessAttempts = Number(process.env.EV2_G12_READINESS_ATTEMPTS ?? 10);
 const readinessIntervalMs = Number(process.env.EV2_G12_READINESS_INTERVAL_MS ?? 1_500);
+const warmupSamplesPerRoute = Number(process.env.EV2_G12_WARMUP_SAMPLES_PER_ROUTE ?? 3);
 const reportPath = process.env.EV2_G12_REPORT_PATH;
 const expectedCspMode =
   process.env.EV2_G12_CSP_MODE ??
@@ -34,7 +35,10 @@ if (
   readinessAttempts > 20 ||
   !Number.isInteger(readinessIntervalMs) ||
   readinessIntervalMs < 100 ||
-  readinessIntervalMs > 5_000
+  readinessIntervalMs > 5_000 ||
+  !Number.isInteger(warmupSamplesPerRoute) ||
+  warmupSamplesPerRoute < 1 ||
+  warmupSamplesPerRoute > 10
 )
   throw new Error("G12_PROBE_INPUT_REFUSED: exact origin, full SHA and at least five samples are required.");
 
@@ -125,6 +129,23 @@ for (let attempt = 1; attempt <= readinessAttempts; attempt += 1) {
   if (attempt < readinessAttempts) await new Promise((resolve) => setTimeout(resolve, readinessIntervalMs));
 }
 if (!ready) throw new Error("G12_PROBE_NOT_READY: target did not reach a stable measurable boundary.");
+
+async function warmRoutes() {
+  for (let sample = 0; sample < warmupSamplesPerRoute; sample += 1) {
+    for (const route of routes) {
+      const response = await fetch(`${origin}${route.path}`, {
+        redirect: "manual",
+        cache: "no-store",
+        signal: AbortSignal.timeout(requestTimeoutMs),
+      });
+      if (response.status !== route.status || !boundaryHeadersValid(response))
+        throw new Error(`G12_PROBE_WARMUP_FAILED: ${route.path} did not preserve its boundary.`);
+      await response.arrayBuffer();
+    }
+  }
+}
+
+await warmRoutes();
 
 async function request(path, expectedStatus, category = "route") {
   const startedAt = performance.now();
@@ -250,6 +271,7 @@ const report = {
   schemaVersion: 1,
   event: "g12.rollout.probe",
   probeProfile,
+  warmupSamplesPerRoute,
   origin,
   candidateSha: expectedSha,
   environment,

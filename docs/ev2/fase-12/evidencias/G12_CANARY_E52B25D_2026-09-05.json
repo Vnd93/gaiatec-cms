@@ -1,0 +1,232 @@
+{
+  "schemaVersion": 1,
+  "outcome": "G12_CANARY_PASS",
+  "suiteKey": "g12-staging-integrated-reduced-v2",
+  "environment": "staging",
+  "canaryRunId": "de784acc-a557-4ed1-b4ca-84f0ea26f077",
+  "candidateSha": "e52b25d903251cf538918d89049a58524c3c9911",
+  "candidateOrigin": "https://ev2-g12-canary.gaiatec-cms-staging.pages.dev",
+  "stableOrigin": "https://gaiatec-cms-staging.pages.dev",
+  "startedAt": "2026-09-06T01:50:25.298Z",
+  "finishedAt": "2026-09-06T01:52:23.735Z",
+  "inheritedG11Checks": 27,
+  "inheritedG11Passed": 27,
+  "g11AssuranceRunId": "104b95be-7c7a-479e-83ba-8001a0a876ab",
+  "p0Count": 0,
+  "p1Count": 0,
+  "securityStatus": "passed",
+  "restoreStatus": "passed",
+  "stablePromoted": false,
+  "syntheticOnly": true,
+  "realDataUsed": false,
+  "productionMutations": 0,
+  "syntheticResidue": {
+    "activeActors": 0,
+    "activeCredentials": 0,
+    "activeOverrides": 0,
+    "personalLeadPayloads": 0,
+    "retainedSyntheticActors": 18,
+    "retainedAnonymizedLeads": 9,
+    "semantics": "zero-active-residue; retained tombstones are counted separately"
+  },
+  "systemMetrics": {
+    "availabilityPercent": 100,
+    "adminReadP95Ms": 385,
+    "commandP95Ms": 406,
+    "adminReadWallP95Ms": 597,
+    "commandWallP95Ms": 631,
+    "outboxLagP95Ms": 0,
+    "auditCoveragePercent": 100,
+    "restoreRpoMinutes": 0,
+    "restoreRtoMinutes": 1
+  },
+  "healthyWindows": [
+    {
+      "id": "dc6d5f9c-b220-41a9-8e98-b25a91db93fc",
+      "startedAt": "2026-09-06T01:51:52.957Z",
+      "endedAt": "2026-09-06T01:52:03.056Z",
+      "outcome": "pass",
+      "measuredResponses": 22,
+      "availabilityPercent": 100,
+      "http5xxRatePercent": 0,
+      "publicP95Ms": 888.3714,
+      "evidenceHash": "59c9bcf827caa66df34f313bd8f65ca26c1b1aad1bacff2bbae554723268b73a",
+      "probe": {
+        "schemaVersion": 1,
+        "event": "g12.rollout.probe",
+        "origin": "https://ev2-g12-canary.gaiatec-cms-staging.pages.dev",
+        "candidateSha": "e52b25d903251cf538918d89049a58524c3c9911",
+        "environment": "staging",
+        "measuredResponses": 22,
+        "sampleCount": 22,
+        "availabilityPercent": 100,
+        "http5xxRatePercent": 0,
+        "publicP95Ms": 888.3714,
+        "requestTimeoutMs": 10000,
+        "routeMetrics": {
+          "/": {
+            "samples": 5,
+            "availabilityPercent": 100,
+            "p50Ms": 550.8526999999995,
+            "p95Ms": 581.6603000000005,
+            "maxMs": 581.6603000000005
+          },
+          "/produtos": {
+            "samples": 5,
+            "availabilityPercent": 100,
+            "p50Ms": 835.1077000000005,
+            "p95Ms": 900.5653000000001,
+            "maxMs": 900.5653000000001
+          },
+          "/contato": {
+            "samples": 5,
+            "availabilityPercent": 100,
+            "p50Ms": 538.2952,
+            "p95Ms": 601.1454999999996,
+            "maxMs": 601.1454999999996
+          },
+          "/admin/login": {
+            "samples": 5,
+            "availabilityPercent": 100,
+            "p50Ms": 31.961499999999432,
+            "p95Ms": 33.560199999999895,
+            "maxMs": 33.560199999999895
+          }
+        },
+        "routeBudgetsValid": true,
+        "releaseHeadersExact": true,
+        "healthContractValid": true,
+        "manifestReleaseExact": true,
+        "nonProductionNoindexValid": true,
+        "cspPolicyValid": true,
+        "outcome": "pass",
+        "violations": []
+      }
+    },
+    {
+      "id": "18eef6ff-2e96-4865-a03c-be65afe75010",
+      "startedAt": "2026-09-06T01:52:03.057Z",
+      "endedAt": "2026-09-06T01:52:13.465Z",
+      "outcome": "pass",
+      "measuredResponses": 22,
+      "availabilityPercent": 100,
+      "http5xxRatePercent": 0,
+      "publicP95Ms": 974.5144999999999,
+      "evidenceHash": "ab05674ee6c3885c6672978bb648cc4c50f6712c0a2f9988357c9f788842a0d3",
+      "probe": {
+        "schemaVersion": 1,
+        "event": "g12.rollout.probe",
+        "origin": "https://ev2-g12-canary.gaiatec-cms-staging.pages.dev",
+        "candidateSha": "e52b25d903251cf538918d89049a58524c3c9911",
+        "environment": "staging",
+        "measuredResponses": 22,
+        "sampleCount": 22,
+        "availabilityPercent": 100,
+        "http5xxRatePercent": 0,
+        "publicP95Ms": 974.5144999999999,
+        "requestTimeoutMs": 10000,
+        "routeMetrics": {
+          "/": {
+            "samples": 5,
+            "availabilityPercent": 100,
+            "p50Ms": 515.6390999999999,
+            "p95Ms": 530.5508,
+            "maxMs": 530.5508
+          },
+          "/produtos": {
+            "samples": 5,
+            "availabilityPercent": 100,
+            "p50Ms": 914.1968999999999,
+            "p95Ms": 1172.995,
+            "maxMs": 1172.995
+          },
+          "/contato": {
+            "samples": 5,
+            "availabilityPercent": 100,
+            "p50Ms": 525.8658999999989,
+            "p95Ms": 573.3426,
+            "maxMs": 573.3426
+          },
+          "/admin/login": {
+            "samples": 5,
+            "availabilityPercent": 100,
+            "p50Ms": 34.953700000000026,
+            "p95Ms": 39.00630000000001,
+            "maxMs": 39.00630000000001
+          }
+        },
+        "routeBudgetsValid": true,
+        "releaseHeadersExact": true,
+        "healthContractValid": true,
+        "manifestReleaseExact": true,
+        "nonProductionNoindexValid": true,
+        "cspPolicyValid": true,
+        "outcome": "pass",
+        "violations": []
+      }
+    },
+    {
+      "id": "f8eabccf-e8d0-4f10-af32-06307e1aeca1",
+      "startedAt": "2026-09-06T01:52:13.465Z",
+      "endedAt": "2026-09-06T01:52:23.735Z",
+      "outcome": "pass",
+      "measuredResponses": 22,
+      "availabilityPercent": 100,
+      "http5xxRatePercent": 0,
+      "publicP95Ms": 881.9168,
+      "evidenceHash": "7220c410ad6c8e0aeb0bf8cc4416015abafff52757e7e3238a3cd53ae744117e",
+      "probe": {
+        "schemaVersion": 1,
+        "event": "g12.rollout.probe",
+        "origin": "https://ev2-g12-canary.gaiatec-cms-staging.pages.dev",
+        "candidateSha": "e52b25d903251cf538918d89049a58524c3c9911",
+        "environment": "staging",
+        "measuredResponses": 22,
+        "sampleCount": 22,
+        "availabilityPercent": 100,
+        "http5xxRatePercent": 0,
+        "publicP95Ms": 881.9168,
+        "requestTimeoutMs": 10000,
+        "routeMetrics": {
+          "/": {
+            "samples": 5,
+            "availabilityPercent": 100,
+            "p50Ms": 540.1031000000003,
+            "p95Ms": 569.2321000000002,
+            "maxMs": 569.2321000000002
+          },
+          "/produtos": {
+            "samples": 5,
+            "availabilityPercent": 100,
+            "p50Ms": 837.2960000000003,
+            "p95Ms": 896.9905,
+            "maxMs": 896.9905
+          },
+          "/contato": {
+            "samples": 5,
+            "availabilityPercent": 100,
+            "p50Ms": 522.4948000000004,
+            "p95Ms": 558.0624,
+            "maxMs": 558.0624
+          },
+          "/admin/login": {
+            "samples": 5,
+            "availabilityPercent": 100,
+            "p50Ms": 36.02419999999984,
+            "p95Ms": 38.52850000000035,
+            "maxMs": 38.52850000000035
+          }
+        },
+        "routeBudgetsValid": true,
+        "releaseHeadersExact": true,
+        "healthContractValid": true,
+        "manifestReleaseExact": true,
+        "nonProductionNoindexValid": true,
+        "cspPolicyValid": true,
+        "outcome": "pass",
+        "violations": []
+      }
+    }
+  ],
+  "evidenceHash": "73545dcaef3c035a50a6fc27c9991c81982b1b03976bf9533e9f8f9f88d6a7f4"
+}

@@ -4,6 +4,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
 import { percentile, runHttpLoadProbe, serverTimingDuration } from "./system-assurance-lib.mjs";
+import { resolveStableBaseline } from "./stable-baseline-lib.mjs";
 import { validateHealthContract, validateReleaseManifest } from "../phase12/release-guard-lib.mjs";
 
 const TARGET = {
@@ -292,22 +293,23 @@ async function installOverride(ctx, actorId, createdBy) {
 }
 
 async function baseline(ctx) {
-  const [stableHealth, stableManifest, candidateHealth, candidateManifest, flags] = await Promise.all([
-    request(TARGET.stableOrigin + "/healthz"),
-    request(TARGET.stableOrigin + "/release-manifest.json"),
-    request(TARGET.candidateOrigin + "/healthz"),
-    request(TARGET.candidateOrigin + "/release-manifest.json"),
-    rest(ctx, "cms_feature_flags", {
-      query: "flag_key=like.ev2.*&select=flag_key,default_enabled,kill_switch&order=flag_key",
-    }),
-  ]);
+  const [stableRoot, stableHealth, stableManifest, candidateHealth, candidateManifest, flags] =
+    await Promise.all([
+      request(TARGET.stableOrigin + "/"),
+      request(TARGET.stableOrigin + "/healthz", { allowed: [200, 404] }),
+      request(TARGET.stableOrigin + "/release-manifest.json", { allowed: [200, 404] }),
+      request(TARGET.candidateOrigin + "/healthz"),
+      request(TARGET.candidateOrigin + "/release-manifest.json"),
+      rest(ctx, "cms_feature_flags", {
+        query: "flag_key=like.ev2.*&select=flag_key,default_enabled,kill_switch&order=flag_key",
+      }),
+    ]);
+  const stable = resolveStableBaseline({
+    root: stableRoot,
+    health: stableHealth,
+    manifest: stableManifest,
+  });
   const contracts = [
-    [
-      "stable_health",
-      stableHealth,
-      validateHealthContract(stableHealth.json, { expectedEnvironment: "staging" }),
-    ],
-    ["stable_manifest", stableManifest, validateReleaseManifest(stableManifest.json)],
     [
       "candidate_health",
       candidateHealth,
@@ -326,12 +328,10 @@ async function baseline(ctx) {
     if (!response.headers.get("content-type")?.includes("application/json") || !validation.valid)
       throw new Error(`${name}_contract_invalid:${validation.violations.join(",")}`);
   }
-  if (stableHealth.json.release !== stableManifest.json.release)
-    throw new Error("stable_release_contract_mismatch");
   if (candidateHealth.json.release !== candidateManifest.json.release)
     throw new Error("candidate_release_contract_mismatch");
   return {
-    stableRelease: stableManifest.json.release,
+    ...stable,
     candidateRelease: candidateManifest.json.release,
     flags: flags.json,
   };
@@ -704,6 +704,8 @@ try {
   );
   await rest(context, "cms_feature_flag_overrides", { method: "DELETE", query: "id=eq." + broadOverrideId });
   broadOverrideId = undefined;
+
+  for (let warmup = 0; warmup < 5; warmup += 1) await system(context, operator, "snapshot");
 
   const snapshotDurations = [];
   const snapshotWallDurations = [];

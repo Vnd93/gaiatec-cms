@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { z } from "npm:zod@4.4.3";
 import { authenticateCms } from "../_shared/cms-auth.ts";
+import { isConfiguredCmsEnvironment, isProductionOperationEnabled } from "../_shared/ev2-environment.ts";
 import { clientAddress, consumeRateLimit, corsHeaders, isAllowedOrigin, json, rateLimitKeyHash, readJsonLimited, sha256 } from "../_shared/security.ts";
 
 const Uuid=z.uuid();
@@ -41,7 +42,7 @@ Deno.serve(async(req)=>{
     rpc="cms_anonymize_lead";args={p_actor_id:identity.user.id,p_lead_id:input.leadId,p_reason:input.reason,p_aal:identity.claims.aal,p_session_id:identity.claims.sessionId,p_issued_at:identity.claims.issuedAt,p_correlation_id:correlationId};
   }else if(input.action==="retry_delivery"){
     const environment=Deno.env.get("CMS_ENVIRONMENT")??"production";
-    if(environment!=="local"&&environment!=="staging") return json(req,{error:"EV2.11 não está autorizada neste ambiente.",code:"CMS_SYSTEM_PRODUCTION_GATED",correlationId,preserved:true},403);
+    if(!isConfiguredCmsEnvironment(environment)||(environment==="production"&&!isProductionOperationEnabled(environment))) return json(req,{error:"EV2.11 não está autorizada neste ambiente.",code:"CMS_SYSTEM_PRODUCTION_GATED",correlationId,preserved:true},403);
     rpc="cms_retry_lead_delivery_limited";args={p_actor_id:identity.user.id,p_event_id:input.eventId,p_justification:input.justification,p_environment:environment,p_site_key:"main",p_aal:identity.claims.aal,p_session_id:identity.claims.sessionId,p_issued_at:identity.claims.issuedAt,p_correlation_id:correlationId,p_idempotency_key:idempotencyKey,p_request_hash:await sha256(JSON.stringify(input)),p_rate_limit_key_hash:fusedRateLimitHash};
   }else{
     rpc="cms_export_leads";args={p_actor_id:identity.user.id,p_status:input.status??null,p_justification:input.justification,p_aal:identity.claims.aal,p_session_id:identity.claims.sessionId,p_issued_at:identity.claims.issuedAt,p_correlation_id:correlationId};

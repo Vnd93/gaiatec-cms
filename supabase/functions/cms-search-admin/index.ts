@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { z } from "npm:zod@4.4.3";
 import { authenticateCms } from "../_shared/cms-auth.ts";
+import { isProductionOperationEnabled } from "../_shared/ev2-environment.ts";
 import { sanitizePublicPayload } from "../_shared/cms-public-projection.ts";
 import { clientAddress, consumeRateLimit, corsHeaders, isAllowedOrigin, json, readJsonLimited } from "../_shared/security.ts";
 
@@ -121,7 +122,7 @@ Deno.serve(async (req) => {
   const parsed = V2.safeParse(raw);
   if (!parsed.success) return json(req, { error: "Comando de busca inválido." }, 400);
   const command = parsed.data, { environment } = command.envelope.actorContext, correlationId = command.envelope.correlationId;
-  if (environment === "production") return json(req, { error: "Produção indisponível nesta fase.", code: "CMS_SEARCH_PRODUCTION_GATED", correlationId }, 403);
+  if (environment === "production" && !isProductionOperationEnabled(environment)) return json(req, { error: "Produção indisponível nesta fase.", code: "CMS_SEARCH_PRODUCTION_GATED", correlationId }, 403);
   if (Deno.env.get("CMS_ENVIRONMENT") !== environment) return json(req, { error: "Escopo não autorizado.", code: "CMS_SEARCH_SCOPE_MISMATCH", correlationId }, 403);
   if (command.action === "capability") {
     const { data: feature, error: featureError } = await capability(identity, environment);

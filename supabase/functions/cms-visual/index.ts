@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { z } from "npm:zod@4.4.3";
 import { authenticateCms } from "../_shared/cms-auth.ts";
+import { isConfiguredCmsEnvironment, isProductionOperationEnabled } from "../_shared/ev2-environment.ts";
 import {
   clientAddress,
   consumeRateLimit,
@@ -265,7 +266,7 @@ const VisualDocument = z
     registryVersion: z.literal(1),
     itemId: Uuid,
     siteKey: z.literal("main"),
-    environment: z.enum(["local", "staging"]),
+    environment: z.enum(["local", "staging", "production"]),
     branchKey: z.string().regex(/^[a-z][a-z0-9-]{1,63}$/),
     themeKey: z.string().regex(/^[a-z][a-z0-9-]{1,63}$/),
     mode: z.enum(["guided", "designer"]),
@@ -487,14 +488,14 @@ Deno.serve(async (req) => {
   }
   const { environment, siteKey } = command.envelope.actorContext;
   const correlationId = command.envelope.correlationId;
-  if (environment === "production")
+  if (environment === "production" && !isProductionOperationEnabled(environment))
     return json(
       req,
       { error: "Produção não está disponível nesta fase.", code: "CMS_VISUAL_PRODUCTION_GATED", correlationId },
       403,
     );
   const configuredEnvironment = Deno.env.get("CMS_ENVIRONMENT");
-  if (!configuredEnvironment || !["local", "staging"].includes(configuredEnvironment))
+  if (!isConfiguredCmsEnvironment(configuredEnvironment))
     return json(req, { error: "Ambiente do CMS não configurado.", correlationId }, 503);
   if (configuredEnvironment !== environment || siteKey !== "main")
     return json(

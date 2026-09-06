@@ -38,19 +38,19 @@ export default function AdminAiAssistantPage() {
   );
   const [workspace, setWorkspace] = useState<Ev2AiWorkspace | null>(null);
   const [selectedSessionId, setSelectedSessionId] = useState("");
-  const [title, setTitle] = useState("Sessão sintética G10");
+  const [title, setTitle] = useState("Cadastro assistido por IA");
   const [mode, setMode] = useState<Ev2AiMode>("draft");
   const [proposalKind, setProposalKind] = useState<"locate" | "explain" | "extract" | "draft_patch">(
     "extract",
   );
-  const [prompt, setPrompt] = useState("Extraia um resumo técnico apoiado somente no trecho sintético.");
+  const [prompt, setPrompt] = useState("Extraia um resumo técnico fiel ao documento informado.");
   const [sourceReference, setSourceReference] = useState("g10x-manual-source");
-  const [sourceTitle, setSourceTitle] = useState("Documento sintético do Gate G10");
+  const [sourceTitle, setSourceTitle] = useState("Documento técnico do produto");
   const [sourceVersion, setSourceVersion] = useState("v1");
-  const [sourceLocator, setSourceLocator] = useState("seção-sintética-1");
+  const [sourceLocator, setSourceLocator] = useState("Seção de especificações");
   const [sourcePage, setSourcePage] = useState("1");
   const [sourceExcerpt, setSourceExcerpt] = useState(
-    "O transmissor sintético mede uma faixa fictícia de zero a cem unidades e exige revisão humana.",
+    "Cole aqui somente o trecho técnico autorizado que servirá de fonte para a proposta.",
   );
   const [targetRef, setTargetRef] = useState("g10x-manual-draft");
   const [selectedProposalId, setSelectedProposalId] = useState("");
@@ -148,7 +148,7 @@ export default function AdminAiAssistantPage() {
     const result = await mutate(
       { action: "start_session", envelope: envelope(), mode, title },
       (value) => Ev2AiSessionCreatedSchema.parse(value),
-      "Sessão sintética criada; nenhum provedor externo foi acionado.",
+      "Sessão assistida criada. Toda sugestão continuará sujeita à sua revisão.",
     );
     if (result) setSelectedSessionId(result.sessionId);
   }
@@ -184,7 +184,7 @@ export default function AdminAiAssistantPage() {
     await mutate(
       { action: "close_session", envelope: envelope(), sessionId: selectedSession.id },
       (value) => Ev2AiSessionClosedSchema.parse(value),
-      "Sessão encerrada. As evidências sintéticas permanecem apenas durante a retenção definida.",
+      "Sessão encerrada. As evidências permanecem apenas durante a retenção definida.",
     );
   }
 
@@ -243,7 +243,7 @@ export default function AdminAiAssistantPage() {
     <section className="admin-ai">
       <div className="admin-page-heading">
         <div>
-          <p className="admin-eyebrow">EV2.10 · F-015 · MODO SINTÉTICO</p>
+          <p className="admin-eyebrow">ASSISTENTE DE CADASTRO · NVIDIA NEMOTRON</p>
           <h1>Assistente controlada</h1>
           <p className="admin-help">
             Localize, explique, extraia ou prepare uma proposta de baixo risco. Confira a fonte, a confiança e
@@ -255,9 +255,9 @@ export default function AdminAiAssistantPage() {
       <div className="admin-ai__safety" role="note">
         <LockKeyhole aria-hidden="true" size={20} />
         <span>
-          <strong>Provedor externo, dados reais e aplicação nesta superfície: bloqueados.</strong> A decisão
-          EV2-D04 está pendente; este candidato usa somente um adaptador determinístico, custo zero e fixtures{" "}
-          <code>g10x-*</code>.
+          <strong>A IA gera propostas; você mantém o controle.</strong> O conteúdo é enviado ao modelo
+          aprovado via OpenRouter, não é aplicado nem publicado automaticamente e permanece sujeito à revisão
+          humana.
         </span>
       </div>
 
@@ -301,7 +301,7 @@ export default function AdminAiAssistantPage() {
         </div>
         <div>
           <span>Política</span>
-          <strong>EV2-D04 · rascunho técnico</strong>
+          <strong>EV2-D04 · aprovado</strong>
         </div>
         <div>
           <span>Retenção máxima</span>
@@ -313,7 +313,7 @@ export default function AdminAiAssistantPage() {
         </div>
         <div>
           <span>Custo</span>
-          <strong>R$ 0,00 · sintético</strong>
+          <strong>Modelo gratuito · sem fallback pago</strong>
         </div>
       </div>
 
@@ -386,8 +386,7 @@ export default function AdminAiAssistantPage() {
           </h2>
           <div className="admin-ai__warning">
             <ShieldAlert aria-hidden="true" size={18} />
-            Não cole dados reais, pessoais, credenciais ou segredos. A fonte é tratada como dado não
-            confiável.
+            Use conteúdo técnico autorizado. Não cole dados pessoais, credenciais ou segredos.
           </div>
           <label>
             Ação assistiva
@@ -408,7 +407,7 @@ export default function AdminAiAssistantPage() {
             <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} required />
           </label>
           <fieldset>
-            <legend>Fonte sintética obrigatória</legend>
+            <legend>Fonte técnica obrigatória</legend>
             <label>
               Referência <code>g10x-*</code>
               <input
@@ -451,7 +450,7 @@ export default function AdminAiAssistantPage() {
               />
             </label>
             <label>
-              Trecho sintético
+              Trecho técnico autorizado
               <textarea
                 value={sourceExcerpt}
                 onChange={(event) => setSourceExcerpt(event.target.value)}
@@ -461,7 +460,7 @@ export default function AdminAiAssistantPage() {
           </fieldset>
           {proposalKind === "draft_patch" && (
             <label>
-              Alvo sintético
+              Referência interna do rascunho
               <input
                 value={targetRef}
                 onChange={(event) => setTargetRef(event.target.value)}

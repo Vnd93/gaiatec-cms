@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { z } from "npm:zod@4.4.3";
 import { authenticateCms } from "../_shared/cms-auth.ts";
+import { isProductionOperationEnabled } from "../_shared/ev2-environment.ts";
 import { evaluateQuality, qualityStatus } from "../_shared/cms-quality-rules.ts";
 import { clientAddress, consumeRateLimit, corsHeaders, isAllowedOrigin, json, readJsonLimited, sha256 } from "../_shared/security.ts";
 
@@ -69,7 +70,7 @@ Deno.serve(async (req) => {
   try { command = Command.parse(await readJsonLimited(req, 32_768)); }
   catch { return json(req, { error: "Comando de qualidade inválido." }, 400); }
   const { environment } = command.envelope.actorContext, correlationId = command.envelope.correlationId;
-  if (environment === "production") return json(req, { error: "Produção indisponível nesta fase.", code: "CMS_QUALITY_PRODUCTION_GATED", correlationId }, 403);
+  if (environment === "production" && !isProductionOperationEnabled(environment)) return json(req, { error: "Produção indisponível nesta fase.", code: "CMS_QUALITY_PRODUCTION_GATED", correlationId }, 403);
   if (Deno.env.get("CMS_ENVIRONMENT") !== environment) return json(req, { error: "Escopo não autorizado.", code: "CMS_QUALITY_SCOPE_MISMATCH", correlationId }, 403);
   const { data: capability, error: capabilityError } = await evaluateCapability(identity, environment);
   if (capabilityError) return json(req, { error: "Capacidade indisponível.", correlationId }, 503);

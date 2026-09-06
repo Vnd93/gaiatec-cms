@@ -74,7 +74,7 @@ test("frontend requires both runtime capabilities and exposes no real target inp
   assert.match(page, /expectedPlanHash: plan\.planHash/);
   assert.match(page, /Aprovar por 10 minutos/);
   assert.match(page, /Executar compensação/);
-  assert.match(runtime, /environment === "production"/);
+  assert.doesNotMatch(runtime, /environment === "production"\s*\|\|/);
   assert.doesNotMatch(page, /contentId|itemId|domain|production target/i);
 });
 

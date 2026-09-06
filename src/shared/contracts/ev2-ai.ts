@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-export const Ev2AiEnvironmentSchema = z.enum(["local", "staging"]);
+export const Ev2AiEnvironmentSchema = z.enum(["local", "staging", "production"]);
+export const Ev2AiProviderModeSchema = z.enum(["synthetic", "openrouter"]);
 export const Ev2AiModeSchema = z.enum(["read", "draft"]);
 export const Ev2AiProposalKindSchema = z.enum(["locate", "explain", "extract", "draft_patch"]);
 export const Ev2AiProposalStatusSchema = z.enum(["proposed", "accepted", "rejected", "edited"]);
@@ -12,11 +13,11 @@ export const Ev2AiCapabilitySchema = z
     source: z.string(),
     environment: z.enum(["local", "staging", "production"]),
     siteKey: z.literal("main"),
-    providerMode: z.literal("synthetic"),
-    externalProviderEnabled: z.literal(false),
-    externalProviderReady: z.literal(false),
+    providerMode: Ev2AiProviderModeSchema,
+    externalProviderEnabled: z.boolean(),
+    externalProviderReady: z.boolean(),
     aiExecute: z.literal(false),
-    realDataAllowed: z.literal(false),
+    realDataAllowed: z.boolean(),
     decisionKey: z.literal("EV2-D04"),
     decisionStatus: z.enum(["technical_draft", "approved", "retired"]),
     policyVersion: z.literal(1),
@@ -35,7 +36,7 @@ export const Ev2AiToolSchema = z
     name: z.string().min(2).max(120),
     mode: Ev2AiModeSchema,
     permission: z.enum(["cms:ai.read", "cms:ai.draft"]),
-    syntheticOnly: z.literal(true),
+    syntheticOnly: z.boolean(),
     mutatesCms: z.literal(false),
   })
   .strict();
@@ -107,7 +108,7 @@ export const Ev2AiSessionSchema = z
     title: z.string().min(3).max(160),
     mode: Ev2AiModeSchema,
     status: z.enum(["active", "closed", "canceled", "expired"]),
-    providerMode: z.literal("synthetic"),
+    providerMode: Ev2AiProviderModeSchema,
     tokensUsed: z.number().int().nonnegative(),
     tokenBudget: z.number().int().positive().max(8000),
     costUsedMicros: z.literal(0),
@@ -124,10 +125,10 @@ export const Ev2AiWorkspaceSchema = z
     policy: z
       .object({
         decisionKey: z.literal("EV2-D04"),
-        status: z.literal("technical_draft"),
-        providerMode: z.literal("synthetic"),
-        externalProviderEnabled: z.literal(false),
-        allowedDataClasses: z.tuple([z.literal("synthetic")]),
+        status: z.enum(["technical_draft", "approved"]),
+        providerMode: Ev2AiProviderModeSchema,
+        externalProviderEnabled: z.boolean(),
+        allowedDataClasses: z.array(z.enum(["synthetic", "business_content"])).min(1),
         retentionHours: z.literal(24),
         aiExecute: z.literal(false),
       })
@@ -142,8 +143,8 @@ export const Ev2AiSessionCreatedSchema = z
     schemaVersion: z.literal(1),
     sessionId: z.uuid(),
     status: z.literal("active"),
-    providerMode: z.literal("synthetic"),
-    externalProviderEnabled: z.literal(false),
+    providerMode: Ev2AiProviderModeSchema,
+    externalProviderEnabled: z.boolean(),
     expiresAt: z.iso.datetime(),
     correlationId: z.uuid(),
   })

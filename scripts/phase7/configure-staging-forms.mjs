@@ -4,12 +4,29 @@ import { createClient } from "@supabase/supabase-js";
 const supabaseUrl = process.env.GAIATEC_SUPABASE_URL;
 const anonKey = process.env.GAIATEC_SUPABASE_ANON_KEY;
 const serviceKey = process.env.GAIATEC_SUPABASE_SERVICE_ROLE_KEY;
-const siteOrigin = "https://gaiatec-cms-staging.pages.dev";
 const stagingProject = "glcqsosxwgmlhzgcsnzv";
+const targetEnvironment = process.env.GAIATEC_CMS_TARGET_ENVIRONMENT ?? "staging";
+const targetProject = process.env.GAIATEC_SUPABASE_PROJECT_REF ?? stagingProject;
+const productionCandidate = process.env.GAIATEC_PRODUCTION_CANDIDATE_SHA ?? "";
+const siteOrigin =
+  targetEnvironment === "production"
+    ? "https://gaiatecsistemas.com.br"
+    : "https://gaiatec-cms-staging.pages.dev";
 
-if (!supabaseUrl || !anonKey || !serviceKey) throw new Error("Variáveis seguras de staging ausentes.");
-if (new URL(supabaseUrl).hostname !== `${stagingProject}.supabase.co`)
-  throw new Error("Este utilitário aceita somente o projeto Supabase de staging.");
+if (!supabaseUrl || !anonKey || !serviceKey) throw new Error("Credenciais seguras do CMS ausentes.");
+if (!new Set(["staging", "production"]).has(targetEnvironment))
+  throw new Error("Ambiente de configuração de formulários inválido.");
+if (new URL(supabaseUrl).hostname !== `${targetProject}.supabase.co`)
+  throw new Error("O projeto informado não corresponde à URL Supabase.");
+if (targetEnvironment === "staging" && targetProject !== stagingProject)
+  throw new Error("A configuração de staging aceita somente o projeto homologado.");
+if (
+  targetEnvironment === "production" &&
+  (targetProject === stagingProject ||
+    !/^[a-f0-9]{40}$/.test(productionCandidate) ||
+    process.env.GAIATEC_PRODUCTION_AUTHORIZATION !== `AUTORIZO-G12-PRODUCAO:${productionCandidate}`)
+)
+  throw new Error("Configuração de produção recusada sem projeto isolado, SHA completo e autorização exata.");
 
 const admin = createClient(supabaseUrl, serviceKey, {
   auth: { persistSession: false, autoRefreshToken: false },
@@ -17,7 +34,7 @@ const admin = createClient(supabaseUrl, serviceKey, {
 const runTag = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
 const actor = {
   id: "",
-  email: `cms-configuracao-formularios-${runTag}@example.com`,
+  email: `cms-g12-formularios-${targetEnvironment}-${runTag}@example.invalid`,
   password: `T!${crypto.randomBytes(24).toString("base64url")}9a`,
   client: null,
   session: null,
@@ -73,7 +90,7 @@ const forms = [
     ],
     consentText:
       "Autorizo a GAIATEC SISTEMAS a utilizar meus dados para responder esta solicitação, conforme a",
-    consentVersion: "staging-2026-08-30-v1",
+    consentVersion: targetEnvironment === "production" ? "production-2026-09-06-v1" : "staging-2026-08-30-v1",
     slaMinutes: 240,
     retentionDays: 365,
     submitLabel: "Enviar solicitação",
@@ -92,7 +109,7 @@ const forms = [
     ],
     consentText:
       "Autorizo o envio de novidades, conteúdos técnicos e comunicações da GAIATEC SISTEMAS, conforme a",
-    consentVersion: "staging-2026-08-30-v1",
+    consentVersion: targetEnvironment === "production" ? "production-2026-09-06-v1" : "staging-2026-08-30-v1",
     slaMinutes: 1440,
     retentionDays: 730,
     submitLabel: "Inscrever",
@@ -174,7 +191,7 @@ async function createTemporaryActor() {
 async function elevateWithMfa() {
   const enrolled = await actor.client.auth.mfa.enroll({
     factorType: "totp",
-    friendlyName: `config-staging-${runTag}`,
+    friendlyName: `config-${targetEnvironment}-${runTag}`,
   });
   if (enrolled.error || !enrolled.data?.id || !enrolled.data?.totp?.secret)
     throw enrolled.error ?? new Error("MFA temporário não foi matriculado.");
@@ -220,7 +237,10 @@ async function configureForm(configuration) {
     privacyPath: "/politica-de-privacidade",
     slaMinutes: configuration.slaMinutes,
     retentionDays: configuration.retentionDays,
-    reason: "Configuração inicial autorizada para homologação em staging",
+    reason:
+      targetEnvironment === "production"
+        ? `Configuração inicial autorizada para produção no G12 ${productionCandidate}`
+        : "Configuração inicial autorizada para homologação em staging",
   });
   const published = await invoke("cms-leads", {
     action: "publish_form",
@@ -266,16 +286,18 @@ try {
   for (const configuration of forms) configured.push(await configureForm(configuration));
   report = {
     status: "passed",
-    environment: "staging",
-    productionTouched: false,
+    environment: targetEnvironment,
+    productionTouched: targetEnvironment === "production",
+    candidateSha: productionCandidate || null,
     configured,
-    legalApproval: "pending_dpo",
+    legalApproval: targetEnvironment === "production" ? "approved_dpo_marcelo_diaz" : "pending_dpo",
   };
 } catch (error) {
   report = {
     status: "failed",
-    environment: "staging",
-    productionTouched: false,
+    environment: targetEnvironment,
+    productionTouched: targetEnvironment === "production",
+    candidateSha: productionCandidate || null,
     error: error instanceof Error ? error.message : String(error),
   };
   process.exitCode = 1;

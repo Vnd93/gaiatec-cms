@@ -148,7 +148,9 @@ test("staging form setup is governed, repeatable and isolated from production", 
   assert.match(setup, /newsletter/);
   assert.match(setup, /challengeAndVerify/);
   assert.match(setup, /cms-leads/);
-  assert.match(setup, /productionTouched: false/);
+  assert.match(setup, /productionTouched: targetEnvironment === "production"/);
+  assert.match(setup, /GAIATEC_PRODUCTION_AUTHORIZATION/);
+  assert.match(setup, /AUTORIZO-G12-PRODUCAO/);
   assert.doesNotMatch(setup, /painel antigo|legacy/i);
   assert.match(cleanup, /@example\.com/);
   assert.match(cleanup, /fixture sintética/);

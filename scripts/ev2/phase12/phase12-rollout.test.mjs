@@ -16,6 +16,12 @@ import {
   validateProductionConfig,
   validateReleaseManifest,
 } from "./release-guard-lib.mjs";
+import {
+  evaluateFunctionInventory,
+  PRODUCTION_FUNCTIONS,
+  PUBLIC_FUNCTIONS,
+  validateProductionBackendConfig,
+} from "./production-backend-lib.mjs";
 
 const read = (path) => readFile(path, "utf8");
 const sha = "a".repeat(40);
@@ -538,6 +544,58 @@ test("production configuration refuses staging and solo GitHub controls remain s
   );
 });
 
+test("production backend configuration is exact, complete and fail-closed", () => {
+  const backendEnv = {
+    PRODUCTION_SUPABASE_PROJECT_REF: "chfuhctnhqgyjowkvllv",
+    PRODUCTION_SUPABASE_URL: "https://chfuhctnhqgyjowkvllv.supabase.co",
+    PRODUCTION_SUPABASE_ANON_KEY: "sb_publishable_example_key_with_safe_length",
+    PRODUCTION_SUPABASE_DB_URL:
+      "postgresql://postgres:example-secure-password@db.chfuhctnhqgyjowkvllv.supabase.co:5432/postgres?sslmode=require",
+    SUPABASE_ACCESS_TOKEN: "sbp_example_management_token_long_enough",
+    PRODUCTION_SITE_ORIGIN: "https://gaiatecsistemas.com.br",
+    ALLOWED_ORIGINS: "https://www.gaiatecsistemas.com.br,https://gaiatecsistemas.com.br",
+    RESEND_API_KEY: "re_example_production_key_long_enough",
+    EMAIL_FROM: "GAIATEC SISTEMAS <cms@gaiatecsistemas.com>",
+    LEAD_NOTIFICATION_TO: "comercial@gaiatecsistemas.com.br",
+    VITE_TURNSTILE_SITE_KEY: "turnstile_site_key",
+    TURNSTILE_SECRET_KEY: "turnstile_secret_key",
+    RATE_LIMIT_SALT: "a".repeat(64),
+    EVIDENCE_SALT: "b".repeat(64),
+    LEAD_EVIDENCE_SALT: "c".repeat(64),
+    OUTBOX_WORKER_SECRET: "d".repeat(64),
+    CMS_AI_EXTERNAL_PROVIDER_ENABLED: "false",
+    CONTACT_CAPTCHA_ALWAYS: "true",
+  };
+  assert.equal(validateProductionBackendConfig(backendEnv).valid, true);
+  assert.match(
+    validateProductionBackendConfig({
+      ...backendEnv,
+      PRODUCTION_SUPABASE_DB_URL:
+        "postgresql://postgres:example-secure-password@db.glcqsosxwgmlhzgcsnzv.supabase.co:5432/postgres?sslmode=require",
+      VITE_TURNSTILE_SITE_KEY: "",
+    }).violations.join(","),
+    /production_database_url_invalid.*turnstile_site_key_missing/,
+  );
+  assert.match(
+    validateProductionBackendConfig({ ...backendEnv, EVIDENCE_SALT: "a".repeat(64) }).violations.join(","),
+    /operational_secrets_must_be_unique/,
+  );
+});
+
+test("production Edge Function inventory fixes JWT mode for every exact-candidate function", () => {
+  const inventory = PRODUCTION_FUNCTIONS.map((name, index) => ({
+    name,
+    status: "ACTIVE",
+    version: index + 1,
+    verify_jwt: !PUBLIC_FUNCTIONS.has(name),
+  }));
+  assert.equal(evaluateFunctionInventory(inventory).valid, true);
+  const unsafe = structuredClone(inventory);
+  unsafe.find((record) => record.name === "cms-public").verify_jwt = true;
+  assert.match(evaluateFunctionInventory(unsafe).violations.join(","), /cms-public:verify_jwt_invalid/);
+  assert.match(evaluateFunctionInventory(inventory.slice(1)).violations.join(","), /cms-ai:missing/);
+});
+
 test("G12 boundary evals contain no false acceptance or remote mutation", () => {
   const result = spawnSync(process.execPath, ["scripts/ev2/phase12/run-evals.mjs"], {
     cwd: process.cwd(),
@@ -565,6 +623,12 @@ test("release workflows and reduced canary are immutable, staged and production 
     stableBaseline,
     verifier,
     template,
+    backendConfig,
+    functionDeploy,
+    functionVerify,
+    databaseVerify,
+    authConfig,
+    vaultConfig,
   ] = await Promise.all([
     read(".github/workflows/ci.yml"),
     read(".github/workflows/preview-ev2-phase12.yml"),
@@ -577,6 +641,12 @@ test("release workflows and reduced canary are immutable, staged and production 
     read("scripts/ev2/phase11/stable-baseline-lib.mjs"),
     read("scripts/ev2/phase12/verify-approval.mjs"),
     read("docs/ev2/fase-12/G12_APPROVAL.template.json"),
+    read("scripts/ev2/phase12/validate-production-backend-config.mjs"),
+    read("scripts/ev2/phase12/deploy-production-functions.mjs"),
+    read("scripts/ev2/phase12/verify-production-functions.mjs"),
+    read("scripts/ev2/phase12/verify-production-database.mjs"),
+    read("scripts/ev2/phase12/configure-production-auth.mjs"),
+    read("scripts/ev2/phase12/configure-production-vault.mjs"),
   ]);
   assert.match(ci, /branches: \[main, Remodelagem, "ev2\/\*\*"\]/);
   assert.match(ci, /version: 2\.116\.0/);
@@ -589,10 +659,20 @@ test("release workflows and reduced canary are immutable, staged and production 
   assert.match(production, /secrets\.RELEASE_GUARD_TOKEN/);
   assert.doesNotMatch(production, /secrets\.GITHUB_RELEASE_GUARD_TOKEN/);
   assert.match(production, /validate-production-config\.mjs/);
+  assert.match(production, /validate-production-backend-config\.mjs/);
+  assert.match(production, /supabase db push --db-url "\$PRODUCTION_SUPABASE_DB_URL" --include-all --yes/);
+  assert.match(production, /deploy-production-functions\.mjs --source \.\.\/candidate/);
+  assert.match(production, /configure-production-auth\.mjs/);
+  assert.match(production, /configure-production-vault\.mjs/);
+  assert.match(production, /verify-production-database\.mjs/);
+  assert.match(production, /VITE_TURNSTILE_SITE_KEY: \$\{\{ secrets\.VITE_TURNSTILE_SITE_KEY \}\}/);
+  assert.match(production, /version: 2\.116\.0/);
   assert.match(production, /ev2-g12-preflight/);
   assert.match(production, /Confirm live baseline equals the approved rollback target/);
   assert.match(production, /Automatically restore the approved prior production deployment/);
   assert.ok(production.indexOf("ev2-g12-preflight") < production.indexOf("--branch main"));
+  assert.ok(production.indexOf("ev2-g12-preflight") < production.indexOf("supabase db push"));
+  assert.ok(production.indexOf("verify-production-database.mjs") < production.indexOf("--branch main"));
   assert.doesNotMatch(production, /VITE_EV2_[A-Z0-9_]+: ["']true["']/);
   const deployJobPreamble = production.slice(
     production.indexOf("  deploy:"),
@@ -632,6 +712,13 @@ test("release workflows and reduced canary are immutable, staged and production 
   assert.match(stableBaseline, /legacy-root-fingerprint/);
   assert.match(verifier, /createHash\("sha256"\)/);
   assert.match(verifier, /validateCanaryEvidenceBinding/);
+  assert.match(backendConfig, /G12_PRODUCTION_BACKEND_CONFIG_BLOCKED/);
+  assert.match(functionDeploy, /G12_PRODUCTION_FUNCTION_INVENTORY_MISMATCH/);
+  assert.match(functionDeploy, /--no-verify-jwt/);
+  assert.match(functionVerify, /evaluateFunctionInventory/);
+  assert.match(databaseVerify, /all_public_tables_rls/);
+  assert.match(authConfig, /disable_signup: true/);
+  assert.match(vaultConfig, /cms_outbox_worker_secret/);
   const approvalTemplate = JSON.parse(template);
   assert.equal(approvalTemplate.decision, "pending");
   assert.equal(approvalTemplate.productionAuthorized, false);

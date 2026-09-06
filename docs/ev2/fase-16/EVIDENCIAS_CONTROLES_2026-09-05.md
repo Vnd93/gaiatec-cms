@@ -66,6 +66,23 @@ aquecimento (p95 1.608,260 ms e 1.510,146 ms), seguidas por uma janela aprovada 
 canary de navegador sem violações. O achado originou aquecimento explícito e testado no workflow;
 nenhum limite foi aumentado e nenhuma tentativa reprovada foi descrita como aprovação.
 
+### Revalidação no candidato de produção
+
+Candidato: `e52b25d903251cf538918d89049a58524c3c9911`.
+
+- o [workflow `34001071800`](https://github.com/Vnd93/gaiatec-cms/actions/runs/34001071800)
+  confirmou o SHA exato da `main`, aprovou 51/51 arquivos e 168/168 testes, auditoria, build e
+  manifesto; como o ambiente `staging` do GitHub não continha o conjunto completo de segredos, ele
+  publicou somente o candidato e não foi contabilizado como canary remoto;
+- o mesmo checkout imutável foi implantado com a sessão Wrangler já autenticada, exclusivamente no
+  projeto `gaiatec-cms-staging`, deployment `https://10ddc502.gaiatec-cms-staging.pages.dev` e alias
+  isolado `ev2-g16-csp-canary`; nenhum projeto, domínio ou dado produtivo foi alterado;
+- HTTP: 22/22 respostas, 100% de disponibilidade, 0% de 5xx, p95 público 1.480,285 ms, orçamentos
+  por rota aprovados e contratos de release, health, manifesto, noindex e CSP exatos;
+- navegador: quatro rotas com status 200, SHA exato, CSP em enforcement e zero violação crítica;
+- relatórios brutos: [HTTP](evidencias/G16_CSP_HTTP_e52b25d.json) e
+  [navegador](evidencias/G16_CSP_BROWSER_e52b25d.json).
+
 ## Backup e restore drill — tentativas preservadas e aprovação
 
 O [workflow `33995606426`](https://github.com/Vnd93/gaiatec-cms/actions/runs/33995606426),
@@ -144,7 +161,7 @@ repositório, eliminando o aviso de redução automática sem alterar o backup a
 
 ## Evidências ainda inexistentes
 
-Não foram fabricados: chave Resend de produção, entrega sintética produtiva, preview CSP do SHA
-final de produção ou autorização literal do SHA final. Proteções, ambientes, DPO/legal, governança
-solo, risco, credenciais Supabase, backup externo e restore drill foram comprovados; os itens
-restantes continuam bloqueando G12.
+Não foram fabricados: chave Resend de produção, entrega sintética produtiva ou autorização literal
+do SHA final. Proteções, ambientes, DPO/legal, governança solo, risco, credenciais Supabase, backup
+externo, restore drill e CSP do candidato foram comprovados; os itens restantes continuam
+bloqueando G12.

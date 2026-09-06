@@ -245,6 +245,7 @@ test("production and canary workflows retain evidence and stay behind their boun
   assert.doesNotMatch(backup, /ON_ERROR_STOP=0/);
   assert.match(backup, /diff -u/);
   assert.match(backup, /path: \$\{\{ steps\.backup\.outputs\.artifact_dir \}\}/);
+  assert.match(backup, /retention-days: 30/);
   assert.doesNotMatch(backup, /path:.*plain_dir/);
   assert.match(email, /VERIFY-RESEND-PRODUCTION:\{0\}/);
   assert.match(email, /environment: production/);

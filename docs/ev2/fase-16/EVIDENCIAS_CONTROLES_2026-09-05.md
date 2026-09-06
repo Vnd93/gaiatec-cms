@@ -66,7 +66,7 @@ aquecimento (p95 1.608,260 ms e 1.510,146 ms), seguidas por uma janela aprovada 
 canary de navegador sem violações. O achado originou aquecimento explícito e testado no workflow;
 nenhum limite foi aumentado e nenhuma tentativa reprovada foi descrita como aprovação.
 
-## Backup e restore drill — primeira tentativa preservada
+## Backup e restore drill — tentativas preservadas e aprovação
 
 O [workflow `33995606426`](https://github.com/Vnd93/gaiatec-cms/actions/runs/33995606426),
 executado em `main` no SHA `09b6fcd774fd840a987459e097d5847fc752af25`, validou configuração,
@@ -133,9 +133,18 @@ dump de dados restaurável; `storage.buckets`, `storage.objects`, autenticação
 as outras tabelas permanecem incluídos. O texto puro foi limpo e nenhum artefato incompleto foi
 publicado.
 
+O [workflow `34000214134`](https://github.com/Vnd93/gaiatec-cms/actions/runs/34000214134),
+executado em `main` no SHA `7613c1b11a60a50ff9be5547624c79662602e09a`, concluiu com sucesso:
+dump lógico, cifragem AES-256, decriptação, restauração em Supabase local efêmero, comparação do
+inventário e das contagens de linhas públicas, limpeza do texto puro, manifesto e upload externo.
+O artefato `supabase-production-backup-34000214134` tem digest GitHub
+`sha256:e346901092477cda2c489e25ab8a47b7a8cd5ccedcfeff859ab1ed73d1565ed6`, tamanho 3,9 KB e
+retenção efetiva de 30 dias. O workflow passa a declarar os mesmos 30 dias permitidos pelo
+repositório, eliminando o aviso de redução automática sem alterar o backup aprovado.
+
 ## Evidências ainda inexistentes
 
-Não foram fabricados: backup real, restore real, chave Resend de produção, entrega sintética
-produtiva, preview CSP do SHA final de produção ou autorização literal do SHA final. Proteções,
-ambientes, DPO/legal, governança solo, risco e credenciais Supabase foram comprovados; os itens
+Não foram fabricados: chave Resend de produção, entrega sintética produtiva, preview CSP do SHA
+final de produção ou autorização literal do SHA final. Proteções, ambientes, DPO/legal, governança
+solo, risco, credenciais Supabase, backup externo e restore drill foram comprovados; os itens
 restantes continuam bloqueando G12.

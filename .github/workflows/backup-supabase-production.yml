@@ -166,4 +166,4 @@ jobs:
           name: supabase-production-backup-${{ github.run_id }}
           path: ${{ steps.backup.outputs.artifact_dir }}
           if-no-files-found: error
-          retention-days: 90
+          retention-days: 30

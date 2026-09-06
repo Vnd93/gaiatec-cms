@@ -11,14 +11,14 @@ ou substituído por confirmação verbal.
 | Deployment produtivo observado | `ff2dbb65-2f8b-4840-a9a1-f2fde29e8ebf`, release `ba1131060177cdc602448ba4e9aeccf7afc298a5` | reconfirmar automaticamente; o valor pode mudar                             |
 | Ambientes GitHub               | `production` e `production-backup` criados e limitados a branches protegidas               | manter sem bypass e completar apenas os secrets externos pendentes          |
 | Branch `main`                  | protegida nos repositórios executável e documental                                         | manter PR, zero approvals, checks estritos, admins e histórico linear       |
-| Secrets/variables Actions      | Supabase, backup e variáveis operacionais cadastrados nos environments                     | adicionar tokens mínimos de Cloudflare, guard GitHub e Resend               |
+| Secrets/variables Actions      | Supabase, backup, Cloudflare, GitHub, Resend e segredos operacionais cadastrados           | cadastrar somente o par Turnstile vinculado aos domínios aprovados          |
 | Supabase de produção           | projeto isolado `chfuhctnhqgyjowkvllv` saudável, mas no plano Free e ainda vazio           | backup externo, restore drill, migrations, funções e revisão RLS aprovados  |
-| Edge Functions EV2             | guardas ainda recusam produção por desenho                                                 | criar release produtiva separada e homologá-la antes de qualquer ativação   |
+| Edge Functions EV2             | inventário exato e modos JWT agora são verificados pelo workflow                           | implantar somente após autorização literal e antes da promoção do frontend  |
 | Elegibilidade frontend         | switches candidatos são de build                                                           | implementar avaliação runtime antes de rollout por coorte em produção       |
 | Privacidade/legal              | escopo padrão aprovado por `@Vnd93`, DPO Marcelo Diaz e canal público registrados          | manter provedor externo de IA desligado; anexar a aprovação ao registro G12 |
-| Provider externo               | Resend definido; produção sem credencial ou evidência                                      | domínio e entrega sintética por SHA, custo e DPA aprovados                  |
+| Provider externo               | Resend configurado, domínio verificado e entrega sintética concluída                       | manter provedor externo de IA desligado                                     |
 | CSP                            | enforcement implementado para preview/produto; staging em Report-Only                      | canary no SHA final com zero violação crítica                               |
-| Alertas/on-call                | canal e escala não registrados                                                             | owner primário/secundário e comunicação de incidente testados               |
+| Operação                       | `@Vnd93` é o único responsável humano, com risco formalmente aceito                        | manter evidência das quatro responsabilidades no mesmo operador             |
 
 ## Configuração mínima no ambiente GitHub `production`
 
@@ -40,6 +40,13 @@ Secrets:
   verificar ambiente, proteção, PR e jobs reais do GitHub Actions;
 - `PRODUCTION_SUPABASE_URL`;
 - `PRODUCTION_SUPABASE_ANON_KEY` — chave pública, ainda assim segregada do build de staging.
+- `PRODUCTION_SUPABASE_DB_URL` — conexão TLS exclusiva do projeto produtivo;
+- `SUPABASE_ACCESS_TOKEN` — administração restrita do projeto produtivo;
+- `RESEND_API_KEY`;
+- `RATE_LIMIT_SALT`, `EVIDENCE_SALT`, `LEAD_EVIDENCE_SALT` e `OUTBOX_WORKER_SECRET` — valores
+  independentes de 256 bits;
+- `TURNSTILE_SECRET_KEY` e `VITE_TURNSTILE_SITE_KEY` — par do widget restrito a
+  `gaiatecsistemas.com.br` e `www.gaiatecsistemas.com.br`.
 
 Variables:
 
@@ -48,6 +55,27 @@ Variables:
 
 O workflow valida esses valores sem imprimir credenciais e falha antes do build se detectar staging,
 placeholder, URL divergente ou projeto incorreto.
+
+Os segredos de Supabase, Resend, Cloudflare, guard de release e os quatro segredos operacionais estão
+cadastrados. O par Turnstile permanece bloqueador intencional: deve ser criado para os domínios reais
+somente na janela autorizada e, sem ele, o workflow recusa a produção antes de qualquer mutação.
+
+## Contrato automatizado do backend produtivo
+
+Após preflight e reconfirmação da baseline, mas antes de promover o frontend, o workflow:
+
+1. aplica no projeto exato as migrations imutáveis do candidato até `0054`;
+2. envia segredos às Edge Functions por arquivo temporário com permissão restrita e remoção garantida;
+3. publica o inventário completo de 32 funções, permitindo chamada sem JWT somente em
+   `cms-preview`, `cms-public`, `cms-outbox-worker` e `lead-capture`;
+4. restringe Auth aos dois domínios aprovados e desabilita cadastro público;
+5. vincula URL e segredo do worker agendado no Supabase Vault;
+6. verifica migrations, RLS de todas as tabelas públicas, cron, Vault, funções ativas, versão e modo
+   JWT antes da promoção do site.
+
+O backend usa projeto dedicado e todas as funções EV2 permanecem inativas funcionalmente no frontend
+porque as flags candidatas são compiladas como `false`. Falha em qualquer verificação impede a troca do
+site.
 
 ## Inventário Supabase produtivo
 

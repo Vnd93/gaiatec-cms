@@ -50,6 +50,9 @@ jobs:
           cache-dependency-path: |
             control/package-lock.json
             candidate/package-lock.json
+      - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3
+        with:
+          version: 2.116.0
       - name: Verify exact candidate belongs to main
         env:
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
@@ -72,6 +75,28 @@ jobs:
           PRODUCTION_SUPABASE_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
           PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
           PRODUCTION_SITE_ORIGIN: ${{ vars.PRODUCTION_SITE_ORIGIN }}
+      - name: Verify the complete production backend configuration before mutation
+        working-directory: control
+        run: node scripts/ev2/phase12/validate-production-backend-config.mjs
+        env:
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          PRODUCTION_SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+          PRODUCTION_SUPABASE_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
+          PRODUCTION_SUPABASE_DB_URL: ${{ secrets.PRODUCTION_SUPABASE_DB_URL }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PRODUCTION_SITE_ORIGIN: ${{ vars.PRODUCTION_SITE_ORIGIN }}
+          ALLOWED_ORIGINS: https://gaiatecsistemas.com.br,https://www.gaiatecsistemas.com.br
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          EMAIL_FROM: ${{ vars.EMAIL_FROM }}
+          LEAD_NOTIFICATION_TO: ${{ vars.LEAD_NOTIFICATION_TO }}
+          VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
+          RATE_LIMIT_SALT: ${{ secrets.RATE_LIMIT_SALT }}
+          EVIDENCE_SALT: ${{ secrets.EVIDENCE_SALT }}
+          LEAD_EVIDENCE_SALT: ${{ secrets.LEAD_EVIDENCE_SALT }}
+          OUTBOX_WORKER_SECRET: ${{ secrets.OUTBOX_WORKER_SECRET }}
+          CMS_AI_EXTERNAL_PROVIDER_ENABLED: "false"
+          CONTACT_CAPTCHA_ALWAYS: "true"
       - name: Verify immutable G12 approval
         id: approval
         working-directory: control
@@ -96,6 +121,7 @@ jobs:
           VITE_CMS_ENVIRONMENT: production
           VITE_SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
+          VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}
           VITE_EV2_DRAFT_V2_CANDIDATE: "false"
           VITE_EV2_MASTER_DATA_CANDIDATE: "false"
           VITE_EV2_PIM_CANDIDATE: "false"
@@ -148,6 +174,80 @@ jobs:
         run: |
           test "$LIVE_DEPLOYMENT" = "$APPROVED_DEPLOYMENT"
           test "$LIVE_RELEASE" = "$APPROVED_RELEASE"
+      - name: Apply the exact candidate migrations to the isolated production database
+        working-directory: candidate
+        env:
+          PRODUCTION_SUPABASE_DB_URL: ${{ secrets.PRODUCTION_SUPABASE_DB_URL }}
+        run: supabase db push --db-url "$PRODUCTION_SUPABASE_DB_URL" --include-all --yes
+      - name: Configure production Edge Function secrets without exposing their values
+        working-directory: control
+        env:
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          ALLOWED_ORIGINS: https://gaiatecsistemas.com.br,https://www.gaiatecsistemas.com.br
+          PUBLIC_SITE_ORIGIN: https://gaiatecsistemas.com.br
+          RATE_LIMIT_SALT: ${{ secrets.RATE_LIMIT_SALT }}
+          EVIDENCE_SALT: ${{ secrets.EVIDENCE_SALT }}
+          LEAD_EVIDENCE_SALT: ${{ secrets.LEAD_EVIDENCE_SALT }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          EMAIL_FROM: ${{ vars.EMAIL_FROM }}
+          LEAD_NOTIFICATION_TO: ${{ vars.LEAD_NOTIFICATION_TO }}
+          OUTBOX_WORKER_SECRET: ${{ secrets.OUTBOX_WORKER_SECRET }}
+        run: |
+          umask 077
+          secrets_file="$RUNNER_TEMP/g12-production-functions.env"
+          trap 'rm -f "$secrets_file"' EXIT
+          {
+            printf 'ALLOWED_ORIGINS=%s\n' "$ALLOWED_ORIGINS"
+            printf 'PUBLIC_SITE_ORIGIN=%s\n' "$PUBLIC_SITE_ORIGIN"
+            printf 'RATE_LIMIT_SALT=%s\n' "$RATE_LIMIT_SALT"
+            printf 'EVIDENCE_SALT=%s\n' "$EVIDENCE_SALT"
+            printf 'LEAD_EVIDENCE_SALT=%s\n' "$LEAD_EVIDENCE_SALT"
+            printf 'TURNSTILE_SECRET_KEY=%s\n' "$TURNSTILE_SECRET_KEY"
+            printf 'CONTACT_CAPTCHA_ALWAYS=true\n'
+            printf 'CONTACT_NOTIFY_EMAIL=%s\n' "$LEAD_NOTIFICATION_TO"
+            printf 'CONTACT_FROM_EMAIL=%s\n' "$EMAIL_FROM"
+            printf 'RESEND_API_KEY=%s\n' "$RESEND_API_KEY"
+            printf 'EMAIL_FROM=%s\n' "$EMAIL_FROM"
+            printf 'LEAD_NOTIFICATION_TO=%s\n' "$LEAD_NOTIFICATION_TO"
+            printf 'CMS_ENVIRONMENT=production\n'
+            printf 'CMS_ADMIN_ORIGIN=https://gaiatecsistemas.com.br\n'
+            printf 'CMS_ADMIN_URL=https://gaiatecsistemas.com.br/admin\n'
+            printf 'OUTBOX_WORKER_SECRET=%s\n' "$OUTBOX_WORKER_SECRET"
+            printf 'CMS_AI_EXTERNAL_PROVIDER_ENABLED=false\n'
+          } > "$secrets_file"
+          supabase secrets set --project-ref "$PRODUCTION_SUPABASE_PROJECT_REF" --env-file "$secrets_file"
+          rm -f "$secrets_file"
+          trap - EXIT
+      - name: Deploy the complete exact-candidate Edge Function inventory
+        working-directory: control
+        env:
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/ev2/phase12/deploy-production-functions.mjs --source ../candidate
+      - name: Lock production authentication to approved domains
+        working-directory: control
+        env:
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/ev2/phase12/configure-production-auth.mjs
+      - name: Bind the scheduled outbox worker through Supabase Vault
+        working-directory: control
+        env:
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          OUTBOX_WORKER_SECRET: ${{ secrets.OUTBOX_WORKER_SECRET }}
+        run: node scripts/ev2/phase12/configure-production-vault.mjs
+      - name: Verify database, RLS, cron, Vault and deployed function modes
+        working-directory: control
+        env:
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          supabase functions list --project-ref "$PRODUCTION_SUPABASE_PROJECT_REF" --output json > ../g12-production-functions.json
+          node scripts/ev2/phase12/verify-production-functions.mjs --file ../g12-production-functions.json
+          node scripts/ev2/phase12/verify-production-database.mjs | tee ../g12-production-backend.json
       - name: Promote the already-tested artifact
         id: promote
         uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
@@ -194,6 +294,8 @@ jobs:
           path: |
             candidate/dist/release-manifest.json
             g12-preflight-probe.json
+            g12-production-backend.json
+            g12-production-functions.json
             g12-production-probe.json
           if-no-files-found: warn
           retention-days: 90

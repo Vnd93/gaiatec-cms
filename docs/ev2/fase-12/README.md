@@ -8,7 +8,7 @@
 
 Promover um artefato imutável com identificação de release, preflight, observabilidade, decisão por
 error budget, responsabilidades aprovadas e rollback recuperável. A fase não cria migration: utiliza as
-migrations aditivas já homologadas até `0052` e preserva todas as flags EV2 desligadas por padrão.
+migrations aditivas já homologadas até `0054` e preserva todas as flags EV2 desligadas por padrão.
 
 ## Entregas
 
@@ -20,6 +20,7 @@ migrations aditivas já homologadas até `0052` e preserva todas as flags EV2 de
 | Canary integrado  | executor reduzido reaproveita a garantia G11, usa dois atores MFA e encerra com resíduo zero     |
 | Aprovação formal  | registro G12 por SHA, quatro responsabilidades de `@Vnd93`, janela e rollback identificados      |
 | Promoção          | preflight do mesmo `dist`, flags candidatas desligadas, baseline capturada antes do deploy       |
+| Backend produtivo | migrations, segredos, 32 funções, Auth, Vault, RLS e cron verificados antes da troca do frontend |
 | Recuperação       | rollback automático ou manual somente para deployment `Production` e SHA previamente conferidos  |
 | Operação          | runbook, matriz de rollout, treinamento/handover e inventário de pré-requisitos                  |
 
@@ -29,6 +30,8 @@ O G11 autorizou a preparação local/staging da EV2.12, não o go-live. O workfl
 simultaneamente branch `main`, ambiente protegido, PR de `@Vnd93`, controles automáticos do branch, projeto
 Supabase produtivo distinto, registro G12 aprovado e a confirmação literal
 `AUTORIZO-G12-PRODUCAO:<SHA completo>`. Na ausência de qualquer item, o fluxo falha antes do deploy.
+O par Turnstile restrito aos domínios reais também é obrigatório e permanece ausente até a janela
+explicitamente autorizada.
 
 O hardening posterior da EV2.13 removeu os switches `VITE_EV2_*_CANDIDATE` das decisões do frontend e
 introduziu elegibilidade individual em runtime. Produção continua explicitamente bloqueada pelo

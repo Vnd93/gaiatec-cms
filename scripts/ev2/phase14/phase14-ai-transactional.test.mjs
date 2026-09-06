@@ -160,6 +160,8 @@ test("rehearsal and canary executors are locked to the isolated staging target",
   assert.match(canary, /no_broad_activation_present/);
   assert.match(canary, /synthetic_residue_zero/);
   assert.match(canary, /productionMutations: 0/);
+  assert.match(canary, /outputs\/ev2\/fase-14\/evidencias/);
+  assert.match(canary, /mkdirSync\(evidenceRoot, \{ recursive: true \}\)/);
   assert.doesNotMatch(canary, /scope_type:\s*"environment"/);
   assert.match(workflow, /PREVIEW-G14-STAGING/);
   assert.match(workflow, /--branch ev2-g14-canary/);

@@ -132,12 +132,3 @@ test("managed pages are clean-room, searchable and production publication is fai
   assert.match(publicApi, /"page", "homepage"/);
   assert.match(publicApi, /p\.blocks/);
 });
-
-test("Gate G8 acceptance and G9 stability blocker remain explicit", async () => {
-  const g8 = await read("docs/fase-8/EVIDENCIAS_GATE_G8.md");
-  const planning = await read("PLANEJAMENTO_EXECUTIVO_DESENVOLVIMENTO_REMODELAGEM_CMS_GAIATEC.md");
-  assert.match(g8, /APROVADO PARA INICIAR A FASE 9 EM LOCAL\/STAGING/);
-  assert.match(g8, /produção não autorizada/i);
-  assert.match(planning, /Gate G8 fica \*\*APROVADO para iniciar a Fase 9 em local\/staging\*\*/);
-  assert.match(g8, /período de estabilidade/i);
-});

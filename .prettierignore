@@ -4,5 +4,6 @@ public/images
 public/assets
 supabase/functions
 src/app
-docs/fase-0
-docs/fase-1
+.github/release-controls/approvals
+.github/release-controls/evidence
+outputs

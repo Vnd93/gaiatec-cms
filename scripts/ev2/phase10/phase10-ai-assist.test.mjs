@@ -136,16 +136,11 @@ test("golden, adversarial, privacy and permission evals pass deterministically",
   assert.equal(report.metrics.manualFallback, true);
 });
 
-test("rehearsal, canary, workflow and approved Gate G10 remain reproducible", async () => {
-  const [rehearsal, canary, workflow, gate, plan, policy, localReport, canaryReport] = await Promise.all([
+test("rehearsal, canary and workflow remain reproducible", async () => {
+  const [rehearsal, canary, workflow] = await Promise.all([
     read("scripts/ev2/phase10/validate-migration.mjs"),
     read("scripts/ev2/phase10/staging-canary.mjs"),
     read(".github/workflows/preview-ev2-phase10.yml"),
-    read("docs/ev2/fase-10/GATE_G10.md"),
-    read("docs/ev2/fase-10/PLANO_CANARY_STAGING.md"),
-    read("docs/ev2/fase-10/PROPOSTA_POLITICA_EV2_D04.md"),
-    read("docs/ev2/fase-10/RELATORIO_VALIDACAO_LOCAL_2026-09-03.md"),
-    read("docs/ev2/fase-10/RELATORIO_CANARY_STAGING_2026-09-03.md"),
   ]);
   assert.match(rehearsal, /G10_MIGRATION_REHEARSAL_PASS/);
   assert.match(rehearsal, /ALVO RECUSADO/);
@@ -164,15 +159,4 @@ test("rehearsal, canary, workflow and approved Gate G10 remain reproducible", as
   assert.match(workflow, /expected_sha/);
   assert.match(workflow, /VITE_EV2_AI_ASSIST_CANDIDATE/);
   assert.match(workflow, /ev2-g10-canary/);
-  assert.match(gate, /G10 APROVADO/);
-  assert.match(plan, /sem produção/i);
-  assert.match(plan, /26\/26/);
-  assert.match(policy, /aprovação explícita do DPO\/Security/i);
-  assert.match(localReport, /150\/150 testes/);
-  assert.match(localReport, /45 verificações de RLS/);
-  assert.match(localReport, /G10 permanece pendente/);
-  assert.match(canaryReport, /26\/26 verificações/);
-  assert.match(canaryReport, /c2500c7de38fdb6c33f338232e858ef12a8fe0e5/);
-  assert.match(canaryReport, /externalProviderCalls=0/);
-  assert.match(canaryReport, /resíduo sintético zero/i);
 });

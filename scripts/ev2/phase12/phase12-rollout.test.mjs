@@ -3,16 +3,30 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
-import worker from "../../../cloudflare/_worker.js";
+import worker, { CONTENT_SECURITY_POLICY } from "../../../cloudflare/_worker.js";
 import {
+  approvalRecordFilenameMatchesCandidate,
+  buildPinnedDpoEvidenceReference,
+  CANONICAL_DOCUMENTATION_SHA,
+  CANONICAL_DPO_EVIDENCE_REFERENCE,
   canonicalTextSha256,
+  CSP_CANARY_ROUTES,
   evaluateCodeOwners,
   evaluateGithubControls,
   evaluateProbeWindow,
   evaluateRolloutAdvance,
   evaluateRolloutWindow,
+  HISTORICAL_DPO_EVIDENCE_REFERENCE,
+  HISTORICAL_G16_CSP_CANDIDATE_SHA,
+  HISTORICAL_G16_CSP_EVIDENCE_REFERENCE,
+  HISTORICAL_G16_CSP_EVIDENCE_SHA256,
+  resolveCspEvidenceBinding,
+  resolveCspEvidenceRepositoryPath,
+  resolveDpoEvidenceReference,
+  resolveG12EvidenceRepositoryPath,
   validateApprovalRecord,
   validateCanaryEvidenceBinding,
+  validateCspEvidenceBinding,
   validateHealthContract,
   validateProductionConfig,
   validateReleaseManifest,
@@ -26,11 +40,59 @@ import {
 
 const read = (path) => readFile(path, "utf8");
 const sha = "a".repeat(40);
+const cspPolicySha256 = createHash("sha256").update(CONTENT_SECURITY_POLICY).digest("hex");
 
 test("text evidence digest is stable across Git and Windows line endings", () => {
   const lf = Buffer.from('{"gate":"G12"}\n{"decision":"approved"}\n', "utf8");
   const crlf = Buffer.from('{"gate":"G12"}\r\n{"decision":"approved"}\r\n', "utf8");
   assert.equal(canonicalTextSha256(lf), canonicalTextSha256(crlf));
+});
+
+test("DPO evidence resolves only the exact legacy id or the trusted SHA-pinned canonical URL", () => {
+  const documentationSha = "b".repeat(40);
+  const canonicalReference = buildPinnedDpoEvidenceReference(documentationSha);
+  assert.equal(
+    canonicalReference,
+    `https://github.com/Vnd93/gaiatec-documentacao/blob/${documentationSha}/docs/80-evolucao/ev2/fase-16/registro-declaracao-governanca-dpo-risco-2026-09-06.md`,
+  );
+  assert.equal(
+    resolveDpoEvidenceReference(HISTORICAL_DPO_EVIDENCE_REFERENCE, {
+      documentationSha,
+      candidateSha: HISTORICAL_G16_CSP_CANDIDATE_SHA,
+    }),
+    canonicalReference,
+  );
+  assert.equal(
+    resolveDpoEvidenceReference(HISTORICAL_DPO_EVIDENCE_REFERENCE, {
+      documentationSha,
+      candidateSha: sha,
+    }),
+    null,
+  );
+  assert.equal(resolveDpoEvidenceReference(canonicalReference, { documentationSha }), canonicalReference);
+  for (const invalidReference of [
+    canonicalReference.replace(`/blob/${documentationSha}/`, "/blob/main/"),
+    canonicalReference.replace(documentationSha, "c".repeat(40)),
+    canonicalReference.replace("github.com/Vnd93", "github.com/another-owner"),
+    `${canonicalReference}?raw=1`,
+    "docs/ev2/fase-16/registro_declaracao_governanca_dpo_risco_2026-09-05.md",
+  ])
+    assert.equal(resolveDpoEvidenceReference(invalidReference, { documentationSha }), null, invalidReference);
+  assert.equal(buildPinnedDpoEvidenceReference("not-a-full-sha"), null);
+  assert.equal(
+    CANONICAL_DPO_EVIDENCE_REFERENCE,
+    buildPinnedDpoEvidenceReference(CANONICAL_DOCUMENTATION_SHA),
+  );
+  assert.equal(
+    resolveDpoEvidenceReference(HISTORICAL_DPO_EVIDENCE_REFERENCE, {
+      candidateSha: HISTORICAL_G16_CSP_CANDIDATE_SHA,
+    }),
+    CANONICAL_DPO_EVIDENCE_REFERENCE,
+  );
+  assert.equal(
+    resolveDpoEvidenceReference(CANONICAL_DPO_EVIDENCE_REFERENCE),
+    CANONICAL_DPO_EVIDENCE_REFERENCE,
+  );
 });
 
 test("production workflow binds manifest identity and runs full preview after backend bootstrap", async () => {
@@ -168,7 +230,7 @@ function approvedRecord() {
         status: "approved",
         approverId: "Vnd93",
         scopeSha256: "e".repeat(64),
-        evidenceReference: "legal/DPO-EV2-12",
+        evidenceReference: CANONICAL_DPO_EVIDENCE_REFERENCE,
         approvedAt: "2026-09-04T08:40:00.000Z",
       },
       emailProvider: {
@@ -187,9 +249,10 @@ function approvedRecord() {
         status: "passed",
         mode: "enforce",
         candidateSha: sha,
-        policySha256: "f".repeat(64),
+        policySha256: cspPolicySha256,
         criticalViolations: 0,
-        evidenceReference: "actions/csp-123",
+        evidenceReference: `.github/release-controls/evidence/G16_CSP_BROWSER_${sha.slice(0, 7)}.json`,
+        evidenceSha256: "9".repeat(64),
         verifiedAt: "2026-09-04T08:50:00.000Z",
       },
     },
@@ -198,7 +261,7 @@ function approvedRecord() {
       responsibleId: "Vnd93",
       riskAccepted: true,
       acceptedAt: "2026-09-04T08:55:00.000Z",
-      evidenceReference: "docs/ev2/fase-16/REGISTRO_DECLARACAO_GOVERNANCA_DPO_RISCO_2026-09-05.md",
+      evidenceReference: CANONICAL_DPO_EVIDENCE_REFERENCE,
     },
     owners: {
       changeOwner: {
@@ -360,6 +423,25 @@ test("health and release manifests reject HTML, incomplete entries and mismatche
     ).violations.join(","),
     /manifest_release_mismatch/,
   );
+  for (const invalidPath of [
+    "dir/file:stream",
+    "//server/share/file.js",
+    "C:/temp/file.js",
+    "/absolute/file.js",
+    "./relative.js",
+    "a//b.js",
+    "a/../b.js",
+    "a\\b.js",
+  ]) {
+    assert.match(
+      validateReleaseManifest(
+        { ...manifest, files: [{ ...manifest.files[0], path: invalidPath }] },
+        { expectedRelease: sha },
+      ).violations.join(","),
+      /manifest_file_entry_invalid/,
+      invalidPath,
+    );
+  }
   assert.equal(
     validateHealthContract(
       { schemaVersion: 1, status: "ready", release: sha, environment: "staging" },
@@ -404,6 +486,18 @@ test("rollout needs three consecutive healthy windows and cannot skip a stage", 
 test("G12 approval requires an exact candidate, live window and the declared sole operator", () => {
   const record = approvedRecord();
   assert.equal(
+    approvalRecordFilenameMatchesCandidate(`.github/release-controls/approvals/G12_${sha}.json`, sha),
+    true,
+  );
+  assert.equal(
+    approvalRecordFilenameMatchesCandidate(
+      `.github/release-controls/approvals/G12_${"b".repeat(40)}.json`,
+      sha,
+    ),
+    false,
+  );
+  assert.equal(approvalRecordFilenameMatchesCandidate(`C:\\approvals\\G12_${sha}.json`, sha), false);
+  assert.equal(
     validateApprovalRecord(record, {
       expectedSha: sha,
       expectedEnvironment: "production",
@@ -412,6 +506,23 @@ test("G12 approval requires an exact candidate, live window and the declared sol
     }).valid,
     true,
   );
+  assert.equal(
+    resolveG12EvidenceRepositoryPath(record.g12Evidence.file),
+    `.github/release-controls/evidence/G12_CANARY_${sha}.json`,
+  );
+  const currentPathRecord = structuredClone(record);
+  currentPathRecord.g12Evidence.file = `.github/release-controls/evidence/G12_CANARY_${sha}.json`;
+  assert.equal(validateApprovalRecord(currentPathRecord).valid, true);
+  assert.equal(resolveG12EvidenceRepositoryPath("../G12_CANARY_escape.json"), null);
+  assert.equal(
+    resolveCspEvidenceRepositoryPath(HISTORICAL_G16_CSP_EVIDENCE_REFERENCE),
+    ".github/release-controls/evidence/G16_CSP_BROWSER_e52b25d.json",
+  );
+  assert.equal(
+    resolveCspEvidenceRepositoryPath("docs/ev2/fase-16/evidencias/G16_CSP_BROWSER_a1b2c3d.json"),
+    null,
+  );
+  assert.equal(resolveCspEvidenceRepositoryPath("../G16_CSP_BROWSER_escape.json"), null);
   const foreignOwner = structuredClone(record);
   foreignOwner.owners.technicalReviewer.id = "another-user";
   assert.match(
@@ -439,6 +550,136 @@ test("G12 approval requires an exact candidate, live window and the declared sol
     }).violations.join(","),
     /production_authorization_text_invalid/,
   );
+  const mutableDpoReference = structuredClone(record);
+  mutableDpoReference.productionReadiness.dpoLegal.evidenceReference =
+    CANONICAL_DPO_EVIDENCE_REFERENCE.replace(CANONICAL_DOCUMENTATION_SHA, "main");
+  assert.match(
+    validateApprovalRecord(mutableDpoReference).violations.join(","),
+    /readiness_dpo_legal_evidence_invalid/,
+  );
+  const foreignGovernanceReference = structuredClone(record);
+  foreignGovernanceReference.operationalGovernance.evidenceReference =
+    "docs/ev2/fase-16/REGISTRO_DECLARACAO_GOVERNANCA_DPO_RISCO_2026-09-05.md?raw=1";
+  assert.match(
+    validateApprovalRecord(foreignGovernanceReference).violations.join(","),
+    /sole_operator_evidence_invalid/,
+  );
+});
+
+test("CSP evidence requires a digest and permits fallback only for the exact historical control", () => {
+  const record = approvedRecord();
+  const control = record.productionReadiness.csp;
+  const evidence = {
+    schemaVersion: 1,
+    event: "ev2.phase16.csp.browser-canary",
+    origin: `https://${sha.slice(0, 8)}.gaiatec-cms-staging.pages.dev`,
+    candidateSha: sha,
+    executedAt: "2026-09-04T08:50:00.000Z",
+    routes: CSP_CANARY_ROUTES.map((path) => ({
+      path,
+      status: 200,
+      release: sha,
+      cspEnforced: true,
+      policySha256: cspPolicySha256,
+      violations: [],
+    })),
+    policySha256: cspPolicySha256,
+    outcome: "pass",
+    criticalViolations: 0,
+    realDataUsed: false,
+    productionMutations: 0,
+  };
+  const reportSha256 = canonicalTextSha256(JSON.stringify(evidence));
+  control.evidenceSha256 = reportSha256;
+  assert.deepEqual(resolveCspEvidenceBinding(control), {
+    repositoryPath: `.github/release-controls/evidence/G16_CSP_BROWSER_${sha.slice(0, 7)}.json`,
+    evidenceSha256: reportSha256,
+    historicalFallback: false,
+  });
+  assert.equal(
+    validateCspEvidenceBinding(control, evidence, {
+      reportSha256,
+      expectedPolicySha256: cspPolicySha256,
+    }).valid,
+    true,
+  );
+
+  const tamperedEvidence = { ...evidence, origin: "https://tampered.invalid" };
+  assert.match(
+    validateCspEvidenceBinding(control, tamperedEvidence, {
+      reportSha256: canonicalTextSha256(JSON.stringify(tamperedEvidence)),
+      expectedPolicySha256: cspPolicySha256,
+    }).violations.join(","),
+    /csp_evidence_digest_mismatch/,
+  );
+
+  const semanticCases = [
+    ["origin", (value) => (value.origin = "https://staging.example.invalid"), /csp_evidence_origin_invalid/],
+    ["routes", (value) => value.routes.reverse(), /csp_evidence_routes_invalid/],
+    ["status", (value) => (value.routes[0].status = 204), /csp_evidence_route_status_invalid/],
+    ["release", (value) => (value.routes[0].release = "b".repeat(40)), /csp_evidence_route_release_invalid/],
+    [
+      "enforcement",
+      (value) => (value.routes[0].cspEnforced = false),
+      /csp_evidence_route_enforcement_invalid/,
+    ],
+    [
+      "violations",
+      (value) => value.routes[0].violations.push({ type: "console", text: "blocked" }),
+      /csp_evidence_route_violations_present/,
+    ],
+    [
+      "report policy",
+      (value) => (value.policySha256 = "0".repeat(64)),
+      /csp_evidence_policy_digest_mismatch/,
+    ],
+    [
+      "route policy",
+      (value) => (value.routes[0].policySha256 = "0".repeat(64)),
+      /csp_evidence_route_policy_digest_mismatch/,
+    ],
+    ["outcome", (value) => (value.outcome = "pause"), /csp_evidence_outcome_invalid/],
+  ];
+  for (const [name, mutate, expectedViolation] of semanticCases) {
+    const forgedEvidence = structuredClone(evidence);
+    mutate(forgedEvidence);
+    const forgedDigest = canonicalTextSha256(JSON.stringify(forgedEvidence));
+    const forgedControl = { ...control, evidenceSha256: forgedDigest };
+    assert.match(
+      validateCspEvidenceBinding(forgedControl, forgedEvidence, {
+        reportSha256: forgedDigest,
+        expectedPolicySha256: cspPolicySha256,
+      }).violations.join(","),
+      expectedViolation,
+      name,
+    );
+  }
+  assert.match(
+    validateCspEvidenceBinding({ ...control, policySha256: "0".repeat(64) }, evidence, {
+      reportSha256,
+      expectedPolicySha256: cspPolicySha256,
+    }).violations.join(","),
+    /csp_policy_digest_mismatch/,
+  );
+  for (const invalidReference of [
+    "../G16_CSP_BROWSER_aaaaaaa.json",
+    `docs/ev2/fase-16/evidencias/G16_CSP_BROWSER_${sha.slice(0, 7)}.json`,
+    `https://github.com/Vnd93/gaiatec-cms/blob/${sha}/.github/release-controls/evidence/G16_CSP_BROWSER_${sha.slice(0, 7)}.json`,
+  ])
+    assert.equal(resolveCspEvidenceBinding({ ...control, evidenceReference: invalidReference }), null);
+  assert.equal(resolveCspEvidenceBinding({ ...control, evidenceSha256: undefined }), null);
+
+  const historicalControl = {
+    candidateSha: "e52b25d903251cf538918d89049a58524c3c9911",
+    evidenceReference: HISTORICAL_G16_CSP_EVIDENCE_REFERENCE,
+  };
+  assert.deepEqual(resolveCspEvidenceBinding(historicalControl), {
+    repositoryPath: ".github/release-controls/evidence/G16_CSP_BROWSER_e52b25d.json",
+    evidenceSha256: HISTORICAL_G16_CSP_EVIDENCE_SHA256,
+    historicalFallback: true,
+  });
+  assert.equal(resolveCspEvidenceBinding({ ...historicalControl, candidateSha: sha }), null);
+  assert.equal(resolveCspEvidenceBinding({ ...historicalControl, evidenceSha256: "0".repeat(64) }), null);
 });
 
 test("G12 approval is cryptographically and semantically bound to its canary report", () => {
@@ -542,7 +783,7 @@ test("production configuration refuses staging and solo GitHub controls remain s
       required_conversation_resolution: { enabled: true },
       required_linear_history: { enabled: true },
     },
-    codeOwners: ["* @Vnd93", "/.github/workflows/** @Vnd93", "/docs/ev2/fase-12/approvals/** @Vnd93"].join(
+    codeOwners: ["* @Vnd93", "/.github/workflows/** @Vnd93", "/.github/release-controls/** @Vnd93"].join(
       "\n",
     ),
     pullRequest: {
@@ -570,7 +811,7 @@ test("production configuration refuses staging and solo GitHub controls remain s
       [
         "* @Vnd93 @another-user",
         "/.github/workflows-backup/** @Vnd93",
-        "/docs/ev2/fase-12/approvals-old/** @Vnd93",
+        "/.github/release-controls-old/** @Vnd93",
       ].join("\n"),
     ).violations,
     [
@@ -578,6 +819,92 @@ test("production configuration refuses staging and solo GitHub controls remain s
       "workflow_vnd93_codeowner_required",
       "approval_record_vnd93_codeowner_required",
     ],
+  );
+  assert.match(
+    evaluateCodeOwners(
+      [
+        "* @Vnd93",
+        "/.github/workflows/** @Vnd93",
+        "/.github/release-controls/** @Vnd93 @gaiatec/security",
+      ].join("\n"),
+    ).violations.join(","),
+    /approval_record_vnd93_codeowner_required/,
+  );
+  assert.deepEqual(
+    evaluateCodeOwners(
+      [
+        "* @Vnd93",
+        "/.github/workflows/** @Vnd93",
+        "/.github/release-controls/** @Vnd93",
+        "/.github/** @another-org/security",
+      ].join("\n"),
+    ).violations,
+    [
+      "global_vnd93_codeowner_required",
+      "workflow_vnd93_codeowner_required",
+      "approval_record_vnd93_codeowner_required",
+    ],
+  );
+  assert.deepEqual(
+    evaluateCodeOwners(
+      [
+        "* @Vnd93",
+        "/.github/** @another-org/security",
+        "/.github/workflows/** @Vnd93",
+        "/.github/release-controls/** @Vnd93",
+      ].join("\n"),
+    ).violations,
+    ["global_vnd93_codeowner_required"],
+  );
+  assert.equal(
+    evaluateCodeOwners(
+      [
+        "* @Vnd93 # all repository files",
+        "/.github/workflows/** @Vnd93 # deployment definitions",
+        "/.github/release-controls/** @Vnd93 # immutable controls",
+      ].join("\n"),
+    ).valid,
+    true,
+  );
+  assert.equal(
+    evaluateCodeOwners(
+      [
+        "* @Vnd93",
+        "/docs/** @another-user",
+        "/docs/** @Vnd93",
+        "/.github/workflows/** @Vnd93",
+        "/.github/release-controls/** @Vnd93",
+      ].join("\n"),
+    ).valid,
+    true,
+  );
+  assert.deepEqual(
+    evaluateCodeOwners(
+      [
+        "* @Vnd93",
+        "/.github/workflows/** @Vnd93",
+        "/.github/release-controls/** @Vnd93",
+        "/.github/workflow?/** @another-org/security",
+      ].join("\n"),
+    ).violations,
+    ["global_vnd93_codeowner_required", "workflow_vnd93_codeowner_required"],
+  );
+  assert.deepEqual(
+    evaluateCodeOwners(
+      [
+        "* @Vnd93",
+        "/.github/workflows/** @Vnd93",
+        "/.github/release-controls/** @Vnd93",
+        "/.github/release-controls/private/**",
+      ].join("\n"),
+    ).violations,
+    ["global_vnd93_codeowner_required", "approval_record_vnd93_codeowner_required"],
+  );
+  assert.match(
+    evaluateCodeOwners(
+      ["* @Vnd93", "/.github/workflows/** @Vnd93", "/.github/release-controls/* @Vnd93"].join("\n"),
+    ).violations.join(","),
+    /approval_record_vnd93_codeowner_required/,
   );
 });
 
@@ -677,7 +1004,7 @@ test("release workflows and reduced canary are immutable, staged and production 
     read("scripts/ev2/phase11/staging-canary.mjs"),
     read("scripts/ev2/phase11/stable-baseline-lib.mjs"),
     read("scripts/ev2/phase12/verify-approval.mjs"),
-    read("docs/ev2/fase-12/G12_APPROVAL.template.json"),
+    read(".github/release-controls/templates/g12-approval.template.json"),
     read("scripts/ev2/phase12/validate-production-backend-config.mjs"),
     read("scripts/ev2/phase12/deploy-production-functions.mjs"),
     read("scripts/ev2/phase12/verify-production-functions.mjs"),
@@ -764,6 +1091,12 @@ test("release workflows and reduced canary are immutable, staged and production 
   assert.equal(approvalTemplate.productionReadiness.dpoLegal.status, "approved");
   assert.equal(approvalTemplate.productionReadiness.dpoLegal.approverId, "Vnd93");
   assert.match(approvalTemplate.productionReadiness.dpoLegal.scopeSha256, /^[a-f0-9]{64}$/);
+  assert.equal(
+    approvalTemplate.productionReadiness.dpoLegal.evidenceReference,
+    CANONICAL_DPO_EVIDENCE_REFERENCE,
+  );
+  assert.equal(approvalTemplate.operationalGovernance.evidenceReference, CANONICAL_DPO_EVIDENCE_REFERENCE);
+  assert.equal(approvalTemplate.productionReadiness.csp.evidenceSha256, null);
   assert.equal(approvalTemplate.productionReadiness.githubProtection.governanceMode, "sole-maintainer");
   assert.equal(approvalTemplate.productionReadiness.githubProtection.maintainerLogin, "Vnd93");
   assert.equal(approvalTemplate.productionReadiness.githubProtection.requiredPullRequestApprovals, 0);
@@ -774,25 +1107,15 @@ test("release workflows and reduced canary are immutable, staged and production 
   assert.equal(approvalTemplate.g12Evidence.file, null);
 });
 
-test("phase documentation binds the completed G12 deployment to immutable evidence", async () => {
-  const [readme, gate, infrastructure, rollout, runbook, training, approvalRaw, productionEvidence] =
-    await Promise.all([
-      read("docs/ev2/fase-12/README.md"),
-      read("docs/ev2/fase-12/GATE_G12.md"),
-      read("docs/ev2/fase-12/PRE_REQUISITOS_INFRAESTRUTURA.md"),
-      read("docs/ev2/fase-12/MATRIZ_ROLLOUT.md"),
-      read("docs/ev2/fase-12/RUNBOOK_GO_LIVE_E_ROLLBACK.md"),
-      read("docs/ev2/fase-12/TREINAMENTO_E_HANDOVER.md"),
-      read("docs/ev2/fase-12/approvals/G12_e52b25d903251cf538918d89049a58524c3c9911.json"),
-      read("docs/ev2/fase-12/EVIDENCIAS_PRODUCAO_G12_2026-09-06.md"),
-    ]);
+test("versioned release controls bind the completed G12 approval to immutable evidence", async () => {
+  const [approvalRaw, evidenceRaw, cspEvidenceRaw] = await Promise.all([
+    read(".github/release-controls/approvals/G12_e52b25d903251cf538918d89049a58524c3c9911.json"),
+    read(".github/release-controls/evidence/G12_CANARY_e52b25d_2026-09-05.json"),
+    read(".github/release-controls/evidence/G16_CSP_BROWSER_e52b25d.json"),
+  ]);
   const approval = JSON.parse(approvalRaw);
-  assert.match(readme, /G12 aprovado e encerrado/);
-  assert.match(readme, /34039654304/);
-  assert.match(gate, /APROVADO E CONCLUÍDO/);
-  assert.match(gate, /34039654304/);
-  assert.match(productionEvidence, /e52b25d903251cf538918d89049a58524c3c9911/);
-  assert.match(productionEvidence, /sha256:c2215d32baddc38e5727a41bbbbe921b9b7e84813043f5d8f1f086ee865586db/);
+  const evidence = JSON.parse(evidenceRaw);
+  const cspEvidence = JSON.parse(cspEvidenceRaw);
   assert.equal(approval.decision, "approved");
   assert.equal(approval.productionAuthorized, true);
   assert.equal(approval.candidateSha, "e52b25d903251cf538918d89049a58524c3c9911");
@@ -801,9 +1124,43 @@ test("phase documentation binds the completed G12 deployment to immutable eviden
     "AUTORIZO-G12-PRODUCAO:e52b25d903251cf538918d89049a58524c3c9911",
   );
   assert.equal(approval.g12Evidence.productionMutations, 0);
-  assert.match(infrastructure, /ambiente (GitHub )?`production`/i);
-  assert.match(infrastructure, /Supabase de produção/);
-  assert.match(rollout, /três janelas consecutivas/i);
-  assert.match(runbook, /automaticamente a API de rollback/i);
-  assert.match(training, /único responsável humano/i);
+  assert.equal(
+    resolveDpoEvidenceReference(approval.operationalGovernance.evidenceReference, {
+      candidateSha: approval.candidateSha,
+    }),
+    CANONICAL_DPO_EVIDENCE_REFERENCE,
+  );
+  assert.equal(
+    resolveDpoEvidenceReference(approval.productionReadiness.dpoLegal.evidenceReference, {
+      candidateSha: approval.candidateSha,
+    }),
+    CANONICAL_DPO_EVIDENCE_REFERENCE,
+  );
+  assert.equal(
+    resolveG12EvidenceRepositoryPath(approval.g12Evidence.file),
+    ".github/release-controls/evidence/G12_CANARY_e52b25d_2026-09-05.json",
+  );
+  assert.deepEqual(
+    validateCanaryEvidenceBinding(approval, evidence, {
+      reportSha256: canonicalTextSha256(evidenceRaw),
+    }),
+    { valid: true, violations: [] },
+  );
+  assert.equal(evidence.outcome, "G12_CANARY_PASS");
+  assert.equal(evidence.productionMutations, 0);
+  assert.deepEqual(
+    validateCspEvidenceBinding(approval.productionReadiness.csp, cspEvidence, {
+      reportSha256: canonicalTextSha256(cspEvidenceRaw),
+      expectedPolicySha256: cspPolicySha256,
+    }),
+    {
+      valid: true,
+      violations: [],
+      binding: {
+        repositoryPath: ".github/release-controls/evidence/G16_CSP_BROWSER_e52b25d.json",
+        evidenceSha256: HISTORICAL_G16_CSP_EVIDENCE_SHA256,
+        historicalFallback: true,
+      },
+    },
+  );
 });

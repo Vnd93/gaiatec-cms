@@ -112,11 +112,10 @@ test("DAM UI is candidate-gated and picker works inside the editor", async () =>
   assert.match(contract, /rollback_replacement/);
 });
 
-test("EV2.5 rollout artifacts remain isolated from production", async () => {
-  const [workflow, canary, gate] = await Promise.all([
+test("EV2.5 rollout automation remains isolated from production", async () => {
+  const [workflow, canary] = await Promise.all([
     read(".github/workflows/preview-ev2-phase5.yml"),
     read("scripts/ev2/phase5/staging-canary.mjs"),
-    read("docs/ev2/fase-5/GATE_G5.md"),
   ]);
   assert.match(workflow, /workflow_dispatch/);
   assert.match(workflow, /expected_sha/);
@@ -130,6 +129,4 @@ test("EV2.5 rollout artifacts remain isolated from production", async () => {
   assert.match(canary, /jobId: targetJobs\.json\[0\]\.id/);
   assert.match(canary, /syntheticResidue: 0/);
   assert.doesNotMatch(canary, /gaiatec-website|cms_environment.*production/i);
-  assert.match(gate, /G5 APROVADO/);
-  assert.match(gate, /Produção:[\s*]+bloqueada/i);
 });

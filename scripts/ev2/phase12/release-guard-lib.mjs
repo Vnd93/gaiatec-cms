@@ -30,6 +30,132 @@ const OWNER_ROLES = Object.freeze([
   "businessOwner",
 ]);
 const OPERATIONAL_GOVERNANCE_MODE = "sole-operator";
+const G12_EVIDENCE_BASENAME = "(G12_CANARY_[a-f0-9_-]+\\.json)";
+const CURRENT_G12_EVIDENCE_PATTERN = new RegExp(
+  `^\\.github/release-controls/evidence/${G12_EVIDENCE_BASENAME}$`,
+);
+const HISTORICAL_G12_EVIDENCE_PATTERN = new RegExp(`^docs/ev2/fase-12/evidencias/${G12_EVIDENCE_BASENAME}$`);
+const G16_CSP_EVIDENCE_BASENAME = "(G16_CSP_BROWSER_[a-f0-9_-]+\\.json)";
+const CURRENT_G16_CSP_EVIDENCE_PATTERN = new RegExp(
+  `^\\.github/release-controls/evidence/${G16_CSP_EVIDENCE_BASENAME}$`,
+);
+export const HISTORICAL_G16_CSP_EVIDENCE_REFERENCE =
+  "docs/ev2/fase-16/evidencias/G16_CSP_BROWSER_e52b25d.json";
+export const HISTORICAL_G16_CSP_CANDIDATE_SHA = "e52b25d903251cf538918d89049a58524c3c9911";
+export const HISTORICAL_G16_CSP_EVIDENCE_SHA256 =
+  "8edf047f0eb5da2412c7246978ef831f075e9ddf875ca4e360b421e55800e9bc";
+export const HISTORICAL_DPO_EVIDENCE_REFERENCE =
+  "docs/ev2/fase-16/REGISTRO_DECLARACAO_GOVERNANCA_DPO_RISCO_2026-09-05.md";
+export const CANONICAL_DPO_DOCUMENT_PATH =
+  "docs/80-evolucao/ev2/fase-16/registro-declaracao-governanca-dpo-risco-2026-09-06.md";
+const CANONICAL_DPO_URL_PREFIX = "https://github.com/Vnd93/gaiatec-documentacao/blob/";
+export const CANONICAL_DOCUMENTATION_SHA = "bf03cbefc2e9d6ac343270530920c1ff83f0ae33";
+export const CANONICAL_DPO_EVIDENCE_REFERENCE = `${CANONICAL_DPO_URL_PREFIX}${CANONICAL_DOCUMENTATION_SHA}/${CANONICAL_DPO_DOCUMENT_PATH}`;
+const SHA256_PATTERN = /^[a-f0-9]{64}$/;
+export const CSP_CANARY_ROUTES = Object.freeze(["/", "/contato", "/relatorio-de-obra/login", "/admin/login"]);
+const CSP_CANARY_ORIGIN_PATTERN =
+  /^https:\/\/(?:ev2-g16-csp-canary|[a-f0-9]{8,40})\.gaiatec-cms-staging\.pages\.dev$/;
+
+function currentCspEvidencePath(candidateSha) {
+  if (!isFullSha(candidateSha)) return null;
+  return `.github/release-controls/evidence/G16_CSP_BROWSER_${candidateSha.slice(0, 7)}.json`;
+}
+
+export function buildPinnedDpoEvidenceReference(documentationSha) {
+  if (!isFullSha(documentationSha)) return null;
+  return `${CANONICAL_DPO_URL_PREFIX}${documentationSha}/${CANONICAL_DPO_DOCUMENT_PATH}`;
+}
+
+export function resolveDpoEvidenceReference(
+  identifier,
+  { documentationSha = CANONICAL_DOCUMENTATION_SHA, candidateSha } = {},
+) {
+  const canonicalReference = buildPinnedDpoEvidenceReference(documentationSha);
+  if (!canonicalReference) return null;
+  if (identifier === canonicalReference) return canonicalReference;
+  if (identifier === HISTORICAL_DPO_EVIDENCE_REFERENCE && candidateSha === HISTORICAL_G16_CSP_CANDIDATE_SHA)
+    return canonicalReference;
+  return null;
+}
+
+export function resolveCspEvidenceBinding(control) {
+  const identifier = control?.evidenceReference;
+  const candidateSha = control?.candidateSha;
+  const currentPath = currentCspEvidencePath(candidateSha);
+  if (!currentPath) return null;
+
+  if (identifier === HISTORICAL_G16_CSP_EVIDENCE_REFERENCE) {
+    if (
+      candidateSha !== HISTORICAL_G16_CSP_CANDIDATE_SHA ||
+      (control?.evidenceSha256 !== undefined && control.evidenceSha256 !== HISTORICAL_G16_CSP_EVIDENCE_SHA256)
+    )
+      return null;
+    return {
+      repositoryPath: currentPath,
+      evidenceSha256: HISTORICAL_G16_CSP_EVIDENCE_SHA256,
+      historicalFallback: true,
+    };
+  }
+
+  if (identifier !== currentPath || !SHA256_PATTERN.test(control?.evidenceSha256 ?? "")) return null;
+  return {
+    repositoryPath: currentPath,
+    evidenceSha256: control.evidenceSha256,
+    historicalFallback: false,
+  };
+}
+
+export function validateCspEvidenceBinding(control, evidence, { reportSha256, expectedPolicySha256 } = {}) {
+  const violations = [];
+  const binding = resolveCspEvidenceBinding(control);
+  if (!binding) violations.push("csp_evidence_reference_or_digest_invalid");
+  else if (reportSha256 !== binding.evidenceSha256) violations.push("csp_evidence_digest_mismatch");
+  if (!SHA256_PATTERN.test(expectedPolicySha256 ?? "") || control?.policySha256 !== expectedPolicySha256)
+    violations.push("csp_policy_digest_mismatch");
+  if (evidence?.schemaVersion !== 1) violations.push("csp_evidence_schema_invalid");
+  if (evidence?.event !== "ev2.phase16.csp.browser-canary") violations.push("csp_evidence_event_invalid");
+  if (!CSP_CANARY_ORIGIN_PATTERN.test(evidence?.origin ?? "")) violations.push("csp_evidence_origin_invalid");
+  if (!isIsoDate(evidence?.executedAt)) violations.push("csp_evidence_timestamp_invalid");
+  if (evidence?.candidateSha !== control?.candidateSha) violations.push("csp_evidence_candidate_mismatch");
+  if (
+    evidence?.outcome !== "pass" ||
+    evidence?.criticalViolations !== 0 ||
+    evidence?.realDataUsed !== false ||
+    evidence?.productionMutations !== 0
+  )
+    violations.push("csp_evidence_outcome_invalid");
+
+  const routes = Array.isArray(evidence?.routes) ? evidence.routes : [];
+  if (
+    routes.length !== CSP_CANARY_ROUTES.length ||
+    routes.some((route, index) => route?.path !== CSP_CANARY_ROUTES[index])
+  )
+    violations.push("csp_evidence_routes_invalid");
+  for (const route of routes) {
+    if (route?.status !== 200) violations.push("csp_evidence_route_status_invalid");
+    if (route?.release !== control?.candidateSha) violations.push("csp_evidence_route_release_invalid");
+    if (route?.cspEnforced !== true) violations.push("csp_evidence_route_enforcement_invalid");
+    if (!Array.isArray(route?.violations) || route.violations.length !== 0)
+      violations.push("csp_evidence_route_violations_present");
+  }
+
+  const embeddedPolicyRequired = binding?.historicalFallback !== true;
+  if (
+    (embeddedPolicyRequired || evidence?.policySha256 !== undefined) &&
+    evidence?.policySha256 !== expectedPolicySha256
+  )
+    violations.push("csp_evidence_policy_digest_mismatch");
+  for (const route of routes) {
+    if (
+      (embeddedPolicyRequired || route?.policySha256 !== undefined) &&
+      route?.policySha256 !== expectedPolicySha256
+    )
+      violations.push("csp_evidence_route_policy_digest_mismatch");
+  }
+
+  const uniqueViolations = [...new Set(violations)];
+  return { valid: uniqueViolations.length === 0, violations: uniqueViolations, binding };
+}
 
 const isFiniteNumber = (value) => typeof value === "number" && Number.isFinite(value);
 const isIsoDate = (value) => typeof value === "string" && Number.isFinite(Date.parse(value));
@@ -43,6 +169,28 @@ export function isFullSha(value) {
 export function canonicalTextSha256(value) {
   const text = Buffer.isBuffer(value) ? value.toString("utf8") : String(value);
   return createHash("sha256").update(text.replace(/\r\n?/g, "\n"), "utf8").digest("hex");
+}
+
+export function resolveG12EvidenceRepositoryPath(identifier) {
+  if (typeof identifier !== "string") return null;
+  const match =
+    identifier.match(CURRENT_G12_EVIDENCE_PATTERN) ?? identifier.match(HISTORICAL_G12_EVIDENCE_PATTERN);
+  return match ? `.github/release-controls/evidence/${match[1]}` : null;
+}
+
+export function approvalRecordFilenameMatchesCandidate(identifier, candidateSha) {
+  if (typeof identifier !== "string" || !isFullSha(candidateSha)) return false;
+  const basename = identifier.split("/").at(-1);
+  const match = basename?.match(/^G12_([a-f0-9]{40})\.json$/);
+  return match?.[1] === candidateSha;
+}
+
+export function resolveCspEvidenceRepositoryPath(identifier) {
+  if (typeof identifier !== "string") return null;
+  if (identifier === HISTORICAL_G16_CSP_EVIDENCE_REFERENCE)
+    return ".github/release-controls/evidence/G16_CSP_BROWSER_e52b25d.json";
+  const match = identifier.match(CURRENT_G16_CSP_EVIDENCE_PATTERN);
+  return match ? `.github/release-controls/evidence/${match[1]}` : null;
 }
 
 export function validateReleaseManifest(manifest, { expectedRelease } = {}) {
@@ -61,7 +209,9 @@ export function validateReleaseManifest(manifest, { expectedRelease } = {}) {
         file.path.length > 0 &&
         !file.path.startsWith("/") &&
         !file.path.includes("\\") &&
-        !file.path.split("/").includes("..");
+        !file.path.includes(":") &&
+        ![...file.path].some((character) => character.charCodeAt(0) < 0x20) &&
+        file.path.split("/").every((segment) => segment && segment !== "." && segment !== "..");
       if (
         !pathValid ||
         !Number.isSafeInteger(file?.bytes) ||
@@ -215,10 +365,7 @@ export function validateApprovalRecord(
     violations.push("g12_evidence_candidate_mismatch");
   if (!/^[a-f0-9]{64}$/.test(record?.g12Evidence?.reportSha256 ?? ""))
     violations.push("g12_evidence_digest_invalid");
-  if (
-    typeof record?.g12Evidence?.file !== "string" ||
-    !/^docs\/ev2\/fase-12\/evidencias\/G12_CANARY_[a-f0-9_-]+\.json$/.test(record.g12Evidence.file)
-  )
+  if (!resolveG12EvidenceRepositoryPath(record?.g12Evidence?.file))
     violations.push("g12_evidence_file_invalid");
   const healthyWindowIds = record?.g12Evidence?.healthyWindowIds;
   if (
@@ -244,7 +391,11 @@ export function validateApprovalRecord(
     violations.push("operational_responsible_invalid");
   if (operationalGovernance?.riskAccepted !== true) violations.push("sole_operator_risk_not_accepted");
   if (!isIsoDate(operationalGovernance?.acceptedAt)) violations.push("sole_operator_acceptance_time_invalid");
-  if (!isMeaningful(operationalGovernance?.evidenceReference))
+  if (
+    !resolveDpoEvidenceReference(operationalGovernance?.evidenceReference, {
+      candidateSha: record?.candidateSha,
+    })
+  )
     violations.push("sole_operator_evidence_invalid");
 
   for (const role of OWNER_ROLES) {
@@ -297,6 +448,14 @@ export function validateApprovalRecord(
       candidateSha: record?.candidateSha,
     });
     violations.push(...readiness.violations.map((item) => `readiness_${item}`));
+    if (
+      !resolveDpoEvidenceReference(record?.productionReadiness?.dpoLegal?.evidenceReference, {
+        candidateSha: record?.candidateSha,
+      })
+    )
+      violations.push("readiness_dpo_legal_evidence_invalid");
+    if (!resolveCspEvidenceBinding(record?.productionReadiness?.csp))
+      violations.push("readiness_csp_evidence_binding_invalid");
   }
 
   const uniqueViolations = [...new Set(violations)];
@@ -455,32 +614,60 @@ export function validateCanaryEvidenceBinding(record, evidence, { reportSha256 }
 export function evaluateCodeOwners(content) {
   const rules = String(content ?? "")
     .split(/\r?\n/)
-    .map((line) => line.trim())
+    .map((line) => line.replace(/\s+#.*$/, "").trim())
     .filter((line) => line && !line.startsWith("#"))
-    .map((line) => {
+    .map((line, index) => {
       const [pattern, ...tokens] = line.split(/\s+/);
       return {
+        index,
         pattern,
-        owners: [
-          ...new Set(
-            tokens.filter((token) => /^@[A-Za-z0-9-]+$/.test(token)).map((token) => token.toLowerCase()),
-          ),
-        ],
+        normalizedPattern: String(pattern ?? "").replace(/^\//, ""),
+        owners: tokens.map((token) => token.toLowerCase()),
+        syntaxValid:
+          Boolean(pattern) && !pattern.startsWith("!") && !pattern.includes("[") && !pattern.includes("]"),
       };
     });
-  const normalizePattern = (pattern) => String(pattern ?? "").replace(/^\//, "");
-  const covers = (expectedPatterns) =>
-    rules.some(
-      (rule) =>
-        expectedPatterns.has(normalizePattern(rule.pattern)) &&
-        rule.owners.length === 1 &&
-        rule.owners[0] === `@${GITHUB_SOLE_MAINTAINER}`,
+  const lastRuleIndexByPattern = new Map(rules.map((rule) => [rule.normalizedPattern, rule.index]));
+  const effectiveRules = rules.filter(
+    (rule) => lastRuleIndexByPattern.get(rule.normalizedPattern) === rule.index,
+  );
+  const hasSoleMaintainer = (rule) =>
+    rule?.owners.length === 1 && rule.owners[0] === `@${GITHUB_SOLE_MAINTAINER}`;
+  const couldMatchArea = (pattern, areaRoot) => {
+    const normalized = String(pattern ?? "").replace(/^\//, "");
+    if (!normalized.includes("/") || normalized.includes("\\")) return true;
+    const wildcardIndex = normalized.search(/[?*]/);
+    const literalPrefix = (wildcardIndex < 0 ? normalized : normalized.slice(0, wildcardIndex)).replace(
+      /\/+$/,
+      "",
     );
+    if (!literalPrefix) return true;
+    if (wildcardIndex >= 0) return areaRoot.startsWith(literalPrefix) || literalPrefix.startsWith(areaRoot);
+    return (
+      literalPrefix === areaRoot ||
+      literalPrefix.startsWith(`${areaRoot}/`) ||
+      areaRoot.startsWith(`${literalPrefix}/`)
+    );
+  };
+  const covers = (expectedPatterns, areaRoot) => {
+    const declaration = effectiveRules
+      .filter((rule) => rule.syntaxValid && expectedPatterns.has(rule.normalizedPattern))
+      .at(-1);
+    if (!hasSoleMaintainer(declaration)) return false;
+    return !effectiveRules
+      .filter((rule) => rule.index > declaration.index)
+      .some(
+        (rule) =>
+          rule.syntaxValid &&
+          !hasSoleMaintainer(rule) &&
+          (areaRoot === null || couldMatchArea(rule.normalizedPattern, areaRoot)),
+      );
+  };
   const violations = [];
-  if (!covers(new Set(["*", "**"]))) violations.push("global_vnd93_codeowner_required");
-  if (!covers(new Set([".github/workflows/*", ".github/workflows/**"])))
+  if (!covers(new Set(["*", "**"]), null)) violations.push("global_vnd93_codeowner_required");
+  if (!covers(new Set([".github/workflows/*", ".github/workflows/**"]), ".github/workflows"))
     violations.push("workflow_vnd93_codeowner_required");
-  if (!covers(new Set(["docs/ev2/fase-12/approvals/*", "docs/ev2/fase-12/approvals/**"])))
+  if (!covers(new Set([".github/release-controls/**"]), ".github/release-controls"))
     violations.push("approval_record_vnd93_codeowner_required");
   return { valid: violations.length === 0, violations };
 }

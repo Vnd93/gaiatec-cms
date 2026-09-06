@@ -4,7 +4,8 @@ import { resolve } from "node:path";
 
 const isWindows = process.platform === "win32";
 const npmCommand = isWindows ? (process.env.ComSpec ?? "cmd.exe") : "npm";
-const reportPath = resolve("docs/validacao-local/ULTIMA_VALIDACAO.md");
+const reportDirectory = resolve("outputs/validacao-local");
+const reportPath = resolve(reportDirectory, "ultima-validacao.md");
 
 function git(...args) {
   const result = spawnSync("git", args, { encoding: "utf8" });
@@ -96,7 +97,7 @@ O banco Supabase efemero nao faz parte deste comando porque exige Docker e Supab
 Esta evidencia e a autoridade obrigatoria da contingencia local vigente. Ela nao comprova GitHub Actions, environments ou branch protection e nao autoriza merge em main nem deploy de producao.
 `;
 
-await mkdir(resolve("docs/validacao-local"), { recursive: true });
+await mkdir(reportDirectory, { recursive: true });
 await writeFile(reportPath, report, "utf8");
 console.log(`\nRelatorio salvo em ${reportPath}`);
 

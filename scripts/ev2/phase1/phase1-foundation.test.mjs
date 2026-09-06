@@ -71,11 +71,3 @@ test("shared contracts stay strict and actor identity remains server-derived", a
   assert.doesNotMatch(contract, /actorId/);
   assert.match(contract, /"create", "status", "cancel", "rollback"/);
 });
-
-test("G1 evidence keeps rollout local and reversible", async () => {
-  const gate = await read("docs/ev2/fase-1/GATE_G1.md");
-  assert.match(gate, /APROVADO PARA EV2\.2 LOCAL/);
-  assert.match(gate, /release vazio/i);
-  assert.match(gate, /rollback/i);
-  assert.match(gate, /não autoriza.+produção/i);
-});

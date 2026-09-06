@@ -247,20 +247,14 @@ test("load statistics use nearest-rank percentiles and strict evidence evaluatio
   assert.equal(result.requiresIndependentReview, true);
 });
 
-test("G11 operational artifacts remain reproducible and release only EV2.12 preparation", async () => {
-  const [rehearsal, reconciliation, rateLimit, canary, workflow, gate, plan, matrix, runbook, acceptance] =
-    await Promise.all([
-      read("scripts/ev2/phase11/validate-migration.mjs"),
-      read("scripts/ev2/phase11/validate-projection-reconciliation.mjs"),
-      read("scripts/ev2/phase11/validate-rate-limit-fusion.mjs"),
-      read("scripts/ev2/phase11/staging-canary.mjs"),
-      read(".github/workflows/preview-ev2-phase11.yml"),
-      read("docs/ev2/fase-11/GATE_G11.md"),
-      read("docs/ev2/fase-11/PLANO_CANARY_STAGING.md"),
-      read("docs/ev2/fase-11/MATRIZ_HOMOLOGACAO.md"),
-      read("docs/ev2/fase-11/RUNBOOK_OPERACIONAL.md"),
-      read("docs/ev2/fase-11/REGISTRO_ACEITE_G11_2026-09-04.md"),
-    ]);
+test("G11 executable controls remain reproducible and fail-closed", async () => {
+  const [rehearsal, reconciliation, rateLimit, canary, workflow] = await Promise.all([
+    read("scripts/ev2/phase11/validate-migration.mjs"),
+    read("scripts/ev2/phase11/validate-projection-reconciliation.mjs"),
+    read("scripts/ev2/phase11/validate-rate-limit-fusion.mjs"),
+    read("scripts/ev2/phase11/staging-canary.mjs"),
+    read(".github/workflows/preview-ev2-phase11.yml"),
+  ]);
   assert.match(rehearsal, /G11_MIGRATION_REHEARSAL_PASS/);
   assert.match(rehearsal, /ALVO RECUSADO/);
   assert.match(rehearsal, /rollback;/i);
@@ -285,13 +279,4 @@ test("G11 operational artifacts remain reproducible and release only EV2.12 prep
   assert.match(canary, /activeCredentials/);
   assert.match(workflow, /ev2-g11-canary/);
   assert.match(workflow, /VITE_EV2_SYSTEM_ASSURANCE_CANDIDATE/);
-  assert.match(gate, /G11 APROVADO PARA PREPARAR A EV2\.12/);
-  assert.match(gate, /PRODUÇÃO BLOQUEADA/);
-  assert.match(plan, /sem produção/i);
-  assert.match(matrix, /Operacional/);
-  assert.match(matrix, /LGPD/);
-  assert.match(runbook, /RPO 0/);
-  assert.match(acceptance, /não declara uma sessão manual que não ocorreu/i);
-  assert.match(acceptance, /EV2-D04/);
-  assert.match(acceptance, /Nenhuma dessas ações é concedida/);
 });

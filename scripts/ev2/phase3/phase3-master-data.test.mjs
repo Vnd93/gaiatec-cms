@@ -85,9 +85,8 @@ test("admin UI is doubly gated and consumes server relation rules", async () => 
   assert.doesNotMatch(page, /category_technology.*targetType/s);
 });
 
-test("Gate G3 records the approved canary without widening rollout", async () => {
-  const [gate, databaseTest, canary, workflow] = await Promise.all([
-    read("docs/ev2/fase-3/GATE_G3.md"),
+test("G3 database checks and canary remain synthetic without widening rollout", async () => {
+  const [databaseTest, canary, workflow] = await Promise.all([
     read("supabase/tests/rls_ev2_phase3_master_data.test.sql"),
     read("scripts/ev2/phase3/staging-canary.ps1"),
     read(".github/workflows/preview-ev2-phase3.yml"),
@@ -95,12 +94,6 @@ test("Gate G3 records the approved canary without widening rollout", async () =>
   assert.match(databaseTest, /select plan\(37\)/);
   assert.match(databaseTest, /inactive values cannot receive new active compatibility links/);
   assert.match(databaseTest, /a merge can be restored without reconstructing references/);
-  assert.match(gate, /G3 APROVADO/);
-  assert.match(gate, /21\/21/);
-  assert.match(gate, /zero referências órfãs/i);
-  assert.match(gate, /nenhuma.*alteração em produção ocorreu/i);
-  assert.match(gate, /185\/185 testes pgTAP/);
-  assert.match(gate, /33666515308/);
   assert.match(canary, /glcqsosxwgmlhzgcsnzv/);
   assert.match(canary, /@example\.invalid/);
   assert.match(canary, /inactive_target_hidden_but_history_preserved/);

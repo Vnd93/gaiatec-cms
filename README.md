@@ -1,22 +1,18 @@
-# Website GAIATEC
+# GAIATEC CMS
 
-Site público e CMS da GAIATEC SISTEMAS. O projeto visual original está disponível no [Figma](https://www.figma.com/design/EizvpyUTWysoYovq7dP3TT/Website-Gaiatec).
+Repositório executável do site público e do CMS da GAIATEC SISTEMAS.
 
-## Documentação
+## Índice
 
-- [Fonte canônica da documentação EV2](https://github.com/Vnd93/gaiatec-documentacao/tree/main/docs/ev2)
-- [Espelho técnico vinculado ao código](docs/README.md)
-- [Índice EV2 do espelho operacional](docs/ev2/README.md)
+- [Documentação canônica](https://github.com/Vnd93/gaiatec-documentacao/tree/main/docs)
+- [Evolução EV2](https://github.com/Vnd93/gaiatec-documentacao/tree/main/docs/80-evolucao/ev2)
+- [Índice documental local](docs/README.md)
+- [Controles operacionais de release](.github/release-controls)
 
 ## Desenvolvimento local
 
 ```bash
 npm ci
 npm run dev
-```
-
-Antes de enviar alterações, execute:
-
-```bash
 npm run check
 ```

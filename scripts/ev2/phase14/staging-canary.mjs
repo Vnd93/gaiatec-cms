@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
@@ -397,12 +397,13 @@ function writeReport(report) {
   if (!reportPath) return;
   const root = path.resolve(process.cwd());
   const resolved = path.resolve(root, reportPath);
-  const evidenceRoot = path.resolve(root, "docs/ev2/fase-14/evidencias");
+  const evidenceRoot = path.resolve(root, "outputs/ev2/fase-14/evidencias");
   if (
     path.dirname(resolved) !== evidenceRoot ||
     !/^G14_CANARY_[a-f0-9_-]+\.json$/i.test(path.basename(resolved))
   )
-    throw new Error("EV2_G14_REPORT_PATH deve apontar para uma evidência G14 dentro do repositório.");
+    throw new Error("EV2_G14_REPORT_PATH deve apontar para outputs/ev2/fase-14/evidencias.");
+  mkdirSync(evidenceRoot, { recursive: true });
   writeFileSync(resolved, `${JSON.stringify(report, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
 }
 

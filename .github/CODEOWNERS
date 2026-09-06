@@ -1,4 +1,4 @@
 # Mantenedor humano único definido para o CMS GAIATEC.
 * @Vnd93
 /.github/workflows/** @Vnd93
-/docs/ev2/fase-12/approvals/** @Vnd93
+/.github/release-controls/** @Vnd93

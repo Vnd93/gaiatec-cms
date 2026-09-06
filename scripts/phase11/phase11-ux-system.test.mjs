@@ -10,23 +10,6 @@ const css = read("src/admin/admin-f11.css") + read("src/admin/admin.css");
 const guidance = read("src/admin/admin-route-guidance.ts");
 const forms = read("src/admin/pages/AdminFormsPage.tsx");
 
-test("documentação normativa F11 existe e mantém os gates anteriores independentes", () => {
-  for (const file of [
-    "PROGRAMA_EXECUTIVO_F11.md",
-    "INVENTARIO_TELAS_E_COMPONENTES.md",
-    "GUIA_DE_CONTEUDO_OPERACIONAL.md",
-    "DESIGN_SYSTEM_ADMIN_GAIATEC.md",
-    "MATRIZ_UX_ACESSIBILIDADE_E_RESPONSIVIDADE.md",
-    "VALIDACAO_UX_UI_F11.md",
-    "EVIDENCIAS_GATE_G11.md",
-    "RUNBOOK_OPERACIONAL_E_ROLLBACK_F11.md",
-  ]) {
-    const content = read(`docs/fase-11/${file}`);
-    assert.ok(content.length > 300, `${file} deve ser substantivo`);
-  }
-  assert.match(read("docs/fase-11/EVIDENCIAS_GATE_G11.md"), /G10 observado como não aprovado/i);
-});
-
 test("todas as superfícies administrativas continuam registradas", () => {
   for (const path of [
     "login",

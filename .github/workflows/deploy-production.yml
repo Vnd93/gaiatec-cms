@@ -7,7 +7,7 @@ on:
         description: SHA completo, imutável, aprovado e contido em main
         required: true
       approval_record:
-        description: Caminho docs/ev2/fase-12/approvals/G12_<sha>.json versionado em main
+        description: Caminho .github/release-controls/approvals/G12_<sha>.json versionado em main
         required: true
       change_reference:
         description: Identificador da mudança aprovado no G12

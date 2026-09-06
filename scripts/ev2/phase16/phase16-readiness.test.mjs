@@ -196,8 +196,8 @@ test("production readiness requires sole-maintainer, legal and operational contr
 
 test("legal scope is hash-bound and the public privacy notice covers production email", async () => {
   const [scope, templateText, privacyNotice] = await Promise.all([
-    read("docs/ev2/fase-16/ESCOPO_DPO_LEGAL_PADRAO.md"),
-    read("docs/ev2/fase-12/G12_APPROVAL.template.json"),
+    read(".github/release-controls/evidence/escopo-dpo-legal-39fd74f2.md"),
+    read(".github/release-controls/templates/g12-approval.template.json"),
     read("src/app/pages/PoliticaPrivacidadePage.tsx"),
   ]);
   const template = JSON.parse(templateText);
@@ -244,11 +244,12 @@ test("CSP is enforced only on production targets and contains the audited browse
 });
 
 test("production and canary workflows retain evidence and stay behind their boundaries", async () => {
-  const [backup, email, deploy, cspCanary] = await Promise.all([
+  const [backup, email, deploy, cspCanary, cspCanaryScript] = await Promise.all([
     read(".github/workflows/backup-supabase-production.yml"),
     read(".github/workflows/verify-production-email.yml"),
     read(".github/workflows/deploy-production.yml"),
     read(".github/workflows/preview-ev2-phase16.yml"),
+    read("scripts/ev2/phase16/csp-browser-canary.mjs"),
   ]);
   assert.match(backup, /environment: production-backup/);
   assert.match(backup, /--symmetric --cipher-algo AES256/);
@@ -274,4 +275,7 @@ test("production and canary workflows retain evidence and stay behind their boun
   assert.match(cspCanary, /--project-name gaiatec-cms-staging/);
   assert.match(cspCanary, /retention-days: 30/);
   assert.doesNotMatch(cspCanary, /--project-name gaiatec-website/);
+  assert.match(cspCanaryScript, /policySha256/);
+  assert.match(cspCanaryScript, /observedPolicies\.size !== 1/);
+  assert.match(cspCanaryScript, /createHash\("sha256"\)\.update\(policy\)/);
 });

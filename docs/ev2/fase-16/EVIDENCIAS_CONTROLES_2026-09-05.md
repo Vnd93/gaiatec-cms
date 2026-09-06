@@ -190,6 +190,17 @@ A correção mantém a chave mínima: a automação passa a registrar
 continua bloqueando qualquer outro erro. A prontidão final permanece exigindo a comprovação
 independente `delivered`; aceite do provedor isoladamente não satisfaz o gate.
 
+O [workflow corrigido `34003817717`](https://github.com/Vnd93/gaiatec-cms/actions/runs/34003817717),
+executado em `main` no SHA `1d796c7ae136b03cfab76f8b0bd93a097e4b9c7b`, concluiu com sucesso em
+29 segundos e, pela mesma chave de idempotência, confirmou o identificador
+`2eae753e-c380-4cf1-913d-05f9e22354e4` sem duplicar a mensagem. O relatório registrou
+`accepted-awaiting-provider-dashboard`, `realDataUsed: false`, `secretsExposed: false` e exigência
+de verificação independente. O artefato
+`production-email-evidence-e52b25d903251cf538918d89049a58524c3c9911`, de 587 bytes, possui
+digest GitHub `sha256:204dfffe0e25c5a1e7f699a8ac73b35575820bd672f965e6005324b5261df85b`.
+Em conjunto com o estado `delivered` observado no painel autenticado do Resend para o mesmo ID,
+destinatário e assunto, a entrega sintética fica comprovada sem ampliar o privilégio da credencial.
+
 ## Evidência ainda inexistente
 
 Não foi fabricada a autorização literal vinculada ao SHA final. Nenhum deploy, migration, função,

@@ -20,7 +20,7 @@ concurrency:
 jobs:
   preview:
     if: >-
-      github.ref_name == 'ev2/fase-16-prontidao-producao-g12' &&
+      (github.ref_name == 'ev2/fase-16-prontidao-producao-g12' || github.ref_name == 'main') &&
       inputs.confirmation == 'CANARY-CSP-G16-STAGING'
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -38,8 +38,13 @@ jobs:
         run: |
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
           test "$(printf '%s' "$EXPECTED_SHA" | grep -E '^[a-f0-9]{40}$')" = "$EXPECTED_SHA"
-          git fetch origin refs/heads/ev2/fase-16-prontidao-producao-g12:refs/remotes/origin/ev2/fase-16-prontidao-producao-g12 --no-tags
-          git merge-base --is-ancestor "$EXPECTED_SHA" origin/ev2/fase-16-prontidao-producao-g12
+          if [ "$GITHUB_REF_NAME" = "main" ]; then
+            git fetch origin refs/heads/main:refs/remotes/origin/main --no-tags
+            test "$EXPECTED_SHA" = "$(git rev-parse origin/main)"
+          else
+            git fetch origin refs/heads/ev2/fase-16-prontidao-producao-g12:refs/remotes/origin/ev2/fase-16-prontidao-producao-g12 --no-tags
+            git merge-base --is-ancestor "$EXPECTED_SHA" origin/ev2/fase-16-prontidao-producao-g12
+          fi
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .nvmrc
@@ -108,4 +113,4 @@ jobs:
             g16-csp-http-evidence.json
             g16-csp-browser-evidence.json
           if-no-files-found: error
-          retention-days: 90
+          retention-days: 30

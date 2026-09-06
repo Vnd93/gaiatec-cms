@@ -14,6 +14,8 @@ const environment = process.env.EV2_G12_ENVIRONMENT ?? "";
 const probeProfile = process.env.EV2_G12_PROBE_PROFILE ?? "full";
 const sampleCount = Number(process.env.EV2_G12_SAMPLE_COUNT ?? (environment === "production" ? 20 : 5));
 const requestTimeoutMs = Number(process.env.EV2_G12_REQUEST_TIMEOUT_MS ?? 10_000);
+const readinessAttempts = Number(process.env.EV2_G12_READINESS_ATTEMPTS ?? 10);
+const readinessIntervalMs = Number(process.env.EV2_G12_READINESS_INTERVAL_MS ?? 1_500);
 const reportPath = process.env.EV2_G12_REPORT_PATH;
 const expectedCspMode =
   process.env.EV2_G12_CSP_MODE ??
@@ -26,7 +28,13 @@ if (
   sampleCount < 5 ||
   !Number.isInteger(requestTimeoutMs) ||
   requestTimeoutMs < 1_000 ||
-  requestTimeoutMs > 30_000
+  requestTimeoutMs > 30_000 ||
+  !Number.isInteger(readinessAttempts) ||
+  readinessAttempts < 1 ||
+  readinessAttempts > 20 ||
+  !Number.isInteger(readinessIntervalMs) ||
+  readinessIntervalMs < 100 ||
+  readinessIntervalMs > 5_000
 )
   throw new Error("G12_PROBE_INPUT_REFUSED: exact origin, full SHA and at least five samples are required.");
 
@@ -60,6 +68,63 @@ const routes =
         { path: "/admin/login", status: 200 },
       ];
 const observations = [];
+const requiresNoindex = environment === "staging" || environment === "production-preview";
+const requiresCspEnforcement = expectedCspMode === "enforce";
+const requiredCspFragments = [
+  "default-src 'self'",
+  "object-src 'none'",
+  "script-src-attr 'none'",
+  "https://brasilapi.com.br",
+  "https://nominatim.openstreetmap.org",
+];
+
+function boundaryHeadersValid(response) {
+  const activePolicy = response.headers.get(
+    requiresCspEnforcement ? "content-security-policy" : "content-security-policy-report-only",
+  );
+  const inactivePolicy = response.headers.get(
+    requiresCspEnforcement ? "content-security-policy-report-only" : "content-security-policy",
+  );
+  return (
+    response.headers.get("x-release") === expectedSha &&
+    (!requiresNoindex || (response.headers.get("x-robots-tag") ?? "").includes("noindex")) &&
+    Boolean(activePolicy) &&
+    !inactivePolicy &&
+    !activePolicy.includes("https://api.resend.com") &&
+    requiredCspFragments.every((fragment) => activePolicy.includes(fragment))
+  );
+}
+
+async function previewReady() {
+  const expectations = [
+    { path: "/healthz", status: 200 },
+    { path: "/release-manifest.json", status: 200 },
+    ...routes,
+  ];
+  const responses = await Promise.all(
+    expectations.map(async ({ path, status }) => {
+      try {
+        const response = await fetch(`${origin}${path}`, {
+          cache: "no-store",
+          redirect: "manual",
+          signal: AbortSignal.timeout(requestTimeoutMs),
+        });
+        return response.status === status && boundaryHeadersValid(response);
+      } catch {
+        return false;
+      }
+    }),
+  );
+  return responses.every(Boolean);
+}
+
+let ready = false;
+for (let attempt = 1; attempt <= readinessAttempts; attempt += 1) {
+  ready = await previewReady();
+  if (ready) break;
+  if (attempt < readinessAttempts) await new Promise((resolve) => setTimeout(resolve, readinessIntervalMs));
+}
+if (!ready) throw new Error("G12_PROBE_NOT_READY: target did not reach a stable measurable boundary.");
 
 async function request(path, expectedStatus, category = "route") {
   const startedAt = performance.now();
@@ -131,15 +196,6 @@ const routeMetrics = Object.fromEntries(
     ];
   }),
 );
-const requiresNoindex = environment === "staging" || environment === "production-preview";
-const requiresCspEnforcement = expectedCspMode === "enforce";
-const requiredCspFragments = [
-  "default-src 'self'",
-  "object-src 'none'",
-  "script-src-attr 'none'",
-  "https://brasilapi.com.br",
-  "https://nominatim.openstreetmap.org",
-];
 const jsonContentType = (response) => response?.headers.get("content-type")?.includes("application/json");
 const evidence = {
   candidateSha: expectedSha,

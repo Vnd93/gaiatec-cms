@@ -274,6 +274,7 @@ test("G11 operational artifacts remain reproducible and release only EV2.12 prep
   assert.match(canary, /exact_candidate_sha/);
   assert.match(canary, /lead_preserved_after_delivery_failure/);
   assert.match(canary, /backend_server_timing_available/);
+  assert.match(canary, /for \(let warmup = 0; warmup < 5; warmup \+= 1\)/);
   assert.match(canary, /adminReadWallP95Ms/);
   assert.match(canary, /commandWallP95Ms/);
   assert.match(canary, /async function rpc[\s\S]*?allowed: \[200, 204\]/);

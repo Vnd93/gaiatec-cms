@@ -705,6 +705,8 @@ try {
   await rest(context, "cms_feature_flag_overrides", { method: "DELETE", query: "id=eq." + broadOverrideId });
   broadOverrideId = undefined;
 
+  for (let warmup = 0; warmup < 5; warmup += 1) await system(context, operator, "snapshot");
+
   const snapshotDurations = [];
   const snapshotWallDurations = [];
   let latestSnapshot;

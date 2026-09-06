@@ -40,6 +40,7 @@
     "eval:ev2:phase14": "node scripts/ev2/phase14/run-evals.mjs",
     "test:ev2:phase16": "node --test scripts/ev2/phase16/*.test.mjs",
     "test:ev2:phase17": "node --test scripts/ev2/phase17/*.test.mjs",
+    "canary:ev2:phase17": "node scripts/ev2/phase17/staging-canary.mjs",
     "canary:ev2:phase16:csp": "node scripts/ev2/phase16/csp-browser-canary.mjs",
     "canary:ev2:phase14:validate": "node scripts/ev2/phase14/validate-migration.mjs",
     "canary:ev2:phase14": "node scripts/ev2/phase14/staging-canary.mjs",

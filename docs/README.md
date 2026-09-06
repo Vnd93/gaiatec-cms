@@ -1,38 +1,21 @@
-# Documentação técnica do Website GAIATEC
+# Índice de documentação
 
-Este diretório mantém o espelho técnico vinculado ao código, necessário para testes, contratos e
-runbooks executáveis do CMS e do site público. A fonte oficial e atualizada da documentação é o
-repositório
-[`Vnd93/gaiatec-documentacao`](https://github.com/Vnd93/gaiatec-documentacao/tree/main/docs).
+A documentação técnica, funcional, operacional, de produto, governança e evolução é mantida
+exclusivamente em [`Vnd93/gaiatec-documentacao`](https://github.com/Vnd93/gaiatec-documentacao/tree/main/docs).
 
-## Ponto de entrada atual
+## Taxonomia canônica
 
-- [Documentação EV2 canônica](https://github.com/Vnd93/gaiatec-documentacao/tree/main/docs/ev2) —
-  estado vigente, decisões e evidências aprovadas.
-- [Espelho local da evolução EV2](ev2/README.md) — artefatos próximos do código usados pelos checks
-  e runbooks; seu estado de gate pode representar o SHA em que foi sincronizado.
-- [Auditoria do CMS de 2026-09-01](auditoria-cms-2026-09-01/RELATORIO.md) — diagnóstico e validação do estado imediatamente anterior à EV2.
+- [Índice](https://github.com/Vnd93/gaiatec-documentacao/tree/main/docs/00-indice)
+- [Produto e requisitos](https://github.com/Vnd93/gaiatec-documentacao/tree/main/docs/10-produto-requisitos)
+- [Arquitetura e segurança](https://github.com/Vnd93/gaiatec-documentacao/tree/main/docs/20-arquitetura-seguranca)
+- [CMS](https://github.com/Vnd93/gaiatec-documentacao/tree/main/docs/30-cms)
+- [Site público](https://github.com/Vnd93/gaiatec-documentacao/tree/main/docs/40-site-publico)
+- [Operação e entrega](https://github.com/Vnd93/gaiatec-documentacao/tree/main/docs/50-operacao-entrega)
+- [Qualidade e auditoria](https://github.com/Vnd93/gaiatec-documentacao/tree/main/docs/60-qualidade-auditoria)
+- [Governança e legal](https://github.com/Vnd93/gaiatec-documentacao/tree/main/docs/70-governanca-legal)
+- [Evolução EV2](https://github.com/Vnd93/gaiatec-documentacao/tree/main/docs/80-evolucao/ev2)
+- [Histórico](https://github.com/Vnd93/gaiatec-documentacao/tree/main/docs/90-historico)
+- [Modelos](https://github.com/Vnd93/gaiatec-documentacao/tree/main/docs/99-modelos)
 
-## Estrutura
-
-| Caminho                     | Finalidade                                                       |
-| --------------------------- | ---------------------------------------------------------------- |
-| `ev2/`                      | Espelho operacional versionado do ciclo EV2.                     |
-| `adr/`                      | Decisões arquiteturais permanentes e suas consequências.         |
-| `fase-0/` a `fase-11/`      | Histórico e evidências do ciclo anterior já executado.           |
-| `auditoria-cms-2026-09-01/` | Relatório e matriz da auditoria de fechamento do ciclo anterior. |
-| `api/`                      | Convenções e referências de APIs.                                |
-| `database/`                 | Convenções e referências do banco de dados.                      |
-| `operations/`               | Procedimentos operacionais e runbooks.                           |
-| `validacao-local/`          | Evidências da validação local mais recente.                      |
-
-> As fases existentes em `fase-0/` a `fase-11/` não devem ser reutilizadas para os artefatos EV2. A nova trilha usa o namespace `docs/ev2/` para evitar colisão de contexto e numeração.
-
-## Convenções
-
-- Markdown no repositório documental oficial é o formato canônico; este diretório é um espelho
-  operacional controlado por PR.
-- Uma decisão arquitetural permanente deve ser registrada em `docs/adr/` antes de orientar implementação.
-- Evidências de gate devem informar data, ambiente, comando/cenário executado, resultado e ressalvas.
-- Senhas, tokens, chaves, dados pessoais e conteúdo de `.env*` não devem aparecer na documentação.
-- Alterações de produção, migrations remotas e deploys exigem autorização e gate próprios; documentos de planejamento não os autorizam.
+Este repositório conserva apenas estes índices, READMEs próximos ao código e controles executáveis
+em [`.github/release-controls`](../.github/release-controls).

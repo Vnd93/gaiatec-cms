@@ -102,12 +102,11 @@ test("candidate UI and session consume scoped access without replacing v1", asyn
   assert.match(page, /usersCommand/);
 });
 
-test("rehearsal, canary, workflow and gate evidence are versioned", async () => {
-  const [rehearsal, canary, workflow, gate] = await Promise.all([
+test("rehearsal, canary and workflow remain fail-closed", async () => {
+  const [rehearsal, canary, workflow] = await Promise.all([
     read("scripts/ev2/phase8/validate-migration.mjs"),
     read("scripts/ev2/phase8/staging-canary.mjs"),
     read(".github/workflows/preview-ev2-phase8.yml"),
-    read("docs/ev2/fase-8/GATE_G8.md"),
   ]);
   assert.match(rehearsal, /G8_MIGRATION_REHEARSAL_PASS/);
   assert.match(canary, /individual_override_only/);
@@ -119,6 +118,4 @@ test("rehearsal, canary, workflow and gate evidence are versioned", async () => 
   assert.match(workflow, /expected_sha/);
   assert.match(workflow, /VITE_EV2_RBAC_SCOPED_CANDIDATE/);
   assert.match(workflow, /ev2-g8-canary/);
-  assert.match(gate, /zero bypass/i);
-  assert.match(gate, /100%/);
 });

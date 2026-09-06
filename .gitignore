@@ -4,12 +4,14 @@ dist/
 .env.local
 .env*
 !.env.example
+.secrets/
 .dev.vars
 .wrangler/
 .vite/
 *.log
 playwright-report/
 test-results/
+outputs/
 
 .vercel
 

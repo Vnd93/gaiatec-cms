@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { chromium } from "@playwright/test";
 
@@ -13,6 +14,7 @@ if (
 const routes = ["/", "/contato", "/relatorio-de-obra/login", "/admin/login"];
 const violations = [];
 const results = [];
+const observedPolicies = new Set();
 const browser = await chromium.launch({ headless: true });
 try {
   const context = await browser.newContext();
@@ -40,11 +42,13 @@ try {
       routeViolations.push({ type: "header", text: "CSP is not exclusively enforced" });
     if (policy.includes("https://api.resend.com"))
       routeViolations.push({ type: "policy", text: "Resend browser origin is forbidden" });
+    if (policy) observedPolicies.add(policy);
     results.push({
       path,
       status: response?.status() ?? 0,
       release,
       cspEnforced: Boolean(policy),
+      policySha256: policy ? createHash("sha256").update(policy).digest("hex") : null,
       violations: routeViolations,
     });
     violations.push(...routeViolations.map((item) => ({ path, ...item })));
@@ -54,6 +58,10 @@ try {
   await browser.close();
 }
 
+if (observedPolicies.size !== 1)
+  violations.push({ path: "*", type: "policy", text: "CSP must be identical on every route" });
+const observedPolicy = observedPolicies.size === 1 ? [...observedPolicies][0] : null;
+
 const report = {
   schemaVersion: 1,
   event: "ev2.phase16.csp.browser-canary",
@@ -61,6 +69,7 @@ const report = {
   candidateSha: expectedSha,
   executedAt: new Date().toISOString(),
   routes: results,
+  policySha256: observedPolicy ? createHash("sha256").update(observedPolicy).digest("hex") : null,
   criticalViolations: violations.length,
   outcome: violations.length === 0 ? "pass" : "pause",
   realDataUsed: false,

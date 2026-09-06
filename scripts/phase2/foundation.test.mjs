@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile, readdir } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 
 test("migrations are sequential and contain RLS enforcement", async () => {
@@ -20,22 +20,19 @@ test("migrations are sequential and contain RLS enforcement", async () => {
 });
 
 test("engineering boundaries exist without importing legacy editorial data", async () => {
-  const required = [
-    "src/public",
-    "src/admin",
-    "src/shared",
-    "src/rdo",
-    "supabase/seed",
-    "docs/api",
-    "docs/database",
-    "docs/operations",
-  ];
-  const marker = await readFile("docs/fase-2/ESTRUTURA_CODIGO.md", "utf8");
-  for (const path of required) assert.match(marker, new RegExp(path.replaceAll("/", "\\/")));
+  const required = ["src/public", "src/admin", "src/shared", "src/rdo", "supabase/seed"];
+  await Promise.all(required.map((path) => access(path)));
 
   const seed = await readFile("supabase/seed/README.md", "utf8");
   assert.match(seed, /sint[eé]tic/i);
   assert.doesNotMatch(seed, /produto|servi[cç]o|imagem|m[ií]dia/i);
+});
+
+test("local validation writes generated evidence outside the documentation indexes", async () => {
+  const validator = await readFile("scripts/phase2/validate-local.mjs", "utf8");
+  assert.match(validator, /outputs\/validacao-local/);
+  assert.match(validator, /ultima-validacao\.md/);
+  assert.doesNotMatch(validator, /docs\/validacao-local/);
 });
 
 test("preview and private paths are fail-closed in edge configuration", async () => {

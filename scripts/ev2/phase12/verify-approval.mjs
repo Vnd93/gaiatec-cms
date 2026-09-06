@@ -1,7 +1,10 @@
-import { createHash } from "node:crypto";
 import { appendFile, readFile } from "node:fs/promises";
 import { resolve, sep } from "node:path";
-import { validateApprovalRecord, validateCanaryEvidenceBinding } from "./release-guard-lib.mjs";
+import {
+  canonicalTextSha256,
+  validateApprovalRecord,
+  validateCanaryEvidenceBinding,
+} from "./release-guard-lib.mjs";
 
 function argument(name) {
   const index = process.argv.indexOf(`--${name}`);
@@ -41,7 +44,7 @@ if (!evidencePath.startsWith(`${evidenceRoot}${sep}`))
 const evidenceBytes = await readFile(evidencePath);
 const evidence = JSON.parse(evidenceBytes.toString("utf8"));
 const binding = validateCanaryEvidenceBinding(record, evidence, {
-  reportSha256: createHash("sha256").update(evidenceBytes).digest("hex"),
+  reportSha256: canonicalTextSha256(evidenceBytes),
 });
 if (!binding.valid) throw new Error(`G12_EVIDENCE_REFUSED:${binding.violations.join(",")}`);
 

@@ -11,7 +11,7 @@
     "file": "docs/ev2/fase-12/evidencias/G12_CANARY_e52b25d_2026-09-05.json",
     "canaryRunId": "de784acc-a557-4ed1-b4ca-84f0ea26f077",
     "candidateSha": "e52b25d903251cf538918d89049a58524c3c9911",
-    "reportSha256": "4ec19ae0adddbcacac7504be8057a44b880ced351608062635f747660f6b603b",
+    "reportSha256": "88411f10217bdcdf08395adea2f73412de38163c2e3a80ef0e8f9a7d41b34299",
     "healthyWindowIds": [
       "dc6d5f9c-b220-41a9-8e98-b25a91db93fc",
       "18eef6ff-2e96-4865-a03c-be65afe75010",

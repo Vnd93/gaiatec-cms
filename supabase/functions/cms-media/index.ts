@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { z } from "npm:zod@4.4.3";
 import { authenticateCms } from "../_shared/cms-auth.ts";
+import { isConfiguredCmsEnvironment, isProductionOperationEnabled } from "../_shared/ev2-environment.ts";
 import {
   clientAddress,
   consumeRateLimit,
@@ -334,9 +335,9 @@ async function getAssetsByIds(identity: Identity, ids: string[], includeUsages =
 
 async function handleV2(req: Request, identity: Identity, command: z.infer<typeof V2Input>) {
   const { environment, siteKey } = command.envelope.actorContext, correlationId = command.envelope.correlationId;
-  if (environment === "production") return json(req, { error: "Produção indisponível nesta fase.", code: "CMS_DAM_PRODUCTION_GATED", correlationId }, 403);
+  if (environment === "production" && !isProductionOperationEnabled(environment)) return json(req, { error: "Produção indisponível nesta fase.", code: "CMS_DAM_PRODUCTION_GATED", correlationId }, 403);
   const configuredEnvironment = Deno.env.get("CMS_ENVIRONMENT");
-  if (!configuredEnvironment || !["local", "staging"].includes(configuredEnvironment)) return json(req, { error: "Ambiente do CMS não configurado.", correlationId }, 503);
+  if (!isConfiguredCmsEnvironment(configuredEnvironment)) return json(req, { error: "Ambiente do CMS não configurado.", correlationId }, 503);
   if (configuredEnvironment !== environment || siteKey !== "main") return json(req, { error: "Escopo não autorizado.", code: "CMS_DAM_SCOPE_MISMATCH", correlationId }, 403);
   const occurredAt = Date.parse(command.envelope.occurredAt);
   if (occurredAt < Date.now() - 15 * 60_000 || occurredAt > Date.now() + 5 * 60_000) return json(req, { error: "Comando expirado ou futuro.", code: "CMS_DAM_COMMAND_STALE", correlationId }, 409);

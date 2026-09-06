@@ -1,6 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { z } from "npm:zod@4.4.3";
 import { authenticateCms } from "../_shared/cms-auth.ts";
+import { isConfiguredCmsEnvironment, isProductionOperationEnabled } from "../_shared/ev2-environment.ts";
+import { generateOpenRouterProposal, openRouterConfigured } from "../_shared/openrouter.ts";
 import {
   clientAddress,
   consumeRateLimit,
@@ -18,7 +20,6 @@ import {
   redactAiText,
 } from "../_shared/ai-safety.ts";
 
-const EXTERNAL_PROVIDER_ENABLED = false;
 const Uuid = z.uuid();
 const Required = z.string().trim().min(1);
 const Environment = z.enum(["local", "staging", "production"]);
@@ -272,14 +273,14 @@ Deno.serve(async (req) => {
   }
   const { environment, siteKey } = command.envelope.actorContext;
   const correlationId = command.envelope.correlationId;
-  if (environment === "production")
+  if (environment === "production" && !isProductionOperationEnabled(environment))
     return json(
       req,
       { error: "Produção não está disponível nesta fase.", code: "CMS_AI_PRODUCTION_GATED", correlationId },
       403,
     );
   const configuredEnvironment = Deno.env.get("CMS_ENVIRONMENT");
-  if (!configuredEnvironment || !["local", "staging"].includes(configuredEnvironment))
+  if (!isConfiguredCmsEnvironment(configuredEnvironment))
     return json(req, { error: "Ambiente do CMS não configurado.", correlationId }, 503);
   if (configuredEnvironment !== environment || siteKey !== "main")
     return json(
@@ -287,12 +288,13 @@ Deno.serve(async (req) => {
       { error: "Escopo assistivo não autorizado.", code: "CMS_AI_SCOPE_MISMATCH", correlationId },
       403,
     );
-  if (EXTERNAL_PROVIDER_ENABLED || Deno.env.get("CMS_AI_EXTERNAL_PROVIDER_ENABLED") === "true")
+  const externalProviderEnabled = openRouterConfigured();
+  if (environment === "production" && !externalProviderEnabled)
     return json(
       req,
       {
-        error: "Configuração externa recusada enquanto EV2-D04 estiver pendente.",
-        code: "CMS_AI_POLICY_NOT_APPROVED",
+        error: "O provedor assistivo não está configurado com o modelo aprovado.",
+        code: "CMS_AI_PROVIDER_NOT_CONFIGURED",
         correlationId,
       },
       503,
@@ -363,7 +365,20 @@ Deno.serve(async (req) => {
       },
       503,
     );
-  if (command.action === "capability") return json(req, { ...capability, correlationId });
+  if (command.action === "capability")
+    return json(req, {
+      ...capability,
+      ...(externalProviderEnabled
+        ? {
+            providerMode: "openrouter",
+            externalProviderEnabled: true,
+            externalProviderReady: true,
+            realDataAllowed: true,
+            decisionStatus: "approved",
+          }
+        : {}),
+      correlationId,
+    });
   if (capability?.enabled !== true)
     return json(
       req,
@@ -381,7 +396,40 @@ Deno.serve(async (req) => {
       ...context,
       p_correlation_id: correlationId,
     });
-    return error ? errorResponse(req, error, correlationId) : json(req, data);
+    if (error) return errorResponse(req, error, correlationId);
+    if (!externalProviderEnabled || !data || typeof data !== "object") return json(req, data);
+    const workspace = data as Record<string, unknown>;
+    const policy = workspace.policy as Record<string, unknown> | undefined;
+    const sessions = Array.isArray(workspace.sessions) ? workspace.sessions : [];
+    const sessionIds = sessions
+      .map((item) => (item as Record<string, unknown>).id)
+      .filter((id): id is string => typeof id === "string");
+    const { data: providerCalls } = sessionIds.length
+      ? await identity.admin
+          .from("cms_ai_provider_calls")
+          .select("session_id")
+          .eq("actor_id", identity.user.id)
+          .eq("provider", "openrouter")
+          .eq("status", "succeeded")
+          .in("session_id", sessionIds)
+      : { data: [] as { session_id: string }[] };
+    const providerSessionIds = new Set((providerCalls ?? []).map((item) => item.session_id));
+    return json(req, {
+      ...workspace,
+      policy: {
+        ...policy,
+        status: "approved",
+        providerMode: "openrouter",
+        externalProviderEnabled: true,
+        allowedDataClasses: ["business_content"],
+      },
+      sessions: sessions.map((item) => {
+        const session = item as Record<string, unknown>;
+        return providerSessionIds.has(String(session.id))
+          ? { ...session, providerMode: "openrouter", reviewable: true }
+          : session;
+      }),
+    });
   }
 
   const idempotencyKey = req.headers.get("X-Idempotency-Key");
@@ -431,7 +479,10 @@ Deno.serve(async (req) => {
       dataClass: "synthetic",
       tokenBudget: 8000,
     });
-    return error ? errorResponse(req, error, correlationId) : json(req, data);
+    if (error) return errorResponse(req, error, correlationId);
+    return json(req, externalProviderEnabled && data && typeof data === "object"
+      ? { ...(data as Record<string, unknown>), providerMode: "openrouter", externalProviderEnabled: true }
+      : data);
   }
 
   if (command.action === "generate_proposal") {
@@ -489,17 +540,48 @@ Deno.serve(async (req) => {
       locator: sourceLocator.value,
       excerpt: sourceExcerpt.value,
     };
-    const proposal = buildSyntheticProposal(
-      prompt.value,
-      safeSource,
-      command.proposalKind!,
-      command.targetRef,
-    );
+    let proposal = buildSyntheticProposal(prompt.value, safeSource, command.proposalKind!, command.targetRef);
+    let providerMode = "synthetic";
+    let providerModel = "deterministic-v1";
+    let providerInputTokens: number | null = null;
+    let providerOutputTokens: number | null = null;
+    if (externalProviderEnabled && command.proposalKind !== "locate") {
+      try {
+        const generated = await generateOpenRouterProposal({
+          prompt: prompt.value,
+          sourceTitle: safeSource.title,
+          sourceVersion: safeSource.version,
+          sourceLocator: safeSource.locator,
+          sourceExcerpt: safeSource.excerpt,
+          proposalKind: command.proposalKind!,
+        });
+        const field = proposal.fields[0];
+        proposal = {
+          ...proposal,
+          summary: generated.summary,
+          fields: [{ ...field, value: generated.value, confidence: generated.confidence }],
+          diff: { before: "", after: generated.value },
+          confidence: generated.confidence,
+          hasPendingFields: generated.confidence < AI_LOW_CONFIDENCE_THRESHOLD,
+        };
+        providerMode = "openrouter";
+        providerModel = generated.model;
+        providerInputTokens = generated.inputTokens;
+        providerOutputTokens = generated.outputTokens;
+      } catch {
+        return json(req, {
+          error: "A IA está temporariamente indisponível; o cadastro manual continua funcionando.",
+          code: "CMS_AI_PROVIDER_UNAVAILABLE",
+          correlationId,
+          preserved: true,
+        }, 503);
+      }
+    }
     const proposalHash = await sha256(
       JSON.stringify(canonicalize({ ...proposal, source: safeSource, policy: AI_SAFETY_POLICY_VERSION })),
     );
-    const inputTokens = estimateAiTokens(prompt.value, safeSource.excerpt);
-    const outputTokens = estimateAiTokens(
+    const inputTokens = providerInputTokens ?? estimateAiTokens(prompt.value, safeSource.excerpt);
+    const outputTokens = providerOutputTokens ?? estimateAiTokens(
       proposal.summary,
       proposal.fields.map((field) => field.value).join(" "),
     );
@@ -526,11 +608,36 @@ Deno.serve(async (req) => {
       proposalHash,
       inputTokens,
       outputTokens,
-      providerMode: "synthetic",
-      externalProviderEnabled: false,
+      providerMode,
+      providerModel,
+      externalProviderEnabled: providerMode === "openrouter",
       policyVersion: AI_SAFETY_POLICY_VERSION,
     });
-    return error ? errorResponse(req, error, correlationId) : json(req, data);
+    if (error) return errorResponse(req, error, correlationId);
+    if (providerMode === "openrouter") {
+      const { error: providerAuditError } = await identity.admin.from("cms_ai_provider_calls").insert({
+        actor_id: identity.user.id,
+        session_id: command.sessionId,
+        provider: providerMode,
+        model_key: providerModel,
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
+        correlation_id: correlationId,
+        status: "succeeded",
+      });
+      if (providerAuditError)
+        return json(
+          req,
+          {
+            error: "A proposta foi preservada, mas a auditoria do provedor falhou. Recarregue antes de revisar.",
+            code: "CMS_AI_PROVIDER_AUDIT_UNAVAILABLE",
+            correlationId,
+            preserved: true,
+          },
+          503,
+        );
+    }
+    return json(req, data);
   }
 
   if (command.action === "decide_proposal") {

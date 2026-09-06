@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { z } from "npm:zod@4.4.3";
 import { authenticateCms } from "../_shared/cms-auth.ts";
+import { isProductionOperationEnabled } from "../_shared/ev2-environment.ts";
 import {
   clientAddress,
   corsHeaders,
@@ -143,7 +144,10 @@ Deno.serve(async (req) => {
   const { environment, siteKey } = command.envelope.actorContext;
   const correlationId = command.envelope.correlationId;
   const deploymentEnvironment = Deno.env.get("CMS_ENVIRONMENT") ?? "production";
-  if (environment === "production" || environment !== deploymentEnvironment)
+  if (
+    environment !== deploymentEnvironment ||
+    (environment === "production" && !isProductionOperationEnabled(environment))
+  )
     return json(
       req,
       { error: "EV2.11 não está autorizada neste ambiente.", code: "CMS_SYSTEM_PRODUCTION_GATED", correlationId },

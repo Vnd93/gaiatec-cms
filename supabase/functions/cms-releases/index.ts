@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { z } from "npm:zod@4.4.3";
 import { authenticateCms } from "../_shared/cms-auth.ts";
+import { isConfiguredCmsEnvironment, isProductionOperationEnabled } from "../_shared/ev2-environment.ts";
 import {
   clientAddress,
   consumeRateLimit,
@@ -168,7 +169,7 @@ Deno.serve(async (req) => {
 
   const { environment, siteKey } = command.envelope.actorContext;
   const correlationId = command.envelope.correlationId;
-  if (environment === "production") {
+  if (environment === "production" && !isProductionOperationEnabled(environment)) {
     logReleaseCommand("warn", "release.command.denied", correlationId, {
       action: command.action,
       environment,
@@ -184,7 +185,7 @@ Deno.serve(async (req) => {
     );
   }
   const configuredEnvironment = Deno.env.get("CMS_ENVIRONMENT");
-  if (!configuredEnvironment || !["local", "staging"].includes(configuredEnvironment)) {
+  if (!isConfiguredCmsEnvironment(configuredEnvironment)) {
     return json(req, { error: "Ambiente do CMS não configurado.", correlationId }, 503);
   }
   if (environment !== configuredEnvironment || siteKey !== "main") {

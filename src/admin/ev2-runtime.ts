@@ -22,12 +22,7 @@ export function isEv2FeatureEnabled(
 ): boolean {
   const manifest = profile?.ev2Capabilities;
   const environment = cmsEnvironment();
-  if (
-    environment === "production" ||
-    manifest?.status !== "ready" ||
-    manifest.environment !== environment ||
-    manifest.siteKey !== "main"
-  )
+  if (manifest?.status !== "ready" || manifest.environment !== environment || manifest.siteKey !== "main")
     return false;
   const evaluatedAt = Date.parse(manifest.evaluatedAt);
   if (!Number.isFinite(evaluatedAt) || evaluatedAt > now + 5_000 || now - evaluatedAt > MAX_MANIFEST_AGE_MS)

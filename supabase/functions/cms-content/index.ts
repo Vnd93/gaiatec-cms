@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { z } from "npm:zod@4.4.3";
 import { authenticateCms } from "../_shared/cms-auth.ts";
+import { isConfiguredCmsEnvironment } from "../_shared/ev2-environment.ts";
 import { evaluateQuality, qualityStatus } from "../_shared/cms-quality-rules.ts";
 import { syncPublicSearchDocument } from "../_shared/cms-search-index.ts";
 import { clientAddress, consumeRateLimit, corsHeaders, isAllowedOrigin, json, readJsonLimited } from "../_shared/security.ts";
@@ -202,7 +203,7 @@ Deno.serve(async (req) => {
   let searchQualityEnabled = false;
   if (["publish", "schedule", "restore"].includes(editorial.action) && editorial.itemId) {
     const environment = Deno.env.get("CMS_ENVIRONMENT");
-    if (environment && ["local", "staging"].includes(environment)) {
+    if (isConfiguredCmsEnvironment(environment)) {
       const { data: capability, error: capabilityError } = await identity.admin.rpc("cms_evaluate_feature_flag", {
         p_actor_id: identity.user.id, p_flag_key: "ev2.search_quality", p_environment: environment,
         p_site_key: "main", p_aal: identity.claims.aal, p_session_id: identity.claims.sessionId,

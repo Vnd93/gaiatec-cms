@@ -16,7 +16,7 @@ async function sourceFiles(root) {
   return nested.flat().filter((file) => /\.(?:ts|tsx)$/.test(file));
 }
 
-test("EV2.13 runtime manifest is additive, individual-only and production gated", async () => {
+test("EV2.13 historical manifest remains immutable and is superseded safely", async () => {
   const [migration, rls] = await Promise.all([
     read("supabase/migrations/0053_ev2_runtime_eligibility.sql"),
     read("supabase/tests/rls_ev2_phase13_runtime.test.sql"),
@@ -49,11 +49,12 @@ test("cms-session refreshes one validated aggregate and loses EV2 access on tran
   assert.match(session, /cms_runtime_capability_manifest/);
   assert.match(session, /validManifest\(manifest, configuredEnvironment\)/);
   assert.match(session, /unavailableManifest/);
-  assert.match(session, /manifest\.status !== expectedStatus/);
+  assert.match(session, /manifest\.status !== "ready"/);
   assert.match(session, /capabilityKeys\.length !== EV2_FEATURE_KEYS\.length/);
   assert.match(runtime, /MAX_MANIFEST_AGE_MS = 60_000/);
   assert.match(auth, /setInterval\(refreshCapabilities, 30_000\)/);
-  assert.match(runtime, /environment === "production"/);
+  assert.doesNotMatch(runtime, /environment === "production"\s*\|\|/);
+  assert.match(session, /CMS_EV2_PRODUCTION_ENABLED/);
   assert.match(runtime, /capability\.source === "override"/);
   assert.match(contract, /"ev2\.system_assurance"/);
 });

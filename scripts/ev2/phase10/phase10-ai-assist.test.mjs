@@ -59,16 +59,17 @@ test("EV2.10 migration is additive, private, synthetic and default-off", async (
 });
 
 test("tool catalog cannot execute critical or CMS-mutating actions", async () => {
-  const [sql, edge] = await Promise.all([
+  const [sql, edge, provider] = await Promise.all([
     read("supabase/migrations/0049_ev2_ai_assist.sql"),
     read("supabase/functions/cms-ai/index.ts"),
+    read("supabase/functions/_shared/openrouter.ts"),
   ]);
   for (const tool of ["content.search", "content.read", "source.inspect", "draft.propose_patch"]) {
     assert.match(sql, new RegExp("'" + tool.replace(".", "\\.") + "'"));
   }
   assert.doesNotMatch(sql, /'content\.(?:publish|delete)'|'users\.grant'|'pii\.export'|'shell\.exec'/);
-  assert.match(edge, /const EXTERNAL_PROVIDER_ENABLED = false/);
-  assert.match(edge, /CMS_AI_EXTERNAL_PROVIDER_ENABLED/);
+  assert.match(edge, /openRouterConfigured/);
+  assert.match(provider, /CMS_AI_EXTERNAL_PROVIDER_ENABLED/);
   assert.match(edge, /CMS_AI_PRODUCTION_GATED/);
   assert.match(edge, /authenticateCms\(req\)/);
   assert.match(edge, /consumeRateLimit/);
@@ -77,6 +78,7 @@ test("tool catalog cannot execute critical or CMS-mutating actions", async () =>
   assert.match(edge, /detectAiPromptInjection\(sourceExcerpt\.value\)/);
   assert.match(edge, /redactAiText/);
   assert.doesNotMatch(edge, /\bfetch\s*\(/);
+  assert.match(provider, /nvidia\/nemotron-3\.5-lightning:free/);
   assert.doesNotMatch(edge, /SUPABASE_SERVICE_ROLE_KEY\s*=/);
 });
 
@@ -90,14 +92,14 @@ test("contracts and UI expose source, confidence, diff, cost and manual fallback
     read("cloudflare/_worker.js"),
     read("src/admin/admin-route-guidance.ts"),
   ]);
-  assert.match(contract, /externalProviderEnabled: z\.literal\(false\)/);
+  assert.match(contract, /externalProviderEnabled: z\.boolean\(\)/);
   assert.match(contract, /aiExecute: z\.literal\(false\)/);
   assert.match(contract, /sourceTitle/);
   assert.match(contract, /sourceVersion/);
   assert.match(contract, /confidence/);
   assert.match(contract, /Ev2AiDiffSchema/);
   assert.match(page, /isEv2FeatureEnabled\(profile, "ev2\.ai_assist"\)/);
-  assert.match(page, /Fonte sintética obrigatória/);
+  assert.match(page, /Fonte técnica obrigatória/);
   assert.match(page, /Diff proposto/);
   assert.match(page, /Permissões efetivas/);
   assert.match(page, /Qualidade:/);
@@ -106,7 +108,7 @@ test("contracts and UI expose source, confidence, diff, cost and manual fallback
   assert.match(page, /fila de revisão/);
   assert.match(page, /selectedProposal\.hasPendingFields/);
   assert.match(page, /Operação manual sempre disponível/);
-  assert.match(page, /R\$ 0,00/);
+  assert.match(page, /Modelo gratuito/);
   assert.match(navigation, /candidate: "ev2\.ai_assist"/);
   assert.match(routes, /path: "assistente"/);
   assert.match(shell, /!item\.candidate \|\| isEv2FeatureEnabled\(profile, item\.candidate\)/);

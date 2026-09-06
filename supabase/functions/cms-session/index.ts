@@ -40,7 +40,7 @@ function unavailableManifest(environment: Environment | null) {
   const evaluatedAt = new Date().toISOString();
   return {
     schemaVersion: 1,
-    status: environment === "production" ? "gated" : "unavailable",
+    status: "unavailable",
     environment,
     siteKey: environment ? "main" : null,
     evaluatedAt,
@@ -56,10 +56,9 @@ function unavailableManifest(environment: Environment | null) {
 function validManifest(value: unknown, environment: Environment): value is Record<string, unknown> {
   if (!value || typeof value !== "object") return false;
   const manifest = value as Record<string, unknown>;
-  const expectedStatus = environment === "production" ? "gated" : "ready";
   if (
     manifest.schemaVersion !== 1 ||
-    manifest.status !== expectedStatus ||
+    manifest.status !== "ready" ||
     manifest.environment !== environment ||
     manifest.siteKey !== "main" ||
     !Number.isFinite(Date.parse(String(manifest.evaluatedAt))) ||
@@ -81,8 +80,7 @@ function validManifest(value: unknown, environment: Environment): value is Recor
       entry.key === key &&
       typeof entry.enabled === "boolean" &&
       ["default", "override", "kill_switch", "unavailable"].includes(String(entry.source)) &&
-      Number.isFinite(Date.parse(String(entry.evaluatedAt))) &&
-      (environment !== "production" || entry.enabled === false)
+      Number.isFinite(Date.parse(String(entry.evaluatedAt)))
     );
   });
 }
@@ -177,8 +175,10 @@ Deno.serve(async (req) => {
   const configured = Deno.env.get("CMS_ENVIRONMENT");
   const configuredEnvironment: Environment | null =
     configured === "local" || configured === "staging" || configured === "production" ? configured : null;
+  const ev2DeploymentEnabled =
+    configuredEnvironment !== "production" || Deno.env.get("CMS_EV2_PRODUCTION_ENABLED") === "true";
   let resolvedData = data as Record<string, unknown>;
-  if (configuredEnvironment === "local" || configuredEnvironment === "staging") {
+  if (configuredEnvironment) {
     const scope = {
       p_actor_id: authData.user.id,
       p_environment: configuredEnvironment,
@@ -215,7 +215,7 @@ Deno.serve(async (req) => {
   }
 
   let ev2Capabilities: Record<string, unknown> = unavailableManifest(configuredEnvironment);
-  if (configuredEnvironment && resolvedData.accessGranted === true) {
+  if (configuredEnvironment && ev2DeploymentEnabled && resolvedData.accessGranted === true) {
     const { data: manifest, error: manifestError } = await admin.rpc(
       "cms_runtime_capability_manifest",
       {

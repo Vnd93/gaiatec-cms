@@ -269,7 +269,7 @@ jobs:
           GAIATEC_CMS_TARGET_ENVIRONMENT=production \
           GAIATEC_PRODUCTION_CANDIDATE_SHA="$CANDIDATE_SHA" \
           GAIATEC_PRODUCTION_AUTHORIZATION="$PRODUCTION_AUTHORIZATION" \
-          node scripts/phase9/publish-staging-clean-room-pages.mjs > ../g12-production-content.json
+          node scripts/phase9/publish-staging-clean-room-pages.mjs | tee ../g12-production-content.json
           GAIATEC_SUPABASE_URL="$PRODUCTION_SUPABASE_URL" \
           GAIATEC_SUPABASE_ANON_KEY="$PRODUCTION_SUPABASE_ANON_KEY" \
           GAIATEC_SUPABASE_SERVICE_ROLE_KEY="$service_key" \
@@ -277,7 +277,7 @@ jobs:
           GAIATEC_CMS_TARGET_ENVIRONMENT=production \
           GAIATEC_PRODUCTION_CANDIDATE_SHA="$CANDIDATE_SHA" \
           GAIATEC_PRODUCTION_AUTHORIZATION="$PRODUCTION_AUTHORIZATION" \
-          node scripts/phase7/configure-staging-forms.mjs > ../g12-production-forms.json
+          node scripts/phase7/configure-staging-forms.mjs | tee ../g12-production-forms.json
           unset service_key keys_json
       - name: Probe the complete candidate against the prepared production backend
         working-directory: control

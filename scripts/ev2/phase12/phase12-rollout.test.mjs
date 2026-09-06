@@ -33,6 +33,23 @@ test("text evidence digest is stable across Git and Windows line endings", () =>
   assert.equal(canonicalTextSha256(lf), canonicalTextSha256(crlf));
 });
 
+test("production workflow binds manifest identity and runs full preview after backend bootstrap", async () => {
+  const workflow = await read(".github/workflows/deploy-production.yml");
+  assert.match(workflow, /env -u GITHUB_SHA npm run artifact:manifest/);
+  assert.match(workflow, /VITE_RELEASE: \$\{\{ inputs\.candidate_sha \}\}/);
+  assert.match(workflow, /EV2_G12_PROBE_PROFILE: technical/);
+  assert.match(workflow, /GAIATEC_CMS_TARGET_ENVIRONMENT=production/);
+  assert.match(workflow, /configure-staging-forms\.mjs/);
+  assert.match(workflow, /EV2_G12_PROBE_PROFILE: full/);
+  assert.ok(
+    workflow.indexOf("GAIATEC_CMS_TARGET_ENVIRONMENT=production") <
+      workflow.indexOf("EV2_G12_PROBE_PROFILE: full"),
+  );
+  assert.ok(
+    workflow.indexOf("EV2_G12_PROBE_PROFILE: full") < workflow.indexOf("Promote the already-tested artifact"),
+  );
+});
+
 function rolloutWindow(offsetMinutes = 0) {
   const startedAt = new Date(Date.UTC(2026, 8, 4, 10, offsetMinutes));
   const endedAt = new Date(startedAt.getTime() + 5 * 60_000);

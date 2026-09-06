@@ -11,6 +11,7 @@ import {
 const origin = (process.env.EV2_G12_ORIGIN ?? "").replace(/\/$/, "");
 const expectedSha = process.env.EV2_G12_EXPECTED_SHA ?? "";
 const environment = process.env.EV2_G12_ENVIRONMENT ?? "";
+const probeProfile = process.env.EV2_G12_PROBE_PROFILE ?? "full";
 const sampleCount = Number(process.env.EV2_G12_SAMPLE_COUNT ?? (environment === "production" ? 20 : 5));
 const requestTimeoutMs = Number(process.env.EV2_G12_REQUEST_TIMEOUT_MS ?? 10_000);
 const reportPath = process.env.EV2_G12_REPORT_PATH;
@@ -37,17 +38,27 @@ const allowedOrigin = {
 }[environment];
 if (!allowedOrigin?.test(origin))
   throw new Error("G12_PROBE_TARGET_REFUSED: origin does not match environment.");
+if (!new Set(["technical", "full"]).has(probeProfile))
+  throw new Error("G12_PROBE_PROFILE_REFUSED: profile is invalid.");
+if (probeProfile === "technical" && environment !== "production-preview")
+  throw new Error("G12_PROBE_PROFILE_REFUSED: technical profile is exclusive to isolated preview.");
 if (!new Set(["enforce", "report-only"]).has(expectedCspMode))
   throw new Error("G12_CSP_MODE_REFUSED: expected CSP mode is invalid.");
 if (environment === "production" && process.env.EV2_G12_PRODUCTION_AUTHORIZED !== "true")
   throw new Error("G12_PRODUCTION_PROBE_REFUSED: explicit workflow authorization is absent.");
 
-const routes = [
-  { path: "/", status: 200 },
-  { path: "/produtos", status: 200 },
-  { path: "/contato", status: 200 },
-  { path: "/admin/login", status: 200 },
-];
+const routes =
+  probeProfile === "technical"
+    ? [
+        { path: "/produtos", status: 200 },
+        { path: "/admin/login", status: 200 },
+      ]
+    : [
+        { path: "/", status: 200 },
+        { path: "/produtos", status: 200 },
+        { path: "/contato", status: 200 },
+        { path: "/admin/login", status: 200 },
+      ];
 const observations = [];
 
 async function request(path, expectedStatus, category = "route") {
@@ -182,6 +193,7 @@ if (!evidence.cspPolicyValid) violations.push("csp_policy_invalid");
 const report = {
   schemaVersion: 1,
   event: "g12.rollout.probe",
+  probeProfile,
   origin,
   candidateSha: expectedSha,
   environment,

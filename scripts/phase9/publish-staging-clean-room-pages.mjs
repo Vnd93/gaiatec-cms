@@ -5,13 +5,33 @@ const supabaseUrl = process.env.GAIATEC_SUPABASE_URL;
 const anonKey = process.env.GAIATEC_SUPABASE_ANON_KEY;
 const serviceKey = process.env.GAIATEC_SUPABASE_SERVICE_ROLE_KEY;
 const stagingProject = "glcqsosxwgmlhzgcsnzv";
-const siteOrigin = "https://gaiatec-cms-staging.pages.dev";
-const authorizationDate = "2026-08-30";
-const authorizationReference = "GAIATEC-F9-CLEAN-ROOM-STAGING-2026-08-30";
+const targetEnvironment = process.env.GAIATEC_CMS_TARGET_ENVIRONMENT ?? "staging";
+const targetProject = process.env.GAIATEC_SUPABASE_PROJECT_REF ?? stagingProject;
+const productionCandidate = process.env.GAIATEC_PRODUCTION_CANDIDATE_SHA ?? "";
+const siteOrigin =
+  targetEnvironment === "production"
+    ? "https://gaiatecsistemas.com.br"
+    : "https://gaiatec-cms-staging.pages.dev";
+const authorizationDate = targetEnvironment === "production" ? "2026-09-06" : "2026-08-30";
+const authorizationReference =
+  targetEnvironment === "production"
+    ? `AUTORIZO-G12-PRODUCAO:${productionCandidate}`
+    : "GAIATEC-F9-CLEAN-ROOM-STAGING-2026-08-30";
 
-if (!supabaseUrl || !anonKey || !serviceKey) throw new Error("Variáveis seguras de staging ausentes.");
-if (new URL(supabaseUrl).hostname !== `${stagingProject}.supabase.co`)
-  throw new Error("Este utilitário aceita somente o projeto Supabase de staging.");
+if (!supabaseUrl || !anonKey || !serviceKey) throw new Error("Credenciais seguras do CMS ausentes.");
+if (!new Set(["staging", "production"]).has(targetEnvironment))
+  throw new Error("Ambiente de publicação clean-room inválido.");
+if (new URL(supabaseUrl).hostname !== `${targetProject}.supabase.co`)
+  throw new Error("O projeto informado não corresponde à URL Supabase.");
+if (targetEnvironment === "staging" && targetProject !== stagingProject)
+  throw new Error("A publicação de staging aceita somente o projeto homologado.");
+if (
+  targetEnvironment === "production" &&
+  (targetProject === stagingProject ||
+    !/^[a-f0-9]{40}$/.test(productionCandidate) ||
+    process.env.GAIATEC_PRODUCTION_AUTHORIZATION !== `AUTORIZO-G12-PRODUCAO:${productionCandidate}`)
+)
+  throw new Error("Publicação de produção recusada sem projeto isolado, SHA completo e autorização exata.");
 
 const admin = createClient(supabaseUrl, serviceKey, {
   auth: { persistSession: false, autoRefreshToken: false },
@@ -22,7 +42,9 @@ const uid = () => crypto.randomUUID();
 const now = () => new Date().toISOString();
 
 function provenance(
-  scope = "Texto original clean-room criado para a Fase 9 e autorizado somente em staging.",
+  scope = targetEnvironment === "production"
+    ? `Texto original clean-room aprovado pelo responsável jurídico/DPO para produção no G12 ${productionCandidate}.`
+    : "Texto original clean-room criado para a Fase 9 e autorizado somente em staging.",
 ) {
   return [
     {
@@ -139,7 +161,9 @@ function managedPage({
       },
       provenance: provenance(
         legalReview
-          ? "Redação legal conservadora e original para staging; revisão jurídica/DPO final obrigatória antes de produção."
+          ? targetEnvironment === "production"
+            ? `Redação legal conservadora confirmada sem alterações pelo DPO Marcelo Diaz para o G12 ${productionCandidate}.`
+            : "Redação legal conservadora e original para staging; revisão jurídica/DPO final obrigatória antes de produção."
           : undefined,
       ),
       governanceState: "homologated",
@@ -147,9 +171,12 @@ function managedPage({
       retirement: { mode: "not_found" },
       approval: {
         businessOwner: "Victor Nishida",
-        editorialReviewer: legalReview
-          ? "Victor Nishida — staging; revisão final DPO antes de produção"
-          : "Victor Nishida — autorização clean-room para staging",
+        editorialReviewer:
+          targetEnvironment === "production"
+            ? "Marcelo Diaz — DPO; dados legais confirmados sem alterações para produção"
+            : legalReview
+              ? "Victor Nishida — staging; revisão final DPO antes de produção"
+              : "Victor Nishida — autorização clean-room para staging",
         approvedAt: now(),
       },
     },
@@ -168,7 +195,11 @@ function industry({ title, slug, summary, challenges, processAreas, keywords }) 
       summary,
       marketName: title,
       challenges,
-      evidence: ["Escopo editorial clean-room autorizado para validação em staging."],
+      evidence: [
+        targetEnvironment === "production"
+          ? `Escopo editorial clean-room autorizado para produção em ${productionCandidate}.`
+          : "Escopo editorial clean-room autorizado para validação em staging.",
+      ],
       processAreas,
       blocks: [{ ...blockBase("rich_text"), data: { text: summary } }],
       seo: {
@@ -784,7 +815,7 @@ function totp(secret, offset = 0) {
 }
 
 async function createActor(role) {
-  const email = `cms-f9-${role}-${runTag}@example.com`;
+  const email = `cms-g12-${targetEnvironment}-${role}-${runTag}@example.invalid`;
   const password = `T!${crypto.randomBytes(24).toString("base64url")}9a`;
   const created = await admin.auth.admin.createUser({ email, password, email_confirm: true });
   if (created.error) throw created.error;
@@ -831,7 +862,7 @@ async function invoke(functionName, actor, body) {
 async function elevate(actor) {
   const enrolled = await actor.client.auth.mfa.enroll({
     factorType: "totp",
-    friendlyName: `f9-staging-${actor.role}-${runTag}`,
+    friendlyName: `g12-${targetEnvironment}-${actor.role}-${runTag}`,
   });
   if (enrolled.error || !enrolled.data?.id || !enrolled.data?.totp?.secret)
     throw enrolled.error ?? new Error(`MFA ${actor.role} não foi matriculado.`);
@@ -854,7 +885,7 @@ async function elevate(actor) {
 }
 
 async function publishFlow(item, creator, reviewer) {
-  const reason = `Substituto clean-room F9 autorizado para staging em ${authorizationDate}`;
+  const reason = `Conteúdo clean-room autorizado para ${targetEnvironment} em ${authorizationDate}; ${authorizationReference}`;
   const existing = await admin
     .from("cms_content_items")
     .select("id,workflow_status")
@@ -884,12 +915,12 @@ async function publishFlow(item, creator, reviewer) {
         if (recovered.error) throw recovered.error;
         const audit = await admin.from("cms_audit_log").insert({
           actor_id: creator.id,
-          action: "cms:content.recover_failed_staging_publication",
+          action: "cms:content.recover_failed_publication",
           target_type: "content_item",
           target_id: itemId,
           event_data: {
             fromState: existing.data[0].workflow_status,
-            reason: "Recuperação de item F9 nunca publicado após rejeição do validador de staging.",
+            reason: `Recuperação de item clean-room nunca publicado após rejeição do validador de ${targetEnvironment}.`,
             authorizationReference,
           },
           correlation_id: correlationId,
@@ -1064,8 +1095,9 @@ try {
     published.push(await publishFlow(item, creator, reviewer));
   report = {
     status: "passed",
-    environment: "staging",
-    productionTouched: false,
+    environment: targetEnvironment,
+    productionTouched: targetEnvironment === "production",
+    candidateSha: productionCandidate || null,
     authorizationReference,
     published,
     publicProjection: await validateProjection(),
@@ -1073,8 +1105,9 @@ try {
 } catch (error) {
   report = {
     status: "failed",
-    environment: "staging",
-    productionTouched: false,
+    environment: targetEnvironment,
+    productionTouched: targetEnvironment === "production",
+    candidateSha: productionCandidate || null,
     error: error instanceof Error ? error.message : String(error),
   };
   process.exitCode = 1;

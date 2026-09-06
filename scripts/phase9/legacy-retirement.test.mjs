@@ -116,12 +116,15 @@ test("edge removes soft-404 allowlists for every retired legacy consumer", async
   }
 });
 
-test("managed pages are clean-room, searchable and publishable only to staging", async () => {
+test("managed pages are clean-room, searchable and production publication is fail-closed", async () => {
   const publisher = await read("scripts/phase9/publish-staging-clean-room-pages.mjs");
   const publicApi = await read("supabase/functions/cms-public/index.ts");
   assert.match(publisher, /GAIATEC-F9-CLEAN-ROOM-STAGING/);
   assert.match(publisher, /revisão final DPO antes de produção/);
-  assert.match(publisher, /productionTouched: false/);
+  assert.match(publisher, /productionTouched: targetEnvironment === "production"/);
+  assert.match(publisher, /GAIATEC_PRODUCTION_AUTHORIZATION/);
+  assert.match(publisher, /AUTORIZO-G12-PRODUCAO/);
+  assert.match(publisher, /targetProject === stagingProject/);
   assert.doesNotMatch(
     publisher,
     /app\/data|site-content|deteccaoGas|dgGaleria|dgImagens|servicesList|searchIndex/,

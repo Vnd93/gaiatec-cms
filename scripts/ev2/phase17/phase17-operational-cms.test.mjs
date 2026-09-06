@@ -58,10 +58,12 @@ test("OpenRouter adapter is locked to Nemotron free with no paid fallback", asyn
   assert.match(adapter, /nvidia\/nemotron-3\.5-lightning:free/);
   assert.match(adapter, /OPENROUTER_MODEL/);
   assert.match(adapter, /AbortController/);
-  assert.match(adapter, /response_format: \{ type: "json_object" \}/);
+  assert.doesNotMatch(adapter, /response_format/);
+  assert.match(adapter, /reasoning: \{ effort: "none", exclude: true \}/);
   assert.doesNotMatch(adapter, /fallback|models:/i);
   assert.doesNotMatch(adapter, /console\.(?:log|debug|info)/);
   assert.match(edge, /CMS_AI_PROVIDER_UNAVAILABLE/);
+  assert.match(edge, /OPENROUTER_REQUEST_FAILED/);
   assert.match(edge, /cms_ai_provider_calls/);
   assert.match(contract, /"synthetic", "openrouter"/);
   assert.match(page, /NVIDIA NEMOTRON/);
@@ -77,4 +79,15 @@ test("provider audit stores metadata only and is not exposed to authenticated cl
     /revoke all on table public\.cms_ai_provider_calls from public, anon, authenticated/,
   );
   assert.doesNotMatch(migration, /prompt|excerpt|response_body|api_key/i);
+});
+
+test("synthetic identities detach without weakening immutable audit records", async () => {
+  const migration = await read("supabase/migrations/0056_cms_audit_identity_detach.sql");
+  assert.match(migration, /tg_op = 'UPDATE'/);
+  assert.match(migration, /v_new -> v_identity_column = 'null'::jsonb/);
+  assert.match(migration, /\(v_old - v_identity_column\) = \(v_new - v_identity_column\)/);
+  assert.match(migration, /cms_login_events_immutable/);
+  assert.match(migration, /cms_audit_log_immutable/);
+  assert.match(migration, /cms_policy_decisions_immutable/);
+  assert.match(migration, /raise exception 'CMS audit records are immutable'/);
 });

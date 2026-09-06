@@ -201,6 +201,7 @@ async function cleanupActor(actorId) {
   for (const table of [
     "cms_ai_provider_calls",
     "cms_ai_events",
+    "cms_ai_eval_runs",
     "cms_ai_messages",
     "cms_ai_proposals",
     "cms_ai_sources",

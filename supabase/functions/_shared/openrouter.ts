@@ -55,7 +55,7 @@ export async function generateOpenRouterProposal(input: {
         model: APPROVED_MODEL,
         temperature: 0.2,
         max_tokens: 900,
-        response_format: { type: "json_object" },
+        reasoning: { effort: "none", exclude: true },
         messages: [
           {
             role: "system",

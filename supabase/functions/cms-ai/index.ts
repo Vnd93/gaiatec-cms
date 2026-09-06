@@ -568,10 +568,14 @@ Deno.serve(async (req) => {
         providerModel = generated.model;
         providerInputTokens = generated.inputTokens;
         providerOutputTokens = generated.outputTokens;
-      } catch {
+      } catch (error) {
+        const providerFailure = error instanceof Error && /^OPENROUTER_[A-Z0-9_]+$/.test(error.message)
+          ? error.message
+          : "OPENROUTER_REQUEST_FAILED";
         return json(req, {
           error: "A IA está temporariamente indisponível; o cadastro manual continua funcionando.",
           code: "CMS_AI_PROVIDER_UNAVAILABLE",
+          providerFailure,
           correlationId,
           preserved: true,
         }, 503);

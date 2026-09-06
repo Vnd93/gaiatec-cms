@@ -40,6 +40,11 @@ export function isFullSha(value) {
   return typeof value === "string" && FULL_SHA_PATTERN.test(value);
 }
 
+export function canonicalTextSha256(value) {
+  const text = Buffer.isBuffer(value) ? value.toString("utf8") : String(value);
+  return createHash("sha256").update(text.replace(/\r\n?/g, "\n"), "utf8").digest("hex");
+}
+
 export function validateReleaseManifest(manifest, { expectedRelease } = {}) {
   const violations = [];
   if (manifest?.schemaVersion !== 1) violations.push("manifest_schema_invalid");

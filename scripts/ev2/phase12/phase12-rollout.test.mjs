@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 import worker from "../../../cloudflare/_worker.js";
 import {
+  canonicalTextSha256,
   evaluateCodeOwners,
   evaluateGithubControls,
   evaluateProbeWindow,
@@ -25,6 +26,12 @@ import {
 
 const read = (path) => readFile(path, "utf8");
 const sha = "a".repeat(40);
+
+test("text evidence digest is stable across Git and Windows line endings", () => {
+  const lf = Buffer.from('{"gate":"G12"}\n{"decision":"approved"}\n', "utf8");
+  const crlf = Buffer.from('{"gate":"G12"}\r\n{"decision":"approved"}\r\n', "utf8");
+  assert.equal(canonicalTextSha256(lf), canonicalTextSha256(crlf));
+});
 
 function rolloutWindow(offsetMinutes = 0) {
   const startedAt = new Date(Date.UTC(2026, 8, 4, 10, offsetMinutes));
@@ -710,7 +717,7 @@ test("release workflows and reduced canary are immutable, staged and production 
   assert.match(g11Canary, /resolveStableBaseline/);
   assert.match(stableBaseline, /stable_release_contract_mismatch/);
   assert.match(stableBaseline, /legacy-root-fingerprint/);
-  assert.match(verifier, /createHash\("sha256"\)/);
+  assert.match(verifier, /canonicalTextSha256\(evidenceBytes\)/);
   assert.match(verifier, /validateCanaryEvidenceBinding/);
   assert.match(backendConfig, /G12_PRODUCTION_BACKEND_CONFIG_BLOCKED/);
   assert.match(functionDeploy, /G12_PRODUCTION_FUNCTION_INVENTORY_MISMATCH/);

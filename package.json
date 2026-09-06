@@ -13,7 +13,7 @@
     "cf:projects": "wrangler pages project list",
     "deploy:preview": "npm run build:staging && wrangler pages deploy dist --project-name gaiatec-cms-staging --branch preview",
     "deploy:staging": "npm run build:staging && wrangler pages deploy dist --project-name gaiatec-cms-staging --branch Remodelagem",
-    "deploy:production": "npm run build && wrangler pages deploy dist --project-name gaiatec-website --branch main",
+    "deploy:production": "node scripts/phase2/block-local-production-deploy.mjs",
     "format": "prettier --write package.json README.md docs/README.md docs/ev2/README.md eslint.config.js playwright.config.ts tsconfig.json tsconfig.strict.json vitest.config.ts .github/workflows .github/release-controls/templates cloudflare scripts/prepare-cloudflare-worker.mjs scripts/check-documentation-boundary.mjs scripts/documentation-boundary-lib.mjs src/admin src/public src/shared tests scripts/ev2 scripts/phase1 scripts/phase2 scripts/phase3 scripts/phase4 scripts/phase5 scripts/phase6 scripts/phase7 scripts/phase8 scripts/phase9 scripts/phase10 scripts/phase11",
     "format:check": "prettier --check package.json README.md docs/README.md docs/ev2/README.md eslint.config.js playwright.config.ts tsconfig.json tsconfig.strict.json vitest.config.ts .github/workflows .github/release-controls/templates cloudflare scripts/prepare-cloudflare-worker.mjs scripts/check-documentation-boundary.mjs scripts/documentation-boundary-lib.mjs src/admin src/public src/shared tests scripts/ev2 scripts/phase1 scripts/phase2 scripts/phase3 scripts/phase4 scripts/phase5 scripts/phase6 scripts/phase7 scripts/phase8 scripts/phase9 scripts/phase10 scripts/phase11",
     "check:documentation-boundary": "node scripts/check-documentation-boundary.mjs",

@@ -17,6 +17,14 @@ npm run dev
 npm run check
 ```
 
+## Publicação em produção
+
+A produção é publicada exclusivamente pelo workflow versionado
+`.github/workflows/deploy-production.yml`, com SHA imutável, registro de aprovação correspondente e
+as credenciais do ambiente `production`. O comando local `npm run deploy:production` é bloqueado de
+forma intencional: o Vite carrega `.env.local`, que pode apontar para staging, e esse artefato não
+pode ser enviado ao projeto produtivo do Cloudflare Pages.
+
 ## CMS administrativo
 
 O CMS em `src/admin/` usa uma sidebar achatada em seis seções: Trabalho, Catálogo, Conteúdo,

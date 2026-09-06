@@ -253,6 +253,9 @@ test("production and canary workflows retain evidence and stay behind their boun
   assert.match(deploy, /CANDIDATE_SHA: \$\{\{ inputs\.candidate_sha \}\}/);
   assert.match(cspCanary, /for attempt in 1 2/);
   assert.match(cspCanary, /EV2_G12_CSP_MODE: enforce/);
+  assert.match(cspCanary, /github\.ref_name == 'main'/);
+  assert.match(cspCanary, /test "\$EXPECTED_SHA" = "\$\(git rev-parse origin\/main\)"/);
   assert.match(cspCanary, /--project-name gaiatec-cms-staging/);
+  assert.match(cspCanary, /retention-days: 30/);
   assert.doesNotMatch(cspCanary, /--project-name gaiatec-website/);
 });

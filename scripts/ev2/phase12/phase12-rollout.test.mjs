@@ -57,7 +57,10 @@ test("rollout probe waits for a stable boundary before starting its strict measu
   assert.match(probe, /EV2_G12_READINESS_ATTEMPTS/);
   assert.match(probe, /boundaryHeadersValid/);
   assert.match(probe, /G12_PROBE_NOT_READY/);
+  assert.match(probe, /EV2_G12_WARMUP_SAMPLES_PER_ROUTE/);
+  assert.match(probe, /G12_PROBE_WARMUP_FAILED/);
   assert.ok(probe.indexOf("if (!ready)") < probe.indexOf("async function request"));
+  assert.ok(probe.indexOf("await warmRoutes()") < probe.indexOf("async function request"));
 });
 
 function rolloutWindow(offsetMinutes = 0) {

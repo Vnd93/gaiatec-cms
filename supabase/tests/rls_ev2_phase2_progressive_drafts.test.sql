@@ -289,9 +289,9 @@ select throws_ok(
     '42000000-0000-4000-8000-000000000001', null, 'product', 'production', 'main',
     'aal2', 'ev2-draft-owner-session', now() - interval '1 minute'
   )$$,
-  '22023',
-  'CMS_DRAFT_V2_COMMAND_INVALID',
-  'EV2.2 refuses production reads and writes'
+  '42501',
+  'CMS_DRAFT_V2_FEATURE_DISABLED',
+  'EV2.2 keeps production reads and writes disabled without an individual flag'
 );
 
 update public.cms_feature_flags

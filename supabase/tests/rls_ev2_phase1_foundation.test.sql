@@ -396,9 +396,9 @@ select throws_ok(
     repeat('1', 64),
     '41000000-0000-4000-8000-000000000062'
   )$$,
-  '22023',
-  'CMS_RELEASE_COMMAND_INVALID',
-  'EV2.1 refuses production release creation'
+  '42501',
+  'CMS_RELEASE_FEATURE_DISABLED',
+  'EV2.1 keeps production release creation disabled without an individual flag'
 );
 
 select * from finish();

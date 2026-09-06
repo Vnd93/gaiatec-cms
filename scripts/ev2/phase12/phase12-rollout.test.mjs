@@ -1063,6 +1063,8 @@ test("release workflows and reduced canary are immutable, staged and production 
   const rollbackJobPreamble = rollback.slice(rollback.indexOf("  rollback:"), rollback.indexOf("    steps:"));
   assert.doesNotMatch(rollbackJobPreamble, /secrets\.|CLOUDFLARE_/);
   assert.doesNotMatch(rollback, /npm ci|actions\/setup-node/);
+  assert.match(cloudflare, /projectDetails\?\.canonical_deployment/);
+  assert.doesNotMatch(cloudflare, /deployments\?env=production&per_page=1/);
   assert.match(cloudflare, /target\?\.environment !== "production"/);
   assert.match(cloudflare, /deployments\/\$\{deploymentId\}\/rollback/);
   assert.match(canary, /g12-staging-integrated-reduced-v2/);

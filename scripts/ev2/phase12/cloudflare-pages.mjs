@@ -45,11 +45,11 @@ function fullRelease(value) {
 }
 
 if (command === "latest-production") {
-  const deployments = await cloudflare("/deployments?env=production&per_page=1");
-  const deployment = deployments?.[0];
+  const projectDetails = await cloudflare("");
+  const deployment = projectDetails?.canonical_deployment;
   const release = fullRelease(deployment?.deployment_trigger?.metadata?.commit_hash);
   if (!UUID_PATTERN.test(deployment?.id ?? "") || !isFullSha(release))
-    throw new Error("G12_ROLLBACK_BASELINE_INVALID: latest production deployment is not immutable.");
+    throw new Error("G12_ROLLBACK_BASELINE_INVALID: canonical production deployment is not immutable.");
   await setOutputs({ deployment_id: deployment.id, release, url: deployment.url });
   console.log(
     JSON.stringify({ event: "g12.production.baseline.captured", deploymentId: deployment.id, release }),

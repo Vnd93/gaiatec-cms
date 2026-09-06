@@ -159,9 +159,38 @@ O artefato `supabase-production-backup-34000214134` tem digest GitHub
 retenção efetiva de 30 dias. O workflow passa a declarar os mesmos 30 dias permitidos pelo
 repositório, eliminando o aviso de redução automática sem alterar o backup aprovado.
 
-## Evidências ainda inexistentes
+## Tokens mínimos e entrega sintética
 
-Não foram fabricados: chave Resend de produção, entrega sintética produtiva ou autorização literal
-do SHA final. Proteções, ambientes, DPO/legal, governança solo, risco, credenciais Supabase, backup
-externo, restore drill e CSP do candidato foram comprovados; os itens restantes continuam
-bloqueando G12.
+Em 2026-09-05 foram criadas três credenciais exclusivas, com valores gravados diretamente nos
+secrets protegidos do ambiente `production` e nunca registrados em documentação ou logs:
+
+- Resend `GAIATEC CMS Production`: somente envio e restrito ao domínio
+  `gaiatecsistemas.com`, salvo como `RESEND_API_KEY`;
+- Cloudflare `GAIATEC CMS Production Pages`: somente
+  `Gaiatec Sistemas - Cloudflare Pages:Editar`, salvo como `CLOUDFLARE_API_TOKEN`;
+- GitHub `GAIATEC G12 Release Guard`: somente o repositório `Vnd93/gaiatec-cms`, com
+  `Actions`, `Administration`, `Metadata` e `Pull requests` em leitura, expiração em
+  2026-10-05 e secret `RELEASE_GUARD_TOKEN`.
+
+O prefixo `GITHUB_` é reservado pelo GitHub e foi recusado pela própria plataforma. Por isso os
+workflows de deploy e rollback passam a usar `RELEASE_GUARD_TOKEN`, sem ampliar permissões.
+
+O [workflow `34002956973`](https://github.com/Vnd93/gaiatec-cms/actions/runs/34002956973)
+executou em `main`, vinculou o envio ao candidato
+`e52b25d903251cf538918d89049a58524c3c9911` e submeteu somente a mensagem sintética para
+`comercial@gaiatecsistemas.com.br`. A credencial de envio mínimo aceitou a mensagem, mas recusou
+com `401` a leitura posterior do status, como esperado para uma chave sem acesso de leitura; o
+workflow falhou fechado e não fabricou uma evidência de entrega. O painel autenticado do Resend
+confirmou o mesmo envio como `delivered`, identificador
+`2eae753e-c380-4cf1-913d-05f9e22354e4`, assunto
+`GAIATEC CMS — verificação sintética e52b25d90325`.
+
+A correção mantém a chave mínima: a automação passa a registrar
+`accepted-awaiting-provider-dashboard` quando a consulta é recusada especificamente com `401` e
+continua bloqueando qualquer outro erro. A prontidão final permanece exigindo a comprovação
+independente `delivered`; aceite do provedor isoladamente não satisfaz o gate.
+
+## Evidência ainda inexistente
+
+Não foi fabricada a autorização literal vinculada ao SHA final. Nenhum deploy, migration, função,
+dado real, domínio real ou promoção de produção foi executado.

@@ -1,5 +1,9 @@
 import { writeFile } from "node:fs/promises";
-import { PRODUCTION_EMAIL_DOMAIN, validateEmailProviderConfig } from "./readiness-lib.mjs";
+import {
+  PRODUCTION_EMAIL_DOMAIN,
+  classifyResendDeliveryStatus,
+  validateEmailProviderConfig,
+} from "./readiness-lib.mjs";
 
 const config = {
   provider: process.env.EMAIL_PROVIDER,
@@ -48,38 +52,52 @@ if (typeof delivery?.id !== "string" || delivery.id.length < 8)
   throw new Error("PRODUCTION_EMAIL_SYNTHETIC_DELIVERY_ID_INVALID");
 
 let deliveryStatus = "unknown";
+let manualDeliveryVerificationRequired = false;
 for (let attempt = 0; attempt < 12; attempt += 1) {
   if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 5_000));
   const statusResponse = await fetch(`https://api.resend.com/emails/${delivery.id}`, {
     headers: { Authorization: `Bearer ${config.apiKey}` },
     signal: AbortSignal.timeout(10_000),
   });
-  if (!statusResponse.ok)
+  const sentEmail = statusResponse.ok ? await statusResponse.json() : null;
+  const classification = classifyResendDeliveryStatus({
+    httpStatus: statusResponse.status,
+    lastEvent: sentEmail?.last_event,
+  });
+  deliveryStatus = classification.event;
+  if (classification.outcome === "manual-verification-required") {
+    manualDeliveryVerificationRequired = true;
+    break;
+  }
+  if (classification.outcome === "unreadable")
     throw new Error(`PRODUCTION_EMAIL_SYNTHETIC_STATUS_UNREADABLE:${statusResponse.status}`);
-  const sentEmail = await statusResponse.json();
-  deliveryStatus = String(sentEmail?.last_event ?? "unknown").toLowerCase();
-  if (["delivered", "opened", "clicked"].includes(deliveryStatus)) break;
-  if (["bounced", "complained", "canceled", "failed"].includes(deliveryStatus))
+  if (classification.outcome === "failed")
     throw new Error(`PRODUCTION_EMAIL_SYNTHETIC_DELIVERY_FAILED:${deliveryStatus}`);
+  if (classification.outcome === "delivered") break;
 }
-if (!["delivered", "opened", "clicked"].includes(deliveryStatus))
+if (!manualDeliveryVerificationRequired && !["delivered", "opened", "clicked"].includes(deliveryStatus))
   throw new Error(`PRODUCTION_EMAIL_SYNTHETIC_DELIVERY_TIMEOUT:${deliveryStatus}`);
 
 const report = {
   schemaVersion: 1,
-  event: "production.email.provider.verified",
+  event: manualDeliveryVerificationRequired
+    ? "production.email.provider.send-accepted"
+    : "production.email.provider.verified",
   provider: "resend",
   sendingDomain: PRODUCTION_EMAIL_DOMAIN,
-  domainVerification: "delivery-proven",
+  domainVerification: manualDeliveryVerificationRequired ? "send-accepted" : "delivery-proven",
   from: config.from,
   notificationTo: config.notificationTo,
   syntheticTo,
   verifiedAt: new Date().toISOString(),
   candidateSha,
   remoteDeliveryAttempted: true,
-  syntheticDeliveryStatus: "passed",
+  syntheticDeliveryStatus: manualDeliveryVerificationRequired
+    ? "accepted-awaiting-provider-dashboard"
+    : "passed",
   syntheticDeliveryId: delivery.id,
   syntheticDeliveryLastEvent: deliveryStatus,
+  manualDeliveryVerificationRequired,
   realDataUsed: false,
   secretsExposed: false,
 };

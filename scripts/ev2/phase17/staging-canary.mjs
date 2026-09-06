@@ -248,7 +248,6 @@ try {
     body: {
       flag_key: "ev2.ai_assist",
       environment: "staging",
-      site_key: "main",
       scope_type: "user",
       scope_key: actor.id,
       enabled: true,

@@ -91,13 +91,22 @@ function decodeBase32(value) {
   return Buffer.from(bytes);
 }
 
-function totp(secret) {
-  const counter = Math.floor(Date.now() / 30_000);
+function totp(secret, now = Date.now()) {
+  const counter = Math.floor(now / 30_000);
   const buffer = Buffer.alloc(8);
   buffer.writeBigUInt64BE(BigInt(counter));
   const digest = createHmac("sha1", decodeBase32(secret)).update(buffer).digest();
   const offset = digest[digest.length - 1] & 15;
   return ((digest.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).toString().padStart(6, "0");
+}
+
+async function authenticationClock() {
+  const response = await fetch(`${context.url}/auth/v1/health`, {
+    headers: { apikey: context.anonKey },
+    signal: AbortSignal.timeout(10_000),
+  });
+  const serverDate = Date.parse(response.headers.get("date") ?? "");
+  return Number.isFinite(serverDate) ? serverDate : Date.now();
 }
 
 async function createActor() {
@@ -108,6 +117,7 @@ async function createActor() {
     headers: context.serviceHeaders,
     body: { email, password, email_confirm: true, user_metadata: { synthetic: true, phase: "ev2-g17" } },
   });
+  actor = { id: created.json.id };
   await rest("cms_profiles", {
     method: "POST",
     prefer: "return=minimal",
@@ -133,14 +143,21 @@ async function createActor() {
   if (!signedIn.data.session) throw signedIn.error;
   const enrolled = await client.auth.mfa.enroll({ factorType: "totp", friendlyName: "EV2 G17" });
   if (!enrolled.data?.totp?.secret) throw enrolled.error;
-  const challenge = await client.auth.mfa.challenge({ factorId: enrolled.data.id });
-  const verified = await client.auth.mfa.verify({
-    factorId: enrolled.data.id,
-    challengeId: challenge.data.id,
-    code: totp(enrolled.data.totp.secret),
-  });
-  if (!verified.data.access_token) throw verified.error;
-  return { id: created.json.id, token: verified.data.access_token };
+  let lastError;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const challenge = await client.auth.mfa.challenge({ factorId: enrolled.data.id });
+    if (challenge.error) throw challenge.error;
+    const verified = await client.auth.mfa.verify({
+      factorId: enrolled.data.id,
+      challengeId: challenge.data.id,
+      code: totp(enrolled.data.totp.secret, await authenticationClock()),
+    });
+    const token = verified.data?.session?.access_token ?? verified.data?.access_token;
+    if (!verified.error && token) return { id: created.json.id, token };
+    lastError = verified.error ?? new Error("AAL2 ausente.");
+    await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
+  }
+  throw lastError;
 }
 
 function envelope(environment = "staging") {
@@ -172,9 +189,8 @@ async function edge(
   });
 }
 
-async function cleanup() {
-  if (!actor) return;
-  const sessions = await rest("cms_ai_sessions", { query: `actor_id=eq.${actor.id}&select=id` });
+async function cleanupActor(actorId) {
+  const sessions = await rest("cms_ai_sessions", { query: `actor_id=eq.${actorId}&select=id` });
   const sessionIds = sessions.json.map((item) => item.id);
   const proposals = sessionIds.length
     ? await rest("cms_ai_proposals", { query: `session_id=in.(${sessionIds.join(",")})&select=id` })
@@ -190,25 +206,38 @@ async function cleanup() {
     "cms_ai_sources",
     "cms_ai_tool_calls",
   ])
-    await rest(table, { method: "DELETE", query: `actor_id=eq.${actor.id}` });
-  await rest("cms_ai_command_receipts", { method: "DELETE", query: `actor_id=eq.${actor.id}` });
-  await rest("cms_ai_sessions", { method: "DELETE", query: `actor_id=eq.${actor.id}` });
+    await rest(table, { method: "DELETE", query: `actor_id=eq.${actorId}` });
+  await rest("cms_ai_command_receipts", { method: "DELETE", query: `actor_id=eq.${actorId}` });
+  await rest("cms_ai_sessions", { method: "DELETE", query: `actor_id=eq.${actorId}` });
   await rest("cms_feature_flag_overrides", {
     method: "DELETE",
-    query: `scope_type=eq.user&scope_key=eq.${actor.id}`,
+    query: `scope_type=eq.user&scope_key=eq.${actorId}`,
   });
-  await rest("cms_user_roles", { method: "DELETE", query: `user_id=eq.${actor.id}` });
-  await rest("cms_profiles", { method: "DELETE", query: `user_id=eq.${actor.id}` });
-  await request(`${context.url}/auth/v1/admin/users/${actor.id}`, {
+  await rest("cms_user_roles", { method: "DELETE", query: `user_id=eq.${actorId}` });
+  await rest("cms_profiles", { method: "DELETE", query: `user_id=eq.${actorId}` });
+  await request(`${context.url}/auth/v1/admin/users/${actorId}`, {
     method: "DELETE",
     headers: context.serviceHeaders,
     allowed: [200, 204],
   });
 }
 
+async function cleanup() {
+  if (actor?.id) await cleanupActor(actor.id);
+}
+
+async function cleanupOrphans() {
+  const users = await request(`${context.url}/auth/v1/admin/users?page=1&per_page=1000`, {
+    headers: context.serviceHeaders,
+  });
+  for (const user of users.json.users ?? [])
+    if (user.user_metadata?.phase === "ev2-g17") await cleanupActor(user.id);
+}
+
 let operationError;
 try {
   context = await loadContext();
+  await cleanupOrphans();
   const health = await request(`${ORIGIN}/healthz`);
   check("immutable_candidate", health.json.release === EXPECTED_SHA, health.json.release);
   actor = await createActor();

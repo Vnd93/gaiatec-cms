@@ -36,7 +36,7 @@ test("EV2.13 historical manifest remains immutable and is superseded safely", as
   assert.match(rls, /parallel broad override invalidates/);
   assert.match(rls, /longer than 30 minutes is ineligible/);
   assert.match(rls, /environment-wide override cannot activate/);
-  assert.match(rls, /production manifest cannot enable/);
+  assert.match(rls, /production manifest without an individual override cannot enable/);
 });
 
 test("cms-session refreshes one validated aggregate and loses EV2 access on transient failure", async () => {

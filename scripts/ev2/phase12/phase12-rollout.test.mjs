@@ -774,21 +774,25 @@ test("release workflows and reduced canary are immutable, staged and production 
   assert.equal(approvalTemplate.g12Evidence.file, null);
 });
 
-test("phase documentation binds G12 approval without claiming a completed deployment", async () => {
-  const [readme, gate, infrastructure, rollout, runbook, training, approvalRaw] = await Promise.all([
-    read("docs/ev2/fase-12/README.md"),
-    read("docs/ev2/fase-12/GATE_G12.md"),
-    read("docs/ev2/fase-12/PRE_REQUISITOS_INFRAESTRUTURA.md"),
-    read("docs/ev2/fase-12/MATRIZ_ROLLOUT.md"),
-    read("docs/ev2/fase-12/RUNBOOK_GO_LIVE_E_ROLLBACK.md"),
-    read("docs/ev2/fase-12/TREINAMENTO_E_HANDOVER.md"),
-    read("docs/ev2/fase-12/approvals/G12_e52b25d903251cf538918d89049a58524c3c9911.json"),
-  ]);
+test("phase documentation binds the completed G12 deployment to immutable evidence", async () => {
+  const [readme, gate, infrastructure, rollout, runbook, training, approvalRaw, productionEvidence] =
+    await Promise.all([
+      read("docs/ev2/fase-12/README.md"),
+      read("docs/ev2/fase-12/GATE_G12.md"),
+      read("docs/ev2/fase-12/PRE_REQUISITOS_INFRAESTRUTURA.md"),
+      read("docs/ev2/fase-12/MATRIZ_ROLLOUT.md"),
+      read("docs/ev2/fase-12/RUNBOOK_GO_LIVE_E_ROLLBACK.md"),
+      read("docs/ev2/fase-12/TREINAMENTO_E_HANDOVER.md"),
+      read("docs/ev2/fase-12/approvals/G12_e52b25d903251cf538918d89049a58524c3c9911.json"),
+      read("docs/ev2/fase-12/EVIDENCIAS_PRODUCAO_G12_2026-09-06.md"),
+    ]);
   const approval = JSON.parse(approvalRaw);
-  assert.match(readme, /G12 aprovado para execução controlada/);
-  assert.match(readme, /ainda sem execução ou promoção/i);
-  assert.match(gate, /APROVADO PARA EXECUÇÃO CONTROLADA/);
-  assert.match(gate, /ainda não executada/i);
+  assert.match(readme, /G12 aprovado e encerrado/);
+  assert.match(readme, /34039654304/);
+  assert.match(gate, /APROVADO E CONCLUÍDO/);
+  assert.match(gate, /34039654304/);
+  assert.match(productionEvidence, /e52b25d903251cf538918d89049a58524c3c9911/);
+  assert.match(productionEvidence, /sha256:c2215d32baddc38e5727a41bbbbe921b9b7e84813043f5d8f1f086ee865586db/);
   assert.equal(approval.decision, "approved");
   assert.equal(approval.productionAuthorized, true);
   assert.equal(approval.candidateSha, "e52b25d903251cf538918d89049a58524c3c9911");

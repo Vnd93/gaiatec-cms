@@ -39,6 +39,8 @@ test("production workflow binds manifest identity and runs full preview after ba
   assert.match(workflow, /VITE_RELEASE: \$\{\{ inputs\.candidate_sha \}\}/);
   assert.match(workflow, /EV2_G12_PROBE_PROFILE: technical/);
   assert.match(workflow, /GAIATEC_CMS_TARGET_ENVIRONMENT=production/);
+  assert.match(workflow, /publish-staging-clean-room-pages\.mjs \| tee \.\.\/g12-production-content\.json/);
+  assert.match(workflow, /configure-staging-forms\.mjs \| tee \.\.\/g12-production-forms\.json/);
   assert.match(workflow, /configure-staging-forms\.mjs/);
   assert.match(workflow, /EV2_G12_PROBE_PROFILE: full/);
   assert.ok(

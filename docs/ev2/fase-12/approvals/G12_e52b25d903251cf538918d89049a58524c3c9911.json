@@ -38,8 +38,8 @@
     "domains": ["gaiatecsistemas.com.br", "www.gaiatecsistemas.com.br"]
   },
   "changeWindow": {
-    "startsAt": "2026-09-06T02:59:35.2458295Z",
-    "endsAt": "2026-09-06T07:04:35.2458295Z"
+    "startsAt": "2026-09-06T12:30:00.000Z",
+    "endsAt": "2026-09-06T20:30:00.000Z"
   },
   "rollback": {
     "deploymentId": "ff2dbb65-2f8b-4840-a9a1-f2fde29e8ebf",

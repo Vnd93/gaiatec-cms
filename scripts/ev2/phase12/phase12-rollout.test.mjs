@@ -50,6 +50,14 @@ test("production workflow binds manifest identity and runs full preview after ba
   );
 });
 
+test("rollout probe waits for a stable boundary before starting its strict measurement window", async () => {
+  const probe = await read("scripts/ev2/phase12/rollout-probe.mjs");
+  assert.match(probe, /EV2_G12_READINESS_ATTEMPTS/);
+  assert.match(probe, /boundaryHeadersValid/);
+  assert.match(probe, /G12_PROBE_NOT_READY/);
+  assert.ok(probe.indexOf("if (!ready)") < probe.indexOf("async function request"));
+});
+
 function rolloutWindow(offsetMinutes = 0) {
   const startedAt = new Date(Date.UTC(2026, 8, 4, 10, offsetMinutes));
   const endedAt = new Date(startedAt.getTime() + 5 * 60_000);

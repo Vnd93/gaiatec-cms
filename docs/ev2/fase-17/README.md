@@ -31,4 +31,3 @@ revisão humana; ela não aplica nem publica conteúdo automaticamente.
 Revisar o candidato e homologar a operação do CMS no alias isolado. Uma eventual ativação em
 produção exigirá autorização nova e literal vinculada ao SHA exato escolhido; este documento não a
 concede.
-

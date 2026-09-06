@@ -1,5 +1,6 @@
 export const PRODUCTION_PROJECT_REF = "chfuhctnhqgyjowkvllv";
 export const PRODUCTION_SITE_ORIGIN = "https://gaiatecsistemas.com.br";
+export const PRODUCTION_OPENROUTER_MODEL = "nvidia/nemotron-3.5-lightning:free";
 export const PRODUCTION_REDIRECT_ALLOW_LIST = [
   "https://gaiatecsistemas.com.br/**",
   "https://www.gaiatecsistemas.com.br/**",
@@ -105,8 +106,14 @@ export function validateProductionBackendConfig(env) {
     violations.push("email_from_invalid");
   if (clean(env.VITE_TURNSTILE_SITE_KEY).length < 10) violations.push("turnstile_site_key_missing");
   if (clean(env.TURNSTILE_SECRET_KEY).length < 10) violations.push("turnstile_secret_key_missing");
-  if (clean(env.CMS_AI_EXTERNAL_PROVIDER_ENABLED) !== "false")
-    violations.push("external_ai_provider_must_remain_disabled");
+  if (clean(env.CMS_EV2_PRODUCTION_ENABLED) !== "true")
+    violations.push("ev2_production_switch_must_be_enabled");
+  if (clean(env.CMS_AI_EXTERNAL_PROVIDER_ENABLED) !== "true")
+    violations.push("external_ai_provider_must_be_enabled");
+  if (clean(env.OPENROUTER_MODEL) !== PRODUCTION_OPENROUTER_MODEL)
+    violations.push("openrouter_model_invalid");
+  if (!clean(env.OPENROUTER_API_KEY).startsWith("sk-or-") || clean(env.OPENROUTER_API_KEY).length < 24)
+    violations.push("openrouter_api_key_invalid");
   if (clean(env.CONTACT_CAPTCHA_ALWAYS) !== "true") violations.push("contact_captcha_must_be_required");
 
   const secretValues = requiredSecretNames.map((name) => clean(env[name]));

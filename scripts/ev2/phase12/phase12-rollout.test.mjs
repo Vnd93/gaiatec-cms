@@ -743,7 +743,7 @@ test("G12 approval is cryptographically and semantically bound to its canary rep
   );
 });
 
-test("production configuration refuses staging and solo GitHub controls remain strict", () => {
+test("production configuration refuses staging and direct-main controls remain strict", () => {
   assert.equal(
     validateProductionConfig({
       supabaseProjectRef: "chfuhctnhqgyjowkvllv",
@@ -769,28 +769,18 @@ test("production configuration refuses staging and solo GitHub controls remain s
       protection_rules: [],
       deployment_branch_policy: { protected_branches: true, custom_branch_policies: false },
     },
+    comparison: { base_commit: { sha: "a".repeat(40) }, status: "ahead" },
+    candidateSha: "a".repeat(40),
     branchProtection: {
-      required_pull_request_reviews: {
-        required_approving_review_count: 0,
-        require_code_owner_reviews: false,
-        require_last_push_approval: false,
-        bypass_pull_request_allowances: { users: [], teams: [], apps: [] },
-      },
       enforce_admins: { enabled: true },
-      required_status_checks: { strict: true, contexts: ["quality", "database", "browser"] },
       allow_force_pushes: { enabled: false },
       allow_deletions: { enabled: false },
-      required_conversation_resolution: { enabled: true },
+      required_conversation_resolution: { enabled: false },
       required_linear_history: { enabled: true },
     },
     codeOwners: ["* @Vnd93", "/.github/workflows/** @Vnd93", "/.github/release-controls/** @Vnd93"].join(
       "\n",
     ),
-    pullRequest: {
-      merged_at: "2026-09-04T08:00:00.000Z",
-      base: { ref: "main" },
-      user: { login: "Vnd93" },
-    },
     checkRuns: [
       { id: 1, name: "quality", status: "completed", conclusion: "success" },
       { id: 2, name: "database", status: "completed", conclusion: "success" },
@@ -803,9 +793,17 @@ test("production configuration refuses staging and solo GitHub controls remain s
   const failedCheck = structuredClone(controlInput);
   failedCheck.checkRuns[0].conclusion = "failure";
   assert.match(evaluateGithubControls(failedCheck).violations.join(","), /actual_check_quality/);
-  const wrongMaintainer = structuredClone(controlInput);
-  wrongMaintainer.pullRequest.user.login = "another-user";
-  assert.match(evaluateGithubControls(wrongMaintainer).violations.join(","), /candidate_pull_request/);
+  const staleCandidate = structuredClone(controlInput);
+  staleCandidate.comparison.base_commit.sha = "b".repeat(40);
+  assert.match(evaluateGithubControls(staleCandidate).violations.join(","), /candidate_must_belong_to_main/);
+  const pullRequestPolicy = structuredClone(controlInput);
+  pullRequestPolicy.branchProtection.required_pull_request_reviews = {
+    required_approving_review_count: 0,
+  };
+  assert.match(
+    evaluateGithubControls(pullRequestPolicy).violations.join(","),
+    /pull_request_rule_incompatible_with_direct_main/,
+  );
   assert.deepEqual(
     evaluateCodeOwners(
       [
@@ -927,7 +925,10 @@ test("production backend configuration is exact, complete and fail-closed", () =
     EVIDENCE_SALT: "b".repeat(64),
     LEAD_EVIDENCE_SALT: "c".repeat(64),
     OUTBOX_WORKER_SECRET: "d".repeat(64),
-    CMS_AI_EXTERNAL_PROVIDER_ENABLED: "false",
+    CMS_EV2_PRODUCTION_ENABLED: "true",
+    CMS_AI_EXTERNAL_PROVIDER_ENABLED: "true",
+    OPENROUTER_API_KEY: "sk-or-example-production-key-long-enough",
+    OPENROUTER_MODEL: "nvidia/nemotron-3.5-lightning:free",
     CONTACT_CAPTCHA_ALWAYS: "true",
   };
   assert.equal(validateProductionBackendConfig(backendEnv).valid, true);
@@ -937,8 +938,9 @@ test("production backend configuration is exact, complete and fail-closed", () =
       PRODUCTION_SUPABASE_DB_URL:
         "postgresql://postgres:example-secure-password@db.glcqsosxwgmlhzgcsnzv.supabase.co:5432/postgres?sslmode=require",
       VITE_TURNSTILE_SITE_KEY: "",
+      CMS_EV2_PRODUCTION_ENABLED: "false",
     }).violations.join(","),
-    /production_database_url_invalid.*turnstile_site_key_missing/,
+    /production_database_url_invalid.*turnstile_site_key_missing.*ev2_production_switch_must_be_enabled/,
   );
   assert.match(
     validateProductionBackendConfig({ ...backendEnv, EVIDENCE_SALT: "a".repeat(64) }).violations.join(","),

@@ -102,3 +102,13 @@ test("historical database assertions follow the production-ready default-off con
   assert.match(release, /CMS_RELEASE_FEATURE_DISABLED/);
   assert.match(drafts, /CMS_DRAFT_V2_FEATURE_DISABLED/);
 });
+
+test("production workflow enables the controlled EV2 and approved free provider switches", async () => {
+  const workflow = await read(".github/workflows/deploy-production.yml");
+  assert.match(workflow, /CMS_EV2_PRODUCTION_ENABLED: "true"/);
+  assert.match(workflow, /CMS_AI_EXTERNAL_PROVIDER_ENABLED: "true"/);
+  assert.match(workflow, /OPENROUTER_API_KEY: \$\{\{ secrets\.OPENROUTER_API_KEY \}\}/);
+  assert.match(workflow, /OPENROUTER_MODEL: \$\{\{ vars\.OPENROUTER_MODEL \}\}/);
+  assert.match(workflow, /printf 'CMS_EV2_PRODUCTION_ENABLED=true\\n'/);
+  assert.match(workflow, /printf 'CMS_AI_EXTERNAL_PROVIDER_ENABLED=true\\n'/);
+});

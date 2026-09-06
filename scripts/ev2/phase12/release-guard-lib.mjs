@@ -674,9 +674,10 @@ export function evaluateCodeOwners(content) {
 
 export function evaluateGithubControls({
   environment,
+  comparison,
   branchProtection,
   codeOwners,
-  pullRequest,
+  candidateSha,
   checkRuns,
 }) {
   const violations = [];
@@ -687,41 +688,21 @@ export function evaluateGithubControls({
     environment?.deployment_branch_policy?.custom_branch_policies !== false
   )
     violations.push("environment_protected_branches_only_required");
-  if (branchProtection?.required_status_checks?.strict !== true)
-    violations.push("strict_status_checks_required");
+  if (comparison?.base_commit?.sha !== candidateSha || !["ahead", "identical"].includes(comparison?.status))
+    violations.push("candidate_must_belong_to_main");
+  if (branchProtection?.required_status_checks)
+    violations.push("required_status_checks_incompatible_with_direct_main");
   const pullReviewRule = branchProtection?.required_pull_request_reviews;
-  if (!pullReviewRule) violations.push("pull_request_rule_required");
-  if (pullReviewRule?.required_approving_review_count !== 0)
-    violations.push("pull_request_approvals_must_be_zero_in_sole_mode");
-  if (pullReviewRule?.require_code_owner_reviews === true)
-    violations.push("code_owner_review_incompatible_with_sole_maintainer");
-  if (pullReviewRule?.require_last_push_approval === true)
-    violations.push("last_push_approval_incompatible_with_sole_maintainer");
-  const bypass = pullReviewRule?.bypass_pull_request_allowances;
-  if ([...(bypass?.users ?? []), ...(bypass?.teams ?? []), ...(bypass?.apps ?? [])].length > 0)
-    violations.push("pull_request_bypass_forbidden");
+  if (pullReviewRule) violations.push("pull_request_rule_incompatible_with_direct_main");
   if (branchProtection?.enforce_admins?.enabled !== true) violations.push("admin_enforcement_required");
-  const contexts = new Set([
-    ...(branchProtection?.required_status_checks?.contexts ?? []),
-    ...(branchProtection?.required_status_checks?.checks ?? []).map((check) => check.context),
-  ]);
-  for (const required of ["quality", "database", "browser"])
-    if (!contexts.has(required)) violations.push(`required_check_${required}_missing`);
   if (branchProtection?.allow_force_pushes?.enabled !== false) violations.push("force_push_must_be_disabled");
   if (branchProtection?.allow_deletions?.enabled !== false)
     violations.push("branch_deletion_must_be_disabled");
-  if (branchProtection?.required_conversation_resolution?.enabled !== true)
-    violations.push("conversation_resolution_required");
+  if (branchProtection?.required_conversation_resolution?.enabled === true)
+    violations.push("conversation_resolution_incompatible_with_direct_main");
   if (branchProtection?.required_linear_history?.enabled !== true) violations.push("linear_history_required");
   const codeOwnerResult = evaluateCodeOwners(codeOwners);
   violations.push(...codeOwnerResult.violations);
-
-  if (
-    !pullRequest?.merged_at ||
-    pullRequest?.base?.ref !== "main" ||
-    String(pullRequest?.user?.login ?? "").toLowerCase() !== GITHUB_SOLE_MAINTAINER
-  )
-    violations.push("candidate_pull_request_invalid");
 
   const latestChecks = new Map();
   for (const run of Array.isArray(checkRuns) ? checkRuns : []) {

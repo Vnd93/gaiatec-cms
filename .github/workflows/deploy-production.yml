@@ -95,7 +95,10 @@ jobs:
           EVIDENCE_SALT: ${{ secrets.EVIDENCE_SALT }}
           LEAD_EVIDENCE_SALT: ${{ secrets.LEAD_EVIDENCE_SALT }}
           OUTBOX_WORKER_SECRET: ${{ secrets.OUTBOX_WORKER_SECRET }}
-          CMS_AI_EXTERNAL_PROVIDER_ENABLED: "false"
+          CMS_EV2_PRODUCTION_ENABLED: "true"
+          CMS_AI_EXTERNAL_PROVIDER_ENABLED: "true"
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
           CONTACT_CAPTCHA_ALWAYS: "true"
       - name: Verify immutable G12 approval
         id: approval
@@ -195,6 +198,8 @@ jobs:
           EMAIL_FROM: ${{ vars.EMAIL_FROM }}
           LEAD_NOTIFICATION_TO: ${{ vars.LEAD_NOTIFICATION_TO }}
           OUTBOX_WORKER_SECRET: ${{ secrets.OUTBOX_WORKER_SECRET }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
         run: |
           umask 077
           secrets_file="$RUNNER_TEMP/g12-production-functions.env"
@@ -216,7 +221,10 @@ jobs:
             printf 'CMS_ADMIN_ORIGIN=https://gaiatecsistemas.com.br\n'
             printf 'CMS_ADMIN_URL=https://gaiatecsistemas.com.br/admin\n'
             printf 'OUTBOX_WORKER_SECRET=%s\n' "$OUTBOX_WORKER_SECRET"
-            printf 'CMS_AI_EXTERNAL_PROVIDER_ENABLED=false\n'
+            printf 'CMS_EV2_PRODUCTION_ENABLED=true\n'
+            printf 'CMS_AI_EXTERNAL_PROVIDER_ENABLED=true\n'
+            printf 'OPENROUTER_API_KEY=%s\n' "$OPENROUTER_API_KEY"
+            printf 'OPENROUTER_MODEL=%s\n' "$OPENROUTER_MODEL"
           } > "$secrets_file"
           supabase secrets set --project-ref "$PRODUCTION_SUPABASE_PROJECT_REF" --env-file "$secrets_file"
           rm -f "$secrets_file"

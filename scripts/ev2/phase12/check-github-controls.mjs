@@ -20,8 +20,8 @@ async function github(path) {
 }
 
 const environment = await github("/environments/production");
+const comparison = await github(`/compare/${candidateSha}...main`);
 const branchProtection = await github("/branches/main/protection");
-const associatedPulls = await github(`/commits/${candidateSha}/pulls`);
 const workflowRunsPayload = await github(
   `/actions/runs?head_sha=${candidateSha}&status=completed&per_page=100`,
 );
@@ -32,13 +32,13 @@ const workflowJobsPayloads = await Promise.all(
   successfulRuns.map((run) => github(`/actions/runs/${run.id}/jobs?filter=latest&per_page=100`)),
 );
 const workflowJobs = workflowJobsPayloads.flatMap((payload) => payload?.jobs ?? []);
-const pullRequest = associatedPulls.find((item) => item?.merged_at && item?.base?.ref === "main");
 const codeOwners = await readFile(".github/CODEOWNERS", "utf8").catch(() => "");
 const result = evaluateGithubControls({
   environment,
+  comparison,
   branchProtection,
   codeOwners,
-  pullRequest,
+  candidateSha,
   checkRuns: workflowJobs,
 });
 if (!result.valid) throw new Error(`G12_GITHUB_CONTROLS_BLOCKED:${result.violations.join(",")}`);
@@ -48,8 +48,7 @@ console.log(
     environment: "production",
     branch: "main",
     candidateSha,
-    pullRequest: pullRequest.number,
-    governanceMode: "sole-maintainer",
+    governanceMode: "sole-maintainer-direct-main",
     maintainerLogin: "Vnd93",
     independentApprovals: 0,
     requiredChecks: ["quality", "database", "browser"],

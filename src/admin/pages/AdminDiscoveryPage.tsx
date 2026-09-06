@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { supabase } from "@/lib/supabase";
 import {
   CmsApplicationContentSchema,
@@ -19,8 +19,16 @@ import { UnsavedChangesGuard } from "../components/UnsavedChangesGuard";
 import { openExternalAfterAsync } from "../open-external-preview";
 import { useDraftBackup } from "../hooks/useDraftBackup";
 import { DraftBackupNotice } from "../components/DraftBackupNotice";
+import { Badge, RecordDrawer, SectionCard } from "../components/AdminUI";
+import { DiscoveryModuleTabs } from "../components/AdminModuleTabs";
 
 type Kind = "service" | "industry" | "application" | "solution";
+const singularLabels: Record<Kind, string> = {
+  service: "Serviço",
+  industry: "Indústria",
+  application: "Aplicação",
+  solution: "Solução",
+};
 const publicPaths: Record<Kind, string> = {
   service: "servicos",
   industry: "industrias",
@@ -144,7 +152,9 @@ export default function AdminDiscoveryPage() {
     kind = (Object.keys(meta).includes(contentType) ? contentType : "service") as Kind;
   const { session, profile } = useAdminAuth(),
     navigate = useNavigate(),
+    [searchParams] = useSearchParams(),
     [items, setItems] = useState<any[]>([]),
+    [selectedSummary, setSelectedSummary] = useState<any | null>(null),
     [payload, setPayload] = useState<any>(() => initial(kind)),
     [slug, setSlug] = useState(`${kind}-sintetico`),
     [lock, setLock] = useState(1),
@@ -159,6 +169,7 @@ export default function AdminDiscoveryPage() {
   const [vocabularies, setVocabularies] = useState<ControlledVocabularyList[]>([]);
   const permission = meta[kind].permission,
     can = (action: string) => profile?.permissions.includes(`${permission}.${action}`) ?? false;
+  const activeTool = searchParams.get("tab") ?? "0";
   const parsed = useMemo(() => schemas[kind].safeParse(payload), [kind, payload]);
   useEffect(() => {
     if (!session || kind !== "service") return;
@@ -304,6 +315,7 @@ export default function AdminDiscoveryPage() {
             </Link>
           )}
         </div>
+        <DiscoveryModuleTabs kind={kind} />
         {error ? (
           <div role="alert" className="admin-notice--error">
             {error}
@@ -316,7 +328,7 @@ export default function AdminDiscoveryPage() {
               e os owners forem aprovados.
             </p>
           </div>
-        ) : (
+        ) : activeTool === "0" ? (
           <div className="admin-table-wrap">
             <table>
               <thead>
@@ -334,14 +346,145 @@ export default function AdminDiscoveryPage() {
                     <td>{item.slug}</td>
                     <td>{item.workflow_status}</td>
                     <td>
-                      <Link to={`/admin/descoberta/${kind}/${item.id}`}>Abrir</Link>
+                      <button type="button" onClick={() => setSelectedSummary(item)}>
+                        Abrir
+                      </button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+        ) : (
+          <SectionCard
+            title={
+              kind === "service"
+                ? activeTool === "1"
+                  ? "Vínculos com produtos"
+                  : "Listas mestras"
+                : kind === "industry"
+                  ? activeTool === "1"
+                    ? "Conteúdo por setor"
+                    : "Ordem no site"
+                  : kind === "application"
+                    ? activeTool === "1"
+                      ? "Vínculos da aplicação"
+                      : "Matriz produto × aplicação"
+                    : "Composição"
+            }
+            description="A relação é bidirecional e respeita o workflow editorial vigente."
+          >
+            {kind === "service" && activeTool === "2" ? (
+              <div className="admin-master-layout">
+                <div className="admin-master-sidebar">
+                  {(vocabularies.length
+                    ? vocabularies
+                    : [
+                        { id: "category", label: "Categorias de serviço", options: [] },
+                        { id: "delivery", label: "Modalidades de atendimento", options: [] },
+                        { id: "standards", label: "Normas e certificações", options: [] },
+                      ]
+                  ).map((list: any) => (
+                    <Link key={list.id} to="/admin/listas-mestras">
+                      <strong>{list.label}</strong>
+                      <span>{list.options.length} termos</span>
+                    </Link>
+                  ))}
+                </div>
+                <p className="admin-help">
+                  Abra uma lista para incluir, inativar ou revisar termos sem alterar os identificadores já
+                  usados.
+                </p>
+              </div>
+            ) : (
+              <div className="admin-table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>
+                        {kind === "industry"
+                          ? "Setor"
+                          : kind === "application"
+                            ? "Aplicação"
+                            : kind === "solution"
+                              ? "Solução"
+                              : "Serviço"}
+                      </th>
+                      <th>Produtos</th>
+                      <th>Serviços</th>
+                      <th>Aplicações</th>
+                      <th>Situação</th>
+                      <th>Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((item) => {
+                      const relations = item.cms_content_drafts?.payload?.relations ?? {};
+                      const products = relations.productIds?.length ?? 0;
+                      const services = relations.serviceIds?.length ?? 0;
+                      const applications = relations.applicationIds?.length ?? 0;
+                      const complete =
+                        products > 0 || (kind === "industry" && (services > 0 || applications > 0));
+                      return (
+                        <tr key={item.id}>
+                          <td>
+                            <strong>{item.cms_content_drafts?.payload?.title ?? "Sem título"}</strong>
+                            <small>{item.slug}</small>
+                          </td>
+                          <td>{products || "—"}</td>
+                          <td>{services || "—"}</td>
+                          <td>{applications || "—"}</td>
+                          <td>
+                            <Badge tone={complete ? "success" : "warning"}>
+                              {complete ? "Completo" : "Sem vínculos"}
+                            </Badge>
+                          </td>
+                          <td>
+                            <Link to={`/admin/descoberta/${kind}/${item.id}`}>
+                              {kind === "industry" ? "Completar" : "Gerenciar vínculos"}
+                            </Link>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </SectionCard>
         )}
+        <RecordDrawer
+          open={Boolean(selectedSummary)}
+          eyebrow={singularLabels[kind].toUpperCase()}
+          title={selectedSummary?.cms_content_drafts?.payload?.title ?? "Sem título"}
+          address={selectedSummary ? `/${publicPaths[kind]}/${selectedSummary.slug}` : undefined}
+          status={
+            <Badge tone={selectedSummary?.workflow_status === "published" ? "success" : "info"}>
+              {String(selectedSummary?.workflow_status ?? "draft").replaceAll("_", " ")}
+            </Badge>
+          }
+          fields={
+            selectedSummary
+              ? [
+                  {
+                    label: "Vínculos",
+                    value: `${selectedSummary.cms_content_drafts?.payload?.relations?.productIds?.length ?? 0} produtos · ${selectedSummary.cms_content_drafts?.payload?.relations?.serviceIds?.length ?? 0} serviços`,
+                  },
+                  {
+                    label: "Atualização",
+                    value: new Date(selectedSummary.updated_at).toLocaleString("pt-BR"),
+                  },
+                ]
+              : undefined
+          }
+          summary={selectedSummary?.cms_content_drafts?.payload?.summary || "Sem resumo editorial."}
+          primary={
+            selectedSummary && (
+              <Link to={`/admin/descoberta/${kind}/${selectedSummary.id}`}>Ver ficha completa</Link>
+            )
+          }
+          onClose={() => setSelectedSummary(null)}
+        />
       </section>
     );
   return (

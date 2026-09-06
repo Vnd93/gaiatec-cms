@@ -12,7 +12,7 @@ body,
    Não polui mouse-clicks (que perdem focus em hover).
    ─────────────────────────────────────────────────────────── */
 *:focus-visible {
-  outline: 2px solid #0057DE;
+  outline: 2px solid #0057de;
   outline-offset: 2px;
   border-radius: 2px;
 }
@@ -38,9 +38,9 @@ textarea:focus-visible {
    círculos verdadeiros marcados com a classe `.rounded-full` (ex.: o
    spinner de carregamento), que permanecem redondos.
    ─────────────────────────────────────────────────────────── */
-*:not(.rounded-full),
-*:not(.rounded-full)::before,
-*:not(.rounded-full)::after {
+.public-site *:not(.rounded-full),
+.public-site *:not(.rounded-full)::before,
+.public-site *:not(.rounded-full)::after {
   border-radius: 0 !important;
 }
 
@@ -63,8 +63,8 @@ textarea:focus-visible {
   --destructive: #d4183d;
   --destructive-foreground: #ffffff;
   --border: rgba(0, 0, 0, 0.1);
-  --input: transparent;
-  --input-background: #f3f3f5;
+  --input: #d4d4d8;
+  --input-background: #ffffff;
   --switch-background: #cbced4;
   --font-weight-medium: 500;
   --font-weight-normal: 400;

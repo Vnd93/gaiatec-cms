@@ -19,6 +19,7 @@ import {
   FilterBar,
   LoadingSkeleton,
   PageHeader,
+  RecordDrawer,
   SectionCard,
   StatePanel,
 } from "../components/AdminUI";
@@ -92,6 +93,7 @@ function LegacyMediaPage() {
   const [files, setFiles] = useState<Partial<Record<MediaUploadSlot, File>>>({});
   const [usages, setUsages] = useState<{ asset: Media; rows: MediaUsage[] } | null>(null);
   const [deleting, setDeleting] = useState<Media | null>(null);
+  const [selected, setSelected] = useState<Media | null>(null);
   const pageSize = 20;
   const canUpload = profile?.permissions.includes("cms:media.upload") ?? false;
   const canManage = profile?.permissions.includes("cms:media.manage") ?? false;
@@ -497,6 +499,9 @@ function LegacyMediaPage() {
                 </dd>
               </dl>
               <div className="admin-actions">
+                <button type="button" onClick={() => setSelected(item)}>
+                  Abrir
+                </button>
                 <button type="button" onClick={() => void inspectUsages(item)} disabled={busy}>
                   Consultar usos
                 </button>
@@ -562,6 +567,53 @@ function LegacyMediaPage() {
           Próxima página
         </button>
       </nav>
+
+      <RecordDrawer
+        open={Boolean(selected)}
+        eyebrow="MÍDIA"
+        title={selected?.original_filename ?? "Arquivo"}
+        address={selected ? `/midia/${selected.id}` : undefined}
+        status={<span className="admin-status">{selected?.processing_status}</span>}
+        fields={
+          selected
+            ? [
+                {
+                  label: "Tipo",
+                  value: selected.original_filename.split(".").pop()?.toUpperCase() ?? "Arquivo",
+                },
+                {
+                  label: "Dimensões",
+                  value:
+                    selected.width && selected.height
+                      ? `${selected.width} × ${selected.height}`
+                      : "Aguardando",
+                },
+                { label: "Direitos", value: `${selected.owner_name} · ${selected.license_name}` },
+                { label: "Verificação", value: selected.scan_status },
+              ]
+            : undefined
+        }
+        summary={selected?.alt_text || "Sem texto alternativo."}
+        primary={
+          selected && (
+            <button type="button" onClick={() => void inspectUsages(selected)}>
+              Ver ficha completa
+            </button>
+          )
+        }
+        onClose={() => setSelected(null)}
+      >
+        {selected && usages?.asset.id === selected.id && (
+          <section className="admin-record-drawer__summary">
+            <h3>Usos registrados</h3>
+            <p>
+              {usages.rows.length
+                ? `${usages.rows.length} vínculo(s) localizado(s).`
+                : "Nenhum uso registrado."}
+            </p>
+          </section>
+        )}
+      </RecordDrawer>
 
       <ConfirmDialog
         open={Boolean(deleting)}

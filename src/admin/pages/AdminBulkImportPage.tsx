@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { Link } from "react-router";
+import { ProductModuleTabs } from "../components/AdminModuleTabs";
 import { useAdminAuth } from "../auth/AdminAuthContext";
 import { bulkImportCommand } from "../api/cms-api";
 import {
@@ -270,6 +271,7 @@ export default function AdminBulkImportPage() {
         Importe apenas cadastros novos preparados para este CMS. O fluxo valida todas as linhas antes de criar
         qualquer registro e sempre gera rascunhos — nunca publica automaticamente.
       </p>
+      <ProductModuleTabs />
       <div className="admin-workflow-actions">
         <button
           className="admin-button admin-button--secondary"

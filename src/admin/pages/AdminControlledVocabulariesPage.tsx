@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { controlledVocabularyCommand, type ControlledVocabularyList } from "../api/cms-api";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { ProductModuleTabs } from "../components/AdminModuleTabs";
 
 type ListDraft = {
   id?: string;
@@ -121,6 +122,7 @@ export default function AdminControlledVocabulariesPage() {
           </p>
         </div>
       </div>
+      <ProductModuleTabs />
       {error && (
         <div role="alert" className="admin-notice--error">
           {error}

@@ -251,6 +251,15 @@ const guidance: Array<{ match: RegExp; value: AdminRouteGuidance }> = [
     },
   },
   {
+    match: /^\/admin\/auditoria/,
+    value: {
+      task: "Filtre e exporte a trilha imutável de ações do CMS.",
+      publicImpact: "A consulta não altera o site nem qualquer registro.",
+      internal: "Eventos, usuários, alvos e correlações são restritos.",
+      nextStep: "Localize a ação pelo período e preserve o código de correlação na investigação.",
+    },
+  },
+  {
     match: /^\/admin\/diagnosticos/,
     value: {
       task: "Investigue falhas reais por código de acompanhamento.",

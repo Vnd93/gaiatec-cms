@@ -1,5 +1,4 @@
 import "../admin.css";
-import "../admin-f11.css";
 import { AdminAlert, LoadingSkeleton } from "./AdminUI";
 
 export function AdminFrame({

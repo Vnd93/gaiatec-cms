@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { CmsFormVersionSchema } from "@/shared/contracts/cms-content";
 import { leadCommand } from "../api/cms-api";
 import { useAdminAuth } from "../auth/AdminAuthContext";
-import { ErrorState } from "../components/AdminUI";
+import { Badge, ErrorState, RecordDrawer } from "../components/AdminUI";
 
 type FormRow = {
   id: string;
@@ -51,6 +51,7 @@ export default function AdminFormsPage() {
   const { session, profile } = useAdminAuth();
   const [forms, setForms] = useState<FormRow[]>([]),
     [selected, setSelected] = useState<FormRow | null>(null),
+    [previewed, setPreviewed] = useState<FormRow | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [message, setMessage] = useState("");
@@ -219,7 +220,7 @@ export default function AdminFormsPage() {
             <p>Nenhum formulário novo cadastrado.</p>
           ) : (
             forms.map((form) => (
-              <button key={form.id} onClick={() => choose(form)}>
+              <button key={form.id} type="button" onClick={() => setPreviewed(form)}>
                 <strong>{form.title}</strong>
                 <br />
                 <small>
@@ -507,6 +508,39 @@ export default function AdminFormsPage() {
           )}
         </form>
       </div>
+      <RecordDrawer
+        open={Boolean(previewed)}
+        eyebrow="FORMULÁRIO"
+        title={previewed?.title ?? ""}
+        address={previewed?.form_key}
+        status={
+          <Badge tone={previewed?.status === "published" ? "success" : "neutral"}>{previewed?.status}</Badge>
+        }
+        fields={[
+          { label: "Versões", value: previewed?.cms_form_versions.length ?? 0 },
+          {
+            label: "Versão ativa",
+            value:
+              previewed?.cms_form_versions.find((version) => version.id === previewed.active_version_id)
+                ?.version ?? "Não publicada",
+          },
+          { label: "Consentimento", value: "LGPD versionado" },
+        ]}
+        summary={previewed?.purpose}
+        primary={
+          <button
+            className="admin-button"
+            type="button"
+            onClick={() => {
+              if (previewed) choose(previewed);
+              setPreviewed(null);
+            }}
+          >
+            Ver ficha completa
+          </button>
+        }
+        onClose={() => setPreviewed(null)}
+      />
     </section>
   );
 }

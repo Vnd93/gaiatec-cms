@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router";
 import { qualityCommand } from "../api/cms-api";
 import { useAdminAuth } from "../auth/AdminAuthContext";
 import { cmsEnvironment, isEv2FeatureEnabled } from "../ev2-runtime";
@@ -46,6 +47,17 @@ export default function AdminQualityPage() {
     [success, setSuccess] = useState("");
   const canRun = profile?.permissions.includes("cms:quality.run") ?? false;
   const canWaive = profile?.permissions.includes("cms:quality.waive") ?? false;
+  const categoryCounts = useMemo(() => {
+    const counts = { seo: 0, links: 0, accessibility: 0, media: 0 };
+    findings.forEach((finding) => {
+      const category = `${finding.category} ${finding.ruleKey}`.toLowerCase();
+      if (category.includes("seo")) counts.seo += 1;
+      else if (category.includes("link")) counts.links += 1;
+      else if (category.includes("access") || category.includes("a11y")) counts.accessibility += 1;
+      else if (category.includes("media") || category.includes("image")) counts.media += 1;
+    });
+    return counts;
+  }, [findings]);
   const load = useCallback(async () => {
     if (!session || !candidateEnabled) return;
     setError("");
@@ -154,6 +166,28 @@ export default function AdminQualityPage() {
         <div className="admin-state">A capacidade está desligada para este usuário.</div>
       ) : (
         <>
+          <div className="admin-metrics" aria-label="Pendências por categoria">
+            <article>
+              <strong>{categoryCounts.seo}</strong>
+              <span>SEO</span>
+            </article>
+            <article>
+              <strong>{categoryCounts.links}</strong>
+              <span>links</span>
+            </article>
+            <article>
+              <strong>{categoryCounts.accessibility}</strong>
+              <span>acessibilidade</span>
+            </article>
+            <article>
+              <strong>{categoryCounts.media}</strong>
+              <span>mídias sem uso</span>
+            </article>
+          </div>
+          <p className="admin-help">
+            Varredura diária automática; a execução manual abaixo atualiza o diagnóstico do item
+            imediatamente.
+          </p>
           <div className="admin-editor-grid">
             <label>
               ID do conteúdo
@@ -215,6 +249,7 @@ export default function AdminQualityPage() {
                     <th>Campo/bloco</th>
                     <th>Severidade</th>
                     <th>Orientação</th>
+                    <th>Ação</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -230,6 +265,20 @@ export default function AdminQualityPage() {
                         <small>
                           {finding.ruleKey} · {finding.category}
                         </small>
+                      </td>
+                      <td>
+                        <Link
+                          className="admin-table-action"
+                          to={
+                            finding.category.toLowerCase().includes("media")
+                              ? "/admin/midia"
+                              : `/admin/produtos/${itemId}?etapa=${
+                                  finding.category.toLowerCase().includes("seo") ? "seo" : "dados"
+                                }`
+                          }
+                        >
+                          Corrigir
+                        </Link>
                       </td>
                     </tr>
                   ))}

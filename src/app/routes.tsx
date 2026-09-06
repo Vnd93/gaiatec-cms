@@ -50,6 +50,7 @@ const AdminMediaPage = lazy(() => import("../admin/pages/AdminMediaPage"));
 const AdminProfilePage = lazy(() => import("../admin/pages/AdminProfilePage"));
 const AdminUsersPage = lazy(() => import("../admin/pages/AdminUsersPage"));
 const AdminDiagnosticsPage = lazy(() => import("../admin/pages/AdminDiagnosticsPage"));
+const AdminAuditPage = lazy(() => import("../admin/pages/AdminAuditPage"));
 const AdminNotFoundPage = lazy(() => import("../admin/pages/AdminNotFoundPage"));
 const AdminDiscoveryPage = lazy(() => import("../admin/pages/AdminDiscoveryPage"));
 const AdminSearchGovernancePage = lazy(() => import("../admin/pages/AdminSearchGovernancePage"));
@@ -219,6 +220,7 @@ export const router = createBrowserRouter([
           { path: "perfil", element: lazyWrap(AdminProfilePage) },
           { path: "usuarios", element: lazyWrap(AdminUsersPage) },
           { path: "diagnosticos", element: lazyWrap(AdminDiagnosticsPage) },
+          { path: "auditoria", element: lazyWrap(AdminAuditPage) },
           { path: "*", element: lazyWrap(AdminNotFoundPage) },
         ],
       },

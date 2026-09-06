@@ -10,7 +10,9 @@ import {
   FilterBar,
   LoadingSkeleton,
   PageHeader,
+  RecordDrawer,
 } from "../components/AdminUI";
+import { ProductModuleTabs } from "../components/AdminModuleTabs";
 
 type ProductItem = {
   id: string;
@@ -18,7 +20,13 @@ type ProductItem = {
   workflow_status: string;
   updated_at: string;
   cms_content_drafts: {
-    payload: { title?: string; manufacturer?: { name?: string }; models?: { model?: string }[] };
+    payload: {
+      title?: string;
+      summary?: string;
+      category?: string | { label?: string };
+      manufacturer?: { name?: string };
+      models?: { model?: string }[];
+    };
   } | null;
 };
 
@@ -27,6 +35,8 @@ export default function AdminProductsPage() {
   const [params] = useSearchParams();
   const [query, setQuery] = useState(params.get("q") ?? "");
   const [status, setStatus] = useState("all");
+  const [category, setCategory] = useState("all");
+  const [selected, setSelected] = useState<ProductItem | null>(null);
   const [items, setItems] = useState<ProductItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -73,6 +83,14 @@ export default function AdminProductsPage() {
   }, [query, status]);
 
   const canEdit = profile?.permissions.includes("cms:products.edit") ?? false;
+  const categoryLabel = (item: ProductItem) => {
+    const value = item.cms_content_drafts?.payload.category;
+    return typeof value === "string" ? value : (value?.label ?? "Sem categoria");
+  };
+  const categories = Array.from(new Set(items.map(categoryLabel))).sort((a, b) =>
+    a.localeCompare(b, "pt-BR"),
+  );
+  const visibleItems = category === "all" ? items : items.filter((item) => categoryLabel(item) === category);
   const statusTone = (value: string) =>
     value === "published"
       ? "success"
@@ -100,7 +118,10 @@ export default function AdminProductsPage() {
           )
         }
       />
-      <FilterBar summary={`${items.length} produto${items.length === 1 ? "" : "s"} nesta página`}>
+      <ProductModuleTabs />
+      <FilterBar
+        summary={`${visibleItems.length} produto${visibleItems.length === 1 ? "" : "s"} nesta página`}
+      >
         <label>
           Buscar por endereço ou título
           <input
@@ -120,6 +141,17 @@ export default function AdminProductsPage() {
             <option value="approved">Aprovado</option>
             <option value="published">Publicado</option>
             <option value="archived">Arquivado</option>
+          </select>
+        </label>
+        <label>
+          Categoria
+          <select value={category} onChange={(event) => setCategory(event.target.value)}>
+            <option value="all">Todas</option>
+            {categories.map((item) => (
+              <option value={item} key={item}>
+                {item}
+              </option>
+            ))}
           </select>
         </label>
       </FilterBar>
@@ -155,7 +187,7 @@ export default function AdminProductsPage() {
             </tr>
           </thead>
           <tbody>
-            {items.map((item) => (
+            {visibleItems.map((item) => (
               <tr key={item.id}>
                 <td>
                   {item.cms_content_drafts?.payload.title ?? "Sem título"}
@@ -172,13 +204,45 @@ export default function AdminProductsPage() {
                 </td>
                 <td>{new Date(item.updated_at).toLocaleString("pt-BR")}</td>
                 <td>
-                  <Link to={`/admin/produtos/${item.id}`}>Abrir editor</Link>
+                  <button type="button" onClick={() => setSelected(item)}>
+                    Abrir
+                  </button>
                 </td>
               </tr>
             ))}
           </tbody>
         </DataTable>
       )}
+      <RecordDrawer
+        open={Boolean(selected)}
+        eyebrow="PRODUTO"
+        title={selected?.cms_content_drafts?.payload.title ?? "Sem título"}
+        address={selected ? `/produtos/${selected.slug}` : undefined}
+        status={
+          <Badge tone={selected ? statusTone(selected.workflow_status) : "neutral"}>
+            {selected?.workflow_status.replaceAll("_", " ")}
+          </Badge>
+        }
+        fields={
+          selected
+            ? [
+                {
+                  label: "Fabricante",
+                  value: selected.cms_content_drafts?.payload.manufacturer?.name ?? "—",
+                },
+                {
+                  label: "Modelo principal",
+                  value: selected.cms_content_drafts?.payload.models?.[0]?.model ?? "—",
+                },
+                { label: "Categoria", value: categoryLabel(selected) },
+                { label: "Atualização", value: new Date(selected.updated_at).toLocaleString("pt-BR") },
+              ]
+            : undefined
+        }
+        summary={selected?.cms_content_drafts?.payload.summary ?? "Sem resumo editorial."}
+        primary={selected && <Link to={`/admin/produtos/${selected.id}`}>Abrir editor completo</Link>}
+        onClose={() => setSelected(null)}
+      />
     </section>
   );
 }

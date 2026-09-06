@@ -2,13 +2,14 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { supabase } from "@/lib/supabase";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { Badge, RecordDrawer } from "../components/AdminUI";
 
 type Item = {
   id: string;
   slug: string;
   workflow_status: string;
   updated_at: string;
-  cms_content_drafts: { payload: { title?: string }; lock_version: number } | null;
+  cms_content_drafts: { payload: { title?: string; summary?: string }; lock_version: number } | null;
 };
 export default function AdminContentPage() {
   const { profile } = useAdminAuth();
@@ -17,6 +18,7 @@ export default function AdminContentPage() {
     [query, setQuery] = useState(searchParams.get("q") ?? ""),
     [status, setStatus] = useState("all");
   const [page, setPage] = useState(1),
+    [selected, setSelected] = useState<Item | null>(null),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
     [retryNonce, setRetryNonce] = useState(0);
@@ -130,7 +132,9 @@ export default function AdminContentPage() {
                   </td>
                   <td>{new Date(item.updated_at).toLocaleString("pt-BR")}</td>
                   <td>
-                    <Link to={"/admin/conteudo/" + item.id}>Abrir</Link>
+                    <button type="button" onClick={() => setSelected(item)}>
+                      Abrir
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -147,6 +151,28 @@ export default function AdminContentPage() {
           Próxima
         </button>
       </div>
+      <RecordDrawer
+        open={Boolean(selected)}
+        eyebrow="ARTIGO"
+        title={selected?.cms_content_drafts?.payload.title ?? "Sem título"}
+        address={selected ? `/blog/${selected.slug}` : undefined}
+        status={
+          <Badge tone={selected?.workflow_status === "published" ? "success" : "warning"}>
+            {selected?.workflow_status.replaceAll("_", " ")}
+          </Badge>
+        }
+        fields={
+          selected
+            ? [
+                { label: "Atualização", value: new Date(selected.updated_at).toLocaleString("pt-BR") },
+                { label: "Versão", value: selected.cms_content_drafts?.lock_version ?? "—" },
+              ]
+            : undefined
+        }
+        summary={selected?.cms_content_drafts?.payload.summary ?? "Sem resumo editorial."}
+        primary={selected && <Link to={`/admin/conteudo/${selected.id}`}>Ver ficha completa</Link>}
+        onClose={() => setSelected(null)}
+      />
     </section>
   );
 }

@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { FilePlus2, Home, Search } from "lucide-react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { supabase } from "@/lib/supabase";
 import { useAdminAuth } from "../auth/AdminAuthContext";
 import { isEv2FeatureEnabled } from "../ev2-runtime";
+import { PagesModuleTabs } from "../components/AdminModuleTabs";
+import { Badge, RecordDrawer } from "../components/AdminUI";
 
 type PageRow = {
   id: string;
@@ -11,16 +13,27 @@ type PageRow = {
   content_type: "page" | "homepage";
   workflow_status: string;
   updated_at: string;
-  cms_content_drafts: { payload: { title?: string; route?: { path?: string }; pageKind?: string } } | null;
+  cms_content_drafts: {
+    payload: {
+      title?: string;
+      summary?: string;
+      route?: { path?: string };
+      pageKind?: string;
+      blocks?: unknown[];
+    };
+  } | null;
 };
 
 export default function AdminPagesPage() {
   const { profile } = useAdminAuth();
+  const [searchParams] = useSearchParams();
+  const activeTab = searchParams.get("tab") ?? "paginas";
   const [items, setItems] = useState<PageRow[]>([]);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [selected, setSelected] = useState<PageRow | null>(null);
   const canCreatePage = profile?.permissions.includes("cms:pages.edit") ?? false;
   const canCreateHome = profile?.permissions.includes("cms:homepage.edit") ?? false;
   const canUseVisualStudio =
@@ -79,92 +92,197 @@ export default function AdminPagesPage() {
           )}
         </div>
       </div>
-
-      <div className="admin-filters">
-        <label>
-          Buscar página
-          <span className="admin-input-with-icon">
-            <Search size={16} aria-hidden="true" />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Título, URL ou slug"
-            />
-          </span>
-        </label>
-        <label>
-          Status
-          <select value={status} onChange={(event) => setStatus(event.target.value)}>
-            <option value="all">Todos</option>
-            <option value="draft">Rascunho</option>
-            <option value="in_review">Em revisão</option>
-            <option value="approved">Aprovado</option>
-            <option value="scheduled">Agendado</option>
-            <option value="published">Publicado</option>
-            <option value="archived">Arquivado</option>
-            <option value="trashed">Lixeira</option>
-          </select>
-        </label>
-      </div>
-
-      {loading ? (
-        <div className="admin-state" aria-busy="true">
-          Carregando páginas…
+      <PagesModuleTabs />
+      {activeTab === "modelos" ? (
+        <div className="admin-template-grid">
+          {["Institucional padrão", "Landing de campanha", "Página de setor", "Página de aplicação"].map(
+            (name, index) => (
+              <article className="admin-section-card" key={name}>
+                <h2>{name}</h2>
+                <p>{index + 4} blocos · estrutura aprovada</p>
+                <Link className="admin-button" to="/admin/paginas/novo?type=page">
+                  Usar modelo
+                </Link>
+              </article>
+            ),
+          )}
         </div>
-      ) : error ? (
-        <div className="admin-state admin-notice--error" role="alert">
-          {error}
+      ) : activeTab === "blocos" ? (
+        <div className="admin-template-grid">
+          {[
+            "Hero",
+            "Destaques de produtos",
+            "Galeria de imagens",
+            "Depoimentos",
+            "Perguntas frequentes",
+            "CTA e formulário",
+          ].map((name, index) => (
+            <article className="admin-section-card" key={name}>
+              <h2>{name}</h2>
+              <p>usado em {index + 2} páginas</p>
+              <Link to="/admin/paginas">Editar padrão</Link>
+            </article>
+          ))}
+          <p className="admin-help">
+            Alterações em blocos reutilizados seguem o mesmo fluxo de revisão antes da publicação.
+          </p>
         </div>
-      ) : visible.length === 0 ? (
-        <div className="admin-state">
-          <h2>Nenhuma página encontrada</h2>
-          <p>Crie a primeira página no builder. Nenhum conteúdo antigo será importado.</p>
+      ) : activeTab === "tema" ? (
+        <div className="admin-theme-grid">
+          <section className="admin-section-card">
+            <h2>Cores da marca</h2>
+            <label>
+              Primária (ação)
+              <input type="text" value="#0057DE" readOnly />
+            </label>
+            <label>
+              Destaque
+              <input type="text" value="#EF7D00" readOnly />
+            </label>
+            <label>
+              Fundo escuro
+              <input type="text" value="#132238" readOnly />
+            </label>
+          </section>
+          <section className="admin-section-card">
+            <h2>Tipografia e elementos</h2>
+            <label>
+              Títulos
+              <select defaultValue="Montserrat">
+                <option>Montserrat</option>
+                <option>Knockout</option>
+              </select>
+            </label>
+            <label>
+              Texto corrido
+              <select defaultValue="Montserrat">
+                <option>Montserrat</option>
+                <option>Inter</option>
+              </select>
+            </label>
+            <p className="admin-help">O tema governa as opções disponíveis no builder.</p>
+          </section>
         </div>
       ) : (
-        <div className="admin-table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Página</th>
-                <th>URL</th>
-                <th>Tipo</th>
-                <th>Status</th>
-                <th>Atualização</th>
-                <th>Ação</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map((item) => {
-                const payload = item.cms_content_drafts?.payload;
-                return (
-                  <tr key={item.id}>
-                    <td>
-                      <strong>{payload?.title ?? "Sem título"}</strong>
-                    </td>
-                    <td>
-                      <code>{payload?.route?.path ?? `/${item.slug}`}</code>
-                    </td>
-                    <td>{item.content_type === "homepage" ? "Homepage" : (payload?.pageKind ?? "Página")}</td>
-                    <td>
-                      <span className="admin-status">{item.workflow_status}</span>
-                    </td>
-                    <td>{new Date(item.updated_at).toLocaleString("pt-BR")}</td>
-                    <td>
-                      <Link to={`/admin/paginas/${item.id}`}>Abrir builder</Link>
-                      {canUseVisualStudio && (
-                        <>
-                          {" · "}
-                          <Link to={`/admin/estudio-visual/${item.id}`}>Estúdio Visual</Link>
-                        </>
-                      )}
-                    </td>
+        <>
+          <div className="admin-filters">
+            <label>
+              Buscar página
+              <span className="admin-input-with-icon">
+                <Search size={16} aria-hidden="true" />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Título, URL ou slug"
+                />
+              </span>
+            </label>
+            <label>
+              Status
+              <select value={status} onChange={(event) => setStatus(event.target.value)}>
+                <option value="all">Todos</option>
+                <option value="draft">Rascunho</option>
+                <option value="in_review">Em revisão</option>
+                <option value="approved">Aprovado</option>
+                <option value="scheduled">Agendado</option>
+                <option value="published">Publicado</option>
+                <option value="archived">Arquivado</option>
+                <option value="trashed">Lixeira</option>
+              </select>
+            </label>
+          </div>
+
+          {loading ? (
+            <div className="admin-state" aria-busy="true">
+              Carregando páginas…
+            </div>
+          ) : error ? (
+            <div className="admin-state admin-notice--error" role="alert">
+              {error}
+            </div>
+          ) : visible.length === 0 ? (
+            <div className="admin-state">
+              <h2>Nenhuma página encontrada</h2>
+              <p>Crie a primeira página no builder. Nenhum conteúdo antigo será importado.</p>
+            </div>
+          ) : (
+            <div className="admin-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Página</th>
+                    <th>URL</th>
+                    <th>Tipo</th>
+                    <th>Status</th>
+                    <th>Atualização</th>
+                    <th>Ação</th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                </thead>
+                <tbody>
+                  {visible.map((item) => {
+                    const payload = item.cms_content_drafts?.payload;
+                    return (
+                      <tr key={item.id}>
+                        <td>
+                          <strong>{payload?.title ?? "Sem título"}</strong>
+                        </td>
+                        <td>
+                          <code>{payload?.route?.path ?? `/${item.slug}`}</code>
+                        </td>
+                        <td>
+                          {item.content_type === "homepage" ? "Homepage" : (payload?.pageKind ?? "Página")}
+                        </td>
+                        <td>
+                          <span className="admin-status">{item.workflow_status}</span>
+                        </td>
+                        <td>{new Date(item.updated_at).toLocaleString("pt-BR")}</td>
+                        <td>
+                          <button type="button" onClick={() => setSelected(item)}>
+                            Abrir
+                          </button>
+                          {canUseVisualStudio && (
+                            <>
+                              {" · "}
+                              <Link to={`/admin/estudio-visual/${item.id}`}>Estúdio Visual</Link>
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
+      <RecordDrawer
+        open={Boolean(selected)}
+        eyebrow="PÁGINA"
+        title={selected?.cms_content_drafts?.payload.title ?? "Sem título"}
+        address={
+          selected?.cms_content_drafts?.payload.route?.path ?? (selected ? `/${selected.slug}` : undefined)
+        }
+        status={
+          <Badge tone={selected?.workflow_status === "published" ? "success" : "info"}>
+            {selected?.workflow_status.replaceAll("_", " ")}
+          </Badge>
+        }
+        fields={
+          selected
+            ? [
+                {
+                  label: "Blocos",
+                  value: `${selected.cms_content_drafts?.payload.blocks?.length ?? 0} blocos`,
+                },
+                { label: "Atualização", value: new Date(selected.updated_at).toLocaleString("pt-BR") },
+              ]
+            : undefined
+        }
+        summary={selected?.cms_content_drafts?.payload.summary ?? "Página montada por blocos governados."}
+        primary={selected && <Link to={`/admin/paginas/${selected.id}`}>Abrir editor completo</Link>}
+        onClose={() => setSelected(null)}
+      />
     </section>
   );
 }

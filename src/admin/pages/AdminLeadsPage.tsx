@@ -337,158 +337,172 @@ export default function AdminLeadsPage() {
         </div>
       )}
       {selected && (
-        <section className="admin-workflow" aria-labelledby="lead-editor-title">
-          <h2 id="lead-editor-title">Atender {selected.reference_code}</h2>
-          <p>
-            Dados pessoais aparecem somente nesta área autenticada. Retenção até{" "}
-            {new Date(selected.retention_until).toLocaleDateString("pt-BR")}.
-          </p>
-          <p>
-            <strong>Origem:</strong> {selected.origin_source} · <code>{selected.origin_path}</code> · UTM{" "}
-            {JSON.stringify(selected.utm)}
-          </p>
-          <p>
-            <strong>Consentimento:</strong>{" "}
-            {selected.cms_lead_consents[0]
-              ? `versão ${selected.cms_lead_consents[0].consent_version}, registrado em ${new Date(selected.cms_lead_consents[0].server_recorded_at).toLocaleString("pt-BR")}, política ${selected.cms_lead_consents[0].policy_path}`
-              : "registro indisponível"}
-          </p>
-          <dl>
-            {Object.entries(selected.payload).map(([key, value]) => (
-              <div key={key}>
-                <dt>{key}</dt>
-                <dd>{String(value)}</dd>
-              </div>
-            ))}
-          </dl>
-          <h3>Histórico</h3>
-          {selected.cms_lead_status_history
-            .slice()
-            .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
-            .map((item) => (
-              <p key={item.id}>
-                {new Date(item.created_at).toLocaleString("pt-BR")} · {item.from_status ?? "entrada"} →{" "}
-                {item.to_status} · {item.reason}
-              </p>
-            ))}
-          <h3>Entrega e resiliência</h3>
-          {selected.cms_lead_outbox.length === 0 ? (
-            <p className="admin-notice admin-notice--error" role="alert">
-              Nenhum evento de entrega foi localizado. Abra Diagnósticos para reconciliar este lead.
+        <>
+          <button
+            className="admin-record-drawer-backdrop"
+            type="button"
+            aria-label="Fechar lead"
+            onClick={() => setSelected(null)}
+          />
+          <section
+            className="admin-record-drawer admin-lead-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="lead-editor-title"
+          >
+            <h2 id="lead-editor-title">Atender {selected.reference_code}</h2>
+            <p className="admin-eyebrow">LEAD · FICHA COMPLETA</p>
+            <p>
+              Dados pessoais aparecem somente nesta área autenticada. Retenção até{" "}
+              {new Date(selected.retention_until).toLocaleDateString("pt-BR")}.
             </p>
-          ) : (
-            selected.cms_lead_outbox
+            <p>
+              <strong>Origem:</strong> {selected.origin_source} · <code>{selected.origin_path}</code> · UTM{" "}
+              {JSON.stringify(selected.utm)}
+            </p>
+            <p>
+              <strong>Consentimento:</strong>{" "}
+              {selected.cms_lead_consents[0]
+                ? `versão ${selected.cms_lead_consents[0].consent_version}, registrado em ${new Date(selected.cms_lead_consents[0].server_recorded_at).toLocaleString("pt-BR")}, política ${selected.cms_lead_consents[0].policy_path}`
+                : "registro indisponível"}
+            </p>
+            <dl>
+              {Object.entries(selected.payload).map(([key, value]) => (
+                <div key={key}>
+                  <dt>{key}</dt>
+                  <dd>{String(value)}</dd>
+                </div>
+              ))}
+            </dl>
+            <h3>Histórico</h3>
+            {selected.cms_lead_status_history
               .slice()
-              .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at))
-              .map((event) => (
-                <article className="admin-alert" key={event.id}>
-                  <p>
-                    <Badge tone={deliveryTone[event.status]}>{deliveryLabels[event.status]}</Badge> ·{" "}
-                    {event.event_type}
-                  </p>
-                  <p>
-                    Tentativas: {event.attempts} · criado em{" "}
-                    {new Date(event.created_at).toLocaleString("pt-BR")}
-                  </p>
-                  {event.status === "failed" && (
+              .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+              .map((item) => (
+                <p key={item.id}>
+                  {new Date(item.created_at).toLocaleString("pt-BR")} · {item.from_status ?? "entrada"} →{" "}
+                  {item.to_status} · {item.reason}
+                </p>
+              ))}
+            <h3>Entrega e resiliência</h3>
+            {selected.cms_lead_outbox.length === 0 ? (
+              <p className="admin-notice admin-notice--error" role="alert">
+                Nenhum evento de entrega foi localizado. Abra Diagnósticos para reconciliar este lead.
+              </p>
+            ) : (
+              selected.cms_lead_outbox
+                .slice()
+                .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at))
+                .map((event) => (
+                  <article className="admin-alert" key={event.id}>
                     <p>
-                      Próxima tentativa automática: {new Date(event.available_at).toLocaleString("pt-BR")}.
+                      <Badge tone={deliveryTone[event.status]}>{deliveryLabels[event.status]}</Badge> ·{" "}
+                      {event.event_type}
                     </p>
-                  )}
-                  {event.last_error_code && <p>Código técnico: {event.last_error_code}</p>}
-                  {(event.status === "failed" || event.status === "dead_letter") && canRetry && (
-                    <button
-                      type="button"
-                      disabled={busy || retryReason.trim().length < 3}
-                      onClick={() => {
-                        setRetryEvent(event);
-                        setPendingSensitiveAction("retry");
-                      }}
-                    >
-                      Reprocessar entrega
-                    </button>
-                  )}
-                </article>
-              ))
-          )}
-          {canRetry &&
-            selected.cms_lead_outbox.some(
-              (event) => event.status === "failed" || event.status === "dead_letter",
-            ) && (
-              <label>
-                Justificativa do reprocessamento
-                <input
-                  required
-                  minLength={3}
-                  maxLength={500}
-                  value={retryReason}
-                  onChange={(event) => setRetryReason(event.target.value)}
-                />
-              </label>
+                    <p>
+                      Tentativas: {event.attempts} · criado em{" "}
+                      {new Date(event.created_at).toLocaleString("pt-BR")}
+                    </p>
+                    {event.status === "failed" && (
+                      <p>
+                        Próxima tentativa automática: {new Date(event.available_at).toLocaleString("pt-BR")}.
+                      </p>
+                    )}
+                    {event.last_error_code && <p>Código técnico: {event.last_error_code}</p>}
+                    {(event.status === "failed" || event.status === "dead_letter") && canRetry && (
+                      <button
+                        type="button"
+                        disabled={busy || retryReason.trim().length < 3}
+                        onClick={() => {
+                          setRetryEvent(event);
+                          setPendingSensitiveAction("retry");
+                        }}
+                      >
+                        Reprocessar entrega
+                      </button>
+                    )}
+                  </article>
+                ))
             )}
-          {canAssign && (
-            <>
-              <label>
-                Status
-                <select value={nextStatus} onChange={(e) => setNextStatus(e.target.value)}>
-                  {statuses.map((item) => (
-                    <option value={item} key={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Responsável
-                <select value={assignee} onChange={(e) => setAssignee(e.target.value)}>
-                  <option value="">Não atribuído</option>
-                  {profiles.map((item) => (
-                    <option key={item.user_id} value={item.user_id}>
-                      {item.display_name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Motivo
-                <input
-                  required
-                  minLength={3}
-                  maxLength={500}
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                />
-              </label>
+            {canRetry &&
+              selected.cms_lead_outbox.some(
+                (event) => event.status === "failed" || event.status === "dead_letter",
+              ) && (
+                <label>
+                  Justificativa do reprocessamento
+                  <input
+                    required
+                    minLength={3}
+                    maxLength={500}
+                    value={retryReason}
+                    onChange={(event) => setRetryReason(event.target.value)}
+                  />
+                </label>
+              )}
+            {canAssign && (
+              <>
+                <label>
+                  Status
+                  <select value={nextStatus} onChange={(e) => setNextStatus(e.target.value)}>
+                    {statuses.map((item) => (
+                      <option value={item} key={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Responsável
+                  <select value={assignee} onChange={(e) => setAssignee(e.target.value)}>
+                    <option value="">Não atribuído</option>
+                    {profiles.map((item) => (
+                      <option key={item.user_id} value={item.user_id}>
+                        {item.display_name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Motivo
+                  <input
+                    required
+                    minLength={3}
+                    maxLength={500}
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="admin-button"
+                  disabled={busy || reason.trim().length < 3}
+                  onClick={() => void update()}
+                >
+                  Salvar atendimento
+                </button>
+              </>
+            )}
+            {canPrivacy && (
               <button
                 type="button"
-                className="admin-button"
+                className="admin-danger-link"
                 disabled={busy || reason.trim().length < 3}
-                onClick={() => void update()}
+                onClick={() => setPendingSensitiveAction("anonymize")}
               >
-                Salvar atendimento
+                Anonimizar conforme LGPD
               </button>
-            </>
-          )}
-          {canPrivacy && (
+            )}
             <button
               type="button"
-              className="admin-danger-link"
-              disabled={busy || reason.trim().length < 3}
-              onClick={() => setPendingSensitiveAction("anonymize")}
+              onClick={() => {
+                setSelected(null);
+                setRetryEvent(null);
+              }}
             >
-              Anonimizar conforme LGPD
+              Fechar
             </button>
-          )}
-          <button
-            type="button"
-            onClick={() => {
-              setSelected(null);
-              setRetryEvent(null);
-            }}
-          >
-            Fechar
-          </button>
-        </section>
+          </section>
+        </>
       )}
       <ConfirmDialog
         open={pendingSensitiveAction !== null}

@@ -46,7 +46,7 @@ export function Layout() {
   return (
     <ComparadorProvider>
       <SiteShellProvider>
-        <div className="min-h-screen bg-white" style={{ fontFamily: "'Inter', sans-serif" }}>
+        <div className="public-site min-h-screen bg-white" style={{ fontFamily: "'Inter', sans-serif" }}>
           <SkipToContent />
           <ScrollToTop />
           <Header />

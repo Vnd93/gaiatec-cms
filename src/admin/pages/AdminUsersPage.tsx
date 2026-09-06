@@ -12,6 +12,7 @@ import {
   FieldGroup,
   LoadingSkeleton,
   PageHeader,
+  RecordDrawer,
   SectionCard,
 } from "../components/AdminUI";
 
@@ -44,6 +45,8 @@ export default function AdminUsersPage() {
   const [invite, setInvite] = useState({ email: "", displayName: "", roles: ["editor"] });
   const [roleDrafts, setRoleDrafts] = useState<Record<string, string[]>>({});
   const [pending, setPending] = useState<PendingAction | null>(null);
+  const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
+  const [fullUser, setFullUser] = useState(false);
   const canInvite = profile?.permissions.includes("cms:users.invite") ?? false;
   const canManage = profile?.permissions.includes("cms:users.manage") ?? false;
   const canSuspend = profile?.permissions.includes("cms:users.suspend") ?? false;
@@ -283,6 +286,9 @@ export default function AdminUsersPage() {
                 <td>{item.last_seen_at ? new Date(item.last_seen_at).toLocaleString("pt-BR") : "Nunca"}</td>
                 <td>
                   <div className="admin-actions">
+                    <button type="button" onClick={() => setSelectedUser(item)}>
+                      Abrir
+                    </button>
                     {canInvite && item.status === "invited" && (
                       <button
                         type="button"
@@ -322,6 +328,53 @@ export default function AdminUsersPage() {
           </tbody>
         </DataTable>
       )}
+
+      <RecordDrawer
+        open={Boolean(selectedUser)}
+        eyebrow="USUÁRIO"
+        title={selectedUser?.display_name ?? ""}
+        address={selectedUser?.display_email ?? selectedUser?.user_id}
+        status={
+          <Badge
+            tone={
+              selectedUser?.status === "active"
+                ? "success"
+                : selectedUser?.status === "suspended"
+                  ? "danger"
+                  : "warning"
+            }
+          >
+            {selectedUser?.status}
+          </Badge>
+        }
+        fields={[
+          { label: "Papéis", value: selectedUser?.roles.join(", ") || "Nenhum" },
+          { label: "MFA", value: selectedUser?.mfa_enrolled_at ? "Configurado" : "Pendente" },
+          {
+            label: "Último acesso",
+            value: selectedUser?.last_seen_at
+              ? new Date(selectedUser.last_seen_at).toLocaleString("pt-BR")
+              : "Nunca",
+          },
+          ...(fullUser ? [{ label: "Identificador", value: selectedUser?.user_id ?? "" }] : []),
+        ]}
+        summary={
+          fullUser
+            ? "Ficha de acesso com identidade, autenticação multifator, papéis e histórico operacional. Alterações permanecem sujeitas ao RBAC e à auditoria."
+            : "Resumo da identidade administrativa e do estado de acesso."
+        }
+        primary={
+          !fullUser ? (
+            <button className="admin-button" type="button" onClick={() => setFullUser(true)}>
+              Ver ficha completa
+            </button>
+          ) : null
+        }
+        onClose={() => {
+          setSelectedUser(null);
+          setFullUser(false);
+        }}
+      />
 
       <ConfirmDialog
         open={Boolean(pending)}

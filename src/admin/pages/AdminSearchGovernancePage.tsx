@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { ProductModuleTabs } from "../components/AdminModuleTabs";
 import { cmsEnvironment, isEv2FeatureEnabled } from "../ev2-runtime";
 import { searchGovernanceCommand } from "../api/cms-api";
 import { AdminAlert, ConfirmDialog } from "../components/AdminUI";
@@ -255,6 +256,7 @@ export default function AdminSearchGovernancePage() {
           <h1>Sinônimos e zero resultado</h1>
         </div>
       </div>
+      <ProductModuleTabs />
       {error && (
         <div role="alert" className="admin-notice--error">
           {error}

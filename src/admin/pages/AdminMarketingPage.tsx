@@ -4,6 +4,7 @@ import { Link } from "react-router";
 import { supabase } from "@/lib/supabase";
 import { useAdminAuth } from "../auth/AdminAuthContext";
 import { campaignWindowLabel } from "../campaign-window";
+import { Badge, RecordDrawer } from "../components/AdminUI";
 
 type CampaignRow = {
   id: string;
@@ -21,6 +22,7 @@ export default function AdminMarketingPage() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [selected, setSelected] = useState<CampaignRow | null>(null);
   const canCreate = profile?.permissions.includes("cms:campaigns.edit") ?? false;
 
   useEffect(() => {
@@ -132,7 +134,9 @@ export default function AdminMarketingPage() {
                       <span className="admin-status">{item.workflow_status}</span>
                     </td>
                     <td>
-                      <Link to={`/admin/marketing/campanhas/${item.id}`}>Editar</Link>
+                      <button type="button" onClick={() => setSelected(item)}>
+                        Abrir
+                      </button>
                     </td>
                   </tr>
                 );
@@ -141,6 +145,34 @@ export default function AdminMarketingPage() {
           </table>
         </div>
       )}
+      <RecordDrawer
+        open={Boolean(selected)}
+        eyebrow="CAMPANHA"
+        title={selected?.cms_content_drafts?.payload.title ?? "Sem título"}
+        address={
+          selected?.cms_content_drafts?.payload.route?.path ??
+          (selected ? `/campanhas/${selected.slug}` : undefined)
+        }
+        status={
+          <Badge tone={selected?.workflow_status === "published" ? "success" : "info"}>
+            {selected?.workflow_status.replaceAll("_", " ")}
+          </Badge>
+        }
+        fields={
+          selected
+            ? [
+                {
+                  label: "Vigência",
+                  value: campaignWindowLabel(selected.cms_content_drafts?.payload.window),
+                },
+                { label: "Atualização", value: new Date(selected.updated_at).toLocaleString("pt-BR") },
+              ]
+            : undefined
+        }
+        summary="Campanha governada com landing page, vigência e expiração automática."
+        primary={selected && <Link to={`/admin/marketing/campanhas/${selected.id}`}>Ver ficha completa</Link>}
+        onClose={() => setSelected(null)}
+      />
     </section>
   );
 }

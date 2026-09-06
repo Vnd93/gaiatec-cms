@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { supabase } from "@/lib/supabase";
 import { CmsProductContentSchema } from "@/shared/contracts/cms-content";
 import {
@@ -47,16 +47,28 @@ type Loaded = {
   }[];
 };
 
-const tabs: [ProductEditorTab, string][] = [
-  ["identificacao", "Identificação"],
-  ["classificacao", "Classificação"],
-  ["comercial", "Conteúdo comercial"],
-  ["especificacoes", "Técnica e mídia"],
-  ["relacoes", "Relações e busca"],
-  ["visibilidade", "Visibilidade e SEO"],
-  ["governanca", "Governança"],
-  ["historico", "Publicação e histórico"],
+type ProductStage = "identificacao" | "especificacoes" | "relacoes" | "visibilidade";
+
+const tabs: [ProductStage, string][] = [
+  ["identificacao", "Dados essenciais"],
+  ["especificacoes", "Modelos"],
+  ["relacoes", "Mídia"],
+  ["visibilidade", "SEO e publicação"],
 ];
+
+function stageForTab(tab: ProductEditorTab): ProductStage {
+  if (["identificacao", "classificacao", "comercial"].includes(tab)) return "identificacao";
+  if (tab === "especificacoes") return "especificacoes";
+  if (tab === "relacoes") return "relacoes";
+  return "visibilidade";
+}
+
+function stageFromSearch(value: string | null): ProductStage {
+  if (value === "modelos") return "especificacoes";
+  if (value === "midia") return "relacoes";
+  if (value === "seo") return "visibilidade";
+  return "identificacao";
+}
 
 function ControlledTermSelect({
   label,
@@ -106,12 +118,16 @@ const jsonHelp: Record<GovernedJsonField, string> = {
 
 export default function AdminProductEditorPage() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { session, profile } = useAdminAuth();
   const draftV2Enabled = isEv2FeatureEnabled(profile, "ev2.draft_v2");
   const [draft, setDraft] = useState(createInitialProductDraft);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
-  const [activeTab, setActiveTab] = useState<ProductEditorTab>("identificacao");
+  const [activeTab, setActiveTab] = useState<ProductEditorTab>(() =>
+    stageFromSearch(searchParams.get("etapa")),
+  );
+  const activeStage = stageForTab(activeTab);
   const [loading, setLoading] = useState(id !== "novo");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -481,9 +497,9 @@ export default function AdminProductEditorPage() {
             id={`product-tab-${key}`}
             type="button"
             role="tab"
-            aria-selected={activeTab === key}
+            aria-selected={activeStage === key}
             aria-controls="product-tabpanel"
-            tabIndex={activeTab === key ? 0 : -1}
+            tabIndex={activeStage === key ? 0 : -1}
             onClick={() => setActiveTab(key)}
             onKeyDown={(event) => {
               if (event.key === "Enter" || event.key === " ") {
@@ -516,14 +532,14 @@ export default function AdminProductEditorPage() {
         <form
           id="product-tabpanel"
           role="tabpanel"
-          aria-labelledby={`product-tab-${activeTab}`}
+          aria-labelledby={`product-tab-${activeStage}`}
           className="admin-product-form"
           onSubmit={(event) => {
             event.preventDefault();
             void run(loaded ? "save" : "create");
           }}
         >
-          {activeTab === "identificacao" && (
+          {activeStage === "identificacao" && (
             <fieldset>
               <legend>Marca, fabricante, linha, modelo comercial e referência do fabricante</legend>
               {input("Slug", "slug")}
@@ -537,18 +553,9 @@ export default function AdminProductEditorPage() {
               {input("Slug da linha", "lineSlug")}
               {input("Modelo comercial GAIATEC", "commercialModel")}
               {input("Referência/modelo do fabricante", "manufacturerReference")}
-              <ProductModelsEditor
-                value={draft.modelsJson}
-                onChange={(value) => set("modelsJson", value)}
-                disabled={busy}
-              />
-              <details className="admin-advanced-panel">
-                <summary>Área avançada — estrutura JSON de modelos</summary>
-                {governedArea("Modelos e variantes completos", "modelsJson")}
-              </details>
             </fieldset>
           )}
-          {activeTab === "classificacao" && (
+          {activeStage === "identificacao" && (
             <fieldset>
               <legend>Taxonomia, função e tecnologia</legend>
               <ControlledTermSelect
@@ -589,7 +596,7 @@ export default function AdminProductEditorPage() {
               {input("Função", "functionText")}
             </fieldset>
           )}
-          {activeTab === "comercial" && (
+          {activeStage === "identificacao" && (
             <fieldset>
               <legend>Conteúdo comercial e blocos</legend>
               {area("Resumo", "summary")}
@@ -604,20 +611,26 @@ export default function AdminProductEditorPage() {
               </details>
             </fieldset>
           )}
-          {activeTab === "especificacoes" && (
+          {activeStage === "especificacoes" && (
             <fieldset>
-              <legend>Atributos tipados</legend>
-              {governedArea("Especificações", "specificationsJson")}
+              <legend>Modelos, variantes e atributos técnicos</legend>
+              <ProductModelsEditor
+                value={draft.modelsJson}
+                onChange={(value) => set("modelsJson", value)}
+                disabled={busy}
+              />
               <details className="admin-advanced-panel">
-                <summary>Área avançada — mídia e documentos</summary>
-                {governedArea("Mídias", "mediaJson")}
-                {governedArea("Documentos", "documentsJson")}
+                <summary>Área avançada — estrutura JSON de modelos</summary>
+                {governedArea("Modelos e variantes completos", "modelsJson")}
               </details>
+              {governedArea("Especificações", "specificationsJson")}
             </fieldset>
           )}
-          {activeTab === "relacoes" && (
+          {activeStage === "relacoes" && (
             <fieldset>
-              <legend>Relações por UUID novo — uma por linha</legend>
+              <legend>Mídia, documentos e recomendações relacionadas</legend>
+              {governedArea("Mídias", "mediaJson")}
+              {governedArea("Documentos", "documentsJson")}
               {area("Produtos relacionados", "productIds")}
               {area("Aplicações", "applicationIds")}
               {area("Setores", "sectorIds")}
@@ -627,7 +640,7 @@ export default function AdminProductEditorPage() {
               <p className="admin-help">Relação com produto não publicado é negada na publicação.</p>
             </fieldset>
           )}
-          {activeTab === "visibilidade" && (
+          {activeStage === "visibilidade" && (
             <fieldset className="admin-visibility-section">
               <legend>O que o site público pode divulgar</legend>
               <p className="admin-help">
@@ -687,7 +700,7 @@ export default function AdminProductEditorPage() {
               </label>
             </fieldset>
           )}
-          {activeTab === "governanca" && (
+          {activeStage === "visibilidade" && (
             <fieldset>
               <legend>Proveniência e aprovação</legend>
               <label>
@@ -706,7 +719,7 @@ export default function AdminProductEditorPage() {
               {input("Homologado em", "homologatedAt", "datetime-local")}
             </fieldset>
           )}
-          {activeTab === "historico" && (
+          {activeStage === "visibilidade" && (
             <fieldset>
               <legend>Workflow, preview e histórico imutável</legend>
               {input("Motivo da revisão", "reason")}
@@ -765,7 +778,7 @@ export default function AdminProductEditorPage() {
                 ))}
             </fieldset>
           )}
-          {activeTab !== "historico" && can("cms:products.edit") && (
+          {activeStage !== "visibilidade" && can("cms:products.edit") && (
             <button className="admin-button" disabled={busy}>
               {loaded ? "Salvar rascunho versionado" : "Criar rascunho manual"}
             </button>
@@ -840,9 +853,9 @@ export default function AdminProductEditorPage() {
             type="button"
             className="admin-button admin-button--secondary"
             onClick={() =>
-              setActiveTab(tabs[Math.max(0, tabs.findIndex(([key]) => key === activeTab) - 1)][0])
+              setActiveTab(tabs[Math.max(0, tabs.findIndex(([key]) => key === activeStage) - 1)][0])
             }
-            disabled={activeTab === tabs[0][0]}
+            disabled={activeStage === tabs[0][0]}
           >
             Voltar
           </button>
@@ -852,11 +865,11 @@ export default function AdminProductEditorPage() {
             disabled={busy || !can("cms:products.edit")}
             onClick={async () => {
               const saved = await run(loaded ? "save" : "create");
-              const index = tabs.findIndex(([key]) => key === activeTab);
+              const index = tabs.findIndex(([key]) => key === activeStage);
               if (saved && loaded && index >= 0 && index < tabs.length - 1) setActiveTab(tabs[index + 1][0]);
             }}
           >
-            {activeTab === tabs.at(-1)?.[0] ? "Salvar rascunho" : "Salvar e continuar"}
+            {activeStage === tabs.at(-1)?.[0] ? "Salvar rascunho" : "Salvar e continuar"}
           </button>
         </div>
       </footer>

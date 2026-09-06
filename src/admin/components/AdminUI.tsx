@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef } from "react";
+import { Link, useLocation } from "react-router";
 import {
   AlertCircle,
   CheckCircle2,
@@ -11,6 +12,113 @@ import {
 } from "lucide-react";
 
 type ActionContent = React.ReactNode;
+
+export function ModuleTabs({
+  label,
+  items,
+}: {
+  label: string;
+  items: Array<{ label: string; to: string; end?: boolean }>;
+}) {
+  const location = useLocation();
+  return (
+    <nav className="admin-module-tabs" aria-label={label}>
+      {items.map((item) => {
+        const [pathname, search = ""] = item.to.split("?");
+        const active =
+          location.pathname === pathname &&
+          (search
+            ? new URLSearchParams(location.search).toString() === search
+            : !item.end || !location.search);
+        return (
+          <Link key={item.to} to={item.to} aria-current={active ? "page" : undefined}>
+            {item.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+export function RecordDrawer({
+  open,
+  eyebrow,
+  title,
+  address,
+  status,
+  fields,
+  summary,
+  primary,
+  children,
+  onClose,
+}: {
+  open: boolean;
+  eyebrow: string;
+  title: string;
+  address?: string;
+  status?: React.ReactNode;
+  fields?: Array<{ label: string; value: React.ReactNode }>;
+  summary?: React.ReactNode;
+  primary?: React.ReactNode;
+  children?: React.ReactNode;
+  onClose: () => void;
+}) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    closeRef.current?.focus();
+    const closeOnEscape = (event: KeyboardEvent) => event.key === "Escape" && onClose();
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose, open]);
+  if (!open) return null;
+  return (
+    <>
+      <button
+        className="admin-record-drawer-backdrop"
+        type="button"
+        aria-label="Fechar resumo"
+        onClick={onClose}
+      />
+      <aside
+        className="admin-record-drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="admin-record-drawer-title"
+      >
+        <header className="admin-record-drawer__header">
+          <div>
+            <p className="admin-eyebrow">{eyebrow}</p>
+            <h2 id="admin-record-drawer-title">{title}</h2>
+            {address && <code>{address}</code>}
+          </div>
+          <button ref={closeRef} type="button" aria-label="Fechar resumo" onClick={onClose}>
+            <X aria-hidden="true" size={18} />
+          </button>
+        </header>
+        {primary && <div className="admin-record-drawer__primary">{primary}</div>}
+        {status && <div className="admin-record-drawer__status">{status}</div>}
+        {fields && (
+          <dl className="admin-record-drawer__fields">
+            {fields.map((field) => (
+              <div key={field.label}>
+                <dt>{field.label}</dt>
+                <dd>{field.value}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+        {summary && (
+          <section className="admin-record-drawer__summary">
+            <h3>Resumo</h3>
+            {summary}
+          </section>
+        )}
+        {children}
+      </aside>
+    </>
+  );
+}
 
 export function PageHeader({
   eyebrow,

@@ -68,10 +68,12 @@ jobs:
 
           supabase db dump --db-url "$PRODUCTION_SUPABASE_DB_URL" --file "$plain_dir/roles.sql" --role-only
           supabase db dump --db-url "$PRODUCTION_SUPABASE_DB_URL" --file "$plain_dir/schema.sql"
-          # storage.buckets_vectors is platform-maintained and rejects restore writes
-          # even when empty; all application and other platform data remains included.
+          # The two Vector Storage metadata tables are platform-maintained and reject
+          # restore writes even when empty; application and regular Storage data remain included.
           supabase db dump --db-url "$PRODUCTION_SUPABASE_DB_URL" --file "$plain_dir/data.sql" \
-            --data-only --use-copy --exclude storage.buckets_vectors
+            --data-only --use-copy \
+            --exclude storage.buckets_vectors \
+            --exclude storage.vector_indexes
           psql "$PRODUCTION_SUPABASE_DB_URL" --no-psqlrc -v ON_ERROR_STOP=1 -Atc \
             "select schemaname || '.' || tablename from pg_tables where schemaname = 'public' order by 1" \
             > "$plain_dir/source-public-tables.txt"

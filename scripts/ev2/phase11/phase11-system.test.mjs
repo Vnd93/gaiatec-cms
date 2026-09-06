@@ -8,8 +8,60 @@ import {
   serverTimingDuration,
   summarizeDurations,
 } from "./system-assurance-lib.mjs";
+import { resolveStableBaseline } from "./stable-baseline-lib.mjs";
 
 const read = (path) => readFile(path, "utf8");
+
+function response(status, type, json) {
+  return { status, headers: new Headers({ "Content-Type": type }), json };
+}
+
+test("G11 fingerprints a legacy stable deployment without promoting it", () => {
+  const result = resolveStableBaseline({
+    health: response(404, "text/html; charset=utf-8", "missing"),
+    manifest: response(200, "text/html; charset=utf-8", "legacy fallback"),
+    root: response(200, "text/html; charset=utf-8", "<html>stable</html>"),
+  });
+  assert.equal(result.stableContractMode, "legacy-root-fingerprint");
+  assert.match(result.stableRelease, /^legacy-root-sha256:[a-f0-9]{64}$/);
+});
+
+test("G11 keeps strict release contracts when the stable deployment exposes them", () => {
+  const release = "a".repeat(40);
+  const result = resolveStableBaseline({
+    health: response(200, "application/json", {
+      schemaVersion: 1,
+      status: "ready",
+      release,
+      environment: "staging",
+    }),
+    manifest: response(200, "application/json", {
+      schemaVersion: 1,
+      release,
+      files: [{ path: "index.html", bytes: 1, sha256: "b".repeat(64) }],
+    }),
+    root: response(200, "text/html", "<html>stable</html>"),
+  });
+  assert.deepEqual(result, { stableRelease: release, stableContractMode: "release-contracts-v1" });
+});
+
+test("G11 fails closed when only one stable release contract is valid", () => {
+  const release = "a".repeat(40);
+  assert.throws(
+    () =>
+      resolveStableBaseline({
+        health: response(200, "application/json", {
+          schemaVersion: 1,
+          status: "ready",
+          release,
+          environment: "staging",
+        }),
+        manifest: response(200, "text/html", "partial"),
+        root: response(200, "text/html", "<html>stable</html>"),
+      }),
+    /stable_release_contract_partial/,
+  );
+});
 
 test("EV2.11 migration is additive, default-off, RLS protected and production gated", async () => {
   const [sql, rls] = await Promise.all([

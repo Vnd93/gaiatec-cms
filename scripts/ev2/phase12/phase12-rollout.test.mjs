@@ -553,19 +553,31 @@ test("G12 boundary evals contain no false acceptance or remote mutation", () => 
 });
 
 test("release workflows and reduced canary are immutable, staged and production fail-closed", async () => {
-  const [ci, preview, production, rollback, githubGuard, cloudflare, canary, g11Canary, verifier, template] =
-    await Promise.all([
-      read(".github/workflows/ci.yml"),
-      read(".github/workflows/preview-ev2-phase12.yml"),
-      read(".github/workflows/deploy-production.yml"),
-      read(".github/workflows/rollback-production.yml"),
-      read("scripts/ev2/phase12/check-github-controls.mjs"),
-      read("scripts/ev2/phase12/cloudflare-pages.mjs"),
-      read("scripts/ev2/phase12/staging-canary.mjs"),
-      read("scripts/ev2/phase11/staging-canary.mjs"),
-      read("scripts/ev2/phase12/verify-approval.mjs"),
-      read("docs/ev2/fase-12/G12_APPROVAL.template.json"),
-    ]);
+  const [
+    ci,
+    preview,
+    production,
+    rollback,
+    githubGuard,
+    cloudflare,
+    canary,
+    g11Canary,
+    stableBaseline,
+    verifier,
+    template,
+  ] = await Promise.all([
+    read(".github/workflows/ci.yml"),
+    read(".github/workflows/preview-ev2-phase12.yml"),
+    read(".github/workflows/deploy-production.yml"),
+    read(".github/workflows/rollback-production.yml"),
+    read("scripts/ev2/phase12/check-github-controls.mjs"),
+    read("scripts/ev2/phase12/cloudflare-pages.mjs"),
+    read("scripts/ev2/phase12/staging-canary.mjs"),
+    read("scripts/ev2/phase11/staging-canary.mjs"),
+    read("scripts/ev2/phase11/stable-baseline-lib.mjs"),
+    read("scripts/ev2/phase12/verify-approval.mjs"),
+    read("docs/ev2/fase-12/G12_APPROVAL.template.json"),
+  ]);
   assert.match(ci, /branches: \[main, Remodelagem, "ev2\/\*\*"\]/);
   assert.match(ci, /version: 2\.116\.0/);
   assert.match(preview, /CANARY-G12-STAGING/);
@@ -615,7 +627,9 @@ test("release workflows and reduced canary are immutable, staged and production 
   assert.match(canary, /productionMutations: 0/);
   assert.match(g11Canary, /EV2_G11_CANDIDATE_ORIGIN/);
   assert.match(g11Canary, /validateReleaseManifest/);
-  assert.match(g11Canary, /stable_release_contract_mismatch/);
+  assert.match(g11Canary, /resolveStableBaseline/);
+  assert.match(stableBaseline, /stable_release_contract_mismatch/);
+  assert.match(stableBaseline, /legacy-root-fingerprint/);
   assert.match(verifier, /createHash\("sha256"\)/);
   assert.match(verifier, /validateCanaryEvidenceBinding/);
   const approvalTemplate = JSON.parse(template);

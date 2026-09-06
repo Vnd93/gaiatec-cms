@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 2,
+  "gate": "G12",
+  "decision": "approved",
+  "candidateSha": "e52b25d903251cf538918d89049a58524c3c9911",
+  "environment": "production",
+  "requestedBy": "Vnd93",
+  "changeReference": "GAIATEC-CMS-G12-PRODUCTION-2026-09-06",
+  "g11EvidenceRunId": "104b95be-7c7a-479e-83ba-8001a0a876ab",
+  "g12Evidence": {
+    "file": "docs/ev2/fase-12/evidencias/G12_CANARY_e52b25d_2026-09-05.json",
+    "canaryRunId": "de784acc-a557-4ed1-b4ca-84f0ea26f077",
+    "candidateSha": "e52b25d903251cf538918d89049a58524c3c9911",
+    "reportSha256": "4ec19ae0adddbcacac7504be8057a44b880ced351608062635f747660f6b603b",
+    "healthyWindowIds": [
+      "dc6d5f9c-b220-41a9-8e98-b25a91db93fc",
+      "18eef6ff-2e96-4865-a03c-be65afe75010",
+      "f8eabccf-e8d0-4f10-af32-06307e1aeca1"
+    ],
+    "syntheticOnly": true,
+    "realDataUsed": false,
+    "productionMutations": 0
+  },
+  "productionAuthorized": true,
+  "productionAuthorizationText": "AUTORIZO-G12-PRODUCAO:e52b25d903251cf538918d89049a58524c3c9911",
+  "productionAuthorizationSha": "e52b25d903251cf538918d89049a58524c3c9911",
+  "productionAuthorizedBy": "Vnd93",
+  "productionAuthorizedAt": "2026-09-06T03:04:35.2458295Z",
+  "operationalGovernance": {
+    "mode": "sole-operator",
+    "responsibleId": "Vnd93",
+    "riskAccepted": true,
+    "acceptedAt": "2026-09-05T18:26:30.434Z",
+    "evidenceReference": "docs/ev2/fase-16/REGISTRO_DECLARACAO_GOVERNANCA_DPO_RISCO_2026-09-05.md"
+  },
+  "target": {
+    "cloudflareProject": "gaiatec-website",
+    "domains": ["gaiatecsistemas.com.br", "www.gaiatecsistemas.com.br"]
+  },
+  "changeWindow": {
+    "startsAt": "2026-09-06T02:59:35.2458295Z",
+    "endsAt": "2026-09-06T07:04:35.2458295Z"
+  },
+  "rollback": {
+    "deploymentId": "ff2dbb65-2f8b-4840-a9a1-f2fde29e8ebf",
+    "release": "ba1131060177cdc602448ba4e9aeccf7afc298a5"
+  },
+  "productionReadiness": {
+    "githubProtection": {
+      "status": "verified",
+      "candidateSha": "e52b25d903251cf538918d89049a58524c3c9911",
+      "governanceMode": "sole-maintainer",
+      "maintainerLogin": "Vnd93",
+      "requiredPullRequestApprovals": 0,
+      "codeOwnersCount": 1,
+      "branchProtected": true,
+      "requiredChecksPassed": true,
+      "soleMaintainerRiskAccepted": true,
+      "evidenceReference": "github://Vnd93/gaiatec-cms/commit/e52b25d903251cf538918d89049a58524c3c9911/checks",
+      "verifiedAt": "2026-09-06T03:04:35.2458295Z"
+    },
+    "backupRestore": {
+      "status": "passed",
+      "projectRef": "chfuhctnhqgyjowkvllv",
+      "externalTarget": "github-actions-encrypted-artifact",
+      "encryptedArchiveSha256": "e346901092477cda2c489e25ab8a47b7a8cd5ccedcfeff859ab1ed73d1565ed6",
+      "backupRunId": "34000214134",
+      "restoreDrillRunId": "34000214134",
+      "rpoMinutes": 1440,
+      "rtoMinutes": 60,
+      "evidenceReference": "github-actions/34000214134",
+      "completedAt": "2026-09-05T22:00:00.000Z"
+    },
+    "dpoLegal": {
+      "status": "approved",
+      "approverId": "Vnd93",
+      "scopeSha256": "39fd74f255c9235c0d2148d791e6189dfe88ff977b5d92396c68ecd2a3191b9c",
+      "evidenceReference": "docs/ev2/fase-16/REGISTRO_DECLARACAO_GOVERNANCA_DPO_RISCO_2026-09-05.md",
+      "approvedAt": "2026-09-05T19:13:23.900Z"
+    },
+    "emailProvider": {
+      "status": "verified",
+      "provider": "resend",
+      "sendingDomain": "gaiatecsistemas.com",
+      "from": "GAIATEC SISTEMAS <cms@gaiatecsistemas.com>",
+      "notificationTo": "comercial@gaiatecsistemas.com.br",
+      "syntheticDeliveryStatus": "passed",
+      "syntheticDeliveryId": "2eae753e-c380-4cf1-913d-05f9e22354e4",
+      "realDataUsed": false,
+      "evidenceReference": "github-actions/34003817717",
+      "verifiedAt": "2026-09-05T23:00:00.000Z"
+    },
+    "csp": {
+      "status": "passed",
+      "mode": "enforce",
+      "candidateSha": "e52b25d903251cf538918d89049a58524c3c9911",
+      "policySha256": "2bd1e588afd53921fc4c71a5acaeb1bf2a6a425ec15dc58b17f4487442a9acd3",
+      "criticalViolations": 0,
+      "evidenceReference": "docs/ev2/fase-16/evidencias/G16_CSP_BROWSER_e52b25d.json",
+      "verifiedAt": "2026-09-06T01:52:23.735Z"
+    }
+  },
+  "owners": {
+    "changeOwner": {
+      "id": "Vnd93",
+      "approvedAt": "2026-09-06T03:04:35.2458295Z",
+      "evidenceReference": "approval/Vnd93/change/G12-e52b25d"
+    },
+    "technicalReviewer": {
+      "id": "Vnd93",
+      "approvedAt": "2026-09-06T03:04:35.2458295Z",
+      "evidenceReference": "approval/Vnd93/technical/G12-e52b25d"
+    },
+    "securityPrivacyOwner": {
+      "id": "Vnd93",
+      "approvedAt": "2026-09-06T03:04:35.2458295Z",
+      "evidenceReference": "approval/Vnd93/security-privacy/G12-e52b25d"
+    },
+    "businessOwner": {
+      "id": "Vnd93",
+      "approvedAt": "2026-09-06T03:04:35.2458295Z",
+      "evidenceReference": "approval/Vnd93/business/G12-e52b25d"
+    }
+  }
+}

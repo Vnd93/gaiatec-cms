@@ -201,7 +201,14 @@ digest GitHub `sha256:204dfffe0e25c5a1e7f699a8ac73b35575820bd672f965e6005324b526
 Em conjunto com o estado `delivered` observado no painel autenticado do Resend para o mesmo ID,
 destinatário e assunto, a entrega sintética fica comprovada sem ampliar o privilégio da credencial.
 
-## Evidência ainda inexistente
+## Autorização final e limite da evidência
 
-Não foi fabricada a autorização literal vinculada ao SHA final. Nenhum deploy, migration, função,
-dado real, domínio real ou promoção de produção foi executado.
+Em 6 de setembro de 2026, `@Vnd93` autorizou literalmente a produção para o SHA
+`e52b25d903251cf538918d89049a58524c3c9911`. A autorização, o canary G12, os três períodos
+saudáveis, a baseline de rollback e os controles acima foram vinculados ao registro versionado
+`docs/ev2/fase-12/approvals/G12_e52b25d903251cf538918d89049a58524c3c9911.json`, validado pelo
+verificador local.
+
+Esta atualização documental não executa deploy. Até este registro, nenhuma migration, função, dado
+real, domínio real ou promoção de produção foi alterado pelo fluxo G12. A evidência de implantação
+será anexada somente após a conclusão do workflow protegido.

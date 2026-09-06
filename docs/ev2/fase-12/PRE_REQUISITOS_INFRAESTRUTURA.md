@@ -11,7 +11,7 @@ ou substituído por confirmação verbal.
 | Deployment produtivo observado | `ff2dbb65-2f8b-4840-a9a1-f2fde29e8ebf`, release `ba1131060177cdc602448ba4e9aeccf7afc298a5` | reconfirmar automaticamente; o valor pode mudar                             |
 | Ambientes GitHub               | `production` e `production-backup` criados e limitados a branches protegidas               | manter sem bypass e completar apenas os secrets externos pendentes          |
 | Branch `main`                  | protegida nos repositórios executável e documental                                         | manter PR, zero approvals, checks estritos, admins e histórico linear       |
-| Secrets/variables Actions      | Supabase, backup, Cloudflare, GitHub, Resend e segredos operacionais cadastrados           | cadastrar somente o par Turnstile vinculado aos domínios aprovados          |
+| Secrets/variables Actions      | Supabase, backup, Cloudflare, GitHub, Resend e segredos operacionais cadastrados           | concluir rotação e cadastro do par Turnstile na janela autorizada           |
 | Supabase de produção           | projeto isolado `chfuhctnhqgyjowkvllv` saudável, mas no plano Free e ainda vazio           | backup externo, restore drill, migrations, funções e revisão RLS aprovados  |
 | Edge Functions EV2             | inventário exato e modos JWT agora são verificados pelo workflow                           | implantar somente após autorização literal e antes da promoção do frontend  |
 | Elegibilidade frontend         | switches candidatos são de build                                                           | implementar avaliação runtime antes de rollout por coorte em produção       |
@@ -57,8 +57,9 @@ O workflow valida esses valores sem imprimir credenciais e falha antes do build 
 placeholder, URL divergente ou projeto incorreto.
 
 Os segredos de Supabase, Resend, Cloudflare, guard de release e os quatro segredos operacionais estão
-cadastrados. O par Turnstile permanece bloqueador intencional: deve ser criado para os domínios reais
-somente na janela autorizada e, sem ele, o workflow recusa a produção antes de qualquer mutação.
+cadastrados. O widget Turnstile foi criado e restrito aos dois domínios aprovados. A chave secreta
+deve ser rotacionada e o novo par armazenado no ambiente protegido antes do disparo; sem ele, o
+workflow recusa a produção antes de qualquer mutação.
 
 ## Contrato automatizado do backend produtivo
 

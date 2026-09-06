@@ -19,16 +19,18 @@ O responsável:
 - aprova o uso do [escopo DPO/legal padrão](ESCOPO_DPO_LEGAL_PADRAO.md);
 - confirma, em 5 de setembro de 2026, 19:13:23 UTC, os dados do controlador sem alterações e
   Marcelo Diaz como encarregado público no canal `vendas@gaiatecsistemas.com.br`;
-- manifesta intenção de autorizar a produção final vinculada ao SHA.
+- autorizou a produção final vinculada ao SHA
+  `e52b25d903251cf538918d89049a58524c3c9911` em 6 de setembro de 2026.
 
 O SHA-256 canônico, com quebras de linha normalizadas em LF, do escopo aprovado é
 `39fd74f255c9235c0d2148d791e6189dfe88ff977b5d92396c68ecd2a3191b9c`.
 
-## Limite vinculante
+## Autorização vinculante
 
-A última declaração não é um comando executável de deploy porque ainda não contém o SHA final. A
-produção só pode começar após todos os controles passarem e após o responsável registrar
-exatamente `AUTORIZO-G12-PRODUCAO:<SHA completo>` para o candidato final informado pelo pipeline.
-Qualquer alteração posterior gera outro SHA e invalida a autorização anterior.
+O responsável registrou exatamente
+`AUTORIZO-G12-PRODUCAO:e52b25d903251cf538918d89049a58524c3c9911`. A autorização permite
+somente a execução controlada desse candidato no ambiente `production`, conforme o registro G12 e
+o workflow protegido. Qualquer alteração posterior do candidato gera outro SHA e invalida esta
+autorização.
 
 Este documento não contém segredo, credencial, CPF ou dado pessoal desnecessário.

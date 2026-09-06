@@ -1,8 +1,8 @@
 # EV2.12 — implantação controlada
 
-**Estado:** candidato qualificado; canary controlado G12 em staging concluído<br>
-**Gate:** G12 não aprovado para produção<br>
-**Produção:** bloqueada por controles técnicos e aprovações ausentes
+**Estado:** candidato qualificado; canary controlado G12 e controles finais concluídos<br>
+**Gate:** G12 aprovado para execução controlada do SHA `e52b25d9…`<br>
+**Produção:** autorizada, ainda sem execução ou promoção
 
 ## Objetivo
 
@@ -26,18 +26,18 @@ migrations aditivas já homologadas até `0054` e preserva todas as flags EV2 de
 
 ## Limite desta entrega
 
-O G11 autorizou a preparação local/staging da EV2.12, não o go-live. O workflow de produção exige
+O workflow de produção exige
 simultaneamente branch `main`, ambiente protegido, PR de `@Vnd93`, controles automáticos do branch, projeto
 Supabase produtivo distinto, registro G12 aprovado e a confirmação literal
 `AUTORIZO-G12-PRODUCAO:<SHA completo>`. Na ausência de qualquer item, o fluxo falha antes do deploy.
-O par Turnstile restrito aos domínios reais também é obrigatório e permanece ausente até a janela
-explicitamente autorizada.
+Esses requisitos foram atendidos para o candidato `e52b25d903251cf538918d89049a58524c3c9911`, exceto
+pela conclusão operacional do par Turnstile, que ocorre na mesma janela autorizada e deve estar nos
+secrets protegidos antes do disparo.
 
 O hardening posterior da EV2.13 removeu os switches `VITE_EV2_*_CANDIDATE` das decisões do frontend e
-introduziu elegibilidade individual em runtime. Produção continua explicitamente bloqueada pelo
-manifesto, e o CMS v1 permanece disponível quando a avaliação falta, expira ou falha. A evidência
-histórica G12 precisa ser requalificada sob o novo verificador antes de poder compor uma aprovação de
-produção.
+introduziu elegibilidade individual em runtime. O CMS v1 permanece disponível quando a avaliação
+falta, expira ou falha. O candidato final foi requalificado pelo verificador, com três janelas
+saudáveis e evidências vinculadas ao registro de aprovação.
 
 ## Documentos operacionais
 
@@ -53,8 +53,8 @@ produção.
 - [Modelo de aprovação](G12_APPROVAL.template.json)
 - [Controles finais EV2.16](../fase-16/README.md)
 
-## Próxima decisão
+## Próxima execução
 
-O canary de staging está concluído. A próxima etapa é eliminar os bloqueios produtivos, validar os
-controles com evidências por responsabilidade e formar o registro de aprovação por SHA. Nenhuma preparação ou
-evidência parcial substitui a autorização específica de produção.
+Concluir a rotação e o armazenamento protegido das chaves Turnstile, integrar em `main` o registro
+G12 verificado e disparar o workflow de produção com os quatro parâmetros exatos da aprovação. A
+promoção do site só ocorre depois que todas as etapas anteriores do workflow forem aprovadas.

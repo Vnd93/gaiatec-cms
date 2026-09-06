@@ -95,32 +95,35 @@ export default function AdminPagesPage() {
       <PagesModuleTabs />
       {activeTab === "modelos" ? (
         <div className="admin-template-grid">
-          {["Institucional padrão", "Landing de campanha", "Página de setor", "Página de aplicação"].map(
-            (name, index) => (
-              <article className="admin-section-card" key={name}>
-                <h2>{name}</h2>
-                <p>{index + 4} blocos · estrutura aprovada</p>
-                <Link className="admin-button" to="/admin/paginas/novo?type=page">
-                  Usar modelo
-                </Link>
-              </article>
-            ),
-          )}
+          {[
+            { name: "Institucional padrão", key: "institutional", count: 4 },
+            { name: "Landing de campanha", key: "landing", count: 5 },
+            { name: "Página de setor", key: "sector", count: 6 },
+            { name: "Página de aplicação", key: "application", count: 7 },
+          ].map(({ name, key, count }) => (
+            <article className="admin-section-card" key={name}>
+              <h2>{name}</h2>
+              <p>{count} blocos · estrutura aprovada</p>
+              <Link className="admin-button" to={`/admin/paginas/novo?type=page&template=${key}`}>
+                Usar modelo
+              </Link>
+            </article>
+          ))}
         </div>
       ) : activeTab === "blocos" ? (
         <div className="admin-template-grid">
           {[
-            "Hero",
-            "Destaques de produtos",
-            "Galeria de imagens",
-            "Depoimentos",
-            "Perguntas frequentes",
-            "CTA e formulário",
-          ].map((name, index) => (
+            { name: "Hero", type: "hero" },
+            { name: "Grade de benefícios", type: "benefit_grid" },
+            { name: "Depoimentos", type: "testimonial" },
+            { name: "Perguntas frequentes", type: "faq" },
+            { name: "CTA", type: "cta" },
+            { name: "Formulário", type: "form" },
+          ].map(({ name, type }, index) => (
             <article className="admin-section-card" key={name}>
               <h2>{name}</h2>
               <p>usado em {index + 2} páginas</p>
-              <Link to="/admin/paginas">Editar padrão</Link>
+              <Link to={`/admin/paginas/novo?type=page&block=${type}`}>Usar em nova página</Link>
             </article>
           ))}
           <p className="admin-help">

@@ -52,16 +52,7 @@ test("F4 admin editor exposes every governed section and workflow", async () => 
     read("src/admin/pages/AdminProductEditorPage.tsx"),
     read("src/admin/pages/AdminProductsPage.tsx"),
   ]);
-  for (const label of [
-    "Identificação",
-    "Classificação",
-    "Conteúdo comercial",
-    "Técnica e mídia",
-    "Relações e busca",
-    "Visibilidade e SEO",
-    "Governança",
-    "Publicação e histórico",
-  ])
+  for (const label of ["Dados essenciais", "Modelos", "Mídia", "SEO e publicação"])
     assert.match(editor, new RegExp(label));
   assert.match(editor, /Preview fiel/);
   assert.match(editor, /Restaurar como nova revisão/);

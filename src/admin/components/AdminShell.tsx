@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { LogOut, Menu, Search, X } from "lucide-react";
+import { LogOut, Menu, PanelLeftClose, PanelLeftOpen, Search, X } from "lucide-react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router";
 import {
   adminNavigation,
@@ -17,6 +17,9 @@ import "../admin.css";
 export function AdminShell() {
   const { profile, user, signOut } = useAdminAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => window.localStorage.getItem("gaiatec.admin.sidebar-collapsed") === "true",
+  );
   const [guideOpen, setGuideOpen] = useState(false);
   const [search, setSearch] = useState("");
   const menuButton = useRef<HTMLButtonElement>(null);
@@ -60,6 +63,10 @@ export function AdminShell() {
   }, [location.pathname, location.search]);
 
   useEffect(() => {
+    window.localStorage.setItem("gaiatec.admin.sidebar-collapsed", String(sidebarCollapsed));
+  }, [sidebarCollapsed]);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
@@ -81,7 +88,7 @@ export function AdminShell() {
   };
 
   return (
-    <div className="admin-app" data-admin-surface>
+    <div className="admin-app" data-admin-surface data-sidebar-collapsed={sidebarCollapsed}>
       <a className="admin-skip-link" href="#admin-main">
         Ir para o conteúdo principal
       </a>
@@ -116,10 +123,25 @@ export function AdminShell() {
         className={mobileOpen ? "admin-sidebar is-open" : "admin-sidebar"}
         aria-label="Menu principal do CMS"
       >
-        <Link className="admin-sidebar__brand" to="/admin" aria-label="CMS GAIATEC — visão geral">
-          <span>GAIATEC</span>
-          <small>CMS</small>
-        </Link>
+        <div className="admin-sidebar__heading">
+          <Link className="admin-sidebar__brand" to="/admin" aria-label="CMS GAIATEC — visão geral">
+            <span>GAIATEC</span>
+            <small>CMS</small>
+          </Link>
+          <button
+            className="admin-sidebar__collapse"
+            type="button"
+            aria-label={sidebarCollapsed ? "Expandir menu administrativo" : "Recolher menu administrativo"}
+            aria-pressed={sidebarCollapsed}
+            onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+          >
+            {sidebarCollapsed ? (
+              <PanelLeftOpen aria-hidden="true" size={17} />
+            ) : (
+              <PanelLeftClose aria-hidden="true" size={17} />
+            )}
+          </button>
+        </div>
         {(permissions.includes("cms:posts.read") ||
           permissions.includes("cms:products.read") ||
           permissions.includes("cms:pages.read")) && (
@@ -174,7 +196,7 @@ export function AdminShell() {
             </span>
           </Link>
           <button type="button" className="admin-sidebar__logout" onClick={() => void signOut()}>
-            <LogOut aria-hidden="true" size={16} /> Sair
+            <LogOut aria-hidden="true" size={16} /> <span>Sair</span>
           </button>
         </div>
       </aside>

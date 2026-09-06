@@ -64,7 +64,7 @@ test("biblioteca compartilhada cobre cabeçalho, formulário, estados, tabela e 
 test("shell oferece busca real, conta, localização, recolhimento e navegação mobile", () => {
   assert.match(shell, /admin-skip-link/);
   assert.match(shell, /Control\+K Meta\+K/);
-  assert.match(shell, /admin-account__profile/);
+  assert.match(shell, /admin-sidebar__profile/);
   assert.match(shell, /sidebarCollapsed/);
   assert.match(shell, /aria-current/);
   assert.match(shell, /Fechar menu administrativo/);

@@ -45,4 +45,51 @@ describe("arquitetura de informação administrativa", () => {
     expect(globalSearchTarget("campanha", ["cms:posts.read"])).toBe("/admin/conteudo?q=campanha");
     expect(globalSearchTarget("restrito", [])).toBe("/admin");
   });
+
+  it("mantém as seis seções e os vinte destinos de primeiro nível", () => {
+    const visibleGroups = adminNavigation.filter((group) =>
+      group.items.some((entry) => entry.menu !== false),
+    );
+    expect(visibleGroups.map((group) => group.label)).toEqual([
+      "Trabalho",
+      "Catálogo",
+      "Conteúdo",
+      "Marketing",
+      "Site",
+      "Administração",
+    ]);
+    expect(
+      visibleGroups.flatMap((group) => group.items.filter((entry) => entry.menu !== false)),
+    ).toHaveLength(20);
+  });
+
+  it.each([
+    ["Leads", "cms:leads.read"],
+    ["Assistente IA", "cms:ai.read"],
+    ["Centro de Qualidade", "cms:quality.read"],
+    ["Produtos", "cms:products.read"],
+    ["Serviços", "cms:services.read"],
+    ["Indústrias", "cms:industries.read"],
+    ["Aplicações", "cms:applications.read"],
+    ["Soluções", "cms:solutions.read"],
+    ["Páginas", "cms:pages.read"],
+    ["Editorial", "cms:posts.read"],
+    ["Mídia", "cms:media.read"],
+    ["Campanhas", "cms:campaigns.read"],
+    ["Formulários", "cms:forms.read"],
+    ["Navegação", "cms:navigation.read"],
+    ["Dados globais", "cms:settings.read"],
+    ["Posicionamentos", "cms:placements.read"],
+    ["Usuários e acessos", "cms:users.read"],
+    ["Auditoria", "cms:diagnostics.read"],
+    ["Diagnósticos", "cms:diagnostics.read"],
+  ])("%s falha fechado sem %s", (label, permission) => {
+    expect(canAccessNavigationItem(item(label), [])).toBe(false);
+    expect(canAccessNavigationItem(item(label), [permission])).toBe(true);
+  });
+
+  it("mantém superfícies EV2 fora do primeiro nível", () => {
+    for (const label of ["PIM EV2", "Dados mestres EV2", "Estúdio Visual", "Sites e ambientes"])
+      expect(item(label).menu).toBe(false);
+  });
 });

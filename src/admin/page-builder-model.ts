@@ -1,6 +1,7 @@
 import type { CmsPageBlock, CmsPageContent } from "@/shared/contracts/cms-content";
 
 export type ManagedPageType = "page" | "homepage";
+export type ManagedPageTemplate = "standard" | "institutional" | "landing" | "sector" | "application";
 
 const id = () => crypto.randomUUID();
 const now = () => new Date().toISOString();
@@ -239,7 +240,10 @@ export function createPageBlock(
   }
 }
 
-export function createInitialPagePayload(contentType: ManagedPageType): CmsPageContent {
+export function createInitialPagePayload(
+  contentType: ManagedPageType,
+  requestedTemplate: ManagedPageTemplate = "standard",
+): CmsPageContent {
   const homepage = contentType === "homepage";
   const slug = homepage ? "homepage" : `pagina-${Date.now()}`;
   const route = homepage ? "/" : `/${slug}`;
@@ -291,8 +295,34 @@ export function createInitialPagePayload(contentType: ManagedPageType): CmsPageC
         ...common,
         consumerId: "cms.managed-page.v1",
         contentType: "page",
-        pageKind: "institutional",
-        templateKey: "standard",
+        pageKind:
+          requestedTemplate === "landing"
+            ? "landing"
+            : requestedTemplate === "sector" || requestedTemplate === "application"
+              ? "thematic"
+              : "institutional",
+        templateKey:
+          requestedTemplate === "landing"
+            ? "landing"
+            : requestedTemplate === "sector" || requestedTemplate === "application"
+              ? "technical"
+              : "standard",
+        title:
+          requestedTemplate === "sector"
+            ? "Nova página de setor"
+            : requestedTemplate === "application"
+              ? "Nova página de aplicação"
+              : requestedTemplate === "landing"
+                ? "Nova landing page"
+                : "Nova página",
+        blocks:
+          requestedTemplate === "landing"
+            ? [createPageBlock("hero"), createPageBlock("benefit_grid"), createPageBlock("form")]
+            : requestedTemplate === "sector"
+              ? [createPageBlock("hero"), createPageBlock("content_grid"), createPageBlock("cta")]
+              : requestedTemplate === "application"
+                ? [createPageBlock("hero"), createPageBlock("steps"), createPageBlock("cta")]
+                : common.blocks,
       };
 }
 

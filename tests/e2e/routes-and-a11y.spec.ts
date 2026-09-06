@@ -18,6 +18,7 @@ const routes = [
   { path: "/campanhas/campanha-sintetica-inexistente", status: 200, edgeStatus: 404 },
   { path: "/relatorio-de-obra/login", status: 200 },
   { path: "/admin/login", status: 200 },
+  { path: "/admin/recuperar-senha", status: 200 },
 ];
 
 for (const route of routes) {
@@ -118,6 +119,38 @@ test("admin is fail-closed and private when signed out", async ({ page }) => {
   await expect(page).toHaveURL(/\/admin\/login$/);
   await expect(page.getByRole("heading", { name: /entrar no painel/i })).toBeVisible();
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/i);
+});
+
+test("new and consolidated admin routes remain fail-closed", async ({ page }) => {
+  for (const route of [
+    "/admin/assistente",
+    "/admin/qualidade",
+    "/admin/auditoria",
+    "/admin/produtos/importacao",
+    "/admin/listas-mestras",
+    "/admin/busca",
+    "/admin/meu-trabalho",
+  ]) {
+    await page.goto(route);
+    await expect(page).toHaveURL(/\/admin\/login$/);
+  }
+});
+
+test("@a11y admin authentication keeps visible focus, contrast and reduced motion", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/admin/login", { waitUntil: "networkidle" });
+  const email = page.getByLabel("E-mail corporativo");
+  await email.focus();
+  await expect(email).toBeFocused();
+  const focusStyle = await email.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { outline: style.outlineStyle, width: style.outlineWidth, shadow: style.boxShadow };
+  });
+  expect(focusStyle.outline !== "none" || focusStyle.shadow !== "none").toBe(true);
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(
+    results.violations.filter((violation) => ["serious", "critical"].includes(violation.impact ?? "")),
+  ).toEqual([]);
 });
 
 test("@a11y mobile menu closes with Escape and restores scrolling", async ({ page }, testInfo) => {

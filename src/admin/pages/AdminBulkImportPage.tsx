@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { Link } from "react-router";
 import { ProductModuleTabs } from "../components/AdminModuleTabs";
+import { StepTabs } from "../components/AdminUI";
 import { useAdminAuth } from "../auth/AdminAuthContext";
 import { bulkImportCommand } from "../api/cms-api";
 import {
@@ -176,7 +177,9 @@ export default function AdminBulkImportPage() {
   const [rows, setRows] = useState<BulkProductCommandRow[]>([]);
   const [errors, setErrors] = useState<BulkImportError[]>([]);
   const [serverValidated, setServerValidated] = useState(false);
+  const [sourceDeclared, setSourceDeclared] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  const [activeStep, setActiveStep] = useState("file");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [correlationId, setCorrelationId] = useState("");
@@ -214,6 +217,7 @@ export default function AdminBulkImportPage() {
       setFileName(file.name);
       setRows(result.rows);
       setErrors(result.errors);
+      setActiveStep("validation");
       commitKey.current = crypto.randomUUID();
       setMessage(
         result.errors.length
@@ -246,6 +250,7 @@ export default function AdminBulkImportPage() {
       setErrors(result.errors ?? []);
       if (action === "bulk_validate") {
         setServerValidated(!(result.errors?.length ?? 0));
+        if (!(result.errors?.length ?? 0)) setActiveStep("confirmation");
         setMessage(
           result.errors?.length
             ? "O servidor encontrou pendências. Nenhum cadastro foi criado."
@@ -272,6 +277,28 @@ export default function AdminBulkImportPage() {
         qualquer registro e sempre gera rascunhos — nunca publica automaticamente.
       </p>
       <ProductModuleTabs />
+      <StepTabs
+        label="Etapas do cadastro em massa"
+        active={activeStep}
+        onChange={(step) => {
+          const allowed =
+            step === "file" ||
+            (step === "validation" && Boolean(fileName)) ||
+            (step === "dry-run" && rows.length > 0 && errors.length === 0) ||
+            (step === "confirmation" && serverValidated);
+          if (allowed) setActiveStep(step);
+        }}
+        steps={[
+          { id: "file", label: "Arquivo" },
+          {
+            id: "validation",
+            label: "Validação",
+            description: errors.length > 0 ? `${errors.length} erro(s)` : undefined,
+          },
+          { id: "dry-run", label: "Dry-run" },
+          { id: "confirmation", label: "Confirmação" },
+        ]}
+      />
       <div className="admin-workflow-actions">
         <button
           className="admin-button admin-button--secondary"
@@ -286,78 +313,103 @@ export default function AdminBulkImportPage() {
         Não use exportações do painel antigo. Imagens e documentos continuam sendo carregados separadamente na
         biblioteca do CMS, com origem, direitos e revisão.
       </div>
-      <fieldset>
-        <legend>1. Selecionar planilha</legend>
-        <label>
-          Arquivo `.xlsx` padronizado, até 5 MB e 500 produtos
-          <input
-            type="file"
-            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            disabled={busy || !canEdit}
-            onChange={(event) => void loadFile(event.target.files?.[0])}
-          />
-        </label>
-        {fileName && <p className="admin-help">Arquivo selecionado: {fileName}</p>}
-      </fieldset>
-      <fieldset>
-        <legend>2. Pré-validação</legend>
-        <p>
-          Produtos prontos: <strong>{rows.length}</strong> · Pendências: <strong>{errors.length}</strong>
-        </p>
-        <button
-          type="button"
-          className="admin-button"
-          disabled={busy || !canEdit || !rows.length || errors.length > 0}
-          onClick={() => void run("bulk_validate")}
-        >
-          Validar no servidor sem cadastrar
-        </button>
-        {errors.length > 0 && (
-          <div className="admin-table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Aba</th>
-                  <th>Linha</th>
-                  <th>Campo</th>
-                  <th>Correção necessária</th>
-                </tr>
-              </thead>
-              <tbody>
-                {errors.slice(0, 100).map((error, index) => (
-                  <tr key={`${error.sheet}-${error.row}-${error.field}-${index}`}>
-                    <td>{error.sheet}</td>
-                    <td>{error.row}</td>
-                    <td>{error.field}</td>
-                    <td>{error.message}</td>
+      {activeStep === "file" && (
+        <fieldset>
+          <legend>1. Arquivo e origem</legend>
+          <label className="admin-checkbox">
+            <input
+              type="checkbox"
+              checked={sourceDeclared}
+              onChange={(event) => setSourceDeclared(event.target.checked)}
+            />
+            Declaro que o arquivo contém somente cadastros novos, com origem e direitos verificados.
+          </label>
+          <label>
+            Arquivo `.xlsx` padronizado, até 5 MB e 500 produtos
+            <input
+              type="file"
+              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              disabled={busy || !canEdit || !sourceDeclared}
+              onChange={(event) => void loadFile(event.target.files?.[0])}
+            />
+          </label>
+          {fileName && <p className="admin-help">Arquivo selecionado: {fileName}</p>}
+        </fieldset>
+      )}
+      {activeStep === "validation" && (
+        <fieldset>
+          <legend>2. Validação por linha e campo</legend>
+          <p>
+            Produtos prontos: <strong>{rows.length}</strong> · Pendências: <strong>{errors.length}</strong>
+          </p>
+          {errors.length > 0 && (
+            <div className="admin-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Aba</th>
+                    <th>Linha</th>
+                    <th>Campo</th>
+                    <th>Correção necessária</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </fieldset>
-      <fieldset>
-        <legend>3. Criar rascunhos</legend>
-        <label className="admin-checkbox">
-          <input
-            type="checkbox"
-            checked={confirmed}
-            disabled={!serverValidated || busy}
-            onChange={(event) => setConfirmed(event.target.checked)}
-          />
-          Confirmo que estes são cadastros novos, que não vieram do painel/site antigo e que as fontes e
-          direitos declarados estão corretos.
-        </label>
-        <button
-          type="button"
-          className="admin-button"
-          disabled={!serverValidated || !confirmed || busy}
-          onClick={() => void run("bulk_create")}
-        >
-          Criar todo o lote como rascunho
-        </button>
-      </fieldset>
+                </thead>
+                <tbody>
+                  {errors.slice(0, 100).map((error, index) => (
+                    <tr key={`${error.sheet}-${error.row}-${error.field}-${index}`}>
+                      <td>{error.sheet}</td>
+                      <td>{error.row}</td>
+                      <td>{error.field}</td>
+                      <td>{error.message}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {errors.length === 0 && rows.length > 0 && (
+            <button type="button" className="admin-button" onClick={() => setActiveStep("dry-run")}>
+              Continuar para o dry-run
+            </button>
+          )}
+        </fieldset>
+      )}
+      {activeStep === "dry-run" && (
+        <fieldset>
+          <legend>3. Dry-run</legend>
+          <p>O servidor validará contratos, duplicidades e permissões sem criar ou publicar registros.</p>
+          <button
+            type="button"
+            className="admin-button"
+            disabled={busy || !canEdit || !rows.length || errors.length > 0}
+            onClick={() => void run("bulk_validate")}
+          >
+            {busy ? "Simulando…" : "Executar dry-run"}
+          </button>
+        </fieldset>
+      )}
+      {activeStep === "confirmation" && (
+        <fieldset>
+          <legend>4. Confirmação</legend>
+          <label className="admin-checkbox">
+            <input
+              type="checkbox"
+              checked={confirmed}
+              disabled={!serverValidated || busy}
+              onChange={(event) => setConfirmed(event.target.checked)}
+            />
+            Confirmo que estes são cadastros novos, que não vieram do painel/site antigo e que as fontes e
+            direitos declarados estão corretos.
+          </label>
+          <button
+            type="button"
+            className="admin-button"
+            disabled={!serverValidated || !confirmed || busy}
+            onClick={() => void run("bulk_create")}
+          >
+            Criar todo o lote como rascunho
+          </button>
+        </fieldset>
+      )}
       {message && (
         <p className="admin-notice" role="status">
           {message}

@@ -72,7 +72,7 @@ test("admin shell covers search, profile, operational and denied states", async 
   ]);
   assert.match(shell, /Breadcrumb/);
   assert.match(shell, /Busca global no CMS/);
-  assert.match(shell, /event\.key !== "Escape"/);
+  assert.match(shell, /event\.key === "Escape"/);
   assert.match(list, /Carregando conteúdo/);
   assert.match(list, /Biblioteca editorial vazia/);
   assert.match(list, /Não foi possível carregar/);

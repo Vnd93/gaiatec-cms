@@ -21,6 +21,7 @@ import {
   pageTypeMeta,
   type ManagedPageType,
 } from "../page-builder-model";
+import type { ManagedPageTemplate } from "../page-builder-model";
 
 type Loaded = {
   id: string;
@@ -93,7 +94,24 @@ export default function AdminPageBuilderPage() {
   const { session, profile } = useAdminAuth();
   const visualStudioEnabled = isEv2FeatureEnabled(profile, "ev2.visual_studio");
   const requestedType = searchParams.get("type") === "homepage" ? "homepage" : "page";
-  const [payload, setPayload] = useState<CmsPageContent>(() => createInitialPagePayload(requestedType));
+  const requestedTemplateParam = searchParams.get("template");
+  const requestedTemplate: ManagedPageTemplate = [
+    "institutional",
+    "landing",
+    "sector",
+    "application",
+  ].includes(requestedTemplateParam ?? "")
+    ? (requestedTemplateParam as ManagedPageTemplate)
+    : "standard";
+  const requestedBlock = (["hero", "benefit_grid", "testimonial", "faq", "form", "cta"] as const).find(
+    (type) => type === searchParams.get("block"),
+  );
+  const [payload, setPayload] = useState<CmsPageContent>(() => {
+    const initial = createInitialPagePayload(requestedType, requestedTemplate);
+    return requestedBlock
+      ? { ...initial, blocks: [...initial.blocks, createPageBlock(requestedBlock)] }
+      : initial;
+  });
   const [slug, setSlug] = useState(() =>
     requestedType === "homepage" ? "homepage" : `pagina-${Date.now()}`,
   );

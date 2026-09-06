@@ -120,6 +120,97 @@ export function RecordDrawer({
   );
 }
 
+export function AdminToast({
+  message,
+  tone = "success",
+  duration = 2600,
+  onDismiss,
+}: {
+  message: string;
+  tone?: "success" | "danger" | "info";
+  duration?: number;
+  onDismiss?: () => void;
+}) {
+  useEffect(() => {
+    if (!message || !onDismiss) return;
+    const timer = window.setTimeout(onDismiss, duration);
+    return () => window.clearTimeout(timer);
+  }, [duration, message, onDismiss]);
+  if (!message) return null;
+  return (
+    <div className={`admin-toast is-${tone}`} role={tone === "danger" ? "alert" : "status"}>
+      {message}
+      {onDismiss && (
+        <button type="button" aria-label="Fechar confirmação" onClick={onDismiss}>
+          <X aria-hidden="true" size={16} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function RelationMatrix({
+  rowLabel,
+  columnLabel,
+  rows,
+  columns,
+  linked,
+  disabled,
+  onToggle,
+}: {
+  rowLabel: string;
+  columnLabel: string;
+  rows: Array<{ id: string; label: string }>;
+  columns: Array<{ id: string; label: string }>;
+  linked: (rowId: string, columnId: string) => boolean;
+  disabled?: boolean;
+  onToggle: (rowId: string, columnId: string, next: boolean) => void;
+}) {
+  return (
+    <div className="admin-relation-matrix">
+      <table>
+        <caption>
+          Matriz {rowLabel} × {columnLabel}
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">{rowLabel}</th>
+            {columns.map((column) => (
+              <th scope="col" key={column.id}>
+                {column.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.id}>
+              <th scope="row">{row.label}</th>
+              {columns.map((column) => {
+                const active = linked(row.id, column.id);
+                return (
+                  <td key={column.id}>
+                    <button
+                      type="button"
+                      className={active ? "is-linked" : undefined}
+                      aria-pressed={active}
+                      aria-label={`${active ? "Remover" : "Adicionar"} vínculo entre ${row.label} e ${column.label}`}
+                      disabled={disabled}
+                      onClick={() => onToggle(row.id, column.id, !active)}
+                    >
+                      <span aria-hidden="true">{active ? "✓" : "—"}</span>
+                    </button>
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function PageHeader({
   eyebrow,
   title,

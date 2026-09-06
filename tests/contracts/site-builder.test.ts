@@ -96,6 +96,16 @@ describe("F6 governed site builder contracts", () => {
     }
   });
 
+  it("materializa modelos aprovados em rascunhos válidos e distintos", () => {
+    for (const template of ["institutional", "landing", "sector", "application"] as const) {
+      const draft = createInitialPagePayload("page", template);
+      expect(CmsManagedPageContentSchema.safeParse(draft).success).toBe(true);
+      expect(draft.blocks.length).toBeGreaterThanOrEqual(3);
+    }
+    expect(createInitialPagePayload("page", "landing").templateKey).toBe("landing");
+    expect(createInitialPagePayload("page", "sector").pageKind).toBe("thematic");
+  });
+
   it("duplicates and reorders blocks without reusing identities", () => {
     const first = createPageBlock("rich_text");
     const second = createPageBlock("cta");

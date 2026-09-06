@@ -19,7 +19,7 @@ import { UnsavedChangesGuard } from "../components/UnsavedChangesGuard";
 import { openExternalAfterAsync } from "../open-external-preview";
 import { useDraftBackup } from "../hooks/useDraftBackup";
 import { DraftBackupNotice } from "../components/DraftBackupNotice";
-import { Badge, RecordDrawer, SectionCard } from "../components/AdminUI";
+import { Badge, RecordDrawer, RelationMatrix, SectionCard } from "../components/AdminUI";
 import { DiscoveryModuleTabs } from "../components/AdminModuleTabs";
 
 type Kind = "service" | "industry" | "application" | "solution";
@@ -154,6 +154,7 @@ export default function AdminDiscoveryPage() {
     navigate = useNavigate(),
     [searchParams] = useSearchParams(),
     [items, setItems] = useState<any[]>([]),
+    [relatedProducts, setRelatedProducts] = useState<any[]>([]),
     [selectedSummary, setSelectedSummary] = useState<any | null>(null),
     [payload, setPayload] = useState<any>(() => initial(kind)),
     [slug, setSlug] = useState(`${kind}-sintetico`),
@@ -189,6 +190,16 @@ export default function AdminDiscoveryPage() {
       active = false;
     };
   }, [kind, session]);
+  const loadRelatedProducts = useCallback(async () => {
+    if (kind !== "application") return;
+    const { data } = await supabase
+      .from("cms_content_items")
+      .select("id,slug,workflow_status,cms_content_drafts(payload,lock_version)")
+      .eq("content_type", "product")
+      .neq("workflow_status", "trashed")
+      .order("updated_at", { ascending: false });
+    setRelatedProducts((data ?? []) as any[]);
+  }, [kind]);
   const reload = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -232,6 +243,75 @@ export default function AdminDiscoveryPage() {
   useEffect(() => {
     void reload();
   }, [reload]);
+  useEffect(() => {
+    void loadRelatedProducts();
+  }, [loadRelatedProducts]);
+
+  async function persistRelation(
+    item: any,
+    contentType: Kind | "product",
+    relationKey: "productIds" | "applicationIds",
+    targetId: string,
+    next: boolean,
+  ) {
+    if (!session) throw new Error("Sessão administrativa indisponível.");
+    const draft = item.cms_content_drafts;
+    const currentIds = draft.payload.relations?.[relationKey] ?? [];
+    const ids = next
+      ? [...new Set([...currentIds, targetId])]
+      : currentIds.filter((candidate: string) => candidate !== targetId);
+    if (item.workflow_status === "published") {
+      await editorialCommand(session, {
+        action: "reopen",
+        itemId: item.id,
+        contentType: null,
+        slug: null,
+        payload: null,
+        expectedLockVersion: null,
+        reason: "Atualizar vínculo bidirecional do catálogo",
+      });
+    }
+    await editorialCommand(session, {
+      action: "save",
+      itemId: item.id,
+      contentType,
+      slug: item.slug,
+      payload: {
+        ...draft.payload,
+        relations: { ...draft.payload.relations, [relationKey]: ids },
+      },
+      expectedLockVersion: draft.lock_version,
+      reason: "Atualizar vínculo bidirecional do catálogo",
+    });
+  }
+
+  async function toggleProductApplication(applicationId: string, productId: string, next: boolean) {
+    const application = items.find((item) => item.id === applicationId);
+    const product = relatedProducts.find((item) => item.id === productId);
+    if (!application || !product || busy) return;
+    setBusy(true);
+    setError("");
+    setSuccess("");
+    try {
+      await persistRelation(product, "product", "applicationIds", applicationId, next);
+      try {
+        await persistRelation(application, "application", "productIds", productId, next);
+      } catch (caught) {
+        await persistRelation(product, "product", "applicationIds", applicationId, !next);
+        throw caught;
+      }
+      setSuccess(`Vínculo ${next ? "adicionado" : "removido"} nos dois sentidos.`);
+      await Promise.all([reload(), loadRelatedProducts()]);
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "O vínculo não pôde ser atualizado; revise a auditoria antes de tentar novamente.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
   async function run(action: string, extras: Record<string, unknown> = {}) {
     if (!session) return;
     setBusy(true);
@@ -374,7 +454,31 @@ export default function AdminDiscoveryPage() {
             }
             description="A relação é bidirecional e respeita o workflow editorial vigente."
           >
-            {kind === "service" && activeTool === "2" ? (
+            {kind === "application" && activeTool === "2" ? (
+              <RelationMatrix
+                rowLabel="Aplicação"
+                columnLabel="Produto"
+                rows={items.map((item) => ({
+                  id: item.id,
+                  label: item.cms_content_drafts?.payload?.title ?? item.slug,
+                }))}
+                columns={relatedProducts.map((item) => ({
+                  id: item.id,
+                  label: item.cms_content_drafts?.payload?.title ?? item.slug,
+                }))}
+                linked={(applicationId, productId) =>
+                  items
+                    .find((item) => item.id === applicationId)
+                    ?.cms_content_drafts?.payload?.relations?.productIds?.includes(productId) ?? false
+                }
+                disabled={
+                  busy || !can("edit") || !(profile?.permissions.includes("cms:products.edit") ?? false)
+                }
+                onToggle={(applicationId, productId, next) =>
+                  void toggleProductApplication(applicationId, productId, next)
+                }
+              />
+            ) : kind === "service" && activeTool === "2" ? (
               <div className="admin-master-layout">
                 <div className="admin-master-sidebar">
                   {(vocabularies.length

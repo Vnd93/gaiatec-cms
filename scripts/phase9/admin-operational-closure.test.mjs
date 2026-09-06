@@ -9,14 +9,7 @@ test("admin navigation is grouped, permission-aware and uses friendly breadcrumb
     read("src/admin/admin-navigation.ts"),
     read("src/admin/components/AdminShell.tsx"),
   ]);
-  for (const group of [
-    "Painel",
-    "Conteúdo do site",
-    "Catálogo",
-    "Marketing e relacionamento",
-    "Estrutura e identidade do site",
-    "Administração",
-  ])
+  for (const group of ["Trabalho", "Catálogo", "Conteúdo", "Marketing", "Site", "Administração"])
     assert.match(navigation, new RegExp(`label: "${group}"`));
   assert.match(navigation, /canAccessNavigationItem/);
   assert.match(navigation, /resolveAdminBreadcrumbs/);

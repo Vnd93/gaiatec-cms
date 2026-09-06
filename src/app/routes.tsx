@@ -38,7 +38,6 @@ const AdminRecoveryPage = lazy(() => import("../admin/pages/RecoveryPage"));
 const AdminSetPasswordPage = lazy(() => import("../admin/pages/SetPasswordPage"));
 const AdminMfaPage = lazy(() => import("../admin/pages/MfaPage"));
 const AdminHomePage = lazy(() => import("../admin/pages/AdminHomePage"));
-const AdminWorkPage = lazy(() => import("../admin/pages/AdminWorkPage"));
 const AdminAiAssistantPage = lazy(() => import("../admin/pages/AdminAiAssistantPage"));
 const AdminAiExecutionPage = lazy(() => import("../admin/pages/AdminAiExecutionPage"));
 const AdminContentPage = lazy(() => import("../admin/pages/AdminContentPage"));
@@ -191,7 +190,7 @@ export const router = createBrowserRouter([
         element: <RequireAdminAuth><AdminShell /></RequireAdminAuth>,
         children: [
           { index: true, element: lazyWrap(AdminHomePage) },
-          { path: "meu-trabalho", element: lazyWrap(AdminWorkPage) },
+          { path: "meu-trabalho", element: <Navigate replace to="/admin" /> },
           { path: "assistente", element: lazyWrap(AdminAiAssistantPage) },
           { path: "assistente/execucao", element: lazyWrap(AdminAiExecutionPage) },
           { path: "conteudo", element: lazyWrap(AdminContentPage) },

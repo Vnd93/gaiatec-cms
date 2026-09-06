@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "gate": "G17",
+  "outcome": "G17_CANARY_PASS",
+  "candidateSha": "7abe356b0f4503d6b87fd00d50acee20ab794d6d",
+  "completedAt": "2026-09-06T18:55:14.282Z",
+  "target": {
+    "projectRef": "glcqsosxwgmlhzgcsnzv",
+    "projectName": "GAIATEC CMS Staging",
+    "candidateOrigin": "https://ev2-g17-canary.gaiatec-cms-staging.pages.dev",
+    "stablePromoted": false
+  },
+  "checks": 7,
+  "provider": "openrouter",
+  "model": "nvidia/nemotron-3.5-lightning:free",
+  "migrations": ["0055", "0056"],
+  "functions": {
+    "cms-session": 19,
+    "cms-ai": 9
+  },
+  "syntheticUsers": 1,
+  "syntheticCleanup": "pass",
+  "humanReviewRequired": true,
+  "automaticApply": false,
+  "automaticPublish": false,
+  "realDataUsed": false,
+  "productionMutations": 0
+}

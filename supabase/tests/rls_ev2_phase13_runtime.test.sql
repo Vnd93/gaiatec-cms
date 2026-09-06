@@ -190,8 +190,8 @@ select is(
     '51300000-0000-4000-8000-000000000101', 'production', 'main', 'aal2',
     'g13-runtime-session', now() - interval '1 minute'
   ) ->> 'status',
-  'gated',
-  'production remains explicitly gated'
+  'ready',
+  'production runtime is evaluable while every capability remains default-off'
 );
 select ok(
   not exists (
@@ -204,7 +204,7 @@ select ok(
     ) entry
     where (entry.value ->> 'enabled')::boolean
   ),
-  'a production manifest cannot enable any capability'
+  'a production manifest without an individual override cannot enable any capability'
 );
 select is(
   public.cms_runtime_capability_manifest(

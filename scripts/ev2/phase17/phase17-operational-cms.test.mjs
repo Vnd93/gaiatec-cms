@@ -91,3 +91,14 @@ test("synthetic identities detach without weakening immutable audit records", as
   assert.match(migration, /cms_policy_decisions_immutable/);
   assert.match(migration, /raise exception 'CMS audit records are immutable'/);
 });
+
+test("historical database assertions follow the production-ready default-off contract", async () => {
+  const [runtime, release, drafts] = await Promise.all([
+    read("supabase/tests/rls_ev2_phase13_runtime.test.sql"),
+    read("supabase/tests/rls_ev2_phase1_foundation.test.sql"),
+    read("supabase/tests/rls_ev2_phase2_progressive_drafts.test.sql"),
+  ]);
+  assert.match(runtime, /production runtime is evaluable while every capability remains default-off/);
+  assert.match(release, /CMS_RELEASE_FEATURE_DISABLED/);
+  assert.match(drafts, /CMS_DRAFT_V2_FEATURE_DISABLED/);
+});

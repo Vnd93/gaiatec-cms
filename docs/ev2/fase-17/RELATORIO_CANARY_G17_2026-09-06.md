@@ -48,4 +48,3 @@ autenticação usado pelas demais funções EV2 e foi exercitado pelo canary.
 
 O candidato está apto para homologação funcional do CMS em staging. Produção permanece bloqueada
 por configuração e fora do escopo deste resultado.
-

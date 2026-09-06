@@ -35,7 +35,7 @@ Ambientes efetivos, ambos sem required reviewers:
 - `production-backup`: somente `main`; secrets exclusivos de banco e criptografia. Não deve ter
   aprovação manual por execução porque o backup diário precisa ser não assistido.
 
-O guard de produção consulta a proteção, lê CODEOWNERS e os check-runs reais e confere que o SHA
+O guard de produção consulta a proteção, lê CODEOWNERS e os jobs reais do GitHub Actions e confere que o SHA
 veio de PR de `@Vnd93` já integrado em `main`. Zero approvals é intencional; qualquer reviewer de
 ambiente, bypass ou autor diferente torna o controle inválido.
 

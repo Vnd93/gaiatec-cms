@@ -37,7 +37,7 @@ Secrets:
 - `CLOUDFLARE_API_TOKEN` — Pages Write somente na conta/projeto necessários;
 - `CLOUDFLARE_ACCOUNT_ID`;
 - `RELEASE_GUARD_TOKEN` — token fine-grained somente leitura de administração/metadados para
-  verificar ambiente, proteção, PR e check-runs;
+  verificar ambiente, proteção, PR e jobs reais do GitHub Actions;
 - `PRODUCTION_SUPABASE_URL`;
 - `PRODUCTION_SUPABASE_ANON_KEY` — chave pública, ainda assim segregada do build de staging.
 

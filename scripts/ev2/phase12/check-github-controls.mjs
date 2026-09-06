@@ -22,20 +22,24 @@ async function github(path) {
 const environment = await github("/environments/production");
 const branchProtection = await github("/branches/main/protection");
 const associatedPulls = await github(`/commits/${candidateSha}/pulls`);
-const checkRunsPayload = await github(`/commits/${candidateSha}/check-runs?filter=latest&per_page=100`);
-const pullRequest = associatedPulls.find(
-  (item) =>
-    item?.merged_at &&
-    item?.base?.ref === "main" &&
-    (item?.merge_commit_sha === candidateSha || item?.head?.sha === candidateSha),
+const workflowRunsPayload = await github(
+  `/actions/runs?head_sha=${candidateSha}&status=completed&per_page=100`,
 );
+const successfulRuns = (workflowRunsPayload?.workflow_runs ?? []).filter(
+  (run) => run?.head_sha === candidateSha && run?.conclusion === "success",
+);
+const workflowJobsPayloads = await Promise.all(
+  successfulRuns.map((run) => github(`/actions/runs/${run.id}/jobs?filter=latest&per_page=100`)),
+);
+const workflowJobs = workflowJobsPayloads.flatMap((payload) => payload?.jobs ?? []);
+const pullRequest = associatedPulls.find((item) => item?.merged_at && item?.base?.ref === "main");
 const codeOwners = await readFile(".github/CODEOWNERS", "utf8").catch(() => "");
 const result = evaluateGithubControls({
   environment,
   branchProtection,
   codeOwners,
   pullRequest,
-  checkRuns: checkRunsPayload?.check_runs,
+  checkRuns: workflowJobs,
 });
 if (!result.valid) throw new Error(`G12_GITHUB_CONTROLS_BLOCKED:${result.violations.join(",")}`);
 console.log(

@@ -737,18 +737,29 @@ test("release workflows and reduced canary are immutable, staged and production 
   assert.equal(approvalTemplate.g12Evidence.file, null);
 });
 
-test("phase documentation preserves blockers and does not claim G12", async () => {
-  const [readme, gate, infrastructure, rollout, runbook, training] = await Promise.all([
+test("phase documentation binds G12 approval without claiming a completed deployment", async () => {
+  const [readme, gate, infrastructure, rollout, runbook, training, approvalRaw] = await Promise.all([
     read("docs/ev2/fase-12/README.md"),
     read("docs/ev2/fase-12/GATE_G12.md"),
     read("docs/ev2/fase-12/PRE_REQUISITOS_INFRAESTRUTURA.md"),
     read("docs/ev2/fase-12/MATRIZ_ROLLOUT.md"),
     read("docs/ev2/fase-12/RUNBOOK_GO_LIVE_E_ROLLBACK.md"),
     read("docs/ev2/fase-12/TREINAMENTO_E_HANDOVER.md"),
+    read("docs/ev2/fase-12/approvals/G12_e52b25d903251cf538918d89049a58524c3c9911.json"),
   ]);
-  assert.match(readme, /G12 não aprovado/);
-  assert.match(readme, /produção.*bloqueada/i);
-  assert.match(gate, /NÃO APROVADO/);
+  const approval = JSON.parse(approvalRaw);
+  assert.match(readme, /G12 aprovado para execução controlada/);
+  assert.match(readme, /ainda sem execução ou promoção/i);
+  assert.match(gate, /APROVADO PARA EXECUÇÃO CONTROLADA/);
+  assert.match(gate, /ainda não executada/i);
+  assert.equal(approval.decision, "approved");
+  assert.equal(approval.productionAuthorized, true);
+  assert.equal(approval.candidateSha, "e52b25d903251cf538918d89049a58524c3c9911");
+  assert.equal(
+    approval.productionAuthorizationText,
+    "AUTORIZO-G12-PRODUCAO:e52b25d903251cf538918d89049a58524c3c9911",
+  );
+  assert.equal(approval.g12Evidence.productionMutations, 0);
   assert.match(infrastructure, /ambiente (GitHub )?`production`/i);
   assert.match(infrastructure, /Supabase de produção/);
   assert.match(rollout, /três janelas consecutivas/i);

@@ -1,8 +1,8 @@
 # EV2.16 — controles vinculantes de prontidão para produção
 
-**Estado em 5 de setembro de 2026:** implementação técnica concluída no branch de trabalho;
-proteções GitHub, ambientes, DPO/legal e credenciais Supabase aplicados. Backup/restore real, Resend,
-preview CSP do candidato final e autorização literal do SHA ainda bloqueiam G12 e produção.
+**Estado em 6 de setembro de 2026:** controles técnicos e externos aprovados para o candidato
+`e52b25d903251cf538918d89049a58524c3c9911`; autorização literal recebida e registro G12 formado.
+O go-live ainda não foi executado.
 
 Esta fase converte os pré-requisitos finais em verificações automáticas e evidências imutáveis. Ela
 não promove staging, não acessa dados reais e não autoriza produção.
@@ -12,13 +12,13 @@ não promove staging, não acessa dados reais e não autoriza produção.
 | Controle                  | Implementado no repositório                                                                                        | Evidência externa atual                                                       |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
 | GitHub e mantenedor único | guard exige PR de `@Vnd93`, CODEOWNERS exclusivo, CI real, branch protegida e ausência de bypass                   | GitHub Pro ativo; `main` protegida nos dois repositórios; ambientes restritos |
-| Backup Supabase Free      | workflow diário cria dump lógico, cifra AES-256 antes do upload e retém a cópia externa por 90 dias                | secrets protegidos e conexão TLS validados; primeira execução real pendente   |
-| Restore drill             | workflow semanal/manual decripta a cópia enviada, restaura em Supabase local efêmero e compara as tabelas públicas | primeiro drill produtivo pendente                                             |
+| Backup Supabase Free      | workflow diário cria dump lógico, cifra AES-256 antes do upload e retém a cópia externa por 30 dias                | backup cifrado aprovado no run `34000214134`                                  |
+| Restore drill             | workflow semanal/manual decripta a cópia enviada, restaura em Supabase local efêmero e compara as tabelas públicas | restore efêmero aprovado no mesmo run                                         |
 | DPO/legal                 | registro G12 v2 exige identidade, instante, referência e hash exato do escopo aprovado                             | aprovado; Marcelo Diaz e canal público confirmados                            |
-| E-mail real               | Resend definido; domínio, remetente, destinatário corporativo e entrega sintética são verificados                  | variáveis e Supabase cadastrados; chave Resend e execução pendentes           |
-| CSP                       | origens auditadas; staging comum em Report-Only e canary/preview/produto em enforcement                            | canary isolado do SHA `7804d5b4…` passou; preview produtivo pendente          |
-| Operação                  | `@Vnd93` assume quatro responsabilidades; guard exige risco solo e evidência individual                            | modelo e risco aceitos; execução da janela pendente                           |
-| Autorização final         | workflow e registro exigem `AUTORIZO-G12-PRODUCAO:<SHA completo>`                                                  | intenção aceita; literal com SHA final ainda pendente                         |
+| E-mail real               | Resend definido; domínio, remetente, destinatário corporativo e entrega sintética são verificados                  | entrega sintética comprovada para o candidato final                           |
+| CSP                       | origens auditadas; staging comum em Report-Only e canary/preview/produto em enforcement                            | candidato final aprovado sem violação crítica                                 |
+| Operação                  | `@Vnd93` assume quatro responsabilidades; guard exige risco solo e evidência individual                            | modelo, risco, evidências e janela aceitos                                    |
+| Autorização final         | workflow e registro exigem `AUTORIZO-G12-PRODUCAO:<SHA completo>`                                                  | literal exato recebido e registro verificado                                  |
 
 ## Artefatos
 

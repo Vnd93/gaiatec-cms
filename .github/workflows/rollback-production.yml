@@ -36,7 +36,8 @@ jobs:
       - name: Verify protected GitHub controls
         run: node scripts/ev2/phase12/check-github-controls.mjs
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_RELEASE_GUARD_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          CANDIDATE_SHA: ${{ inputs.expected_release }}
       - name: Validate immutable rollback inputs
         env:
           DEPLOYMENT_ID: ${{ inputs.deployment_id }}

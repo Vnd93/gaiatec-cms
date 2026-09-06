@@ -38,7 +38,7 @@ jobs:
         run: |
           test "$(printf '%s' "$CANDIDATE_SHA" | grep -E '^[a-f0-9]{40}$')" = "$CANDIDATE_SHA"
           git merge-base --is-ancestor "$CANDIDATE_SHA" origin/main
-      - name: Verify domain and synthetic delivery without customer data
+      - name: Verify domain and synthetic send acceptance without customer data
         env:
           EMAIL_PROVIDER: resend
           EMAIL_SENDING_DOMAIN: gaiatecsistemas.com
@@ -55,4 +55,4 @@ jobs:
           name: production-email-evidence-${{ inputs.candidate_sha }}
           path: production-email-evidence.json
           if-no-files-found: error
-          retention-days: 90
+          retention-days: 30

@@ -61,7 +61,7 @@ jobs:
         working-directory: control
         run: node scripts/ev2/phase12/check-github-controls.mjs
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_RELEASE_GUARD_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
       - name: Verify production configuration is isolated
         working-directory: control

@@ -553,12 +553,13 @@ test("G12 boundary evals contain no false acceptance or remote mutation", () => 
 });
 
 test("release workflows and reduced canary are immutable, staged and production fail-closed", async () => {
-  const [ci, preview, production, rollback, cloudflare, canary, g11Canary, verifier, template] =
+  const [ci, preview, production, rollback, githubGuard, cloudflare, canary, g11Canary, verifier, template] =
     await Promise.all([
       read(".github/workflows/ci.yml"),
       read(".github/workflows/preview-ev2-phase12.yml"),
       read(".github/workflows/deploy-production.yml"),
       read(".github/workflows/rollback-production.yml"),
+      read("scripts/ev2/phase12/check-github-controls.mjs"),
       read("scripts/ev2/phase12/cloudflare-pages.mjs"),
       read("scripts/ev2/phase12/staging-canary.mjs"),
       read("scripts/ev2/phase11/staging-canary.mjs"),
@@ -573,6 +574,8 @@ test("release workflows and reduced canary are immutable, staged and production 
   assert.match(production, /AUTORIZO-G12-PRODUCAO/);
   assert.match(production, /git -C control merge-base --is-ancestor/);
   assert.match(production, /check-github-controls\.mjs/);
+  assert.match(production, /secrets\.RELEASE_GUARD_TOKEN/);
+  assert.doesNotMatch(production, /secrets\.GITHUB_RELEASE_GUARD_TOKEN/);
   assert.match(production, /validate-production-config\.mjs/);
   assert.match(production, /ev2-g12-preflight/);
   assert.match(production, /Confirm live baseline equals the approved rollback target/);
@@ -595,6 +598,10 @@ test("release workflows and reduced canary are immutable, staged and production 
     /working-directory: control\r?\n\s+run: node scripts\/ev2\/phase12\/rollout-probe\.mjs/,
   );
   assert.match(rollback, /ROLLBACK-G12-PRODUCTION/);
+  assert.match(rollback, /CANDIDATE_SHA: \$\{\{ inputs\.expected_release \}\}/);
+  assert.match(githubGuard, /\/actions\/runs\?head_sha=/);
+  assert.match(githubGuard, /\/actions\/runs\/\$\{run\.id\}\/jobs/);
+  assert.doesNotMatch(githubGuard, /\/check-runs/);
   const rollbackJobPreamble = rollback.slice(rollback.indexOf("  rollback:"), rollback.indexOf("    steps:"));
   assert.doesNotMatch(rollbackJobPreamble, /secrets\.|CLOUDFLARE_/);
   assert.doesNotMatch(rollback, /npm ci|actions\/setup-node/);

@@ -87,6 +87,24 @@ export function validateResendDomainResponse(payload, expectedDomain = PRODUCTIO
   return { valid: violations.length === 0, violations, domainId: domain?.id ?? null };
 }
 
+export function classifyResendDeliveryStatus({ httpStatus, lastEvent }) {
+  if (httpStatus === 401)
+    return {
+      outcome: "manual-verification-required",
+      terminal: true,
+      event: "unreadable-by-sending-only-token",
+    };
+  if (!Number.isInteger(httpStatus) || httpStatus < 200 || httpStatus >= 300)
+    return { outcome: "unreadable", terminal: true, event: "unknown" };
+
+  const event = String(lastEvent ?? "unknown").toLowerCase();
+  if (["delivered", "opened", "clicked"].includes(event))
+    return { outcome: "delivered", terminal: true, event };
+  if (["bounced", "complained", "canceled", "failed"].includes(event))
+    return { outcome: "failed", terminal: true, event };
+  return { outcome: "pending", terminal: false, event };
+}
+
 export function validateProductionReadinessControls(readiness, { candidateSha } = {}) {
   const violations = [];
   const evidence = (control, prefix) => {

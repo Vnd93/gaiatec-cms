@@ -6,6 +6,7 @@ import worker, { CONTENT_SECURITY_POLICY } from "../../../cloudflare/_worker.js"
 import { prepareRoleRestore } from "./prepare-role-restore.mjs";
 import {
   PRODUCTION_SUPABASE_PROJECT_REF,
+  classifyResendDeliveryStatus,
   validateBackupConfig,
   validateEmailProviderConfig,
   validateProductionReadinessControls,
@@ -156,6 +157,20 @@ test("real email provider is Resend with verified sending and corporate recipien
   );
 });
 
+test("sending-only Resend credentials require independent dashboard delivery evidence", () => {
+  assert.deepEqual(classifyResendDeliveryStatus({ httpStatus: 401 }), {
+    outcome: "manual-verification-required",
+    terminal: true,
+    event: "unreadable-by-sending-only-token",
+  });
+  assert.equal(
+    classifyResendDeliveryStatus({ httpStatus: 200, lastEvent: "delivered" }).outcome,
+    "delivered",
+  );
+  assert.equal(classifyResendDeliveryStatus({ httpStatus: 200, lastEvent: "bounced" }).outcome, "failed");
+  assert.equal(classifyResendDeliveryStatus({ httpStatus: 503 }).outcome, "unreadable");
+});
+
 test("production readiness requires sole-maintainer, legal and operational controls", () => {
   const controls = readiness();
   assert.equal(validateProductionReadinessControls(controls, { candidateSha: sha }).valid, true);
@@ -249,6 +264,7 @@ test("production and canary workflows retain evidence and stay behind their boun
   assert.doesNotMatch(backup, /path:.*plain_dir/);
   assert.match(email, /VERIFY-RESEND-PRODUCTION:\{0\}/);
   assert.match(email, /environment: production/);
+  assert.match(email, /retention-days: 30/);
   assert.match(deploy, /AUTORIZO-G12-PRODUCAO:\{0\}/);
   assert.match(deploy, /CANDIDATE_SHA: \$\{\{ inputs\.candidate_sha \}\}/);
   assert.match(cspCanary, /for attempt in 1 2/);

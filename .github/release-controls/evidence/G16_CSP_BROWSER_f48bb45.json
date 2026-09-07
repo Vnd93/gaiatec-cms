@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "event": "ev2.phase16.csp.browser-canary",
+  "origin": "https://ev2-g16-csp-canary.gaiatec-cms-staging.pages.dev",
+  "candidateSha": "f48bb4530566456a0090a98cd39caf1cacb51b09",
+  "executedAt": "2026-09-07T00:09:35.995Z",
+  "routes": [
+    {
+      "path": "/",
+      "status": 200,
+      "release": "f48bb4530566456a0090a98cd39caf1cacb51b09",
+      "cspEnforced": true,
+      "policySha256": "2bd1e588afd53921fc4c71a5acaeb1bf2a6a425ec15dc58b17f4487442a9acd3",
+      "violations": []
+    },
+    {
+      "path": "/contato",
+      "status": 200,
+      "release": "f48bb4530566456a0090a98cd39caf1cacb51b09",
+      "cspEnforced": true,
+      "policySha256": "2bd1e588afd53921fc4c71a5acaeb1bf2a6a425ec15dc58b17f4487442a9acd3",
+      "violations": []
+    },
+    {
+      "path": "/relatorio-de-obra/login",
+      "status": 200,
+      "release": "f48bb4530566456a0090a98cd39caf1cacb51b09",
+      "cspEnforced": true,
+      "policySha256": "2bd1e588afd53921fc4c71a5acaeb1bf2a6a425ec15dc58b17f4487442a9acd3",
+      "violations": []
+    },
+    {
+      "path": "/admin/login",
+      "status": 200,
+      "release": "f48bb4530566456a0090a98cd39caf1cacb51b09",
+      "cspEnforced": true,
+      "policySha256": "2bd1e588afd53921fc4c71a5acaeb1bf2a6a425ec15dc58b17f4487442a9acd3",
+      "violations": []
+    }
+  ],
+  "policySha256": "2bd1e588afd53921fc4c71a5acaeb1bf2a6a425ec15dc58b17f4487442a9acd3",
+  "criticalViolations": 0,
+  "outcome": "pass",
+  "realDataUsed": false,
+  "productionMutations": 0
+}

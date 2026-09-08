@@ -14,6 +14,8 @@ import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 import { createClient } from "@supabase/supabase-js";
 
+import { revisionProvenanceSql, sqlJson } from "./cms-public-bridge-fixture-sql.mjs";
+
 const TARGETS = Object.freeze({
   staging: Object.freeze({
     ref: "glcqsosxwgmlhzgcsnzv",
@@ -141,11 +143,6 @@ async function managementQuery(query) {
 function sqlText(value) {
   if (typeof value !== "string" || /\0/.test(value)) refuse("SQL_TEXT_INVALID");
   return `'${value.replaceAll("'", "''")}'`;
-}
-
-function sqlJson(value) {
-  const encoded = Buffer.from(JSON.stringify(value), "utf8").toString("base64");
-  return `convert_from(decode('${encoded}','base64'),'UTF8')::jsonb`;
 }
 
 function exactKeys(value, keys) {
@@ -618,9 +615,9 @@ insert into public.cms_content_revisions(
   source_draft_version,reason,created_by
 ) values
   ('${state.page.revisionId}'::uuid,'${state.page.id}'::uuid,1,1,${sqlJson(page)},${sqlJson(page.seo)},
-    ${sqlJson({ syntheticOnly: true, runTag: state.runTag })},1,'QA synthetic public bridge fixture',${actor}),
+    ${revisionProvenanceSql(page.provenance)},1,'QA synthetic public bridge fixture',${actor}),
   ('${state.campaign.revisionId}'::uuid,'${state.campaign.id}'::uuid,1,1,${sqlJson(campaign)},${sqlJson(campaign.seo)},
-    ${sqlJson({ syntheticOnly: true, runTag: state.runTag })},1,'QA synthetic public bridge fixture',${actor});
+    ${revisionProvenanceSql(campaign.provenance)},1,'QA synthetic public bridge fixture',${actor});
 insert into public.cms_publications(item_id,revision_id,cache_tag,published_by,published_at)
 values
   ('${state.page.id}'::uuid,'${state.page.revisionId}'::uuid,${sqlText(`cms:page:${state.page.id}`)},${actor},statement_timestamp()),

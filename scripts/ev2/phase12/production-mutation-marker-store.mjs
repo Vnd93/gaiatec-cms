@@ -27,7 +27,7 @@ if (
 
 const variablePath = `/repos/${repository}/actions/variables/${PRODUCTION_MUTATION_MARKER_VARIABLE}`;
 
-async function github(path, { method = "GET", body, allowNotFound = false, etag } = {}) {
+async function github(path, { method = "GET", body, allowNotFound = false } = {}) {
   let lastFailure = "transport";
   for (let attempt = 1; attempt <= 4; attempt += 1) {
     try {
@@ -38,14 +38,13 @@ async function github(path, { method = "GET", body, allowNotFound = false, etag 
           Accept: "application/vnd.github+json",
           "Content-Type": "application/json",
           "X-GitHub-Api-Version": "2022-11-28",
-          ...(etag ? { "If-Match": etag } : {}),
         },
         body: body === undefined ? undefined : JSON.stringify(body),
         signal: AbortSignal.timeout(15_000),
       });
       const payload = response.status === 204 ? null : await response.json().catch(() => null);
-      if (allowNotFound && response.status === 404) return { found: false, etag: "", payload: null };
-      if (response.ok) return { found: true, etag: response.headers.get("etag") ?? "", payload };
+      if (allowNotFound && response.status === 404) return { found: false, payload: null };
+      if (response.ok) return { found: true, payload };
       lastFailure = String(response.status);
       if (![408, 429].includes(response.status) && response.status < 500)
         throw new Error(`G12_PRODUCTION_MARKER_STORE_API_REFUSED:${response.status}`);
@@ -131,7 +130,7 @@ async function clear() {
   const result = verifyProductionMutationMarkerVariable(stored, hmacKey, expected);
   if (!result.valid)
     throw new Error(`G12_PRODUCTION_MARKER_STORE_CLEAR_REFUSED:${result.violations.join(",")}`);
-  await github(variablePath, { method: "DELETE", etag: current.etag });
+  await github(variablePath, { method: "DELETE", allowNotFound: true });
   const terminal = await github(variablePath, { allowNotFound: true });
   if (terminal.found) throw new Error("G12_PRODUCTION_MARKER_STORE_CLEAR_VERIFICATION_FAILED");
   if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, "cleared=true\n", "utf8");

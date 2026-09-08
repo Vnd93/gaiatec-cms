@@ -1573,7 +1573,7 @@ set search_path = pg_catalog, public, private, pg_temp
 as $$
 declare
   v_item public.cms_content_items%rowtype;
-  v_definition public.cms_pim_attribute_definitions%rowtype;
+  v_definition record;
   v_unit public.cms_pim_units%rowtype;
   v_canonical_unit public.cms_pim_units%rowtype;
   v_specification jsonb;
@@ -1581,7 +1581,6 @@ declare
   v_environment text;
   v_category_option_id uuid;
   v_category_id uuid;
-  v_required boolean;
 begin
   select * into v_item from public.cms_content_items item where item.id = p_item_id;
   if not found or v_item.content_type <> 'product'
@@ -1639,7 +1638,7 @@ begin
       return false;
     end if;
     v_definition_id := (v_specification ->> 'definitionId')::uuid;
-    select definition, member.required into v_definition, v_required
+    select definition.*, member.required as member_required into v_definition
     from (
       select attribute_set.*
       from public.cms_pim_attribute_sets attribute_set
@@ -1687,7 +1686,7 @@ begin
        or v_specification -> 'filterable' is distinct from to_jsonb(v_definition.filterable)
        or v_specification -> 'comparable' is distinct from to_jsonb(v_definition.comparable)
        or v_specification -> 'searchable' is distinct from to_jsonb(v_definition.searchable)
-       or v_specification -> 'required' is distinct from to_jsonb(v_required)
+       or v_specification -> 'required' is distinct from to_jsonb(v_definition.member_required)
        or coalesce(v_specification ->> 'scope', 'product')
             not in ('product', 'model', 'variant')
        or (

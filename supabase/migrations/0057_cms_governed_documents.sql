@@ -2,6 +2,8 @@
 -- O upload ocorre somente por URL assinada emitida pela Edge Function cms-documents;
 -- clientes autenticados podem ler metadados autorizados, mas nunca gravar tabelas ou Storage diretamente.
 
+begin;
+
 -- O inventario legado precisa ser estavel entre a validacao e o backfill. Sem
 -- estes locks, uma publicacao ou troca de objeto concorrente poderia entrar
 -- depois do preflight e antes da criacao do ativo governado.
@@ -1401,3 +1403,5 @@ grant execute on function public.cms_transition_document_asset(
 ) to service_role;
 grant execute on function public.cms_legacy_documents_promotion_ready()
 to service_role;
+
+commit;

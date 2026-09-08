@@ -264,6 +264,11 @@ test("legacy document backfill preflights malformed data and blocks promotion un
   ]);
 
   const preflight = migration.slice(0, migration.indexOf("insert into public.cms_permissions"));
+  const transactionStart = migration.indexOf("begin;");
+  const inventoryLock = migration.indexOf("lock table public.cms_content_items");
+  const transactionCommit = migration.lastIndexOf("commit;");
+  assert.ok(transactionStart >= 0 && transactionStart < inventoryLock);
+  assert.ok(transactionCommit > inventoryLock);
   assert.match(
     preflight,
     /lock table public\.cms_content_items, public\.cms_content_drafts,\s+public\.cms_content_revisions, public\.cms_published_projection,\s+storage\.objects in share mode/,

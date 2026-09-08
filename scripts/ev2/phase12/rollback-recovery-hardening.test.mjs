@@ -50,7 +50,11 @@ test("staging rollback restores the retained sealed candidate instead of rebuild
 });
 
 test("staging baseline inventory uses candidate tooling with a fail-closed explicit repository root", async () => {
-  const workflow = await read(".github/workflows/deploy-staging.yml");
+  const [workflow, ci] = await Promise.all([
+    read(".github/workflows/deploy-staging.yml"),
+    read(".github/workflows/ci.yml"),
+  ]);
+  assert.match(ci, /jobs:\s+quality:[\s\S]*?actions\/checkout@[a-f0-9]+[\s\S]*?fetch-depth: 0/);
   assert.match(
     workflow,
     /working-directory: baseline[\s\S]*node \.\.\/candidate\/scripts\/qa\/cms-coverage-inventory\.mjs \\\r?\n\s+--repository-root \. \\\r?\n\s+--output outputs\/cms-coverage-rollback\.json/,

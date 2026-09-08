@@ -1,10 +1,14 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import type { CmsNavigationContent, CmsSiteSettingsContent } from "@/shared/contracts/cms-content";
-import { getPublishedSiteShell, type PublishedSiteShell } from "./catalog-api";
+import {
+  getPublishedSiteShell,
+  type PublicNavigation,
+  type PublicSiteSettings,
+  type PublishedSiteShell,
+} from "./catalog-api";
 
 type SiteShellState = {
-  navigation: CmsNavigationContent | null;
-  settings: CmsSiteSettingsContent | null;
+  navigation: PublicNavigation | null;
+  settings: PublicSiteSettings | null;
   placements: PublishedSiteShell["placements"];
   loading: boolean;
 };

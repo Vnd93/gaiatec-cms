@@ -22,6 +22,7 @@ function state(
     keepLocalVersion: vi.fn(),
     retry: vi.fn(),
     flush: vi.fn(async () => true),
+    promote: vi.fn(async () => crypto.randomUUID()),
     ...overrides,
   };
 }

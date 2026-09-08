@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { ChevronRight, ArrowRight } from "lucide-react";
 
 /* ────────────────────────────────────────────────────────
@@ -13,8 +13,6 @@ type NavItem = {
 interface MegaMenuPanelProps {
   /** Item raiz cujo painel está sendo renderizado (Produtos, Indústrias, Serviços) */
   item: NavItem;
-  /** Lista de setores para filtro (extraída de useSetores ou hardcoded) */
-  setores?: string[];
   /** Tema do painel — segue o estado do header (dark no topo, light ao rolar) */
   theme?: "dark" | "light";
   /** Handler de fechar (click fora, Esc, etc) */
@@ -23,21 +21,6 @@ interface MegaMenuPanelProps {
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
 }
-
-/* ────────────────────────────────────────────────────────
-   FALLBACK DOS 9 SETORES (caso useSetores não passe lista)
-   ──────────────────────────────────────────────────────── */
-const DEFAULT_SETORES = [
-  "Saneamento / Líquido",
-  "Gás e Petróleo",
-  "Biogás e Biometano",
-  "Proteção Catódica",
-  "HVAC",
-  "Controle Ambiental",
-  "Agronegócio",
-  "Indústria",
-  "Telemetria",
-];
 
 /**
  * Painel de mega menu — Indústrias / Produtos / Serviços (desktop ≥1024px).
@@ -53,24 +36,17 @@ const DEFAULT_SETORES = [
  */
 export function MegaMenuPanel({
   item,
-  setores: setoresProp,
   theme = "light",
   onClose,
   onMouseEnter,
   onMouseLeave,
 }: MegaMenuPanelProps) {
-  const setores = useMemo(() => setoresProp ?? DEFAULT_SETORES, [setoresProp]);
-
   /** Categoria ativa (índice em item.children) — primeira por default */
   const [activeCat, setActiveCat] = useState(0);
-
-  /** Filtro de setor ("Todos" = null, senão nome do setor) */
-  const [setorFilter, setSetorFilter] = useState<string | null>(null);
 
   /** Reset quando o item raiz muda */
   useEffect(() => {
     setActiveCat(0);
-    setSetorFilter(null);
   }, [item.label]);
 
   /** ESC fecha o painel */
@@ -85,7 +61,8 @@ export function MegaMenuPanel({
   if (!item.children || item.children.length === 0) return null;
 
   const categorias = item.children;
-  const categoriaAtiva = categorias[activeCat];
+  const activeIndex = Math.min(activeCat, categorias.length - 1);
+  const categoriaAtiva = categorias[activeIndex];
   const subCategorias = categoriaAtiva?.children ?? [];
 
   return (
@@ -138,34 +115,6 @@ export function MegaMenuPanel({
           margin: 0 auto;
           padding: 28px 32px 36px 32px;
         }
-        /* ─── Tabs de filtro por setor (texto + underline ativo, sem pill) ─── */
-        .hdr-mega-tabs {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 2px 22px;
-          margin-bottom: 28px;
-          border-bottom: 1px solid var(--mm-divider);
-        }
-        .hdr-mega-tab {
-          padding: 0 0 14px 0;
-          font-size: 12px;
-          font-weight: 500;
-          line-height: 1.2;
-          background: transparent;
-          color: var(--mm-muted);
-          border: 0;
-          border-bottom: 2px solid transparent;
-          margin-bottom: -1px;
-          cursor: pointer;
-          white-space: nowrap;
-          transition: color 0.18s ease, border-color 0.18s ease;
-        }
-        .hdr-mega-tab:hover { color: var(--mm-text); }
-        .hdr-mega-tab.active {
-          color: var(--mm-text);
-          font-weight: 600;
-          border-bottom-color: var(--mm-accent);
-        }
         /* ─── Grid principal: 1fr 3fr ─── */
         .hdr-mega-grid {
           display: grid;
@@ -195,6 +144,7 @@ export function MegaMenuPanel({
           border: 0;
           cursor: pointer;
           text-align: left;
+          text-decoration: none;
           transition: color 0.15s ease;
         }
         .hdr-mega-cat-btn:hover { color: var(--mm-text); }
@@ -269,14 +219,6 @@ export function MegaMenuPanel({
           line-height: 1.6;
           color: var(--mm-subtle);
         }
-        /* Empty state quando filtro de setor não encontra nada */
-        .hdr-mega-empty {
-          grid-column: 1 / -1;
-          padding: 48px 20px;
-          text-align: center;
-          color: var(--mm-subtle);
-          font-size: 14px;
-        }
         /* Mobile: oculto (drawer mobile já existe no Header) */
         @media (max-width: 1023px) {
           .hdr-mega-panel-v2 { display: none !important; }
@@ -284,53 +226,22 @@ export function MegaMenuPanel({
       `}</style>
 
       <div className="hdr-mega-inner">
-        {/* ─── Tabs de filtro por setor ─── */}
-        <div className="hdr-mega-tabs" role="tablist" aria-label="Filtro por setor">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={setorFilter === null}
-            className={`hdr-mega-tab${setorFilter === null ? " active" : ""}`}
-            onClick={() => setSetorFilter(null)}
-          >
-            Todos
-          </button>
-          {setores.map((s) => (
-            <button
-              key={s}
-              type="button"
-              role="tab"
-              aria-selected={setorFilter === s}
-              className={`hdr-mega-tab${setorFilter === s ? " active" : ""}`}
-              onClick={() => setSetorFilter(s)}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-
         {/* ─── Grid principal ─── */}
         <div className="hdr-mega-grid">
           {/* ─── Coluna 1: categorias ─── */}
           <nav className="hdr-mega-col1" aria-label={`Categorias de ${item.label}`}>
             {categorias.map((cat, i) => (
-              <button
+              <a
                 key={cat.label}
-                type="button"
+                href={cat.href}
                 role="menuitem"
-                className={`hdr-mega-cat-btn${i === activeCat ? " active" : ""}`}
+                className={`hdr-mega-cat-btn${i === activeIndex ? " active" : ""}`}
                 onMouseEnter={() => setActiveCat(i)}
                 onFocus={() => setActiveCat(i)}
-                onClick={() => {
-                  // Click navega pro href se existir, senão só mantém ativa
-                  if (cat.href && cat.href !== "#") {
-                    window.location.href = cat.href;
-                  }
-                }}
               >
                 <span>{cat.label}</span>
                 <ChevronRight size={14} className="chev" />
-              </button>
+              </a>
             ))}
 
             <div className="hdr-mega-bottom-cta">
@@ -347,7 +258,7 @@ export function MegaMenuPanel({
               /* Sem sub-categorias: mostra um link único pra própria categoria */
               <div className="hdr-mega-subcat">
                 <a
-                  href={categoriaAtiva.href || "#"}
+                  href={categoriaAtiva.href}
                   className="hdr-mega-subcat-title"
                 >
                   {categoriaAtiva.label}
@@ -360,7 +271,7 @@ export function MegaMenuPanel({
               subCategorias.map((subCat) => (
                 <div key={subCat.label} className="hdr-mega-subcat">
                   <a
-                    href={subCat.href || "#"}
+                    href={subCat.href}
                     className="hdr-mega-subcat-title"
                   >
                     {subCat.label}
@@ -369,7 +280,7 @@ export function MegaMenuPanel({
                     subCat.children.map((leaf) => (
                       <a
                         key={leaf.label}
-                        href={leaf.href || "#"}
+                        href={leaf.href}
                         className="hdr-mega-subcat-link"
                       >
                         {leaf.label}
@@ -377,7 +288,7 @@ export function MegaMenuPanel({
                     ))
                   ) : (
                     <a
-                      href={subCat.href || "#"}
+                      href={subCat.href}
                       className="hdr-mega-subcat-link"
                     >
                       Ver detalhes →

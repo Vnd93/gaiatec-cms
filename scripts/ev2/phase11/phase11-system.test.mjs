@@ -92,8 +92,9 @@ test("EV2.11 migration is additive, default-off, RLS protected and production ga
 });
 
 test("F-017 exposes delivery state and a controlled, durable replay path", async () => {
-  const [sql, edge, page, worker] = await Promise.all([
+  const [sql, scopedSql, edge, page, worker] = await Promise.all([
     read("supabase/migrations/0050_ev2_system_assurance.sql"),
+    read("supabase/migrations/0072_cms_forms_leads_authoritative_scope.sql"),
     read("supabase/functions/cms-leads/index.ts"),
     read("src/admin/pages/AdminLeadsPage.tsx"),
     read("supabase/functions/cms-outbox-worker/index.ts"),
@@ -111,8 +112,11 @@ test("F-017 exposes delivery state and a controlled, durable replay path", async
   assert.match(edge, /cms_retry_lead_delivery_limited/);
   assert.match(edge, /rateLimitKeyHash/);
   assert.match(edge, /Server-Timing.*command/);
-  assert.match(page, /cms_lead_outbox\(/);
-  assert.match(page, /Reprocessar entrega/);
+  assert.match(edge, /cms_leads_list_scoped/);
+  assert.match(scopedSql, /from public\.cms_lead_outbox outbox where outbox\.lead_id = lead\.id/);
+  assert.match(page, /action: "list_leads"/);
+  assert.match(page, /cms_lead_outbox/);
+  assert.match(page, /Tentar envio novamente/);
   assert.match(page, /O lead permanecerá intacto/);
   assert.match(worker, /leadDurability: true/);
   assert.match(worker, /durationMs/);
@@ -144,8 +148,8 @@ test("F-018 exposes a read-only snapshot and two-person Gate G11 evidence", asyn
   assert.doesNotMatch(edge, /SUPABASE_SERVICE_ROLE_KEY\s*=/);
   assert.match(contract, /gateDecision: z\.literal\("non_authoritative"\)/);
   assert.match(page, /isEv2FeatureEnabled\(profile, "ev2\.system_assurance"\)/);
-  assert.match(page, /não o aprova isoladamente/);
-  assert.match(page, /Filas transacionais verificadas/);
+  assert.match(page, /não libera uma publicação por conta própria/);
+  assert.match(page, /Processamentos verificados/);
   assert.match(api, /systemAssuranceCommand/);
 });
 

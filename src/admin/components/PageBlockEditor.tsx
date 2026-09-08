@@ -1,5 +1,7 @@
 import { ArrowDown, ArrowUp, Copy, Eye, EyeOff, GripVertical, Plus, Trash2 } from "lucide-react";
 import type { CmsPageBlock } from "@/shared/contracts/cms-content";
+import { PAGE_BLOCK_LABELS, publishedFormForBlock, type PublishedFormOption } from "../page-builder-model";
+import { urlSegmentFromText } from "../url-segment";
 
 export type BuilderMedia = {
   id: string;
@@ -20,12 +22,29 @@ export type BuilderRelation = {
 
 const uid = () => crypto.randomUUID();
 
+function relationTypeLabel(type: string) {
+  return (
+    {
+      product: "Produto",
+      service: "Serviço",
+      industry: "Indústria",
+      application: "Aplicação",
+      solution: "Solução",
+      post: "Artigo",
+      campaign: "Campanha",
+      page: "Página",
+      homepage: "Página inicial",
+    }[type] ?? "Conteúdo"
+  );
+}
+
 export function PageBlockEditor({
   block,
   index,
   total,
   media,
   relations,
+  forms,
   onChange,
   onRemove,
   onDuplicate,
@@ -36,12 +55,14 @@ export function PageBlockEditor({
   total: number;
   media: BuilderMedia[];
   relations: BuilderRelation[];
+  forms: PublishedFormOption[];
   onChange: (block: CmsPageBlock) => void;
   onRemove: () => void;
   onDuplicate: () => void;
   onMove: (offset: -1 | 1) => void;
 }) {
   const data = block.data as any;
+  const publishedForm = publishedFormForBlock(block, forms);
   const patchData = (patch: Record<string, unknown>) =>
     onChange({ ...block, data: { ...data, ...patch } } as CmsPageBlock);
   const field = (
@@ -75,6 +96,11 @@ export function PageBlockEditor({
     );
   const removeItem = (itemIndex: number) =>
     setItems(data.items.filter((_: unknown, current: number) => current !== itemIndex));
+  const suggestedAnchor =
+    urlSegmentFromText(
+      String(data.title || data.heading || data.eyebrow || PAGE_BLOCK_LABELS[block.type] || "seção"),
+      80,
+    ) || `secao-${index + 1}`;
 
   return (
     <details className={block.hidden ? "admin-page-block is-hidden" : "admin-page-block"} open={index === 0}>
@@ -83,7 +109,7 @@ export function PageBlockEditor({
           <GripVertical size={17} aria-hidden="true" />
         </span>
         <strong>
-          {index + 1}. {block.type.replaceAll("_", " ")}
+          {index + 1}. {PAGE_BLOCK_LABELS[block.type] ?? "Bloco de conteúdo"}
         </strong>
         <span>{block.hidden ? "Oculto" : "Visível"}</span>
       </summary>
@@ -116,13 +142,15 @@ export function PageBlockEditor({
       </div>
 
       <div className="admin-page-block__settings">
-        <label>
-          Âncora opcional
+        <label className="admin-checkbox-row">
           <input
-            value={block.anchor ?? ""}
-            onChange={(event) => onChange({ ...block, anchor: event.target.value || undefined })}
-            placeholder="nome-da-secao"
+            type="checkbox"
+            checked={Boolean(block.anchor)}
+            onChange={(event) =>
+              onChange({ ...block, anchor: event.target.checked ? suggestedAnchor : undefined })
+            }
           />
+          Permitir link direto para esta seção
         </label>
         <label>
           Largura
@@ -511,13 +539,44 @@ export function PageBlockEditor({
             {field("Título", "heading")}
             {field("Texto", "text", { textarea: true })}
             <label>
-              Formulário
-              <select value={data.formKey} onChange={(event) => patchData({ formKey: event.target.value })}>
-                <option value="contact">Contato</option>
-                <option value="newsletter">Newsletter</option>
-                <option value="lead">Lead comercial</option>
+              Formulário publicado
+              <select
+                value={publishedForm?.id ?? "__invalid__"}
+                aria-invalid={!publishedForm}
+                aria-describedby={`form-binding-help-${block.id}`}
+                onChange={(event) => {
+                  const form = forms.find((candidate) => candidate.id === event.target.value);
+                  if (!form) return;
+                  patchData({
+                    formKey: form.formKey,
+                    formId: form.id,
+                    formVersionId: form.versionId,
+                  });
+                }}
+              >
+                {!publishedForm && (
+                  <option value="__invalid__" disabled>
+                    Selecione um formulário publicado
+                  </option>
+                )}
+                {forms.map((form) => (
+                  <option value={form.id} key={`${form.id}:${form.versionId}`}>
+                    {form.title}
+                  </option>
+                ))}
               </select>
             </label>
+            <p
+              id={`form-binding-help-${block.id}`}
+              className={!publishedForm ? "admin-notice admin-notice--error" : "admin-help"}
+              role={!publishedForm ? "alert" : undefined}
+            >
+              {publishedForm
+                ? `A versão publicada atual de “${publishedForm.title}” será usada no site.`
+                : forms.length
+                  ? "Este bloco ainda não possui um vínculo publicável. Selecione uma definição antes de salvar."
+                  : "Nenhum formulário publicado está disponível. Publique uma versão em Marketing > Formulários."}
+            </p>
             {field("Texto do botão", "buttonLabel")}
           </>
         )}
@@ -1005,7 +1064,7 @@ export function PageBlockEditor({
                       })
                     }
                   />{" "}
-                  {item.label} <small>({item.content_type})</small>
+                  {item.label} <small>({relationTypeLabel(item.content_type)})</small>
                 </label>
               ))}
             </fieldset>

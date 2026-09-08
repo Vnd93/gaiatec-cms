@@ -1,27 +1,118 @@
 import type { CmsProductContent } from "@/shared/contracts/cms-content";
+import { SUPABASE_URL } from "@/lib/supabase";
 import type { CmsPublicProductContent } from "../catalog-api";
+import type { CmsRelatedItem } from "./CmsPageRenderer";
 import { formatProductSpecification } from "../format-product-spec";
 import "../product-catalog.css";
+
+function isPublicInternetHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (
+    !host.includes(".") ||
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".local") ||
+    host.endsWith(".internal") ||
+    host === "::" ||
+    host === "::1" ||
+    /^(?:fc|fd|fe[89ab])/i.test(host)
+  )
+    return false;
+  const ipv4 = host.split(".").map(Number);
+  if (ipv4.length !== 4 || ipv4.some((part) => !Number.isInteger(part) || part < 0 || part > 255))
+    return true;
+  const [first, second] = ipv4;
+  return !(
+    first === 0 ||
+    first === 10 ||
+    first === 127 ||
+    (first === 100 && second >= 64 && second <= 127) ||
+    (first === 169 && second === 254) ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168) ||
+    first >= 224
+  );
+}
+
+function safeHttpHref(value: unknown, httpsOnly = false, allowGovernedPreview = false): string | undefined {
+  if (typeof value !== "string" || value.length > 2_000) return undefined;
+  try {
+    const parsed = new URL(value);
+    const configured = new URL(SUPABASE_URL);
+    const governedLocalAsset =
+      parsed.origin === configured.origin &&
+      parsed.pathname === "/functions/v1/cms-public" &&
+      ["media", "document"].includes(parsed.searchParams.get("type") ?? "");
+    const governedPreviewAsset =
+      allowGovernedPreview &&
+      parsed.origin === configured.origin &&
+      /^\/storage\/v1\/object\/sign\/(?:cms-media-private|cms-documents-private)\//.test(parsed.pathname);
+    const compatibilityType = parsed.searchParams.get("type");
+    const compatibilityKeys = [...parsed.searchParams.keys()];
+    const expectedCompatibilityKeys =
+      compatibilityType === "media"
+        ? ["type", "kind", "slug", "path", "slot"]
+        : ["type", "kind", "slug", "path", "position"];
+    const governedCompatibilityAsset =
+      typeof window !== "undefined" &&
+      parsed.origin === window.location.origin &&
+      parsed.pathname === "/__cms-public-asset" &&
+      ["media", "document"].includes(compatibilityType ?? "") &&
+      compatibilityKeys.length === expectedCompatibilityKeys.length &&
+      new Set(compatibilityKeys).size === compatibilityKeys.length &&
+      expectedCompatibilityKeys.every((key) => compatibilityKeys.includes(key));
+    if (
+      parsed.username ||
+      parsed.password ||
+      (httpsOnly && parsed.protocol !== "https:") ||
+      (!httpsOnly && !["http:", "https:"].includes(parsed.protocol)) ||
+      (!isPublicInternetHostname(parsed.hostname) &&
+        !governedLocalAsset &&
+        !governedPreviewAsset &&
+        !governedCompatibilityAsset) ||
+      (!governedPreviewAsset &&
+        [...parsed.searchParams.keys()].some((key) =>
+          /^(?:access[_-]?token|refresh[_-]?token|token|api[_-]?key|apikey|key|secret|signature|sig|credential|authorization|password)$/i.test(
+            key,
+          ),
+        ))
+    )
+      return undefined;
+    return parsed.href;
+  } catch {
+    return undefined;
+  }
+}
+
+const safeInternalHref = (value: unknown) =>
+  typeof value === "string" && /^\/(?:[a-z0-9]+(?:-[a-z0-9]+)*\/?)*$/.test(value) ? value : undefined;
 
 function ProductContentBlock({
   block,
   mediaUrls,
+  preview,
 }: {
   block: CmsProductContent["blocks"][number];
   mediaUrls: Record<string, string>;
+  preview: boolean;
 }) {
   if (block.type === "rich_text") return <p>{block.data.text}</p>;
   if (block.type === "cta")
-    return (
+    return safeInternalHref(block.data.href) ? (
       <p>
-        <a className="new-catalog__button" href={block.data.href}>
+        <a className="new-catalog__button" href={safeInternalHref(block.data.href)}>
           {block.data.label}
         </a>
       </p>
+    ) : (
+      <p>{block.data.label}</p>
     );
   if (block.type === "image") {
-    const source =
-      mediaUrls[`${block.data.assetId}:large.webp`] ?? mediaUrls[`${block.data.assetId}:medium.webp`];
+    const source = safeHttpHref(
+      mediaUrls[`${block.data.assetId}:large.webp`] ?? mediaUrls[`${block.data.assetId}:medium.webp`],
+      false,
+      preview,
+    );
     return source ? (
       <figure>
         <img src={source} alt={block.data.alt} />
@@ -32,19 +123,55 @@ function ProductContentBlock({
   return null;
 }
 
+const identifierLabels = {
+  erp: "Código do ERP",
+  gtin: "GTIN",
+  ncm: "NCM",
+  other: "Identificador",
+} as const;
+
+const documentLanguageLabels: Record<string, string> = {
+  pt: "Português",
+  "pt-BR": "Português (Brasil)",
+  en: "Inglês",
+  "en-US": "Inglês (Estados Unidos)",
+  es: "Espanhol",
+  "es-ES": "Espanhol (Espanha)",
+};
+
+const documentLanguageLabel = (language: string) => documentLanguageLabels[language] ?? "Outro idioma";
+
 export function CmsProductRenderer({
   payload: p,
   mediaUrls = {},
   documentUrls = {},
+  relatedItems = [],
   preview = false,
 }: {
   payload: CmsProductContent | CmsPublicProductContent;
   mediaUrls?: Record<string, string>;
   documentUrls?: Record<string, string>;
+  relatedItems?: CmsRelatedItem[];
   preview?: boolean;
 }) {
-  const image = mediaUrls["large.webp"] ?? mediaUrls["medium.webp"];
+  const visibility = preview && "fieldVisibility" in p ? p.fieldVisibility : null;
+  const isPublicField = (field: keyof CmsProductContent["fieldVisibility"]) =>
+    visibility === null || visibility[field] === "public";
+  const visibleBrand = isPublicField("brand") ? p.brand : undefined;
+  const visibleManufacturer = isPublicField("manufacturer") ? p.manufacturer : undefined;
+  const visibleProductLine = isPublicField("productLine") ? p.productLine : undefined;
+  const visibleClassification = isPublicField("classification") ? p.classification : undefined;
+  const visibleControlledClassification = isPublicField("classification")
+    ? p.controlledClassification
+    : undefined;
   const primaryMedia = p.media.find((entry) => entry.role === "primary");
+  const image = primaryMedia
+    ? safeHttpHref(
+        mediaUrls[`${primaryMedia.assetId}:large.webp`] ?? mediaUrls[`${primaryMedia.assetId}:medium.webp`],
+        false,
+        preview,
+      )
+    : undefined;
   const galleryBlock = p.blocks.find((block) => block.type === "gallery");
   const galleryIds = (
     galleryBlock?.data.assetIds ??
@@ -53,27 +180,47 @@ export function CmsProductRenderer({
   const galleryMedia = galleryIds
     .map((assetId) => p.media.find((entry) => entry.assetId === assetId))
     .filter((entry): entry is (typeof p.media)[number] => Boolean(entry));
-  const relationBlock = p.blocks.find((block) => block.type === "related_content");
   const identityVisible = Boolean(
-    p.brand || p.manufacturer || p.models[0]?.model || p.models[0]?.manufacturerReference,
+    visibleBrand ||
+    visibleManufacturer ||
+    (isPublicField("commercialModel") && p.models[0]?.model) ||
+    (isPublicField("manufacturerReference") && p.models[0]?.manufacturerReference),
   );
   const modelColumnsVisible = Boolean(
     p.models.some(
-      (model) => model.model || model.manufacturerReference || model.sku || model.variants.length,
+      (model) =>
+        (isPublicField("commercialModel") && model.model) ||
+        (isPublicField("manufacturerReference") && model.manufacturerReference) ||
+        (isPublicField("sku") && model.sku) ||
+        model.variants.length,
     ),
   );
-  const visibleDocuments = preview
-    ? p.documents
-    : p.documents.filter((document) => document.visibility === "public");
+  const variantCodeColumnVisible =
+    isPublicField("sku") && p.models.some((model) => model.variants.some((variant) => Boolean(variant.code)));
+  const visibleIdentifiers = (p.externalIdentifiers ?? []).filter(
+    (identifier) => !("visibility" in identifier) || identifier.visibility === "public",
+  );
+  const documentHref = (document: (typeof p.documents)[number]) => {
+    const governed = safeHttpHref(documentUrls[document.id.toLowerCase()], false, preview);
+    return governed;
+  };
+  const manufacturerHref = safeHttpHref(visibleManufacturer?.officialUrl, true);
+  const visibleDocuments = (isPublicField("documents") ? p.documents : [])
+    .filter((document) => document.visibility === "public")
+    .filter((document) => Boolean(documentHref(document)));
+  const visibleSpecifications = (isPublicField("specifications") ? p.specifications : []).filter(
+    (specification) => !preview || !("homologated" in specification) || specification.homologated === true,
+  );
   return (
-    <article className="new-catalog product-detail" data-cms-renderer="catalog-product">
+    <article className="new-catalog product-detail">
       {preview && (
         <p className="cms-preview-banner" role="status">
           Preview privado — usa o mesmo renderer do produto público
         </p>
       )}
       <nav aria-label="Breadcrumb">
-        Início / Produtos{p.classification?.segment ? ` / ${p.classification.segment}` : ""} / {p.title}
+        Início / Produtos{visibleClassification?.segment ? ` / ${visibleClassification.segment}` : ""} /{" "}
+        {p.title}
       </nav>
       <header className="product-detail__hero">
         <div>
@@ -85,53 +232,65 @@ export function CmsProductRenderer({
           )}
         </div>
         <div>
-          {(p.brand || p.productLine) && (
+          {(visibleBrand || visibleProductLine) && (
             <p className="new-catalog__eyebrow">
-              {[p.brand?.name, p.productLine?.name].filter(Boolean).join(" · ")}
+              {[visibleBrand?.name, visibleProductLine?.name].filter(Boolean).join(" · ")}
             </p>
           )}
           <h1>{p.title}</h1>
           <span className="product-detail__status">
-            {p.pilotState === "homologated"
-              ? "Homologado"
-              : p.pilotState === "synthetic_test"
-                ? "Teste sintético"
-                : "Conteúdo piloto em homologação"}
+            {preview ? "Pré-visualização editorial" : "Produto GAIATEC"}
           </span>
           {p.summary && <p>{p.summary}</p>}
           <p className="new-catalog__lead">{p.commercial.shortDescription}</p>
           {identityVisible && (
             <dl className="product-detail__identity">
-              {p.brand && (
+              {visibleBrand && (
                 <div>
                   <dt>Marca comercial</dt>
-                  <dd>{p.brand.name}</dd>
+                  <dd>{visibleBrand.name}</dd>
                 </div>
               )}
-              {p.models[0]?.model && (
+              {isPublicField("commercialModel") && p.models[0]?.model && (
                 <div>
                   <dt>Modelo comercial GAIATEC</dt>
                   <dd>{p.models[0].model}</dd>
                 </div>
               )}
-              {p.models[0]?.manufacturerReference && (
+              {isPublicField("manufacturerReference") && p.models[0]?.manufacturerReference && (
                 <div>
                   <dt>Referência do fabricante</dt>
                   <dd>{p.models[0].manufacturerReference}</dd>
                 </div>
               )}
-              {p.manufacturer && (
+              {visibleManufacturer && (
                 <div>
                   <dt>Fabricante/OEM nominal</dt>
                   <dd>
-                    {p.manufacturer.officialUrl ? (
-                      <a href={p.manufacturer.officialUrl}>{p.manufacturer.name}</a>
+                    {manufacturerHref ? (
+                      <a href={manufacturerHref}>{visibleManufacturer.name}</a>
                     ) : (
-                      p.manufacturer.name
+                      visibleManufacturer.name
                     )}
                   </dd>
                 </div>
               )}
+            </dl>
+          )}
+          {visibleIdentifiers.length > 0 && (
+            <dl className="product-detail__identity" aria-label="Identificadores do produto">
+              {visibleIdentifiers.map((identifier, index) => (
+                <div key={`${identifier.kind}:${identifier.value}:${index}`}>
+                  <dt>
+                    {identifierLabels[identifier.kind]}
+                    {"ownerLabel" in identifier && identifier.ownerLabel ? ` — ${identifier.ownerLabel}` : ""}
+                  </dt>
+                  <dd>
+                    {identifier.value}
+                    {identifier.issuer ? ` · ${identifier.issuer}` : ""}
+                  </dd>
+                </div>
+              ))}
             </dl>
           )}
           <a className="new-catalog__button" href="/contato">
@@ -144,8 +303,11 @@ export function CmsProductRenderer({
           <h2 id="galeria-produto">Galeria</h2>
           <div className="product-detail__gallery">
             {galleryMedia.map((entry) => {
-              const source =
-                mediaUrls[`${entry.assetId}:large.webp`] ?? mediaUrls[`${entry.assetId}:medium.webp`];
+              const source = safeHttpHref(
+                mediaUrls[`${entry.assetId}:large.webp`] ?? mediaUrls[`${entry.assetId}:medium.webp`],
+                false,
+                preview,
+              );
               return source ? (
                 <figure key={entry.assetId}>
                   <img src={source} alt={entry.alt} />
@@ -158,57 +320,64 @@ export function CmsProductRenderer({
       )}
       <nav className="product-detail__nav" aria-label="Conteúdo do produto">
         <a href="#visao-geral">Visão geral</a>
-        {p.specifications.length > 0 && <a href="#especificacoes">Especificações</a>}
+        {visibleSpecifications.length > 0 && <a href="#especificacoes">Especificações</a>}
         {modelColumnsVisible && <a href="#modelos">Modelos</a>}
-        {p.relations && <a href="#aplicacoes">Relações</a>}
-        {p.documents.length > 0 && <a href="#downloads">Downloads</a>}
+        {isPublicField("relations") && relatedItems.length > 0 && <a href="#aplicacoes">Relações</a>}
+        {visibleDocuments.length > 0 && <a href="#downloads">Downloads</a>}
       </nav>
       <section id="visao-geral">
         <h2>Visão geral</h2>
         <p>{p.commercial.valueProposition}</p>
-        {(p.controlledClassification || p.classification) && (
+        {(visibleControlledClassification || visibleClassification) && (
           <dl className="product-detail__classification">
-            {(p.controlledClassification?.productCategory?.label ?? p.classification?.segment) && (
+            {(visibleControlledClassification?.productCategory?.label ?? visibleClassification?.segment) && (
               <div>
                 <dt>Categoria de produto</dt>
-                <dd>{p.controlledClassification?.productCategory?.label ?? p.classification?.segment}</dd>
+                <dd>
+                  {visibleControlledClassification?.productCategory?.label ?? visibleClassification?.segment}
+                </dd>
               </div>
             )}
-            {(p.controlledClassification?.applicationMagnitude?.label ?? p.classification?.category) && (
+            {(visibleControlledClassification?.applicationMagnitude?.label ??
+              visibleClassification?.category) && (
               <div>
                 <dt>Aplicação / grandeza</dt>
                 <dd>
-                  {p.controlledClassification?.applicationMagnitude?.label ?? p.classification?.category}
+                  {visibleControlledClassification?.applicationMagnitude?.label ??
+                    visibleClassification?.category}
                 </dd>
               </div>
             )}
-            {p.classification?.subcategory && (
+            {visibleClassification?.subcategory && (
               <div>
                 <dt>Subcategoria</dt>
-                <dd>{p.classification.subcategory}</dd>
+                <dd>{visibleClassification.subcategory}</dd>
               </div>
             )}
-            {(p.controlledClassification?.technology?.label ?? p.technology) && (
-              <div>
-                <dt>Tecnologia</dt>
-                <dd>{p.controlledClassification?.technology?.label ?? p.technology}</dd>
-              </div>
-            )}
-            {(p.controlledClassification?.installationOperation?.label ?? p.classification?.family) && (
+            {isPublicField("technology") &&
+              (visibleControlledClassification?.technology?.label ?? p.technology) && (
+                <div>
+                  <dt>Tecnologia</dt>
+                  <dd>{visibleControlledClassification?.technology?.label ?? p.technology}</dd>
+                </div>
+              )}
+            {(visibleControlledClassification?.installationOperation?.label ??
+              visibleClassification?.family) && (
               <div>
                 <dt>Instalação / operação</dt>
                 <dd>
-                  {p.controlledClassification?.installationOperation?.label ?? p.classification?.family}
+                  {visibleControlledClassification?.installationOperation?.label ??
+                    visibleClassification?.family}
                 </dd>
               </div>
             )}
-            {p.controlledClassification?.monitoredElement?.label && (
+            {visibleControlledClassification?.monitoredElement?.label && (
               <div>
                 <dt>Elemento monitorado</dt>
-                <dd>{p.controlledClassification.monitoredElement.label}</dd>
+                <dd>{visibleControlledClassification.monitoredElement.label}</dd>
               </div>
             )}
-            {p.function && (
+            {isPublicField("function") && p.function && (
               <div>
                 <dt>Função</dt>
                 <dd>{p.function}</dd>
@@ -233,23 +402,23 @@ export function CmsProductRenderer({
           </>
         )}
         {p.blocks.map((block) => (
-          <ProductContentBlock key={block.id} block={block} mediaUrls={mediaUrls} />
+          <ProductContentBlock key={block.id} block={block} mediaUrls={mediaUrls} preview={preview} />
         ))}
       </section>
-      {p.specifications.length > 0 && (
-        <section
-          id="especificacoes"
-          data-source={
-            p.blocks.find((block) => block.type === "specifications")?.data.source ?? "typed-attributes"
-          }
-        >
+      {visibleSpecifications.length > 0 && (
+        <section id="especificacoes">
           <h2>Especificações técnicas</h2>
           <div className="new-catalog__scroll">
             <table>
               <tbody>
-                {p.specifications.map((spec) => (
-                  <tr key={spec.id}>
-                    <th>{spec.label}</th>
+                {visibleSpecifications.map((spec) => (
+                  <tr
+                    key={`${spec.key}:${spec.scope ?? "product"}:${"ownerLabel" in spec ? spec.ownerLabel : ""}`}
+                  >
+                    <th>
+                      {spec.label}
+                      {"ownerLabel" in spec && spec.ownerLabel ? ` — ${spec.ownerLabel}` : ""}
+                    </th>
                     <td>{formatProductSpecification(spec)}</td>
                   </tr>
                 ))}
@@ -265,11 +434,19 @@ export function CmsProductRenderer({
             <table>
               <thead>
                 <tr>
-                  {p.models.some((model) => model.model) && <th>Modelo</th>}
-                  {p.models.some((model) => model.manufacturerReference) && <th>Referência do fabricante</th>}
-                  {p.models.some((model) => model.sku) && <th>SKU</th>}
+                  {isPublicField("commercialModel") && p.models.some((model) => model.model) && (
+                    <th>Modelo</th>
+                  )}
+                  {isPublicField("manufacturerReference") &&
+                    p.models.some((model) => model.manufacturerReference) && (
+                      <th>Referência do fabricante</th>
+                    )}
+                  {isPublicField("sku") &&
+                    p.models.some((model) => model.sku || model.variants.some((variant) => variant.sku)) && (
+                      <th>SKU</th>
+                    )}
                   <th>Variante</th>
-                  <th>Código</th>
+                  {variantCodeColumnVisible && <th>Código</th>}
                   <th>Status</th>
                 </tr>
               </thead>
@@ -277,13 +454,19 @@ export function CmsProductRenderer({
                 {p.models.flatMap((model) =>
                   model.variants.map((variant) => (
                     <tr key={variant.id}>
-                      {p.models.some((entry) => entry.model) && <td>{model.model}</td>}
-                      {p.models.some((entry) => entry.manufacturerReference) && (
-                        <td>{model.manufacturerReference}</td>
+                      {isPublicField("commercialModel") && p.models.some((entry) => entry.model) && (
+                        <td>{model.model}</td>
                       )}
-                      {p.models.some((entry) => entry.sku) && <td>{model.sku}</td>}
+                      {isPublicField("manufacturerReference") &&
+                        p.models.some((entry) => entry.manufacturerReference) && (
+                          <td>{model.manufacturerReference}</td>
+                        )}
+                      {isPublicField("sku") &&
+                        p.models.some(
+                          (entry) => entry.sku || entry.variants.some((variant) => variant.sku),
+                        ) && <td>{variant.sku ?? model.sku}</td>}
                       <td>{variant.name}</td>
-                      <td>{variant.code}</td>
+                      {variantCodeColumnVisible && <td>{variant.code}</td>}
                       <td>{model.status === "active" ? "Ativo" : "Descontinuado"}</td>
                     </tr>
                   )),
@@ -293,40 +476,36 @@ export function CmsProductRenderer({
           </div>
         </section>
       )}
-      {p.relations && (
+      {isPublicField("relations") && relatedItems.length > 0 && (
         <section id="aplicacoes">
           <h2>Relações</h2>
-          {Object.values(p.relations).every((ids) => ids.length === 0) ? (
-            <p>{relationBlock?.data.state ?? "Nenhuma relação homologada para esta versão."}</p>
-          ) : (
-            <div className="new-catalog__chips">
-              <span>{p.relations.productIds.length} produtos</span>
-              <span>{p.relations.applicationIds.length} aplicações</span>
-              <span>{p.relations.sectorIds.length} setores</span>
-              <span>{p.relations.serviceIds.length} serviços</span>
-            </div>
-          )}
+          <div className="new-catalog__chips">
+            {relatedItems.map((item) => {
+              const href = safeInternalHref(item.path);
+              return href ? (
+                <a href={href} key={item.path}>
+                  {item.title}
+                </a>
+              ) : (
+                <span key={item.path}>{item.title}</span>
+              );
+            })}
+          </div>
         </section>
       )}
-      {p.documents.length > 0 && (
+      {visibleDocuments.length > 0 && (
         <section id="downloads">
           <h2>Documentos</h2>
           {visibleDocuments.length === 0 ? (
-            <p>Nenhum documento público aprovado.</p>
+            <p>Nenhum documento disponível para download.</p>
           ) : (
             <ul>
               {visibleDocuments.map((document) => (
                 <li key={document.id}>
-                  <a href={documentUrls[document.id] ?? document.officialUrl} rel="noreferrer">
-                    {document.title} — revisão {document.revision} · {document.language}
+                  <a href={documentHref(document)} rel="noreferrer">
+                    {document.title} — revisão {document.revision} ·{" "}
+                    {documentLanguageLabel(document.language)}
                   </a>
-                  {preview && (
-                    <small>
-                      {" "}
-                      Tipo: {document.kind}; visibilidade: {document.visibility}; SHA-256: {document.sha256};
-                      direitos: {document.rightsConfirmed ? "confirmados" : "não confirmados"}.
-                    </small>
-                  )}
                 </li>
               ))}
             </ul>
@@ -335,43 +514,20 @@ export function CmsProductRenderer({
       )}
       {preview && (
         <section id="governanca-preview" className="product-detail__governance">
-          <h2>Governança, busca e SEO da revisão</h2>
-          <p>
-            <strong>Estado:</strong> {p.pilotState}. <strong>Owner:</strong> {p.approval.portfolioOwner}.{" "}
-            <strong>Homologado em:</strong> {p.approval.homologatedAt ?? "não homologado"}.
-          </p>
-          <p>
-            <strong>Revisores:</strong> técnico {p.approval.technicalReviewer}; comercial{" "}
-            {p.approval.commercialReviewer}; editorial {p.approval.editorialReviewer}.
-          </p>
-          <p>
-            <strong>Sinônimos:</strong> {p.search.synonyms.join(" · ") || "nenhum"}.{" "}
-            <strong>Palavras-chave:</strong> {p.search.keywords.join(" · ") || "nenhuma"}.
-          </p>
-          <p>
-            <strong>SEO:</strong> {p.seo.title}; {p.seo.description}; canonical {p.seo.canonicalPath};{" "}
-            {p.seo.indexable ? "indexável" : "não indexável"}; OG {p.seo.ogImageId ?? "não definida"}.
-          </p>
-          <p>
-            <strong>Redirects:</strong>{" "}
-            {p.redirects.map((entry) => `${entry.statusCode} ${entry.sourcePath}`).join(" · ") || "nenhum"}.
-          </p>
-          <details>
-            <summary>Proveniência completa ({p.provenance.length})</summary>
-            <ul>
-              {p.provenance.map((source, index) => (
-                <li key={`${source.sourceSha256 ?? source.sourcePath ?? source.sourceUrl}-${index}`}>
-                  {source.sourceKind}; {source.sourceUrl ?? source.sourcePath}; SHA-256{" "}
-                  {source.sourceSha256 ?? "não aplicável"}; versão {source.documentVersion ?? "não declarada"}
-                  ; data {source.documentDate ?? source.fileModifiedAt ?? "não declarada"}; autorização{" "}
-                  {source.authorizationReference ?? "não declarada"} em{" "}
-                  {source.authorizationDate ?? "data não declarada"}; escopo{" "}
-                  {source.rightsScope ?? "não declarado"}; owner comercial {source.commercialOwner}; owner
-                  técnico {source.technicalOwner}; verificado em {source.verifiedAt}.
-                </li>
-              ))}
-            </ul>
-          </details>
+          <h2>Resumo da pré-visualização</h2>
+          <ul>
+            <li>
+              {p.seo.indexable
+                ? "A página poderá aparecer nos mecanismos de busca depois da publicação."
+                : "A página permanecerá fora dos mecanismos de busca."}
+            </li>
+            <li>
+              {visibleDocuments.length === 0
+                ? "Nenhum documento ficará disponível para download."
+                : `${visibleDocuments.length} documento(s) ficará(ão) disponível(is) para download.`}
+            </li>
+            <li>Informações restritas e registros de governança permanecem nas áreas autorizadas do CMS.</li>
+          </ul>
         </section>
       )}
     </article>

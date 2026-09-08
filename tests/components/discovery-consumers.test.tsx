@@ -8,16 +8,13 @@ import {
   solutionPayload,
 } from "../fixtures/discovery-payloads";
 const row = (content_type: any, payload: any) => ({
-  item_id: "33333333-3333-4333-8333-333333333333",
-  revision_id: "44444444-4444-4444-8444-444444444444",
+  key: `/sintetico-${content_type}`,
+  kind: content_type,
   slug: "sintetico",
-  content_type,
   path: "/sintetico",
   payload,
   seo: payload.seo,
-  content_version: 1,
-  etag: "test",
-  published_at: "2026-08-29T12:00:00.000Z",
+  publishedAt: "2026-08-29T12:00:00.000Z",
 });
 describe("F5 field to consumer coverage", () => {
   it("renders every service commercial field", () => {
@@ -26,6 +23,8 @@ describe("F5 field to consumer coverage", () => {
     expect(screen.getByText("Entregável visível")).toBeInTheDocument();
     expect(screen.getByText("Etapa visível")).toBeInTheDocument();
     expect(container.querySelector("main")).not.toBeInTheDocument();
+    expect(screen.getByText(/Serviço · visão geral/)).toBeVisible();
+    expect(screen.queryByText(/aguardando owner/i)).not.toBeInTheDocument();
   });
   it("renders industry challenges and evidence", () => {
     render(<DiscoveryEntityRenderer entity={row("industry", industryPayload) as any} />);
@@ -48,5 +47,10 @@ describe("F5 field to consumer coverage", () => {
     render(<DiscoveryEntityRenderer entity={row("solution", solutionPayload) as any} />);
     expect(screen.getByText("Abordagem sintética visível")).toBeInTheDocument();
     expect(screen.getByText("Componente visível")).toBeInTheDocument();
+  });
+  it("falls back to the contact route when a CTA path is not governed", () => {
+    const payload = { ...servicePayload, cta: { label: "Falar conosco", href: "//attacker.invalid" } };
+    render(<DiscoveryEntityRenderer entity={row("service", payload) as any} />);
+    expect(screen.getByRole("link", { name: "Falar conosco" })).toHaveAttribute("href", "/contato");
   });
 });

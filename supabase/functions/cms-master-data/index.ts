@@ -159,15 +159,6 @@ function canonicalize(value: unknown): unknown {
   return value;
 }
 
-function normalize(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase("pt-BR")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
 function logMasterData(
   level: "info" | "warn" | "error",
   event: string,
@@ -199,6 +190,27 @@ async function readAllowed(identity: Awaited<ReturnType<typeof authenticateCms>>
 }
 
 type DatabaseRecord = Record<string, any>;
+type MasterActorScope = {
+  isQaActor: boolean;
+  active: boolean;
+};
+
+async function actorReadScope(
+  identity: NonNullable<Awaited<ReturnType<typeof authenticateCms>>>,
+  environment: "local" | "staging" | "production",
+): Promise<MasterActorScope> {
+  const { data, error } = await identity.admin.rpc("cms_actor_scope_context", {
+    p_actor_id: identity.user.id,
+    p_environment: environment,
+  });
+  if (error || typeof data !== "object" || !data) {
+    throw new Error("CMS_MASTER_DATA_ACTOR_SCOPE_UNAVAILABLE");
+  }
+  return {
+    isQaActor: data.isQaActor === true,
+    active: data.active === true,
+  };
+}
 
 function mapAlias(alias: DatabaseRecord) {
   return {
@@ -244,14 +256,13 @@ async function queryMasterData(
   command: QueryCommand,
 ) {
   if (command.action === "list_rules") {
-    const { data, error } = await identity.admin
-      .from("cms_master_relation_rules")
-      .select("relation_type,source_type,target_type,label,active")
-      .eq("active", true)
-      .order("label");
+    const { data, error } = await identity.admin.rpc("cms_master_list_rules_scoped", {
+      p_actor_id: identity.user.id,
+      p_environment: command.envelope.actorContext.environment,
+    });
     if (error) throw error;
     return {
-      rules: (data ?? []).map((rule) => ({
+      rules: (data ?? []).map((rule: DatabaseRecord) => ({
         relationType: rule.relation_type,
         sourceType: rule.source_type,
         targetType: rule.target_type,
@@ -262,118 +273,44 @@ async function queryMasterData(
   }
 
   if (command.action === "list_entities") {
-    let query = identity.admin
-      .from("cms_master_entities")
-      .select(
-        "id,entity_type,canonical_name,normalized_name,description,external_domain,source_type,source_ref,status,merged_into_id,lock_version,updated_at,cms_master_entity_aliases(id,alias,normalized_alias,source_type,updated_at)",
-      )
-      .eq("site_key", command.envelope.actorContext.siteKey)
-      .order("canonical_name")
-      .limit(500);
-    if (command.entityType) query = query.eq("entity_type", command.entityType);
-    if (!command.includeInactive) query = query.eq("status", "active");
-    const { data, error } = await query;
+    const { data, error } = await identity.admin.rpc("cms_master_list_entities_scoped", {
+      p_actor_id: identity.user.id,
+      p_environment: command.envelope.actorContext.environment,
+      p_site_key: command.envelope.actorContext.siteKey,
+      p_entity_type: command.entityType ?? null,
+      p_query: command.query,
+      p_include_inactive: command.includeInactive,
+      p_limit: 500,
+    });
     if (error) throw error;
-    const mergedByTarget = new Map<string, DatabaseRecord[]>();
-    const activeIds = (data ?? []).filter((entity) => entity.status === "active").map((entity) => entity.id);
-    let mergedSources: DatabaseRecord[] = [];
-    if (activeIds.length) {
-      const { data: merged, error: mergedError } = await identity.admin
-        .from("cms_master_entities")
-        .select(
-          "id,canonical_name,merged_into_id,cms_master_entity_aliases(id,alias,normalized_alias,source_type,updated_at)",
-        )
-        .eq("site_key", command.envelope.actorContext.siteKey)
-        .eq("status", "merged")
-        .in("merged_into_id", activeIds);
-      if (mergedError) throw mergedError;
-      mergedSources = merged ?? [];
-      for (const merged of mergedSources) {
-        const sources = mergedByTarget.get(merged.merged_into_id) ?? [];
-        sources.push(merged);
-        mergedByTarget.set(merged.merged_into_id, sources);
-      }
-    }
-    const needle = normalize(command.query);
-    const entities = needle
-      ? (data ?? []).filter((entity) =>
-          [
-            entity.canonical_name,
-            ...(entity.cms_master_entity_aliases ?? []).map((alias) => alias.alias),
-            ...(mergedByTarget.get(entity.id) ?? []).flatMap((merged) => [
-              merged.canonical_name,
-              ...(merged.cms_master_entity_aliases ?? []).map((alias: DatabaseRecord) => alias.alias),
-            ]),
-          ]
-            .map(normalize)
-            .some((candidate) => candidate.includes(needle)),
-        )
-      : (data ?? []);
-    return { entities: entities.map(mapEntity) };
+    return { entities: (data ?? []).map(mapEntity) };
   }
 
-  const { data: mergedSources, error: mergedSourcesError } = await identity.admin
-    .from("cms_master_entities")
-    .select("id")
-    .eq("site_key", command.envelope.actorContext.siteKey)
-    .eq("status", "merged")
-    .eq("merged_into_id", command.sourceEntityId);
-  if (mergedSourcesError) throw mergedSourcesError;
-  const sourceIds = [command.sourceEntityId, ...(mergedSources ?? []).map((entity) => entity.id)];
-  let query = identity.admin
-    .from("cms_master_compatibilities")
-    .select(
-      "id,relation_type,source_entity_id,target_entity_id,status,effective_from,effective_to,version,lock_version,source_type,source_ref,updated_at",
-    )
-    .eq("site_key", command.envelope.actorContext.siteKey)
-    .eq("relation_type", command.relationType)
-    .in("source_entity_id", sourceIds)
-    .order("effective_from", { ascending: false });
-  if (!command.includeInactive) query = query.eq("status", "active");
-  const { data: compatibilities, error } = await query;
+  const { data: compatibilities, error } = await identity.admin.rpc("cms_master_get_dependencies_scoped", {
+    p_actor_id: identity.user.id,
+    p_environment: command.envelope.actorContext.environment,
+    p_site_key: command.envelope.actorContext.siteKey,
+    p_relation_type: command.relationType,
+    p_source_entity_id: command.sourceEntityId,
+    p_include_inactive: command.includeInactive,
+  });
   if (error) throw error;
-  const targetIds = [...new Set((compatibilities ?? []).map((item) => item.target_entity_id))];
-  const { data: targets, error: targetsError } = targetIds.length
-    ? await identity.admin
-        .from("cms_master_entities")
-        .select("id,entity_type,canonical_name,status,lock_version,merged_into_id")
-        .in("id", targetIds)
-    : { data: [], error: null };
-  if (targetsError) throw targetsError;
-  const mergedParentIds = [...new Set((targets ?? []).map((target) => target.merged_into_id).filter(Boolean))];
-  const { data: mergedParents, error: mergedParentsError } = mergedParentIds.length
-    ? await identity.admin
-        .from("cms_master_entities")
-        .select("id,entity_type,canonical_name,status,lock_version,merged_into_id")
-        .in("id", mergedParentIds)
-    : { data: [], error: null };
-  if (mergedParentsError) throw mergedParentsError;
-  const targetById = new Map((targets ?? []).map((target) => [target.id, target]));
-  const parentById = new Map((mergedParents ?? []).map((target) => [target.id, target]));
   return {
-    compatibilities: (compatibilities ?? [])
-      .map((item) => {
-        const historicalTarget = targetById.get(item.target_entity_id) ?? null;
-        const resolvedTarget = historicalTarget?.merged_into_id
-          ? (parentById.get(historicalTarget.merged_into_id) ?? historicalTarget)
-          : historicalTarget;
-        return {
-          id: item.id,
-          relationType: item.relation_type,
-          sourceEntityId: item.source_entity_id,
-          targetEntityId: item.target_entity_id,
-          status: item.status,
-          effectiveFrom: item.effective_from,
-          effectiveTo: item.effective_to,
-          version: item.version,
-          lockVersion: item.lock_version,
-          sourceType: item.source_type,
-          sourceRef: item.source_ref,
-          updatedAt: item.updated_at,
-          target: mapTarget(resolvedTarget),
-        };
-      })
-      .filter((item) => command.includeInactive || item.target?.status === "active"),
+    compatibilities: (compatibilities ?? []).map((item: DatabaseRecord) => ({
+      id: item.id,
+      relationType: item.relation_type,
+      sourceEntityId: item.source_entity_id,
+      targetEntityId: item.target_entity_id,
+      status: item.status,
+      effectiveFrom: item.effective_from,
+      effectiveTo: item.effective_to,
+      version: item.version,
+      lockVersion: item.lock_version,
+      sourceType: item.source_type,
+      sourceRef: item.source_ref,
+      updatedAt: item.updated_at,
+      target: mapTarget(item.target),
+    })),
   };
 }
 
@@ -461,6 +398,31 @@ Deno.serve(async (req) => {
 
   if (["list_entities", "list_rules", "get_dependencies"].includes(command.action)) {
     if (!(await readAllowed(identity))) return json(req, { error: "Permissão insuficiente.", correlationId }, 403);
+    let actorScope: MasterActorScope;
+    try {
+      actorScope = await actorReadScope(identity, environment);
+    } catch {
+      return json(
+        req,
+        {
+          error: "Escopo de leitura temporariamente indisponível.",
+          code: "CMS_MASTER_DATA_ACTOR_SCOPE_UNAVAILABLE",
+          correlationId,
+        },
+        503,
+      );
+    }
+    if (!actorScope.active) {
+      return json(
+        req,
+        {
+          error: "Operação indisponível ou sem permissão.",
+          code: actorScope.isQaActor ? "CMS_MASTER_DATA_QA_SCOPE_INACTIVE" : "CMS_MASTER_DATA_SCOPE_INVALID",
+          correlationId,
+        },
+        403,
+      );
+    }
     try {
       return json(req, {
         schemaVersion: 1,

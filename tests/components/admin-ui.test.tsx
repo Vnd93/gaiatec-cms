@@ -48,20 +48,30 @@ describe("sistema compartilhado do admin", () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     render(
-      <StepTabs
-        label="Etapas"
-        active="a"
-        onChange={onChange}
-        steps={[
-          { id: "a", label: "Identificação" },
-          { id: "b", label: "SEO" },
-        ]}
-      />,
+      <>
+        <StepTabs
+          idPrefix="editor"
+          label="Etapas"
+          active="a"
+          onChange={onChange}
+          steps={[
+            { id: "a", label: "Identificação" },
+            { id: "b", label: "SEO" },
+          ]}
+        />
+        <section id="editor-panel-a" role="tabpanel" aria-labelledby="editor-tab-a">
+          Identificação ativa
+        </section>
+      </>,
     );
     const first = screen.getByRole("tab", { name: /Identificação/ });
+    expect(first).toHaveAttribute("aria-controls", "editor-panel-a");
+    expect(screen.getByRole("tabpanel", { name: /Identificação/ })).toBeInTheDocument();
     await user.click(first);
     await user.keyboard("{ArrowRight}");
     expect(onChange).toHaveBeenLastCalledWith("b");
+    await user.keyboard("{Home}");
+    expect(onChange).toHaveBeenLastCalledWith("a");
   });
 
   it("confirma ações críticas com foco inicial no cancelamento e Escape", async () => {
@@ -81,6 +91,50 @@ describe("sistema compartilhado do admin", () => {
     expect(screen.getByRole("button", { name: "Cancelar" })).toHaveFocus();
     await user.keyboard("{Escape}");
     expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("isola o fundo, prende o foco no diálogo em portal e o devolve ao acionador", async () => {
+    const user = userEvent.setup();
+    const trigger = document.createElement("button");
+    trigger.textContent = "Abrir confirmação";
+    document.body.append(trigger);
+    trigger.focus();
+    const cancel = vi.fn();
+    const { container, rerender } = render(
+      <ConfirmDialog
+        open
+        title="Confirmar publicação?"
+        description="A versão ficará pública."
+        confirmLabel="Publicar"
+        onConfirm={vi.fn()}
+        onCancel={cancel}
+      />,
+    );
+
+    const dialog = screen.getByRole("alertdialog", { name: "Confirmar publicação?" });
+    expect(dialog.closest("[data-admin-modal-layer]")?.parentElement).toBe(document.body);
+    expect(container).toHaveAttribute("inert");
+    const close = screen.getByRole("button", { name: "Fechar confirmação" });
+    const confirm = screen.getByRole("button", { name: "Publicar" });
+    close.focus();
+    await user.tab({ shift: true });
+    expect(confirm).toHaveFocus();
+    await user.tab();
+    expect(close).toHaveFocus();
+
+    rerender(
+      <ConfirmDialog
+        open={false}
+        title="Confirmar publicação?"
+        description="A versão ficará pública."
+        confirmLabel="Publicar"
+        onConfirm={vi.fn()}
+        onCancel={cancel}
+      />,
+    );
+    expect(container).not.toHaveAttribute("inert");
+    expect(trigger).toHaveFocus();
+    trigger.remove();
   });
 
   it("abre drawer com foco, ação de ficha completa e fechamento por Escape", async () => {
@@ -104,6 +158,38 @@ describe("sistema compartilhado do admin", () => {
     expect(screen.getByRole("button", { name: "Abrir editor completo" })).toBeEnabled();
     await user.keyboard("{Escape}");
     expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("mantém a tabulação dentro do drawer em portal e restaura o foco ao fechar", async () => {
+    const user = userEvent.setup();
+    const trigger = document.createElement("button");
+    trigger.textContent = "Abrir resumo";
+    document.body.append(trigger);
+    trigger.focus();
+    const close = vi.fn();
+    const props = {
+      eyebrow: "PRODUTO",
+      title: "Produto homologado",
+      primary: <button>Abrir editor completo</button>,
+      onClose: close,
+    };
+    const { container, rerender } = render(<RecordDrawer open {...props} />);
+
+    const dialog = screen.getByRole("dialog", { name: "Produto homologado" });
+    expect(dialog.closest("[data-admin-modal-layer]")?.parentElement).toBe(document.body);
+    expect(container).toHaveAttribute("inert");
+    const dialogClose = screen.getAllByRole("button", { name: "Fechar resumo" }).at(-1)!;
+    const primary = screen.getByRole("button", { name: "Abrir editor completo" });
+    dialogClose.focus();
+    await user.tab({ shift: true });
+    expect(primary).toHaveFocus();
+    await user.tab();
+    expect(dialogClose).toHaveFocus();
+
+    rerender(<RecordDrawer open={false} {...props} />);
+    expect(container).not.toHaveAttribute("inert");
+    expect(trigger).toHaveFocus();
+    trigger.remove();
   });
 
   it("marca a aba interna correspondente à rota", () => {

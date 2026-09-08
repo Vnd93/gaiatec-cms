@@ -1,0 +1,269 @@
+name: Promote staging frontend bridge watchdog
+
+on:
+  workflow_run:
+    workflows: ["Promote staging frontend bridge"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: staging
+  cancel-in-progress: false
+
+jobs:
+  compensate-incomplete-frontend-bridge:
+    if: >-
+      (github.event.workflow_run.conclusion == 'cancelled' ||
+      github.event.workflow_run.conclusion == 'failure' ||
+      github.event.workflow_run.conclusion == 'timed_out') &&
+      github.event.workflow_run.event == 'workflow_dispatch' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.path == '.github/workflows/promote-staging-frontend-bridge.yml' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: staging
+    steps:
+      - name: Checkout the exact trusted bridge control revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          path: control
+      - name: Recover HMAC state independently of workflow artifacts
+        id: variable_state
+        continue-on-error: true
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs get
+          --kind staging-deploy --file ../state-variable/staging-frontend-bridge-state.json
+          --run-id "${{ github.event.workflow_run.id }}"
+          --run-attempt "${{ github.event.workflow_run.run_attempt }}"
+          --control-sha "${{ github.event.workflow_run.head_sha }}"
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+      - name: Download immutable pre-mutation state and baseline bytes
+        id: recovery_artifact
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: staging-frontend-bridge-recovery-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+          digest-mismatch: error
+          path: recovery
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+      - name: Validate exact bridge state and immutable ancestry
+        id: watchdog_state
+        working-directory: control
+        env:
+          VARIABLE_STATE_OUTCOME: ${{ steps.variable_state.outcome }}
+          ARTIFACT_STATE_OUTCOME: ${{ steps.recovery_artifact.outcome }}
+          TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
+          TRIGGER_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          TRIGGER_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          TRIGGER_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const { appendFileSync, existsSync, readFileSync } = require("node:fs");
+          const candidates = process.env.VARIABLE_STATE_OUTCOME === "success"
+            ? ["../state-variable/staging-frontend-bridge-state.json"]
+            : [
+                "../recovery/control/outputs/staging-frontend-bridge-state.json",
+                "../recovery/outputs/staging-frontend-bridge-state.json",
+                "../recovery/staging-frontend-bridge-state.json",
+              ];
+          const statePath = candidates.find((entry) => existsSync(entry));
+          if (!statePath || (process.env.VARIABLE_STATE_OUTCOME !== "success" &&
+              process.env.ARTIFACT_STATE_OUTCOME !== "success"))
+            throw new Error("G12_STAGING_BRIDGE_WATCHDOG_STATE_UNAVAILABLE");
+          const state = JSON.parse(readFileSync(statePath, "utf8"));
+          const sha = /^[a-f0-9]{40}$/;
+          const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+          const exact = (value, keys) => value && typeof value === "object" && !Array.isArray(value) &&
+            JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...keys].sort());
+          if (
+            !["cancelled", "failure", "timed_out"].includes(process.env.TRIGGER_CONCLUSION) ||
+            !exact(state, ["schemaVersion", "event", "workflow", "project", "branch", "runMarker",
+              "compensationMarker", "candidateRelease", "original"]) ||
+            !exact(state.workflow, ["runId", "runAttempt", "controlSha"]) ||
+            !exact(state.original, ["deploymentId", "release", "createdOn", "commitMessage"]) ||
+            state.schemaVersion !== 1 || state.event !== "g12.staging.deploy.prepared" ||
+            String(state.workflow.runId) !== process.env.TRIGGER_RUN_ID ||
+            Number(state.workflow.runAttempt) !== Number(process.env.TRIGGER_RUN_ATTEMPT) ||
+            state.workflow.controlSha !== process.env.TRIGGER_HEAD_SHA ||
+            state.project !== "gaiatec-cms-staging" || state.branch !== "ev2-g17-canary" ||
+            !sha.test(state.candidateRelease || "") || !sha.test(state.original.release || "") ||
+            state.candidateRelease === state.original.release || !uuid.test(state.original.deploymentId || "") ||
+            !Number.isFinite(Date.parse(state.original.createdOn || "")) ||
+            typeof state.original.commitMessage !== "string" || /[\r\n\0]/.test(state.original.commitMessage) ||
+            state.runMarker !== `g12-staging-bridge-run-${process.env.TRIGGER_RUN_ID}-${process.env.TRIGGER_RUN_ATTEMPT}` ||
+            state.compensationMarker !== `g12-staging-bridge-compensation-${process.env.TRIGGER_RUN_ID}-${process.env.TRIGGER_RUN_ATTEMPT}`
+          ) throw new Error("G12_STAGING_BRIDGE_WATCHDOG_STATE_REFUSED");
+          appendFileSync(process.env.GITHUB_OUTPUT, [
+            `candidate_release=${state.candidateRelease}`,
+            `original_release=${state.original.release}`,
+            `original_deployment=${state.original.deploymentId}`,
+            `original_created_on=${new Date(state.original.createdOn).toISOString()}`,
+            `original_commit_message=${state.original.commitMessage}`,
+            `run_marker=${state.runMarker}`,
+            `compensation_marker=${state.compensationMarker}`,
+            `state_path=${statePath}`,
+          ].join("\n") + "\n");
+          NODE
+      - name: Verify baseline candidate and control ancestry
+        working-directory: control
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          git cat-file -e "${{ github.event.workflow_run.head_sha }}^{commit}"
+          git cat-file -e "${{ steps.watchdog_state.outputs.original_release }}^{commit}"
+          git cat-file -e "${{ steps.watchdog_state.outputs.candidate_release }}^{commit}"
+          git merge-base --is-ancestor "${{ steps.watchdog_state.outputs.original_release }}" "${{ steps.watchdog_state.outputs.candidate_release }}"
+          git merge-base --is-ancestor "${{ steps.watchdog_state.outputs.candidate_release }}" "${{ github.event.workflow_run.head_sha }}"
+      - name: Install pinned recovery tooling
+        working-directory: control
+        run: npm ci --ignore-scripts
+      - name: Recover any preview fixture owned by the incomplete run
+        id: preview_fixture_recovery
+        continue-on-error: true
+        working-directory: control
+        run: node scripts/qa/cms-public-bridge-fixture.mjs recover
+        env:
+          QA_CMS_BRIDGE_ENVIRONMENT: staging
+          QA_CMS_BRIDGE_CANDIDATE_SHA: ${{ steps.watchdog_state.outputs.candidate_release }}
+          QA_CMS_BRIDGE_WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          QA_CMS_BRIDGE_WORKFLOW_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          QA_CMS_BRIDGE_INSTANCE: preview
+          QA_CMS_BRIDGE_STATE_PATH: outputs/staging-bridge-preview-state.json
+          QA_CMS_BRIDGE_REPORT_PATH: outputs/staging-bridge-preview-recovery.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Recover any canonical fixture owned by the incomplete run
+        id: canonical_fixture_recovery
+        continue-on-error: true
+        working-directory: control
+        run: node scripts/qa/cms-public-bridge-fixture.mjs recover
+        env:
+          QA_CMS_BRIDGE_ENVIRONMENT: staging
+          QA_CMS_BRIDGE_CANDIDATE_SHA: ${{ steps.watchdog_state.outputs.candidate_release }}
+          QA_CMS_BRIDGE_WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          QA_CMS_BRIDGE_WORKFLOW_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          QA_CMS_BRIDGE_INSTANCE: canonical
+          QA_CMS_BRIDGE_STATE_PATH: outputs/staging-bridge-canonical-state.json
+          QA_CMS_BRIDGE_REPORT_PATH: outputs/staging-bridge-canonical-recovery.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Decide canonical staging compensation from a fresh read
+        id: watchdog_decision
+        continue-on-error: true
+        working-directory: control
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-cms-staging
+          CLOUDFLARE_PAGES_BRANCH: ev2-g17-canary
+          STAGING_ORIGINAL_DEPLOYMENT: ${{ steps.watchdog_state.outputs.original_deployment }}
+          STAGING_ORIGINAL_RELEASE: ${{ steps.watchdog_state.outputs.original_release }}
+          STAGING_ORIGINAL_CREATED_ON: ${{ steps.watchdog_state.outputs.original_created_on }}
+          STAGING_ORIGINAL_COMMIT_MESSAGE: ${{ steps.watchdog_state.outputs.original_commit_message }}
+          STAGING_CANDIDATE_RELEASE: ${{ steps.watchdog_state.outputs.candidate_release }}
+          STAGING_RUN_MARKER: ${{ steps.watchdog_state.outputs.run_marker }}
+          STAGING_COMPENSATION_MARKER: ${{ steps.watchdog_state.outputs.compensation_marker }}
+        run: node scripts/ev2/phase12/staging-pages-state.mjs decide
+      - name: Restore baseline only while the owned bridge remains canonical
+        id: watchdog_compensation
+        if: always() && steps.watchdog_decision.outputs.action == 'restore-original'
+        continue-on-error: true
+        working-directory: control
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-cms-staging
+          CLOUDFLARE_PAGES_BRANCH: ev2-g17-canary
+          STAGING_ORIGINAL_DEPLOYMENT: ${{ steps.watchdog_state.outputs.original_deployment }}
+          STAGING_ORIGINAL_RELEASE: ${{ steps.watchdog_state.outputs.original_release }}
+          STAGING_ORIGINAL_CREATED_ON: ${{ steps.watchdog_state.outputs.original_created_on }}
+          STAGING_ORIGINAL_COMMIT_MESSAGE: ${{ steps.watchdog_state.outputs.original_commit_message }}
+          STAGING_CANDIDATE_RELEASE: ${{ steps.watchdog_state.outputs.candidate_release }}
+          STAGING_RUN_MARKER: ${{ steps.watchdog_state.outputs.run_marker }}
+          STAGING_COMPENSATION_MARKER: ${{ steps.watchdog_state.outputs.compensation_marker }}
+        run: >-
+          node scripts/ev2/phase12/staging-pages-state.mjs compensate
+          --dist ../recovery/baseline/dist
+          --seal ../recovery/baseline/outputs/staging-baseline-dist-seal.json
+      - name: Recheck canonical state after reconciliation
+        id: canonical_recheck
+        if: >-
+          always() && (steps.watchdog_decision.outputs.action == 'already-original' ||
+          steps.watchdog_compensation.outcome == 'success')
+        working-directory: control
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-cms-staging
+          CLOUDFLARE_PAGES_BRANCH: ev2-g17-canary
+          STAGING_ORIGINAL_DEPLOYMENT: ${{ steps.watchdog_state.outputs.original_deployment }}
+          STAGING_ORIGINAL_RELEASE: ${{ steps.watchdog_state.outputs.original_release }}
+          STAGING_ORIGINAL_CREATED_ON: ${{ steps.watchdog_state.outputs.original_created_on }}
+          STAGING_ORIGINAL_COMMIT_MESSAGE: ${{ steps.watchdog_state.outputs.original_commit_message }}
+          STAGING_CANDIDATE_RELEASE: ${{ steps.watchdog_state.outputs.candidate_release }}
+          STAGING_RUN_MARKER: ${{ steps.watchdog_state.outputs.run_marker }}
+          STAGING_COMPENSATION_MARKER: ${{ steps.watchdog_state.outputs.compensation_marker }}
+        run: node scripts/ev2/phase12/staging-pages-state.mjs assert-original
+      - name: Probe the restored old-backend baseline
+        id: watchdog_probe
+        if: always() && steps.canonical_recheck.outcome == 'success'
+        working-directory: control
+        run: node scripts/ev2/phase12/rollout-probe.mjs
+        env:
+          EV2_G12_ORIGIN: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
+          EV2_G12_EXPECTED_SHA: ${{ steps.watchdog_state.outputs.original_release }}
+          EV2_G12_ENVIRONMENT: staging
+          EV2_G12_PROBE_PROFILE: full
+          EV2_G12_SAMPLE_COUNT: "5"
+          EV2_G12_REPORT_PATH: outputs/staging-frontend-bridge-watchdog-probe.json
+      - name: Persist terminal watchdog evidence
+        id: watchdog_evidence
+        if: >-
+          always() && steps.preview_fixture_recovery.outcome == 'success' &&
+          steps.canonical_fixture_recovery.outcome == 'success' &&
+          steps.watchdog_probe.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: staging-frontend-bridge-watchdog-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+          path: |
+            control/outputs/staging-bridge-preview-recovery.json
+            control/outputs/staging-bridge-canonical-recovery.json
+            control/outputs/staging-frontend-bridge-watchdog-probe.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Clear exact redundant state after proven recovery
+        id: clear_state
+        if: always() && steps.watchdog_evidence.outcome == 'success'
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs clear --kind staging-deploy
+          --file "${{ steps.watchdog_state.outputs.state_path }}"
+          --run-id "${{ github.event.workflow_run.id }}"
+          --run-attempt "${{ github.event.workflow_run.run_attempt }}"
+          --control-sha "${{ github.event.workflow_run.head_sha }}"
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+      - name: Fail closed unless fixtures and canonical baseline are proven recovered
+        if: >-
+          always() && (steps.watchdog_state.outcome != 'success' ||
+          steps.preview_fixture_recovery.outcome != 'success' ||
+          steps.canonical_fixture_recovery.outcome != 'success' ||
+          steps.watchdog_decision.outcome != 'success' ||
+          steps.canonical_recheck.outcome != 'success' ||
+          steps.watchdog_probe.outcome != 'success' ||
+          steps.watchdog_evidence.outcome != 'success' ||
+          steps.clear_state.outcome != 'success')
+        run: exit 1

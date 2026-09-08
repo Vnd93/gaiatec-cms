@@ -217,13 +217,14 @@ async function elevateWithMfa() {
 async function configureForm(configuration) {
   const current = await admin
     .from("cms_form_definitions")
-    .select("id")
+    .select("id,lock_version")
     .eq("form_key", configuration.key)
     .maybeSingle();
   if (current.error) throw current.error;
   const saved = await invoke("cms-leads", {
     action: "save_form",
     formId: current.data?.id ?? null,
+    expectedLockVersion: current.data?.lock_version ?? null,
     formKey: configuration.key,
     title: configuration.title,
     purpose: configuration.purpose,
@@ -246,6 +247,7 @@ async function configureForm(configuration) {
     action: "publish_form",
     formId: saved.formId,
     versionId: saved.versionId,
+    expectedLockVersion: saved.lockVersion,
   });
   const response = await fetch(
     `${supabaseUrl}/functions/v1/cms-public?${new URLSearchParams({ type: "form", key: configuration.key })}`,

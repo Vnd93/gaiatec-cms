@@ -30,7 +30,11 @@ import { CmsPageRenderer } from "@/public/components/CmsPageRenderer";
 import { CmsApiError, mediaCommand, visualStudioCommand } from "../api/cms-api";
 import { useAdminAuth } from "../auth/AdminAuthContext";
 import { cmsEnvironment, isEv2FeatureEnabled } from "../ev2-runtime";
-import { pageBlockReferenceRequirement } from "../page-builder-model";
+import {
+  governedFormBindingIssue,
+  pageBlockReferenceRequirement,
+  type PublishedFormOption,
+} from "../page-builder-model";
 import {
   appendVisualComponent,
   duplicateVisualNode,
@@ -46,6 +50,8 @@ import {
   visualPageMetadata,
 } from "../visual-studio-model";
 import { PageBlockEditor, type BuilderMedia, type BuilderRelation } from "../components/PageBlockEditor";
+import { UnsavedChangesGuard } from "../components/UnsavedChangesGuard";
+import { humanValidationIssue } from "../validation-field-label";
 import "../admin-visual-studio.css";
 
 const CMS_ENVIRONMENT = cmsEnvironment();
@@ -81,6 +87,7 @@ export default function AdminVisualStudioPage() {
   const [draftVersion, setDraftVersion] = useState<number | null>(null);
   const [media, setMedia] = useState<BuilderMedia[]>([]);
   const [relations, setRelations] = useState<BuilderRelation[]>([]);
+  const [forms, setForms] = useState<PublishedFormOption[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState("");
   const [breakpoint, setBreakpoint] = useState<Breakpoint>("desktop");
   const [history, setHistory] = useState<Ev2VisualDocument[]>([]);
@@ -128,7 +135,7 @@ export default function AdminVisualStudioPage() {
           asset.processing_status === "ready" && (!asset.scan_status || asset.scan_status === "clean"),
       );
     };
-    const [draftResult, mediaResult, relationResult] = await Promise.all([
+    const [draftResult, mediaResult, relationResult, formResult] = await Promise.all([
       supabase.from("cms_content_drafts").select("payload,lock_version").eq("item_id", itemId).single(),
       mediaRequest(),
       supabase
@@ -137,6 +144,12 @@ export default function AdminVisualStudioPage() {
         .in("content_type", ["product", "service", "industry", "application", "solution", "page"])
         .neq("workflow_status", "trashed")
         .order("updated_at", { ascending: false }),
+      supabase
+        .from("cms_form_definitions")
+        .select("id,form_key,active_version_id,title")
+        .eq("status", "published")
+        .not("active_version_id", "is", null)
+        .order("title", { ascending: true }),
     ]);
     if (draftResult.error) throw new Error("O rascunho editorial de origem não está disponível.");
     setBasePayload(draftResult.data.payload as CmsPageContent);
@@ -173,6 +186,20 @@ export default function AdminVisualStudioPage() {
               ? row.cms_content_drafts[0]?.payload?.title
               : row.cms_content_drafts?.payload?.title) ?? row.slug,
         })),
+    );
+    setForms(
+      (formResult.data ?? []).flatMap((row) =>
+        row.active_version_id
+          ? [
+              {
+                id: row.id,
+                formKey: row.form_key,
+                versionId: row.active_version_id,
+                title: row.title,
+              },
+            ]
+          : [],
+      ),
     );
   }, [itemId, session]);
 
@@ -231,13 +258,6 @@ export default function AdminVisualStudioPage() {
     void load();
   }, [load]);
 
-  useEffect(() => {
-    if (!dirty) return;
-    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty]);
-
   const selectedNode = document?.nodes.find((node) => node.id === selectedNodeId);
   const selectedNodeIndex = document?.nodes.findIndex((node) => node.id === selectedNodeId) ?? -1;
   const componentCounts = useMemo(() => {
@@ -291,13 +311,16 @@ export default function AdminVisualStudioPage() {
   const previewRelatedItems = useMemo(
     () =>
       relations.map((item) => ({
-        item_id: item.id,
         title: item.label,
         summary: item.summary,
         path: item.path ?? `/${item.slug}`,
-        content_type: item.content_type,
+        kind: item.content_type,
       })),
     [relations],
+  );
+  const formBindingIssue = useMemo(
+    () => governedFormBindingIssue(document?.nodes ?? [], forms),
+    [document?.nodes, forms],
   );
 
   function commit(next: Ev2VisualDocument) {
@@ -365,9 +388,13 @@ export default function AdminVisualStudioPage() {
 
   async function saveDocument() {
     if (!session || !loaded || !document || !hasMutationMfa) return false;
+    if (formBindingIssue) {
+      setError(formBindingIssue);
+      return false;
+    }
     const parsed = Ev2VisualDocumentSchema.safeParse(document);
     if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? "Documento visual incompleto.");
+      setError(humanValidationIssue(parsed.error.issues[0]) || "Documento visual incompleto.");
       return false;
     }
     setBusy(true);
@@ -522,6 +549,10 @@ export default function AdminVisualStudioPage() {
 
   async function applyToDraft() {
     if (!session || !loaded || !draftVersion || dirty || !hasMutationMfa) return;
+    if (formBindingIssue) {
+      setError(formBindingIssue);
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -578,7 +609,7 @@ export default function AdminVisualStudioPage() {
       <section>
         <h1>Estúdio Visual</h1>
         <div role="status" className="admin-notice">
-          O Estúdio Visual EV2.9 não está elegível para esta sessão. O site builder v1 permanece inalterado.
+          O Estúdio Visual não está disponível para esta sessão. O construtor de páginas permanece disponível.
         </div>
       </section>
     );
@@ -599,10 +630,10 @@ export default function AdminVisualStudioPage() {
         <h1>Estúdio Visual</h1>
         <div role={capability === "error" ? "alert" : "status"} className="admin-notice">
           {capability === "checking"
-            ? "Verificando o canary individual da EV2.9…"
+            ? "Verificando a disponibilidade do Estúdio Visual…"
             : capability === "error"
               ? error || "Não foi possível verificar a capacidade visual."
-              : "A capacidade visual está desligada para esta identidade. O builder v1 continua disponível."}
+              : "A capacidade visual está desligada para esta identidade. O construtor de páginas continua disponível."}
         </div>
       </section>
     );
@@ -612,11 +643,11 @@ export default function AdminVisualStudioPage() {
       <section>
         <div className="admin-page-heading">
           <div>
-            <p className="admin-eyebrow">EV2.9 · DOCUMENTO VISUAL VERSIONADO</p>
+            <p className="admin-eyebrow">DOCUMENTO VISUAL VERSIONADO</p>
             <h1>Estúdio Visual</h1>
             <p className="admin-help">
-              Inicie um branch isolado a partir do rascunho atual. O builder v1 e a publicação não serão
-              alterados.
+              Inicie uma versão visual isolada a partir do rascunho atual. O construtor e a publicação não
+              serão alterados.
             </p>
           </div>
           {canBranch && (
@@ -626,7 +657,7 @@ export default function AdminVisualStudioPage() {
               disabled={busy || !hasMutationMfa}
               onClick={() => void createBranch()}
             >
-              <Shapes size={16} aria-hidden="true" /> Criar branch visual
+              <Shapes size={16} aria-hidden="true" /> Criar versão visual
             </button>
           )}
         </div>
@@ -645,16 +676,17 @@ export default function AdminVisualStudioPage() {
             Criar o branch visual exige MFA. <Link to="/admin/mfa">Elevar sessão</Link>
           </div>
         )}
-        <Link to={`/admin/paginas/${itemId}`}>Voltar ao site builder v1</Link>
+        <Link to={`/admin/paginas/${itemId}`}>Voltar ao construtor de páginas</Link>
       </section>
     );
   }
 
   return (
     <section className="admin-visual-studio">
+      <UnsavedChangesGuard dirty={dirty && !busy} />
       <div className="admin-page-heading">
         <div>
-          <p className="admin-eyebrow">EV2.9 · {loaded.branch.branchKey}</p>
+          <p className="admin-eyebrow">DOCUMENTO VISUAL VERSIONADO</p>
           <h1>Estúdio Visual</h1>
           <p className="admin-help">
             20 componentes governados · grade 12/8/4 · sem HTML, CSS ou JavaScript arbitrário.
@@ -662,11 +694,11 @@ export default function AdminVisualStudioPage() {
         </div>
         <div className="admin-heading-actions">
           <Link className="admin-button admin-button--secondary" to={`/admin/paginas/${itemId}`}>
-            Builder v1
+            Construtor de páginas
           </Link>
           <button
             type="button"
-            disabled={busy || !dirty || !canEditDocument || !hasMutationMfa}
+            disabled={busy || !dirty || !canEditDocument || !hasMutationMfa || Boolean(formBindingIssue)}
             onClick={() => void saveDocument()}
           >
             <Save size={16} aria-hidden="true" /> Salvar documento
@@ -674,7 +706,7 @@ export default function AdminVisualStudioPage() {
           <button
             type="button"
             className="admin-button"
-            disabled={busy || dirty || !canApply || !hasMutationMfa}
+            disabled={busy || dirty || !canApply || !hasMutationMfa || Boolean(formBindingIssue)}
             onClick={() => void applyToDraft()}
           >
             <FileCheck2 size={16} aria-hidden="true" /> Aplicar ao rascunho
@@ -710,14 +742,19 @@ export default function AdminVisualStudioPage() {
       )}
       {!hasMutationMfa && (canEdit || canBranch || canSnapshot || canSymbol || canApply) && (
         <div role="status" className="admin-notice">
-          Toda mutação do Estúdio Visual exige MFA; a consulta permanece disponível.{" "}
+          Toda alteração do Estúdio Visual exige autenticação em duas etapas; a consulta permanece disponível.{" "}
           <Link to="/admin/mfa">Elevar sessão</Link>
         </div>
       )}
       {document.mode === "designer" && !canDesign && (
         <div role="status" className="admin-notice">
-          Este documento está em Modo Designer. Selecione o modo Guiado para editar ou solicite a permissão
-          <code> cms:visual.design</code>.
+          Este documento está em Modo Designer. Selecione o modo Guiado para editar ou solicite a permissão de
+          design visual ao administrador.
+        </div>
+      )}
+      {formBindingIssue && (
+        <div role="alert" className="admin-notice admin-notice--error">
+          {formBindingIssue}
         </div>
       )}
 
@@ -739,7 +776,7 @@ export default function AdminVisualStudioPage() {
             onChange={(event) => {
               const mode = event.target.value === "designer" ? "designer" : "guided";
               if (mode === "designer" && !canDesign) {
-                setError("O Modo Designer exige a permissão cms:visual.design.");
+                setError("O Modo Designer exige a permissão de design visual.");
                 return;
               }
               commit({ ...document, mode });
@@ -766,7 +803,8 @@ export default function AdminVisualStudioPage() {
               const referenceRequirement = pageBlockReferenceRequirement(component.key);
               const referenceUnavailable =
                 (referenceRequirement === "media" && media.length === 0) ||
-                (referenceRequirement === "relation" && relations.length === 0);
+                (referenceRequirement === "relation" && relations.length === 0) ||
+                (referenceRequirement === "form" && forms.length === 0);
               return (
                 <button
                   key={component.key}
@@ -776,7 +814,13 @@ export default function AdminVisualStudioPage() {
                     exhausted
                       ? "Limite governado atingido"
                       : referenceUnavailable
-                        ? `Cadastre ${referenceRequirement === "media" ? "uma mídia" : "um conteúdo relacionado"} antes de inserir`
+                        ? `Cadastre ${
+                            referenceRequirement === "media"
+                              ? "uma mídia"
+                              : referenceRequirement === "form"
+                                ? "um formulário publicado"
+                                : "um conteúdo relacionado"
+                          } antes de inserir`
                         : undefined
                   }
                   onClick={() =>
@@ -784,6 +828,7 @@ export default function AdminVisualStudioPage() {
                       appendVisualComponent(document, component.key, {
                         assetId: media[0]?.id,
                         relatedItemId: relations[0]?.id,
+                        form: forms[0],
                       }),
                     )
                   }
@@ -1022,6 +1067,7 @@ export default function AdminVisualStudioPage() {
                   total={document.nodes.length}
                   media={media}
                   relations={relations}
+                  forms={forms}
                   onChange={(block) => safely(() => updateVisualNode(document, selectedNode.id, block))}
                   onRemove={() => safely(() => removeVisualNode(document, selectedNode.id))}
                   onDuplicate={() => safely(() => duplicateVisualNode(document, selectedNode.id))}

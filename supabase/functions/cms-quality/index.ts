@@ -35,14 +35,24 @@ async function evaluateCapability(identity: Identity, environment: string) {
   });
 }
 
-async function persistRun(identity: Identity, itemId: string, trigger: "manual" | "release", correlationId: string) {
-  const [{ data: item }, { data: draft }, { data: waivers }] = await Promise.all([
-    identity.admin.from("cms_content_items").select("id").eq("id", itemId).maybeSingle(),
-    identity.admin.from("cms_content_drafts").select("payload,seo").eq("item_id", itemId).maybeSingle(),
-    identity.admin.from("cms_quality_waivers").select("rule_key").eq("item_id", itemId).gt("expires_at", new Date().toISOString()),
-  ]);
-  if (!item || !draft) throw new Error("CMS_QUALITY_ITEM_NOT_FOUND");
-  const waivedRules = new Set((waivers ?? []).map((entry) => entry.rule_key));
+async function persistRun(
+  identity: Identity,
+  itemId: string,
+  trigger: "manual" | "release",
+  correlationId: string,
+  environment: string,
+  idempotencyKey: string,
+  requestHash: string,
+) {
+  const { data: bundle, error: bundleError } = await identity.admin.rpc("cms_content_read_bundle_scoped", {
+    p_actor_id: identity.user.id,
+    p_item_id: itemId,
+    p_revision_id: null,
+    p_environment: environment,
+  });
+  const draft = bundle?.draft;
+  if (bundleError || !bundle || !draft) throw new Error("CMS_QUALITY_ITEM_NOT_FOUND");
+  const waivedRules = new Set<string>(bundle.waiverRuleKeys ?? []);
   const findings = evaluateQuality(draft.payload, draft.seo).map((entry) => ({ ...entry, waived: waivedRules.has(entry.ruleKey) }));
   const effective = findings.filter((entry) => !entry.waived);
   const status = qualityStatus(effective);
@@ -52,12 +62,21 @@ async function persistRun(identity: Identity, itemId: string, trigger: "manual" 
     recommendations: effective.filter((entry) => entry.severity === "recommendation").length,
     waived: findings.filter((entry) => entry.waived).length,
   };
-  const { data: run, error } = await identity.admin.rpc("cms_record_quality_run", {
-    p_item_id: itemId, p_revision_id: null, p_trigger_kind: trigger, p_status: status,
-    p_counts: counts, p_findings: findings, p_actor_id: identity.user.id, p_correlation_id: correlationId,
+  const { data: run, error } = await identity.admin.rpc("cms_execute_quality_command_scoped", {
+    p_actor_id: identity.user.id,
+    p_action: "run",
+    p_item_id: itemId,
+    p_environment: environment,
+    p_idempotency_key: idempotencyKey,
+    p_request_hash: requestHash,
+    p_payload: { trigger, status, counts, findings },
+    p_aal: identity.claims.aal,
+    p_session_id: identity.claims.sessionId,
+    p_issued_at: identity.claims.issuedAt,
+    p_correlation_id: correlationId,
   });
   if (error || !run) throw error ?? new Error("CMS_QUALITY_RUN_FAILED");
-  return { schemaVersion: 1, runId: run.runId, itemId, rulesetVersion: "v1", status, counts, findings, checkedAt: run.checkedAt, correlationId };
+  return run;
 }
 
 Deno.serve(async (req) => {
@@ -72,6 +91,11 @@ Deno.serve(async (req) => {
   const { environment } = command.envelope.actorContext, correlationId = command.envelope.correlationId;
   if (environment === "production" && !isProductionOperationEnabled(environment)) return json(req, { error: "Produção indisponível nesta fase.", code: "CMS_QUALITY_PRODUCTION_GATED", correlationId }, 403);
   if (Deno.env.get("CMS_ENVIRONMENT") !== environment) return json(req, { error: "Escopo não autorizado.", code: "CMS_QUALITY_SCOPE_MISMATCH", correlationId }, 403);
+  const { data: actorScope, error: actorScopeError } = await identity.admin.rpc("cms_actor_scope_context", {
+    p_actor_id: identity.user.id,
+    p_environment: environment,
+  });
+  if (actorScopeError || actorScope?.active !== true) return json(req, { error: "Escopo não autorizado.", code: "CMS_QUALITY_SCOPE_MISMATCH", correlationId }, 403);
   const { data: capability, error: capabilityError } = await evaluateCapability(identity, environment);
   if (capabilityError) return json(req, { error: "Capacidade indisponível.", correlationId }, 503);
   if (command.action === "capability") return json(req, { ...capability, commandId: command.envelope.commandId, correlationId });
@@ -84,9 +108,12 @@ Deno.serve(async (req) => {
   } catch { return json(req, { error: "Proteção temporariamente indisponível.", correlationId }, 503); }
 
   if (command.action === "list") {
-    let query = identity.admin.from("cms_quality_runs").select("id,item_id,ruleset_version,trigger_kind,status,finding_counts,checked_at").order("checked_at", { ascending: false }).limit(command.limit);
-    if (command.itemId) query = query.eq("item_id", command.itemId);
-    const { data, error } = await query;
+    const { data, error } = await identity.admin.rpc("cms_quality_list_runs_scoped", {
+      p_actor_id: identity.user.id,
+      p_environment: environment,
+      p_item_id: command.itemId ?? null,
+      p_limit: command.limit,
+    });
     if (error) return json(req, { error: "Resultados indisponíveis.", correlationId }, 503);
     return json(req, { items: data ?? [], correlationId });
   }
@@ -94,28 +121,50 @@ Deno.serve(async (req) => {
   const idempotencyKey = req.headers.get("X-Idempotency-Key");
   if (!idempotencyKey || !Uuid.safeParse(idempotencyKey).success) return json(req, { error: "Chave idempotente obrigatória." }, 400);
   const requestHash = await sha256(JSON.stringify(command));
-  const { data: receipt } = await identity.admin.from("cms_quality_command_receipts").select("request_hash,response").eq("actor_id", identity.user.id).eq("action", command.action).eq("idempotency_key", idempotencyKey).maybeSingle();
-  if (receipt?.request_hash !== undefined) {
-    if (receipt.request_hash !== requestHash) return json(req, { error: "Chave idempotente reutilizada com outro comando.", code: "CMS_QUALITY_IDEMPOTENCY_CONFLICT", correlationId }, 409);
-    if (receipt.response) return json(req, receipt.response);
-    return json(req, { error: "Comando idempotente ainda em processamento.", code: "CMS_QUALITY_COMMAND_IN_PROGRESS", correlationId }, 409);
-  } else {
-    const { error } = await identity.admin.from("cms_quality_command_receipts").insert({ actor_id: identity.user.id, action: command.action, idempotency_key: idempotencyKey, request_hash: requestHash });
-    if (error) return json(req, { error: "Conflito idempotente.", correlationId }, 409);
-  }
   try {
     let response: Record<string, unknown>;
     if (command.action === "waive") {
-      const { data, error } = await identity.admin.from("cms_quality_waivers").insert({ item_id: command.itemId, rule_key: command.ruleKey, reason: command.reason, expires_at: command.expiresAt, created_by: identity.user.id, correlation_id: correlationId }).select("id,item_id,rule_key,reason,expires_at,created_at").single();
-      if (error) throw error;
-      await identity.admin.from("cms_audit_log").insert({ actor_id: identity.user.id, action: "cms:quality.waived", target_type: "content_item", target_id: command.itemId, correlation_id: correlationId, event_data: { ruleKey: command.ruleKey, expiresAt: command.expiresAt, reason: command.reason } });
-      response = { waiver: data, correlationId };
-    } else response = await persistRun(identity, command.itemId, command.trigger, correlationId);
-    await identity.admin.from("cms_quality_command_receipts").update({ response, completed_at: new Date().toISOString() }).eq("actor_id", identity.user.id).eq("action", command.action).eq("idempotency_key", idempotencyKey);
+      const { data, error } = await identity.admin.rpc("cms_execute_quality_command_scoped", {
+        p_actor_id: identity.user.id,
+        p_action: command.action,
+        p_item_id: command.itemId,
+        p_environment: environment,
+        p_idempotency_key: idempotencyKey,
+        p_request_hash: requestHash,
+        p_payload: { ruleKey: command.ruleKey, reason: command.reason, expiresAt: command.expiresAt },
+        p_aal: identity.claims.aal,
+        p_session_id: identity.claims.sessionId,
+        p_issued_at: identity.claims.issuedAt,
+        p_correlation_id: correlationId,
+      });
+      if (error || !data) throw error ?? new Error("CMS_QUALITY_WAIVER_FAILED");
+      response = data as Record<string, unknown>;
+    } else response = await persistRun(identity, command.itemId, command.trigger, correlationId, environment, idempotencyKey, requestHash);
     return json(req, response, command.action === "waive" ? 201 : 200);
   } catch (error) {
-    await identity.admin.from("cms_quality_command_receipts").delete().eq("actor_id", identity.user.id).eq("action", command.action).eq("idempotency_key", idempotencyKey).is("completed_at", null);
-    const missing = error instanceof Error && error.message.includes("ITEM_NOT_FOUND");
-    return json(req, { error: missing ? "Conteúdo não encontrado." : "Verificação de qualidade indisponível.", correlationId }, missing ? 404 : 500);
+    const errorRecord = typeof error === "object" && error !== null ? error as Record<string, unknown> : null;
+    const message = error instanceof Error
+      ? error.message
+      : typeof errorRecord?.message === "string"
+        ? errorRecord.message
+        : String(error ?? "");
+    const missing = message.includes("ITEM_NOT_FOUND") || message.includes("CONTENT_NOT_FOUND");
+    const forbidden = message.includes("FORBIDDEN");
+    const conflict = message.includes("IDEMPOTENCY_CONFLICT") || errorRecord?.code === "40001";
+    return json(
+      req,
+      {
+        error: missing
+          ? "Conteúdo não encontrado."
+          : forbidden
+            ? "Operação não autorizada."
+            : conflict
+              ? "Chave idempotente reutilizada com outro comando."
+              : "Verificação de qualidade indisponível.",
+        ...(conflict ? { code: "CMS_QUALITY_IDEMPOTENCY_CONFLICT" } : {}),
+        correlationId,
+      },
+      missing ? 404 : forbidden ? 403 : conflict ? 409 : 500,
+    );
   }
 });

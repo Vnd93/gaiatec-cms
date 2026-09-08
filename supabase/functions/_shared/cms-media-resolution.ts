@@ -5,12 +5,16 @@ export async function resolveMediaAssets(
   assetIds: string[],
   primaryId: string | undefined,
   ttlSeconds: number,
+  limits: { maxAssets?: number; maxVariants?: number } = {},
 ) {
   const mediaUrls: Record<string, string> = {};
   const mediaAlt: Record<string, string> = {};
   if (!assetIds.length) return { mediaUrls, mediaAlt };
 
   const uniqueIds = [...new Set(assetIds)];
+  const maxAssets = limits.maxAssets ?? 1_000;
+  const maxVariants = limits.maxVariants ?? 4_000;
+  if (uniqueIds.length > maxAssets) throw new Error("CMS_MEDIA_REFERENCE_LIMIT_EXCEEDED");
   const { data: replacements, error: replacementError } = await client
     .from("cms_dam_replacements")
     .select("source_asset_id,target_asset_id")
@@ -46,9 +50,11 @@ export async function resolveMediaAssets(
         .from("cms_media_variants")
         .select("asset_id,variant_key,format,transform_path")
         .in("asset_id", eligibleIds)
+        .limit(maxVariants + 1)
     : { data: [], error: null };
   if (variantError) throw variantError;
-  const paths = (variants ?? []).map((variant) => variant.transform_path);
+  if ((variants ?? []).length > maxVariants) throw new Error("CMS_MEDIA_VARIANT_LIMIT_EXCEEDED");
+  const paths = [...new Set((variants ?? []).map((variant) => variant.transform_path))];
   const { data: signedVariants, error: signingError } = paths.length
     ? await client.storage.from("cms-media-private").createSignedUrls(paths, ttlSeconds)
     : { data: [], error: null };

@@ -23,10 +23,11 @@ describe("product editor full-field round-trip", () => {
     expect(rebuilt.jsonErrors[0]).toMatchObject({ field: "specificationsJson", tab: "especificacoes" });
   });
 
-  it("keeps explicit commercial and manufacturer models separate", () => {
+  it("keeps the semantic models editor as the only authority for model identity", () => {
     const draft = hydrateProductDraft(comprehensiveProductPayload(), "produto-completo");
-    draft.commercialModel = "GATFLOW-B";
-    draft.manufacturerReference = "KF700E";
+    const models = JSON.parse(draft.modelsJson);
+    models[0] = { ...models[0], model: "GATFLOW-B", manufacturerReference: "KF700E" };
+    draft.modelsJson = JSON.stringify(models);
     const rebuilt = CmsProductContentSchema.parse(buildProductPayload(draft).payload);
     expect(rebuilt.models[0]).toMatchObject({ model: "GATFLOW-B", manufacturerReference: "KF700E" });
   });

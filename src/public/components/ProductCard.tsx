@@ -22,14 +22,18 @@ export function ProductCard({
   onSelect: (checked: boolean) => void;
 }) {
   const p = product.payload;
-  const image = product.media_urls?.["medium.webp"] ?? product.media_urls?.["thumbnail.webp"];
-  const primaryMedia = p.media.find((entry) => entry.role === "primary");
+  const primary = p.media.find((entry) => entry.role === "primary");
+  const image = primary
+    ? (product.mediaUrls?.[`${primary.assetId}:large.webp`] ??
+      product.mediaUrls?.[`${primary.assetId}:medium.webp`])
+    : undefined;
+  const primaryMedia = primary;
   const model = p.models[0];
   const facts = [
     model?.model ? { label: "Modelo", value: model.model } : null,
     model?.manufacturerReference ? { label: "Referência", value: model.manufacturerReference } : null,
     ...p.specifications.slice(0, 2).map((spec) => ({
-      label: spec.label,
+      label: spec.ownerLabel ? `${spec.label} — ${spec.ownerLabel}` : spec.label,
       value: formatProductSpecification(spec),
     })),
   ].filter((fact): fact is { label: string; value: string } => Boolean(fact?.value));
@@ -40,9 +44,7 @@ export function ProductCard({
       style={{ "--card-order": index } as CSSProperties}
     >
       <div className="catalog-product-card__media">
-        <span className="catalog-product-card__status">
-          {featuredLabel || (p.pilotState === "homologated" ? "Produto homologado" : "Em homologação")}
-        </span>
+        <span className="catalog-product-card__status">{featuredLabel || "Catálogo GAIATEC"}</span>
         {image ? (
           <Link to={`/produtos/${product.slug}`} tabIndex={-1} aria-hidden="true">
             <img
@@ -53,7 +55,7 @@ export function ProductCard({
             />
           </Link>
         ) : (
-          <span className="catalog-product-card__image-empty" aria-label="Produto sem imagem publicada">
+          <span className="catalog-product-card__image-empty" aria-label="Produto sem imagem disponível">
             <ImageIcon size={38} aria-hidden="true" />
           </span>
         )}

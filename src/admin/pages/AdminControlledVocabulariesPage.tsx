@@ -2,9 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { controlledVocabularyCommand, type ControlledVocabularyList } from "../api/cms-api";
 import { useAdminAuth } from "../auth/AdminAuthContext";
 import { ProductModuleTabs } from "../components/AdminModuleTabs";
+import { operatorErrorMessage } from "../operator-error-message";
+import { urlSegmentFromText } from "../url-segment";
 
 type ListDraft = {
   id?: string;
+  lockVersion?: number;
   listKey: string;
   entityType: string;
   dimensionKey: string;
@@ -16,6 +19,7 @@ type ListDraft = {
 };
 type OptionDraft = {
   id?: string;
+  lockVersion?: number;
   listId: string;
   slug: string;
   label: string;
@@ -45,6 +49,30 @@ const emptyOption: OptionDraft = {
   sortOrder: 0,
 };
 
+const entityLabels: Record<string, string> = {
+  product: "Produtos",
+  service: "Serviços",
+  industry: "Indústrias",
+  application: "Aplicações",
+  solution: "Soluções",
+  page: "Páginas",
+  campaign: "Campanhas",
+};
+
+function generatedOptionSlug(label: string) {
+  return urlSegmentFromText(label, 120) || "opcao";
+}
+
+function semanticListPayload(draft: ListDraft): ListDraft {
+  if (draft.id) return draft;
+  const dimensionKey = urlSegmentFromText(draft.label, 79) || "classificacao";
+  return {
+    ...draft,
+    listKey: `${draft.entityType}.${dimensionKey}`,
+    dimensionKey,
+  };
+}
+
 export default function AdminControlledVocabulariesPage() {
   const { session, profile } = useAdminAuth();
   const [lists, setLists] = useState<ControlledVocabularyList[]>([]),
@@ -68,7 +96,7 @@ export default function AdminControlledVocabulariesPage() {
       setLists(result.items);
       setSelected((current) => current || result.items[0]?.id || "");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Listas mestras indisponíveis.");
+      setError(operatorErrorMessage(caught, { fallback: "As listas mestras estão indisponíveis." }));
     } finally {
       setBusy(false);
     }
@@ -95,7 +123,7 @@ export default function AdminControlledVocabulariesPage() {
         body,
       );
       setSuccess(
-        `Alteração auditada. Código ${result.correlationId.slice(0, 8)}.${
+        `Alteração concluída e registrada na auditoria.${
           typeof result.usageCount === "number"
             ? ` A opção permanece referenciada por ${result.usageCount} conteúdo(s).`
             : ""
@@ -105,7 +133,7 @@ export default function AdminControlledVocabulariesPage() {
       setOptionDraft({ ...emptyOption, listId: selected });
       await reload();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Alteração não concluída.");
+      setError(operatorErrorMessage(caught, { fallback: "Não foi possível concluir a alteração." }));
     } finally {
       setBusy(false);
     }
@@ -114,7 +142,7 @@ export default function AdminControlledVocabulariesPage() {
     <section>
       <div className="admin-page-heading">
         <div>
-          <p className="admin-eyebrow">GOVERNANÇA DO CATÁLOGO</p>
+          <p className="admin-eyebrow">PADRÕES DO CATÁLOGO</p>
           <h1>Listas mestras</h1>
           <p className="admin-help">
             Classificações cadastráveis, ordenadas e auditadas. Opções utilizadas nunca são excluídas; podem
@@ -134,7 +162,7 @@ export default function AdminControlledVocabulariesPage() {
         </div>
       )}
       <div className="admin-master-layout">
-        <aside className="admin-master-sidebar" aria-label="Dimensões cadastradas">
+        <aside className="admin-master-sidebar" aria-label="Listas cadastradas">
           {lists.map((list) => (
             <button
               key={list.id}
@@ -146,11 +174,11 @@ export default function AdminControlledVocabulariesPage() {
             >
               <strong>{list.label}</strong>
               <span>
-                {list.entity_type} · {list.options.length} opções
+                {entityLabels[list.entity_type] ?? "Outros cadastros"} · {list.options.length} opções
               </span>
             </button>
           ))}
-          {!lists.length && !busy && <p>Nenhuma dimensão cadastrada.</p>}
+          {!lists.length && !busy && <p>Nenhuma lista cadastrada.</p>}
         </aside>
         <div className="admin-master-content">
           {current ? (
@@ -158,7 +186,7 @@ export default function AdminControlledVocabulariesPage() {
               <div className="admin-editor-card">
                 <div>
                   <h2>{current.label}</h2>
-                  <p>{current.description || current.list_key}</p>
+                  <p>{current.description || "Sem descrição operacional."}</p>
                 </div>
                 {canManage && (
                   <button
@@ -167,6 +195,7 @@ export default function AdminControlledVocabulariesPage() {
                     onClick={() =>
                       setListDraft({
                         id: current.id,
+                        lockVersion: current.lock_version,
                         listKey: current.list_key,
                         entityType: current.entity_type,
                         dimensionKey: current.dimension_key,
@@ -178,7 +207,7 @@ export default function AdminControlledVocabulariesPage() {
                       })
                     }
                   >
-                    Editar dimensão abaixo
+                    Editar lista abaixo
                   </button>
                 )}
                 <label>
@@ -192,9 +221,8 @@ export default function AdminControlledVocabulariesPage() {
                     <tr>
                       <th>Ordem</th>
                       <th>Rótulo</th>
-                      <th>Identificador</th>
                       <th>Visibilidade</th>
-                      <th>Estado</th>
+                      <th>Situação</th>
                       {canManage && <th>Ação</th>}
                     </tr>
                   </thead>
@@ -203,10 +231,6 @@ export default function AdminControlledVocabulariesPage() {
                       <tr key={option.id}>
                         <td>{option.sort_order}</td>
                         <td>{option.label}</td>
-                        <td>
-                          <code title="UUID usado na planilha de cadastro em massa">{option.id}</code>
-                          <small>{option.slug}</small>
-                        </td>
                         <td>{option.public_visible ? "Pública" : "Interna"}</td>
                         <td>
                           <span
@@ -223,6 +247,7 @@ export default function AdminControlledVocabulariesPage() {
                               onClick={() =>
                                 setOptionDraft({
                                   id: option.id,
+                                  lockVersion: option.lock_version,
                                   listId: current.id,
                                   slug: option.slug,
                                   label: option.label,
@@ -248,7 +273,11 @@ export default function AdminControlledVocabulariesPage() {
                                   return;
                                 void command({
                                   action: "set_option_active",
-                                  option: { id: option.id, active: !option.active },
+                                  option: {
+                                    id: option.id,
+                                    active: !option.active,
+                                    lockVersion: option.lock_version,
+                                  },
                                 });
                               }}
                             >
@@ -266,15 +295,18 @@ export default function AdminControlledVocabulariesPage() {
                   className="admin-editor-card"
                   onSubmit={(event) => {
                     event.preventDefault();
-                    void command({ action: "upsert_option", option: { ...optionDraft, listId: current.id } });
+                    void command({
+                      action: "upsert_option",
+                      option: {
+                        ...optionDraft,
+                        listId: current.id,
+                        slug: optionDraft.slug || generatedOptionSlug(optionDraft.label),
+                      },
+                    });
                   }}
                 >
                   <h2>Adicionar ou atualizar opção</h2>
-                  {optionDraft.id && (
-                    <p className="admin-help">
-                      Editando UUID <code>{optionDraft.id}</code>
-                    </p>
-                  )}
+                  {optionDraft.id && <p className="admin-help">Editando “{optionDraft.label}”.</p>}
                   <div className="admin-form-grid">
                     <label>
                       Rótulo
@@ -282,18 +314,14 @@ export default function AdminControlledVocabulariesPage() {
                         required
                         maxLength={160}
                         value={optionDraft.label}
-                        onChange={(event) => setOptionDraft({ ...optionDraft, label: event.target.value })}
-                      />
-                    </label>
-                    <label>
-                      Identificador estável
-                      <input
-                        required
-                        disabled={Boolean(optionDraft.id)}
-                        pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
-                        maxLength={120}
-                        value={optionDraft.slug}
-                        onChange={(event) => setOptionDraft({ ...optionDraft, slug: event.target.value })}
+                        onChange={(event) => {
+                          const label = event.target.value;
+                          setOptionDraft({
+                            ...optionDraft,
+                            label,
+                            slug: optionDraft.id ? optionDraft.slug : generatedOptionSlug(label),
+                          });
+                        }}
                       />
                     </label>
                     <label>
@@ -345,51 +373,38 @@ export default function AdminControlledVocabulariesPage() {
             </>
           ) : (
             <div className="admin-state">
-              <h2>Selecione uma dimensão</h2>
+              <h2>Selecione uma lista</h2>
             </div>
           )}
           {canManage && (
-            <details className="admin-editor-card">
-              <summary>Criar nova dimensão extensível</summary>
+            <section className="admin-editor-card" aria-labelledby="master-list-editor-title">
+              <h2 id="master-list-editor-title">
+                {listDraft.id ? "Editar lista mestra" : "Criar lista mestra"}
+              </h2>
+              <p className="admin-help">
+                Escolha a área e dê um nome claro. As referências necessárias para integração são criadas
+                automaticamente e preservadas nas edições.
+              </p>
               <form
                 onSubmit={(event) => {
                   event.preventDefault();
-                  void command({ action: "upsert_list", list: listDraft });
+                  void command({ action: "upsert_list", list: semanticListPayload(listDraft) });
                 }}
               >
                 <div className="admin-form-grid">
                   <label>
-                    Chave da lista
-                    <input
-                      required
+                    Área de uso
+                    <select
                       disabled={Boolean(listDraft.id)}
-                      pattern="[a-z][a-z0-9_.-]{2,119}"
-                      maxLength={120}
-                      value={listDraft.listKey}
-                      onChange={(event) => setListDraft({ ...listDraft, listKey: event.target.value })}
-                    />
-                  </label>
-                  <label>
-                    Entidade
-                    <input
-                      required
-                      disabled={Boolean(listDraft.id)}
-                      pattern="[a-z][a-z0-9_-]{1,79}"
-                      maxLength={80}
                       value={listDraft.entityType}
                       onChange={(event) => setListDraft({ ...listDraft, entityType: event.target.value })}
-                    />
-                  </label>
-                  <label>
-                    Dimensão
-                    <input
-                      required
-                      disabled={Boolean(listDraft.id)}
-                      pattern="[a-z][a-z0-9_-]{1,79}"
-                      maxLength={80}
-                      value={listDraft.dimensionKey}
-                      onChange={(event) => setListDraft({ ...listDraft, dimensionKey: event.target.value })}
-                    />
+                    >
+                      {Object.entries(entityLabels).map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                   <label>
                     Nome operacional
@@ -436,14 +451,14 @@ export default function AdminControlledVocabulariesPage() {
                       checked={listDraft.active}
                       onChange={(event) => setListDraft({ ...listDraft, active: event.target.checked })}
                     />
-                    Dimensão ativa
+                    Lista ativa
                   </label>
                 </div>
                 <button type="submit" className="admin-button" disabled={busy}>
-                  {listDraft.id ? "Salvar dimensão" : "Criar dimensão"}
+                  {listDraft.id ? "Salvar lista" : "Criar lista"}
                 </button>
               </form>
-            </details>
+            </section>
           )}
         </div>
       </div>

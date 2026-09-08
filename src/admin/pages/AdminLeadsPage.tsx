@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { leadCommand } from "../api/cms-api";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { buildCsv } from "../csv";
 import { isEv2FeatureEnabled } from "../ev2-runtime";
 import { Badge, ConfirmDialog } from "../components/AdminUI";
+import { isOperatorSafeMessage, operatorErrorMessage } from "../operator-error-message";
 
 type LeadDelivery = {
   id: string;
@@ -45,6 +46,72 @@ type Lead = {
 };
 type Profile = { user_id: string; display_name: string };
 const statuses = ["new", "assigned", "in_service", "responded", "converted", "disqualified", "archived"];
+const statusLabels: Record<string, string> = {
+  new: "Novo",
+  assigned: "Atribuído",
+  in_service: "Em atendimento",
+  responded: "Respondido",
+  converted: "Convertido",
+  disqualified: "Não qualificado",
+  archived: "Arquivado",
+};
+const originLabels: Record<string, string> = {
+  website: "Site",
+  campaign: "Campanha",
+  form: "Formulário",
+  contact: "Contato",
+  landing_page: "Página de campanha",
+};
+const utmLabels: Record<string, string> = {
+  source: "Origem da campanha",
+  utm_source: "Origem da campanha",
+  medium: "Canal",
+  utm_medium: "Canal",
+  campaign: "Campanha",
+  utm_campaign: "Campanha",
+  term: "Termo",
+  utm_term: "Termo",
+  content: "Variação",
+  utm_content: "Variação",
+};
+const leadFieldLabels: Record<string, string> = {
+  name: "Nome",
+  full_name: "Nome completo",
+  email: "E-mail",
+  phone: "Telefone",
+  company: "Empresa",
+  message: "Mensagem",
+  subject: "Assunto",
+  city: "Cidade",
+  state: "Estado",
+  role: "Cargo",
+};
+const deliveryEventLabels: Record<string, string> = {
+  lead_created: "Novo lead",
+  lead_updated: "Atendimento atualizado",
+  lead_assigned: "Lead atribuído",
+  lead_notification: "Notificação do lead",
+};
+
+function humanLabel(key: string, known: Record<string, string> = {}): string {
+  const normalized = key.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
+  const knownLabel = known[key] ?? known[normalized];
+  if (knownLabel) return knownLabel;
+  return "Outra informação";
+}
+
+function humanValue(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "Não informado";
+  if (typeof value === "boolean") return value ? "Sim" : "Não";
+  if (Array.isArray(value)) return value.map(humanValue).join(", ");
+  if (typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>)
+      .map(([key, nested]) => `${humanLabel(key)}: ${humanValue(nested)}`)
+      .join(" · ");
+  }
+  return String(value);
+}
+const LEADS_PAGE_SIZE = 50;
 const deliveryLabels: Record<LeadDelivery["status"], string> = {
   pending: "Aguardando entrega",
   processing: "Processando",
@@ -70,39 +137,64 @@ function relevantDelivery(lead: Lead): LeadDelivery | undefined {
 
 export default function AdminLeadsPage() {
   const { session, profile } = useAdminAuth();
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
   const [leads, setLeads] = useState<Lead[]>([]),
     [profiles, setProfiles] = useState<Profile[]>([]),
     [status, setStatus] = useState("all"),
+    [page, setPage] = useState(1),
+    [total, setTotal] = useState(0),
     [selected, setSelected] = useState<Lead | null>(null),
     [nextStatus, setNextStatus] = useState("new"),
     [assignee, setAssignee] = useState(""),
     [reason, setReason] = useState("Atualização do atendimento comercial"),
     [exportReason, setExportReason] = useState("Exportação operacional autorizada"),
-    [retryReason, setRetryReason] = useState("Reprocessamento operacional após verificação da dependência"),
+    [retryReason, setRetryReason] = useState("Nova tentativa após verificar o serviço de envio"),
     [retryEvent, setRetryEvent] = useState<LeadDelivery | null>(null),
     [error, setError] = useState(""),
     [message, setMessage] = useState(""),
+    [loading, setLoading] = useState(true),
     [busy, setBusy] = useState(false),
     [pendingSensitiveAction, setPendingSensitiveAction] = useState<"export" | "anonymize" | "retry" | null>(
       null,
     );
   const load = useCallback(async () => {
-    let request = supabase
-      .from("cms_leads")
-      .select(
-        "id,reference_code,status,origin_path,origin_source,assigned_to,sla_due_at,retention_until,created_at,payload,utm,cms_lead_consents(id,consent_version,policy_path,server_recorded_at),cms_lead_status_history(id,from_status,to_status,reason,created_at),cms_lead_outbox(id,event_type,status,attempts,available_at,completed_at,last_error_code,created_at)",
-      )
-      .order("created_at", { ascending: false })
-      .limit(200);
-    if (status !== "all") request = request.eq("status", status);
-    const [{ data, error: loadError }, { data: people }] = await Promise.all([
-      request,
-      supabase.from("cms_profiles").select("user_id,display_name").eq("status", "active"),
-    ]);
-    if (loadError) setError("Não foi possível carregar os leads.");
-    else setLeads((data ?? []) as unknown as Lead[]);
-    setProfiles((people ?? []) as Profile[]);
-  }, [status]);
+    setLoading(true);
+    const activeSession = sessionRef.current;
+    if (!activeSession) {
+      setLoading(false);
+      return;
+    }
+    try {
+      const result = await leadCommand<{
+        items: Lead[];
+        total: number;
+        assignees: Profile[];
+      }>(activeSession, {
+        action: "list_leads",
+        status: status === "all" ? null : status,
+        limit: LEADS_PAGE_SIZE,
+        offset: (page - 1) * LEADS_PAGE_SIZE,
+      });
+      const resultTotal = result.total ?? 0;
+      const lastPage = Math.max(1, Math.ceil(resultTotal / LEADS_PAGE_SIZE));
+      if (page > lastPage) {
+        setPage(lastPage);
+        setLoading(false);
+        return;
+      }
+      setError("");
+      setLeads(result.items ?? []);
+      setProfiles(result.assignees ?? []);
+      setTotal(resultTotal);
+    } catch {
+      setError("Não foi possível carregar os leads.");
+      setLeads([]);
+      setProfiles([]);
+      setTotal(0);
+    }
+    setLoading(false);
+  }, [page, status]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -123,11 +215,11 @@ export default function AdminLeadsPage() {
         assignedTo: assignee || null,
         reason,
       });
-      setMessage("Lead atualizado e evento de notificação enfileirado.");
+      setMessage("Atendimento salvo. A notificação será enviada.");
       await load();
       setSelected(null);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Falha ao atualizar lead.");
+      setError(operatorErrorMessage(caught, { fallback: "Não foi possível salvar o atendimento." }));
     } finally {
       setBusy(false);
     }
@@ -142,7 +234,7 @@ export default function AdminLeadsPage() {
       await load();
       setSelected(null);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Falha ao anonimizar lead.");
+      setError(operatorErrorMessage(caught, { fallback: "Não foi possível anonimizar o lead." }));
     } finally {
       setBusy(false);
     }
@@ -161,22 +253,40 @@ export default function AdminLeadsPage() {
         status: status === "all" ? null : status,
         justification: exportReason,
       });
-      const headers = ["reference", "status", "createdAt", "originPath", "originSource", "utm", "fields"];
-      const cell = (value: unknown) =>
-        `"${String(typeof value === "object" ? JSON.stringify(value) : (value ?? "")).replace(/"/g, '""')}"`;
-      const csv = [
-        headers.join(","),
-        ...result.rows.map((row) => headers.map((key) => cell(row[key])).join(",")),
-      ].join("\r\n");
+      const headers = [
+        "Referência",
+        "Situação",
+        "Recebido em",
+        "Endereço de origem",
+        "Origem",
+        "Dados da campanha",
+        "Dados informados",
+      ];
+      const csv = buildCsv([
+        headers,
+        ...result.rows.map((row) => [
+          humanValue(row.reference),
+          statusLabels[String(row.status)] ?? "Situação indisponível",
+          Number.isNaN(Date.parse(String(row.createdAt)))
+            ? "Data indisponível"
+            : new Date(String(row.createdAt)).toLocaleString("pt-BR"),
+          humanValue(row.originPath),
+          originLabels[String(row.originSource)] ?? "Origem não identificada",
+          humanValue(row.utm),
+          humanValue(row.fields),
+        ]),
+      ]);
       const url = URL.createObjectURL(new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" }));
       const anchor = document.createElement("a");
       anchor.href = url;
       anchor.download = `leads-auditados-${new Date().toISOString().slice(0, 10)}.csv`;
       anchor.click();
       URL.revokeObjectURL(url);
-      setMessage(`${result.rowCount} lead(s) exportados. Código ${result.correlationId.slice(0, 8)}.`);
+      setMessage(
+        `${result.rowCount} lead(s) do filtro atual exportados. A exportação foi registrada na auditoria.`,
+      );
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Falha na exportação.");
+      setError(operatorErrorMessage(caught, { fallback: "Não foi possível exportar os leads." }));
     } finally {
       setBusy(false);
     }
@@ -186,17 +296,17 @@ export default function AdminLeadsPage() {
     setBusy(true);
     setError("");
     try {
-      const result = await leadCommand<{ correlationId: string }>(session, {
+      await leadCommand<{ correlationId: string }>(session, {
         action: "retry_delivery",
         eventId: retryEvent.id,
         justification: retryReason,
       });
-      setMessage(`Entrega recolocada na fila. Código ${result.correlationId.slice(0, 8)}.`);
+      setMessage("Nova tentativa de envio solicitada e registrada na auditoria.");
       await load();
       setSelected(null);
       setRetryEvent(null);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Falha ao reprocessar a entrega.");
+      setError(operatorErrorMessage(caught, { fallback: "Não foi possível solicitar uma nova tentativa." }));
     } finally {
       setBusy(false);
     }
@@ -221,7 +331,7 @@ export default function AdminLeadsPage() {
           <p className="admin-eyebrow">COMERCIAL · LGPD</p>
           <h1>Leads</h1>
           <p className="admin-help">
-            Atendimento com origem, SLA, responsável, histórico, consentimento e retenção.
+            Atendimento com origem, prazo, responsável, histórico, consentimento e retenção.
           </p>
         </div>
       </div>
@@ -237,12 +347,19 @@ export default function AdminLeadsPage() {
       )}
       <div className="admin-filters">
         <label>
-          Status
-          <select value={status} onChange={(e) => setStatus(e.target.value)}>
+          Situação
+          <select
+            value={status}
+            onChange={(e) => {
+              setStatus(e.target.value);
+              setPage(1);
+              setSelected(null);
+            }}
+          >
             <option value="all">Todos</option>
             {statuses.map((item) => (
               <option value={item} key={item}>
-                {item}
+                {statusLabels[item]}
               </option>
             ))}
           </select>
@@ -265,12 +382,19 @@ export default function AdminLeadsPage() {
               disabled={busy || exportReason.trim().length < 3}
               onClick={() => setPendingSensitiveAction("export")}
             >
-              Exportar com auditoria
+              Exportar filtro atual com auditoria
             </button>
           </>
         )}
       </div>
-      {leads.length === 0 ? (
+      <p className="admin-help" role="status">
+        {loading ? "Carregando leads…" : `${leads.length} lead(s) nesta página · ${total} no filtro atual.`}
+      </p>
+      {loading ? (
+        <div className="admin-state" aria-busy="true">
+          Carregando leads…
+        </div>
+      ) : leads.length === 0 ? (
         <div className="admin-state">
           <h2>Nenhum lead recebido</h2>
           <p>O módulo começa vazio e não importa cadastros ou encaminhamentos anteriores.</p>
@@ -281,9 +405,9 @@ export default function AdminLeadsPage() {
             <thead>
               <tr>
                 <th>Referência</th>
-                <th>Status</th>
+                <th>Situação</th>
                 <th>Origem</th>
-                <th>SLA</th>
+                <th>Prazo de atendimento</th>
                 <th>Entrega</th>
                 <th>Responsável</th>
                 <th>Ação</th>
@@ -298,10 +422,12 @@ export default function AdminLeadsPage() {
                     <small>{new Date(lead.created_at).toLocaleString("pt-BR")}</small>
                   </td>
                   <td>
-                    <span className="admin-status">{lead.status}</span>
+                    <span className="admin-status">
+                      {statusLabels[lead.status] ?? "Situação indisponível"}
+                    </span>
                   </td>
                   <td>
-                    {lead.origin_source}
+                    {originLabels[lead.origin_source] ?? "Origem não identificada"}
                     <br />
                     <code>{lead.origin_path}</code>
                   </td>
@@ -336,6 +462,25 @@ export default function AdminLeadsPage() {
           </table>
         </div>
       )}
+      <nav className="admin-pagination" aria-label="Paginação de leads">
+        <button
+          type="button"
+          disabled={loading || page === 1}
+          onClick={() => setPage((current) => Math.max(1, current - 1))}
+        >
+          Página anterior
+        </button>
+        <span>
+          Página {page} de {Math.max(1, Math.ceil(total / LEADS_PAGE_SIZE))}
+        </span>
+        <button
+          type="button"
+          disabled={loading || page * LEADS_PAGE_SIZE >= total}
+          onClick={() => setPage((current) => current + 1)}
+        >
+          Próxima página
+        </button>
+      </nav>
       {selected && (
         <>
           <button
@@ -347,19 +492,30 @@ export default function AdminLeadsPage() {
           <section
             className="admin-record-drawer admin-lead-drawer"
             role="dialog"
+            aria-label="Atendimento do lead"
             aria-modal="true"
             aria-labelledby="lead-editor-title"
           >
             <h2 id="lead-editor-title">Atender {selected.reference_code}</h2>
-            <p className="admin-eyebrow">LEAD · FICHA COMPLETA</p>
+            <p className="admin-eyebrow">ATENDIMENTO · FICHA COMPLETA</p>
             <p>
               Dados pessoais aparecem somente nesta área autenticada. Retenção até{" "}
               {new Date(selected.retention_until).toLocaleDateString("pt-BR")}.
             </p>
             <p>
-              <strong>Origem:</strong> {selected.origin_source} · <code>{selected.origin_path}</code> · UTM{" "}
-              {JSON.stringify(selected.utm)}
+              <strong>Origem:</strong> {originLabels[selected.origin_source] ?? "Origem não identificada"} ·{" "}
+              <code>{selected.origin_path}</code>
             </p>
+            {Object.keys(selected.utm).length > 0 && (
+              <dl>
+                {Object.entries(selected.utm).map(([key, value]) => (
+                  <div key={key}>
+                    <dt>{humanLabel(key, utmLabels)}</dt>
+                    <dd>{humanValue(value)}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
             <p>
               <strong>Consentimento:</strong>{" "}
               {selected.cms_lead_consents[0]
@@ -369,8 +525,8 @@ export default function AdminLeadsPage() {
             <dl>
               {Object.entries(selected.payload).map(([key, value]) => (
                 <div key={key}>
-                  <dt>{key}</dt>
-                  <dd>{String(value)}</dd>
+                  <dt>{humanLabel(key, leadFieldLabels)}</dt>
+                  <dd>{humanValue(value)}</dd>
                 </div>
               ))}
             </dl>
@@ -380,14 +536,17 @@ export default function AdminLeadsPage() {
               .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
               .map((item) => (
                 <p key={item.id}>
-                  {new Date(item.created_at).toLocaleString("pt-BR")} · {item.from_status ?? "entrada"} →{" "}
-                  {item.to_status} · {item.reason}
+                  {new Date(item.created_at).toLocaleString("pt-BR")} ·{" "}
+                  {item.from_status ? (statusLabels[item.from_status] ?? "Situação anterior") : "Entrada"} →{" "}
+                  {statusLabels[item.to_status] ?? "Situação atualizada"} ·{" "}
+                  {isOperatorSafeMessage(item.reason) ? item.reason : "Motivo disponível na auditoria."}
                 </p>
               ))}
-            <h3>Entrega e resiliência</h3>
+            <h3>Envio de notificações</h3>
             {selected.cms_lead_outbox.length === 0 ? (
               <p className="admin-notice admin-notice--error" role="alert">
-                Nenhum evento de entrega foi localizado. Abra Diagnósticos para reconciliar este lead.
+                Não foi possível localizar o histórico de envio. Consulte Diagnósticos para verificar este
+                lead.
               </p>
             ) : (
               selected.cms_lead_outbox
@@ -397,10 +556,10 @@ export default function AdminLeadsPage() {
                   <article className="admin-alert" key={event.id}>
                     <p>
                       <Badge tone={deliveryTone[event.status]}>{deliveryLabels[event.status]}</Badge> ·{" "}
-                      {event.event_type}
+                      {deliveryEventLabels[event.event_type] ?? "Atualização de envio"}
                     </p>
                     <p>
-                      Tentativas: {event.attempts} · criado em{" "}
+                      Tentativas de envio: {event.attempts} · registrado em{" "}
                       {new Date(event.created_at).toLocaleString("pt-BR")}
                     </p>
                     {event.status === "failed" && (
@@ -408,7 +567,9 @@ export default function AdminLeadsPage() {
                         Próxima tentativa automática: {new Date(event.available_at).toLocaleString("pt-BR")}.
                       </p>
                     )}
-                    {event.last_error_code && <p>Código técnico: {event.last_error_code}</p>}
+                    {event.last_error_code && (
+                      <p>Falha técnica registrada. Consulte Diagnósticos com a permissão apropriada.</p>
+                    )}
                     {(event.status === "failed" || event.status === "dead_letter") && canRetry && (
                       <button
                         type="button"
@@ -418,7 +579,7 @@ export default function AdminLeadsPage() {
                           setPendingSensitiveAction("retry");
                         }}
                       >
-                        Reprocessar entrega
+                        Tentar envio novamente
                       </button>
                     )}
                   </article>
@@ -429,7 +590,7 @@ export default function AdminLeadsPage() {
                 (event) => event.status === "failed" || event.status === "dead_letter",
               ) && (
                 <label>
-                  Justificativa do reprocessamento
+                  Justificativa da nova tentativa
                   <input
                     required
                     minLength={3}
@@ -442,11 +603,11 @@ export default function AdminLeadsPage() {
             {canAssign && (
               <>
                 <label>
-                  Status
+                  Situação
                   <select value={nextStatus} onChange={(e) => setNextStatus(e.target.value)}>
                     {statuses.map((item) => (
                       <option value={item} key={item}>
-                        {item}
+                        {statusLabels[item]}
                       </option>
                     ))}
                   </select>
@@ -510,21 +671,21 @@ export default function AdminLeadsPage() {
           pendingSensitiveAction === "anonymize"
             ? "Anonimizar este lead?"
             : pendingSensitiveAction === "retry"
-              ? "Reprocessar esta entrega?"
+              ? "Tentar este envio novamente?"
               : "Exportar dados de leads?"
         }
         description={
           pendingSensitiveAction === "anonymize"
             ? "A anonimização remove dados pessoais de forma irreversível e registra a justificativa na auditoria."
             : pendingSensitiveAction === "retry"
-              ? "A entrega será recolocada na fila com MFA, idempotência, justificativa e auditoria. O lead permanecerá intacto."
+              ? "Uma nova tentativa será solicitada com a justificativa informada e registrada na auditoria. O lead permanecerá intacto."
               : "O arquivo contém dados pessoais. A exportação e sua justificativa serão registradas na auditoria."
         }
         confirmLabel={
           pendingSensitiveAction === "anonymize"
             ? "Anonimizar lead"
             : pendingSensitiveAction === "retry"
-              ? "Reprocessar entrega"
+              ? "Tentar envio novamente"
               : "Exportar arquivo"
         }
         dangerous={pendingSensitiveAction === "anonymize"}

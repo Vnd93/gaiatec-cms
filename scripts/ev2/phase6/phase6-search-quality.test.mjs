@@ -35,7 +35,9 @@ test("search index is shadowed, governed and only accepts homologated technical 
     "sanitizePublicPayload",
     "cms_search_documents",
     'eq("homologated", true)',
-    "cms_search_index_jobs",
+    "cms_search_begin_global_reindex",
+    "cms_search_finish_global_reindex",
+    "cms_search_governance_command_scoped",
     "upsert_rule",
     "reindex",
     "cms:search.reindex",
@@ -44,7 +46,7 @@ test("search index is shadowed, governed and only accepts homologated technical 
     assert.match(edge, new RegExp(evidence.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(edge, /readPermission/);
   assert.match(edge, /upsert_synonym/);
-  assert.match(edge, /\[featureResult, access\] = await Promise\.all/);
+  assert.match(edge, /cms_actor_scope_context/);
   assert.match(edge, /admin-search;dur=/);
   assert.match(edge, /\.range\(offset, offset \+ pageSize - 1\)/);
   assert.match(migration, /jsonb_array_elements_text[\s\S]+selected\.value/);
@@ -87,7 +89,9 @@ test("quality is deterministic, idempotent and blocks candidate publication", as
     read("supabase/functions/cms-content/index.ts"),
   ]);
   for (const evidence of [
-    "cms_quality_command_receipts",
+    "cms_execute_quality_command_scoped",
+    "cms_quality_list_runs_scoped",
+    "cms_content_read_bundle_scoped",
     "X-Idempotency-Key",
     "cms_evaluate_feature_flag",
     "CMS_QUALITY_PRODUCTION_GATED",
@@ -117,7 +121,7 @@ test("admin runtime exposes governed search and quality while the public UI rema
   assert.match(publicSearch, /Encontre o conteúdo técnico certo/);
   assert.match(publicSearch, /searchPublishedProducts\(query\)/);
   assert.doesNotMatch(publicSearch, /Filtros técnicos disponíveis|Categoria de produto/);
-  assert.match(adminSearch, /Relevância governada/);
+  assert.match(adminSearch, /Ordenação dos resultados/);
   assert.match(adminSearch, /isEv2FeatureEnabled\(profile, "ev2\.search_quality"\)/);
   assert.match(qualityPage, /Centro de Qualidade/);
   assert.match(routes, /path: "qualidade"/);

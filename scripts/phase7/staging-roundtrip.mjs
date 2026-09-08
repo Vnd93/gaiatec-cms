@@ -1,20 +1,73 @@
 import crypto from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
+import {
+  assertQaActorLease,
+  completeQaActorLease,
+  createQaRunTag,
+  qaActorMetadata,
+  QA_ACTOR_LEASE_TTL_MINUTES,
+} from "../qa/qa-actor-lease.mjs";
 
+const stagingProjectRef = "glcqsosxwgmlhzgcsnzv";
 const supabaseUrl = process.env.GAIATEC_SUPABASE_URL;
-const anonKey = process.env.GAIATEC_SUPABASE_ANON_KEY;
-const serviceKey = process.env.GAIATEC_SUPABASE_SERVICE_ROLE_KEY;
+let anonKey = process.env.GAIATEC_SUPABASE_ANON_KEY;
+let serviceKey = process.env.GAIATEC_SUPABASE_SERVICE_ROLE_KEY;
+const expectedSha = process.env.GAIATEC_EXPECTED_SHA ?? "";
+const supabaseAccessToken = process.env.SUPABASE_ACCESS_TOKEN ?? "";
 const siteOrigin = (process.env.GAIATEC_STAGING_ORIGIN ?? "https://gaiatec-cms-staging.pages.dev").replace(
   /\/$/,
   "",
 );
-if (!supabaseUrl || !anonKey || !serviceKey) throw new Error("Variáveis seguras de staging ausentes.");
+if (supabaseUrl !== `https://${stagingProjectRef}.supabase.co`)
+  throw new Error("Alvo recusado: a homologação integral só pode operar no projeto staging canônico.");
+
+function quoteWindowsArgument(value) {
+  if (/^[A-Za-z0-9_@./:\\=-]+$/.test(value)) return value;
+  return `"${value.replaceAll("%", "%%").replaceAll('"', '""')}"`;
+}
+
+function runSupabase(args) {
+  const binary = "npx";
+  const pinned = ["--yes", "supabase@2.116.0", ...args];
+  const command = process.platform === "win32" ? (process.env.ComSpec ?? "cmd.exe") : binary;
+  const commandArgs =
+    process.platform === "win32"
+      ? ["/d", "/s", "/c", [binary, ...pinned].map(quoteWindowsArgument).join(" ")]
+      : pinned;
+  const result = spawnSync(command, commandArgs, {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    windowsHide: true,
+    maxBuffer: 20 * 1024 * 1024,
+  });
+  if (result.error || result.status !== 0)
+    throw new Error(
+      [result.error?.message, result.stdout?.trim(), result.stderr?.trim()].filter(Boolean).join("\n"),
+    );
+  return result.stdout.trim();
+}
+
+if ((!anonKey || !serviceKey) && supabaseAccessToken) {
+  const keys = JSON.parse(
+    runSupabase(["projects", "api-keys", "--project-ref", stagingProjectRef, "--reveal", "--output", "json"]),
+  );
+  anonKey ||= keys.find((key) => key.id === "anon")?.api_key;
+  serviceKey ||= keys.find((key) => key.id === "service_role")?.api_key;
+}
+if (!anonKey || !serviceKey) throw new Error("Credenciais seguras de staging indisponíveis.");
+if (!/^[a-f0-9]{40}$/.test(expectedSha)) throw new Error("GAIATEC_EXPECTED_SHA deve ser um SHA completo.");
+if (supabaseAccessToken.length < 24)
+  throw new Error("SUPABASE_ACCESS_TOKEN é obrigatório para revogar as sessões sintéticas.");
 
 const admin = createClient(supabaseUrl, serviceKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
-const runTag = `${new Date().toISOString().replace(/\D/g, "").slice(0, 14)}-${crypto.randomBytes(3).toString("hex")}`;
-const shortTag = runTag.replace(/[^a-z0-9]/g, "");
+const generatedRunTag = createQaRunTag(expectedSha);
+const runTag = process.env.GAIATEC_QA_RUN_TAG ?? generatedRunTag;
+if (!/^QA-CMS-FINAL-\d{8}-[a-f0-9]{8}$/.test(runTag) || runTag.slice(-8) !== expectedSha.slice(0, 8))
+  throw new Error("GAIATEC_QA_RUN_TAG não segue QA-CMS-FINAL-<data>-<sha-curto>.");
+const shortTag = runTag.toLowerCase().replace(/[^a-z0-9]/g, "");
 const createdUsers = [];
 const createdItems = [];
 const createdForms = [];
@@ -48,13 +101,57 @@ function decodeJwt(token) {
   return JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString("utf8"));
 }
 
+async function managementQuery(query) {
+  const response = await fetch(`https://api.supabase.com/v1/projects/${stagingProjectRef}/database/query`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${supabaseAccessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ query }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) throw new Error("Consulta segura de gestão do staging falhou.");
+  const payload = await response.json().catch(() => null);
+  if (!Array.isArray(payload)) throw new Error("Resposta de gestão do staging inválida.");
+  return payload;
+}
+
+async function leaseRpc(name, body) {
+  const result = await admin.rpc(name, body);
+  if (result.error || !result.data || typeof result.data !== "object")
+    throw new Error(`RPC de lease indisponível: ${name}`);
+  return result.data;
+}
+
 async function createActor(role) {
-  const email = `cms-${role}-${shortTag}@example.com`;
+  const email = `cms-${role}-${shortTag}@example.invalid`;
   const password = `T!${crypto.randomBytes(24).toString("base64url")}9a`;
-  const { data, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true });
+  const { data, error } = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: qaActorMetadata(runTag, expectedSha, "staging"),
+  });
   if (error) throw error;
-  const actor = { role, email, password, id: data.user.id, client: null, session: null };
+  const identity = {
+    actorId: data.user.id,
+    runTag,
+    candidateSha: expectedSha,
+    environment: "staging",
+  };
+  const actor = {
+    role,
+    email,
+    password,
+    id: data.user.id,
+    client: null,
+    session: null,
+    identity,
+    lease: null,
+  };
   createdUsers.push(actor);
+  actor.lease = await assertQaActorLease(leaseRpc, identity, "active");
   const profile = await admin.from("cms_profiles").insert({
     user_id: actor.id,
     display_name: `Homologação ${role} ${runTag}`,
@@ -448,15 +545,43 @@ async function loadControlledProductClassification() {
 }
 
 async function run() {
+  const healthResponse = await fetch(`${siteOrigin}/healthz`, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
+  });
+  const health = await healthResponse.json().catch(() => null);
+  assert(healthResponse.status === 200, "Healthcheck de staging indisponível", healthResponse.status);
+  assert(health?.environment === "staging", "Shell não aponta para staging", health);
+  if (expectedSha) {
+    assert(health?.release === expectedSha, "Shell não corresponde ao SHA homologado", health);
+    assert(
+      healthResponse.headers.get("x-release") === expectedSha,
+      "Cabeçalho de release não corresponde ao SHA homologado",
+      healthResponse.headers.get("x-release"),
+    );
+  }
+  record("Identidade imutável do shell", {
+    environment: health.environment,
+    release: health.release,
+  });
+
   const [adminActor, marketing, reviewer, commercial] = await Promise.all([
     createActor("admin"),
     createActor("marketing"),
     createActor("reviewer"),
     createActor("commercial"),
   ]);
+  assert(
+    [adminActor, marketing, reviewer, commercial].every(
+      (actor) =>
+        actor.lease?.status === "active" && actor.lease.ttlSeconds === QA_ACTOR_LEASE_TTL_MINUTES * 60,
+    ),
+    "Lease automática não foi confirmada antes da concessão de acesso",
+  );
   record("Identidades temporárias e RBAC", {
     roles: ["admin", "marketing", "reviewer", "commercial"],
     initialAal: "aal1",
+    watchdogLease: `active-${QA_ACTOR_LEASE_TTL_MINUTES}m`,
   });
 
   const formKey = `form-g7-${shortTag}`;
@@ -688,12 +813,13 @@ async function run() {
     },
     origin: {
       path: `/campanhas/${campaignSlug}`,
-      source: "campaign-g7-staging",
+      source: "campaign",
       campaignId: activeCampaign.itemId,
       utm: { source: "homologacao", medium: "synthetic", campaign: campaignSlug },
     },
     consent: { accepted: true, text: consentText, version: `g7-${runTag}` },
     honeypot: "",
+    captchaToken: "XXXX.DUMMY.TOKEN.XXXX",
   };
   const captureHeaders = {
     apikey: anonKey,
@@ -701,6 +827,30 @@ async function run() {
     "Content-Type": "application/json",
     "User-Agent": `GAIATEC-G7/${runTag}`,
   };
+  const missingCaptchaResponse = await fetch(`${supabaseUrl}/functions/v1/lead-capture`, {
+    method: "POST",
+    headers: captureHeaders,
+    body: JSON.stringify({ ...leadBody, idempotencyKey: uid(), captchaToken: undefined }),
+  });
+  const missingCaptcha = await missingCaptchaResponse.json();
+  assert(
+    missingCaptchaResponse.status === 403 && missingCaptcha.challengeRequired === true,
+    "Captação sem Turnstile não foi bloqueada",
+    missingCaptcha,
+  );
+  const invalidCaptchaResponse = await fetch(`${supabaseUrl}/functions/v1/lead-capture`, {
+    method: "POST",
+    headers: captureHeaders,
+    body: JSON.stringify({ ...leadBody, idempotencyKey: uid(), captchaToken: "token-invalido" }),
+  });
+  const invalidCaptcha = await invalidCaptchaResponse.json();
+  assert(
+    invalidCaptchaResponse.status === 403 && invalidCaptcha.challengeRequired === true,
+    "Captação com Turnstile inválido não foi bloqueada",
+    invalidCaptcha,
+  );
+  record("Turnstile obrigatório", { missingDenied: true, invalidDenied: true });
+
   const firstCaptureResponse = await fetch(`${supabaseUrl}/functions/v1/lead-capture`, {
     method: "POST",
     headers: captureHeaders,
@@ -1119,6 +1269,47 @@ async function run() {
   assert(archivedPage.status === 404, "Artigo arquivado continuou público", archivedPage.status);
   record("Retirada e projeção pública", { remainingPublishedFixtures: 0, archivedRouteStatus: 404 });
 
+  const formBeforeArchive = await admin
+    .from("cms_form_definitions")
+    .select("lock_version")
+    .eq("id", savedForm.data.formId)
+    .single();
+  if (formBeforeArchive.error) throw formBeforeArchive.error;
+  const archivedForm = await leadCommand(adminActor, {
+    action: "archive_form",
+    formId: savedForm.data.formId,
+    expectedLockVersion: formBeforeArchive.data.lock_version,
+    reason: `Retirada controlada ${runTag}`,
+  });
+  const retiredPublicForm = await publicApi({ type: "form", key: formKey });
+  assert(retiredPublicForm.status === 204, "Formulário retirado continuou público", retiredPublicForm);
+  const restoredForm = await leadCommand(adminActor, {
+    action: "restore_form",
+    formId: savedForm.data.formId,
+    sourceVersionId: savedForm.data.versionId,
+    expectedLockVersion: archivedForm.data.lockVersion,
+    reason: `Restauração controlada ${runTag}`,
+  });
+  const restoredPublicForm = await publicApi({ type: "form", key: formKey });
+  assert(
+    restoredPublicForm.status === 200 && restoredPublicForm.data.versionId === savedForm.data.versionId,
+    "Formulário restaurado não voltou ao consumidor público",
+    restoredPublicForm,
+  );
+  await leadCommand(adminActor, {
+    action: "archive_form",
+    formId: savedForm.data.formId,
+    expectedLockVersion: restoredForm.data.lockVersion,
+    reason: `Arquivamento final ${runTag}`,
+  });
+  const finallyRetiredForm = await publicApi({ type: "form", key: formKey });
+  assert(finallyRetiredForm.status === 204, "Formulário sintético não terminou arquivado");
+  record("Ciclo público do formulário", {
+    archiveStatus: retiredPublicForm.status,
+    restoredVersion: restoredPublicForm.data.version,
+    finalStatus: finallyRetiredForm.status,
+  });
+
   const audit = await admin
     .from("cms_audit_log")
     .select("action,target_id,correlation_id")
@@ -1126,6 +1317,8 @@ async function run() {
   if (audit.error) throw audit.error;
   const expectedAudit = [
     "cms:form.publish",
+    "cms:form.archive",
+    "cms:form.restore",
     "cms:content.publish",
     "cms:leads.update",
     "cms:leads.export",
@@ -1147,44 +1340,187 @@ async function run() {
     environment: { supabaseProject: "glcqsosxwgmlhzgcsnzv", siteOrigin, productionTouched: false },
     evidence,
     externalDependencies: {
-      emailDelivery: "not_executed_missing_resend_api_key",
-      leadNotificationRecipient: "not_configured",
-      dpoApproval: "pending_owner",
-      goLiveApproval: "pending_owner",
+      emailDelivery: "outside_this_canary",
+      leadNotificationRecipient: "outside_this_canary",
+      dpoApproval: "outside_this_canary_enforced_by_release_gate",
+      goLiveApproval: "requires_sha_bound_literal_after_homologation",
     },
   };
 }
 
 async function cleanup() {
+  const cleanupErrors = [];
+  const attempt = async (label, operation) => {
+    try {
+      const result = await operation();
+      if (result?.error) throw result.error;
+      return result;
+    } catch (error) {
+      cleanupErrors.push(new Error(label, { cause: error }));
+      return null;
+    }
+  };
   const now = new Date().toISOString();
-  if (createdItems.length) {
-    await admin
-      .from("cms_content_items")
-      .update({ workflow_status: "archived", archived_at: now })
-      .in("id", createdItems)
-      .neq("workflow_status", "archived");
-  }
-  if (createdForms.length) {
-    await admin
-      .from("cms_form_versions")
-      .update({ status: "retired" })
-      .in("form_id", createdForms)
-      .eq("status", "published");
-    await admin
-      .from("cms_form_definitions")
-      .update({ status: "retired", active_version_id: null })
-      .in("id", createdForms);
-  }
-  for (const actor of createdUsers) {
-    await admin
-      .from("cms_profiles")
-      .update({ status: "suspended", suspended_at: now, sessions_valid_after: now })
-      .eq("user_id", actor.id);
-    await admin.auth.admin.updateUserById(actor.id, {
-      password: `R!${crypto.randomBytes(32).toString("base64url")}8z`,
-      ban_duration: "876000h",
+  let cleanupItemIds = [...createdItems];
+  let cleanupFormIds = [...createdForms];
+  if (createdUsers.length) {
+    const actorIds = createdUsers.map((actor) => actor.id);
+    await attempt("owned_content_inventory", async () => {
+      const result = await admin.from("cms_content_items").select("id").in("created_by", actorIds);
+      if (result.error) throw result.error;
+      cleanupItemIds = [...new Set([...cleanupItemIds, ...(result.data ?? []).map((item) => item.id)])];
+    });
+    await attempt("owned_form_inventory", async () => {
+      const result = await admin.from("cms_form_definitions").select("id").in("created_by", actorIds);
+      if (result.error) throw result.error;
+      cleanupFormIds = [...new Set([...cleanupFormIds, ...(result.data ?? []).map((form) => form.id)])];
     });
   }
+  if (cleanupItemIds.length) {
+    let projections = [];
+    await attempt("public_projection_inventory", async () => {
+      const result = await admin
+        .from("cms_published_projection")
+        .select("item_id,revision_id")
+        .in("item_id", cleanupItemIds);
+      if (result.error) throw result.error;
+      projections = result.data ?? [];
+    });
+    if (projections.length)
+      await attempt("public_withdrawal_outbox", () =>
+        admin.from("cms_publication_outbox").upsert(
+          projections.map(({ item_id: itemId, revision_id: revisionId }) => ({
+            item_id: itemId,
+            revision_id: revisionId,
+            event_type: "unpublish",
+            correlation_id: uid(),
+          })),
+          { onConflict: "item_id,revision_id,event_type", ignoreDuplicates: true },
+        ),
+      );
+    await attempt("publication_cleanup", () =>
+      admin.from("cms_publications").delete().in("item_id", cleanupItemIds),
+    );
+    await attempt("projection_cleanup", () =>
+      admin.from("cms_published_projection").delete().in("item_id", cleanupItemIds),
+    );
+    await attempt("route_cleanup", () =>
+      admin
+        .from("cms_route_rules")
+        .update({ active: false })
+        .in("item_id", cleanupItemIds)
+        .eq("active", true),
+    );
+    await attempt("content_archive", () =>
+      admin
+        .from("cms_content_items")
+        .update({
+          workflow_status: "archived",
+          archived_at: now,
+          scheduled_for: null,
+          deleted_at: null,
+          deleted_by: null,
+        })
+        .in("id", cleanupItemIds)
+        .neq("workflow_status", "archived"),
+    );
+  }
+  if (cleanupFormIds.length) {
+    await attempt("form_version_retirement", () =>
+      admin
+        .from("cms_form_versions")
+        .update({ status: "retired" })
+        .in("form_id", cleanupFormIds)
+        .eq("status", "published"),
+    );
+    await attempt("form_retirement", () =>
+      admin
+        .from("cms_form_definitions")
+        .update({ status: "retired", active_version_id: null })
+        .in("id", cleanupFormIds)
+        .neq("status", "retired"),
+    );
+  }
+  for (const actor of createdUsers) {
+    await attempt(`overrides:${actor.id}`, () =>
+      admin.from("cms_feature_flag_overrides").delete().eq("scope_type", "user").eq("scope_key", actor.id),
+    );
+    await attempt(`scoped_roles:${actor.id}`, () =>
+      admin
+        .from("cms_scoped_role_assignments")
+        .update({
+          revoked_at: now,
+          revoked_by: actor.id,
+          revocation_reason: "QA synthetic phase7 cleanup",
+        })
+        .eq("user_id", actor.id)
+        .is("revoked_at", null),
+    );
+    await attempt(`legacy_roles:${actor.id}`, () =>
+      admin.from("cms_user_roles").delete().eq("user_id", actor.id),
+    );
+    await attempt(`rdo_access:${actor.id}`, () =>
+      admin
+        .from("rdo_user_access")
+        .update({
+          active: false,
+          suspended_at: now,
+          suspended_by: actor.id,
+          updated_at: now,
+        })
+        .eq("user_id", actor.id)
+        .eq("active", true),
+    );
+    await attempt(`profile:${actor.id}`, () =>
+      admin
+        .from("cms_profiles")
+        .update({
+          status: "suspended",
+          suspended_at: now,
+          suspended_by: actor.id,
+          sessions_valid_after: now,
+        })
+        .eq("user_id", actor.id),
+    );
+    await attempt(`sessions:${actor.id}`, () =>
+      managementQuery(`delete from auth.sessions where user_id = '${actor.id}'::uuid`),
+    );
+    await attempt(`credentials:${actor.id}`, async () => {
+      const revoked = await admin.auth.admin.updateUserById(actor.id, {
+        password: `R!${crypto.randomBytes(32).toString("base64url")}8z`,
+        ban_duration: "876000h",
+      });
+      if (revoked.error) throw revoked.error;
+    });
+    await attempt(`lease:${actor.id}`, () => completeQaActorLease(leaseRpc, actor.identity));
+  }
+  if (cleanupErrors.length)
+    throw new AggregateError(
+      cleanupErrors,
+      "Encerramento da homologação sintética incompleto; o watchdog automático permanece ativo.",
+    );
+  const audit = createdUsers.length
+    ? await admin
+        .from("cms_audit_log")
+        .select("id", { count: "exact", head: true })
+        .eq("target_type", "qa_fixture")
+        .eq("target_id", runTag)
+        .in(
+          "actor_id",
+          createdUsers.map((actor) => actor.id),
+        )
+    : { count: 0, error: null };
+  if (audit.error) throw audit.error;
+  assert(
+    (audit.count ?? 0) >= createdUsers.length * 2,
+    "Auditoria imutável das leases sintéticas não foi preservada",
+    audit.count,
+  );
+  return {
+    actorLeasesCleaned: createdUsers.length,
+    retainedLeaseAuditEvents: audit.count,
+    watchdogFallbackOnCancellation: true,
+  };
 }
 
 let report;
@@ -1199,6 +1535,7 @@ try {
   };
   process.exitCode = 1;
 } finally {
-  await cleanup();
+  const cleanupEvidence = await cleanup();
+  report = { ...report, cleanup: cleanupEvidence };
 }
 process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);

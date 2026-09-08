@@ -1,12 +1,36 @@
 export const PRODUCTION_PROJECT_REF = "chfuhctnhqgyjowkvllv";
 export const PRODUCTION_SITE_ORIGIN = "https://gaiatecsistemas.com.br";
+export const PRODUCTION_CLOUDFLARE_PROJECT = "gaiatec-website";
+export const PRODUCTION_CLOUDFLARE_DOMAINS = ["gaiatecsistemas.com.br", "www.gaiatecsistemas.com.br"];
+export const PRODUCTION_TURNSTILE_HOSTNAMES = ["gaiatecsistemas.com.br", "www.gaiatecsistemas.com.br"];
+export const TURNSTILE_TEST_SECRET_KEYS = new Set([
+  "1x0000000000000000000000000000000AA",
+  "2x0000000000000000000000000000000AA",
+  "3x0000000000000000000000000000000AA",
+]);
 export const PRODUCTION_OPENROUTER_MODEL = "nvidia/nemotron-3.5-lightning:free";
 export const PRODUCTION_REDIRECT_ALLOW_LIST = [
   "https://gaiatecsistemas.com.br/**",
   "https://www.gaiatecsistemas.com.br/**",
 ];
 
-export const PUBLIC_FUNCTIONS = new Set(["cms-outbox-worker", "cms-preview", "cms-public", "lead-capture"]);
+export function productionCloudflareApprovalTarget({ accountId, zoneId, cachePurgeTokenId }) {
+  return JSON.stringify({
+    cloudflareAccountId: String(accountId ?? "").trim(),
+    cloudflareProject: PRODUCTION_CLOUDFLARE_PROJECT,
+    cloudflareZoneId: String(zoneId ?? "").trim(),
+    domains: [...PRODUCTION_CLOUDFLARE_DOMAINS],
+    cachePurgeTokenId: String(cachePurgeTokenId ?? "").trim(),
+  });
+}
+
+export const PUBLIC_FUNCTIONS = new Set([
+  "cms-outbox-worker",
+  "cms-preview",
+  "cms-public",
+  "cms-recovery",
+  "lead-capture",
+]);
 
 export const PRODUCTION_FUNCTIONS = [
   "cms-ai",
@@ -16,6 +40,7 @@ export const PRODUCTION_FUNCTIONS = [
   "cms-collaboration",
   "cms-content",
   "cms-controlled-vocabularies",
+  "cms-documents",
   "cms-drafts-v2",
   "cms-leads",
   "cms-master-data",
@@ -24,6 +49,7 @@ export const PRODUCTION_FUNCTIONS = [
   "cms-pim",
   "cms-preview",
   "cms-public",
+  "cms-recovery",
   "cms-quality",
   "cms-releases",
   "cms-scopes",
@@ -58,6 +84,19 @@ function validEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean(value));
 }
 
+function sha256(value) {
+  return createHash("sha256").update(String(value), "utf8").digest("hex");
+}
+
+function matchesSha256(value, expectedDigest) {
+  const actual = sha256(value);
+  const expected = clean(expectedDigest);
+  return (
+    /^[a-f0-9]{64}$/.test(expected) &&
+    timingSafeEqual(Buffer.from(actual, "hex"), Buffer.from(expected, "hex"))
+  );
+}
+
 function validateDatabaseUrl(value, projectRef) {
   try {
     const parsed = new URL(value);
@@ -88,6 +127,11 @@ export function validateProductionBackendConfig(env) {
     .filter(Boolean)
     .sort();
   const expectedOrigins = [PRODUCTION_SITE_ORIGIN, "https://www.gaiatecsistemas.com.br"].sort();
+  const turnstileHostnames = clean(env.TURNSTILE_ALLOWED_HOSTNAMES)
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean)
+    .sort();
 
   if (projectRef !== PRODUCTION_PROJECT_REF) violations.push("production_project_ref_invalid");
   if (clean(env.PRODUCTION_SUPABASE_URL).replace(/\/$/, "") !== expectedApiUrl)
@@ -99,13 +143,33 @@ export function validateProductionBackendConfig(env) {
     violations.push("supabase_access_token_invalid");
   if (siteOrigin !== PRODUCTION_SITE_ORIGIN) violations.push("production_site_origin_invalid");
   if (JSON.stringify(origins) !== JSON.stringify(expectedOrigins)) violations.push("allowed_origins_invalid");
+  if (JSON.stringify(turnstileHostnames) !== JSON.stringify([...PRODUCTION_TURNSTILE_HOSTNAMES].sort()))
+    violations.push("turnstile_allowed_hostnames_invalid");
   if (!clean(env.RESEND_API_KEY).startsWith("re_") || clean(env.RESEND_API_KEY).length < 20)
     violations.push("resend_api_key_invalid");
   if (!validEmail(env.LEAD_NOTIFICATION_TO)) violations.push("lead_notification_email_invalid");
   if (!/^.+<[^\s@]+@gaiatecsistemas\.com>$/.test(clean(env.EMAIL_FROM)))
     violations.push("email_from_invalid");
-  if (clean(env.VITE_TURNSTILE_SITE_KEY).length < 10) violations.push("turnstile_site_key_missing");
+  if (clean(env.REQUIRE_APPROVAL_BINDINGS) === "true") {
+    if (!matchesSha256(clean(env.EMAIL_FROM), env.APPROVED_EMAIL_FROM_SHA256))
+      violations.push("email_from_approval_mismatch");
+    if (!matchesSha256(clean(env.LEAD_NOTIFICATION_TO), env.APPROVED_LEAD_NOTIFICATION_TO_SHA256))
+      violations.push("notification_to_approval_mismatch");
+    if (
+      !matchesSha256(
+        productionCloudflareApprovalTarget({
+          accountId: env.CLOUDFLARE_ACCOUNT_ID,
+          zoneId: env.CLOUDFLARE_ZONE_ID,
+          cachePurgeTokenId: env.CLOUDFLARE_CACHE_PURGE_TOKEN_ID,
+        }),
+        env.APPROVED_CLOUDFLARE_TARGET_SHA256,
+      )
+    )
+      violations.push("cloudflare_target_approval_mismatch");
+  }
   if (clean(env.TURNSTILE_SECRET_KEY).length < 10) violations.push("turnstile_secret_key_missing");
+  if (TURNSTILE_TEST_SECRET_KEYS.has(clean(env.TURNSTILE_SECRET_KEY)))
+    violations.push("turnstile_test_credential_forbidden");
   if (clean(env.CMS_EV2_PRODUCTION_ENABLED) !== "true")
     violations.push("ev2_production_switch_must_be_enabled");
   if (clean(env.CMS_AI_EXTERNAL_PROVIDER_ENABLED) !== "true")
@@ -114,6 +178,15 @@ export function validateProductionBackendConfig(env) {
     violations.push("openrouter_model_invalid");
   if (!clean(env.OPENROUTER_API_KEY).startsWith("sk-or-") || clean(env.OPENROUTER_API_KEY).length < 24)
     violations.push("openrouter_api_key_invalid");
+  if (
+    clean(env.REQUIRE_APPROVAL_BINDINGS) === "true" &&
+    (clean(env.CLOUDFLARE_CACHE_PURGE_TOKEN).length < 30 ||
+      clean(env.CLOUDFLARE_CACHE_PURGE_TOKEN) === clean(env.CLOUDFLARE_API_TOKEN) ||
+      !/^[a-f0-9]{32}$/.test(clean(env.CLOUDFLARE_ACCOUNT_ID)) ||
+      !/^[a-f0-9]{32}$/.test(clean(env.CLOUDFLARE_ZONE_ID)) ||
+      !/^[a-f0-9]{32}$/.test(clean(env.CLOUDFLARE_CACHE_PURGE_TOKEN_ID)))
+  )
+    violations.push("dedicated_cloudflare_cache_purge_token_invalid");
   if (clean(env.CONTACT_CAPTCHA_ALWAYS) !== "true") violations.push("contact_captcha_must_be_required");
 
   const secretValues = requiredSecretNames.map((name) => clean(env[name]));
@@ -138,6 +211,7 @@ export async function managementRequest(path, { method = "GET", token, body } = 
       ...(body === undefined ? {} : { "Content-Type": "application/json" }),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    signal: AbortSignal.timeout(30_000),
   });
   if (!response.ok)
     throw new Error(`SUPABASE_MANAGEMENT_REQUEST_FAILED:${method}:${path}:${response.status}`);
@@ -171,3 +245,4 @@ export function evaluateFunctionInventory(payload) {
   }
   return { valid: violations.length === 0, violations, records };
 }
+import { createHash, timingSafeEqual } from "node:crypto";

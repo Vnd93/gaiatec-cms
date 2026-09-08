@@ -404,7 +404,6 @@ async function verifyResidue(context, actorId, itemId) {
     rest(context, "cms_content_items", { query: `id=eq.${itemId}&select=id` }),
     rest(context, "cms_search_rules", { query: `created_by=eq.${actorId}&select=id` }),
     rest(context, "cms_search_synonyms", { query: `created_by=eq.${actorId}&select=id` }),
-    rest(context, "cms_quality_command_receipts", { query: `actor_id=eq.${actorId}&select=actor_id` }),
     rest(context, "cms_search_documents", { query: `item_id=eq.${itemId}&select=item_id` }),
   ]);
   return checks.every((entry) => Array.isArray(entry.json) && entry.json.length === 0);

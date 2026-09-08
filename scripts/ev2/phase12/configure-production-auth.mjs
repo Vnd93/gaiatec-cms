@@ -10,15 +10,17 @@ if (process.env.PRODUCTION_SUPABASE_PROJECT_REF !== PRODUCTION_PROJECT_REF || !t
   throw new Error("G12_PRODUCTION_AUTH_CONFIG_BLOCKED");
 
 const path = `/v1/projects/${PRODUCTION_PROJECT_REF}/config/auth`;
-await managementRequest(path, {
-  method: "PATCH",
-  token,
-  body: {
-    site_url: PRODUCTION_SITE_ORIGIN,
-    uri_allow_list: PRODUCTION_REDIRECT_ALLOW_LIST.join(","),
-    disable_signup: true,
-  },
-});
+const verifyOnly = process.argv.includes("--verify-only");
+if (!verifyOnly)
+  await managementRequest(path, {
+    method: "PATCH",
+    token,
+    body: {
+      site_url: PRODUCTION_SITE_ORIGIN,
+      uri_allow_list: PRODUCTION_REDIRECT_ALLOW_LIST.join(","),
+      disable_signup: true,
+    },
+  });
 
 const config = await managementRequest(path, { token });
 const valid =
@@ -33,5 +35,6 @@ console.log(
     siteUrl: config.site_url,
     redirectAllowList: PRODUCTION_REDIRECT_ALLOW_LIST,
     publicSignupDisabled: true,
+    mode: verifyOnly ? "verify-only" : "configure-and-verify",
   }),
 );

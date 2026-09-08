@@ -29,11 +29,13 @@ begin
 end $$;
 `;
 
-await managementRequest(`/v1/projects/${PRODUCTION_PROJECT_REF}/database/query`, {
-  method: "POST",
-  token,
-  body: { query },
-});
+const verifyOnly = process.argv.includes("--verify-only");
+if (!verifyOnly)
+  await managementRequest(`/v1/projects/${PRODUCTION_PROJECT_REF}/database/query`, {
+    method: "POST",
+    token,
+    body: { query },
+  });
 
 const [verification] = await managementRequest(`/v1/projects/${PRODUCTION_PROJECT_REF}/database/query`, {
   method: "POST",
@@ -47,4 +49,10 @@ const [verification] = await managementRequest(`/v1/projects/${PRODUCTION_PROJEC
 if (verification?.worker_url_ok !== true || verification?.worker_secret_ok !== true)
   throw new Error("G12_PRODUCTION_VAULT_CONFIG_VERIFICATION_FAILED");
 
-console.log(JSON.stringify({ event: "g12.production.vault.verified", configuredSecrets: 2 }));
+console.log(
+  JSON.stringify({
+    event: "g12.production.vault.verified",
+    configuredSecrets: 2,
+    mode: verifyOnly ? "verify-only" : "configure-and-verify",
+  }),
+);

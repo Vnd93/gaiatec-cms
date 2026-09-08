@@ -52,6 +52,15 @@ test("visual builder and global administration have public consumers", async () 
   assert.match(previewApi, /media_alt/);
 });
 
+test("preview preflight explicitly permits its authenticated GET consumer", async () => {
+  const [previewApi, sharedSecurity] = await Promise.all([
+    read("supabase/functions/cms-preview/index.ts"),
+    read("supabase/functions/_shared/security.ts"),
+  ]);
+  assert.match(previewApi, /req\.method === "GET"/);
+  assert.match(sharedSecurity, /"Access-Control-Allow-Methods": "GET, POST, OPTIONS"/);
+});
+
 test("active global shell no longer consumes the discontinued admin data hooks", async () => {
   for (const file of [
     "src/app/components/Header.tsx",
@@ -84,7 +93,7 @@ test("retired routes and scheduled placements are resolved by the public integra
   const worker = await read("cloudflare/_worker.js");
   assert.match(publicApi, /cms_route_rules/);
   assert.match(route, /resolution\.kind === "route"/);
-  assert.match(route, /resolution\.rule\.status_code === 410/);
+  assert.match(route, /resolution\.rule\.status === 410/);
   assert.match(placements, /global_announcement/);
   assert.match(placements, /home_featured/);
   assert.match(products, /catalog_featured/);
@@ -94,6 +103,10 @@ test("retired routes and scheduled placements are resolved by the public integra
   assert.match(worker, /injectPageMetadata/);
   assert.match(worker, /paginas/);
   assert.match(worker, /site/);
+  assert.match(worker, /new AbortController\(\)/);
+  assert.match(worker, /setTimeout\(\(\) => controller\.abort\(\), 5_000\)/);
+  assert.match(worker, /signal: controller\.signal/);
+  assert.match(worker, /clearTimeout\(timeout\)/);
 });
 
 test("edge serves managed pages with initial SEO and real retirement statuses", async () => {
@@ -106,6 +119,8 @@ test("edge serves managed pages with initial SEO and real retirement statuses", 
     '<!doctype html><html><head><title>Base</title><meta name="description" content="base"><meta name="robots" content="index, follow"><link rel="canonical" href="https://gaiatecsistemas.com.br/"></head><body><div id="root"></div></body></html>';
   const env = {
     PUBLIC_SITE_ORIGIN: "https://gaiatecsistemas.com.br",
+    CF_PAGES_BRANCH: "main",
+    CF_PAGES_COMMIT_SHA: "a".repeat(40),
     ASSETS: {
       fetch: async (request) =>
         new URL(request.url).pathname.endsWith(".xlsx")
@@ -117,17 +132,87 @@ test("edge serves managed pages with initial SEO and real retirement statuses", 
           : new Response(html, { headers: { "Content-Type": "text/html" } }),
     },
   };
+  const sitemapRequests = [];
+  let sitemapFailure = null;
 
   globalThis.fetch = async (input) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
+    const type = url.searchParams.get("type");
     const path = url.searchParams.get("path");
+    if (type === "sitemap") {
+      if (sitemapFailure === "network") throw new TypeError("network unavailable");
+      if (sitemapFailure === "unavailable")
+        return Response.json({ error: "temporarily unavailable" }, { status: 503 });
+      if (sitemapFailure === "missing") return Response.json({ error: "not found" }, { status: 404 });
+      sitemapRequests.push(url.searchParams.get("contentTypes"));
+      return new Response('<?xml version="1.0"?><urlset></urlset>', {
+        headers: { "Content-Type": "application/xml" },
+      });
+    }
+    if (type === "detail" && url.searchParams.get("slug") === "medidor-qa")
+      return Response.json({
+        kind: "product",
+        payload: {
+          title: "Medidor QA",
+          summary: "Produto sintético publicado pelo CMS.",
+          brand: { name: "GAIATEC" },
+          manufacturer: { name: "Fabricante QA" },
+          models: [{ model: "GT-QA", sku: "QA-001" }],
+          controlledClassification: { productCategory: { label: "Instrumentação" } },
+          specifications: [
+            { label: "Faixa nominal", type: "range", value: { min: 0, max: 10 }, unit: "bar" },
+            { label: "Saídas", type: "enum", value: ["4–20 mA", "Modbus"] },
+            { label: "Certificado", type: "boolean", value: true },
+          ],
+        },
+        seo: {
+          title: "Medidor QA | GAIATEC",
+          description: "Produto sintético publicado pelo CMS.",
+          canonicalPath: "/produtos/medidor-qa",
+          indexable: true,
+        },
+        publishedAt: "2026-09-07T12:00:00.000Z",
+      });
+    if (type === "detail" && url.searchParams.get("slug") === "produto-indisponivel")
+      return Response.json({ error: "temporarily unavailable" }, { status: 503 });
+    if (
+      type === "detail" &&
+      ["produto-antigo", "produto-retirado", "produto-redirect-indisponivel"].includes(
+        url.searchParams.get("slug"),
+      )
+    )
+      return Response.json({ error: "not found" }, { status: 404 });
+    if (type === "post-detail" && ["artigo-antigo", "artigo-retirado"].includes(url.searchParams.get("slug")))
+      return Response.json({ error: "not found" }, { status: 404 });
+    if (type === "post-detail" && url.searchParams.get("slug") === "artigo-qa")
+      return Response.json({
+        kind: "post",
+        payload: { title: "Artigo QA", summary: "Conteúdo técnico para validação." },
+        seo: {
+          title: "Artigo QA | GAIATEC",
+          description: "Conteúdo técnico para validação.",
+          canonicalPath: "/blog/artigo-qa",
+          indexable: true,
+        },
+        publishedAt: "2026-09-07T12:00:00.000Z",
+      });
+    if (type === "redirect" && path === "/blog/artigo-antigo")
+      return Response.json({ status: 301, destinationPath: "/blog/artigo-novo" });
+    if (type === "redirect" && path === "/blog/artigo-retirado")
+      return Response.json({ status: 410, destinationPath: null });
+    if (type === "redirect" && path === "/produtos/produto-antigo")
+      return Response.json({ status: 301, destinationPath: "/produtos/produto-novo" });
+    if (type === "redirect" && path === "/produtos/produto-retirado")
+      return Response.json({ status: 410, destinationPath: null });
+    if (type === "redirect" && path === "/produtos/produto-redirect-indisponivel")
+      return Response.json({ error: "temporarily unavailable" }, { status: 503 });
     if (
       url.searchParams.get("type") === "entity-detail" &&
       url.searchParams.get("contentType") === "solution" &&
       url.searchParams.get("slug") === "instrumentacao-monitoramento-remoto"
     )
       return Response.json({
-        content_type: "solution",
+        kind: "solution",
         payload: { title: "Instrumentação e monitoramento remoto" },
         seo: {
           title: "Instrumentação e monitoramento remoto | GAIATEC",
@@ -135,12 +220,32 @@ test("edge serves managed pages with initial SEO and real retirement statuses", 
           canonicalPath: "/solucoes/instrumentacao-monitoramento-remoto",
           indexable: true,
         },
-        media_urls: {},
+        publishedAt: "2026-09-07T12:00:00.000Z",
       });
+    if (
+      type === "entity-detail" &&
+      ["servico-antigo", "solucao-retirada", "industria-redirect-sem-rede"].includes(
+        url.searchParams.get("slug"),
+      )
+    )
+      return Response.json({ error: "not found" }, { status: 404 });
+    if (type === "redirect" && path === "/servicos/servico-antigo")
+      return Response.json({ status: 302, destinationPath: "/servicos/servico-novo" });
+    if (type === "redirect" && path === "/solucoes/solucao-retirada")
+      return Response.json({ status: 410, destinationPath: null });
+    if (type === "redirect" && path === "/industrias/industria-redirect-sem-rede")
+      throw new TypeError("network unavailable");
+    if (type === "campaign-by-path" && path === "/campanhas/campanha-antiga")
+      return Response.json({
+        kind: "route",
+        rule: { status: 301, destinationPath: "/campanhas/campanha-nova" },
+      });
+    if (type === "campaign-by-path" && path === "/campanhas/campanha-retirada")
+      return Response.json({ kind: "route", rule: { status: 410, destinationPath: null } });
     if (path === "/pagina-retirada")
-      return Response.json({ kind: "route", rule: { status_code: 410, destination_path: null } });
+      return Response.json({ kind: "route", rule: { status: 410, destinationPath: null } });
     if (path === "/pagina-antiga")
-      return Response.json({ kind: "route", rule: { status_code: 301, destination_path: "/pagina-nova" } });
+      return Response.json({ kind: "route", rule: { status: 301, destinationPath: "/pagina-nova" } });
     if (path === "/pagina-nova")
       return Response.json({
         kind: "page",
@@ -152,9 +257,14 @@ test("edge serves managed pages with initial SEO and real retirement statuses", 
             canonicalPath: "/pagina-nova",
             indexable: true,
           },
-          media_urls: {},
+          publishedAt: "2026-09-07T12:00:00.000Z",
         },
       });
+    if (type === "page-by-path" && path === "/pagina-backend-indisponivel")
+      return Response.json({ error: "temporarily unavailable" }, { status: 503 });
+    if (type === "page-by-path" && path === "/pagina-sem-rede") throw new TypeError("network unavailable");
+    if (type === "redirect" && path === "/redirect-backend-indisponivel")
+      return Response.json({ error: "temporarily unavailable" }, { status: 503 });
     return Response.json({ kind: "fallback" });
   };
 
@@ -176,6 +286,54 @@ test("edge serves managed pages with initial SEO and real retirement statuses", 
     assert.match(discoveryBody, /<title>Instrumentação e monitoramento remoto \| GAIATEC<\/title>/);
     assert.match(discoveryBody, /Solução integrada publicada pelo CMS/);
 
+    const product = await module.default.fetch(
+      new Request("https://gaiatecsistemas.com.br/produtos/medidor-qa"),
+      env,
+    );
+    const productBody = await product.text();
+    assert.equal(product.status, 200);
+    assert.equal(product.headers.get("cache-control"), "public, max-age=0, must-revalidate");
+    assert.match(productBody, /<title>Medidor QA \| GAIATEC<\/title>/);
+    assert.match(
+      productBody,
+      /rel="canonical" href="https:\/\/gaiatecsistemas\.com\.br\/produtos\/medidor-qa"/,
+    );
+    const productSchema = JSON.parse(
+      productBody.match(/<script type="application\/ld\+json" data-cms-page>(.*?)<\/script>/)?.[1] ?? "{}",
+    );
+    assert.equal(productSchema["@type"], "Product");
+    assert.equal(productSchema.name, "Medidor QA");
+    assert.deepEqual(productSchema.additionalProperty[0].value, {
+      "@type": "QuantitativeValue",
+      minValue: 0,
+      maxValue: 10,
+      unitText: "bar",
+    });
+    assert.equal(productSchema.additionalProperty[0].unitText, undefined);
+    assert.equal(productSchema.additionalProperty[1].value, "4–20 mA, Modbus");
+    assert.equal(productSchema.additionalProperty[2].value, "Sim");
+    assert.doesNotMatch(productBody, /\{\\?"min\\?"|\[\\?"4/);
+
+    const article = await module.default.fetch(
+      new Request("https://gaiatecsistemas.com.br/blog/artigo-qa"),
+      env,
+    );
+    const articleBody = await article.text();
+    assert.equal(article.status, 200);
+    const articleSchema = JSON.parse(
+      articleBody.match(/<script type="application\/ld\+json" data-cms-page>(.*?)<\/script>/)?.[1] ?? "{}",
+    );
+    assert.equal(articleSchema["@type"], "Article");
+    assert.equal(articleSchema.datePublished, "2026-09-07T12:00:00.000Z");
+
+    const unavailableProduct = await module.default.fetch(
+      new Request("https://gaiatecsistemas.com.br/produtos/produto-indisponivel"),
+      env,
+    );
+    assert.equal(unavailableProduct.status, 503);
+    assert.equal(unavailableProduct.headers.get("cache-control"), "no-store, max-age=0");
+    assert.match(unavailableProduct.headers.get("x-robots-tag") ?? "", /noindex/);
+
     const discoveryCollection = await module.default.fetch(
       new Request("https://gaiatecsistemas.com.br/solucoes"),
       env,
@@ -195,6 +353,132 @@ test("edge serves managed pages with initial SEO and real retirement statuses", 
     );
     assert.equal(redirect.status, 301);
     assert.equal(redirect.headers.get("location"), "/pagina-nova");
+    for (const header of [
+      "strict-transport-security",
+      "x-content-type-options",
+      "x-frame-options",
+      "referrer-policy",
+      "permissions-policy",
+      "cross-origin-opener-policy",
+      "content-security-policy",
+    ])
+      assert.ok(redirect.headers.get(header), `redirect is missing ${header}`);
+    assert.equal(redirect.headers.get("cache-control"), "public, max-age=0, must-revalidate");
+
+    const blogRedirect = await module.default.fetch(
+      new Request("https://gaiatecsistemas.com.br/blog/artigo-antigo"),
+      env,
+    );
+    assert.equal(blogRedirect.status, 301);
+    assert.equal(blogRedirect.headers.get("location"), "/blog/artigo-novo");
+
+    const retiredBlog = await module.default.fetch(
+      new Request("https://gaiatecsistemas.com.br/blog/artigo-retirado"),
+      env,
+    );
+    assert.equal(retiredBlog.status, 410);
+    assert.match(retiredBlog.headers.get("x-robots-tag") ?? "", /noindex/);
+
+    const productRedirect = await module.default.fetch(
+      new Request("https://gaiatecsistemas.com.br/produtos/produto-antigo"),
+      env,
+    );
+    assert.equal(productRedirect.status, 301);
+    assert.equal(productRedirect.headers.get("location"), "/produtos/produto-novo");
+
+    const retiredProduct = await module.default.fetch(
+      new Request("https://gaiatecsistemas.com.br/produtos/produto-retirado"),
+      env,
+    );
+    assert.equal(retiredProduct.status, 410);
+    assert.match(retiredProduct.headers.get("x-robots-tag") ?? "", /noindex/);
+
+    const discoveryRedirect = await module.default.fetch(
+      new Request("https://gaiatecsistemas.com.br/servicos/servico-antigo"),
+      env,
+    );
+    assert.equal(discoveryRedirect.status, 302);
+    assert.equal(discoveryRedirect.headers.get("location"), "/servicos/servico-novo");
+
+    const retiredDiscovery = await module.default.fetch(
+      new Request("https://gaiatecsistemas.com.br/solucoes/solucao-retirada"),
+      env,
+    );
+    assert.equal(retiredDiscovery.status, 410);
+    assert.match(retiredDiscovery.headers.get("x-robots-tag") ?? "", /noindex/);
+
+    const campaignRedirect = await module.default.fetch(
+      new Request("https://gaiatecsistemas.com.br/campanhas/campanha-antiga"),
+      env,
+    );
+    assert.equal(campaignRedirect.status, 301);
+    assert.equal(campaignRedirect.headers.get("location"), "/campanhas/campanha-nova");
+
+    const retiredCampaign = await module.default.fetch(
+      new Request("https://gaiatecsistemas.com.br/campanhas/campanha-retirada"),
+      env,
+    );
+    assert.equal(retiredCampaign.status, 410);
+    assert.match(retiredCampaign.headers.get("x-robots-tag") ?? "", /noindex/);
+
+    for (const unavailablePath of [
+      "/pagina-backend-indisponivel",
+      "/pagina-sem-rede",
+      "/redirect-backend-indisponivel",
+      "/produtos/produto-redirect-indisponivel",
+      "/industrias/industria-redirect-sem-rede",
+    ]) {
+      const unavailable = await module.default.fetch(
+        new Request(`https://gaiatecsistemas.com.br${unavailablePath}`),
+        env,
+      );
+      assert.equal(unavailable.status, 503, unavailablePath);
+      assert.equal(unavailable.headers.get("cache-control"), "no-store, max-age=0");
+      assert.match(unavailable.headers.get("x-robots-tag") ?? "", /noindex/);
+    }
+
+    const staticRedirect = await module.default.fetch(
+      new Request("https://gaiatecsistemas.com.br/setores"),
+      env,
+    );
+    assert.equal(staticRedirect.status, 301);
+    assert.equal(staticRedirect.headers.get("location"), "/industrias");
+    assert.ok(staticRedirect.headers.get("strict-transport-security"));
+
+    for (const path of [
+      "/sitemap.xml",
+      "/sitemap-produtos.xml",
+      "/sitemap-blog.xml",
+      "/sitemap-conteudo.xml",
+    ]) {
+      const sitemap = await module.default.fetch(new Request(`https://gaiatecsistemas.com.br${path}`), env);
+      assert.equal(sitemap.status, 200);
+      assert.match(sitemap.headers.get("content-type") ?? "", /xml/);
+    }
+    assert.deepEqual(sitemapRequests, [
+      null,
+      "product",
+      "post",
+      "service,industry,application,solution,campaign,page,homepage",
+    ]);
+
+    for (const failureMode of ["unavailable", "network"]) {
+      sitemapFailure = failureMode;
+      const unavailableSitemap = await module.default.fetch(
+        new Request("https://gaiatecsistemas.com.br/sitemap.xml"),
+        env,
+      );
+      assert.equal(unavailableSitemap.status, 503, failureMode);
+      assert.equal(unavailableSitemap.headers.get("cache-control"), "no-store, max-age=0");
+      assert.match(unavailableSitemap.headers.get("x-robots-tag") ?? "", /noindex/);
+    }
+    sitemapFailure = "missing";
+    const missingSitemap = await module.default.fetch(
+      new Request("https://gaiatecsistemas.com.br/sitemap.xml"),
+      env,
+    );
+    assert.equal(missingSitemap.status, 404);
+    sitemapFailure = null;
 
     const admin = await module.default.fetch(
       new Request("https://gaiatecsistemas.com.br/admin/paginas"),

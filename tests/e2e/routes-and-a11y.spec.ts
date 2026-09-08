@@ -131,7 +131,10 @@ test("new and consolidated admin routes remain fail-closed", async ({ page }) =>
     "/admin/busca",
     "/admin/meu-trabalho",
   ]) {
-    await page.goto(route);
+    // Stop waiting as soon as the protected document is committed: React may
+    // replace it with /admin/login before the original load event on fast mobile
+    // runs, which is the expected security behavior rather than a navigation error.
+    await page.goto(route, { waitUntil: "commit" });
     await expect(page).toHaveURL(/\/admin\/login$/);
   }
 });

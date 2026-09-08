@@ -5,6 +5,9 @@ import type {
 } from "@/shared/contracts/ev2-foundation";
 
 const MAX_MANIFEST_AGE_MS = 60_000;
+// Browser and API clocks can legitimately differ. Accept a small amount of
+// server-ahead skew while continuing to reject stale or implausibly future manifests.
+const MAX_SERVER_CLOCK_AHEAD_MS = 120_000;
 
 type CapabilityProfile = {
   ev2Capabilities?: Ev2CapabilityManifest;
@@ -25,7 +28,11 @@ export function isEv2FeatureEnabled(
   if (manifest?.status !== "ready" || manifest.environment !== environment || manifest.siteKey !== "main")
     return false;
   const evaluatedAt = Date.parse(manifest.evaluatedAt);
-  if (!Number.isFinite(evaluatedAt) || evaluatedAt > now + 5_000 || now - evaluatedAt > MAX_MANIFEST_AGE_MS)
+  if (
+    !Number.isFinite(evaluatedAt) ||
+    evaluatedAt > now + MAX_SERVER_CLOCK_AHEAD_MS ||
+    now - evaluatedAt > MAX_MANIFEST_AGE_MS
+  )
     return false;
   const capability = manifest.capabilities[feature];
   return capability?.key === feature && capability.enabled === true && capability.source === "override";

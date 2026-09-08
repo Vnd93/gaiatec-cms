@@ -50,8 +50,8 @@ function envelope() {
   };
 }
 
-function shortHash(value: string) {
-  return `${value.slice(0, 10)}…${value.slice(-8)}`;
+function internalExecutionReference() {
+  return `g14x-ui-${crypto.randomUUID().replaceAll("-", "").slice(0, 16)}`;
 }
 
 function isDefinitiveMutationFailure(caught: unknown): boolean {
@@ -71,19 +71,17 @@ export default function AdminAiExecutionPage() {
   const [workspace, setWorkspace] = useState<Ev2AiExecutionWorkspace | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState("");
   const [selectedTargetRef, setSelectedTargetRef] = useState("");
-  const [targetRef, setTargetRef] = useState(
-    () => `g14x-manual-${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`,
-  );
-  const [targetTitle, setTargetTitle] = useState("Alvo sintético G14");
-  const [targetSummary, setTargetSummary] = useState("Estado sintético inicial para o ensaio G14.");
-  const [planTitle, setPlanTitle] = useState("Plano sintético G14");
+  const [targetRef, setTargetRef] = useState(internalExecutionReference);
+  const [targetTitle, setTargetTitle] = useState("Alvo sintético de ensaio");
+  const [targetSummary, setTargetSummary] = useState("Estado sintético inicial para o ensaio controlado.");
+  const [planTitle, setPlanTitle] = useState("Plano sintético de ensaio");
   const [editingPlanId, setEditingPlanId] = useState("");
   const [editingPlanHash, setEditingPlanHash] = useState("");
   const [toolKey, setToolKey] = useState<ToolKey>("draft.apply_patch");
-  const [patchText, setPatchText] = useState("Resumo sintético preparado pelo plano G14.");
+  const [patchText, setPatchText] = useState("Resumo sintético preparado pelo plano de ensaio.");
   const [scheduledAt, setScheduledAt] = useState("");
   const [steps, setSteps] = useState<Ev2AiExecutionStep[]>([]);
-  const [rationale, setRationale] = useState("Plano sintético conferido contra o dry-run e o escopo G14.");
+  const [rationale, setRationale] = useState("Plano sintético conferido contra o ensaio e seu escopo.");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -164,7 +162,7 @@ export default function AdminAiExecutionPage() {
         result = await send();
       }
       setPendingMutation(null);
-      setSuccess(operation.message + ` Correlação: ${result.correlationId}`);
+      setSuccess(operation.message);
       try {
         await loadWorkspace();
       } catch {
@@ -218,7 +216,10 @@ export default function AdminAiExecutionPage() {
       },
       "Alvo sintético criado; nenhuma tabela editorial foi alterada.",
     );
-    if (result?.targetRef) setSelectedTargetRef(result.targetRef);
+    if (result?.targetRef) {
+      setSelectedTargetRef(result.targetRef);
+      setTargetRef(internalExecutionReference());
+    }
   }
 
   function addStep() {
@@ -267,7 +268,7 @@ export default function AdminAiExecutionPage() {
       },
       editingPlanId
         ? "Plano revisado; qualquer aprovação anterior foi invalidada."
-        : "Dry-run validado e plano sintético criado para revisão independente.",
+        : "Simulação segura validada e plano sintético criado para revisão independente.",
     );
     if (result?.planId) setSelectedPlanId(result.planId);
     if (result) {
@@ -283,7 +284,7 @@ export default function AdminAiExecutionPage() {
     setPlanTitle(plan.title);
     setSteps(rebaseExpectedVersions(plan.steps, workspace?.targets ?? []));
     setSuccess(
-      "Plano carregado com as versões atuais. Ao salvar, o hash mudará e a aprovação anterior expirará.",
+      "Plano carregado com as versões atuais. Ao salvar, a versão verificada do plano mudará e a aprovação anterior expirará.",
     );
   }
 
@@ -361,22 +362,22 @@ export default function AdminAiExecutionPage() {
       <section>
         <h1>Execução transacional controlada</h1>
         <div role="status" className="admin-notice">
-          A EV2.14 exige os overrides individuais <code>ev2.ai_assist</code> e <code>ev2.ai_execute</code>. O
-          fluxo manual permanece disponível.
+          A execução assistida precisa ser habilitada individualmente para esta conta. O fluxo manual
+          permanece disponível enquanto a autorização não estiver completa.
         </div>
         <Link to="/admin/assistente">Voltar à assistência sem execução</Link>
       </section>
     );
   }
 
-  if (capability === "checking") return <p role="status">Verificando a elegibilidade G14…</p>;
+  if (capability === "checking") return <p role="status">Verificando a elegibilidade da execução…</p>;
 
   if (capability !== "enabled" || !workspace) {
     return (
       <section>
         <h1>Execução transacional controlada</h1>
         <div role="alert" className="admin-alert admin-alert--error">
-          {error || "A execução G14 está indisponível. Nenhuma alteração foi aplicada."}
+          {error || "A execução assistida está indisponível. Nenhuma alteração foi aplicada."}
         </div>
         <Link to="/admin/assistente">Usar assistência sem execução</Link>
       </section>
@@ -388,9 +389,9 @@ export default function AdminAiExecutionPage() {
       <UnsavedChangesGuard dirty={pendingMutation !== null} />
       <header className="admin-ai-exec__header">
         <div>
-          <p className="admin-eyebrow">EV2.14 · Gate G14</p>
+          <p className="admin-eyebrow">EXECUÇÃO ASSISTIDA</p>
           <h1 id="ai-exec-title">Execução transacional controlada</h1>
-          <p>Plano estruturado, dry-run, aprovação segregada, execução atômica e compensação.</p>
+          <p>Plano estruturado, simulação segura, aprovação segregada, execução atômica e compensação.</p>
         </div>
         <Link to="/admin/assistente">Assistência de leitura e rascunho</Link>
       </header>
@@ -398,8 +399,9 @@ export default function AdminAiExecutionPage() {
       <div className="admin-ai-exec__guardrails" role="status">
         <ShieldAlert aria-hidden="true" size={20} />
         <p>
-          Somente <strong>alvos sintéticos g14x-*</strong> em {CMS_ENVIRONMENT}. Produção, dados reais, rede
-          externa e tabelas editoriais estão bloqueados. MFA é obrigatório em toda mutação.
+          Somente <strong>alvos sintéticos de ensaio</strong> desta execução podem ser selecionados.
+          Planejador, revisor e executor usam MFA, com revisão e execução por pessoas distintas. Dados reais e
+          tabelas editoriais permanecem bloqueados em {CMS_ENVIRONMENT}.
         </p>
       </div>
 
@@ -417,7 +419,7 @@ export default function AdminAiExecutionPage() {
         <div role="status" className="admin-notice">
           <p>
             Há um comando com resultado ambíguo. A repetição segura reutiliza exatamente o mesmo envelope e a
-            mesma chave idempotente.
+            mesma proteção contra duplicidade.
           </p>
           <button type="button" onClick={() => void executeMutation(pendingMutation)} disabled={busy}>
             Repetir comando pendente
@@ -428,6 +430,7 @@ export default function AdminAiExecutionPage() {
       <div className="admin-ai-exec__grid">
         <form
           className="admin-editor-card"
+          aria-label="Criar alvo sintético de ensaio"
           onSubmit={(event) => {
             event.preventDefault();
             void createTarget();
@@ -436,18 +439,18 @@ export default function AdminAiExecutionPage() {
           <h2>
             <Plus aria-hidden="true" size={19} /> 1. Alvo sintético
           </h2>
-          <label>
-            Referência g14x-*
-            <input
-              value={targetRef}
-              onChange={(event) => setTargetRef(event.target.value)}
-              pattern="g14x-[a-z0-9-]{3,100}"
-              required
-            />
-          </label>
+          <p className="admin-help">
+            A referência técnica deste ensaio é criada automaticamente e fica disponível apenas na auditoria.
+          </p>
           <label>
             Título
-            <input value={targetTitle} onChange={(event) => setTargetTitle(event.target.value)} required />
+            <input
+              value={targetTitle}
+              onChange={(event) => setTargetTitle(event.target.value)}
+              required
+              minLength={3}
+              maxLength={160}
+            />
           </label>
           <label>
             Resumo inicial
@@ -455,6 +458,8 @@ export default function AdminAiExecutionPage() {
               value={targetSummary}
               onChange={(event) => setTargetSummary(event.target.value)}
               required
+              minLength={3}
+              maxLength={3000}
             />
           </label>
           <button
@@ -467,15 +472,25 @@ export default function AdminAiExecutionPage() {
 
         <section className="admin-editor-card">
           <h2>
-            <ListChecks aria-hidden="true" size={19} /> 2. Plano e dry-run
+            <ListChecks aria-hidden="true" size={19} /> 2. Plano e simulação segura
           </h2>
           <label>
             Título do plano
-            <input value={planTitle} onChange={(event) => setPlanTitle(event.target.value)} />
+            <input
+              value={planTitle}
+              onChange={(event) => setPlanTitle(event.target.value)}
+              required
+              minLength={3}
+              maxLength={160}
+            />
           </label>
           <label>
             Alvo
-            <select value={selectedTargetRef} onChange={(event) => setSelectedTargetRef(event.target.value)}>
+            <select
+              required
+              value={selectedTargetRef}
+              onChange={(event) => setSelectedTargetRef(event.target.value)}
+            >
               <option value="">Selecione</option>
               {workspace.targets
                 .filter((target) => target.owned)
@@ -488,7 +503,7 @@ export default function AdminAiExecutionPage() {
           </label>
           <label>
             Comando oficial sintético
-            <select value={toolKey} onChange={(event) => setToolKey(event.target.value as ToolKey)}>
+            <select required value={toolKey} onChange={(event) => setToolKey(event.target.value as ToolKey)}>
               {workspace.tools.map((tool) => (
                 <option key={tool.key} value={tool.key}>
                   {tool.name} · {tool.risk}
@@ -499,7 +514,13 @@ export default function AdminAiExecutionPage() {
           {toolKey === "draft.apply_patch" && (
             <label>
               Novo resumo sintético
-              <textarea value={patchText} onChange={(event) => setPatchText(event.target.value)} />
+              <textarea
+                required
+                minLength={3}
+                maxLength={3000}
+                value={patchText}
+                onChange={(event) => setPatchText(event.target.value)}
+              />
             </label>
           )}
           {toolKey === "release.schedule" && (
@@ -507,6 +528,7 @@ export default function AdminAiExecutionPage() {
               Data do ensaio (máximo 24 horas)
               <input
                 type="datetime-local"
+                required
                 value={scheduledAt}
                 onChange={(event) => setScheduledAt(event.target.value)}
               />
@@ -524,7 +546,11 @@ export default function AdminAiExecutionPage() {
             {steps.map((step, index) => (
               <li key={step.stepKey}>
                 <span>
-                  {index + 1}. {step.toolKey} · {step.targetRef} · espera v{step.expectedVersion}
+                  {index + 1}.{" "}
+                  {workspace.tools.find((tool) => tool.key === step.toolKey)?.name ?? "Operação controlada"} ·{" "}
+                  {workspace.targets.find((target) => target.reference === step.targetRef)?.title ??
+                    "Alvo de ensaio"}{" "}
+                  · versão conferida automaticamente
                 </span>
                 <button
                   type="button"
@@ -544,8 +570,8 @@ export default function AdminAiExecutionPage() {
             ))}
           </ol>
           <p className="admin-ai-exec__preview">
-            Dry-run local: {steps.length} etapa(s) · {planTargetCount(steps)} alvo(s) · risco {currentRisk} ·
-            reversível
+            Simulação local: {steps.length} etapa(s) · {planTargetCount(steps)} alvo(s) · risco {currentRisk}{" "}
+            · reversível
           </p>
           <button
             type="button"
@@ -556,7 +582,7 @@ export default function AdminAiExecutionPage() {
           >
             {editingPlanId
               ? "Salvar nova versão e invalidar aprovação"
-              : "Validar dry-run e solicitar revisão"}
+              : "Validar simulação e solicitar revisão"}
           </button>
         </section>
       </div>
@@ -571,7 +597,11 @@ export default function AdminAiExecutionPage() {
           <>
             <label>
               Plano
-              <select value={selectedPlan.id} onChange={(event) => setSelectedPlanId(event.target.value)}>
+              <select
+                required
+                value={selectedPlan.id}
+                onChange={(event) => setSelectedPlanId(event.target.value)}
+              >
                 {workspace.plans.map((plan) => (
                   <option key={plan.id} value={plan.id}>
                     {plan.title} · {plan.status} · {plan.risk}
@@ -587,16 +617,22 @@ export default function AdminAiExecutionPage() {
                 <strong>Risco:</strong> {selectedPlan.risk}
               </p>
               <p>
-                <strong>Hash:</strong> <code>{shortHash(selectedPlan.planHash)}</code>
+                <strong>Integridade:</strong> plano conferido pelo servidor
               </p>
               <p>
-                <strong>Dry-run:</strong> {selectedPlan.dryRun.stepCount} etapa(s),{" "}
+                <strong>Simulação segura:</strong> {selectedPlan.dryRun.stepCount} etapa(s),{" "}
                 {selectedPlan.dryRun.targetCount} alvo(s), reversível
               </p>
             </div>
             <label>
               Justificativa
-              <textarea value={rationale} onChange={(event) => setRationale(event.target.value)} />
+              <textarea
+                required
+                minLength={3}
+                maxLength={1000}
+                value={rationale}
+                onChange={(event) => setRationale(event.target.value)}
+              />
             </label>
             <div className="admin-ai-exec__actions">
               {selectedPlan.owned && ["ready", "approved", "rejected"].includes(selectedPlan.status) && (
@@ -671,7 +707,9 @@ export default function AdminAiExecutionPage() {
                 ) : null)}
             </div>
             {selectedPlan.owned && selectedPlan.status === "ready" && (
-              <p className="admin-ai-exec__note">Outro usuário sintético com MFA deve aprovar este hash.</p>
+              <p className="admin-ai-exec__note">
+                Outro usuário sintético com MFA deve aprovar esta versão verificada.
+              </p>
             )}
           </>
         )}

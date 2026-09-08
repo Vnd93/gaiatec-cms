@@ -3,7 +3,8 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { CANONICAL_PDF_VERSION, generateCanonicalRdoPdf } from "../_shared/canonical-pdf.ts";
 import { cleanText, clientAddress, consumeRateLimit, corsHeaders, isAllowedOrigin, json, readJsonLimited, sha256, sha256Bytes } from "../_shared/security.ts";
 
-const TERMS_VERSION = "v2-2026-08-pendente-juridico";
+// Texto aprovado no Gate G1 conforme ADR-010 e respectivo aceite canônico.
+const TERMS_VERSION = "v3-2026-09-adr010-aprovado";
 const TERMS_TEXT = `Ao assinar este Relatório Diário de Obra (RDO), declaro que:
 
 1. As informações registradas neste relatório são verdadeiras e refletem as atividades, condições e ocorrências observadas na obra na data indicada.
@@ -14,7 +15,7 @@ const TERMS_TEXT = `Ao assinar este Relatório Diário de Obra (RDO), declaro qu
 
 4. Reconheço que a força probatória e o nível de assinatura aplicável dependem do contexto, da aceitação das partes e da legislação específica. A correção posterior gera nova versão e preserva a anterior.
 
-A GAIATEC trata os dados deste relatório para acompanhamento e documentação da obra, conforme a política de privacidade e retenção aplicável. Este texto permanece sujeito à aprovação jurídica e de negócio antes do Gate G1.`;
+A GAIATEC trata os dados deste relatório para acompanhamento e documentação da obra, conforme a política de privacidade e retenção aplicável.`;
 const isUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 
 function dataUrlSize(value: string): number {

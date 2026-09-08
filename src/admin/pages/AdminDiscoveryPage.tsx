@@ -14,13 +14,21 @@ import {
   issuePreview,
   type ControlledVocabularyList,
 } from "../api/cms-api";
-import { DiscoveryContentEditor } from "../components/DiscoveryContentEditor";
+import { DiscoveryContentEditor, type DiscoveryRelationOption } from "../components/DiscoveryContentEditor";
 import { UnsavedChangesGuard } from "../components/UnsavedChangesGuard";
 import { openExternalAfterAsync } from "../open-external-preview";
 import { useDraftBackup } from "../hooks/useDraftBackup";
 import { DraftBackupNotice } from "../components/DraftBackupNotice";
 import { Badge, RecordDrawer, RelationMatrix, SectionCard } from "../components/AdminUI";
 import { DiscoveryModuleTabs } from "../components/AdminModuleTabs";
+import { EditorialArchiveAction } from "../components/EditorialArchiveAction";
+import { humanValidationIssue } from "../validation-field-label";
+import {
+  fetchAuthoritativeEditorialItem,
+  INVALIDATED_EDITOR_SNAPSHOT,
+  saveWithPublishedRevisionReconciliation,
+  type AuthoritativeEditorialItem,
+} from "../published-revision-save";
 
 type Kind = "service" | "industry" | "application" | "solution";
 const singularLabels: Record<Kind, string> = {
@@ -54,34 +62,34 @@ function initial(kind: Kind) {
     schemaVersion: 1,
     consumerId: meta[kind].consumerId,
     contentType: kind,
-    title: "Conteúdo sintético descartável",
-    summary: "Fixture técnica para validar o contrato da Fase 5.",
-    blocks: [{ id: uid(), type: "rich_text", data: { text: "Conteúdo sintético sem uso editorial." } }],
+    title: "",
+    summary: "",
+    blocks: [{ id: uid(), type: "rich_text", data: { text: "" } }],
     seo: {
-      title: "Conteúdo sintético | GAIATEC",
-      description: "Fixture sintética não indexável usada na validação técnica da Fase 5.",
-      canonicalPath: `/${kind}-sintetico`,
+      title: "",
+      description: "",
+      canonicalPath: "",
       indexable: false,
     },
     provenance: [
       {
         sourceKind: "owner_authored",
-        authorizationReference: "F5-FIXTURE-SINTETICA",
+        authorizationReference: "",
         authorizationDate: new Date().toISOString().slice(0, 10),
-        rightsScope: "Teste descartável de staging",
-        rightsConfirmed: true,
-        commercialOwner: "Owner a definir",
-        technicalOwner: "Owner a definir",
+        rightsScope: "",
+        rightsConfirmed: false,
+        commercialOwner: "",
+        technicalOwner: "",
         verifiedAt: now(),
       },
     ],
-    governanceState: "synthetic_test",
-    search: { synonyms: [], keywords: ["fixture-sintetica"] },
+    governanceState: "awaiting_owner",
+    search: { synonyms: [], keywords: [] },
     approval: {
-      businessOwner: "Owner a definir",
-      technicalReviewer: "Revisor a definir",
-      commercialReviewer: "Revisor a definir",
-      editorialReviewer: "Revisor a definir",
+      businessOwner: "",
+      technicalReviewer: "",
+      commercialReviewer: "",
+      editorialReviewer: "",
     },
     media: [],
     relations: { productIds: [], serviceIds: [], industryIds: [], applicationIds: [], solutionIds: [] },
@@ -92,45 +100,45 @@ function initial(kind: Kind) {
       ...common,
       contentType: "service",
       approval: {
-        operationalOwner: "Owner a definir",
-        technicalReviewer: "Revisor a definir",
-        commercialReviewer: "Revisor a definir",
-        editorialReviewer: "Revisor a definir",
+        operationalOwner: "",
+        technicalReviewer: "",
+        commercialReviewer: "",
+        editorialReviewer: "",
       },
       serviceKind: "",
-      serviceKindRef: { id: "", slug: "", label: "" },
-      scope: "Escopo sintético.",
-      whenToHire: ["Cenário sintético."],
-      deliverables: ["Entregável sintético."],
+      scope: "",
+      whenToHire: [""],
+      deliverables: [""],
       prerequisites: [],
-      executionSteps: ["Etapa sintética."],
+      executionSteps: [""],
       relations: { productIds: [], industryIds: [], applicationIds: [], solutionIds: [] },
     };
   if (kind === "industry")
     return {
       ...common,
       contentType: "industry",
-      marketName: "Mercado sintético",
-      challenges: ["Desafio sintético."],
-      evidence: ["Evidência sintética não editorial."],
-      processAreas: ["Processo sintético."],
+      displayOrder: 999,
+      marketName: "",
+      challenges: [""],
+      evidence: [""],
+      processAreas: [""],
     };
   if (kind === "application")
     return {
       ...common,
       contentType: "application",
-      process: "Processo sintético.",
-      problem: "Problema sintético.",
-      benefits: ["Benefício sintético."],
+      process: "",
+      problem: "",
+      benefits: [""],
       points: [
         {
           id: uid(),
-          title: "Ponto sintético",
-          need: "Necessidade sintética.",
-          variable: "Variável sintética",
-          function: "Função sintética.",
-          technicalBenefit: "Benefício técnico sintético.",
-          operationalBenefit: "Benefício operacional sintético.",
+          title: "",
+          need: "",
+          variable: "",
+          function: "",
+          technicalBenefit: "",
+          operationalBenefit: "",
           productIds: [],
           serviceIds: [],
         },
@@ -139,11 +147,11 @@ function initial(kind: Kind) {
   return {
     ...common,
     contentType: "solution",
-    problem: "Problema sintético.",
-    approach: "Abordagem sintética.",
-    benefits: ["Benefício sintético."],
-    components: ["Componente sintético."],
-    gasDetectionModel: "integrated_master_catalog",
+    problem: "",
+    approach: "",
+    benefits: [""],
+    components: [""],
+    gasDetectionModel: "not_applicable",
   };
 }
 
@@ -157,13 +165,14 @@ export default function AdminDiscoveryPage() {
     [relatedProducts, setRelatedProducts] = useState<any[]>([]),
     [selectedSummary, setSelectedSummary] = useState<any | null>(null),
     [payload, setPayload] = useState<any>(() => initial(kind)),
-    [slug, setSlug] = useState(`${kind}-sintetico`),
+    [slug, setSlug] = useState(""),
     [lock, setLock] = useState(1),
     [workflowStatus, setWorkflowStatus] = useState("draft"),
     [revisions, setRevisions] = useState<any[]>([]),
     [loading, setLoading] = useState(true),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
+    [relationError, setRelationError] = useState(""),
     [success, setSuccess] = useState(""),
     [previewFallback, setPreviewFallback] = useState(""),
     [savedSnapshot, setSavedSnapshot] = useState(() => JSON.stringify({ payload, slug }));
@@ -200,6 +209,33 @@ export default function AdminDiscoveryPage() {
       .order("updated_at", { ascending: false });
     setRelatedProducts((data ?? []) as any[]);
   }, [kind]);
+  const [relationOptions, setRelationOptions] = useState<DiscoveryRelationOption[]>([]);
+  const loadRelationOptions = useCallback(async () => {
+    if (!id) return;
+    setRelationError("");
+    const { data, error: relationLoadError } = await supabase
+      .from("cms_published_projection")
+      .select("item_id,content_type,payload")
+      .in("content_type", ["product", "service", "industry", "application", "solution"])
+      .order("published_at", { ascending: false });
+    if (relationLoadError) {
+      setRelationOptions([]);
+      setRelationError("Os conteúdos publicados para relacionamento estão temporariamente indisponíveis.");
+      return;
+    }
+    setRelationOptions(
+      (data ?? [])
+        .filter((row) => row.item_id !== id)
+        .map((row) => ({
+          id: row.item_id,
+          contentType: row.content_type as DiscoveryRelationOption["contentType"],
+          label:
+            row.payload && typeof row.payload === "object" && "title" in row.payload
+              ? String(row.payload.title)
+              : "Conteúdo publicado",
+        })),
+    );
+  }, [id]);
   const reload = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -233,7 +269,7 @@ export default function AdminDiscoveryPage() {
       else setItems((data ?? []) as any[]);
     } else {
       setPayload(initial(kind));
-      setSlug(`${kind}-sintetico`);
+      setSlug("");
       setRevisions([]);
       setLock(1);
       setWorkflowStatus("draft");
@@ -246,6 +282,9 @@ export default function AdminDiscoveryPage() {
   useEffect(() => {
     void loadRelatedProducts();
   }, [loadRelatedProducts]);
+  useEffect(() => {
+    void loadRelationOptions();
+  }, [loadRelationOptions]);
 
   async function persistRelation(
     item: any,
@@ -255,33 +294,63 @@ export default function AdminDiscoveryPage() {
     next: boolean,
   ) {
     if (!session) throw new Error("Sessão administrativa indisponível.");
-    const draft = item.cms_content_drafts;
-    const currentIds = draft.payload.relations?.[relationKey] ?? [];
+    const authoritative = await fetchAuthoritativeEditorialItem(item.id, contentType);
+    const draft = authoritative.cms_content_drafts;
+    const relations =
+      draft.payload.relations &&
+      typeof draft.payload.relations === "object" &&
+      !Array.isArray(draft.payload.relations)
+        ? (draft.payload.relations as Record<string, unknown>)
+        : {};
+    const currentIds = Array.isArray(relations[relationKey])
+      ? relations[relationKey].filter((candidate): candidate is string => typeof candidate === "string")
+      : [];
     const ids = next
       ? [...new Set([...currentIds, targetId])]
       : currentIds.filter((candidate: string) => candidate !== targetId);
-    if (item.workflow_status === "published") {
-      await editorialCommand(session, {
-        action: "reopen",
-        itemId: item.id,
-        contentType: null,
-        slug: null,
-        payload: null,
-        expectedLockVersion: null,
-        reason: "Atualizar vínculo bidirecional do catálogo",
-      });
-    }
-    await editorialCommand(session, {
-      action: "save",
-      itemId: item.id,
-      contentType,
-      slug: item.slug,
-      payload: {
-        ...draft.payload,
-        relations: { ...draft.payload.relations, [relationKey]: ids },
+    const applyAuthoritativeState = (state: AuthoritativeEditorialItem) => {
+      if (contentType === "product")
+        setRelatedProducts((current) => current.map((row) => (row.id === state.id ? state : row)));
+      else setItems((current) => current.map((row) => (row.id === state.id ? state : row)));
+      if (id === state.id) {
+        setLock(state.cms_content_drafts.lock_version);
+        setWorkflowStatus(state.workflow_status);
+        setRevisions(state.cms_content_revisions ?? []);
+      }
+    };
+    await saveWithPublishedRevisionReconciliation({
+      reopen:
+        authoritative.workflow_status === "published"
+          ? () =>
+              editorialCommand(session, {
+                action: "reopen",
+                itemId: authoritative.id,
+                contentType: null,
+                slug: null,
+                payload: null,
+                expectedLockVersion: null,
+                reason: "Atualizar vínculo bidirecional do catálogo",
+              })
+          : null,
+      save: () =>
+        editorialCommand(session, {
+          action: "save",
+          itemId: authoritative.id,
+          contentType,
+          slug: authoritative.slug,
+          payload: {
+            ...draft.payload,
+            relations: { ...relations, [relationKey]: ids },
+          },
+          expectedLockVersion: draft.lock_version,
+          reason: "Atualizar vínculo bidirecional do catálogo",
+        }),
+      invalidateSnapshot: () => {
+        if (id === authoritative.id) setSavedSnapshot(INVALIDATED_EDITOR_SNAPSHOT);
       },
-      expectedLockVersion: draft.lock_version,
-      reason: "Atualizar vínculo bidirecional do catálogo",
+      reconcile: async () => {
+        applyAuthoritativeState(await fetchAuthoritativeEditorialItem(authoritative.id, contentType));
+      },
     });
   }
 
@@ -322,37 +391,51 @@ export default function AdminDiscoveryPage() {
       if (!["create", "save"].includes(action) && dirty)
         throw new Error("Salve o conteúdo antes de executar uma ação de revisão ou publicação.");
       if ((action === "create" || action === "save") && !parsed.success) {
-        setError(
-          `Contrato inválido: ${parsed.error.issues[0]?.path.join(".")} — ${parsed.error.issues[0]?.message}`,
-        );
+        setError(`Cadastro inválido. ${humanValidationIssue(parsed.error.issues[0])}`);
         return;
       }
-      if (action === "save" && workflowStatus === "published" && id && id !== "novo") {
-        await editorialCommand(session, {
-          action: "reopen",
-          itemId: id,
-          contentType: null,
-          slug: null,
-          payload: null,
-          expectedLockVersion: null,
-          reason: "Abrir nova versão governada do conteúdo publicado",
-        });
-      }
-      const result = await editorialCommand(session, {
-        action,
-        itemId: id && id !== "novo" ? id : null,
-        contentType: kind,
-        slug,
-        payload: action === "create" || action === "save" ? payload : null,
-        expectedLockVersion: action === "save" ? lock : null,
-        reason: "Operação governada da Fase 5",
-        ...extras,
+      const publishedItemId =
+        action === "save" && workflowStatus === "published" && id && id !== "novo" ? id : null;
+      const result = await saveWithPublishedRevisionReconciliation({
+        reopen: publishedItemId
+          ? () =>
+              editorialCommand(session, {
+                action: "reopen",
+                itemId: publishedItemId,
+                contentType: null,
+                slug: null,
+                payload: null,
+                expectedLockVersion: null,
+                reason: "Abrir nova versão governada do conteúdo publicado",
+              })
+          : null,
+        save: () =>
+          editorialCommand(session, {
+            action,
+            itemId: id && id !== "novo" ? id : null,
+            contentType: kind,
+            slug,
+            payload: action === "create" || action === "save" ? payload : null,
+            expectedLockVersion: id && id !== "novo" ? lock : null,
+            reason: "Operação governada da Fase 5",
+            ...extras,
+          }),
+        invalidateSnapshot: () => setSavedSnapshot(INVALIDATED_EDITOR_SNAPSHOT),
+        reconcile: async () => {
+          if (!publishedItemId) return;
+          const authoritative = await fetchAuthoritativeEditorialItem(publishedItemId, kind);
+          setLock(authoritative.cms_content_drafts.lock_version);
+          setWorkflowStatus(authoritative.workflow_status);
+          setRevisions(authoritative.cms_content_revisions ?? []);
+        },
       });
       setSuccess(
-        `Operação ${action} concluída. Código de acompanhamento: ${result.correlationId.slice(0, 8)}.`,
+        action === "archive"
+          ? `${workflowStatus === "published" ? "Conteúdo público retirado e item arquivado" : "Item arquivado"}. A alteração foi registrada na auditoria.`
+          : "Operação concluída e registrada na auditoria.",
       );
       if (action === "create" || action === "save") setSavedSnapshot(JSON.stringify({ payload, slug }));
-      if (["create", "save", "publish"].includes(action)) backup.clear();
+      if (["create", "save", "publish", "archive"].includes(action)) backup.clear();
       if (action === "create") navigate(`/admin/descoberta/${kind}/${result.itemId}`);
       else await reload();
     } catch (e) {
@@ -414,7 +497,7 @@ export default function AdminDiscoveryPage() {
               <thead>
                 <tr>
                   <th>Título</th>
-                  <th>Endereço amigável</th>
+                  <th>Endereço público</th>
                   <th>Status</th>
                   <th>Ação</th>
                 </tr>
@@ -422,8 +505,10 @@ export default function AdminDiscoveryPage() {
               <tbody>
                 {items.map((item) => (
                   <tr key={item.id}>
-                    <td>{item.cms_content_drafts?.payload?.title}</td>
-                    <td>{item.slug}</td>
+                    <td>{item.cms_content_drafts?.payload?.title ?? "Sem título"}</td>
+                    <td>
+                      /{publicPaths[kind]}/{item.slug}
+                    </td>
                     <td>{item.workflow_status}</td>
                     <td>
                       <button type="button" onClick={() => setSelectedSummary(item)}>
@@ -460,11 +545,11 @@ export default function AdminDiscoveryPage() {
                 columnLabel="Produto"
                 rows={items.map((item) => ({
                   id: item.id,
-                  label: item.cms_content_drafts?.payload?.title ?? item.slug,
+                  label: item.cms_content_drafts?.payload?.title ?? "Cadastro sem título",
                 }))}
                 columns={relatedProducts.map((item) => ({
                   id: item.id,
-                  label: item.cms_content_drafts?.payload?.title ?? item.slug,
+                  label: item.cms_content_drafts?.payload?.title ?? "Produto sem título",
                 }))}
                 linked={(applicationId, productId) =>
                   items
@@ -500,6 +585,55 @@ export default function AdminDiscoveryPage() {
                   usados.
                 </p>
               </div>
+            ) : kind === "industry" && activeTool === "2" ? (
+              <div className="admin-table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Ordem</th>
+                      <th>Setor</th>
+                      <th>Endereço público</th>
+                      <th>Situação editorial</th>
+                      <th>Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items
+                      .slice()
+                      .sort((left, right) => {
+                        const orderDifference =
+                          (left.cms_content_drafts?.payload?.displayOrder ?? 999) -
+                          (right.cms_content_drafts?.payload?.displayOrder ?? 999);
+                        return (
+                          orderDifference ||
+                          String(left.cms_content_drafts?.payload?.title ?? left.slug).localeCompare(
+                            String(right.cms_content_drafts?.payload?.title ?? right.slug),
+                            "pt-BR",
+                          )
+                        );
+                      })
+                      .map((item) => (
+                        <tr key={item.id}>
+                          <td>{item.cms_content_drafts?.payload?.displayOrder ?? 999}</td>
+                          <td>
+                            <strong>{item.cms_content_drafts?.payload?.title ?? "Sem título"}</strong>
+                          </td>
+                          <td>
+                            /{publicPaths.industry}/{item.slug}
+                          </td>
+                          <td>{item.workflow_status.replaceAll("_", " ")}</td>
+                          <td>
+                            <Link to={`/admin/descoberta/industry/${item.id}`}>Editar ordem</Link>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+                <p className="admin-help">
+                  A posição é versionada com o conteúdo e só chega ao site depois do fluxo de revisão e
+                  publicação.
+                </p>
+              </div>
             ) : (
               <div className="admin-table-wrap">
                 <table>
@@ -533,7 +667,9 @@ export default function AdminDiscoveryPage() {
                         <tr key={item.id}>
                           <td>
                             <strong>{item.cms_content_drafts?.payload?.title ?? "Sem título"}</strong>
-                            <small>{item.slug}</small>
+                            <small>
+                              /{publicPaths[kind]}/{item.slug}
+                            </small>
                           </td>
                           <td>{products || "—"}</td>
                           <td>{services || "—"}</td>
@@ -596,7 +732,7 @@ export default function AdminDiscoveryPage() {
       <UnsavedChangesGuard dirty={dirty && !busy} />
       <div className="admin-page-heading">
         <div>
-          <p className="admin-eyebrow">{meta[kind].consumerId}</p>
+          <p className="admin-eyebrow">CATÁLOGO DE DESCOBERTA</p>
           <h1>Editor de {meta[kind].label.toLowerCase()}</h1>
         </div>
         <Link to={`/admin/descoberta/${kind}`}>Voltar à lista</Link>
@@ -630,6 +766,14 @@ export default function AdminDiscoveryPage() {
           )}
         </div>
       )}
+      {relationError && (
+        <div role="alert" className="admin-notice--error">
+          {relationError}{" "}
+          <button type="button" onClick={() => void loadRelationOptions()}>
+            Tentar novamente
+          </button>
+        </div>
+      )}
       {success && (
         <div role="status" className="admin-notice--success">
           {success}
@@ -643,12 +787,10 @@ export default function AdminDiscoveryPage() {
         onChange={setPayload}
         onSlugChange={setSlug}
         contractValid={parsed.success}
-        contractIssue={
-          parsed.success
-            ? undefined
-            : `${parsed.error.issues[0]?.path.join(".")} — ${parsed.error.issues[0]?.message}`
-        }
+        contractIssue={parsed.success ? undefined : humanValidationIssue(parsed.error.issues[0])}
         serviceKindOptions={vocabularies.find((list) => list.list_key === "service.category")?.options}
+        generateAddressFromTitle={id === "novo"}
+        relationOptions={relationOptions}
       />
       <div className="admin-workflow-bar">
         <div>
@@ -700,6 +842,14 @@ export default function AdminDiscoveryPage() {
               >
                 Preview
               </button>
+              <EditorialArchiveAction
+                state={workflowStatus}
+                entityLabel={singularLabels[kind].toLocaleLowerCase("pt-BR")}
+                article={kind === "service" ? "O" : "A"}
+                allowed={can("publish")}
+                busy={busy}
+                onArchive={() => void run("archive")}
+              />
             </>
           )}
         </div>
@@ -711,15 +861,17 @@ export default function AdminDiscoveryPage() {
             {revisions
               .slice()
               .sort((a, b) => b.revision_number - a.revision_number)
-              .map((r) => (
+              .map((r, index) => (
                 <li key={r.id}>
                   Revisão {r.revision_number} — {r.reason}{" "}
-                  <button
-                    disabled={busy || !can("publish")}
-                    onClick={() => void run("restore", { revisionId: r.id })}
-                  >
-                    Restaurar
-                  </button>
+                  {(workflowStatus === "archived" || (workflowStatus === "published" && index > 0)) && (
+                    <button
+                      disabled={busy || !can("publish")}
+                      onClick={() => void run("restore", { revisionId: r.id })}
+                    >
+                      Restaurar
+                    </button>
+                  )}
                 </li>
               ))}
           </ul>

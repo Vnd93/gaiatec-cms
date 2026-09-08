@@ -43,6 +43,7 @@ const CollaborationRequest = z
     envelope: Envelope,
     action: z.enum([
       "capability",
+      "assignees",
       "list",
       "create_task",
       "add_comment",
@@ -178,6 +179,22 @@ Deno.serve(async (req) => {
     if (!error) return json(req, { ...data, correlationId });
     const forbidden = error.message.includes("FORBIDDEN");
     return json(req, { error: forbidden ? "Sem permissão para consultar a inbox." : "Inbox indisponível.", correlationId }, forbidden ? 403 : 503);
+  }
+  if (command.action === "assignees") {
+    const { data, error } = await identity.admin.rpc("cms_list_collaboration_assignees", {
+      ...common,
+      p_limit: 500,
+    });
+    if (!error) return json(req, { ...data, correlationId });
+    const forbidden = error.code === "42501" || error.message.includes("FORBIDDEN");
+    return json(
+      req,
+      {
+        error: forbidden ? "Sem permissão para consultar responsáveis." : "Responsáveis indisponíveis.",
+        correlationId,
+      },
+      forbidden ? 403 : 503,
+    );
   }
 
   const idempotencyKey = req.headers.get("X-Idempotency-Key");

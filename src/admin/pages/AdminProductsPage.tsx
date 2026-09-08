@@ -30,6 +30,23 @@ type ProductItem = {
   } | null;
 };
 
+const PRODUCTS_PAGE_SIZE = 50;
+const TITLE_LOOKUP_PAGE_SIZE = 500;
+const productStatusLabels: Record<string, string> = {
+  new: "Novo",
+  draft: "Rascunho",
+  in_review: "Em revisão",
+  approved: "Aprovado",
+  scheduled: "Agendado",
+  published: "Publicado",
+  archived: "Arquivado",
+  trashed: "Na lixeira",
+};
+
+function productStatusLabel(status: string | undefined): string {
+  return status ? (productStatusLabels[status] ?? "Situação indisponível") : "Situação indisponível";
+}
+
 export default function AdminProductsPage() {
   const { profile } = useAdminAuth();
   const [params] = useSearchParams();
@@ -38,10 +55,18 @@ export default function AdminProductsPage() {
   const [category, setCategory] = useState("all");
   const [selected, setSelected] = useState<ProductItem | null>(null);
   const [items, setItems] = useState<ProductItem[]>([]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
+    setQuery(params.get("q") ?? "");
+    setPage(1);
+  }, [params]);
+
+  useEffect(() => {
+    let active = true;
     const timer = window.setTimeout(async () => {
       setLoading(true);
       setError("");
@@ -51,36 +76,65 @@ export default function AdminProductsPage() {
         .replace(/[%_,()."'\\]/g, "");
       let request = supabase
         .from("cms_content_items")
-        .select("id,slug,workflow_status,updated_at,cms_content_drafts(payload)")
+        .select("id,slug,workflow_status,updated_at,cms_content_drafts(payload)", {
+          count: "exact",
+        })
         .eq("content_type", "product")
         .order("updated_at", { ascending: false });
       if (status !== "all") request = request.eq("workflow_status", status);
       if (normalizedQuery) {
-        const titleMatches = await supabase
-          .from("cms_content_drafts")
-          .select("content_id")
-          .ilike("payload->>title", `%${normalizedQuery}%`)
-          .limit(50);
-        if (titleMatches.error) {
-          setError("Não foi possível pesquisar os títulos dos produtos.");
+        const matchingIds: string[] = [];
+        let titleLookupFailed = false;
+        for (let offset = 0; ; offset += TITLE_LOOKUP_PAGE_SIZE) {
+          const titleMatches = await supabase
+            .from("cms_content_drafts")
+            .select("content_id")
+            .or(
+              `payload->>title.ilike.%${normalizedQuery}%,payload->manufacturer->>name.ilike.%${normalizedQuery}%`,
+            )
+            .range(offset, offset + TITLE_LOOKUP_PAGE_SIZE - 1);
+          if (titleMatches.error) {
+            titleLookupFailed = true;
+            break;
+          }
+          matchingIds.push(...(titleMatches.data ?? []).map((item) => item.content_id));
+          if ((titleMatches.data ?? []).length < TITLE_LOOKUP_PAGE_SIZE) break;
+        }
+        if (!active) return;
+        if (titleLookupFailed) {
+          setError("Não foi possível pesquisar os nomes e fabricantes dos produtos.");
           setItems([]);
+          setTotal(0);
           setLoading(false);
           return;
         }
-        const matchingIds = (titleMatches.data ?? []).map((item) => item.content_id);
-        request = request.or(
-          [`slug.ilike.%${normalizedQuery}%`, matchingIds.length ? `id.in.(${matchingIds.join(",")})` : ""]
-            .filter(Boolean)
-            .join(","),
-        );
+        request = matchingIds.length
+          ? request.in("id", Array.from(new Set(matchingIds)))
+          : request.eq("id", "00000000-0000-0000-0000-000000000000");
       }
-      const result = await request.limit(50);
-      if (result.error) setError("Não foi possível carregar os produtos do CMS.");
-      else setItems((result.data ?? []) as unknown as ProductItem[]);
+      const result = await request.range((page - 1) * PRODUCTS_PAGE_SIZE, page * PRODUCTS_PAGE_SIZE - 1);
+      if (!active) return;
+      if (result.error) {
+        setError("Não foi possível carregar os produtos do CMS.");
+        setItems([]);
+        setTotal(0);
+      } else {
+        const resultTotal = result.count ?? 0;
+        const lastPage = Math.max(1, Math.ceil(resultTotal / PRODUCTS_PAGE_SIZE));
+        if (page > lastPage) {
+          setPage(lastPage);
+          return;
+        }
+        setItems((result.data ?? []) as unknown as ProductItem[]);
+        setTotal(resultTotal);
+      }
       setLoading(false);
     }, 250);
-    return () => window.clearTimeout(timer);
-  }, [query, status]);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [page, query, status]);
 
   const canEdit = profile?.permissions.includes("cms:products.edit") ?? false;
   const categoryLabel = (item: ProductItem) => {
@@ -102,7 +156,7 @@ export default function AdminProductsPage() {
   return (
     <section>
       <PageHeader
-        eyebrow="CATÁLOGO CLEAN-ROOM"
+        eyebrow="CATÁLOGO DE PRODUTOS"
         title="Produtos"
         description="Localize, filtre e abra produtos do novo catálogo. Nenhum cadastro do sistema anterior é consultado."
         actions={
@@ -120,21 +174,33 @@ export default function AdminProductsPage() {
       />
       <ProductModuleTabs />
       <FilterBar
-        summary={`${visibleItems.length} produto${visibleItems.length === 1 ? "" : "s"} nesta página`}
+        summary={`${visibleItems.length} produto${visibleItems.length === 1 ? "" : "s"} visível${visibleItems.length === 1 ? "" : "is"} nesta página · ${total} no filtro de busca e situação`}
       >
         <label>
-          Buscar por endereço ou título
+          Buscar por nome ou fabricante
           <input
             type="search"
             maxLength={120}
             value={query}
-            placeholder="Ex.: medidor-de-vazao"
-            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Ex.: Medidor de vazão ou GAIATEC"
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setPage(1);
+              setSelected(null);
+            }}
           />
         </label>
         <label>
-          Status
-          <select value={status} onChange={(event) => setStatus(event.target.value)}>
+          Situação
+          <select
+            value={status}
+            onChange={(event) => {
+              setStatus(event.target.value);
+              setCategory("all");
+              setPage(1);
+              setSelected(null);
+            }}
+          >
             <option value="all">Todos</option>
             <option value="draft">Rascunho</option>
             <option value="in_review">Em revisão</option>
@@ -144,7 +210,7 @@ export default function AdminProductsPage() {
           </select>
         </label>
         <label>
-          Categoria
+          Categoria nesta página
           <select value={category} onChange={(event) => setCategory(event.target.value)}>
             <option value="all">Todas</option>
             {categories.map((item) => (
@@ -164,7 +230,7 @@ export default function AdminProductsPage() {
           title={query || status !== "all" ? "Nenhum produto encontrado" : "Catálogo editorial vazio"}
           description={
             query || status !== "all"
-              ? "Ajuste a busca ou o filtro de status."
+              ? "Ajuste a busca ou o filtro de situação."
               : "Cadastre apenas produtos novos e autorizados."
           }
           action={
@@ -176,12 +242,12 @@ export default function AdminProductsPage() {
           }
         />
       ) : (
-        <DataTable caption={`Produtos do CMS: ${items.length} resultados`}>
+        <DataTable caption={`Produtos do CMS: ${visibleItems.length} resultados visíveis nesta página`}>
           <thead>
             <tr>
               <th>Produto</th>
               <th>Fabricante/modelo</th>
-              <th>Status</th>
+              <th>Situação</th>
               <th>Atualização</th>
               <th>Ação</th>
             </tr>
@@ -189,17 +255,14 @@ export default function AdminProductsPage() {
           <tbody>
             {visibleItems.map((item) => (
               <tr key={item.id}>
-                <td>
-                  {item.cms_content_drafts?.payload.title ?? "Sem título"}
-                  <small>{item.slug}</small>
-                </td>
+                <td>{item.cms_content_drafts?.payload.title ?? "Sem título"}</td>
                 <td>
                   {item.cms_content_drafts?.payload.manufacturer?.name ?? "—"}
                   <small>{item.cms_content_drafts?.payload.models?.[0]?.model ?? "—"}</small>
                 </td>
                 <td>
                   <Badge tone={statusTone(item.workflow_status)}>
-                    {item.workflow_status.replace(/_/g, " ")}
+                    {productStatusLabel(item.workflow_status)}
                   </Badge>
                 </td>
                 <td>{new Date(item.updated_at).toLocaleString("pt-BR")}</td>
@@ -213,6 +276,31 @@ export default function AdminProductsPage() {
           </tbody>
         </DataTable>
       )}
+      <nav className="admin-pagination" aria-label="Paginação de produtos">
+        <button
+          type="button"
+          disabled={loading || page === 1}
+          onClick={() => {
+            setCategory("all");
+            setPage((current) => Math.max(1, current - 1));
+          }}
+        >
+          Página anterior
+        </button>
+        <span>
+          Página {page} de {Math.max(1, Math.ceil(total / PRODUCTS_PAGE_SIZE))}
+        </span>
+        <button
+          type="button"
+          disabled={loading || page * PRODUCTS_PAGE_SIZE >= total}
+          onClick={() => {
+            setCategory("all");
+            setPage((current) => current + 1);
+          }}
+        >
+          Próxima página
+        </button>
+      </nav>
       <RecordDrawer
         open={Boolean(selected)}
         eyebrow="PRODUTO"
@@ -220,7 +308,7 @@ export default function AdminProductsPage() {
         address={selected ? `/produtos/${selected.slug}` : undefined}
         status={
           <Badge tone={selected ? statusTone(selected.workflow_status) : "neutral"}>
-            {selected?.workflow_status.replaceAll("_", " ")}
+            {productStatusLabel(selected?.workflow_status)}
           </Badge>
         }
         fields={

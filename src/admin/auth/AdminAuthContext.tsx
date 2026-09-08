@@ -26,7 +26,7 @@ export type SessionSnapshot = {
   rbacScoped?: boolean;
   scope?: {
     siteKey: "main";
-    environment: "local" | "staging";
+    environment: "local" | "staging" | "production";
     effectiveUntil: string | null;
   };
 };
@@ -73,6 +73,32 @@ function friendlyError(message: string): string {
   return "Não foi possível concluir a operação. Tente novamente.";
 }
 
+function isSessionSnapshot(value: unknown): value is SessionSnapshot {
+  if (!value || typeof value !== "object") return false;
+  const snapshot = value as Record<string, unknown>;
+  const roles = snapshot.roles;
+  const permissions = snapshot.permissions;
+  if (
+    typeof snapshot.userId !== "string" ||
+    !["invited", "active", "suspended"].includes(String(snapshot.status)) ||
+    !Array.isArray(roles) ||
+    roles.some((role) => typeof role !== "string") ||
+    !Array.isArray(permissions) ||
+    permissions.some((permission) => typeof permission !== "string") ||
+    typeof snapshot.mfaRequired !== "boolean" ||
+    typeof snapshot.mfaVerified !== "boolean" ||
+    typeof snapshot.accessGranted !== "boolean" ||
+    typeof snapshot.activated !== "boolean"
+  )
+    return false;
+  if (
+    snapshot.accessGranted &&
+    (snapshot.status !== "active" || roles.length === 0 || (snapshot.mfaRequired && !snapshot.mfaVerified))
+  )
+    return false;
+  return true;
+}
+
 async function invokeSession(session: Session, action: "resolve" | "mfa" | "recovery" | "logout") {
   const response = await fetch(`${SUPABASE_URL}/functions/v1/cms-session`, {
     method: "POST",
@@ -84,8 +110,16 @@ async function invokeSession(session: Session, action: "resolve" | "mfa" | "reco
     body: JSON.stringify({ action }),
     signal: AbortSignal.timeout(10_000),
   });
-  const body = (await response.json().catch(() => ({}))) as SessionSnapshot & { error?: string };
-  if (!response.ok) throw new SessionInvocationError(body.error ?? "SESSION_REJECTED", response.status);
+  const body = (await response.json().catch(() => ({}))) as unknown;
+  if (!response.ok) {
+    const remoteError =
+      body && typeof body === "object" && typeof (body as { error?: unknown }).error === "string"
+        ? (body as { error: string }).error
+        : "SESSION_REJECTED";
+    throw new SessionInvocationError(remoteError, response.status);
+  }
+  if (!isSessionSnapshot(body) || body.userId !== session.user.id)
+    throw new SessionInvocationError("SESSION_RESPONSE_INVALID", 503);
   return body;
 }
 
@@ -136,21 +170,30 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
           updateStatus("unauthorized");
           return;
         }
-        const [{ data: factors }, { data: assurance }] = await Promise.all([
+        const [factorResult, assuranceResult] = await Promise.all([
           supabase.auth.mfa.listFactors(),
           supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
         ]);
         if (currentRequest !== requestId.current) return;
+        if (
+          factorResult.error ||
+          assuranceResult.error ||
+          !assuranceResult.data ||
+          !["aal1", "aal2"].includes(String(assuranceResult.data.currentLevel))
+        )
+          throw new SessionInvocationError("MFA_STATE_UNAVAILABLE", 503);
+        const factors = factorResult.data;
+        const assurance = assuranceResult.data;
         const verified = factors?.totp?.some((factor) => factor.status === "verified") ?? false;
         if (assurance?.currentLevel === "aal2") {
           const refreshed = await supabase.auth.refreshSession();
-          if (refreshed.data.session) {
-            const verifiedSnapshot = await invokeSession(refreshed.data.session, "mfa");
-            if (currentRequest !== requestId.current) return;
-            updateSession(refreshed.data.session);
-            setProfile(verifiedSnapshot);
-            updateStatus(verifiedSnapshot.accessGranted ? "ready" : "unauthorized");
-          }
+          if (refreshed.error || !refreshed.data.session)
+            throw new SessionInvocationError("MFA_SESSION_REFRESH_FAILED", 503);
+          const verifiedSnapshot = await invokeSession(refreshed.data.session, "mfa");
+          if (currentRequest !== requestId.current) return;
+          updateSession(refreshed.data.session);
+          setProfile(verifiedSnapshot);
+          updateStatus(verifiedSnapshot.accessGranted ? "ready" : "unauthorized");
           return;
         }
         updateStatus(verified ? "mfa_challenge" : "mfa_enroll");
@@ -263,75 +306,114 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         await resolveSession(current);
       },
       async signIn(email, password) {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: email.trim().toLowerCase(),
-          password,
-        });
-        if (error || !data.session) return { error: friendlyError(error?.message ?? "SESSION_MISSING") };
-        await resolveSession(data.session);
-        return { error: null };
+        try {
+          const { data, error } = await supabase.auth.signInWithPassword({
+            email: email.trim().toLowerCase(),
+            password,
+          });
+          if (error || !data.session) return { error: friendlyError(error?.message ?? "SESSION_MISSING") };
+          await resolveSession(data.session);
+          return { error: null };
+        } catch {
+          return { error: "Não foi possível concluir a operação. Tente novamente." };
+        }
       },
       async signOut() {
-        if (session) await invokeSession(session, "logout").catch(() => undefined);
-        await supabase.auth.signOut({ scope: "local" });
-        requestId.current += 1;
-        updateSession(null);
-        setProfile(null);
-        updateStatus("signed_out");
+        const current = sessionRef.current;
+        if (current) await invokeSession(current, "logout").catch(() => undefined);
+        try {
+          await supabase.auth.signOut({ scope: "local" });
+        } catch {
+          // O estado local do CMS ainda deve ser encerrado mesmo se o SDK falhar.
+        } finally {
+          requestId.current += 1;
+          updateSession(null);
+          setProfile(null);
+          updateStatus("signed_out");
+        }
       },
       async requestRecovery(email) {
-        const redirectTo = `${window.location.origin}/admin/definir-senha`;
-        const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-          redirectTo,
-        });
-        return { error: error ? friendlyError(error.message) : null };
+        try {
+          const response = await fetch(`${SUPABASE_URL}/functions/v1/cms-recovery`, {
+            method: "POST",
+            headers: {
+              apikey: SUPABASE_ANON_KEY,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ email: email.trim().toLowerCase() }),
+            signal: AbortSignal.timeout(10_000),
+          });
+          const body = (await response.json().catch(() => ({}))) as { error?: string };
+          if (!response.ok) return { error: friendlyError(body.error ?? "RECOVERY_FAILED") };
+          return { error: null };
+        } catch {
+          return { error: "Não foi possível concluir a operação. Tente novamente." };
+        }
       },
       async updatePassword(password) {
-        const { error } = await supabase.auth.updateUser({ password });
-        if (error) return { error: friendlyError(error.message) };
-        const current = await supabase.auth.getSession();
-        if (!current.data.session) return { error: "A sessão do convite expirou. Solicite um novo link." };
-        await resolveSession(current.data.session, "recovery");
-        return { error: null };
+        try {
+          const { error } = await supabase.auth.updateUser({ password });
+          if (error) return { error: friendlyError(error.message) };
+          const current = await supabase.auth.getSession();
+          if (!current.data.session) return { error: "A sessão do convite expirou. Solicite um novo link." };
+          await resolveSession(current.data.session, "recovery");
+          return { error: null };
+        } catch {
+          return { error: "Não foi possível concluir a operação. Tente novamente." };
+        }
       },
       async beginMfaEnrollment() {
-        const { data: factors } = await supabase.auth.mfa.listFactors();
-        for (const factor of factors?.all ?? []) {
-          if (factor.factor_type === "totp" && factor.status === "unverified") {
-            await supabase.auth.mfa.unenroll({ factorId: factor.id });
+        try {
+          const factorResult = await supabase.auth.mfa.listFactors();
+          if (factorResult.error)
+            return { enrollment: null, error: "Não foi possível consultar o autenticador." };
+          for (const factor of factorResult.data?.all ?? []) {
+            if (factor.factor_type === "totp" && factor.status === "unverified") {
+              const removal = await supabase.auth.mfa.unenroll({ factorId: factor.id });
+              if (removal.error)
+                return { enrollment: null, error: "Não foi possível preparar o autenticador." };
+            }
           }
+          const { data, error } = await supabase.auth.mfa.enroll({
+            factorType: "totp",
+            friendlyName: "CMS GAIATEC",
+          });
+          if (error || !data)
+            return { enrollment: null, error: friendlyError(error?.message ?? "MFA_ENROLL_FAILED") };
+          return {
+            enrollment: { factorId: data.id, qrCode: data.totp.qr_code, secret: data.totp.secret },
+            error: null,
+          };
+        } catch {
+          return { enrollment: null, error: "Não foi possível preparar o autenticador." };
         }
-        const { data, error } = await supabase.auth.mfa.enroll({
-          factorType: "totp",
-          friendlyName: "CMS GAIATEC",
-        });
-        if (error || !data)
-          return { enrollment: null, error: friendlyError(error?.message ?? "MFA_ENROLL_FAILED") };
-        return {
-          enrollment: { factorId: data.id, qrCode: data.totp.qr_code, secret: data.totp.secret },
-          error: null,
-        };
       },
       async verifyMfa(code, factorId) {
-        let selectedId = factorId;
-        if (!selectedId) {
-          const { data } = await supabase.auth.mfa.listFactors();
-          selectedId = data?.totp?.find((factor) => factor.status === "verified")?.id;
+        try {
+          let selectedId = factorId;
+          if (!selectedId) {
+            const factorResult = await supabase.auth.mfa.listFactors();
+            if (factorResult.error) return { error: "Não foi possível consultar o autenticador." };
+            selectedId = factorResult.data?.totp?.find((factor) => factor.status === "verified")?.id;
+          }
+          if (!selectedId) return { error: "Autenticador não encontrado." };
+          const challenge = await supabase.auth.mfa.challenge({ factorId: selectedId });
+          if (challenge.error || !challenge.data)
+            return { error: friendlyError(challenge.error?.message ?? "MFA_CHALLENGE_FAILED") };
+          const verification = await supabase.auth.mfa.verify({
+            factorId: selectedId,
+            challengeId: challenge.data.id,
+            code: code.replace(/\D/g, ""),
+          });
+          if (verification.error) return { error: "Código inválido ou expirado." };
+          const refreshed = await supabase.auth.refreshSession();
+          if (refreshed.error || !refreshed.data.session)
+            return { error: "Não foi possível atualizar a sessão segura." };
+          await resolveSession(refreshed.data.session, "mfa");
+          return { error: null };
+        } catch {
+          return { error: "Não foi possível confirmar sua identidade." };
         }
-        if (!selectedId) return { error: "Autenticador não encontrado." };
-        const challenge = await supabase.auth.mfa.challenge({ factorId: selectedId });
-        if (challenge.error || !challenge.data)
-          return { error: friendlyError(challenge.error?.message ?? "MFA_CHALLENGE_FAILED") };
-        const verification = await supabase.auth.mfa.verify({
-          factorId: selectedId,
-          challengeId: challenge.data.id,
-          code: code.replace(/\D/g, ""),
-        });
-        if (verification.error) return { error: "Código inválido ou expirado." };
-        const refreshed = await supabase.auth.refreshSession();
-        if (!refreshed.data.session) return { error: "Não foi possível atualizar a sessão segura." };
-        await resolveSession(refreshed.data.session, "mfa");
-        return { error: null };
       },
     }),
     [profile, resolveSession, session, status, updateSession, updateStatus],

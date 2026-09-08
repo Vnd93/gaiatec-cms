@@ -4,9 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       git_ref:
-        description: Commit aprovado para staging
+        description: SHA completo ou ref contido em main para staging
         required: true
-        default: Remodelagem
+        default: main
+      rollback_ref:
+        description: SHA completo do frontend atualmente aprovado para provar compatibilidade de rollback
+        required: true
+      frontend_bridge_run_id:
+        description: Run que promoveu o mesmo SHA A ao alias staging sobre o backend anterior
+        required: true
       ev2_draft_v2_candidate:
         description: Habilitar somente o adapter cliente candidato EV2.2
         required: true
@@ -14,40 +20,1108 @@ on:
         default: false
 
 permissions:
+  actions: read
   contents: read
+
+concurrency:
+  group: staging
+  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 240
     environment: staging
+    outputs:
+      state_artifact_id: ${{ steps.staging_state_artifact.outputs.artifact-id }}
+      state_artifact_digest: ${{ steps.staging_state_artifact.outputs.artifact-digest }}
+      recovery_artifact_id: ${{ steps.staging_recovery_artifact.outputs.artifact-id }}
+      recovery_artifact_digest: ${{ steps.staging_recovery_artifact.outputs.artifact-digest }}
+      candidate_artifact_id: ${{ steps.staging_candidate_artifact.outputs.artifact-id }}
+      candidate_artifact_digest: ${{ steps.staging_candidate_artifact.outputs.artifact-digest }}
+      candidate_sha: ${{ steps.candidate.outputs.sha }}
+      rollback_sha: ${{ inputs.rollback_ref }}
+      run_marker: ${{ steps.staging_state.outputs.run_marker }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Validate staging dispatch branch before any mutation
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+          DISPATCH_ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          FRONTEND_BRIDGE_RUN_ID: ${{ inputs.frontend_bridge_run_id }}
+        run: |
+          set -euo pipefail
+          test "$DISPATCH_REF" = refs/heads/main
+          test "${DISPATCH_ACTOR,,}" = vnd93
+          test "${TRIGGERING_ACTOR,,}" = vnd93
+          test "$(printf '%s' "$FRONTEND_BRIDGE_RUN_ID" | grep -E '^[1-9][0-9]*$')" = "$FRONTEND_BRIDGE_RUN_ID"
+      - name: Checkout exact staging candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.git_ref }}
+          fetch-depth: 0
+          path: candidate
+      - name: Checkout approved rollback frontend baseline
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.rollback_ref }}
+          fetch-depth: 0
+          path: baseline
+      - name: Resolve and verify the exact staging candidate
+        id: candidate
+        working-directory: candidate
+        env:
+          ROLLBACK_REF: ${{ inputs.rollback_ref }}
+        run: |
+          candidate_sha="$(git rev-parse HEAD)"
+          git fetch origin main
+          git merge-base --is-ancestor "$candidate_sha" origin/main
+          test "$(printf '%s' "$ROLLBACK_REF" | grep -E '^[a-f0-9]{40}$')" = "$ROLLBACK_REF"
+          test "$(git -C ../baseline rev-parse HEAD)" = "$ROLLBACK_REF"
+          git merge-base --is-ancestor "$ROLLBACK_REF" "$candidate_sha"
+          test "$ROLLBACK_REF" = "$candidate_sha"
+          test -z "$(git status --porcelain)"
+          printf 'sha=%s\n' "$candidate_sha" >> "$GITHUB_OUTPUT"
+      - name: Resolve exact successful staging frontend bridge run
+        id: frontend_bridge_run
+        working-directory: candidate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          FRONTEND_BRIDGE_RUN_ID: ${{ inputs.frontend_bridge_run_id }}
+        run: >-
+          node scripts/ev2/phase12/verify-staging-frontend-bridge-run.mjs
+          --run-id "$FRONTEND_BRIDGE_RUN_ID"
+          --expected-release "${{ steps.candidate.outputs.sha }}"
+      - name: Download immutable staging frontend bridge evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.frontend_bridge_run.outputs.artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ inputs.frontend_bridge_run_id }}
+          path: ${{ runner.temp }}/g12-staging-frontend-bridge
+      - name: Verify staging bridge evidence for this exact SHA
+        id: frontend_bridge
+        working-directory: candidate
+        env:
+          EXPECTED_RUN_ID: ${{ inputs.frontend_bridge_run_id }}
+          EXPECTED_CONTROL_SHA: ${{ steps.frontend_bridge_run.outputs.control_sha }}
+          EXPECTED_RELEASE: ${{ steps.candidate.outputs.sha }}
+        run: >-
+          node scripts/ev2/phase12/verify-staging-frontend-bridge-evidence.mjs
+          --artifact-dir "$RUNNER_TEMP/g12-staging-frontend-bridge"
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version-file: .nvmrc
+          node-version-file: candidate/.nvmrc
           cache: npm
-      - run: npm ci
-      - run: npm run check
-      - run: npm run build:staging
+          cache-dependency-path: candidate/package-lock.json
+      - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3
+        with:
+          version: 2.116.0
+      - name: Install and validate exact candidate
+        working-directory: candidate
+        run: |
+          npm ci
+          npm run check
+          npm audit --audit-level=high
+      - name: Generate the exhaustive source-backed CMS coverage matrix
+        working-directory: candidate
+        run: node scripts/qa/cms-coverage-inventory.mjs --output outputs/g12-cms-coverage-matrix.json
+      - name: Prove append-only backend and rollback compatibility
+        working-directory: candidate
+        run: |
+          mkdir -p outputs
+          node scripts/ev2/phase12/verify-backend-forward-compatibility.mjs \
+            --candidate . --baseline ../baseline --report outputs/g12-backend-compatibility.json
+      - name: Verify exact candidate checkout is clean before staging mutation
+        working-directory: candidate
+        run: test -z "$(git status --porcelain --untracked-files=all)"
+      - name: Prove the live staging alias matches the approved rollback SHA
+        working-directory: candidate
+        run: node scripts/ev2/phase12/rollout-probe.mjs
         env:
-          VITE_RELEASE: ${{ github.sha }}
+          EV2_G12_ORIGIN: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
+          EV2_G12_EXPECTED_SHA: ${{ inputs.rollback_ref }}
+          EV2_G12_ENVIRONMENT: staging
+          EV2_G12_PROBE_PROFILE: full
+          EV2_G12_SAMPLE_COUNT: "5"
+          EV2_G12_REPORT_PATH: ../g12-staging-live-baseline.json
+      - name: Capture immutable live staging state before any remote mutation
+        id: staging_baseline
+        timeout-minutes: 3
+        working-directory: candidate
+        run: node scripts/ev2/phase12/staging-pages-state.mjs capture
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-cms-staging
+          CLOUDFLARE_PAGES_BRANCH: ev2-g17-canary
+          STAGING_EXPECTED_RELEASE: ${{ inputs.rollback_ref }}
+      - name: Bind live staging identity to the frontend-only bridge deployment A
+        env:
+          LIVE_ID: ${{ steps.staging_baseline.outputs.deployment_id }}
+          LIVE_RELEASE: ${{ steps.staging_baseline.outputs.release }}
+          LIVE_CREATED: ${{ steps.staging_baseline.outputs.created_on }}
+          LIVE_MARKER: ${{ steps.staging_baseline.outputs.commit_message }}
+          BRIDGE_ID: ${{ steps.frontend_bridge.outputs.canonical_deployment_id }}
+          BRIDGE_RELEASE: ${{ steps.frontend_bridge.outputs.canonical_release }}
+          BRIDGE_CREATED: ${{ steps.frontend_bridge.outputs.canonical_created_on }}
+          BRIDGE_MARKER: ${{ steps.frontend_bridge.outputs.canonical_commit_message }}
+        run: |
+          set -euo pipefail
+          test "$LIVE_ID" = "$BRIDGE_ID"
+          test "$LIVE_RELEASE" = "$BRIDGE_RELEASE"
+          test "$LIVE_CREATED" = "$BRIDGE_CREATED"
+          test "$LIVE_MARKER" = "$BRIDGE_MARKER"
+      - name: Persist credential-free staging recovery state before mutation
+        id: staging_state
+        working-directory: candidate
+        env:
+          CANDIDATE_SHA: ${{ steps.candidate.outputs.sha }}
+          ORIGINAL_RELEASE: ${{ inputs.rollback_ref }}
+          ORIGINAL_DEPLOYMENT_ID: ${{ steps.staging_baseline.outputs.deployment_id }}
+          ORIGINAL_CREATED_ON: ${{ steps.staging_baseline.outputs.created_on }}
+          ORIGINAL_COMMIT_MESSAGE: ${{ steps.staging_baseline.outputs.commit_message }}
+          CONTROL_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          run_marker="g12-staging-run-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          export RUN_MARKER="$run_marker"
+          node <<'NODE'
+          const { mkdirSync, writeFileSync } = require("node:fs");
+          const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+          const sha = /^[a-f0-9]{40}$/;
+          if (
+            !sha.test(process.env.CANDIDATE_SHA || "") ||
+            !sha.test(process.env.ORIGINAL_RELEASE || "") ||
+            !sha.test(process.env.CONTROL_SHA || "") ||
+            !uuid.test(process.env.ORIGINAL_DEPLOYMENT_ID || "") ||
+            !Number.isFinite(Date.parse(process.env.ORIGINAL_CREATED_ON || "")) ||
+            /[\r\n\0]/.test(process.env.ORIGINAL_COMMIT_MESSAGE || "") ||
+            !/^g12-staging-run-[1-9]\d*-[1-9]\d*$/.test(process.env.RUN_MARKER || "")
+          ) throw new Error("G12_STAGING_STATE_INPUT_REFUSED");
+          const state = {
+            schemaVersion: 1,
+            event: "g12.staging.deploy.prepared",
+            workflow: {
+              runId: process.env.GITHUB_RUN_ID,
+              runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT),
+              controlSha: process.env.CONTROL_SHA,
+            },
+            project: "gaiatec-cms-staging",
+            branch: "ev2-g17-canary",
+            runMarker: process.env.RUN_MARKER,
+            compensationMarker: `g12-staging-deploy-compensation-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`,
+            candidateRelease: process.env.CANDIDATE_SHA,
+            original: {
+              deploymentId: process.env.ORIGINAL_DEPLOYMENT_ID,
+              release: process.env.ORIGINAL_RELEASE,
+              createdOn: process.env.ORIGINAL_CREATED_ON,
+              commitMessage: process.env.ORIGINAL_COMMIT_MESSAGE,
+            },
+          };
+          mkdirSync("outputs", { recursive: true });
+          writeFileSync("outputs/staging-deploy-state.json", JSON.stringify(state, null, 2) + "\n", {
+            encoding: "utf8",
+            mode: 0o600,
+          });
+          NODE
+          printf 'run_marker=%s\n' "$run_marker" >> "$GITHUB_OUTPUT"
+      - name: Persist redundant HMAC staging state before mutation
+        id: staging_state_variable
+        timeout-minutes: 5
+        working-directory: candidate
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          CONTROL_SHA: ${{ github.sha }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs put
+          --kind staging-deploy --file outputs/staging-deploy-state.json
+      - name: Upload mandatory pre-mutation staging state
+        id: staging_state_artifact
+        timeout-minutes: 5
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: staging-deploy-state-${{ github.run_id }}-${{ github.run_attempt }}
+          path: candidate/outputs/staging-deploy-state.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Apply the exact candidate migrations to staging
+        working-directory: candidate
+        env:
+          STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          test "$STAGING_SUPABASE_PROJECT_REF" = "glcqsosxwgmlhzgcsnzv"
+          supabase link --project-ref "$STAGING_SUPABASE_PROJECT_REF" --yes
+          supabase db push --linked --include-all --dry-run
+          supabase db push --linked --include-all --yes
+      - name: Configure the exact staging browser origins without wildcard trust
+        working-directory: candidate
+        env:
+          STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          STAGING_ALLOWED_ORIGINS: >-
+            https://gaiatec-cms-staging.pages.dev,
+            https://ev2-g17-canary.gaiatec-cms-staging.pages.dev,
+            https://ev2-g12-canary.gaiatec-cms-staging.pages.dev,
+            https://ev2-g16-csp-canary.gaiatec-cms-staging.pages.dev,
+            https://ev2-g12-rollback-compat.gaiatec-cms-staging.pages.dev
+          STAGING_ALLOWED_HOSTNAMES: >-
+            gaiatec-cms-staging.pages.dev,
+            ev2-g17-canary.gaiatec-cms-staging.pages.dev,
+            ev2-g12-canary.gaiatec-cms-staging.pages.dev,
+            ev2-g16-csp-canary.gaiatec-cms-staging.pages.dev,
+            ev2-g12-rollback-compat.gaiatec-cms-staging.pages.dev
+        run: >-
+          supabase secrets set --project-ref "$STAGING_SUPABASE_PROJECT_REF"
+          ALLOWED_ORIGINS="$STAGING_ALLOWED_ORIGINS"
+          TURNSTILE_ALLOWED_HOSTNAMES="$STAGING_ALLOWED_HOSTNAMES"
+          PUBLIC_SITE_ORIGIN=https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
+          CMS_ENVIRONMENT=staging
+          CMS_RELEASE_SHA="${{ steps.candidate.outputs.sha }}"
+          CMS_ADMIN_ORIGIN=https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
+          CMS_ADMIN_URL=https://ev2-g17-canary.gaiatec-cms-staging.pages.dev/admin
+          CONTACT_CAPTCHA_ALWAYS=true
+          TURNSTILE_EXPECTED_ACTION=lead_capture
+      - name: Configure and verify the exact staging Auth redirect boundary
+        working-directory: candidate
+        env:
+          STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/ev2/phase12/configure-staging-auth.mjs | tee ../g12-staging-auth.json
+      - name: Deploy the complete exact-candidate Edge Function inventory to staging
+        working-directory: candidate
+        env:
+          STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: >-
+          node scripts/ev2/phase12/deploy-staging-functions.mjs
+          --source . --rollback-source ../baseline
+          --candidate "${{ steps.candidate.outputs.sha }}"
+          --report outputs/g12-staging-function-deployment.json
+      - name: Verify staging migrations, RLS, Storage, Vault and Function modes
+        working-directory: candidate
+        env:
+          STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          supabase functions list --project-ref "$STAGING_SUPABASE_PROJECT_REF" --output json > ../g12-staging-functions.json
+          node scripts/ev2/phase12/verify-production-functions.mjs \
+          --file ../g12-staging-functions.json \
+          --receipt outputs/g12-staging-function-deployment.json \
+          --source . --candidate "${{ steps.candidate.outputs.sha }}" \
+          --environment staging --project-ref "$STAGING_SUPABASE_PROJECT_REF"
+          node scripts/ev2/phase12/verify-staging-database.mjs --source . | tee ../g12-staging-database.json
+      - name: Exercise post-baseline migration scenarios with isolated synthetic data
+        working-directory: candidate
+        run: node scripts/ev2/phase12/staging-migrations-canary.mjs
+        env:
+          G12_MIGRATION_CANARY_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          G12_MIGRATION_CANARY_REPORT_PATH: ../g12-staging-migrations-canary.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Build the approved rollback frontend against the candidate backend
+        working-directory: baseline
+        run: |
+          npm ci
+          npm run build:staging
+          env -u GITHUB_SHA npm run artifact:manifest
+          mkdir -p outputs
+          node ../candidate/scripts/qa/cms-coverage-inventory.mjs \
+            --repository-root . \
+            --output outputs/cms-coverage-rollback.json
+        env:
+          VITE_RELEASE: ${{ inputs.rollback_ref }}
           VITE_CMS_ENVIRONMENT: staging
-          VITE_EV2_DRAFT_V2_CANDIDATE: ${{ inputs.ev2_draft_v2_candidate }}
-      - run: npm run artifact:manifest
-        env:
-          GITHUB_SHA: ${{ github.sha }}
-      - id: deploy
+          VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          VITE_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_STAGING_SITE_KEY }}
+          VITE_GOOGLE_MAPS_KEY: ${{ vars.GOOGLE_MAPS_BROWSER_KEY }}
+          VITE_CONTACT_CAPTCHA_ALWAYS: "true"
+          VITE_EV2_DRAFT_V2_CANDIDATE: "false"
+      - name: Seal the approved staging recovery artifact
+        working-directory: candidate
+        run: |
+          mkdir -p ../baseline/outputs
+          node scripts/ev2/phase12/seal-production-dist.mjs \
+            --dist ../baseline/dist \
+            --archive ../baseline/outputs/staging-baseline-dist.tar \
+            --output ../baseline/outputs/staging-baseline-dist-seal.json \
+            --candidate "${{ inputs.rollback_ref }}"
+      - name: Verify the staging recovery artifact before durable handoff
+        working-directory: candidate
+        run: >-
+          node scripts/ev2/phase12/verify-production-dist-seal.mjs
+          --dist ../baseline/dist
+          --seal ../baseline/outputs/staging-baseline-dist-seal.json
+          --candidate "${{ inputs.rollback_ref }}"
+      - name: Upload mandatory sealed staging recovery artifact
+        id: staging_recovery_artifact
+        timeout-minutes: 10
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: staging-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            baseline/dist
+            baseline/outputs/staging-baseline-dist.tar
+            baseline/outputs/staging-baseline-dist-seal.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Revalidate the sealed recovery artifact before compatibility publication
+        working-directory: candidate
+        run: >-
+          node scripts/ev2/phase12/verify-production-dist-seal.mjs
+          --dist ../baseline/dist
+          --seal ../baseline/outputs/staging-baseline-dist-seal.json
+          --candidate "${{ inputs.rollback_ref }}"
+      - name: Publish the rollback frontend to an isolated compatibility canary
+        id: rollback_compatibility_deploy
+        timeout-minutes: 15
         uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name gaiatec-cms-staging --branch Remodelagem
-      - run: npm run smoke:http -- "${{ steps.deploy.outputs.deployment-url }}"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+          workingDirectory: baseline
+          command: >-
+            pages deploy dist --project-name gaiatec-cms-staging --branch ev2-g12-rollback-compat
+            --commit-hash ${{ inputs.rollback_ref }} --commit-dirty=false
+      - name: Probe the rollback frontend against the candidate backend
+        working-directory: candidate
+        run: node scripts/ev2/phase12/rollout-probe.mjs
+        env:
+          EV2_G12_ORIGIN: ${{ steps.rollback_compatibility_deploy.outputs.deployment-url }}
+          EV2_G12_EXPECTED_SHA: ${{ inputs.rollback_ref }}
+          EV2_G12_ENVIRONMENT: staging
+          EV2_G12_PROBE_PROFILE: full
+          EV2_G12_SAMPLE_COUNT: "5"
+          EV2_G12_REPORT_PATH: ../g12-staging-rollback-compatibility.json
+      - name: Install the isolated browser for authenticated rollback compatibility
+        working-directory: candidate
+        run: npx playwright install --with-deps chromium
+      - name: Provision an isolated MFA actor for authenticated rollback compatibility
+        id: rollback_browser_fixture
+        working-directory: candidate
+        run: node scripts/qa/cms-browser-fixture.mjs setup
+        env:
+          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          QA_CMS_TARGET_ENVIRONMENT: staging
+          QA_CMS_FIXTURE_STATE_PATH: outputs/cms-browser-rollback-state.json
+          QA_CMS_FIXTURE_REPORT_PATH: outputs/cms-browser-rollback-setup.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Traverse the rollback frontend with an AAL2 session against the candidate backend
+        timeout-minutes: 25
+        working-directory: candidate
+        run: >-
+          npx playwright test tests/e2e/cms-final-coverage.spec.ts
+          --project=desktop-chromium --workers=1 --retries=0
+          --grep "sessão AAL2 percorre todas as superfícies"
+        env:
+          PLAYWRIGHT_BASE_URL: ${{ steps.rollback_compatibility_deploy.outputs.deployment-url }}
+          QA_CMS_REPORT_PATH: outputs/cms-rollback-authenticated-compatibility.json
+          QA_CMS_COVERAGE_INVENTORY_PATH: ../baseline/outputs/cms-coverage-rollback.json
+          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          QA_CMS_FRONTEND_EXPECTED_SHA: ${{ inputs.rollback_ref }}
+          QA_CMS_ROLLBACK_COMPATIBILITY: "true"
+          QA_CMS_TARGET_ENVIRONMENT: staging
+      - name: Revoke the rollback compatibility actor and verify zero active residue
+        id: rollback_browser_cleanup
+        if: always() && steps.rollback_browser_fixture.outcome != 'skipped'
+        working-directory: candidate
+        run: node scripts/qa/cms-browser-fixture.mjs cleanup
+        env:
+          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          QA_CMS_TARGET_ENVIRONMENT: staging
+          QA_CMS_FIXTURE_STATE_PATH: outputs/cms-browser-rollback-state.json
+          QA_CMS_FIXTURE_REPORT_PATH: outputs/cms-browser-rollback-cleanup.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Retry rollback compatibility actor cleanup after a cleanup failure
+        if: >-
+          always() && steps.rollback_browser_fixture.outcome != 'skipped' &&
+          steps.rollback_browser_cleanup.outcome == 'failure'
+        working-directory: candidate
+        run: node scripts/qa/cms-browser-fixture.mjs cleanup
+        env:
+          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          QA_CMS_TARGET_ENVIRONMENT: staging
+          QA_CMS_FIXTURE_STATE_PATH: outputs/cms-browser-rollback-state.json
+          QA_CMS_FIXTURE_REPORT_PATH: outputs/cms-browser-rollback-cleanup-retry.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Build the staging shell from the same SHA
+        working-directory: candidate
+        run: npm run build:staging
+        env:
+          VITE_RELEASE: ${{ steps.candidate.outputs.sha }}
+          VITE_CMS_ENVIRONMENT: staging
+          VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          VITE_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_STAGING_SITE_KEY }}
+          VITE_GOOGLE_MAPS_KEY: ${{ vars.GOOGLE_MAPS_BROWSER_KEY }}
+          VITE_CONTACT_CAPTCHA_ALWAYS: "true"
+          VITE_EV2_DRAFT_V2_CANDIDATE: ${{ inputs.ev2_draft_v2_candidate }}
+      - name: Verify exact candidate checkout is clean before sealing the artifact
+        working-directory: candidate
+        run: test -z "$(git status --porcelain --untracked-files=all)"
+      - name: Seal staging release manifest
+        working-directory: candidate
+        run: env -u GITHUB_SHA npm run artifact:manifest
+        env:
+          VITE_RELEASE: ${{ steps.candidate.outputs.sha }}
+      - name: Seal the immutable staging candidate bytes before first publication
+        working-directory: candidate
+        run: >-
+          node scripts/ev2/phase12/seal-production-dist.mjs
+          --dist dist
+          --archive outputs/staging-candidate-dist.tar
+          --output outputs/staging-candidate-dist-seal.json
+          --candidate "${{ steps.candidate.outputs.sha }}"
+      - name: Verify the staging candidate seal before durable handoff
+        working-directory: candidate
+        run: >-
+          node scripts/ev2/phase12/verify-production-dist-seal.mjs
+          --dist dist
+          --seal outputs/staging-candidate-dist-seal.json
+          --candidate "${{ steps.candidate.outputs.sha }}"
+      - name: Upload mandatory immutable staging candidate artifact
+        id: staging_candidate_artifact
+        timeout-minutes: 10
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: staging-${{ github.sha }}
-          path: dist
+          name: staging-candidate-${{ steps.candidate.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            candidate/outputs/staging-candidate-dist.tar
+            candidate/outputs/staging-candidate-dist-seal.json
+          if-no-files-found: error
           retention-days: 30
+      - name: Revalidate the immutable staging candidate before canonical canary publication
+        working-directory: candidate
+        run: >-
+          node scripts/ev2/phase12/verify-production-dist-seal.mjs
+          --dist dist
+          --seal outputs/staging-candidate-dist-seal.json
+          --candidate "${{ steps.candidate.outputs.sha }}"
+      - name: Deploy the immutable staging candidate
+        id: deploy
+        timeout-minutes: 15
+        working-directory: candidate
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-cms-staging
+          STAGING_ORIGINAL_DEPLOYMENT: ${{ steps.staging_baseline.outputs.deployment_id }}
+          STAGING_ORIGINAL_RELEASE: ${{ steps.staging_baseline.outputs.release }}
+          STAGING_ORIGINAL_CREATED_ON: ${{ steps.staging_baseline.outputs.created_on }}
+          STAGING_ORIGINAL_COMMIT_MESSAGE: ${{ steps.staging_baseline.outputs.commit_message }}
+        run: >-
+          node scripts/ev2/phase12/deploy-sealed-staging-dist.mjs
+          --archive outputs/staging-candidate-dist.tar
+          --seal outputs/staging-candidate-dist-seal.json
+          --candidate "${{ steps.candidate.outputs.sha }}"
+          --branch ev2-g17-canary
+          --commit-message "${{ steps.staging_state.outputs.run_marker }}"
+          --wrangler-script node_modules/wrangler/bin/wrangler.js
+      - name: Bind the canonical canary to this workflow deployment marker
+        id: staging_owned_deployment
+        timeout-minutes: 3
+        working-directory: candidate
+        run: node scripts/ev2/phase12/staging-pages-state.mjs assert-owned
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-cms-staging
+          CLOUDFLARE_PAGES_BRANCH: ev2-g17-canary
+          STAGING_ORIGINAL_RELEASE: ${{ inputs.rollback_ref }}
+          STAGING_ORIGINAL_DEPLOYMENT: ${{ steps.staging_baseline.outputs.deployment_id }}
+          STAGING_ORIGINAL_CREATED_ON: ${{ steps.staging_baseline.outputs.created_on }}
+          STAGING_ORIGINAL_COMMIT_MESSAGE: ${{ steps.staging_baseline.outputs.commit_message }}
+          STAGING_CANDIDATE_RELEASE: ${{ steps.candidate.outputs.sha }}
+          STAGING_RUN_MARKER: ${{ steps.staging_state.outputs.run_marker }}
+      - name: Probe shell and public routes of the exact deployment
+        working-directory: candidate
+        run: node scripts/ev2/phase12/rollout-probe.mjs
+        env:
+          EV2_G12_ORIGIN: ${{ steps.deploy.outputs.deployment-url }}
+          EV2_G12_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          EV2_G12_ENVIRONMENT: staging
+          EV2_G12_PROBE_PROFILE: full
+          EV2_G12_SAMPLE_COUNT: "5"
+          EV2_G12_REPORT_PATH: ../g12-staging-probe.json
+      - name: Revalidate immutable bytes before the isolated G12 canary
+        working-directory: candidate
+        run: >-
+          node scripts/ev2/phase12/verify-production-dist-seal.mjs
+          --dist dist
+          --seal outputs/staging-candidate-dist-seal.json
+          --candidate "${{ steps.candidate.outputs.sha }}"
+      - name: Publish the same artifact to the isolated G12 canary
+        timeout-minutes: 15
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: candidate
+          command: >-
+            pages deploy dist --project-name gaiatec-cms-staging --branch ev2-g12-canary
+            --commit-hash ${{ steps.candidate.outputs.sha }} --commit-dirty=false
+      - name: Run three healthy G12 windows and inherited system assurance
+        working-directory: candidate
+        run: npm run canary:ev2:phase12
+        env:
+          EV2_G12_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          EV2_G12_REPORT_PATH: ../g12-canary.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Revalidate immutable bytes before the enforced-CSP canary
+        working-directory: candidate
+        run: >-
+          node scripts/ev2/phase12/verify-production-dist-seal.mjs
+          --dist dist
+          --seal outputs/staging-candidate-dist-seal.json
+          --candidate "${{ steps.candidate.outputs.sha }}"
+      - name: Publish the same artifact to the enforced-CSP canary
+        timeout-minutes: 15
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: candidate
+          command: >-
+            pages deploy dist --project-name gaiatec-cms-staging --branch ev2-g16-csp-canary
+            --commit-hash ${{ steps.candidate.outputs.sha }} --commit-dirty=false
+      - name: Run deployed public catalog, route, mobile and accessibility browser regressions
+        working-directory: candidate
+        run: >-
+          npx playwright test tests/e2e/products-catalog.spec.ts tests/e2e/routes-and-a11y.spec.ts
+          --workers=2 --retries=0
+        env:
+          PLAYWRIGHT_BASE_URL: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
+      - name: Validate source inventory and signed-out routes in the deployed browser
+        working-directory: candidate
+        run: >-
+          npx playwright test --project=desktop-chromium --retries=0
+          --grep "matriz classifica|CI sem segredos"
+        env:
+          PLAYWRIGHT_BASE_URL: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
+          QA_CMS_REPORT_PATH: outputs/cms-final-coverage.json
+          QA_CMS_TARGET_ENVIRONMENT: staging
+          QA_CMS_REQUIRE_AUTHENTICATED: "false"
+          QA_CMS_AUTHENTICATED_SUITE_SCHEDULED: "true"
+      - name: Verify exact candidate checkout is clean before browser mutation
+        working-directory: candidate
+        run: test -z "$(git status --porcelain --untracked-files=all)"
+      - name: Provision the isolated MFA actor for the mutating browser cycle
+        id: browser_mutating_fixture
+        timeout-minutes: 10
+        working-directory: candidate
+        run: node scripts/qa/cms-browser-fixture.mjs setup
+        env:
+          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          QA_CMS_TARGET_ENVIRONMENT: staging
+          QA_CMS_PROVISION_AUTH_LIFECYCLE: "true"
+          QA_CMS_FIXTURE_STATE_PATH: outputs/cms-browser-mutating-state.json
+          QA_CMS_FIXTURE_REPORT_PATH: outputs/cms-browser-mutating-setup.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Run the complete authenticated mutating editorial cycle first
+        timeout-minutes: 55
+        working-directory: candidate
+        run: |
+          npx playwright test tests/e2e/cms-auth-lifecycle.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @mutating
+          npx playwright test tests/e2e/cms-final-coverage.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @ui-bootstrap
+          npx playwright test tests/e2e/cms-admin-ops-cycles.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @mutating
+          npx playwright test tests/e2e/cms-secondary-ui-cycles.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @mutating
+          npx playwright test tests/e2e/cms-security-boundaries.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @security-staging
+        env:
+          PLAYWRIGHT_BASE_URL: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
+          QA_CMS_AUTH_REPORT_PATH: outputs/cms-auth-lifecycle.json
+          QA_CMS_REPORT_PATH: outputs/cms-final-coverage.json
+          QA_CMS_ADMIN_OPS_REPORT_PATH: outputs/cms-admin-ops-cycles.json
+          QA_CMS_SECONDARY_REPORT_PATH: outputs/cms-secondary-ui-cycles.json
+          QA_CMS_SECURITY_REPORT_PATH: outputs/cms-security-boundaries.json
+          QA_CMS_UI_CREATED_STATE_PATH: outputs/cms-ui-created-state.json
+          QA_CMS_SECURITY_REQUIRED: "true"
+          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          QA_CMS_TARGET_ENVIRONMENT: staging
+      - name: Browser-prove A and an already-loaded f48 tab against the forward backend
+        timeout-minutes: 15
+        working-directory: candidate
+        run: |
+          npx playwright test tests/e2e/cms-public-forward-compatibility.spec.ts \
+            --project=desktop-chromium --workers=1 --retries=0
+          node scripts/ev2/phase12/verify-public-bridge-forward-canary.mjs \
+            --file outputs/cms-public-forward-compatibility.json \
+            --candidate "${{ steps.candidate.outputs.sha }}"
+        env:
+          PLAYWRIGHT_BASE_URL: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
+          QA_CMS_PUBLIC_FORWARD_REQUIRED: "true"
+          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          QA_CMS_UI_CREATED_STATE_PATH: outputs/cms-ui-created-state.json
+          QA_CMS_BRIDGE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          QA_CMS_BRIDGE_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          QA_CMS_BRIDGE_REPORT_PATH: outputs/cms-public-forward-compatibility.json
+      - name: Traverse every authenticated route, menu and required viewport on the same lease
+        timeout-minutes: 25
+        working-directory: candidate
+        run: >-
+          npx playwright test tests/e2e/cms-final-coverage.spec.ts
+          --project=desktop-chromium --workers=1 --retries=0 --grep @semantic
+        env:
+          PLAYWRIGHT_BASE_URL: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
+          QA_CMS_REPORT_PATH: outputs/cms-final-coverage.json
+          QA_CMS_UI_CREATED_STATE_PATH: outputs/cms-ui-created-state.json
+          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          QA_CMS_TARGET_ENVIRONMENT: staging
+      - name: Revoke the mutating browser actor and verify zero active residue
+        id: browser_mutating_cleanup
+        if: always() && steps.browser_mutating_fixture.outcome != 'skipped'
+        continue-on-error: true
+        timeout-minutes: 5
+        working-directory: candidate
+        run: node scripts/qa/cms-browser-fixture.mjs cleanup
+        env:
+          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          QA_CMS_TARGET_ENVIRONMENT: staging
+          QA_CMS_FIXTURE_STATE_PATH: outputs/cms-browser-mutating-state.json
+          QA_CMS_FIXTURE_REPORT_PATH: outputs/cms-browser-mutating-cleanup.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Retry cleanup for the same isolated browser lease
+        if: always() && steps.browser_mutating_cleanup.outcome == 'failure'
+        timeout-minutes: 5
+        working-directory: candidate
+        run: node scripts/qa/cms-browser-fixture.mjs cleanup
+        env:
+          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          QA_CMS_TARGET_ENVIRONMENT: staging
+          QA_CMS_FIXTURE_STATE_PATH: outputs/cms-browser-mutating-state.json
+          QA_CMS_FIXTURE_REPORT_PATH: outputs/cms-browser-mutating-cleanup.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Prove terminal zero residue for the same isolated browser lease
+        if: always() && steps.browser_mutating_cleanup.outcome != 'skipped'
+        timeout-minutes: 5
+        working-directory: candidate
+        run: node scripts/qa/cms-browser-fixture.mjs residue
+        env:
+          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          QA_CMS_TARGET_ENVIRONMENT: staging
+          QA_CMS_FIXTURE_STATE_PATH: outputs/cms-browser-mutating-state.json
+          QA_CMS_FIXTURE_REPORT_PATH: outputs/cms-browser-mutating-residue.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Materialize fail-closed terminal CMS coverage from the single bound run
+        timeout-minutes: 8
+        working-directory: candidate
+        run: >-
+          node scripts/qa/materialize-cms-terminal-coverage.mjs
+          --inventory outputs/g12-cms-coverage-matrix.json
+          --runtime outputs/cms-final-coverage.json
+          --setup outputs/cms-browser-mutating-setup.json
+          --cleanup outputs/cms-browser-mutating-cleanup.json
+          --residue outputs/cms-browser-mutating-residue.json
+          --auth outputs/cms-auth-lifecycle.json
+          --admin outputs/cms-admin-ops-cycles.json
+          --secondary outputs/cms-secondary-ui-cycles.json
+          --security outputs/cms-security-boundaries.json
+          --sha "${{ steps.candidate.outputs.sha }}"
+          --environment staging
+          --output outputs/cms-terminal-coverage-matrix.json
+      - name: Validate enforced CSP in a real browser
+        working-directory: candidate
+        run: npm run canary:ev2:phase16:csp
+        env:
+          CSP_CANARY_ORIGIN: https://ev2-g16-csp-canary.gaiatec-cms-staging.pages.dev
+          CSP_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          CSP_EVIDENCE_PATH: ../g16-csp-browser.json
+      - name: Run authenticated synthetic canary against the deployed backend
+        working-directory: candidate
+        run: npm run canary:ev2:phase17 | tee ../g17-staging-canary.json
+        env:
+          EV2_G17_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Exercise the governed editorial lifecycle end to end
+        working-directory: candidate
+        run: |
+          qa_date="$(date -u +%Y%m%d)"
+          export GAIATEC_QA_RUN_TAG="QA-CMS-FINAL-${qa_date}-${GAIATEC_EXPECTED_SHA:0:8}"
+          node scripts/phase7/staging-roundtrip.mjs | tee ../g12-staging-lifecycle.json
+        env:
+          GAIATEC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          GAIATEC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          GAIATEC_STAGING_ORIGIN: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
+          GAIATEC_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Probe public, anonymous, CORS and secret boundaries
+        working-directory: candidate
+        run: node scripts/ev2/phase12/probe-supabase-boundary.mjs | tee ../g12-staging-boundary.json
+        env:
+          CMS_BACKEND_ENVIRONMENT: staging
+          CMS_BACKEND_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          CMS_BACKEND_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          CMS_BACKEND_ORIGIN: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
+      - name: Revalidate the immutable candidate after all staging gates
+        if: always() && steps.staging_candidate_artifact.outcome == 'success'
+        working-directory: candidate
+        run: >-
+          node scripts/ev2/phase12/verify-production-dist-seal.mjs
+          --dist dist
+          --seal outputs/staging-candidate-dist-seal.json
+          --candidate "${{ steps.candidate.outputs.sha }}"
+      - name: Bind staging evidence to mandatory artifact IDs and digests
+        if: >-
+          always() && steps.staging_state_artifact.outcome == 'success' &&
+          steps.staging_recovery_artifact.outcome == 'success' &&
+          steps.staging_candidate_artifact.outcome == 'success'
+        working-directory: candidate
+        env:
+          STATE_ARTIFACT_ID: ${{ steps.staging_state_artifact.outputs.artifact-id }}
+          STATE_ARTIFACT_DIGEST: ${{ steps.staging_state_artifact.outputs.artifact-digest }}
+          RECOVERY_ARTIFACT_ID: ${{ steps.staging_recovery_artifact.outputs.artifact-id }}
+          RECOVERY_ARTIFACT_DIGEST: ${{ steps.staging_recovery_artifact.outputs.artifact-digest }}
+          CANDIDATE_ARTIFACT_ID: ${{ steps.staging_candidate_artifact.outputs.artifact-id }}
+          CANDIDATE_ARTIFACT_DIGEST: ${{ steps.staging_candidate_artifact.outputs.artifact-digest }}
+          CANDIDATE_SHA: ${{ steps.candidate.outputs.sha }}
+        run: |
+          node <<'NODE'
+          const { readFileSync, writeFileSync } = require("node:fs");
+          const id = /^[1-9]\d*$/;
+          const digest = /^(?:sha256:)?[a-f0-9]{64}$/;
+          for (const name of ["STATE_ARTIFACT_ID", "RECOVERY_ARTIFACT_ID", "CANDIDATE_ARTIFACT_ID"])
+            if (!id.test(process.env[name] || "")) throw new Error("G12_STAGING_ARTIFACT_ID_INVALID");
+          for (const name of ["STATE_ARTIFACT_DIGEST", "RECOVERY_ARTIFACT_DIGEST", "CANDIDATE_ARTIFACT_DIGEST"])
+            if (!digest.test(process.env[name] || "")) throw new Error("G12_STAGING_ARTIFACT_DIGEST_INVALID");
+          const canonicalDigest = (value) => value.startsWith("sha256:") ? value : `sha256:${value}`;
+          const seal = JSON.parse(readFileSync("outputs/staging-candidate-dist-seal.json", "utf8"));
+          const evidence = {
+            schemaVersion: 1,
+            event: "g12.staging.artifacts.bound",
+            candidateSha: process.env.CANDIDATE_SHA,
+            state: { id: process.env.STATE_ARTIFACT_ID, digest: canonicalDigest(process.env.STATE_ARTIFACT_DIGEST) },
+            recovery: { id: process.env.RECOVERY_ARTIFACT_ID, digest: canonicalDigest(process.env.RECOVERY_ARTIFACT_DIGEST) },
+            candidate: {
+              id: process.env.CANDIDATE_ARTIFACT_ID,
+              digest: canonicalDigest(process.env.CANDIDATE_ARTIFACT_DIGEST),
+              archiveSha256: seal.archiveSha256,
+              treeSha256: seal.treeSha256,
+            },
+          };
+          writeFileSync("outputs/staging-artifact-bindings.json", JSON.stringify(evidence, null, 2) + "\n", {
+            encoding: "utf8",
+            mode: 0o600,
+          });
+          NODE
+      - name: Require every successful staging evidence file before upload
+        if: success()
+        run: |
+          for file in \
+            candidate/outputs/staging-artifact-bindings.json \
+            candidate/outputs/cms-auth-lifecycle.json \
+            candidate/outputs/cms-final-coverage.json \
+            candidate/outputs/cms-admin-ops-cycles.json \
+            candidate/outputs/cms-secondary-ui-cycles.json \
+            candidate/outputs/cms-security-boundaries.json \
+            candidate/outputs/cms-ui-created-state.json \
+            candidate/outputs/cms-public-forward-compatibility.json \
+            candidate/outputs/cms-browser-mutating-setup.json \
+            candidate/outputs/cms-browser-mutating-cleanup.json \
+            candidate/outputs/cms-browser-mutating-residue.json \
+            candidate/outputs/cms-terminal-coverage-matrix.json \
+            candidate/outputs/g12-cms-coverage-matrix.json \
+            candidate/outputs/cms-browser-rollback-setup.json \
+            candidate/outputs/cms-browser-rollback-cleanup.json \
+            candidate/outputs/cms-rollback-authenticated-compatibility.json \
+            candidate/outputs/g12-staging-function-deployment.json \
+            candidate/outputs/g12-backend-compatibility.json \
+            baseline/outputs/cms-coverage-rollback.json \
+            g12-canary.json \
+            g16-csp-browser.json \
+            g12-staging-database.json \
+            g12-staging-auth.json \
+            g12-staging-functions.json \
+            g12-staging-migrations-canary.json \
+            g12-staging-live-baseline.json \
+            g12-staging-rollback-compatibility.json \
+            g12-staging-probe.json \
+            g12-staging-boundary.json \
+            g12-staging-lifecycle.json \
+            g17-staging-canary.json
+          do
+            test -s "$file"
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: staging-${{ steps.candidate.outputs.sha }}
+          path: |
+            candidate/outputs/staging-artifact-bindings.json
+            candidate/outputs/cms-auth-lifecycle.json
+            candidate/outputs/cms-final-coverage.json
+            candidate/outputs/cms-admin-ops-cycles.json
+            candidate/outputs/cms-secondary-ui-cycles.json
+            candidate/outputs/cms-security-boundaries.json
+            candidate/outputs/cms-ui-created-state.json
+            candidate/outputs/cms-public-forward-compatibility.json
+            candidate/outputs/cms-browser-mutating-setup.json
+            candidate/outputs/cms-browser-mutating-cleanup.json
+            candidate/outputs/cms-browser-mutating-residue.json
+            candidate/outputs/cms-terminal-coverage-matrix.json
+            candidate/outputs/g12-cms-coverage-matrix.json
+            candidate/outputs/cms-browser-rollback-setup.json
+            candidate/outputs/cms-browser-rollback-cleanup.json
+            candidate/outputs/cms-browser-rollback-cleanup-retry.json
+            candidate/outputs/cms-rollback-authenticated-compatibility.json
+            candidate/outputs/g12-staging-function-deployment.json
+            candidate/outputs/g12-backend-compatibility.json
+            baseline/outputs/cms-coverage-rollback.json
+            g12-canary.json
+            g16-csp-browser.json
+            g12-staging-database.json
+            g12-staging-auth.json
+            g12-staging-functions.json
+            g12-staging-migrations-canary.json
+            g12-staging-live-baseline.json
+            g12-staging-rollback-compatibility.json
+            g12-staging-probe.json
+            g12-staging-boundary.json
+            g12-staging-lifecycle.json
+            g17-staging-canary.json
+          if-no-files-found: error
+          retention-days: 30
+
+  finalize:
+    needs: deploy
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: staging
+    steps:
+      - name: Checkout the trusted staging control revision
+        timeout-minutes: 5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          path: control
+      - name: Download mandatory pre-mutation state by immutable artifact ID
+        id: state_artifact_download
+        if: needs.deploy.outputs.state_artifact_id != ''
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.deploy.outputs.state_artifact_id }}
+          digest-mismatch: error
+          path: state
+      - name: Recover signed staging state when artifact download is unavailable
+        id: state_variable_fallback
+        if: always() && steps.state_artifact_download.outcome != 'success'
+        continue-on-error: true
+        timeout-minutes: 5
+        working-directory: control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs get
+          --kind staging-deploy --file ../state-variable/staging-deploy-state.json
+          --run-id "${{ github.run_id }}" --run-attempt "${{ github.run_attempt }}"
+          --control-sha "${{ github.sha }}"
+      - name: Validate staging state and workflow binding
+        id: finalizer_state
+        working-directory: control
+        env:
+          EXPECTED_RUN_ID: ${{ github.run_id }}
+          EXPECTED_RUN_ATTEMPT: ${{ github.run_attempt }}
+          EXPECTED_CONTROL_SHA: ${{ github.sha }}
+          EXPECTED_CANDIDATE_SHA: ${{ needs.deploy.outputs.candidate_sha }}
+          EXPECTED_ROLLBACK_SHA: ${{ needs.deploy.outputs.rollback_sha }}
+          EXPECTED_RUN_MARKER: ${{ needs.deploy.outputs.run_marker }}
+          EXPECTED_STATE_ARTIFACT_ID: ${{ needs.deploy.outputs.state_artifact_id }}
+          EXPECTED_STATE_ARTIFACT_DIGEST: ${{ needs.deploy.outputs.state_artifact_digest }}
+          STATE_ARTIFACT_OUTCOME: ${{ steps.state_artifact_download.outcome }}
+          STATE_VARIABLE_OUTCOME: ${{ steps.state_variable_fallback.outcome }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const { appendFileSync, readFileSync } = require("node:fs");
+          const statePath = process.env.STATE_ARTIFACT_OUTCOME === "success"
+            ? "../state/staging-deploy-state.json"
+            : "../state-variable/staging-deploy-state.json";
+          if (process.env.STATE_ARTIFACT_OUTCOME !== "success" && process.env.STATE_VARIABLE_OUTCOME !== "success")
+            throw new Error("G12_STAGING_FINALIZER_STATE_UNAVAILABLE");
+          const state = JSON.parse(readFileSync(statePath, "utf8"));
+          const sha = /^[a-f0-9]{40}$/;
+          const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+          const artifactId = /^[1-9]\d*$/;
+          const artifactDigest = /^(?:sha256:)?[a-f0-9]{64}$/;
+          if (
+            state.schemaVersion !== 1 || state.event !== "g12.staging.deploy.prepared" ||
+            state.workflow?.runId !== process.env.EXPECTED_RUN_ID ||
+            Number(state.workflow?.runAttempt) !== Number(process.env.EXPECTED_RUN_ATTEMPT) ||
+            state.workflow?.controlSha !== process.env.EXPECTED_CONTROL_SHA ||
+            state.candidateRelease !== process.env.EXPECTED_CANDIDATE_SHA ||
+            state.original?.release !== process.env.EXPECTED_ROLLBACK_SHA ||
+            state.runMarker !== process.env.EXPECTED_RUN_MARKER ||
+            state.compensationMarker !== `g12-staging-deploy-compensation-${process.env.EXPECTED_RUN_ID}-${process.env.EXPECTED_RUN_ATTEMPT}` ||
+            state.project !== "gaiatec-cms-staging" || state.branch !== "ev2-g17-canary" ||
+            !sha.test(state.candidateRelease || "") || !sha.test(state.original?.release || "") || !uuid.test(state.original?.deploymentId || "") ||
+            !Number.isFinite(Date.parse(state.original?.createdOn || "")) ||
+            typeof state.original?.commitMessage !== "string" || /[\r\n\0]/.test(state.original.commitMessage) ||
+            (process.env.STATE_ARTIFACT_OUTCOME === "success" &&
+            (!artifactId.test(process.env.EXPECTED_STATE_ARTIFACT_ID || "") ||
+            !artifactDigest.test(process.env.EXPECTED_STATE_ARTIFACT_DIGEST || "")))
+          ) throw new Error("G12_STAGING_FINALIZER_STATE_REFUSED");
+          appendFileSync(process.env.GITHUB_OUTPUT, [
+            `candidate_release=${state.candidateRelease}`,
+            `original_release=${state.original.release}`,
+            `run_marker=${state.runMarker}`,
+            `compensation_marker=${state.compensationMarker}`,
+            `original_deployment=${state.original.deploymentId}`,
+            `original_created_on=${new Date(state.original.createdOn).toISOString()}`,
+            `original_commit_message=${state.original.commitMessage}`,
+            `state_path=${statePath}`,
+          ].join("\n") + "\n");
+          NODE
+          git cat-file -e "${{ needs.deploy.outputs.rollback_sha }}^{commit}"
+          git cat-file -e "${{ needs.deploy.outputs.candidate_sha }}^{commit}"
+          git merge-base --is-ancestor \
+            "${{ needs.deploy.outputs.rollback_sha }}" "${{ needs.deploy.outputs.candidate_sha }}"
+      - name: Recheck canonical staging state after the deploy job
+        id: finalizer_decision
+        timeout-minutes: 3
+        continue-on-error: true
+        working-directory: control
+        env: &staging_reconcile_environment
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-cms-staging
+          CLOUDFLARE_PAGES_BRANCH: ev2-g17-canary
+          STAGING_ORIGINAL_RELEASE: ${{ steps.finalizer_state.outputs.original_release }}
+          STAGING_ORIGINAL_DEPLOYMENT: ${{ steps.finalizer_state.outputs.original_deployment }}
+          STAGING_ORIGINAL_CREATED_ON: ${{ steps.finalizer_state.outputs.original_created_on }}
+          STAGING_ORIGINAL_COMMIT_MESSAGE: ${{ steps.finalizer_state.outputs.original_commit_message }}
+          STAGING_CANDIDATE_RELEASE: ${{ steps.finalizer_state.outputs.candidate_release }}
+          STAGING_RUN_MARKER: ${{ steps.finalizer_state.outputs.run_marker }}
+          STAGING_COMPENSATION_MARKER: ${{ steps.finalizer_state.outputs.compensation_marker }}
+        run: >-
+          node scripts/ev2/phase12/staging-pages-state.mjs
+          ${{ needs.deploy.result == 'success' && 'assert-owned' || 'decide' }}
+      - name: Download the exact sealed recovery artifact only when compensation is required
+        id: recovery_artifact_download
+        if: >-
+          always() && needs.deploy.result != 'success' &&
+          steps.finalizer_decision.outputs.action == 'restore-original' &&
+          needs.deploy.outputs.recovery_artifact_id != ''
+        continue-on-error: true
+        timeout-minutes: 10
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.deploy.outputs.recovery_artifact_id }}
+          digest-mismatch: error
+          path: recovery
+      - name: Install the exact locked Wrangler only for compensation
+        if: >-
+          always() && needs.deploy.result != 'success' &&
+          steps.finalizer_decision.outputs.action == 'restore-original' &&
+          steps.recovery_artifact_download.outcome == 'success'
+        timeout-minutes: 10
+        working-directory: control
+        run: npm ci --ignore-scripts
+      - name: Compensate only this run's still-canonical staging candidate
+        id: finalizer_compensation
+        if: >-
+          always() && needs.deploy.result != 'success' &&
+          steps.finalizer_decision.outputs.action == 'restore-original'
+        timeout-minutes: 15
+        continue-on-error: true
+        working-directory: control
+        env: *staging_reconcile_environment
+        run: >-
+          node scripts/ev2/phase12/staging-pages-state.mjs compensate
+          --dist ../recovery/dist
+          --seal ../recovery/outputs/staging-baseline-dist-seal.json
+      - name: Retry ambiguous compensation after a fresh canonical recheck
+        id: finalizer_compensation_retry
+        if: >-
+          always() && needs.deploy.result != 'success' &&
+          steps.finalizer_decision.outputs.action == 'restore-original' &&
+          steps.recovery_artifact_download.outcome == 'success' &&
+          steps.finalizer_compensation.outcome != 'success'
+        timeout-minutes: 15
+        continue-on-error: true
+        working-directory: control
+        env: *staging_reconcile_environment
+        run: >-
+          node scripts/ev2/phase12/staging-pages-state.mjs compensate
+          --dist ../recovery/dist
+          --seal ../recovery/outputs/staging-baseline-dist-seal.json
+      - name: Terminal canonical recheck for successful staging deployment
+        if: always() && needs.deploy.result == 'success'
+        timeout-minutes: 3
+        working-directory: control
+        env: *staging_reconcile_environment
+        run: node scripts/ev2/phase12/staging-pages-state.mjs assert-owned
+      - name: Terminal canonical recheck after staging compensation
+        if: >-
+          always() && needs.deploy.result != 'success' &&
+          (steps.finalizer_decision.outputs.action == 'already-original' ||
+          steps.finalizer_compensation.outcome == 'success' ||
+          steps.finalizer_compensation_retry.outcome == 'success')
+        timeout-minutes: 3
+        working-directory: control
+        env: *staging_reconcile_environment
+        run: node scripts/ev2/phase12/staging-pages-state.mjs assert-original
+      - name: Probe the terminal staging frontend against the forward backend
+        id: finalizer_probe
+        if: >-
+          always() && steps.finalizer_state.outcome == 'success' &&
+          (steps.finalizer_decision.outcome == 'success' ||
+          steps.finalizer_compensation.outcome == 'success' ||
+          steps.finalizer_compensation_retry.outcome == 'success')
+        timeout-minutes: 10
+        working-directory: control
+        env:
+          EV2_G12_ORIGIN: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
+          EV2_G12_EXPECTED_SHA: ${{ needs.deploy.result == 'success' && steps.finalizer_state.outputs.candidate_release || steps.finalizer_state.outputs.original_release }}
+          EV2_G12_ENVIRONMENT: staging
+          EV2_G12_PROBE_PROFILE: full
+          EV2_G12_SAMPLE_COUNT: "5"
+          EV2_G12_REPORT_PATH: ../g12-staging-terminal-probe.json
+        run: node scripts/ev2/phase12/rollout-probe.mjs
+      - name: Upload mandatory terminal staging evidence
+        id: terminal_evidence_upload
+        if: always() && steps.finalizer_probe.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: staging-terminal-${{ github.run_id }}-${{ github.run_attempt }}
+          path: g12-staging-terminal-probe.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Compare and clear redundant staging state after terminal success
+        id: clear_recovery_state
+        if: >-
+          always() && needs.deploy.result == 'success' &&
+          steps.finalizer_decision.outcome == 'success' &&
+          steps.finalizer_probe.outcome == 'success' &&
+          steps.terminal_evidence_upload.outcome == 'success'
+        timeout-minutes: 5
+        working-directory: control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs clear
+          --kind staging-deploy --file "${{ steps.finalizer_state.outputs.state_path }}"
+          --run-id "${{ github.run_id }}" --run-attempt "${{ github.run_attempt }}"
+          --control-sha "${{ github.sha }}"
+      - name: Fail closed when staging did not finish in the required canonical state
+        if: >-
+          always() &&
+          (steps.finalizer_state.outcome != 'success' ||
+          steps.finalizer_decision.outcome != 'success' ||
+          steps.finalizer_probe.outcome != 'success' ||
+          steps.terminal_evidence_upload.outcome != 'success' ||
+          (needs.deploy.result == 'success' && steps.clear_recovery_state.outcome != 'success') ||
+          (needs.deploy.result != 'success' &&
+          steps.finalizer_decision.outputs.action == 'restore-original' &&
+          steps.finalizer_compensation.outcome != 'success' &&
+          steps.finalizer_compensation_retry.outcome != 'success'))
+        run: exit 1

@@ -108,7 +108,8 @@ test("interface não adiciona sino ou notificação decorativa", () => {
 });
 
 test("formulários resolvem a relação versionada e oferecem recuperação acionável", () => {
-  assert.match(forms, /cms_form_versions!cms_form_versions_form_id_fkey/);
+  assert.match(forms, /leadCommand/);
+  assert.match(forms, /action: "list_forms"/);
   assert.match(forms, /<ErrorState/);
   assert.match(forms, /Tentar novamente/);
 });

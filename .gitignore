@@ -9,6 +9,7 @@ dist/
 .wrangler/
 .vite/
 *.log
+*.tsbuildinfo
 playwright-report/
 test-results/
 outputs/

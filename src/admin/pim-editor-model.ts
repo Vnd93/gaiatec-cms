@@ -14,12 +14,12 @@ export function createEmptyPimProduct(): Ev2PimProductInput {
   return {
     id: crypto.randomUUID(),
     name: "",
-    slug: "produto-novo",
+    slug: "",
     summary: "",
     valueProposition: "",
     status: "draft",
     sourceType: "manual",
-    sourceRef: "Cadastro guiado EV2.4",
+    sourceRef: "",
     masterData: {
       manufacturerId: "",
       categoryId: "",
@@ -44,9 +44,9 @@ export function createEmptyPimProduct(): Ev2PimProductInput {
       {
         id: crypto.randomUUID(),
         sourceKind: "owner_authored",
-        sourceRef: "Cadastro interno",
-        confidence: 1,
-        rightsConfirmed: true,
+        sourceRef: "",
+        confidence: 0,
+        rightsConfirmed: false,
       },
     ],
   } as Ev2PimProductInput;

@@ -86,9 +86,14 @@ function workspace(correlationId: string) {
     policy: {
       decisionKey: "EV2-D04",
       status: "technical_draft",
-      providerMode: "synthetic",
-      externalProviderEnabled: false,
+      providerMode: "openrouter",
+      providerModel: "nvidia/nemotron-3.5-lightning:free",
+      externalProviderEnabled: true,
+      externalProviderReady: true,
       allowedDataClasses: ["synthetic"],
+      realDataAllowed: false,
+      automaticPublishAllowed: false,
+      manualFallback: true,
       retentionHours: 24,
       aiExecute: false,
     },
@@ -114,7 +119,9 @@ function workspace(correlationId: string) {
         title: "Fila segregada do editor",
         mode: "draft",
         status: "active",
-        providerMode: "synthetic",
+        providerMode: "openrouter",
+        providerModel: "nvidia/nemotron-3.5-lightning:free",
+        providerStatus: "succeeded",
         tokensUsed: 120,
         tokenBudget: 8000,
         costUsedMicros: 0,
@@ -133,7 +140,9 @@ function workspace(correlationId: string) {
         title: "Minha sessão de leitura",
         mode: "read",
         status: "active",
-        providerMode: "synthetic",
+        providerMode: "openrouter",
+        providerModel: "nvidia/nemotron-3.5-lightning:free",
+        providerStatus: null,
         tokensUsed: 0,
         tokenBudget: 8000,
         costUsedMicros: 0,
@@ -154,9 +163,11 @@ function responseFor(body: Record<string, unknown>) {
       source: "individual_override",
       environment: "staging",
       siteKey: "main",
-      providerMode: "synthetic",
-      externalProviderEnabled: false,
-      externalProviderReady: false,
+      providerMode: "openrouter",
+      providerModel: "nvidia/nemotron-3.5-lightning:free",
+      allowedModel: "nvidia/nemotron-3.5-lightning:free",
+      externalProviderEnabled: true,
+      externalProviderReady: true,
       aiExecute: false,
       realDataAllowed: false,
       decisionKey: "EV2-D04",
@@ -207,6 +218,11 @@ describe("EV2.10 controlled AI assistant", () => {
 
     expect(await screen.findByText(/fila segregada do editor/i)).toBeVisible();
     expect(screen.getByRole("heading", { name: "Assistente controlada" })).toBeVisible();
+    expect(screen.getByRole("option", { name: /Em andamento · fila de revisão/ })).toBeInTheDocument();
+    expect(screen.getAllByRole("option", { name: /Extração · Aguardando decisão/ })).not.toHaveLength(0);
+    expect(screen.queryByLabelText(/referência g10x/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Referência interna do rascunho")).not.toBeInTheDocument();
+    expect(screen.queryByText(/g10x-/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Preparar proposta sem aplicar" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Aceitar para uso manual" })).toBeEnabled();
 

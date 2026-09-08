@@ -221,7 +221,7 @@ const jsonContentType = (response) => response?.headers.get("content-type")?.inc
 const evidence = {
   candidateSha: expectedSha,
   environment,
-  sampleCount: measured,
+  sampleCount,
   availabilityPercent: (successful / measured) * 100,
   http5xxRatePercent: (serverErrors / measured) * 100,
   publicP95Ms: percentile(

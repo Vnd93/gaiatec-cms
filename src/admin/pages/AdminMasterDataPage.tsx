@@ -153,10 +153,8 @@ export default function AdminMasterDataPage() {
     setError("");
     setSuccess("");
     try {
-      const result = Ev2MasterMutationResultSchema.parse(
-        await masterDataCommand(session, body, crypto.randomUUID()),
-      );
-      setSuccess(`Alteração auditada. Código ${result.correlationId.slice(0, 8)}.`);
+      Ev2MasterMutationResultSchema.parse(await masterDataCommand(session, body, crypto.randomUUID()));
+      setSuccess("Alteração concluída e registrada na auditoria.");
       await load();
       await loadDependencies();
       return true;
@@ -302,6 +300,7 @@ export default function AdminMasterDataPage() {
                       <button
                         type="button"
                         disabled={busy}
+                        aria-label={entity.status === "active" ? "Inativar entidade" : "Reativar entidade"}
                         onClick={() =>
                           void mutate({
                             action: "set_entity_status",
@@ -345,6 +344,7 @@ export default function AdminMasterDataPage() {
       {canManage && (
         <form
           className="admin-editor-card"
+          aria-label="Editar entidade de dados mestres"
           onSubmit={(event) => {
             event.preventDefault();
             const body = draft.id
@@ -379,6 +379,7 @@ export default function AdminMasterDataPage() {
               Nome canônico
               <input
                 required
+                minLength={1}
                 maxLength={180}
                 value={draft.name}
                 onChange={(event) => setDraft({ ...draft, name: event.target.value })}
@@ -388,6 +389,7 @@ export default function AdminMasterDataPage() {
               Domínio externo opcional
               <input
                 maxLength={253}
+                pattern="[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?"
                 placeholder="fabricante.example"
                 value={draft.externalDomain}
                 onChange={(event) => setDraft({ ...draft, externalDomain: event.target.value })}
@@ -566,6 +568,7 @@ export default function AdminMasterDataPage() {
                 <button
                   type="button"
                   disabled={busy}
+                  aria-label="Inativar compatibilidade"
                   onClick={() =>
                     void mutate({
                       action: "set_compatibility_status",

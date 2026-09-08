@@ -58,30 +58,42 @@ test("controlled vocabularies are generic, audited, MFA protected and non-destru
   assert.match(contract, /controlledClassification/);
   assert.match(contract, /serviceKindRef/);
   for (const header of [
-    "categoria_produto_id",
-    "aplicacao_grandeza_id",
-    "tecnologia_id",
-    "instalacao_operacao_id",
-    "elemento_monitorado_id",
+    "categoria_produto",
+    "aplicacao_grandeza",
+    "tecnologia",
+    "instalacao_operacao",
+    "elemento_monitorado",
   ])
     assert.match(bulk, new RegExp(header));
+  assert.match(bulk, /bulkControlledDimensions/);
+  assert.match(bulk, /resolveControlledTerm/);
+  assert.doesNotMatch(bulk, /categoria_produto_id/);
+  assert.doesNotMatch(bulk, /aplicacao_grandeza_id/);
   assert.match(projection, /publicRef/);
   assert.match(projection, /delete safe\.manufacturer/);
   assert.match(projection, /delete publicModel\.manufacturerReference/);
   assert.match(projection, /delete publicModel\.sku/);
 });
 
-test("product UX follows operational cards, sticky status, visual models and advanced JSON", async () => {
-  const [page, models, css] = await Promise.all([
+test("product UX follows operational cards, semantic governed editors and sticky status", async () => {
+  const [page, models, semantics, documents, css] = await Promise.all([
     read("src/admin/pages/AdminProductEditorPage.tsx"),
     read("src/admin/components/ProductModelsEditor.tsx"),
+    read("src/admin/components/ProductSemanticEditors.tsx"),
+    read("src/admin/components/ProductDocumentsEditor.tsx"),
     read("src/admin/admin.css"),
   ]);
   assert.match(page, /admin-editor-workspace/);
   assert.match(page, /admin-editor-rail/);
   assert.match(page, /admin-editor-footer/);
-  assert.match(page, /Área avançada/);
   assert.match(page, /ControlledTermSelect/);
+  assert.match(page, /ProductSpecificationsEditor/);
+  assert.match(page, /ProductIdentifiersEditor/);
+  assert.match(page, /ProductDocumentsEditor/);
+  assert.match(semantics, /Atributo controlado/);
+  assert.match(semantics, /Identificadores comerciais/);
+  assert.match(documents, /Documentos técnicos/);
+  assert.doesNotMatch(page, /Área avançada/);
   for (const action of ["Adicionar modelo", "Adicionar variante", "Inativ"])
     assert.match(models, new RegExp(action));
   assert.match(css, /position:\s*sticky/);

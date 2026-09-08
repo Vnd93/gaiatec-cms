@@ -439,7 +439,7 @@ function envelope(expectedVersion) {
   return result;
 }
 
-async function invokeFunction(context, actor, name, body, idempotencyKey) {
+async function invokeFunction(context, actor, name, body, idempotencyKey, allowed = [200]) {
   return requestJson(`${context.projectUrl}/functions/v1/${name}`, {
     method: "POST",
     headers: {
@@ -449,6 +449,7 @@ async function invokeFunction(context, actor, name, body, idempotencyKey) {
       ...(idempotencyKey ? { "X-Idempotency-Key": idempotencyKey } : {}),
     },
     body,
+    allowed,
   });
 }
 
@@ -859,29 +860,28 @@ async function reconcile(
       mismatches.push("blocked_sku");
     if (item.source.skuEligible && actual.skus[0]?.sku !== expectedSku) mismatches.push("cms_sku");
 
-    const preview = await invokeFunction(context, actor, "cms-pim", {
-      action: "preview_v1_adapter",
-      envelope: envelope(),
-      productId: item.input.id,
-      basePayload: {
-        summary: "",
-        manufacturer: {},
-        classification: { subcategory: item.source.subcategory },
-        commercial: { valueProposition: "" },
-        specifications: [],
+    const preview = await invokeFunction(
+      context,
+      actor,
+      "cms-pim",
+      {
+        action: "preview_v1_adapter",
+        envelope: envelope(),
+        productId: item.input.id,
+        basePayload: {
+          summary: "",
+          manufacturer: {},
+          classification: { subcategory: item.source.subcategory },
+          commercial: { valueProposition: "" },
+          specifications: [],
+        },
       },
-    });
-    const payload = preview.json.payload;
-    const expectedManufacturer = item.source.manufacturer ?? manifest.placeholders.manufacturer;
-    const expectedBrand = item.source.brand ?? "Marca não informada";
-    if (payload.title !== item.source.name) mismatches.push("adapter_title");
-    if (payload.manufacturer?.name !== expectedManufacturer) mismatches.push("adapter_manufacturer");
-    if (payload.brand?.name !== expectedBrand) mismatches.push("adapter_brand");
-    if (payload.models?.[0]?.model !== item.source.model) mismatches.push("adapter_model");
-    if (payload.models?.[0]?.manufacturerReference !== "Não informado") mismatches.push("adapter_mpn");
-    if (payload.classification?.subcategory !== item.source.subcategory)
-      mismatches.push("adapter_subcategory");
-    if (item.source.skuEligible && payload.models?.[0]?.sku !== expectedSku) mismatches.push("adapter_sku");
+      undefined,
+      [422],
+    );
+    if (preview.json?.code !== "CMS_PIM_PUBLIC_DATA_REQUIRED") {
+      mismatches.push("incomplete_adapter_not_blocked");
+    }
     divergenceCount += mismatches.length;
     details.push({ masterId: item.source.masterId, qualityStatus: item.source.qualityStatus, mismatches });
   }

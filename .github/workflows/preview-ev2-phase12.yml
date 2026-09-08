@@ -7,7 +7,7 @@ on:
         description: SHA completo e exato aprovado para o canary EV2.12
         required: true
       confirmation:
-        description: Digite CANARY-G12-STAGING
+        description: Digite CANARY-G12-STAGING:<SHA>:FULL
         required: true
       ev2_full_candidate:
         description: Habilitar a integração EV2 somente no build isolado de staging
@@ -24,16 +24,32 @@ concurrency:
 
 jobs:
   preview:
-    if: >-
-      github.ref_name == 'ev2/desenvolvimento-fases-1-a-12' &&
-      inputs.confirmation == 'CANARY-G12-STAGING' &&
-      inputs.ev2_full_candidate
     runs-on: ubuntu-latest
     timeout-minutes: 35
     environment: staging
     env:
       CANARY_DEPLOY_CONFIGURED: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' && secrets.STAGING_SUPABASE_URL != '' && secrets.STAGING_SUPABASE_ANON_KEY != '' }}
     steps:
+      - name: Validate G12 canary dispatch authorization before checkout
+        env:
+          DISPATCH_REF_NAME: ${{ github.ref_name }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+          FULL_CANDIDATE: ${{ inputs.ev2_full_candidate }}
+        run: |
+          set -euo pipefail
+          if [ "$DISPATCH_REF_NAME" != "ev2/desenvolvimento-fases-1-a-12" ]; then
+            echo "::error::The G12 canary must be dispatched from its approved branch."
+            exit 1
+          fi
+          if ! [[ "$EXPECTED_SHA" =~ ^[a-f0-9]{40}$ ]]; then
+            echo "::error::expected_sha must be a full lowercase Git SHA."
+            exit 1
+          fi
+          if [ "$CONFIRMATION" != "CANARY-G12-STAGING:$EXPECTED_SHA:FULL" ] || [ "$FULL_CANDIDATE" != "true" ]; then
+            echo "::error::The G12 canary authorization is invalid."
+            exit 1
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.expected_sha }}

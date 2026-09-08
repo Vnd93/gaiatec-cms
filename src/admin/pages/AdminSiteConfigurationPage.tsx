@@ -22,6 +22,12 @@ import {
   type SiteDocumentPayload,
   type SiteDocumentType,
 } from "../site-document-model";
+import { humanValidationIssue, humanValidationPath } from "../validation-field-label";
+import {
+  fetchAuthoritativeEditorialItem,
+  INVALIDATED_EDITOR_SNAPSHOT,
+  saveWithPublishedRevisionReconciliation,
+} from "../published-revision-save";
 
 type Loaded = {
   id: string;
@@ -93,7 +99,10 @@ export default function AdminSiteConfigurationPage() {
         if (parsed.success) {
           setPayload(parsed.data as SiteDocumentPayload);
           setSavedSnapshot(JSON.stringify(parsed.data));
-        } else setError(`Documento incompatível: ${parsed.error.issues[0]?.path.join(".")}.`);
+        } else
+          setError(
+            `Configuração incompatível em ${humanValidationPath(parsed.error.issues[0]?.path ?? [])}.`,
+          );
       } else {
         const initial = createSiteDocument(activeType);
         setPayload(initial);
@@ -135,32 +144,44 @@ export default function AdminSiteConfigurationPage() {
         throw new Error("Salve a configuração antes de executar uma ação de revisão ou publicação.");
       if ((action === "create" || action === "save") && !validation.success) {
         const issue = validation.error.issues[0];
-        throw new Error(`Documento incompleto: ${issue.path.join(".")} — ${issue.message}`);
+        throw new Error(`Configuração incompleta. ${humanValidationIssue(issue)}`);
       }
-      if (action === "save" && state === "published" && loaded) {
-        await editorialCommand(session, {
-          action: "reopen",
-          itemId: loaded.id,
-          contentType: null,
-          slug: null,
-          payload: null,
-          expectedLockVersion: null,
-          reason: `Abrir nova versão: ${reason}`,
-        });
-      }
-      const result = await editorialCommand(session, {
-        action,
-        itemId: loaded?.id ?? null,
-        contentType: loaded ? null : activeType,
-        slug: meta.slug,
-        payload: action === "create" || action === "save" ? payload : null,
-        expectedLockVersion: loaded?.cms_content_drafts.lock_version ?? null,
-        reason,
-        ...extras,
+      const publishedItem = action === "save" && state === "published" && loaded ? loaded : null;
+      await saveWithPublishedRevisionReconciliation({
+        reopen: publishedItem
+          ? () =>
+              editorialCommand(session, {
+                action: "reopen",
+                itemId: publishedItem.id,
+                contentType: null,
+                slug: null,
+                payload: null,
+                expectedLockVersion: null,
+                reason: `Abrir nova versão: ${reason}`,
+              })
+          : null,
+        save: () =>
+          editorialCommand(session, {
+            action,
+            itemId: loaded?.id ?? null,
+            contentType: loaded ? null : activeType,
+            slug: meta.slug,
+            payload: action === "create" || action === "save" ? payload : null,
+            expectedLockVersion: loaded?.cms_content_drafts.lock_version ?? null,
+            reason,
+            ...extras,
+          }),
+        invalidateSnapshot: () => setSavedSnapshot(INVALIDATED_EDITOR_SNAPSHOT),
+        reconcile: async () => {
+          if (!publishedItem) return;
+          const authoritative = (await fetchAuthoritativeEditorialItem(
+            publishedItem.id,
+            activeType,
+          )) as Loaded;
+          setLoadedByType((current) => ({ ...current, [activeType]: authoritative }));
+        },
       });
-      setSuccess(
-        `Operação ${result.status} concluída. Código de acompanhamento ${result.correlationId.slice(0, 8)}.`,
-      );
+      setSuccess("Operação concluída e registrada na auditoria.");
       if (action === "create" || action === "save") setSavedSnapshot(JSON.stringify(payload));
       if (["create", "save", "publish"].includes(action)) backup.clear();
       await load();
@@ -244,6 +265,7 @@ export default function AdminSiteConfigurationPage() {
             key={type}
             role="tab"
             type="button"
+            aria-label={siteDocumentMeta[type].label}
             aria-selected={activeType === type}
             onClick={() => setSearchParams({ section: type })}
           >
@@ -274,6 +296,13 @@ export default function AdminSiteConfigurationPage() {
 
       <form
         className="admin-site-document"
+        aria-label={
+          activeType === "navigation"
+            ? "Configuração global de navegação"
+            : activeType === "site_settings"
+              ? "Configuração global do site"
+              : "Configuração global de destaques"
+        }
         onSubmit={(event) => {
           event.preventDefault();
           void run(loaded ? "save" : "create");
@@ -289,11 +318,19 @@ export default function AdminSiteConfigurationPage() {
           <PlacementEditor payload={payload} relations={relations} onChange={(next) => setPayload(next)} />
         )}
 
+        <SiteDocumentGovernanceEditor payload={payload} onChange={setPayload} />
+
         <fieldset>
           <legend>Workflow de {meta.label.toLowerCase()}</legend>
           <label>
             Motivo da alteração
-            <input value={reason} onChange={(event) => setReason(event.target.value)} />
+            <input
+              required
+              minLength={3}
+              maxLength={500}
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+            />
           </label>
           <p>
             Status: <strong>{state}</strong> · Contrato:{" "}
@@ -400,14 +437,126 @@ export default function AdminSiteConfigurationPage() {
           <h2>Pendências</h2>
           <ul>
             {validation.error.issues.slice(0, 10).map((issue) => (
-              <li key={`${issue.path.join(".")}-${issue.message}`}>
-                {issue.path.join(".")} — {issue.message}
-              </li>
+              <li key={`${issue.path.join(".")}-${issue.message}`}>{humanValidationIssue(issue)}</li>
             ))}
           </ul>
         </aside>
       )}
     </section>
+  );
+}
+
+function SiteDocumentGovernanceEditor({
+  payload,
+  onChange,
+}: {
+  payload: SiteDocumentPayload;
+  onChange: (payload: SiteDocumentPayload) => void;
+}) {
+  const source = payload.provenance[0];
+  const patchSource = (patch: Record<string, unknown>) =>
+    onChange({
+      ...payload,
+      provenance: payload.provenance.map((item, index) => (index === 0 ? { ...item, ...patch } : item)),
+    } as SiteDocumentPayload);
+  return (
+    <fieldset>
+      <legend>Identificação, SEO, proveniência e direitos</legend>
+      <label>
+        Título do documento
+        <input
+          required
+          minLength={1}
+          maxLength={180}
+          value={payload.title}
+          onChange={(event) => onChange({ ...payload, title: event.target.value })}
+        />
+      </label>
+      <label>
+        Título SEO
+        <input
+          required
+          minLength={1}
+          maxLength={70}
+          value={payload.seo.title}
+          onChange={(event) => onChange({ ...payload, seo: { ...payload.seo, title: event.target.value } })}
+        />
+      </label>
+      <label>
+        Descrição SEO
+        <textarea
+          required
+          minLength={1}
+          maxLength={170}
+          value={payload.seo.description}
+          onChange={(event) =>
+            onChange({ ...payload, seo: { ...payload.seo, description: event.target.value } })
+          }
+        />
+      </label>
+      <label>
+        Canonical técnico
+        <input value={payload.seo.canonicalPath} readOnly />
+      </label>
+      <label>
+        Referência da autorização
+        <input
+          maxLength={300}
+          value={source?.authorizationReference ?? ""}
+          onChange={(event) => patchSource({ authorizationReference: event.target.value || undefined })}
+        />
+      </label>
+      <label>
+        Data da autorização
+        <input
+          type="date"
+          value={source?.authorizationDate ?? ""}
+          onChange={(event) => patchSource({ authorizationDate: event.target.value || undefined })}
+        />
+      </label>
+      <label>
+        Escopo dos direitos
+        <input
+          maxLength={300}
+          value={source?.rightsScope ?? ""}
+          onChange={(event) => patchSource({ rightsScope: event.target.value || undefined })}
+        />
+      </label>
+      <label>
+        Responsável comercial
+        <input
+          required
+          minLength={1}
+          maxLength={120}
+          value={source?.commercialOwner ?? ""}
+          onChange={(event) => patchSource({ commercialOwner: event.target.value })}
+        />
+      </label>
+      <label>
+        Responsável técnico
+        <input
+          required
+          minLength={1}
+          maxLength={120}
+          value={source?.technicalOwner ?? ""}
+          onChange={(event) => patchSource({ technicalOwner: event.target.value })}
+        />
+      </label>
+      <label className="admin-checkbox">
+        <input
+          type="checkbox"
+          required
+          checked={source?.rightsConfirmed === true}
+          onChange={(event) =>
+            patchSource({
+              rightsConfirmed: event.target.checked,
+              verifiedAt: event.target.checked ? new Date().toISOString() : "",
+            })
+          }
+        />{" "}
+        Confirmo os direitos para esta configuração global
+      </label>
+    </fieldset>
   );
 }
 
@@ -446,6 +595,9 @@ function NavigationEditor({
             <label>
               Rótulo
               <input
+                required
+                minLength={1}
+                maxLength={80}
                 value={item.label}
                 onChange={(event) => updateItem(index, { label: event.target.value })}
               />
@@ -453,6 +605,10 @@ function NavigationEditor({
             <label>
               Destino
               <input
+                required
+                minLength={1}
+                maxLength={500}
+                pattern="(?:/(?!/)[^\\s]*|https?://[^\\s]+)"
                 value={item.href}
                 onChange={(event) => updateItem(index, { href: event.target.value })}
               />
@@ -529,11 +685,11 @@ function NavigationEditor({
                 id: crypto.randomUUID(),
                 parentId: null,
                 location: "header",
-                label: "Novo item",
-                href: "/",
+                label: "",
+                href: "",
                 order: payload.items.length,
                 newTab: false,
-                visible: true,
+                visible: false,
               },
             ],
           })
@@ -560,22 +716,34 @@ function SettingsEditor({
         <legend>Empresa e contato</legend>
         <label>
           Nome público
-          <input value={payload.company.name} onChange={(event) => company({ name: event.target.value })} />
+          <input
+            required
+            minLength={1}
+            maxLength={160}
+            value={payload.company.name}
+            onChange={(event) => company({ name: event.target.value })}
+          />
         </label>
         <label>
           Razão social opcional
           <input
+            maxLength={200}
             value={payload.company.legalName ?? ""}
             onChange={(event) => company({ legalName: event.target.value || undefined })}
           />
         </label>
         <label>
           Telefone
-          <input value={payload.company.phone} onChange={(event) => company({ phone: event.target.value })} />
+          <input
+            maxLength={40}
+            value={payload.company.phone}
+            onChange={(event) => company({ phone: event.target.value })}
+          />
         </label>
         <label>
           WhatsApp
           <input
+            maxLength={40}
             value={payload.company.whatsapp}
             onChange={(event) => company({ whatsapp: event.target.value })}
           />
@@ -584,6 +752,8 @@ function SettingsEditor({
           E-mail
           <input
             type="email"
+            required
+            maxLength={254}
             value={payload.company.email}
             onChange={(event) => company({ email: event.target.value })}
           />
@@ -592,6 +762,7 @@ function SettingsEditor({
           Endereço
           <textarea
             rows={3}
+            maxLength={500}
             value={payload.company.address}
             onChange={(event) => company({ address: event.target.value })}
           />
@@ -602,6 +773,9 @@ function SettingsEditor({
         <label>
           Rótulo
           <input
+            required
+            minLength={1}
+            maxLength={120}
             value={payload.defaultCta.label}
             onChange={(event) =>
               onChange({ ...payload, defaultCta: { ...payload.defaultCta, label: event.target.value } })
@@ -611,6 +785,10 @@ function SettingsEditor({
         <label>
           Destino
           <input
+            required
+            minLength={1}
+            maxLength={500}
+            pattern="(?:/(?!/)[^\\s]*|https?://[^\\s]+)"
             value={payload.defaultCta.href}
             onChange={(event) =>
               onChange({ ...payload, defaultCta: { ...payload.defaultCta, href: event.target.value } })
@@ -626,6 +804,9 @@ function SettingsEditor({
             <label>
               Nome
               <input
+                required
+                minLength={1}
+                maxLength={50}
                 value={link.network}
                 onChange={(event) =>
                   onChange({
@@ -641,6 +822,8 @@ function SettingsEditor({
               URL
               <input
                 type="url"
+                required
+                maxLength={500}
                 value={link.url}
                 onChange={(event) =>
                   onChange({
@@ -671,10 +854,7 @@ function SettingsEditor({
           onClick={() =>
             onChange({
               ...payload,
-              socialLinks: [
-                ...payload.socialLinks,
-                { id: crypto.randomUUID(), network: "LinkedIn", url: "https://" },
-              ],
+              socialLinks: [...payload.socialLinks, { id: crypto.randomUUID(), network: "", url: "" }],
             })
           }
         >
@@ -726,6 +906,7 @@ function PlacementEditor({
             <label>
               Conteúdo
               <select
+                required
                 value={item.targetId}
                 onChange={(event) => {
                   const target = relations.find((candidate) => candidate.id === event.target.value);
@@ -746,6 +927,7 @@ function PlacementEditor({
             <label>
               Rótulo opcional
               <input
+                maxLength={120}
                 value={item.label ?? ""}
                 onChange={(event) => update(index, { label: event.target.value || undefined })}
               />
@@ -754,6 +936,7 @@ function PlacementEditor({
               Início
               <input
                 type="datetime-local"
+                required
                 value={item.startsAt.slice(0, 16)}
                 onChange={(event) =>
                   event.target.value &&
@@ -765,6 +948,7 @@ function PlacementEditor({
               Término
               <input
                 type="datetime-local"
+                required
                 value={item.endsAt.slice(0, 16)}
                 onChange={(event) =>
                   event.target.value && update(index, { endsAt: new Date(event.target.value).toISOString() })
@@ -807,8 +991,9 @@ function PlacementEditor({
       <button
         type="button"
         onClick={() => {
-          const startsAt = new Date();
+          const startsAt = new Date(Date.now() + 3_600_000);
           const endsAt = new Date(startsAt.getTime() + 86400000);
+          const target = relations[0];
           onChange({
             ...payload,
             placements: [
@@ -816,8 +1001,9 @@ function PlacementEditor({
               {
                 id: crypto.randomUUID(),
                 slot: "home_featured",
-                targetType: "page",
-                targetId: crypto.randomUUID(),
+                targetType: (target?.content_type ??
+                  "page") as CmsPlacementContent["placements"][number]["targetType"],
+                targetId: target?.id ?? "",
                 startsAt: startsAt.toISOString(),
                 endsAt: endsAt.toISOString(),
                 priority: 0,

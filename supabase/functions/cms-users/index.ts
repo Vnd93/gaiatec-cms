@@ -1,5 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { findExistingAuthUserByEmail } from "../_shared/cms-existing-auth-user.ts";
+import { isConfiguredCmsEnvironment } from "../_shared/ev2-environment.ts";
 import { cleanText, clientAddress, consumeRateLimit, corsHeaders, isAllowedOrigin, json, readJsonLimited } from "../_shared/security.ts";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -49,27 +51,16 @@ async function authorize(admin: SupabaseClient, actorId: string, permission: str
   return !error && data === true;
 }
 
-async function listUsers(req: Request, admin: SupabaseClient, actorId: string, claims: Claims) {
-  if (!(await authorize(admin, actorId, "cms:users.read", claims))) return json(req, { error: "Acesso administrativo insuficiente." }, 403);
-
-  const [{ data: profiles, error: profilesError }, { data: assignedRoles, error: rolesError }] = await Promise.all([
-    admin
-      .from("cms_profiles")
-      .select("user_id,display_name,display_email,status,mfa_enrolled_at,last_sign_in_at,last_seen_at,invited_at,suspended_at,sessions_valid_after")
-      .order("display_name"),
-    admin.from("cms_user_roles").select("user_id,role_key").order("role_key"),
-  ]);
-  if (profilesError || rolesError) return json(req, { error: "Não foi possível consultar os usuários." }, 500);
-
-  const rolesByUser = new Map<string, string[]>();
-  for (const role of assignedRoles ?? []) {
-    const roles = rolesByUser.get(role.user_id) ?? [];
-    roles.push(role.role_key);
-    rolesByUser.set(role.user_id, roles);
-  }
-  return json(req, {
-    users: (profiles ?? []).map((profile) => ({ ...profile, roles: rolesByUser.get(profile.user_id) ?? [], is_self: profile.user_id === actorId })),
+async function listUsers(req: Request, admin: SupabaseClient, actorId: string, environment: string, claims: Claims) {
+  const { data, error } = await admin.rpc("cms_users_list_scoped", {
+    p_actor_id: actorId,
+    p_environment: environment,
+    p_aal: claims.aal,
+    p_session_id: claims.sessionId,
+    p_issued_at: claims.issuedAt,
   });
+  if (error) return json(req, { error: "Acesso administrativo insuficiente." }, error.code === "42501" ? 403 : 500);
+  return json(req, data);
 }
 
 Deno.serve(async (req) => {
@@ -81,6 +72,10 @@ Deno.serve(async (req) => {
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
   const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!url || !anonKey || !serviceRole) return json(req, { error: "Serviço indisponível." }, 503);
+  const configuredEnvironment = Deno.env.get("CMS_ENVIRONMENT");
+  if (!isConfiguredCmsEnvironment(configuredEnvironment)) {
+    return json(req, { error: "Ambiente do CMS indisponível." }, 503);
+  }
 
   const authHeader = req.headers.get("Authorization") ?? "";
   const caller = createClient(url, anonKey, {
@@ -112,7 +107,7 @@ Deno.serve(async (req) => {
     return json(req, { error: "Serviço de proteção indisponível." }, 503);
   }
 
-  if (input.action === "list") return listUsers(req, admin, authData.user.id, claims);
+  if (input.action === "list") return listUsers(req, admin, authData.user.id, configuredEnvironment, claims);
   if (!UUID.test(input.idempotencyKey)) return json(req, { error: "Identificador da solicitação inválido." }, 400);
 
   const permission =
@@ -127,6 +122,8 @@ Deno.serve(async (req) => {
 
   let targetUserId = input.userId;
   let createdAuthUser = false;
+  let reusedAuthUser = false;
+  let qaInvite = false;
   const correlationId = crypto.randomUUID();
   const releaseReservation = async () => {
     await admin
@@ -137,10 +134,11 @@ Deno.serve(async (req) => {
       .eq("idempotency_key", input.idempotencyKey)
       .eq("correlation_id", correlationId);
   };
-  const { data: reservation, error: reservationError } = await admin.rpc("cms_reserve_user_command", {
+  const { data: reservation, error: reservationError } = await admin.rpc("cms_reserve_user_command_scoped", {
     p_actor_id: authData.user.id,
     p_action: input.action,
     p_target_user_id: UUID.test(targetUserId) ? targetUserId : null,
+    p_environment: configuredEnvironment,
     p_aal: claims.aal,
     p_session_id: claims.sessionId,
     p_issued_at: claims.issuedAt,
@@ -161,16 +159,92 @@ Deno.serve(async (req) => {
       await releaseReservation();
       return json(req, { error: "Envio de convite indisponível." }, 503);
     }
-    const { data, error } = await admin.auth.admin.inviteUserByEmail(input.email, {
-      redirectTo: `${adminOrigin.replace(/\/$/, "")}/admin/definir-senha`,
-      data: { display_name: input.displayName },
-    });
-    if (error || !data.user?.id) {
+    const { data: inviteContext, error: inviteContextError } = await admin.rpc(
+      "cms_user_invite_context_scoped",
+      {
+        p_actor_id: authData.user.id,
+        p_environment: configuredEnvironment,
+        p_aal: claims.aal,
+        p_session_id: claims.sessionId,
+        p_issued_at: claims.issuedAt,
+      },
+    );
+    if (inviteContextError) {
       await releaseReservation();
-      return json(req, { error: "Não foi possível criar o convite; verifique se o usuário já existe." }, 400);
+      return json(req, { error: "Operação não autorizada." }, inviteContextError.code === "42501" ? 403 : 503);
     }
-    targetUserId = data.user.id;
-    createdAuthUser = true;
+    qaInvite = inviteContext?.isQaActor === true;
+    const marker = inviteContext?.marker as Record<string, unknown> | undefined;
+    const validQaMarker =
+      !qaInvite ||
+      (marker?.synthetic === true &&
+        marker?.purpose === "qa-cms-browser" &&
+        typeof marker?.runTag === "string" &&
+        /^QA-CMS-FINAL-[0-9]{8}-[0-9a-f]{8}$/.test(marker.runTag) &&
+        typeof marker?.candidateSha === "string" &&
+        /^[0-9a-f]{40}$/.test(marker.candidateSha) &&
+        marker?.environment === configuredEnvironment);
+    if (!validQaMarker) {
+      await releaseReservation();
+      return json(req, { error: "Contexto seguro do convite indisponível." }, 503);
+    }
+    let existing = null;
+    if (!qaInvite) {
+      try {
+        existing = await findExistingAuthUserByEmail(input.email, (page, perPage) =>
+          admin.auth.admin.listUsers({ page, perPage }),
+        );
+      } catch {
+        await releaseReservation();
+        return json(req, { error: "Não foi possível consultar o diretório de identidades." }, 503);
+      }
+    }
+    if (existing) {
+      targetUserId = existing.id;
+      reusedAuthUser = true;
+    } else {
+      const invitationNonce = crypto.randomUUID();
+      const { data, error } = await admin.auth.admin.inviteUserByEmail(input.email, {
+        redirectTo: `${adminOrigin.replace(/\/$/, "")}/admin/definir-senha`,
+        data: {
+          display_name: input.displayName,
+          cms_invitation_nonce: invitationNonce,
+          ...(qaInvite ? marker : {}),
+        },
+      });
+      const invitedUserId = data.user?.id;
+      const invitedMetadata = data.user?.user_metadata;
+      const invitationOwned = invitedMetadata?.cms_invitation_nonce === invitationNonce;
+      if (
+        error ||
+        !invitedUserId ||
+        !invitationOwned ||
+        (qaInvite &&
+          (invitedMetadata?.synthetic !== true ||
+            invitedMetadata?.purpose !== "qa-cms-browser" ||
+            invitedMetadata?.runTag !== marker?.runTag ||
+            invitedMetadata?.candidateSha !== marker?.candidateSha ||
+            invitedMetadata?.environment !== configuredEnvironment))
+      ) {
+        if (invitedUserId && qaInvite) {
+          await admin.rpc("cms_abandon_qa_invite_scoped", {
+            p_actor_id: authData.user.id,
+            p_target_user_id: invitedUserId,
+            p_environment: configuredEnvironment,
+            p_aal: claims.aal,
+            p_session_id: claims.sessionId,
+            p_issued_at: claims.issuedAt,
+            p_correlation_id: correlationId,
+          });
+        } else if (invitedUserId && invitationOwned) {
+          await admin.auth.admin.deleteUser(invitedUserId).catch(() => undefined);
+        }
+        await releaseReservation();
+        return json(req, { error: "Não foi possível criar a identidade convidada." }, 400);
+      }
+      targetUserId = invitedUserId;
+      createdAuthUser = true;
+    }
   }
 
   if (input.action === "resend_invite") {
@@ -179,13 +253,20 @@ Deno.serve(async (req) => {
       return json(req, { error: "Usuário inválido." }, 400);
     }
     const adminOrigin = Deno.env.get("CMS_ADMIN_ORIGIN");
-    const { data: profile } = await admin.from("cms_profiles").select("display_email,display_name,status").eq("user_id", targetUserId).maybeSingle();
-    if (!adminOrigin || profile?.status !== "invited" || !profile.display_email) {
+    const { data: profile, error: profileError } = await admin.rpc("cms_user_profile_scoped", {
+      p_actor_id: authData.user.id,
+      p_target_user_id: targetUserId,
+      p_environment: configuredEnvironment,
+      p_aal: claims.aal,
+      p_session_id: claims.sessionId,
+      p_issued_at: claims.issuedAt,
+    });
+    if (profileError || !adminOrigin || profile?.status !== "invited" || !profile.displayEmail) {
       await releaseReservation();
       return json(req, { error: "Convite pendente não encontrado." }, 409);
     }
     const mailer = createClient(url, anonKey, { auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false } });
-    const { error } = await mailer.auth.resetPasswordForEmail(profile.display_email, {
+    const { error } = await mailer.auth.resetPasswordForEmail(profile.displayEmail, {
       redirectTo: `${adminOrigin.replace(/\/$/, "")}/admin/definir-senha`,
     });
     if (error) {
@@ -199,21 +280,14 @@ Deno.serve(async (req) => {
     return json(req, { error: "Usuário inválido." }, 400);
   }
 
-  if (input.action === "reactivate") {
-    const { error } = await admin.auth.admin.updateUserById(targetUserId, { ban_duration: "none" });
-    if (error) {
-      await releaseReservation();
-      return json(req, { error: "Não foi possível reativar a identidade." }, 502);
-    }
-  }
-
-  const { data: result, error: commandError } = await admin.rpc("cms_apply_user_command", {
+  const { data: result, error: commandError } = await admin.rpc("cms_apply_user_command_scoped", {
     p_actor_id: authData.user.id,
     p_action: input.action,
     p_target_user_id: targetUserId,
     p_display_name: input.displayName || null,
     p_display_email: input.email || null,
     p_role_keys: input.roles,
+    p_environment: configuredEnvironment,
     p_aal: claims.aal,
     p_session_id: claims.sessionId,
     p_issued_at: claims.issuedAt,
@@ -222,19 +296,28 @@ Deno.serve(async (req) => {
   });
 
   if (commandError) {
-    if (createdAuthUser) await admin.auth.admin.deleteUser(targetUserId).catch(() => undefined);
+    if (createdAuthUser && qaInvite) {
+      await admin.rpc("cms_abandon_qa_invite_scoped", {
+        p_actor_id: authData.user.id,
+        p_target_user_id: targetUserId,
+        p_environment: configuredEnvironment,
+        p_aal: claims.aal,
+        p_session_id: claims.sessionId,
+        p_issued_at: claims.issuedAt,
+        p_correlation_id: correlationId,
+      });
+    } else if (createdAuthUser) {
+      await admin.auth.admin.deleteUser(targetUserId).catch(() => undefined);
+    }
     await releaseReservation();
     const forbidden = commandError.code === "42501";
     return json(req, { error: forbidden ? "Operação não autorizada." : "Não foi possível concluir a operação." }, forbidden ? 403 : 409);
   }
 
-  if (input.action === "suspend") {
-    const { error } = await admin.auth.admin.updateUserById(targetUserId, { ban_duration: "876000h" });
-    if (error) return json(req, { error: "Acesso ao CMS suspenso, mas a identidade não pôde ser bloqueada." }, 502);
-  }
-  if (input.action === "revoke_sessions") {
-    await admin.auth.admin.updateUserById(targetUserId, { ban_duration: "1s" }).catch(() => undefined);
-  }
-
-  return json(req, result);
+  return json(req, {
+    ...result,
+    ...(input.action === "invite"
+      ? { invitationDelivery: reusedAuthUser ? "existing_identity" : "email_invite" }
+      : {}),
+  });
 });

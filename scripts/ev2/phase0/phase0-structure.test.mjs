@@ -40,8 +40,11 @@ test("EV2 command and capability contracts are strict and server-scoped", async 
   assert.match(contract, /\.strict\(\)/);
 });
 
-test("production build keeps every deployable EV2 candidate disabled", async () => {
-  const workflow = await read(".github/workflows/deploy-production.yml");
+test("sealed production build keeps every deployable EV2 candidate disabled", async () => {
+  const [bridgeWorkflow, deployWorkflow] = await Promise.all([
+    read(".github/workflows/promote-production-frontend-bridge.yml"),
+    read(".github/workflows/deploy-production.yml"),
+  ]);
   for (const variable of [
     "VITE_EV2_DRAFT_V2_CANDIDATE",
     "VITE_EV2_MASTER_DATA_CANDIDATE",
@@ -55,8 +58,14 @@ test("production build keeps every deployable EV2 candidate disabled", async () 
     "VITE_EV2_AI_ASSIST_CANDIDATE",
     "VITE_EV2_SYSTEM_ASSURANCE_CANDIDATE",
   ]) {
-    assert.match(workflow, new RegExp(`${variable}: ["']false["']`));
+    assert.match(bridgeWorkflow, new RegExp(`${variable}: ["']false["']`));
   }
+
+  assert.match(bridgeWorkflow, /VITE_CMS_ENVIRONMENT: production/);
+  assert.match(bridgeWorkflow, /g12-production-frontend-bridge-dist-seal\.json/);
+  assert.match(deployWorkflow, /Download the exact sealed frontend bridge bytes/);
+  assert.match(deployWorkflow, /Verify bridge evidence and exact sealed rollback bytes/);
+  assert.doesNotMatch(deployWorkflow, /run: npm run build/);
 });
 
 test("EV2.0 verification remains part of local and CI quality gates", async () => {

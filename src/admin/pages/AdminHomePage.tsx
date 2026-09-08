@@ -23,8 +23,48 @@ type ActivityItem = {
   action: string;
   target_type: string;
   target_id: string | null;
-  created_at: string;
+  occurred_at: string;
 };
+
+const contentTypeLabels: Record<string, string> = {
+  product: "Produto",
+  post: "Artigo",
+  page: "Página",
+  homepage: "Página inicial",
+  service: "Serviço",
+  industry: "Indústria",
+  application: "Aplicação",
+  solution: "Solução",
+  campaign: "Campanha",
+  navigation: "Navegação",
+  site_settings: "Configurações do site",
+  placement: "Posicionamento",
+};
+
+function activityActionLabel(value: string): string {
+  const normalized = value.toLocaleLowerCase("en-US");
+  const labels: Array<[RegExp, string]> = [
+    [/unpublish|retir/, "Conteúdo retirado do site"],
+    [/publish|publica/, "Conteúdo publicado"],
+    [/rollback|restore|restaur/, "Versão restaurada"],
+    [/archive|arquiv/, "Cadastro arquivado"],
+    [/approve|aprova/, "Revisão aprovada"],
+    [/submit|sent.?to.?review/, "Conteúdo enviado para revisão"],
+    [/revision|review|revis/, "Revisão registrada"],
+    [/invite|convite/, "Convite enviado"],
+    [/revoke|revog/, "Acesso revogado"],
+    [/suspend|suspens/, "Acesso suspenso"],
+    [/sign.?out|logout|session.?closed/, "Sessão encerrada"],
+    [/sign.?in|login|session.?created/, "Acesso realizado"],
+    [/export|exporta/, "Dados exportados"],
+    [/upload|envio/, "Arquivo enviado"],
+    [/retry|reprocess/, "Nova tentativa solicitada"],
+    [/delete|remove|exclu|remov/, "Registro removido"],
+    [/create|insert|cria|cadast/, "Cadastro criado"],
+    [/update|save|edit|atualiz|salv/, "Cadastro atualizado"],
+  ];
+  return labels.find(([pattern]) => pattern.test(normalized))?.[1] ?? "Operação administrativa registrada";
+}
 
 export default function AdminHomePage() {
   const { profile } = useAdminAuth();
@@ -45,6 +85,7 @@ export default function AdminHomePage() {
       supabase
         .from("cms_operational_events")
         .select("id", { count: "exact", head: true })
+        .eq("severity", "critical")
         .is("resolved_at", null),
       supabase
         .from("cms_content_items")
@@ -54,8 +95,8 @@ export default function AdminHomePage() {
         .limit(6),
       supabase
         .from("cms_audit_log")
-        .select("id,action,target_type,target_id,created_at")
-        .order("created_at", { ascending: false })
+        .select("id,action,target_type,target_id,occurred_at")
+        .order("occurred_at", { ascending: false })
         .limit(6),
     ]).then((results) => {
       if (!active) return;
@@ -108,9 +149,9 @@ export default function AdminHomePage() {
       <SectionCard title="Próximas ações" description="Escolha uma tarefa compatível com suas permissões.">
         <div className="admin-actions">
           {profile?.permissions.includes("cms:posts.edit") && (
-            <Link to="/admin/conteudo/novo">Criar demonstração sintética</Link>
+            <Link to="/admin/conteudo/novo">Criar artigo</Link>
           )}
-          <Link to="/admin/conteudo">Consultar workflow editorial</Link>
+          <Link to="/admin/conteudo">Consultar fluxo editorial</Link>
           {profile?.permissions.includes("cms:diagnostics.read") && (
             <Link to="/admin/diagnosticos">Abrir diagnósticos</Link>
           )}
@@ -132,9 +173,10 @@ export default function AdminHomePage() {
                 return (
                   <article key={item.id}>
                     <div>
-                      <strong>{item.cms_content_drafts?.payload.title ?? item.slug}</strong>
+                      <strong>{item.cms_content_drafts?.payload.title ?? "Conteúdo sem título"}</strong>
                       <small>
-                        {item.content_type} · atualizado {new Date(item.updated_at).toLocaleString("pt-BR")}
+                        {contentTypeLabels[item.content_type] ?? "Conteúdo"} · atualizado{" "}
+                        {new Date(item.updated_at).toLocaleString("pt-BR")}
                       </small>
                     </div>
                     <Badge tone="warning">Em revisão</Badge>
@@ -154,12 +196,10 @@ export default function AdminHomePage() {
                 <article key={item.id}>
                   <span className="admin-activity-list__dot" />
                   <div>
-                    <strong>{item.action.replaceAll(/[.:_-]+/g, " ")}</strong>
+                    <strong>{activityActionLabel(item.action)}</strong>
                     <small>
-                      <code>
-                        {item.target_type}:{item.target_id ?? "—"}
-                      </code>{" "}
-                      · {new Date(item.created_at).toLocaleString("pt-BR")}
+                      {contentTypeLabels[item.target_type] ?? "Registro administrativo"} ·{" "}
+                      {new Date(item.occurred_at).toLocaleString("pt-BR")}
                     </small>
                   </div>
                 </article>
@@ -174,7 +214,7 @@ export default function AdminHomePage() {
         <StatePanel
           kind="forbidden"
           title="Sem permissão de edição"
-          description="Seu papel pode consultar apenas os domínios concedidos. API e banco aplicam a mesma restrição."
+          description="Seu papel pode consultar apenas as áreas concedidas. As mesmas regras se aplicam a todas as operações."
         />
       )}
     </section>

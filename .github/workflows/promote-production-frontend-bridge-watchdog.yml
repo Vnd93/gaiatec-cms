@@ -1,0 +1,342 @@
+name: Promote production frontend bridge watchdog
+
+on:
+  workflow_run:
+    workflows: ["Promote production frontend bridge"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  compensate-incomplete-production-frontend-bridge:
+    if: >-
+      (github.event.workflow_run.conclusion == 'cancelled' ||
+      github.event.workflow_run.conclusion == 'failure' ||
+      github.event.workflow_run.conclusion == 'timed_out') &&
+      github.event.workflow_run.event == 'workflow_dispatch' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.path == '.github/workflows/promote-production-frontend-bridge.yml' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: production
+    steps:
+      - name: Checkout the exact trusted production bridge control revision
+        timeout-minutes: 5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          path: control
+      - name: Recover HMAC production bridge state independently of artifacts
+        id: variable_state
+        continue-on-error: true
+        timeout-minutes: 5
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs get
+          --kind production-frontend-bridge
+          --file ../state-variable/g12-production-frontend-bridge-state.json
+          --run-id "${{ github.event.workflow_run.id }}"
+          --run-attempt "${{ github.event.workflow_run.run_attempt }}"
+          --control-sha "${{ github.event.workflow_run.head_sha }}"
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+      - name: Download immutable HMAC state and sealed predecessor bytes
+        id: recovery_artifact
+        continue-on-error: true
+        timeout-minutes: 10
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: production-frontend-bridge-recovery-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+          digest-mismatch: error
+          path: recovery
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+      - name: Verify artifact HMAC state independently of the repository variable
+        id: artifact_state
+        if: always() && steps.recovery_artifact.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 5
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs verify
+          --kind production-frontend-bridge
+          --wrapper-file ../recovery/g12-production-frontend-bridge-recovery-wrapper.json
+          --file ../state-artifact/g12-production-frontend-bridge-state.json
+          --run-id "${{ github.event.workflow_run.id }}"
+          --run-attempt "${{ github.event.workflow_run.run_attempt }}"
+          --control-sha "${{ github.event.workflow_run.head_sha }}"
+        env:
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+      - name: Select and validate exact HMAC bridge state
+        id: watchdog_state
+        working-directory: control
+        env:
+          VARIABLE_STATE_OUTCOME: ${{ steps.variable_state.outcome }}
+          ARTIFACT_STATE_OUTCOME: ${{ steps.artifact_state.outcome }}
+          EXPECTED_RUN_ID: ${{ github.event.workflow_run.id }}
+          EXPECTED_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          EXPECTED_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          variable=../state-variable/g12-production-frontend-bridge-state.json
+          artifact=../state-artifact/g12-production-frontend-bridge-state.json
+          if [ "$VARIABLE_STATE_OUTCOME" = success ] && [ "$ARTIFACT_STATE_OUTCOME" = success ]; then
+            cmp "$variable" "$artifact"
+            state="$variable"
+          elif [ "$VARIABLE_STATE_OUTCOME" = success ]; then
+            state="$variable"
+          elif [ "$ARTIFACT_STATE_OUTCOME" = success ]; then
+            state="$artifact"
+          else
+            echo "::error::No authenticated pre-mutation production bridge state is available."
+            exit 1
+          fi
+          node scripts/ev2/phase12/read-production-frontend-bridge-state.mjs --file "$state"
+          printf 'state_path=%s\n' "$state" >> "$GITHUB_OUTPUT"
+      - name: Verify candidate, predecessor and control ancestry
+        working-directory: control
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          git cat-file -e "${{ github.event.workflow_run.head_sha }}^{commit}"
+          git cat-file -e "${{ steps.watchdog_state.outputs.candidate_sha }}^{commit}"
+          git cat-file -e "${{ steps.watchdog_state.outputs.baseline_release }}^{commit}"
+          git merge-base --is-ancestor "${{ steps.watchdog_state.outputs.baseline_release }}" "${{ steps.watchdog_state.outputs.candidate_sha }}"
+          git merge-base --is-ancestor "${{ steps.watchdog_state.outputs.candidate_sha }}" "${{ github.event.workflow_run.head_sha }}"
+      - name: Download exact sealed candidate deployment bytes
+        id: candidate_artifact
+        continue-on-error: true
+        timeout-minutes: 10
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: production-frontend-bridge-dist-${{ steps.watchdog_state.outputs.candidate_sha }}
+          digest-mismatch: error
+          path: candidate-artifact
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+      - name: Verify exact candidate and predecessor deployment bytes against HMAC state
+        id: deployment_bytes
+        if: >-
+          always() && steps.recovery_artifact.outcome == 'success' &&
+          steps.candidate_artifact.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 10
+        working-directory: control
+        run: |
+          set -euo pipefail
+          node scripts/ev2/phase12/verify-production-dist-archive.mjs \
+            --archive ../candidate-artifact/outputs/g12-production-frontend-bridge-dist.tar \
+            --seal ../candidate-artifact/outputs/g12-production-frontend-bridge-dist-seal.json \
+            --candidate "${{ steps.watchdog_state.outputs.candidate_sha }}" \
+            --expected-archive-sha256 "${{ steps.watchdog_state.outputs.candidate_archive_sha256 }}" \
+            --expected-tree-sha256 "${{ steps.watchdog_state.outputs.candidate_tree_sha256 }}" \
+            --expected-archive-bytes "${{ steps.watchdog_state.outputs.candidate_archive_bytes }}"
+          node scripts/ev2/phase12/verify-production-dist-archive.mjs \
+            --archive ../recovery/predecessor/outputs/g12-production-frontend-bridge-predecessor-dist.tar \
+            --seal ../recovery/predecessor/outputs/g12-production-frontend-bridge-predecessor-dist-seal.json \
+            --candidate "${{ steps.watchdog_state.outputs.baseline_release }}" \
+            --expected-archive-sha256 "${{ steps.watchdog_state.outputs.predecessor_archive_sha256 }}" \
+            --expected-tree-sha256 "${{ steps.watchdog_state.outputs.predecessor_tree_sha256 }}" \
+            --expected-archive-bytes "${{ steps.watchdog_state.outputs.predecessor_archive_bytes }}"
+      - name: Decide recovery only from a fresh canonical read
+        id: watchdog_decision
+        continue-on-error: true
+        timeout-minutes: 5
+        working-directory: control
+        env: &production_bridge_watchdog_environment
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+          PRODUCTION_BRIDGE_BASELINE_DEPLOYMENT_ID: ${{ steps.watchdog_state.outputs.baseline_deployment_id }}
+          PRODUCTION_BRIDGE_BASELINE_RELEASE: ${{ steps.watchdog_state.outputs.baseline_release }}
+          PRODUCTION_BRIDGE_BASELINE_CREATED_ON: ${{ steps.watchdog_state.outputs.baseline_created_on }}
+          PRODUCTION_BRIDGE_BASELINE_COMMIT_MESSAGE: ${{ steps.watchdog_state.outputs.baseline_commit_message }}
+          PRODUCTION_BRIDGE_CANDIDATE_RELEASE: ${{ steps.watchdog_state.outputs.candidate_sha }}
+          PRODUCTION_BRIDGE_RUN_MARKER: ${{ steps.watchdog_state.outputs.run_marker }}
+          PRODUCTION_BRIDGE_COMPENSATION_MARKER: ${{ steps.watchdog_state.outputs.compensation_marker }}
+        run: node scripts/ev2/phase12/production-frontend-bridge-pages-state.mjs decide
+      - name: Install pinned recovery tooling only for an owned canonical bridge
+        if: >-
+          always() && steps.watchdog_decision.outputs.action == 'restore-predecessor' &&
+          steps.deployment_bytes.outcome == 'success'
+        timeout-minutes: 10
+        working-directory: control
+        run: npm ci --ignore-scripts
+      - name: Restore sealed predecessor under adjacent canonical CAS
+        id: watchdog_recovery
+        if: >-
+          always() && steps.watchdog_decision.outputs.action == 'restore-predecessor' &&
+          steps.deployment_bytes.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 20
+        working-directory: control
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+        run: >-
+          node scripts/ev2/phase12/deploy-sealed-production-dist.mjs
+          --archive ../recovery/predecessor/outputs/g12-production-frontend-bridge-predecessor-dist.tar
+          --seal ../recovery/predecessor/outputs/g12-production-frontend-bridge-predecessor-dist-seal.json
+          --candidate "${{ steps.watchdog_state.outputs.baseline_release }}"
+          --branch main
+          --commit-message "${{ steps.watchdog_state.outputs.compensation_marker }}"
+          --expected-canonical-id "${{ steps.watchdog_decision.outputs.deployment_id }}"
+          --expected-canonical-release "${{ steps.watchdog_decision.outputs.release }}"
+          --expected-canonical-created-on "${{ steps.watchdog_decision.outputs.created_on }}"
+          --expected-canonical-marker "${{ steps.watchdog_decision.outputs.commit_message }}"
+          --wrangler-script node_modules/wrangler/bin/wrangler.js
+      - name: Recheck ambiguous watchdog recovery before retry
+        id: watchdog_retry_decision
+        if: >-
+          always() && steps.watchdog_decision.outputs.action == 'restore-predecessor' &&
+          steps.watchdog_recovery.outcome != 'success'
+        continue-on-error: true
+        timeout-minutes: 5
+        working-directory: control
+        env: *production_bridge_watchdog_environment
+        run: node scripts/ev2/phase12/production-frontend-bridge-pages-state.mjs decide
+      - name: Retry sealed predecessor under a new adjacent canonical CAS
+        id: watchdog_recovery_retry
+        if: >-
+          always() && steps.watchdog_retry_decision.outputs.action == 'restore-predecessor' &&
+          steps.deployment_bytes.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 20
+        working-directory: control
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+        run: >-
+          node scripts/ev2/phase12/deploy-sealed-production-dist.mjs
+          --archive ../recovery/predecessor/outputs/g12-production-frontend-bridge-predecessor-dist.tar
+          --seal ../recovery/predecessor/outputs/g12-production-frontend-bridge-predecessor-dist-seal.json
+          --candidate "${{ steps.watchdog_state.outputs.baseline_release }}"
+          --branch main
+          --commit-message "${{ steps.watchdog_state.outputs.compensation_marker }}"
+          --expected-canonical-id "${{ steps.watchdog_retry_decision.outputs.deployment_id }}"
+          --expected-canonical-release "${{ steps.watchdog_retry_decision.outputs.release }}"
+          --expected-canonical-created-on "${{ steps.watchdog_retry_decision.outputs.created_on }}"
+          --expected-canonical-marker "${{ steps.watchdog_retry_decision.outputs.commit_message }}"
+          --wrangler-script node_modules/wrangler/bin/wrangler.js
+      - name: Prove sealed predecessor canonical after watchdog reconciliation
+        id: watchdog_canonical
+        if: always() && steps.watchdog_decision.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 5
+        working-directory: control
+        env: *production_bridge_watchdog_environment
+        run: node scripts/ev2/phase12/production-frontend-bridge-pages-state.mjs assert-predecessor
+      - name: Probe restored predecessor without backend or lead mutation
+        id: watchdog_probe
+        if: always() && steps.watchdog_canonical.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 10
+        working-directory: control
+        run: node scripts/ev2/phase12/rollout-probe.mjs
+        env:
+          EV2_G12_ORIGIN: https://gaiatecsistemas.com.br
+          EV2_G12_EXPECTED_SHA: ${{ steps.watchdog_state.outputs.baseline_release }}
+          EV2_G12_ENVIRONMENT: production
+          EV2_G12_PRODUCTION_AUTHORIZED: "true"
+          EV2_G12_PROBE_PROFILE: full
+          EV2_G12_SAMPLE_COUNT: "20"
+          EV2_G12_REPORT_PATH: ../g12-production-frontend-bridge-watchdog-probe.json
+      - name: Materialize sanitized watchdog reconciliation evidence
+        id: watchdog_evidence
+        if: always() && steps.watchdog_probe.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 5
+        working-directory: control
+        env:
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+          SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          SOURCE_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+          CANDIDATE_SHA: ${{ steps.watchdog_state.outputs.candidate_sha }}
+          PREDECESSOR_SHA: ${{ steps.watchdog_state.outputs.baseline_release }}
+          CANONICAL_DEPLOYMENT_ID: ${{ steps.watchdog_canonical.outputs.deployment_id }}
+          CANONICAL_ACTION: ${{ steps.watchdog_canonical.outputs.action }}
+        run: |
+          node <<'NODE'
+          const { writeFileSync } = require("node:fs");
+          const sha = /^[a-f0-9]{40}$/;
+          const positive = /^[1-9]\d*$/;
+          const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+          if (!positive.test(process.env.SOURCE_RUN_ID || "") ||
+              !positive.test(process.env.SOURCE_RUN_ATTEMPT || "") ||
+              !sha.test(process.env.SOURCE_CONTROL_SHA || "") ||
+              !sha.test(process.env.CANDIDATE_SHA || "") ||
+              !sha.test(process.env.PREDECESSOR_SHA || "") ||
+              !uuid.test(process.env.CANONICAL_DEPLOYMENT_ID || "") ||
+              !["already-predecessor", "already-restored-predecessor"].includes(process.env.CANONICAL_ACTION || ""))
+            throw new Error("G12_PRODUCTION_BRIDGE_WATCHDOG_EVIDENCE_REFUSED");
+          writeFileSync("../g12-production-frontend-bridge-watchdog.json", JSON.stringify({
+            schemaVersion: 1,
+            event: "g12.production.frontend_bridge.watchdog_reconciled",
+            workflow: { runId: process.env.SOURCE_RUN_ID, runAttempt: Number(process.env.SOURCE_RUN_ATTEMPT), controlSha: process.env.SOURCE_CONTROL_SHA },
+            candidateSha: process.env.CANDIDATE_SHA,
+            predecessorSha: process.env.PREDECESSOR_SHA,
+            canonicalDeploymentId: process.env.CANONICAL_DEPLOYMENT_ID,
+            canonicalAction: process.env.CANONICAL_ACTION,
+            backendMutation: "none",
+            leadMutation: "none",
+            sensitiveValuesLogged: false,
+          }, null, 2) + "\n", { mode: 0o600, flag: "wx" });
+          NODE
+      - name: Upload mandatory production bridge watchdog evidence
+        id: watchdog_evidence_upload
+        if: always() && steps.watchdog_evidence.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: production-frontend-bridge-watchdog-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+          path: |
+            g12-production-frontend-bridge-watchdog.json
+            g12-production-frontend-bridge-watchdog-probe.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Compare and clear HMAC state only after proven watchdog reconciliation
+        id: clear_recovery_state
+        if: always() && steps.watchdog_evidence_upload.outcome == 'success'
+        timeout-minutes: 5
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs clear
+          --kind production-frontend-bridge
+          --file "${{ steps.watchdog_state.outputs.state_path }}"
+          --run-id "${{ github.event.workflow_run.id }}"
+          --run-attempt "${{ github.event.workflow_run.run_attempt }}"
+          --control-sha "${{ github.event.workflow_run.head_sha }}"
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+      - name: Fail closed unless the sealed predecessor and state are proven reconciled
+        if: >-
+          always() && (steps.watchdog_state.outcome != 'success' ||
+          steps.watchdog_decision.outcome != 'success' ||
+          steps.watchdog_canonical.outcome != 'success' ||
+          steps.watchdog_probe.outcome != 'success' ||
+          steps.watchdog_evidence.outcome != 'success' ||
+          steps.watchdog_evidence_upload.outcome != 'success' ||
+          steps.clear_recovery_state.outcome != 'success' ||
+          (steps.watchdog_decision.outputs.action == 'restore-predecessor' &&
+          steps.deployment_bytes.outcome != 'success') ||
+          (steps.watchdog_decision.outputs.action == 'restore-predecessor' &&
+          steps.watchdog_recovery.outcome != 'success' &&
+          steps.watchdog_recovery_retry.outcome != 'success' &&
+          steps.watchdog_retry_decision.outputs.action != 'already-restored-predecessor'))
+        run: exit 1

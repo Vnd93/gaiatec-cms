@@ -25,6 +25,7 @@ import {
   type Ev2RoleCatalogItem,
   type Ev2ScopedRoleAssignment,
 } from "@/shared/contracts/ev2-rbac";
+import { operatorErrorMessage } from "../operator-error-message";
 
 type AdministrativeUser = {
   user_id: string;
@@ -51,6 +52,75 @@ function formatDate(value: string | null): string {
 
 function reasonLabel(reasonCode: string): string {
   return ev2PolicyReasonLabels[reasonCode] ?? reasonCode.replaceAll("_", " ");
+}
+
+const environmentLabels: Record<string, string> = {
+  local: "Desenvolvimento local",
+  staging: "Homologação",
+  production: "Produção",
+};
+const permissionAreaLabels: Record<string, string> = {
+  users: "Usuários",
+  sessions: "Sessões",
+  scopes: "Acessos por escopo",
+  policy_decisions: "Decisões de acesso",
+  products: "Produtos",
+  content: "Conteúdo",
+  pages: "Páginas",
+  homepage: "Página inicial",
+  posts: "Artigos",
+  media: "Mídia",
+  forms: "Formulários",
+  leads: "Leads",
+  campaigns: "Campanhas",
+  releases: "Releases",
+  diagnostics: "Diagnósticos",
+  audit: "Auditoria",
+  search: "Busca",
+  quality: "Qualidade",
+  settings: "Dados globais",
+  navigation: "Navegação",
+  placements: "Posicionamentos",
+};
+const permissionActionLabels: Record<string, string> = {
+  read: "consultar",
+  edit: "editar",
+  manage: "administrar",
+  invite: "convidar",
+  suspend: "suspender",
+  revoke: "revogar",
+  publish: "publicar",
+  approve: "aprovar",
+  upload: "enviar arquivos",
+  export: "exportar",
+  run: "executar",
+  waive: "registrar exceção",
+  assign: "atribuir",
+  rollback: "reverter",
+};
+
+function permissionLabel(permissionKey: string): string {
+  const [area = "", ...actionParts] = permissionKey.replace(/^cms:/, "").split(".");
+  const action = actionParts.join(".");
+  const areaLabel = permissionAreaLabels[area] ?? area.replaceAll("_", " ");
+  const actionLabel = permissionActionLabels[action] ?? action.replaceAll(/[._-]+/g, " ");
+  return `${areaLabel}: ${actionLabel}`;
+}
+
+function roleLabel(roleKey: string, roles: Ev2RoleCatalogItem[]): string {
+  return roles.find((role) => role.roleKey === roleKey)?.name ?? roleKey.replaceAll("_", " ");
+}
+
+function targetLabel(targetType: string | null): string {
+  if (!targetType) return "Sem alvo específico";
+  const labels: Record<string, string> = {
+    administrative_screen: "Tela administrativa",
+    user: "Usuário",
+    content: "Conteúdo",
+    release: "Release",
+    site: "Site",
+  };
+  return labels[targetType] ?? targetType.replaceAll("_", " ");
 }
 
 export function ScopedAccessPanel({ users }: { users: AdministrativeUser[] }) {
@@ -80,6 +150,10 @@ export function ScopedAccessPanel({ users }: { users: AdministrativeUser[] }) {
   const canManage = profile?.permissions.includes("cms:scopes.manage") ?? false;
   const canReadDecisions = profile?.permissions.includes("cms:policy_decisions.read") ?? false;
   const eligibleUsers = useMemo(() => users.filter((user) => !user.is_self), [users]);
+  const permissionOptions = useMemo(
+    () => Array.from(new Set(roles.flatMap((role) => role.permissions))).sort(),
+    [roles],
+  );
 
   const load = useCallback(async () => {
     if (!candidateEnabled || !session) return;
@@ -112,7 +186,7 @@ export function ScopedAccessPanel({ users }: { users: AdministrativeUser[] }) {
         setDecisions(audit.items);
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "A autorização escopada está indisponível.");
+      setError(operatorErrorMessage(caught, { fallback: "A autorização escopada está indisponível." }));
     } finally {
       setLoading(false);
     }
@@ -131,6 +205,11 @@ export function ScopedAccessPanel({ users }: { users: AdministrativeUser[] }) {
     if (roles.some((role) => role.roleKey === grant.roleKey) || roles.length === 0) return;
     setGrant((current) => ({ ...current, roleKey: roles[0].roleKey }));
   }, [grant.roleKey, roles]);
+
+  useEffect(() => {
+    if (permissionOptions.includes(permissionKey) || permissionOptions.length === 0) return;
+    setPermissionKey(permissionOptions[0]);
+  }, [permissionKey, permissionOptions]);
 
   if (!candidateEnabled) return null;
 
@@ -175,7 +254,7 @@ export function ScopedAccessPanel({ users }: { users: AdministrativeUser[] }) {
       setGrant((current) => ({ ...current, reason: "", expiresAt: "" }));
       await load();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Não foi possível conceder o acesso.");
+      setError(operatorErrorMessage(caught, { fallback: "Não foi possível conceder o acesso." }));
     } finally {
       setBusy(false);
     }
@@ -206,7 +285,7 @@ export function ScopedAccessPanel({ users }: { users: AdministrativeUser[] }) {
       setSuccess("Concessão revogada e decisão registrada na auditoria.");
       await load();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Não foi possível revogar o acesso.");
+      setError(operatorErrorMessage(caught, { fallback: "Não foi possível revogar o acesso." }));
     } finally {
       setBusy(false);
     }
@@ -231,7 +310,7 @@ export function ScopedAccessPanel({ users }: { users: AdministrativeUser[] }) {
       setEvaluation(result);
       if (canReadDecisions) await load();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Não foi possível avaliar a permissão.");
+      setError(operatorErrorMessage(caught, { fallback: "Não foi possível avaliar a permissão." }));
     } finally {
       setBusy(false);
     }
@@ -239,8 +318,8 @@ export function ScopedAccessPanel({ users }: { users: AdministrativeUser[] }) {
 
   return (
     <SectionCard
-      title="Acesso por escopo — EV2.8"
-      description={`Autorizações efetivas para o site main no ambiente ${CMS_ENVIRONMENT}.`}
+      title="Acesso por site e ambiente"
+      description={`Autorizações efetivas para o site principal em ${environmentLabels[CMS_ENVIRONMENT] ?? CMS_ENVIRONMENT}.`}
       actions={
         <button className="admin-button admin-button--secondary" type="button" onClick={() => void load()}>
           Atualizar
@@ -253,17 +332,18 @@ export function ScopedAccessPanel({ users }: { users: AdministrativeUser[] }) {
         <LoadingSkeleton label="Carregando concessões escopadas" rows={3} />
       ) : capability?.enabled !== true ? (
         <AdminAlert tone="warning">
-          Canary inativo para esta identidade. Nenhum papel escopado foi aplicado e o comportamento legado foi
-          preservado.
+          O controle de acesso por ambiente não está ativo para esta identidade. As permissões vigentes foram
+          preservadas.
         </AdminAlert>
       ) : (
         <>
           <AdminAlert tone="success">
-            RBAC escopado ativo para esta identidade em main/{CMS_ENVIRONMENT}. Ativação: {capability.source}.
+            Controle de acesso por ambiente ativo para esta identidade em{" "}
+            {environmentLabels[CMS_ENVIRONMENT] ?? CMS_ENVIRONMENT}.
           </AdminAlert>
 
           {canManage && (
-            <form className="admin-form" onSubmit={submitGrant}>
+            <form className="admin-form" aria-label="Nova concessão no escopo" onSubmit={submitGrant}>
               <FieldGroup
                 legend="Nova concessão"
                 description="A própria identidade não pode elevar seu acesso. Delegações exigem validade definida."
@@ -294,7 +374,7 @@ export function ScopedAccessPanel({ users }: { users: AdministrativeUser[] }) {
                   >
                     {roles.map((role) => (
                       <option key={role.roleKey} value={role.roleKey}>
-                        {role.name} ({role.roleKey})
+                        {role.name}
                       </option>
                     ))}
                   </select>
@@ -352,7 +432,7 @@ export function ScopedAccessPanel({ users }: { users: AdministrativeUser[] }) {
             (assignments.length === 0 ? (
               <EmptyState
                 title="Nenhuma concessão encontrada"
-                description={`Não há papéis registrados em main/${CMS_ENVIRONMENT}.`}
+                description={`Não há papéis registrados para o site principal em ${environmentLabels[CMS_ENVIRONMENT] ?? CMS_ENVIRONMENT}.`}
               />
             ) : (
               <DataTable caption={`${assignments.length} concessões no escopo`}>
@@ -370,9 +450,8 @@ export function ScopedAccessPanel({ users }: { users: AdministrativeUser[] }) {
                     <tr key={assignment.id}>
                       <td>
                         <strong>{assignment.displayName}</strong>
-                        <small>{assignment.userId}</small>
                       </td>
-                      <td>{assignment.roleKey}</td>
+                      <td>{roleLabel(assignment.roleKey, roles)}</td>
                       <td>
                         {assignment.grantType === "delegated" ? "Delegada" : "Direta"}
                         <small>{formatDate(assignment.expiresAt)}</small>
@@ -381,7 +460,6 @@ export function ScopedAccessPanel({ users }: { users: AdministrativeUser[] }) {
                         <Badge tone={assignment.effective ? "success" : "neutral"}>
                           {assignment.effective ? "efetiva" : "inativa"}
                         </Badge>
-                        <small>versão {assignment.lockVersion}</small>
                       </td>
                       <td>
                         {canManage && assignment.effective && (
@@ -393,7 +471,7 @@ export function ScopedAccessPanel({ users }: { users: AdministrativeUser[] }) {
                               setPendingRevoke(assignment);
                             }}
                           >
-                            Revogar
+                            Abrir revogação
                           </button>
                         )}
                       </td>
@@ -403,19 +481,24 @@ export function ScopedAccessPanel({ users }: { users: AdministrativeUser[] }) {
               </DataTable>
             ))}
 
-          <form className="admin-form" onSubmit={evaluatePermission}>
+          <form className="admin-form" aria-label="Simular decisão da sessão" onSubmit={evaluatePermission}>
             <FieldGroup
               legend="Simular decisão da sessão"
               description="A avaliação usa a sessão atual, registra allow/deny e não altera permissões."
             >
               <label>
-                Chave de permissão
-                <input
+                Permissão
+                <select
                   required
-                  pattern="cms:[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+"
                   value={permissionKey}
                   onChange={(event) => setPermissionKey(event.target.value)}
-                />
+                >
+                  {permissionOptions.map((permission) => (
+                    <option key={permission} value={permission}>
+                      {permissionLabel(permission)}
+                    </option>
+                  ))}
+                </select>
               </label>
             </FieldGroup>
             <button className="admin-button admin-button--secondary" disabled={busy}>
@@ -424,8 +507,7 @@ export function ScopedAccessPanel({ users }: { users: AdministrativeUser[] }) {
           </form>
           {evaluation && (
             <AdminAlert tone={evaluation.allowed ? "success" : "danger"}>
-              {evaluation.allowed ? "Permitido" : "Negado"}: {reasonLabel(evaluation.reasonCode)}. Decisão{" "}
-              {evaluation.decisionId}.
+              {evaluation.allowed ? "Permitido" : "Negado"}: {reasonLabel(evaluation.reasonCode)}.
             </AdminAlert>
           )}
 
@@ -443,19 +525,16 @@ export function ScopedAccessPanel({ users }: { users: AdministrativeUser[] }) {
                 {decisions.map((decision) => (
                   <tr key={decision.id}>
                     <td>{new Date(decision.occurredAt).toLocaleString("pt-BR")}</td>
-                    <td>{decision.permissionKey}</td>
+                    <td>{permissionLabel(decision.permissionKey)}</td>
                     <td>
                       <Badge tone={decision.decision === "allow" ? "success" : "danger"}>
-                        {decision.decision}
+                        {decision.decision === "allow" ? "Permitido" : "Negado"}
                       </Badge>
-                      <small>{decision.aal.toUpperCase()}</small>
+                      <small>{decision.aal === "aal2" ? "MFA confirmado" : "Sessão padrão"}</small>
                     </td>
                     <td>
                       {reasonLabel(decision.reasonCode)}
-                      <small>
-                        {decision.targetType ?? "sem alvo"}
-                        {decision.targetId ? ` / ${decision.targetId}` : ""}
-                      </small>
+                      <small>{targetLabel(decision.targetType)}</small>
                     </td>
                   </tr>
                 ))}
@@ -470,7 +549,7 @@ export function ScopedAccessPanel({ users }: { users: AdministrativeUser[] }) {
         title="Revogar esta concessão escopada?"
         description={
           pendingRevoke
-            ? `O papel ${pendingRevoke.roleKey} de ${pendingRevoke.displayName} deixará de ser efetivo em main/${CMS_ENVIRONMENT}.`
+            ? `O papel ${roleLabel(pendingRevoke.roleKey, roles)} de ${pendingRevoke.displayName} deixará de ser efetivo no site principal em ${environmentLabels[CMS_ENVIRONMENT] ?? CMS_ENVIRONMENT}.`
             : ""
         }
         confirmLabel="Revogar concessão"

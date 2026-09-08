@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { Phone, MessageSquare, Mail, ArrowRight, Loader2, CheckCircle2, Linkedin, Instagram, Facebook, Youtube } from "lucide-react";
-import type { CmsFormVersion, CmsNavigationContent } from "@/shared/contracts/cms-content";
 import { usePublishedSiteShell } from "@/public/site-shell-context";
-import { getPublishedForm } from "@/public/catalog-api";
+import { getPublishedForm, type PublicFormVersion, type PublicNavigationItem } from "@/public/catalog-api";
 import { submitGovernedLead } from "@/public/lead-api";
+import { publishedNavigationItems } from "@/public/site-shell-navigation";
 import { TurnstileChallenge } from "./TurnstileChallenge";
 
 const KNOCKOUT = "'Knockout HTF68', sans-serif";
@@ -12,15 +12,12 @@ const KNOCKOUT = "'Knockout HTF68', sans-serif";
 type FooterLink = { label: string; href: string; newTab: boolean };
 type FooterColumn = { title: string; links: FooterLink[] };
 
-function menuToColumns(items: CmsNavigationContent["items"] | undefined): FooterColumn[] {
+function menuToColumns(items: PublicNavigationItem[] | undefined): FooterColumn[] {
   if (!items) return [];
-  const visible = items.filter((item) => item.visible && item.location === "footer");
-  const roots = visible.filter((item) => item.parentId === null).sort((a, b) => a.order - b.order);
+  const roots = items.filter((item) => item.location === "footer");
   const columns = roots.map((root) => ({
     title: root.label.toUpperCase(),
-    links: visible
-      .filter((item) => item.parentId === root.id)
-      .sort((a, b) => a.order - b.order)
+    links: (root.children ?? [])
       .map((item) => ({ label: item.label, href: item.href, newTab: item.newTab })),
   }));
   return columns;
@@ -36,9 +33,9 @@ const SOCIAL_ICONS: Record<string, typeof Linkedin> = {
 type NlStatus = "idle" | "submitting" | "success" | "error";
 
 export function Footer() {
-  const { navigation, settings } = usePublishedSiteShell();
+  const { navigation, settings, loading } = usePublishedSiteShell();
 
-  const columns = menuToColumns(navigation?.items).slice(0, 4);
+  const columns = menuToColumns(publishedNavigationItems(navigation?.items)).slice(0, 4);
   const year = new Date().getFullYear();
 
   const tel = settings?.company.phone.trim() ?? "";
@@ -49,9 +46,11 @@ export function Footer() {
   const [newsletterConsent, setNewsletterConsent] = useState(false);
   const [newsletterWebsite, setNewsletterWebsite] = useState("");
   const [nlStatus, setNlStatus] = useState<NlStatus>("idle");
-  const [newsletterForm, setNewsletterForm] = useState<CmsFormVersion | null>(null);
+  const [newsletterForm, setNewsletterForm] = useState<PublicFormVersion | null>(null);
   const [newsletterFormLoading, setNewsletterFormLoading] = useState(true);
-  const [newsletterCaptchaRequired, setNewsletterCaptchaRequired] = useState(false);
+  const [newsletterCaptchaRequired, setNewsletterCaptchaRequired] = useState(
+    import.meta.env.VITE_CONTACT_CAPTCHA_ALWAYS === "true",
+  );
   const [newsletterCaptchaToken, setNewsletterCaptchaToken] = useState("");
   const [newsletterIdempotencyKey, setNewsletterIdempotencyKey] = useState(() =>
     crypto.randomUUID(),
@@ -86,7 +85,7 @@ export function Footer() {
           .filter((field) => field.type !== "hidden")
           .map((field) => [
             field.key,
-            field.id === emailField.id ? email.trim() : field.type === "checkbox" ? true : "",
+            field.key === emailField.key ? email.trim() : field.type === "checkbox" ? true : "",
           ]),
       );
       await submitGovernedLead({
@@ -102,7 +101,7 @@ export function Footer() {
       setEmail("");
       setNewsletterConsent(false);
       setNewsletterWebsite("");
-      setNewsletterCaptchaRequired(false);
+      setNewsletterCaptchaRequired(import.meta.env.VITE_CONTACT_CAPTCHA_ALWAYS === "true");
       setNewsletterCaptchaToken("");
       setNewsletterIdempotencyKey(crypto.randomUUID());
       setTimeout(() => setNlStatus("idle"), 6000);
@@ -242,6 +241,11 @@ export function Footer() {
 
           {/* Link columns */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-10">
+            {!loading && columns.length === 0 && (
+              <p className="col-span-full text-[13px] text-slate-400" role="status">
+                Navegação temporariamente indisponível.
+              </p>
+            )}
             {columns.map((col) => (
               <div key={col.title}>
                 <h6 className="text-[12px] text-white mb-5 tracking-[0.12em] uppercase" style={{ fontWeight: 700 }}>

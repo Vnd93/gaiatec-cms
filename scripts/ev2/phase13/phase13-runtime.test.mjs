@@ -103,7 +103,8 @@ test("the reduced G13 canary is immutable, identity-scoped and staging-only", as
   assert.match(rehearsal, /EV2_G13_PARALLEL_BROAD_OVERRIDE_NOT_CLOSED/);
   assert.match(rehearsal, /EV2_G13_LONG_TTL_NOT_CLOSED/);
   assert.match(workflow, /EV2\.13 Candidate Preview \(not a gate\)/);
-  assert.match(workflow, /PREVIEW-G13-STAGING/);
+  assert.match(workflow, /PREVIEW-G13-STAGING:<SHA>:RUNTIME-MANIFEST/);
+  assert.match(workflow, /test "\$CONFIRMATION" = "PREVIEW-G13-STAGING:\$EXPECTED_SHA:RUNTIME-MANIFEST"/);
   assert.match(workflow, /Require isolated Pages preview configuration/);
   assert.doesNotMatch(workflow, /CANARY-G13-STAGING|CANARY_DEPLOY_CONFIGURED/);
   assert.match(workflow, /--commit-hash \$\{\{ inputs\.expected_sha \}\}/);

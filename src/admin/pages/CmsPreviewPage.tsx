@@ -14,6 +14,14 @@ import type {
 } from "@/shared/contracts/cms-content";
 import { DiscoveryEntityRenderer } from "@/public/components/DiscoveryEntityRenderer";
 import { CmsPageRenderer } from "@/public/components/CmsPageRenderer";
+import { operatorErrorMessage } from "../operator-error-message";
+
+const previewUnavailableMessage = "Não foi possível carregar a visualização.";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export default function CmsPreviewPage() {
   const { token = "" } = useParams();
   const [previewData, setPreviewData] = useState<{
@@ -48,11 +56,32 @@ export default function CmsPreviewPage() {
       cache: "no-store",
     })
       .then(async (response) => {
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error);
-        setPreviewData(data);
+        if (!response.ok) {
+          setError(
+            operatorErrorMessage(undefined, {
+              fallback: previewUnavailableMessage,
+              source: "remote",
+              status: response.status,
+            }),
+          );
+          return;
+        }
+        const data: unknown = await response.json().catch(() => null);
+        if (!isRecord(data) || !isRecord(data.payload)) {
+          setError(previewUnavailableMessage);
+          return;
+        }
+        setPreviewData(data as NonNullable<typeof previewData>);
       })
-      .catch((caught) => setError(caught instanceof Error ? caught.message : "Preview indisponível."));
+      .catch((caught) =>
+        setError(
+          operatorErrorMessage(caught, {
+            fallback: previewUnavailableMessage,
+            source: "remote",
+            status: 0,
+          }),
+        ),
+      );
   }, [token]);
   return (
     <main className="cms-preview-page" data-admin-surface>
@@ -82,18 +111,15 @@ export default function CmsPreviewPage() {
           <DiscoveryEntityRenderer
             preview
             entity={{
-              item_id: previewData.itemId ?? "preview",
-              revision_id: "preview",
+              key: previewData.itemId ?? "preview",
               slug: previewData.slug ?? "preview",
-              content_type: previewData.payload.contentType as any,
+              kind: previewData.payload.contentType as any,
               path: "#",
               payload: previewData.payload as any,
               seo: previewData.payload.seo,
-              content_version: 0,
-              etag: "preview",
-              published_at: new Date().toISOString(),
-              media_urls: previewData.media_urls,
-              document_urls: previewData.document_urls,
+              publishedAt: new Date().toISOString(),
+              mediaUrls: previewData.media_urls,
+              documentUrls: previewData.document_urls,
             }}
           />
         ) : (

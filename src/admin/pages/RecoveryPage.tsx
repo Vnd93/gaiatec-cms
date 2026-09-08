@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router";
 import { useAdminAuth } from "../auth/AdminAuthContext";
 import { AdminError, AdminFrame, AdminSuccess } from "../components/AdminFrame";
+import { operatorErrorMessage } from "../operator-error-message";
 
 export default function AdminRecoveryPage() {
   const { requestRecovery } = useAdminAuth();
@@ -14,10 +15,24 @@ export default function AdminRecoveryPage() {
     event.preventDefault();
     setError(null);
     setBusy(true);
-    const result = await requestRecovery(email);
-    setBusy(false);
-    if (result.error) setError(result.error);
-    else setSent(true);
+    try {
+      const result = await requestRecovery(email);
+      if (result.error)
+        setError(
+          operatorErrorMessage(result.error, {
+            fallback: "Não foi possível solicitar o link. Tente novamente.",
+          }),
+        );
+      else setSent(true);
+    } catch (caught) {
+      setError(
+        operatorErrorMessage(caught, {
+          fallback: "Não foi possível solicitar o link. Tente novamente.",
+        }),
+      );
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (

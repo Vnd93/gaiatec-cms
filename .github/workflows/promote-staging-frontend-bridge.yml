@@ -1,0 +1,457 @@
+name: Promote staging frontend bridge
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: SHA A completo contido em main
+        required: true
+      expected_baseline_sha:
+        description: SHA exato atualmente servido pelo alias staging antes do bootstrap
+        required: true
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: staging
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment: staging
+    steps:
+      - name: Validate trusted staging bridge dispatch
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+          DISPATCH_ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          BASELINE_SHA: ${{ inputs.expected_baseline_sha }}
+        run: |
+          set -euo pipefail
+          test "$DISPATCH_REF" = refs/heads/main
+          test "${DISPATCH_ACTOR,,}" = vnd93
+          test "${TRIGGERING_ACTOR,,}" = vnd93
+          test "$(printf '%s' "$CANDIDATE_SHA" | grep -E '^[a-f0-9]{40}$')" = "$CANDIDATE_SHA"
+          test "$(printf '%s' "$BASELINE_SHA" | grep -E '^[a-f0-9]{40}$')" = "$BASELINE_SHA"
+          test "$CANDIDATE_SHA" != "$BASELINE_SHA"
+      - name: Checkout current control
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: { fetch-depth: 0, path: control }
+      - name: Checkout exact bridge A
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: { ref: "${{ inputs.candidate_sha }}", fetch-depth: 0, path: candidate }
+      - name: Checkout exact staging recovery baseline
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: { ref: "${{ inputs.expected_baseline_sha }}", fetch-depth: 0, path: baseline }
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: control/.nvmrc
+          cache: npm
+          cache-dependency-path: |
+            control/package-lock.json
+            candidate/package-lock.json
+            baseline/package-lock.json
+      - name: Verify exact ancestry and protected CI
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+          test "$(git -C ../candidate rev-parse HEAD)" = "${{ inputs.candidate_sha }}"
+          test "$(git -C ../baseline rev-parse HEAD)" = "${{ inputs.expected_baseline_sha }}"
+          git merge-base --is-ancestor "${{ inputs.expected_baseline_sha }}" "${{ inputs.candidate_sha }}"
+          git merge-base --is-ancestor "${{ inputs.candidate_sha }}" origin/main
+          node scripts/ev2/phase12/check-github-controls.mjs
+      - name: Install and prove bridge contracts
+        working-directory: candidate
+        run: |
+          npm ci
+          npm run check
+          npm audit --audit-level=high
+          npx vitest run tests/unit/public-bridge-compatibility.test.ts \
+            tests/unit/catalog-api-form-binding.test.ts tests/unit/catalog-api-sanitized-content.test.ts \
+            tests/unit/lead-api-boundary.test.ts tests/components/cms-page-renderer.test.tsx
+          npx playwright install --with-deps chromium
+      - name: Install recovery baseline tooling
+        working-directory: baseline
+        run: npm ci
+      - name: Refuse local configuration inputs
+        env:
+          VITE_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_STAGING_SITE_KEY }}
+        run: |
+          set -euo pipefail
+          for checkout in candidate baseline; do
+            test ! -e "$checkout/.env.local"
+            test ! -e "$checkout/.env.staging.local"
+            test ! -e "$checkout/.env.production.local"
+          done
+          test "${#VITE_TURNSTILE_SITE_KEY}" -ge 10
+          case "$VITE_TURNSTILE_SITE_KEY" in
+            1x00000000000000000000AA|2x00000000000000000000AB|1x00000000000000000000BB|2x00000000000000000000BB|3x00000000000000000000FF)
+              echo "::error::The staging bridge requires the configured real Turnstile widget."
+              exit 1
+              ;;
+          esac
+      - name: Build frontend-only A for staging
+        working-directory: candidate
+        run: |
+          npm run build:staging
+          env -u GITHUB_SHA npm run artifact:manifest
+          node scripts/ev2/phase12/seal-production-dist.mjs \
+            --dist dist --archive outputs/staging-frontend-bridge-dist.tar \
+            --output outputs/staging-frontend-bridge-dist-seal.json \
+            --candidate "${{ inputs.candidate_sha }}"
+        env:
+          VITE_RELEASE: ${{ inputs.candidate_sha }}
+          VITE_CMS_ENVIRONMENT: staging
+          VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          VITE_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_STAGING_SITE_KEY }}
+          VITE_GOOGLE_MAPS_KEY: ${{ vars.GOOGLE_MAPS_BROWSER_KEY }}
+          VITE_CONTACT_CAPTCHA_ALWAYS: "true"
+          VITE_EV2_DRAFT_V2_CANDIDATE: "false"
+      - name: Build exact pre-bridge recovery frontend
+        working-directory: baseline
+        run: |
+          npm run build:staging
+          env -u GITHUB_SHA npm run artifact:manifest
+          mkdir -p outputs
+          node ../control/scripts/ev2/phase12/seal-production-dist.mjs \
+            --dist dist --archive outputs/staging-baseline-dist.tar \
+            --output outputs/staging-baseline-dist-seal.json \
+            --candidate "${{ inputs.expected_baseline_sha }}"
+        env:
+          VITE_RELEASE: ${{ inputs.expected_baseline_sha }}
+          VITE_CMS_ENVIRONMENT: staging
+          VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          VITE_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_STAGING_SITE_KEY }}
+          VITE_GOOGLE_MAPS_KEY: ${{ vars.GOOGLE_MAPS_BROWSER_KEY }}
+          VITE_CONTACT_CAPTCHA_ALWAYS: "true"
+          VITE_EV2_DRAFT_V2_CANDIDATE: "false"
+      - name: Prove live alias is the expected old-backend baseline
+        working-directory: control
+        run: node scripts/ev2/phase12/rollout-probe.mjs
+        env:
+          EV2_G12_ORIGIN: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
+          EV2_G12_EXPECTED_SHA: ${{ inputs.expected_baseline_sha }}
+          EV2_G12_ENVIRONMENT: staging
+          EV2_G12_SAMPLE_COUNT: "5"
+      - name: Capture canonical staging state before any deployment or fixture
+        id: baseline_state
+        working-directory: control
+        run: node scripts/ev2/phase12/staging-pages-state.mjs capture
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-cms-staging
+          CLOUDFLARE_PAGES_BRANCH: ev2-g17-canary
+          STAGING_EXPECTED_RELEASE: ${{ inputs.expected_baseline_sha }}
+      - name: Arm durable staging bridge recovery state
+        working-directory: control
+        run: |
+          mkdir -p outputs
+          node <<'NODE'
+          const { writeFileSync } = require("node:fs");
+          const state = {
+            schemaVersion: 1, event: "g12.staging.deploy.prepared",
+            workflow: { runId: process.env.GITHUB_RUN_ID, runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT), controlSha: process.env.GITHUB_SHA },
+            project: "gaiatec-cms-staging", branch: "ev2-g17-canary",
+            runMarker: `g12-staging-bridge-run-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`,
+            compensationMarker: `g12-staging-bridge-compensation-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`,
+            candidateRelease: process.env.CANDIDATE_SHA,
+            original: { deploymentId: process.env.BASELINE_ID, release: process.env.BASELINE_SHA,
+              createdOn: process.env.BASELINE_CREATED, commitMessage: process.env.BASELINE_MARKER },
+          };
+          writeFileSync("outputs/staging-frontend-bridge-state.json", JSON.stringify(state, null, 2) + "\n", { mode: 0o600 });
+          NODE
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          BASELINE_SHA: ${{ inputs.expected_baseline_sha }}
+          BASELINE_ID: ${{ steps.baseline_state.outputs.deployment_id }}
+          BASELINE_CREATED: ${{ steps.baseline_state.outputs.created_on }}
+          BASELINE_MARKER: ${{ steps.baseline_state.outputs.commit_message }}
+      - name: Persist redundant HMAC recovery state before any remote mutation
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs put --kind staging-deploy
+          --file outputs/staging-frontend-bridge-state.json
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          CONTROL_SHA: ${{ github.sha }}
+      - name: Upload recovery state and exact baseline bytes
+        id: recovery_upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: staging-frontend-bridge-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            control/outputs/staging-frontend-bridge-state.json
+            baseline/dist
+            baseline/outputs/staging-baseline-dist.tar
+            baseline/outputs/staging-baseline-dist-seal.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Deploy sealed A to isolated staging preview branch
+        id: preview
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/deploy-sealed-staging-dist.mjs
+          --archive ../candidate/outputs/staging-frontend-bridge-dist.tar
+          --seal ../candidate/outputs/staging-frontend-bridge-dist-seal.json
+          --candidate "${{ inputs.candidate_sha }}" --branch ev2-g12-canary
+          --commit-message "g12-staging-bridge-preview-run-${{ github.run_id }}-${{ github.run_attempt }}"
+          --wrangler-script ../candidate/node_modules/wrangler/bin/wrangler.js
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-cms-staging
+      - name: Probe isolated A against the old staging backend
+        working-directory: control
+        run: node scripts/ev2/phase12/rollout-probe.mjs
+        env:
+          EV2_G12_ORIGIN: https://ev2-g12-canary.gaiatec-cms-staging.pages.dev
+          EV2_G12_EXPECTED_SHA: ${{ inputs.candidate_sha }}
+          EV2_G12_ENVIRONMENT: staging
+          EV2_G12_SAMPLE_COUNT: "5"
+          EV2_G12_REPORT_PATH: ../staging-bridge-preview-probe.json
+      - name: Run isolated full public bridge cycle on old backend
+        id: preview_fixture
+        continue-on-error: true
+        working-directory: candidate
+        run: node scripts/qa/cms-public-bridge-fixture.mjs setup
+        env:
+          QA_CMS_BRIDGE_ENVIRONMENT: staging
+          QA_CMS_BRIDGE_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          QA_CMS_BRIDGE_INSTANCE: preview
+          QA_CMS_BRIDGE_STATE_PATH: outputs/staging-bridge-preview-state.json
+          QA_CMS_BRIDGE_REPORT_PATH: outputs/staging-bridge-preview-setup.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Browser-prove A to f48 page campaign form and exact lead
+        id: preview_functional
+        if: steps.preview_fixture.outcome == 'success'
+        continue-on-error: true
+        working-directory: candidate
+        run: npx playwright test tests/e2e/cms-public-bridge-canary.spec.ts --project=desktop-chromium --workers=1 --retries=0
+        env:
+          QA_CMS_BRIDGE_ENVIRONMENT: staging
+          QA_CMS_BRIDGE_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          QA_CMS_BRIDGE_INSTANCE: preview
+          QA_CMS_BRIDGE_STATE_PATH: outputs/staging-bridge-preview-state.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PLAYWRIGHT_BASE_URL: https://ev2-g12-canary.gaiatec-cms-staging.pages.dev
+          QA_CMS_BRIDGE_ORIGIN: https://ev2-g12-canary.gaiatec-cms-staging.pages.dev
+          QA_CMS_PUBLIC_BRIDGE_REQUIRED: "true"
+          QA_CMS_EXPECTED_SHA: ${{ inputs.candidate_sha }}
+          QA_CMS_BRIDGE_DEPLOYMENT_ORIGIN: ${{ steps.preview.outputs.deployment-url }}
+          QA_CMS_BRIDGE_DEPLOYMENT_ID: ${{ steps.preview.outputs.deployment-id }}
+          QA_CMS_BRIDGE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          QA_CMS_BRIDGE_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          QA_CMS_BRIDGE_REPORT_PATH: outputs/staging-bridge-preview-functional.json
+      - name: Cleanup isolated preview fixture
+        id: preview_cleanup
+        if: always() && steps.preview_fixture.outcome != 'skipped'
+        continue-on-error: true
+        working-directory: candidate
+        run: node scripts/qa/cms-public-bridge-fixture.mjs cleanup
+        env:
+          QA_CMS_BRIDGE_ENVIRONMENT: staging
+          QA_CMS_BRIDGE_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          QA_CMS_BRIDGE_INSTANCE: preview
+          QA_CMS_BRIDGE_STATE_PATH: outputs/staging-bridge-preview-state.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          QA_CMS_BRIDGE_REPORT_PATH: outputs/staging-bridge-preview-cleanup.json
+      - name: Prove isolated preview fixture residue is zero
+        id: preview_residue
+        if: always() && steps.preview_cleanup.outcome == 'success'
+        continue-on-error: true
+        working-directory: candidate
+        run: node scripts/qa/cms-public-bridge-fixture.mjs residue
+        env:
+          QA_CMS_BRIDGE_ENVIRONMENT: staging
+          QA_CMS_BRIDGE_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          QA_CMS_BRIDGE_INSTANCE: preview
+          QA_CMS_BRIDGE_STATE_PATH: outputs/staging-bridge-preview-state.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          QA_CMS_BRIDGE_REPORT_PATH: outputs/staging-bridge-preview-residue.json
+      - name: Promote exact A to canonical staging alias with CAS
+        id: promote
+        if: steps.preview_functional.outcome == 'success' && steps.preview_cleanup.outcome == 'success' && steps.preview_residue.outcome == 'success'
+        continue-on-error: true
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/deploy-sealed-staging-dist.mjs
+          --archive ../candidate/outputs/staging-frontend-bridge-dist.tar
+          --seal ../candidate/outputs/staging-frontend-bridge-dist-seal.json
+          --candidate "${{ inputs.candidate_sha }}" --branch ev2-g17-canary
+          --commit-message "g12-staging-bridge-run-${{ github.run_id }}-${{ github.run_attempt }}"
+          --wrangler-script ../candidate/node_modules/wrangler/bin/wrangler.js
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-cms-staging
+          STAGING_ORIGINAL_DEPLOYMENT: ${{ steps.baseline_state.outputs.deployment_id }}
+          STAGING_ORIGINAL_RELEASE: ${{ inputs.expected_baseline_sha }}
+          STAGING_ORIGINAL_CREATED_ON: ${{ steps.baseline_state.outputs.created_on }}
+          STAGING_ORIGINAL_COMMIT_MESSAGE: ${{ steps.baseline_state.outputs.commit_message }}
+      - name: Probe canonical staging A on old backend
+        id: canonical_probe
+        if: steps.promote.outcome == 'success'
+        continue-on-error: true
+        working-directory: control
+        run: node scripts/ev2/phase12/rollout-probe.mjs
+        env:
+          EV2_G12_ORIGIN: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
+          EV2_G12_EXPECTED_SHA: ${{ inputs.candidate_sha }}
+          EV2_G12_ENVIRONMENT: staging
+          EV2_G12_SAMPLE_COUNT: "5"
+          EV2_G12_REPORT_PATH: ../staging-bridge-canonical-probe.json
+      - name: Setup canonical public bridge fixture
+        id: canonical_fixture
+        if: steps.canonical_probe.outcome == 'success'
+        continue-on-error: true
+        working-directory: candidate
+        run: node scripts/qa/cms-public-bridge-fixture.mjs setup
+        env:
+          QA_CMS_BRIDGE_ENVIRONMENT: staging
+          QA_CMS_BRIDGE_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          QA_CMS_BRIDGE_INSTANCE: canonical
+          QA_CMS_BRIDGE_STATE_PATH: outputs/staging-bridge-canonical-state.json
+          QA_CMS_BRIDGE_REPORT_PATH: outputs/staging-bridge-canonical-setup.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Browser-prove canonical A to f48 exact public cycle
+        id: canonical_functional
+        if: steps.canonical_fixture.outcome == 'success'
+        continue-on-error: true
+        working-directory: candidate
+        run: npx playwright test tests/e2e/cms-public-bridge-canary.spec.ts --project=desktop-chromium --workers=1 --retries=0
+        env:
+          QA_CMS_BRIDGE_ENVIRONMENT: staging
+          QA_CMS_BRIDGE_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          QA_CMS_BRIDGE_INSTANCE: canonical
+          QA_CMS_BRIDGE_STATE_PATH: outputs/staging-bridge-canonical-state.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PLAYWRIGHT_BASE_URL: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
+          QA_CMS_PUBLIC_BRIDGE_REQUIRED: "true"
+          QA_CMS_EXPECTED_SHA: ${{ inputs.candidate_sha }}
+          QA_CMS_BRIDGE_DEPLOYMENT_ORIGIN: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
+          QA_CMS_BRIDGE_DEPLOYMENT_ID: ${{ steps.promote.outputs.deployment-id }}
+          QA_CMS_BRIDGE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          QA_CMS_BRIDGE_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          QA_CMS_BRIDGE_REPORT_PATH: outputs/staging-bridge-canonical-functional.json
+      - name: Cleanup canonical fixture
+        id: canonical_cleanup
+        if: always() && steps.canonical_fixture.outcome != 'skipped'
+        continue-on-error: true
+        working-directory: candidate
+        run: node scripts/qa/cms-public-bridge-fixture.mjs cleanup
+        env:
+          QA_CMS_BRIDGE_ENVIRONMENT: staging
+          QA_CMS_BRIDGE_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          QA_CMS_BRIDGE_INSTANCE: canonical
+          QA_CMS_BRIDGE_STATE_PATH: outputs/staging-bridge-canonical-state.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          QA_CMS_BRIDGE_REPORT_PATH: outputs/staging-bridge-canonical-cleanup.json
+      - name: Prove canonical fixture residue is zero
+        id: canonical_residue
+        if: always() && steps.canonical_cleanup.outcome == 'success'
+        continue-on-error: true
+        working-directory: candidate
+        run: node scripts/qa/cms-public-bridge-fixture.mjs residue
+        env:
+          QA_CMS_BRIDGE_ENVIRONMENT: staging
+          QA_CMS_BRIDGE_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          QA_CMS_BRIDGE_INSTANCE: canonical
+          QA_CMS_BRIDGE_STATE_PATH: outputs/staging-bridge-canonical-state.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          QA_CMS_BRIDGE_REPORT_PATH: outputs/staging-bridge-canonical-residue.json
+      - name: Write immutable staging bridge evidence
+        id: evidence
+        if: steps.canonical_functional.outcome == 'success' && steps.canonical_cleanup.outcome == 'success' && steps.canonical_residue.outcome == 'success'
+        continue-on-error: true
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/write-staging-frontend-bridge-evidence.mjs
+          --seal ../candidate/outputs/staging-frontend-bridge-dist-seal.json
+          --preview-probe ../staging-bridge-preview-probe.json --canonical-probe ../staging-bridge-canonical-probe.json
+          --preview-functional ../candidate/outputs/staging-bridge-preview-functional.json
+          --preview-cleanup ../candidate/outputs/staging-bridge-preview-cleanup.json
+          --preview-residue ../candidate/outputs/staging-bridge-preview-residue.json
+          --canonical-functional ../candidate/outputs/staging-bridge-canonical-functional.json
+          --canonical-cleanup ../candidate/outputs/staging-bridge-canonical-cleanup.json
+          --canonical-residue ../candidate/outputs/staging-bridge-canonical-residue.json
+          --output ../staging-frontend-bridge-evidence.json
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CONTROL_SHA: ${{ github.sha }}
+          PREVIEW_ORIGIN: https://ev2-g12-canary.gaiatec-cms-staging.pages.dev
+          CANONICAL_ORIGIN: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
+          BASELINE_DEPLOYMENT_ID: ${{ steps.baseline_state.outputs.deployment_id }}
+          BASELINE_RELEASE: ${{ inputs.expected_baseline_sha }}
+          BASELINE_CREATED_ON: ${{ steps.baseline_state.outputs.created_on }}
+          BASELINE_COMMIT_MESSAGE: ${{ steps.baseline_state.outputs.commit_message }}
+          PREVIEW_DEPLOYMENT_ID: ${{ steps.preview.outputs.deployment-id }}
+          PREVIEW_RELEASE: ${{ inputs.candidate_sha }}
+          PREVIEW_CREATED_ON: ${{ steps.preview.outputs.deployment-created-on }}
+          PREVIEW_COMMIT_MESSAGE: g12-staging-bridge-preview-run-${{ github.run_id }}-${{ github.run_attempt }}
+          CANONICAL_DEPLOYMENT_ID: ${{ steps.promote.outputs.deployment-id }}
+          CANONICAL_RELEASE: ${{ inputs.candidate_sha }}
+          CANONICAL_CREATED_ON: ${{ steps.promote.outputs.deployment-created-on }}
+          CANONICAL_COMMIT_MESSAGE: g12-staging-bridge-run-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Upload immutable staging bridge evidence
+        id: evidence_upload
+        if: steps.evidence.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: staging-frontend-bridge-${{ inputs.candidate_sha }}
+          path: staging-frontend-bridge-evidence.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Automatically restore old staging frontend on failure
+        id: recover
+        if: always() && steps.recovery_upload.outcome == 'success' && steps.evidence_upload.outcome != 'success'
+        continue-on-error: true
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/staging-pages-state.mjs compensate
+          --dist ../baseline/dist --seal ../baseline/outputs/staging-baseline-dist-seal.json
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-cms-staging
+          CLOUDFLARE_PAGES_BRANCH: ev2-g17-canary
+          STAGING_ORIGINAL_DEPLOYMENT: ${{ steps.baseline_state.outputs.deployment_id }}
+          STAGING_ORIGINAL_RELEASE: ${{ inputs.expected_baseline_sha }}
+          STAGING_ORIGINAL_CREATED_ON: ${{ steps.baseline_state.outputs.created_on }}
+          STAGING_ORIGINAL_COMMIT_MESSAGE: ${{ steps.baseline_state.outputs.commit_message }}
+          STAGING_CANDIDATE_RELEASE: ${{ inputs.candidate_sha }}
+          STAGING_RUN_MARKER: g12-staging-bridge-run-${{ github.run_id }}-${{ github.run_attempt }}
+          STAGING_COMPENSATION_MARKER: g12-staging-bridge-compensation-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Clear redundant recovery state only after success or proven compensation
+        if: always() && (steps.evidence_upload.outcome == 'success' || steps.recover.outcome == 'success')
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs clear --kind staging-deploy
+          --file outputs/staging-frontend-bridge-state.json --run-id "${{ github.run_id }}"
+          --run-attempt "${{ github.run_attempt }}" --control-sha "${{ github.sha }}"
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+      - name: Enforce terminal staging bridge outcome
+        if: always()
+        env:
+          EVIDENCE: ${{ steps.evidence_upload.outcome }}
+          RECOVER: ${{ steps.recover.outcome }}
+        run: |
+          if [ "$EVIDENCE" = success ]; then test "$RECOVER" = skipped; exit 0; fi
+          test "$RECOVER" = success
+          exit 1

@@ -10,6 +10,8 @@ import {
 import { sitesCommand } from "../api/cms-api";
 import { useAdminAuth } from "../auth/AdminAuthContext";
 import { cmsEnvironment, isEv2FeatureEnabled } from "../ev2-runtime";
+import { urlSegmentFromText } from "../url-segment";
+import { operatorErrorMessage } from "../operator-error-message";
 import "../admin-visual-studio.css";
 
 const CMS_ENVIRONMENT = cmsEnvironment();
@@ -21,6 +23,40 @@ const defaultTokens = [
   { key: "radius.card", kind: "radius" as const, value: "1rem" },
   { key: "type.body", kind: "type" as const, value: "Montserrat, sans-serif" },
 ];
+
+const siteStatusLabels: Record<Ev2SiteSummary["status"], string> = {
+  pilot: "Em preparação",
+  active: "Ativo",
+  suspended: "Suspenso",
+  archived: "Arquivado",
+};
+const environmentLabels = { local: "Local", staging: "Homologação", production: "Produção" } as const;
+const environmentStatusLabels = { active: "Ativo", locked: "Bloqueado" } as const;
+const tokenLabels: Record<string, string> = {
+  "color.brand": "Cor principal",
+  "color.text": "Cor do texto",
+  "color.surface": "Cor de fundo",
+  "space.section": "Espaçamento entre seções",
+  "radius.card": "Formato dos cartões",
+  "type.body": "Fonte dos textos",
+};
+const tokenChoices: Record<string, Array<{ value: string; label: string }>> = {
+  "space.section": [
+    { value: "clamp(2rem,5vw,4rem)", label: "Compacto" },
+    { value: "clamp(3rem,7vw,7rem)", label: "Confortável" },
+    { value: "clamp(4rem,9vw,9rem)", label: "Amplo" },
+  ],
+  "radius.card": [
+    { value: "0.25rem", label: "Discreto" },
+    { value: "1rem", label: "Arredondado" },
+    { value: "1.5rem", label: "Muito arredondado" },
+  ],
+  "type.body": [
+    { value: "Montserrat, sans-serif", label: "Montserrat" },
+    { value: "Arial, sans-serif", label: "Arial" },
+    { value: "Georgia, serif", label: "Georgia" },
+  ],
+};
 
 function envelope() {
   return {
@@ -40,16 +76,23 @@ export default function AdminSitesPage() {
   );
   const [sites, setSites] = useState<Ev2SiteSummary[]>([]);
   const [selectedKey, setSelectedKey] = useState("main");
-  const [newKey, setNewKey] = useState("");
   const [newName, setNewName] = useState("");
-  const [newPurpose, setNewPurpose] = useState("Piloto sintético do Gate G9");
-  const [hostname, setHostname] = useState("");
+  const [newPurpose, setNewPurpose] = useState("Validação isolada de um novo site");
+  const [hostnameLabel, setHostnameLabel] = useState("");
   const [tokens, setTokens] = useState(defaultTokens);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const canManage = profile?.permissions.includes("cms:sites.manage") ?? false;
   const selected = useMemo(() => sites.find((site) => site.key === selectedKey), [selectedKey, sites]);
+  const newKey = useMemo(() => `g9x-${urlSegmentFromText(newName || "site-de-teste", 80)}`, [newName]);
+  const hostname = useMemo(
+    () =>
+      hostnameLabel.trim() && selected
+        ? `${urlSegmentFromText(hostnameLabel, 48)}.${selected.key}.invalid`
+        : "",
+    [hostnameLabel, selected],
+  );
 
   const load = useCallback(async () => {
     if (!session || !candidateEnabled) return;
@@ -72,7 +115,7 @@ export default function AdminSitesPage() {
       );
     } catch (caught) {
       setCapability("error");
-      setError(caught instanceof Error ? caught.message : "Registro de sites indisponível.");
+      setError(operatorErrorMessage(caught, { fallback: "A lista de sites está indisponível." }));
     }
   }, [candidateEnabled, session]);
 
@@ -82,7 +125,7 @@ export default function AdminSitesPage() {
 
   useEffect(() => {
     setTokens(defaultTokens.map((token) => ({ ...token })));
-    setHostname("");
+    setHostnameLabel("");
   }, [selectedKey]);
 
   async function mutate(body: Record<string, unknown>, message: string) {
@@ -95,11 +138,11 @@ export default function AdminSitesPage() {
         await sitesCommand(session, body, crypto.randomUUID()),
       );
       setSelectedKey(result.siteKey);
-      setSuccess(`${message} Código ${result.correlationId.slice(0, 8)}.`);
+      setSuccess(`${message} A alteração foi registrada na auditoria.`);
       await load();
       return true;
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "A configuração não foi alterada.");
+      setError(operatorErrorMessage(caught, { fallback: "A configuração não foi alterada." }));
       return false;
     } finally {
       setBusy(false);
@@ -111,7 +154,7 @@ export default function AdminSitesPage() {
       <section>
         <h1>Sites e ambientes</h1>
         <div role="status" className="admin-notice">
-          A preparação multisite EV2.9 não está elegível para esta sessão. O site principal permanece único.
+          A preparação de outros sites não está disponível para esta sessão. O site principal permanece único.
         </div>
       </section>
     );
@@ -122,10 +165,10 @@ export default function AdminSitesPage() {
         <h1>Sites e ambientes</h1>
         <div role={capability === "error" ? "alert" : "status"} className="admin-notice">
           {capability === "checking"
-            ? "Verificando o canary individual da preparação multisite…"
+            ? "Verificando a permissão para preparar outros sites…"
             : capability === "error"
-              ? error || "Não foi possível verificar a capacidade multisite."
-              : "A preparação multisite está desligada. O site principal permanece único e operacional."}
+              ? error || "Não foi possível verificar a preparação de outros sites."
+              : "A preparação de outros sites está desativada. O site principal permanece único e operacional."}
         </div>
       </section>
     );
@@ -135,19 +178,19 @@ export default function AdminSitesPage() {
     <section>
       <div className="admin-page-heading">
         <div>
-          <p className="admin-eyebrow">EV2.9 · PREPARAÇÃO MULTISITE</p>
+          <p className="admin-eyebrow">PREPARAÇÃO ISOLADA</p>
           <h1>Sites, ambientes e temas</h1>
           <p className="admin-help">
-            Inventário isolado para o Gate G9. Sites adicionais são apenas sintéticos, ficam bloqueados e não
-            recebem produção, domínio real, conteúdo ou tráfego.
+            Sites adicionais são usados somente em validação, permanecem bloqueados e não recebem produção,
+            domínio real, conteúdo ou tráfego.
           </p>
         </div>
       </div>
       <div className="admin-visual-safety" role="note">
         <LockKeyhole size={18} aria-hidden="true" />
         <span>
-          <strong>Multisite operacional: não.</strong> Produção e ativação global estão bloqueadas no banco e
-          na API.
+          <strong>Ativação de vários sites bloqueada.</strong> Os sites de teste não podem receber tráfego de
+          produção.
         </span>
       </div>
       {error && (
@@ -162,21 +205,22 @@ export default function AdminSitesPage() {
       )}
       {!profile?.mfaVerified && canManage && (
         <div role="status" className="admin-notice">
-          Preparar fixtures exige MFA. <Link to="/admin/mfa">Elevar sessão</Link>
+          Preparar sites de teste exige verificação em duas etapas.{" "}
+          <Link to="/admin/mfa">Confirmar identidade</Link>
         </div>
       )}
 
       <div className="admin-dashboard-grid">
         <article className="admin-editor-card">
           <h2>
-            <Building2 size={18} aria-hidden="true" /> Registro isolado
+            <Building2 size={18} aria-hidden="true" /> Site selecionado
           </h2>
           <label>
             Site
             <select value={selectedKey} onChange={(event) => setSelectedKey(event.target.value)}>
               {sites.map((site) => (
                 <option key={site.id} value={site.key}>
-                  {site.name} · {site.key}
+                  {site.name}
                 </option>
               ))}
             </select>
@@ -185,27 +229,25 @@ export default function AdminSitesPage() {
             <dl className="admin-definition-list">
               <div>
                 <dt>Estado</dt>
-                <dd>{selected.status}</dd>
+                <dd>{siteStatusLabels[selected.status]}</dd>
               </div>
               <div>
                 <dt>Escopo</dt>
-                <dd>{selected.primary ? "principal" : "fixture sintética"}</dd>
+                <dd>{selected.primary ? "Site principal" : "Site de teste isolado"}</dd>
               </div>
               <div>
                 <dt>Tema</dt>
-                <dd>{selected.themeKey ?? "sem tema"}</dd>
+                <dd>{selected.themeKey ? "Tema configurado" : "Tema padrão"}</dd>
               </div>
               <div>
                 <dt>Idioma</dt>
-                <dd>{selected.defaultLanguage}</dd>
+                <dd>{selected.defaultLanguage === "pt-BR" ? "Português (Brasil)" : "Idioma configurado"}</dd>
               </div>
               <div>
                 <dt>Fuso</dt>
-                <dd>{selected.timezone}</dd>
-              </div>
-              <div>
-                <dt>Versão</dt>
-                <dd>{selected.lockVersion}</dd>
+                <dd>
+                  {selected.timezone === "America/Sao_Paulo" ? "Horário de Brasília" : "Fuso configurado"}
+                </dd>
               </div>
             </dl>
           )}
@@ -217,7 +259,8 @@ export default function AdminSitesPage() {
           </h2>
           {selected?.environments.map((environment) => (
             <p key={environment.id}>
-              <strong>{environment.key}</strong> · {environment.status}
+              <strong>{environmentLabels[environment.key]}</strong> ·{" "}
+              {environmentStatusLabels[environment.status]}
             </p>
           ))}
           <h3>
@@ -227,14 +270,12 @@ export default function AdminSitesPage() {
             <ul>
               {selected.domains.map((domain) => (
                 <li key={domain.id}>
-                  <code>{domain.hostname}</code> · {domain.status}
+                  <span>{domain.hostname}</span> · {domain.status === "reserved" ? "Reservado" : "Bloqueado"}
                 </li>
               ))}
             </ul>
           ) : (
-            <p>
-              Nenhum domínio. Somente <code>.invalid</code> é aceito nesta fase.
-            </p>
+            <p>Nenhum domínio de teste foi reservado.</p>
           )}
         </article>
       </div>
@@ -254,44 +295,40 @@ export default function AdminSitesPage() {
                     name: newName,
                     purpose: newPurpose,
                   },
-                  "Site sintético preparado; ambos os ambientes permanecem bloqueados.",
+                  "Site de teste preparado; ambos os ambientes permanecem bloqueados.",
                 );
                 if (completed) {
-                  setNewKey("");
                   setNewName("");
                 }
               })();
             }}
           >
             <h2>
-              <Plus size={18} aria-hidden="true" /> Novo fixture
+              <Plus size={18} aria-hidden="true" /> Novo site de teste
             </h2>
             <label>
-              Chave
+              Nome do site de teste
               <input
-                value={newKey}
-                onChange={(event) => setNewKey(event.target.value)}
-                placeholder="g9x-tenant-a"
-                pattern="g9x-[a-z0-9]+(?:-[a-z0-9]+)*"
+                value={newName}
+                onChange={(event) => setNewName(event.target.value)}
+                minLength={2}
+                maxLength={120}
+                pattern=".*[A-Za-z0-9À-ÿ].*"
                 required
               />
-            </label>
-            <label>
-              Nome sintético
-              <input value={newName} onChange={(event) => setNewName(event.target.value)} required />
             </label>
             <label>
               Finalidade
               <textarea value={newPurpose} onChange={(event) => setNewPurpose(event.target.value)} required />
             </label>
             <button type="submit" disabled={busy}>
-              Preparar fixture bloqueado
+              Preparar site bloqueado
             </button>
           </form>
 
           {selected?.synthetic && selected.status === "pilot" && (
             <div className="admin-editor-card">
-              <h2>Operações do fixture selecionado</h2>
+              <h2>Operações do site selecionado</h2>
               <form
                 onSubmit={(event) => {
                   event.preventDefault();
@@ -304,18 +341,21 @@ export default function AdminSitesPage() {
                         hostname,
                         expectedVersion: selected.lockVersion,
                       },
-                      "Domínio reservado e não verificável registrado.",
+                      "Domínio de teste reservado e mantido sem ativação.",
                     );
-                    if (completed) setHostname("");
+                    if (completed) setHostnameLabel("");
                   })();
                 }}
               >
                 <label>
-                  Hostname <code>.invalid</code>
+                  Nome do domínio de teste
                   <input
-                    value={hostname}
-                    onChange={(event) => setHostname(event.target.value)}
-                    placeholder={`${selected.key}.invalid`}
+                    value={hostnameLabel}
+                    onChange={(event) => setHostnameLabel(event.target.value)}
+                    placeholder="campanha-interna"
+                    minLength={2}
+                    maxLength={48}
+                    pattern="[A-Za-z0-9À-ÿ]+(?:[ -][A-Za-z0-9À-ÿ]+)*"
                     required
                   />
                 </label>
@@ -324,20 +364,40 @@ export default function AdminSitesPage() {
                 </button>
               </form>
               <fieldset>
-                <legend>Tokens governados</legend>
+                <legend>Tema visual</legend>
                 {tokens.map((token, index) => (
                   <label key={token.key}>
-                    {token.key}
-                    <input
-                      value={token.value}
-                      onChange={(event) =>
-                        setTokens((current) =>
-                          current.map((item, currentIndex) =>
-                            currentIndex === index ? { ...item, value: event.target.value } : item,
-                          ),
-                        )
-                      }
-                    />
+                    {tokenLabels[token.key] ?? "Opção visual"}
+                    {token.kind === "color" ? (
+                      <input
+                        type="color"
+                        value={token.value}
+                        onChange={(event) =>
+                          setTokens((current) =>
+                            current.map((item, currentIndex) =>
+                              currentIndex === index ? { ...item, value: event.target.value } : item,
+                            ),
+                          )
+                        }
+                      />
+                    ) : (
+                      <select
+                        value={token.value}
+                        onChange={(event) =>
+                          setTokens((current) =>
+                            current.map((item, currentIndex) =>
+                              currentIndex === index ? { ...item, value: event.target.value } : item,
+                            ),
+                          )
+                        }
+                      >
+                        {(tokenChoices[token.key] ?? []).map((choice) => (
+                          <option key={choice.value} value={choice.value}>
+                            {choice.label}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </label>
                 ))}
                 <button
@@ -352,11 +412,11 @@ export default function AdminSitesPage() {
                         tokens,
                         expectedVersion: selected.lockVersion,
                       },
-                      "Nova versão imutável de tokens registrada.",
+                      "Nova versão do tema registrada.",
                     )
                   }
                 >
-                  Versionar tokens
+                  Salvar nova versão do tema
                 </button>
               </fieldset>
               <button
@@ -370,11 +430,11 @@ export default function AdminSitesPage() {
                       targetSiteKey: selected.key,
                       expectedVersion: selected.lockVersion,
                     },
-                    "Fixture suspenso sem exclusão da trilha.",
+                    "Site de teste suspenso sem excluir o histórico.",
                   )
                 }
               >
-                Suspender fixture
+                Suspender site de teste
               </button>
             </div>
           )}

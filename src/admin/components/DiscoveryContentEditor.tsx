@@ -1,5 +1,8 @@
 import { cloneElement, useEffect, useId, useState } from "react";
 import type { ControlledVocabularyOption } from "../api/cms-api";
+import { DamPicker, type DamPickerSelection } from "./DamPicker";
+import { operatorErrorMessage } from "../operator-error-message";
+import { urlSegmentFromText } from "../url-segment";
 
 export type DiscoveryKind = "service" | "industry" | "application" | "solution";
 
@@ -12,14 +15,21 @@ type Props = {
   contractValid: boolean;
   contractIssue?: string;
   serviceKindOptions?: ControlledVocabularyOption[];
+  generateAddressFromTitle?: boolean;
+  relationOptions?: DiscoveryRelationOption[];
+};
+
+export type DiscoveryRelationOption = {
+  id: string;
+  contentType: DiscoveryKind | "product";
+  label: string;
 };
 
 const tabs = [
   ["content", "Conteúdo"],
-  ["search", "Busca, CTA e SEO"],
+  ["search", "Busca e divulgação"],
   ["connections", "Mídia e relações"],
-  ["governance", "Governança"],
-  ["advanced", "Avançado"],
+  ["governance", "Aprovação"],
 ] as const;
 
 const relationLabels: Record<string, string> = {
@@ -28,6 +38,21 @@ const relationLabels: Record<string, string> = {
   industryIds: "Indústrias relacionadas",
   applicationIds: "Aplicações relacionadas",
   solutionIds: "Soluções relacionadas",
+};
+
+const relationKinds: Record<string, DiscoveryRelationOption["contentType"]> = {
+  productIds: "product",
+  serviceIds: "service",
+  industryIds: "industry",
+  applicationIds: "application",
+  solutionIds: "solution",
+};
+
+const publicPrefixes: Record<DiscoveryKind, string> = {
+  service: "servicos",
+  industry: "industrias",
+  application: "aplicacoes",
+  solution: "solucoes",
 };
 
 const approvalLabels: Record<string, string> = {
@@ -47,13 +72,6 @@ function setPath(source: any, path: string[], value: unknown) {
   });
   cursor[path.at(-1) as string] = value;
   return next;
-}
-
-function listFromText(value: string) {
-  return value
-    .split("\n")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
 }
 
 function Field({
@@ -89,10 +107,9 @@ function Field({
 
 function ListField({
   label,
-  hint = "Informe um item por linha.",
+  hint = "Adicione, edite, ordene ou remova cada item separadamente.",
   value,
   onChange,
-  rows = 5,
 }: {
   label: string;
   hint?: string;
@@ -100,14 +117,55 @@ function ListField({
   onChange: (value: string[]) => void;
   rows?: number;
 }) {
+  const hintId = useId();
+  const items = value?.length ? value : [""];
+  const update = (index: number, nextValue: string) =>
+    onChange(items.map((item, current) => (current === index ? nextValue : item)));
+  const move = (index: number, offset: -1 | 1) => {
+    const target = index + offset;
+    if (target < 0 || target >= items.length) return;
+    const next = [...items];
+    [next[index], next[target]] = [next[target], next[index]];
+    onChange(next);
+  };
+
   return (
-    <Field label={label} hint={hint} wide>
-      <textarea
-        rows={rows}
-        value={(value ?? []).join("\n")}
-        onChange={(e) => onChange(listFromText(e.target.value))}
-      />
-    </Field>
+    <fieldset className="admin-field admin-field--wide admin-semantic-editor">
+      <legend className="admin-field__label">{label}</legend>
+      <span className="admin-field__hint" id={hintId}>
+        {hint}
+      </span>
+      {items.map((item, index) => (
+        <div className="admin-inline-fields" key={`${label}-${index}`}>
+          <label>
+            {index === 0 ? label : `${label} ${index + 1}`}
+            <input
+              value={item}
+              maxLength={240}
+              aria-describedby={hintId}
+              onChange={(event) => update(index, event.target.value)}
+            />
+          </label>
+          <button type="button" disabled={index === 0} onClick={() => move(index, -1)}>
+            Mover para cima
+          </button>
+          <button type="button" disabled={index === items.length - 1} onClick={() => move(index, 1)}>
+            Mover para baixo
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              onChange(items.length === 1 ? [] : items.filter((_, current) => current !== index))
+            }
+          >
+            Remover
+          </button>
+        </div>
+      ))}
+      <button type="button" disabled={items.length >= 30} onClick={() => onChange([...items, ""])}>
+        Adicionar item em {label.toLocaleLowerCase("pt-BR")}
+      </button>
+    </fieldset>
   );
 }
 
@@ -131,18 +189,15 @@ export function DiscoveryContentEditor({
   contractValid,
   contractIssue,
   serviceKindOptions = [],
+  generateAddressFromTitle = false,
+  relationOptions = [],
 }: Props) {
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number][0]>("content");
-  const [jsonDraft, setJsonDraft] = useState(() => JSON.stringify(payload, null, 2));
-  const [jsonError, setJsonError] = useState("");
+  const [mediaLabels, setMediaLabels] = useState<Record<string, DamPickerSelection>>({});
 
   useEffect(() => {
     setActiveTab("content");
   }, [kind]);
-
-  useEffect(() => {
-    setJsonDraft(JSON.stringify(payload, null, 2));
-  }, [payload]);
 
   const patch = (path: string[], value: unknown) => onChange(setPath(payload, path, value));
   const patchRichText = (text: string) => {
@@ -153,6 +208,11 @@ export function DiscoveryContentEditor({
     patch(["blocks"], blocks);
   };
   const richText = payload.blocks?.find((block: any) => block.type === "rich_text")?.data?.text ?? "";
+  const activeServiceKindOptions = serviceKindOptions.filter((option) => option.active);
+  const selectedServiceKind = String(payload.serviceKind ?? "");
+  const selectedServiceKindAvailable = activeServiceKindOptions.some(
+    (option) => option.label === selectedServiceKind,
+  );
 
   const updateMedia = (index: number, field: string, value: unknown) => {
     const media = [...(payload.media ?? [])];
@@ -164,11 +224,37 @@ export function DiscoveryContentEditor({
       ["media"],
       (payload.media ?? []).filter((_: unknown, current: number) => current !== index),
     );
-  const addMedia = () =>
+  const selectedMedia: DamPickerSelection[] = (payload.media ?? []).map((media: any) =>
+    mediaLabels[media.assetId]
+      ? mediaLabels[media.assetId]
+      : {
+          id: media.assetId,
+          originalFilename: "Arquivo selecionado",
+          altText: media.alt ?? "",
+          previewUrl: null,
+        },
+  );
+
+  const selectMedia = (selection: DamPickerSelection[]) => {
+    setMediaLabels((current) => ({
+      ...current,
+      ...Object.fromEntries(selection.map((asset) => [asset.id, asset])),
+    }));
+    const existing = new Map((payload.media ?? []).map((media: any) => [media.assetId, media]));
     patch(
       ["media"],
-      [...(payload.media ?? []), { assetId: "", role: "gallery", alt: "", caption: "", order: 0 }],
+      selection.map((asset, index) => {
+        const current = existing.get(asset.id) as Record<string, unknown> | undefined;
+        return {
+          assetId: asset.id,
+          role: current?.role ?? (index === 0 ? "primary" : "gallery"),
+          alt: current?.alt ?? asset.altText,
+          ...(current?.caption ? { caption: current.caption } : {}),
+          order: index,
+        };
+      }),
     );
+  };
 
   const updatePoint = (index: number, field: string, value: unknown) => {
     const points = [...(payload.points ?? [])];
@@ -204,8 +290,10 @@ export function DiscoveryContentEditor({
         <strong>{contractValid ? "Cadastro completo e válido" : "Cadastro precisa de ajustes"}</strong>
         <span>
           {contractValid
-            ? "Os campos obrigatórios estão prontos para salvar e seguir no workflow."
-            : contractIssue || "Revise os campos indicados antes de salvar."}
+            ? "Os campos obrigatórios estão prontos para salvar e seguir no fluxo editorial."
+            : operatorErrorMessage(contractIssue, {
+                fallback: "Revise os campos indicados antes de salvar.",
+              })}
         </span>
       </div>
 
@@ -230,11 +318,30 @@ export function DiscoveryContentEditor({
             description="Informações principais exibidas nos cards, páginas e resultados de busca do site."
           />
           <div className="admin-field-grid">
-            <Field label="Endereço amigável (slug)" hint="Use letras minúsculas, números e hífens.">
-              <input value={slug} onChange={(e) => onSlugChange(e.target.value)} />
-            </Field>
             <Field label="Título público">
-              <input value={payload.title ?? ""} onChange={(e) => patch(["title"], e.target.value)} />
+              <input
+                value={payload.title ?? ""}
+                onChange={(e) => {
+                  const title = e.target.value;
+                  let next = setPath(payload, ["title"], title);
+                  if (generateAddressFromTitle) {
+                    const nextSlug = urlSegmentFromText(title);
+                    onSlugChange(nextSlug);
+                    next = setPath(
+                      next,
+                      ["seo", "canonicalPath"],
+                      nextSlug ? `/${publicPrefixes[kind]}/${nextSlug}` : "",
+                    );
+                  }
+                  onChange(next);
+                }}
+              />
+            </Field>
+            <Field
+              label="Endereço público gerado"
+              hint="O endereço é criado a partir do título e permanece estável depois do cadastro."
+            >
+              <input readOnly value={slug ? `/${publicPrefixes[kind]}/${slug}` : "Aguardando o título"} />
             </Field>
             <Field label="Resumo" hint="Texto curto usado em cards e introduções." wide>
               <textarea
@@ -260,34 +367,40 @@ export function DiscoveryContentEditor({
               />
               <div className="admin-field-grid">
                 <Field label="Categoria do serviço">
-                  <input
-                    role="combobox"
-                    list="service-kind-options"
-                    value={payload.serviceKind ?? ""}
-                    onChange={(e) => {
-                      const input = e.target.value;
-                      const option = serviceKindOptions.find(
-                        (entry) => entry.label === input || entry.slug === input,
+                  <select
+                    value={selectedServiceKind}
+                    onChange={(event) => {
+                      const option = activeServiceKindOptions.find(
+                        (entry) => entry.label === event.target.value,
                       );
+                      if (!option) {
+                        onChange(
+                          setPath(setPath(payload, ["serviceKind"], ""), ["serviceKindRef"], undefined),
+                        );
+                        return;
+                      }
                       onChange(
-                        setPath(
-                          setPath(payload, ["serviceKind"], option?.label ?? input),
-                          ["serviceKindRef"],
-                          { id: option?.id ?? "", slug: option?.slug ?? "", label: option?.label ?? input },
-                        ),
+                        setPath(setPath(payload, ["serviceKind"], option.label), ["serviceKindRef"], {
+                          id: option.id,
+                          slug: option.slug,
+                          label: option.label,
+                        }),
                       );
                     }}
-                  />
-                </Field>
-                <datalist id="service-kind-options">
-                  {serviceKindOptions
-                    .filter((option) => option.active)
-                    .map((option) => (
+                  >
+                    <option value="">Selecione uma categoria</option>
+                    {selectedServiceKind && !selectedServiceKindAvailable && (
+                      <option value={selectedServiceKind} disabled>
+                        {selectedServiceKind} (indisponível para novos cadastros)
+                      </option>
+                    )}
+                    {activeServiceKindOptions.map((option) => (
                       <option key={option.id} value={option.label}>
-                        {option.slug}
+                        {option.label}
                       </option>
                     ))}
-                </datalist>
+                  </select>
+                </Field>
                 <Field label="Escopo" wide>
                   <textarea
                     rows={5}
@@ -326,6 +439,18 @@ export function DiscoveryContentEditor({
                 description="Contexto, desafios e áreas de processo atendidas."
               />
               <div className="admin-field-grid">
+                <Field
+                  label="Ordem no site"
+                  hint="Menores números aparecem primeiro na listagem pública. Use de 0 a 999."
+                >
+                  <input
+                    type="number"
+                    min={0}
+                    max={999}
+                    value={payload.displayOrder ?? 999}
+                    onChange={(e) => patch(["displayOrder"], Number(e.target.value))}
+                  />
+                </Field>
                 <Field label="Nome do mercado">
                   <input
                     value={payload.marketName ?? ""}
@@ -477,7 +602,7 @@ export function DiscoveryContentEditor({
       )}
 
       {activeTab === "search" && (
-        <section className="admin-editor-section" role="tabpanel" aria-label="Busca, CTA e SEO">
+        <section className="admin-editor-section" role="tabpanel" aria-label="Busca e divulgação">
           <SectionHeading
             title="Busca interna e chamada para ação"
             description="Controle como o conteúdo é encontrado e qual ação o visitante deve realizar."
@@ -508,24 +633,24 @@ export function DiscoveryContentEditor({
           </div>
           <div className="admin-form-card">
             <SectionHeading
-              title="SEO"
-              description="Título, descrição e endereço canônico usados por mecanismos de busca e compartilhamentos."
+              title="Busca e compartilhamento"
+              description="Defina o título, a descrição e o endereço principal usados em buscas e compartilhamentos."
             />
             <div className="admin-field-grid">
-              <Field label="Título SEO" hint={`${(payload.seo?.title ?? "").length}/70 caracteres`}>
+              <Field label="Título para busca" hint={`${(payload.seo?.title ?? "").length}/70 caracteres`}>
                 <input
                   value={payload.seo?.title ?? ""}
                   onChange={(e) => patch(["seo", "title"], e.target.value)}
                 />
               </Field>
-              <Field label="Caminho canônico">
+              <Field label="Endereço principal">
                 <input
                   value={payload.seo?.canonicalPath ?? ""}
                   onChange={(e) => patch(["seo", "canonicalPath"], e.target.value)}
                 />
               </Field>
               <Field
-                label="Descrição SEO"
+                label="Descrição para busca"
                 hint={`${(payload.seo?.description ?? "").length}/170 caracteres`}
                 wide
               >
@@ -552,42 +677,60 @@ export function DiscoveryContentEditor({
         <section className="admin-editor-section" role="tabpanel" aria-label="Mídia e relações">
           <SectionHeading
             title="Relações com outros conteúdos"
-            description="Use o identificador UUID de cada cadastro, um por linha. O conteúdo relacionado precisa estar publicado."
+            description="Selecione pelo nome os cadastros publicados que devem aparecer relacionados."
           />
-          <div className="admin-field-grid">
-            {Object.entries(payload.relations ?? {}).map(([key, value]) => (
-              <ListField
-                key={key}
-                label={relationLabels[key] ?? key}
-                value={value as string[]}
-                onChange={(next) => patch(["relations", key], next)}
-                rows={4}
-              />
-            ))}
+          <div className="admin-form-grid">
+            {Object.entries(payload.relations ?? {}).map(([key, value]) => {
+              const selectedIds = value as string[];
+              const choices = relationOptions.filter((option) => option.contentType === relationKinds[key]);
+              const unavailableCount = selectedIds.filter(
+                (selectedId) => !choices.some((option) => option.id === selectedId),
+              ).length;
+              return (
+                <fieldset className="admin-check-grid" key={key}>
+                  <legend>{relationLabels[key] ?? "Conteúdos relacionados"}</legend>
+                  {choices.length ? (
+                    choices.map((option) => (
+                      <label className="admin-checkbox" key={option.id}>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(option.id)}
+                          onChange={(event) =>
+                            patch(
+                              ["relations", key],
+                              event.target.checked
+                                ? [...selectedIds, option.id]
+                                : selectedIds.filter((id) => id !== option.id),
+                            )
+                          }
+                        />
+                        {option.label}
+                      </label>
+                    ))
+                  ) : (
+                    <p className="admin-help">Nenhum cadastro publicado disponível.</p>
+                  )}
+                  {unavailableCount > 0 && (
+                    <p className="admin-help">
+                      {unavailableCount} vínculo(s) anterior(es) indisponível(is); eles serão preservados até
+                      uma revisão explícita.
+                    </p>
+                  )}
+                </fieldset>
+              );
+            })}
           </div>
           <div className="admin-form-card">
-            <div className="admin-repeater-heading">
-              <div>
-                <h2>Mídia</h2>
-                <p>Associe arquivos já cadastrados e processados na biblioteca de mídia.</p>
-              </div>
-              <button type="button" onClick={addMedia}>
-                Adicionar mídia
-              </button>
-            </div>
+            <h2>Mídia</h2>
+            <p>Escolha arquivos processados na biblioteca ou envie uma imagem com direitos registrados.</p>
+            <DamPicker label="Imagens relacionadas" value={selectedMedia} multiple onChange={selectMedia} />
             {(payload.media ?? []).length === 0 && (
               <p className="admin-empty-inline">Nenhuma mídia associada.</p>
             )}
             {(payload.media ?? []).map((media: any, index: number) => (
               <fieldset className="admin-media-row" key={`${media.assetId}-${index}`}>
-                <legend>Mídia {index + 1}</legend>
+                <legend>{mediaLabels[media.assetId]?.originalFilename ?? `Imagem ${index + 1}`}</legend>
                 <div className="admin-field-grid">
-                  <Field label="ID do arquivo (UUID)">
-                    <input
-                      value={media.assetId ?? ""}
-                      onChange={(e) => updateMedia(index, "assetId", e.target.value)}
-                    />
-                  </Field>
                   <Field label="Uso">
                     <select
                       value={media.role ?? "gallery"}
@@ -630,18 +773,18 @@ export function DiscoveryContentEditor({
       )}
 
       {activeTab === "governance" && (
-        <section className="admin-editor-section" role="tabpanel" aria-label="Governança">
+        <section className="admin-editor-section" role="tabpanel" aria-label="Aprovação">
           <SectionHeading
             title="Aprovação e responsabilidade"
-            description="Esses dados são internos e sustentam o workflow de revisão e publicação."
+            description="Estas informações sustentam a revisão, a aprovação e a publicação."
           />
           <div className="admin-field-grid">
-            <Field label="Estado de governança">
+            <Field label="Situação da aprovação">
               <select
                 value={payload.governanceState ?? "awaiting_owner"}
                 onChange={(e) => patch(["governanceState"], e.target.value)}
               >
-                <option value="synthetic_test">Teste sintético</option>
+                <option value="synthetic_test">Validação controlada</option>
                 <option value="awaiting_owner">Aguardando responsável</option>
                 <option value="homologated">Homologado</option>
               </select>
@@ -649,7 +792,7 @@ export function DiscoveryContentEditor({
             {Object.entries(payload.approval ?? {})
               .filter(([key]) => key !== "homologatedAt")
               .map(([key, value]) => (
-                <Field key={key} label={approvalLabels[key] ?? key}>
+                <Field key={key} label={approvalLabels[key] ?? "Outra responsabilidade"}>
                   <input
                     value={String(value ?? "")}
                     onChange={(e) => patch(["approval", key], e.target.value)}
@@ -671,7 +814,7 @@ export function DiscoveryContentEditor({
           </div>
           <div className="admin-form-card">
             <SectionHeading
-              title="Proveniência"
+              title="Origem e direitos"
               description="Registre de onde veio o conteúdo e quem confirmou o direito de uso."
             />
             <div className="admin-field-grid">
@@ -680,7 +823,7 @@ export function DiscoveryContentEditor({
                   value={payload.provenance?.[0]?.sourceKind ?? "owner_authored"}
                   onChange={(e) => patch(["provenance", "0", "sourceKind"], e.target.value)}
                 >
-                  <option value="owner_authored">Criado pelo proprietário</option>
+                  <option value="owner_authored">Conteúdo preparado pelo responsável</option>
                   <option value="official_company">Documento oficial da empresa</option>
                   <option value="official_manufacturer">Documento oficial do fabricante</option>
                 </select>
@@ -727,41 +870,6 @@ export function DiscoveryContentEditor({
               </label>
             </div>
           </div>
-        </section>
-      )}
-
-      {activeTab === "advanced" && (
-        <section className="admin-editor-section" role="tabpanel" aria-label="Avançado">
-          <SectionHeading
-            title="Contrato completo"
-            description="Área técnica para manutenção excepcional. Use os formulários das outras seções na operação normal."
-          />
-          <div className="admin-advanced-warning">
-            Alterações aqui afetam todo o cadastro. O salvamento continua bloqueado enquanto o JSON estiver
-            inválido.
-          </div>
-          <Field label="JSON governado" wide>
-            <textarea
-              className="admin-json-editor"
-              rows={28}
-              value={jsonDraft}
-              onChange={(e) => {
-                setJsonDraft(e.target.value);
-                try {
-                  const next = JSON.parse(e.target.value);
-                  setJsonError("");
-                  onChange(next);
-                } catch {
-                  setJsonError("JSON inválido. Corrija a estrutura antes de salvar.");
-                }
-              }}
-            />
-          </Field>
-          {jsonError && (
-            <div role="alert" className="admin-notice--error">
-              {jsonError}
-            </div>
-          )}
         </section>
       )}
     </div>

@@ -2,9 +2,8 @@ import { useEffect, useState } from "react";
 import { Phone, MessageSquare, MapPin, ArrowRight } from "lucide-react";
 import { AnimateOnScroll } from "./useScrollAnimation";
 import { usePublishedSiteShell } from "@/public/site-shell-context";
-import { getPublishedForm } from "@/public/catalog-api";
+import { getPublishedForm, type PublicFormVersion } from "@/public/catalog-api";
 import { CmsLeadForm } from "@/public/components/CmsLeadForm";
-import type { CmsFormVersion } from "@/shared/contracts/cms-content";
 
 const KNOCKOUT = "'Knockout HTF68', sans-serif";
 
@@ -26,7 +25,7 @@ export function ContactSection({
 }) {
   const { settings } = usePublishedSiteShell();
   const light = variant === "light";
-  const [form, setForm] = useState<CmsFormVersion | null>(null);
+  const [form, setForm] = useState<PublicFormVersion | null>(null);
   const [formLoading, setFormLoading] = useState(true);
 
   useEffect(() => {

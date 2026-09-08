@@ -86,9 +86,7 @@
   border-radius: 0;
   background: transparent;
 }
-.cms-lead-form--contact > label[data-field-type="textarea"],
-.cms-lead-form--contact > label[data-field-type="select"],
-.cms-lead-form--contact > label[data-field-key="empresa"],
+.cms-lead-form--contact > .cms-lead-form__field--wide,
 .cms-lead-form--contact > .cms-lead-form__checkbox,
 .cms-lead-form--contact > .cms-page-button,
 .cms-lead-form--contact > .cms-lead-form__success,

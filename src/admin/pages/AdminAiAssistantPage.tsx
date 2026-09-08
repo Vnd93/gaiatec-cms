@@ -15,9 +15,49 @@ import {
 import { aiAssistCommand } from "../api/cms-api";
 import { useAdminAuth } from "../auth/AdminAuthContext";
 import { cmsEnvironment, isEv2FeatureEnabled } from "../ev2-runtime";
+import { operatorErrorMessage } from "../operator-error-message";
 import "../admin-ai-assistant.css";
 
 const CMS_ENVIRONMENT = cmsEnvironment();
+const environmentLabels = {
+  local: "Ambiente local",
+  staging: "Homologação",
+  production: "Produção",
+} as const;
+const sessionStatusLabels: Record<string, string> = {
+  active: "Em andamento",
+  closed: "Encerrada",
+  canceled: "Cancelada",
+  expired: "Expirada",
+};
+const proposalKindLabels: Record<string, string> = {
+  locate: "Localização",
+  explain: "Explicação",
+  extract: "Extração",
+  draft_patch: "Proposta de rascunho",
+};
+const proposalStatusLabels: Record<string, string> = {
+  proposed: "Aguardando decisão",
+  accepted: "Aceita",
+  rejected: "Rejeitada",
+  edited: "Editada",
+};
+
+function sessionStatusLabel(status: string): string {
+  return sessionStatusLabels[status] ?? "Situação indisponível";
+}
+
+function proposalKindLabel(kind: string): string {
+  return proposalKindLabels[kind] ?? "Proposta assistida";
+}
+
+function proposalStatusLabel(status: string): string {
+  return proposalStatusLabels[status] ?? "Situação indisponível";
+}
+
+function internalAssistantReference(kind: "source" | "draft") {
+  return `g10x-${kind}-${crypto.randomUUID().replaceAll("-", "").slice(0, 16)}`;
+}
 
 function envelope() {
   return {
@@ -44,7 +84,7 @@ export default function AdminAiAssistantPage() {
     "extract",
   );
   const [prompt, setPrompt] = useState("Extraia um resumo técnico fiel ao documento informado.");
-  const [sourceReference, setSourceReference] = useState("g10x-manual-source");
+  const [sourceReference] = useState(() => internalAssistantReference("source"));
   const [sourceTitle, setSourceTitle] = useState("Documento técnico do produto");
   const [sourceVersion, setSourceVersion] = useState("v1");
   const [sourceLocator, setSourceLocator] = useState("Seção de especificações");
@@ -52,9 +92,9 @@ export default function AdminAiAssistantPage() {
   const [sourceExcerpt, setSourceExcerpt] = useState(
     "Cole aqui somente o trecho técnico autorizado que servirá de fonte para a proposta.",
   );
-  const [targetRef, setTargetRef] = useState("g10x-manual-draft");
+  const [targetRef] = useState(() => internalAssistantReference("draft"));
   const [selectedProposalId, setSelectedProposalId] = useState("");
-  const [rationale, setRationale] = useState("Conteúdo sintético conferido com a fonte apresentada.");
+  const [rationale, setRationale] = useState("Conteúdo conferido com a fonte apresentada.");
   const [editedValue, setEditedValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -100,7 +140,7 @@ export default function AdminAiAssistantPage() {
       await loadWorkspace();
     } catch (caught) {
       setCapability("error");
-      setError(caught instanceof Error ? caught.message : "Assistência indisponível.");
+      setError(operatorErrorMessage(caught, { fallback: "A assistência está indisponível." }));
     }
   }, [candidateEnabled, loadWorkspace, session]);
 
@@ -134,9 +174,9 @@ export default function AdminAiAssistantPage() {
       return result;
     } catch (caught) {
       setError(
-        caught instanceof Error
-          ? caught.message
-          : "A operação foi recusada. O CMS manual permanece disponível.",
+        operatorErrorMessage(caught, {
+          fallback: "A operação assistida não foi concluída. Os editores manuais continuam disponíveis.",
+        }),
       );
       return null;
     } finally {
@@ -216,8 +256,8 @@ export default function AdminAiAssistantPage() {
       <section>
         <h1>Assistente controlada</h1>
         <div role="status" className="admin-notice">
-          A assistência EV2.10 não está elegível para esta sessão. Todos os editores manuais continuam
-          disponíveis.
+          A assistência por inteligência artificial não está disponível para esta conta. Todos os editores
+          manuais continuam disponíveis.
         </div>
       </section>
     );
@@ -229,10 +269,10 @@ export default function AdminAiAssistantPage() {
         <h1>Assistente controlada</h1>
         <div role={capability === "error" ? "alert" : "status"} className="admin-notice">
           {capability === "checking"
-            ? "Verificando o canary individual da EV2.10…"
+            ? "Verificando a disponibilidade da assistência…"
             : capability === "error"
               ? error || "Não foi possível verificar a assistência."
-              : "A assistência está desligada. Use normalmente os editores manuais do CMS."}
+              : "A assistência está desativada. Use normalmente os editores manuais."}
         </div>
         <ManualFallback />
       </section>
@@ -243,11 +283,11 @@ export default function AdminAiAssistantPage() {
     <section className="admin-ai">
       <div className="admin-page-heading">
         <div>
-          <p className="admin-eyebrow">ASSISTENTE DE CADASTRO · NVIDIA NEMOTRON</p>
+          <p className="admin-eyebrow">ASSISTENTE DE CADASTRO</p>
           <h1>Assistente controlada</h1>
           <p className="admin-help">
             Localize, explique, extraia ou prepare uma proposta de baixo risco. Confira a fonte, a confiança e
-            o diff antes de registrar sua decisão.
+            as alterações propostas antes de registrar sua decisão.
           </p>
         </div>
       </div>
@@ -256,8 +296,7 @@ export default function AdminAiAssistantPage() {
         <LockKeyhole aria-hidden="true" size={20} />
         <span>
           <strong>A IA gera propostas; você mantém o controle.</strong> O conteúdo é enviado ao modelo
-          aprovado via OpenRouter, não é aplicado nem publicado automaticamente e permanece sujeito à revisão
-          humana.
+          aprovado, não é aplicado nem publicado automaticamente e permanece sujeito à revisão humana.
         </span>
       </div>
 
@@ -266,14 +305,15 @@ export default function AdminAiAssistantPage() {
           ["cms:ai.plan", "cms:ai.approve", "cms:ai.execute", "cms:ai.compensate"].includes(permission),
         ) && (
           <div className="admin-notice">
-            A execução G14 está disponível somente para alvos sintéticos.{" "}
-            <Link to="/admin/assistente/execucao">Abrir execução transacional controlada</Link>
+            A execução assistida está disponível somente para exercícios controlados de homologação.{" "}
+            <Link to="/admin/assistente/execucao">Abrir execução assistida</Link>
           </div>
         )}
 
       {!profile?.mfaVerified && (
         <div role="status" className="admin-notice">
-          Consultar é permitido, mas criar ou decidir exige MFA. <Link to="/admin/mfa">Confirmar MFA</Link>
+          Consultar é permitido, mas criar ou decidir exige verificação em duas etapas.{" "}
+          <Link to="/admin/mfa">Confirmar identidade</Link>
         </div>
       )}
       {error && (
@@ -289,37 +329,38 @@ export default function AdminAiAssistantPage() {
 
       <div className="admin-ai__metrics" aria-label="Limites da assistência">
         <div>
-          <span>Escopo</span>
-          <strong>main · {CMS_ENVIRONMENT}</strong>
+          <span>Site</span>
+          <strong>Site principal · {environmentLabels[CMS_ENVIRONMENT]}</strong>
         </div>
         <div>
-          <span>Permissões efetivas</span>
+          <span>Acesso disponível</span>
           <strong>
             leitura{canDraft ? " · rascunho" : ""}
             {canReview ? " · revisão" : ""}
           </strong>
         </div>
         <div>
-          <span>Política</span>
-          <strong>EV2-D04 · aprovado</strong>
+          <span>Regra de segurança</span>
+          <strong>Revisão humana obrigatória</strong>
         </div>
         <div>
           <span>Retenção máxima</span>
           <strong>24 horas</strong>
         </div>
         <div>
-          <span>Execução no CMS</span>
-          <strong>0 ações</strong>
+          <span>Alterações automáticas</span>
+          <strong>Nenhuma</strong>
         </div>
         <div>
           <span>Custo</span>
-          <strong>Modelo gratuito · sem fallback pago</strong>
+          <strong>Sem cobrança · nenhuma troca automática de serviço</strong>
         </div>
       </div>
 
       <div className="admin-ai__grid">
         <form
           className="admin-editor-card"
+          aria-label="Abrir sessão da assistente"
           onSubmit={(event) => {
             event.preventDefault();
             void createSession();
@@ -329,7 +370,7 @@ export default function AdminAiAssistantPage() {
             <Bot aria-hidden="true" size={19} /> 1. Abrir sessão
           </h2>
           <label>
-            Título operacional
+            Nome desta sessão
             <input value={title} onChange={(event) => setTitle(event.target.value)} required />
           </label>
           <label>
@@ -350,7 +391,8 @@ export default function AdminAiAssistantPage() {
               <option value="">Selecione</option>
               {workspace?.sessions.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {item.title} · {item.status} · {item.owned ? "minha sessão" : "fila de revisão"}
+                  {item.title} · {sessionStatusLabel(item.status)} ·{" "}
+                  {item.owned ? "minha sessão" : "fila de revisão"}
                 </option>
               ))}
             </select>
@@ -358,8 +400,8 @@ export default function AdminAiAssistantPage() {
           {selectedSession && (
             <>
               <p className="admin-ai__budget">
-                Orçamento: {selectedSession.tokensUsed}/{selectedSession.tokenBudget} tokens · custo{" "}
-                {selectedSession.costUsedMicros} µ
+                Uso da sessão: {selectedSession.tokensUsed} de {selectedSession.tokenBudget} unidades · sem
+                cobrança
               </p>
               {selectedSession.owned && selectedSession.status === "active" && (
                 <button
@@ -376,6 +418,7 @@ export default function AdminAiAssistantPage() {
 
         <form
           className="admin-editor-card"
+          aria-label="Solicitar proposta com fonte"
           onSubmit={(event) => {
             event.preventDefault();
             void generateProposal();
@@ -389,7 +432,7 @@ export default function AdminAiAssistantPage() {
             Use conteúdo técnico autorizado. Não cole dados pessoais, credenciais ou segredos.
           </div>
           <label>
-            Ação assistiva
+            Tipo de ajuda
             <select
               value={proposalKind}
               onChange={(event) =>
@@ -408,15 +451,9 @@ export default function AdminAiAssistantPage() {
           </label>
           <fieldset>
             <legend>Fonte técnica obrigatória</legend>
-            <label>
-              Referência <code>g10x-*</code>
-              <input
-                value={sourceReference}
-                onChange={(event) => setSourceReference(event.target.value)}
-                pattern="g10x-[a-z0-9-]{3,100}"
-                required
-              />
-            </label>
+            <p className="admin-help">
+              A referência técnica é criada automaticamente e fica disponível somente na auditoria.
+            </p>
             <label>
               Documento
               <input value={sourceTitle} onChange={(event) => setSourceTitle(event.target.value)} required />
@@ -442,7 +479,7 @@ export default function AdminAiAssistantPage() {
               </label>
             </div>
             <label>
-              Localizador
+              Seção ou referência no documento
               <input
                 value={sourceLocator}
                 onChange={(event) => setSourceLocator(event.target.value)}
@@ -459,15 +496,9 @@ export default function AdminAiAssistantPage() {
             </label>
           </fieldset>
           {proposalKind === "draft_patch" && (
-            <label>
-              Referência interna do rascunho
-              <input
-                value={targetRef}
-                onChange={(event) => setTargetRef(event.target.value)}
-                pattern="g10x-[a-z0-9-]{3,100}"
-                required
-              />
-            </label>
+            <p className="admin-help">
+              O vínculo com o rascunho de ensaio é gerado automaticamente e não altera conteúdo real.
+            </p>
           )}
           <button
             type="submit"
@@ -483,9 +514,7 @@ export default function AdminAiAssistantPage() {
             Preparar proposta sem aplicar
           </button>
           {proposalKind === "draft_patch" && !canDraft && (
-            <small>
-              Seu papel não possui <code>cms:ai.draft</code>.
-            </small>
+            <small>Seu papel não permite preparar rascunhos com a assistente.</small>
           )}
         </form>
       </div>
@@ -506,7 +535,8 @@ export default function AdminAiAssistantPage() {
               >
                 {proposals.map((proposal) => (
                   <option key={proposal.id} value={proposal.id}>
-                    {proposal.kind} · {proposal.status} · {Math.round(proposal.confidence * 100)}%
+                    {proposalKindLabel(proposal.kind)} · {proposalStatusLabel(proposal.status)} ·{" "}
+                    {Math.round(proposal.confidence * 100)}%
                   </option>
                 ))}
               </select>
@@ -527,7 +557,7 @@ export default function AdminAiAssistantPage() {
                       ? "aguarda confirmação"
                       : field.status === "human_verified"
                         ? "confirmado por revisão"
-                        : "apoiado"}
+                        : "confirmado pela fonte"}
                   </span>
                 </header>
                 <p>{field.value}</p>
@@ -551,7 +581,7 @@ export default function AdminAiAssistantPage() {
               </section>
             ))}
             <div className="admin-ai__diff">
-              <h3>Diff proposto</h3>
+              <h3>Alterações propostas</h3>
               <div>
                 <span>Antes</span>
                 <pre>{selectedProposal.diff.before || "Sem alteração existente"}</pre>
@@ -604,13 +634,9 @@ export default function AdminAiAssistantPage() {
                     <X aria-hidden="true" size={17} /> Rejeitar
                   </button>
                 </div>
-                {!canReview && (
-                  <small>
-                    Um papel com <code>cms:ai.review</code> registra a decisão.
-                  </small>
-                )}
+                {!canReview && <small>Um revisor autorizado precisa registrar a decisão.</small>}
                 {canReview && !selectedSession?.reviewable && (
-                  <small>A segregação exige que outro revisor autorizado decida esta proposta.</small>
+                  <small>Para garantir uma revisão independente, outra pessoa autorizada deve decidir.</small>
                 )}
                 {selectedProposal.hasPendingFields && selectedSession?.reviewable && (
                   <small>
@@ -620,7 +646,7 @@ export default function AdminAiAssistantPage() {
               </div>
             )}
             <p className="admin-ai__not-applied">
-              Aplicado: não · Publicado: não · Continue manualmente no editor apropriado.
+              Nenhuma alteração foi aplicada ou publicada. Continue no editor apropriado.
             </p>
           </>
         )}
@@ -637,7 +663,7 @@ function ManualFallback() {
       <h2 id="ai-manual-title">Operação manual sempre disponível</h2>
       <p>
         Uma indisponibilidade ou bloqueio da assistência não impede localizar, editar, revisar ou publicar
-        pelo fluxo governado atual.
+        pelo fluxo editorial normal.
       </p>
       <nav aria-label="Atalhos para operação manual">
         <Link to="/admin/conteudo">Conteúdo editorial</Link>

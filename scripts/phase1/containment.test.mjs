@@ -31,8 +31,9 @@ test("unprepared worker fails closed and private/staging headers remain enforced
     new Request("https://staging.example.com/produtos/nao-existe"),
     env,
   );
-  assert.equal(invalidEntity.status, 404);
+  assert.equal(invalidEntity.status, 503);
   assert.match(invalidEntity.headers.get("x-robots-tag") ?? "", /noindex/);
+  assert.match(invalidEntity.headers.get("cache-control") ?? "", /no-store/);
 
   const invalidPrivate = await worker.fetch(
     new Request("https://staging.example.com/relatorio-de-obra/inexistente"),
@@ -99,4 +100,8 @@ test("frontend and server hash the identical versioned signature terms", async (
   const serverText = server.match(/TERMS_TEXT = `([\s\S]*?)`;/)?.[1];
   assert.equal(serverVersion, clientVersion);
   assert.equal(serverText, clientText);
+  assert.equal(clientVersion, "v3-2026-09-adr010-aprovado");
+  assert.match(client, /ADR-010/);
+  assert.match(server, /ADR-010/);
+  assert.doesNotMatch(client + server, /pendente-juridico|permanece sujeito à aprovação jurídica/i);
 });

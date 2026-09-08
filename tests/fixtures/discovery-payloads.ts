@@ -38,6 +38,7 @@ export const industryPayload = {
   ...common,
   consumerId: "cms.industry.v1",
   contentType: "industry" as const,
+  displayOrder: 10,
   marketName: "Mercado sintético",
   challenges: ["Desafio visível"],
   evidence: ["Evidência visível"],

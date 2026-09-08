@@ -54,4 +54,23 @@ describe("preview externo assíncrono", () => {
     expect(target.document.body.textContent).toContain("Token expirado");
     expect(target.location.replace).not.toHaveBeenCalled();
   });
+
+  it("remove detalhes técnicos tanto do retorno quanto da aba reservada", async () => {
+    const target = previewWindow();
+    const result = await openExternalAfterAsync(
+      async () => {
+        throw new Error('{"code":"PGRST116","itemId":"45000000-0000-4000-8000-000000000001"}');
+      },
+      () => target as unknown as Window,
+    );
+
+    expect(result).toMatchObject({
+      status: "failed",
+      error: new Error("Não foi possível preparar a visualização."),
+    });
+    expect(target.document.body.textContent).toBe(
+      "Não foi possível preparar a visualização. Feche esta aba e tente novamente.",
+    );
+    expect(target.document.body.textContent).not.toMatch(/PGRST|itemId|45000000/);
+  });
 });

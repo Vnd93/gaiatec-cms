@@ -8,8 +8,8 @@ console.log(
     event: "g12.production.backend_config.verified",
     projectRef: process.env.PRODUCTION_SUPABASE_PROJECT_REF,
     siteOrigin: process.env.PRODUCTION_SITE_ORIGIN,
-    externalAiProviderEnabled: false,
-    captchaRequired: true,
+    externalAiProviderEnabled: process.env.CMS_AI_EXTERNAL_PROVIDER_ENABLED === "true",
+    captchaRequired: process.env.CONTACT_CAPTCHA_ALWAYS === "true",
     protectedSecretsVerified: 11,
   }),
 );

@@ -1,16 +1,30 @@
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
+import {
+  assertQaActorLease,
+  completeQaActorLease,
+  createQaRunTag,
+  qaActorMetadata,
+  QA_ACTOR_LEASE_TTL_MINUTES,
+} from "../../qa/qa-actor-lease.mjs";
 
 const PROJECT_REF = "glcqsosxwgmlhzgcsnzv";
 const PROJECT_NAME = "GAIATEC CMS Staging";
 const ORIGIN = "https://ev2-g17-canary.gaiatec-cms-staging.pages.dev";
 const EXPECTED_SHA = process.env.EV2_G17_EXPECTED_SHA ?? "";
 if (!/^[a-f0-9]{40}$/.test(EXPECTED_SHA)) throw new Error("EV2_G17_EXPECTED_SHA inválido.");
+const QA_RUN_TAG = createQaRunTag(EXPECTED_SHA);
+const SUPABASE_ACCESS_TOKEN = process.env.SUPABASE_ACCESS_TOKEN ?? "";
 
 const checks = [];
 let context;
 let actor;
+
+function quoteWindowsArgument(value) {
+  if (/^[A-Za-z0-9_@./:\\=-]+$/.test(value)) return value;
+  return `"${value.replaceAll("%", "%%").replaceAll('"', '""')}"`;
+}
 
 function check(name, condition, detail) {
   checks.push({ name, result: condition ? "PASS" : "FAIL", detail });
@@ -20,17 +34,21 @@ function check(name, condition, detail) {
 function runSupabase(args) {
   const binary = "npx";
   const pinned = ["--yes", "supabase@2.116.0", ...args];
-  const result = spawnSync(
-    process.env.ComSpec ?? "cmd.exe",
-    ["/d", "/s", "/c", [binary, ...pinned].join(" ")],
-    {
-      cwd: process.cwd(),
-      encoding: "utf8",
-      windowsHide: true,
-      maxBuffer: 20 * 1024 * 1024,
-    },
-  );
-  if (result.status !== 0) throw new Error(result.stderr || result.stdout);
+  const command = process.platform === "win32" ? (process.env.ComSpec ?? "cmd.exe") : binary;
+  const commandArgs =
+    process.platform === "win32"
+      ? ["/d", "/s", "/c", [binary, ...pinned].map(quoteWindowsArgument).join(" ")]
+      : pinned;
+  const result = spawnSync(command, commandArgs, {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    windowsHide: true,
+    maxBuffer: 20 * 1024 * 1024,
+  });
+  if (result.error || result.status !== 0)
+    throw new Error(
+      [result.error?.message, result.stdout?.trim(), result.stderr?.trim()].filter(Boolean).join("\n"),
+    );
   return result.stdout.trim();
 }
 
@@ -54,6 +72,7 @@ async function request(url, { method = "GET", headers = {}, body, allowed = [200
 }
 
 async function loadContext() {
+  if (SUPABASE_ACCESS_TOKEN.length < 24) throw new Error("Token de gestão de staging indisponível.");
   const projects = JSON.parse(runSupabase(["projects", "list", "--output", "json"]));
   const project = projects.find((entry) => entry.ref === PROJECT_REF);
   if (!project || project.name !== PROJECT_NAME || !project.linked) throw new Error("Alvo staging recusado.");
@@ -76,8 +95,35 @@ async function rest(table, { method = "GET", query = "", body, prefer } = {}) {
     method,
     headers: { ...context.serviceHeaders, ...(prefer ? { Prefer: prefer } : {}) },
     body,
-    allowed: method === "POST" ? [200, 201] : method === "DELETE" ? [200, 204] : [200, 206],
+    allowed:
+      method === "POST" ? [200, 201] : method === "DELETE" || method === "PATCH" ? [200, 204] : [200, 206],
   });
+}
+
+async function rpc(name, body) {
+  const result = await request(`${context.url}/rest/v1/rpc/${name}`, {
+    method: "POST",
+    headers: context.serviceHeaders,
+    body,
+    allowed: [200, 204],
+  });
+  return result.json;
+}
+
+async function managementQuery(query) {
+  const response = await fetch(`https://api.supabase.com/v1/projects/${PROJECT_REF}/database/query`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${SUPABASE_ACCESS_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ query }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) throw new Error("Consulta segura de gestão do staging falhou.");
+  const payload = await response.json().catch(() => null);
+  if (!Array.isArray(payload)) throw new Error("Resposta de gestão do staging inválida.");
+  return payload;
 }
 
 function decodeBase32(value) {
@@ -115,9 +161,21 @@ async function createActor() {
   const created = await request(`${context.url}/auth/v1/admin/users`, {
     method: "POST",
     headers: context.serviceHeaders,
-    body: { email, password, email_confirm: true, user_metadata: { synthetic: true, phase: "ev2-g17" } },
+    body: {
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: qaActorMetadata(QA_RUN_TAG, EXPECTED_SHA, "staging"),
+    },
   });
   actor = { id: created.json.id };
+  const identity = {
+    actorId: created.json.id,
+    runTag: QA_RUN_TAG,
+    candidateSha: EXPECTED_SHA,
+    environment: "staging",
+  };
+  const lease = await assertQaActorLease(rpc, identity, "active");
   await rest("cms_profiles", {
     method: "POST",
     prefer: "return=minimal",
@@ -153,7 +211,7 @@ async function createActor() {
       code: totp(enrolled.data.totp.secret, await authenticationClock()),
     });
     const token = verified.data?.session?.access_token ?? verified.data?.access_token;
-    if (!verified.error && token) return { id: created.json.id, token };
+    if (!verified.error && token) return { id: created.json.id, token, identity, lease };
     lastError = verified.error ?? new Error("AAL2 ausente.");
     await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
   }
@@ -190,6 +248,46 @@ async function edge(
 }
 
 async function cleanupActor(actorId) {
+  const owned = await rest("cms_content_items", { query: `created_by=eq.${actorId}&select=id` });
+  const ownedItemIds = owned.json.map((item) => item.id);
+  if (ownedItemIds.length) {
+    const itemFilter = ownedItemIds.join(",");
+    const projections = await rest("cms_published_projection", {
+      query: `item_id=in.(${itemFilter})&select=item_id,revision_id`,
+    });
+    if (projections.json.length)
+      await rest("cms_publication_outbox", {
+        method: "POST",
+        query: "on_conflict=item_id,revision_id,event_type",
+        prefer: "resolution=ignore-duplicates,return=minimal",
+        body: projections.json.map((projection) => ({
+          item_id: projection.item_id,
+          revision_id: projection.revision_id,
+          event_type: "unpublish",
+          correlation_id: randomUUID(),
+        })),
+      });
+    await rest("cms_publications", { method: "DELETE", query: `item_id=in.(${itemFilter})` });
+    await rest("cms_published_projection", { method: "DELETE", query: `item_id=in.(${itemFilter})` });
+    await rest("cms_route_rules", {
+      method: "PATCH",
+      query: `item_id=in.(${itemFilter})&active=eq.true`,
+      prefer: "return=minimal",
+      body: { active: false },
+    });
+    await rest("cms_content_items", {
+      method: "PATCH",
+      query: `id=in.(${itemFilter})&workflow_status=neq.archived`,
+      prefer: "return=minimal",
+      body: {
+        workflow_status: "archived",
+        archived_at: new Date().toISOString(),
+        scheduled_for: null,
+        deleted_at: null,
+        deleted_by: null,
+      },
+    });
+  }
   const sessions = await rest("cms_ai_sessions", { query: `actor_id=eq.${actorId}&select=id` });
   const sessionIds = sessions.json.map((item) => item.id);
   const proposals = sessionIds.length
@@ -214,34 +312,80 @@ async function cleanupActor(actorId) {
     method: "DELETE",
     query: `scope_type=eq.user&scope_key=eq.${actorId}`,
   });
-  await rest("cms_user_roles", { method: "DELETE", query: `user_id=eq.${actorId}` });
-  await rest("cms_profiles", { method: "DELETE", query: `user_id=eq.${actorId}` });
-  await request(`${context.url}/auth/v1/admin/users/${actorId}`, {
-    method: "DELETE",
-    headers: context.serviceHeaders,
-    allowed: [200, 204],
+  const now = new Date().toISOString();
+  await rest("cms_scoped_role_assignments", {
+    method: "PATCH",
+    query: `user_id=eq.${actorId}&revoked_at=is.null`,
+    prefer: "return=minimal",
+    body: {
+      revoked_at: now,
+      revoked_by: actorId,
+      revocation_reason: "QA synthetic G17 cleanup",
+    },
   });
+  await rest("cms_user_roles", { method: "DELETE", query: `user_id=eq.${actorId}` });
+  await rest("rdo_user_access", {
+    method: "PATCH",
+    query: `user_id=eq.${actorId}&active=eq.true`,
+    prefer: "return=minimal",
+    body: {
+      active: false,
+      suspended_at: now,
+      suspended_by: actorId,
+      updated_at: now,
+    },
+  });
+  await rest("cms_profiles", {
+    method: "PATCH",
+    query: `user_id=eq.${actorId}`,
+    prefer: "return=minimal",
+    body: {
+      status: "suspended",
+      suspended_at: now,
+      suspended_by: actorId,
+      sessions_valid_after: now,
+    },
+  });
+  await managementQuery(`delete from auth.sessions where user_id = '${actorId}'::uuid`);
+  await request(`${context.url}/auth/v1/admin/users/${actorId}`, {
+    method: "PUT",
+    headers: context.serviceHeaders,
+    body: {
+      password: `Revoked!${randomBytes(32).toString("base64url")}9Z`,
+      ban_duration: "876000h",
+    },
+  });
+  const identity = {
+    actorId,
+    runTag: QA_RUN_TAG,
+    candidateSha: EXPECTED_SHA,
+    environment: "staging",
+  };
+  const lease = await completeQaActorLease(rpc, identity);
+  const audit = await rest("cms_audit_log", {
+    query: `actor_id=eq.${actorId}&target_type=eq.qa_fixture&target_id=eq.${QA_RUN_TAG}&select=id`,
+  });
+  if (audit.json.length < 2) throw new Error("Auditoria imutável da lease G17 não foi preservada.");
+  return { status: lease.status, retainedAuditEvents: audit.json.length };
 }
 
 async function cleanup() {
-  if (actor?.id) await cleanupActor(actor.id);
-}
-
-async function cleanupOrphans() {
-  const users = await request(`${context.url}/auth/v1/admin/users?page=1&per_page=1000`, {
-    headers: context.serviceHeaders,
-  });
-  for (const user of users.json.users ?? [])
-    if (user.user_metadata?.phase === "ev2-g17") await cleanupActor(user.id);
+  if (!actor?.id) return { status: "not-created", retainedAuditEvents: 0 };
+  return cleanupActor(actor.id);
 }
 
 let operationError;
+let cleanupEvidence;
 try {
   context = await loadContext();
-  await cleanupOrphans();
   const health = await request(`${ORIGIN}/healthz`);
   check("immutable_candidate", health.json.release === EXPECTED_SHA, health.json.release);
   actor = await createActor();
+  check(
+    "qa_actor_watchdog_lease_active",
+    actor.lease.status === "active" && actor.lease.ttlSeconds === QA_ACTOR_LEASE_TTL_MINUTES * 60,
+    actor.lease.status,
+  );
   const now = Date.now();
   await rest("cms_feature_flag_overrides", {
     method: "POST",
@@ -254,7 +398,7 @@ try {
       enabled: true,
       reason: "Canary sintético G17",
       starts_at: new Date(now - 1000).toISOString(),
-      expires_at: new Date(now + 29 * 60_000).toISOString(),
+      expires_at: new Date(now + QA_ACTOR_LEASE_TTL_MINUTES * 60_000).toISOString(),
       created_by: actor.id,
     },
   });
@@ -346,7 +490,7 @@ try {
   operationError = error;
 } finally {
   try {
-    await cleanup();
+    cleanupEvidence = await cleanup();
   } catch (cleanupError) {
     operationError ??= cleanupError;
   }
@@ -363,5 +507,6 @@ console.log(
     syntheticUsers: 1,
     productionMutations: 0,
     realDataUsed: false,
+    watchdogLease: cleanupEvidence,
   }),
 );

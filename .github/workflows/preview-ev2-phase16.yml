@@ -7,7 +7,7 @@ on:
         description: SHA completo e exato do candidato CSP
         required: true
       confirmation:
-        description: Digite CANARY-CSP-G16-STAGING
+        description: Digite CANARY-CSP-G16-STAGING:<SHA>
         required: true
 
 permissions:
@@ -19,15 +19,31 @@ concurrency:
 
 jobs:
   preview:
-    if: >-
-      (github.ref_name == 'ev2/fase-16-prontidao-producao-g12' || github.ref_name == 'main') &&
-      inputs.confirmation == 'CANARY-CSP-G16-STAGING'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     environment: staging
     env:
       CANARY_DEPLOY_CONFIGURED: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' && secrets.STAGING_SUPABASE_URL != '' && secrets.STAGING_SUPABASE_ANON_KEY != '' }}
     steps:
+      - name: Validate G16 CSP canary dispatch authorization before checkout
+        env:
+          DISPATCH_REF_NAME: ${{ github.ref_name }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          if [ "$DISPATCH_REF_NAME" != "main" ] && [ "$DISPATCH_REF_NAME" != "ev2/fase-16-prontidao-producao-g12" ]; then
+            echo "::error::The G16 CSP canary must be dispatched from an approved branch."
+            exit 1
+          fi
+          if ! [[ "$EXPECTED_SHA" =~ ^[a-f0-9]{40}$ ]]; then
+            echo "::error::expected_sha must be a full lowercase Git SHA."
+            exit 1
+          fi
+          if [ "$CONFIRMATION" != "CANARY-CSP-G16-STAGING:$EXPECTED_SHA" ]; then
+            echo "::error::The G16 CSP canary confirmation is invalid."
+            exit 1
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.expected_sha }}

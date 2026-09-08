@@ -130,6 +130,16 @@ export const Ev2DamCommandSchema = z.discriminatedUnion("action", [
     .strict(),
   z
     .object({
+      action: z.literal("abort_upload"),
+      envelope: Ev2CommandEnvelopeSchema,
+      assetId: UuidSchema,
+      reasonCode: z
+        .enum(["client_upload_failed", "client_cancelled", "client_processing_failed"])
+        .default("client_upload_failed"),
+    })
+    .strict(),
+  z
+    .object({
       action: z.literal("update_metadata"),
       envelope: ExpectedVersionEnvelopeSchema,
       assetId: UuidSchema,
@@ -262,6 +272,13 @@ export const Ev2DamActiveReplacementSchema = z
     lockVersion: z.number().int().positive(),
   })
   .strict();
+export const Ev2DamIncomingReplacementSchema = z
+  .object({
+    id: UuidSchema,
+    sourceAssetId: UuidSchema,
+    lockVersion: z.number().int().positive(),
+  })
+  .strict();
 export const Ev2DamUsageSchema = z
   .object({
     itemId: UuidSchema,
@@ -269,6 +286,10 @@ export const Ev2DamUsageSchema = z
     blockId: UuidSchema.nullable(),
     usageKind: z.string(),
     createdAt: TimestampSchema,
+    contentType: z.string(),
+    displayTitle: z.string().trim().min(1).max(180),
+    adminPath: z.string().startsWith("/admin/"),
+    blockLabel: z.string().trim().min(1).max(180).nullable(),
   })
   .strict();
 
@@ -299,9 +320,12 @@ export const Ev2DamAssetSchema = z
     createdAt: TimestampSchema,
     updatedAt: TimestampSchema,
     activeReplacement: Ev2DamActiveReplacementSchema.nullable().default(null),
+    incomingReplacement: Ev2DamIncomingReplacementSchema.nullable().default(null),
     collections: z.array(Ev2DamCollectionSchema).default([]),
     tags: z.array(Ev2DamTagSchema).default([]),
     crops: z.array(Ev2DamCropSchema).default([]),
+    totalUsageCount: z.number().int().nonnegative().default(0),
+    hiddenUsageCount: z.number().int().nonnegative().default(0),
     usages: z.array(Ev2DamUsageSchema).default([]),
   })
   .strict();
@@ -327,10 +351,20 @@ export const Ev2DamMatchResultSchema = ResultBase.extend({
   exact: Ev2DamAssetSchema.nullable(),
   similar: z.array(Ev2DamAssetSchema),
 }).strict();
+export const Ev2DamAbortUploadResultSchema = ResultBase.extend({
+  assetId: UuidSchema,
+  status: z.enum(["failed", "rejected"]),
+  archived: z.literal(true),
+  gcScheduled: z.literal(true),
+  gcAfter: TimestampSchema,
+}).strict();
 export const Ev2DamReplacementPreviewResultSchema = ResultBase.extend({
   sourceAssetId: UuidSchema,
   targetAssetId: UuidSchema,
   usageCount: z.number().int().nonnegative(),
+  visibleUsageCount: z.number().int().nonnegative(),
+  hiddenUsageCount: z.number().int().nonnegative(),
+  hasHiddenUsages: z.boolean(),
   usages: z.array(Ev2DamUsageSchema),
   targetPublishable: z.boolean(),
 }).strict();

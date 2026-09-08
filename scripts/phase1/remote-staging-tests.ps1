@@ -112,6 +112,10 @@ try {
   )
   $accessInsert = Invoke-Api -Method Post -Uri "$ProjectUrl/rest/v1/rdo_user_access" -Headers $serviceHeaders -Body $accessRows
   Assert-Check "seed_access_allowlist" ($accessInsert.Status -in 200, 201) "HTTP $($accessInsert.Status)"
+  $dualScopeProfile = Invoke-Api -Method Post -Uri "$ProjectUrl/rest/v1/cms_profiles" -Headers $serviceHeaders -Body @{
+    user_id = $owner.Id; display_name = "Operador sintético dual scope"; display_email = $owner.Email; status = "active"
+  }
+  Assert-Check "seed_dual_scope_identity" ($dualScopeProfile.Status -in 200, 201) "HTTP $($dualScopeProfile.Status)"
 
   $ownerToken = Get-UserToken $owner.Email $password
   $otherToken = Get-UserToken $other.Email $password
@@ -122,6 +126,67 @@ try {
   $noAccessRead = Invoke-Api -Method Get -Uri "$ProjectUrl/rest/v1/rdo_relatorios?select=id" -Headers (User-Headers $noAccessToken)
   Assert-Check "no_scope_reads_nothing" ($noAccessRead.Status -eq 200 -and @($noAccessRead.Json).Count -eq 0) "HTTP $($noAccessRead.Status)"
 
+  $teamList = Invoke-Function "rdo-team" $adminToken @{}
+  $teamIds = @($teamList.Json.users | ForEach-Object { [string]$_.id })
+  $serializedTeam = $teamList.Json | ConvertTo-Json -Depth 10 -Compress
+  Assert-Check "team_lists_only_rdo_allowlist" (
+    $teamList.Status -eq 200 -and
+    $teamIds -contains $owner.Id -and
+    $teamIds -contains $admin.Id -and
+    $teamIds -notcontains $noAccess.Id -and
+    -not $serializedTeam.Contains($noAccess.Email)
+  ) "HTTP $($teamList.Status); CMS-only identity absent"
+
+  $memberMutation = Invoke-Function "rdo-team" $ownerToken @{ action = "set_role"; userId = $other.Id; role = "admin" }
+  Assert-Check "rdo_member_cannot_manage_team" ($memberMutation.Status -eq 403) "HTTP $($memberMutation.Status)"
+
+  $crossScopeMutation = Invoke-Function "rdo-team" $adminToken @{ action = "suspend"; userId = $noAccess.Id }
+  Assert-Check "cms_only_uuid_is_not_rdo_mutation_target" ($crossScopeMutation.Status -eq 404) "HTTP $($crossScopeMutation.Status)"
+  $noAccessAuth = Invoke-Api -Method Get -Uri "$ProjectUrl/auth/v1/admin/users/$($noAccess.Id)" -Headers @{ apikey = $serviceKey; Authorization = "Bearer $serviceKey" }
+  $bannedProperty = $noAccessAuth.Json.PSObject.Properties["banned_until"]
+  $cmsOnlyRemainsUnbanned = $null -eq $bannedProperty -or [string]::IsNullOrWhiteSpace([string]$bannedProperty.Value)
+  Assert-Check "cross_scope_attempt_did_not_ban_auth_identity" ($noAccessAuth.Status -eq 200 -and $cmsOnlyRemainsUnbanned) "Auth identity unchanged"
+
+  $selfSuspension = Invoke-Function "rdo-team" $adminToken @{ action = "suspend"; userId = $admin.Id }
+  Assert-Check "rdo_admin_self_or_last_admin_is_protected" ($selfSuspension.Status -eq 409) "HTTP $($selfSuspension.Status)"
+  $adminAccessAfter = Invoke-Api -Method Get -Uri "$ProjectUrl/rest/v1/rdo_user_access?user_id=eq.$($admin.Id)&select=active,role,lock_version" -Headers $serviceHeaders
+  Assert-Check "protected_admin_state_is_unchanged" (
+    $adminAccessAfter.Status -eq 200 -and
+    @($adminAccessAfter.Json).Count -eq 1 -and
+    @($adminAccessAfter.Json)[0].active -eq $true -and
+    @($adminAccessAfter.Json)[0].role -eq "rdo_admin"
+  ) "active RDO admin preserved"
+
+  $lastAdminSql = @'
+begin;
+lock table public.rdo_user_access in share row exclusive mode;
+update public.rdo_user_access
+set active = false
+where role = 'rdo_admin' and user_id <> '{0}'::uuid;
+do $qa$
+declare
+  v_message text;
+begin
+  begin
+    perform public.rdo_apply_team_member_command(
+      '{0}'::uuid, '{0}'::uuid, 'suspend', null,
+      '59000000-0000-4000-8000-000000009901'::uuid,
+      '59000000-0000-4000-8000-000000009902'::uuid
+    );
+    raise exception 'REMOTE_LAST_ADMIN_CHECK_DID_NOT_BLOCK';
+  exception when sqlstate '42501' then
+    get stacked diagnostics v_message = message_text;
+    if v_message <> 'RDO_TEAM_LAST_ADMIN_PROTECTED' then
+      raise exception 'REMOTE_LAST_ADMIN_WRONG_ERROR';
+    end if;
+  end;
+end;
+$qa$;
+rollback;
+'@ -f $admin.Id
+  $null = Invoke-RestMethod -Method Post -Uri "$ManagementUrl/database/query" -Headers $managementHeaders -Body (@{ query = $lastAdminSql; read_only = $false } | ConvertTo-Json -Compress)
+  Assert-Check "remote_database_protects_exact_last_rdo_admin" $true "transactional remote assertion rolled back"
+
   $foreignInsert = Invoke-Api -Method Post -Uri "$ProjectUrl/rest/v1/rdo_relatorios?select=id" -Headers (User-Headers $ownerToken) -Body @{ created_by = $other.Id; cliente = "Sintetico bloqueado" }
   Assert-Check "owner_cannot_forge_foreign_owner" ($foreignInsert.Status -ge 400) "HTTP $($foreignInsert.Status)"
 
@@ -130,6 +195,27 @@ try {
   $report = @($draftInsert.Json)[0]
   $reportId = [string]$report.id
   $reportIds.Add($reportId)
+
+  $suspendDualScope = Invoke-Function "rdo-team" $adminToken @{ action = "suspend"; userId = $owner.Id }
+  Assert-Check "dual_scope_rdo_suspension" ($suspendDualScope.Status -eq 200 -and $suspendDualScope.Json.active -eq $false) "HTTP $($suspendDualScope.Status)"
+  $dualScopeAuth = Invoke-Api -Method Get -Uri "$ProjectUrl/auth/v1/admin/users/$($owner.Id)" -Headers @{ apikey = $serviceKey; Authorization = "Bearer $serviceKey" }
+  $dualBannedProperty = $dualScopeAuth.Json.PSObject.Properties["banned_until"]
+  $dualScopeRemainsUnbanned = $null -eq $dualBannedProperty -or [string]::IsNullOrWhiteSpace([string]$dualBannedProperty.Value)
+  $dualScopeCms = Invoke-Api -Method Get -Uri "$ProjectUrl/rest/v1/cms_profiles?user_id=eq.$($owner.Id)&select=status" -Headers $serviceHeaders
+  Assert-Check "rdo_suspension_preserves_auth_and_cms" (
+    $dualScopeAuth.Status -eq 200 -and $dualScopeRemainsUnbanned -and
+    @($dualScopeCms.Json).Count -eq 1 -and @($dualScopeCms.Json)[0].status -eq "active"
+  ) "Auth unbanned; CMS profile active"
+  $revokedIssuedSession = Invoke-Api -Method Get -Uri "$ProjectUrl/rest/v1/rdo_relatorios?id=eq.$reportId&select=id" -Headers (User-Headers $ownerToken)
+  $revokedIssuedCommand = Invoke-Function "rdo-command" $ownerToken @{ action = "archive"; reportId = $reportId; idempotencyKey = [guid]::NewGuid().ToString() }
+  Assert-Check "issued_session_is_revoked_immediately_from_rdo" (
+    $revokedIssuedSession.Status -eq 200 -and @($revokedIssuedSession.Json).Count -eq 0 -and $revokedIssuedCommand.Status -eq 403
+  ) "RLS and Edge re-evaluated active=false"
+  $reactivateDualScope = Invoke-Function "rdo-team" $adminToken @{ action = "reactivate"; userId = $owner.Id }
+  $restoredIssuedSession = Invoke-Api -Method Get -Uri "$ProjectUrl/rest/v1/rdo_relatorios?id=eq.$reportId&select=id" -Headers (User-Headers $ownerToken)
+  Assert-Check "dual_scope_rdo_reactivation" (
+    $reactivateDualScope.Status -eq 200 -and $reactivateDualScope.Json.active -eq $true -and @($restoredIssuedSession.Json).Count -eq 1
+  ) "same Auth session regains only RDO scope"
 
   $otherRead = Invoke-Api -Method Get -Uri "$ProjectUrl/rest/v1/rdo_relatorios?id=eq.$reportId&select=id" -Headers (User-Headers $otherToken)
   Assert-Check "other_member_cannot_read" ($otherRead.Status -eq 200 -and @($otherRead.Json).Count -eq 0) "HTTP $($otherRead.Status)"
@@ -217,12 +303,15 @@ delete from public.contact_notification_outbox;
 delete from public.contact_submissions;
 delete from public.rdo_notification_outbox where requested_by in ($ids);
 delete from public.rdo_command_receipts where actor_id in ($ids);
-delete from public.rdo_audit_events where actor_id in ($ids) or report_id in (select id from public.rdo_relatorios where created_by in ($ids));
 delete from public.rdo_fotos where relatorio_id in (select id from public.rdo_relatorios where created_by in ($ids));
 alter table public.rdo_relatorios disable trigger rdo_guard_immutable;
-delete from public.rdo_relatorios where created_by in ($ids);
+update public.rdo_relatorios
+set status = 'arquivado', archived_at = coalesce(archived_at, now())
+where created_by in ($ids);
 alter table public.rdo_relatorios enable trigger rdo_guard_immutable;
 delete from public.rdo_user_access where user_id in ($ids);
+delete from public.cms_user_roles where user_id in ($ids);
+delete from public.cms_profiles where user_id in ($ids);
 delete from public.request_rate_limits;
 commit;
 "@

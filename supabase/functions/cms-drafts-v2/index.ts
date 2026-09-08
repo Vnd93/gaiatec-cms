@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { z } from "npm:zod@4.4.3";
+import { CmsContentPayloadSchema } from "../../../src/shared/contracts/cms-content.ts";
 import { authenticateCms } from "../_shared/cms-auth.ts";
 import { isConfiguredCmsEnvironment, isProductionOperationEnabled } from "../_shared/ev2-environment.ts";
 import {
@@ -88,6 +89,21 @@ const Command = z.discriminatedUnion("action", [
       action: z.literal("discard"),
       envelope: Envelope,
       draftId: Uuid,
+      reason: z.string().trim().min(3).max(500),
+    })
+    .strict()
+    .superRefine((command, context) => {
+      if (!command.envelope.expectedVersion) {
+        context.addIssue({ code: "custom", path: ["envelope", "expectedVersion"], message: "required" });
+      }
+    }),
+  z
+    .object({
+      action: z.literal("promote"),
+      envelope: Envelope,
+      draftId: Uuid,
+      slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(160),
+      payload: CmsContentPayloadSchema,
       reason: z.string().trim().min(3).max(500),
     })
     .strict()
@@ -240,18 +256,111 @@ Deno.serve(async (req) => {
     return json(req, { error: "Chave idempotente obrigatória.", correlationId }, 400);
   }
 
-  const requestHash = await sha256(JSON.stringify(canonicalize(command)));
+  let effectiveCommand = command;
+  if (
+    command.action === "promote" &&
+    (command.payload.contentType === "product" || command.payload.contentType === "service")
+  ) {
+    const { data: normalized, error: normalizationError } = await identity.admin.rpc(
+      "cms_normalize_controlled_payload_scoped",
+      {
+        p_actor_id: identity.user.id,
+        p_environment: environment,
+        p_content_type: command.payload.contentType,
+        p_payload: command.payload,
+        p_require_active: true,
+      },
+    );
+    const validated = CmsContentPayloadSchema.safeParse(normalized);
+    if (normalizationError || !validated.success) {
+      return json(
+        req,
+        {
+          error: "Classificação padronizada ausente, desconhecida ou inativa.",
+          code: "CMS_CONTROLLED_TERM_INVALID",
+          correlationId,
+          preserved: true,
+        },
+        422,
+      );
+    }
+    effectiveCommand = { ...command, payload: validated.data };
+  }
+
+  const requestHash = await sha256(JSON.stringify(canonicalize(effectiveCommand)));
+  if (effectiveCommand.action === "promote") {
+    const { data, error } = await identity.admin.rpc("cms_promote_draft_v2_to_content", {
+      ...common,
+      p_draft_id: effectiveCommand.draftId,
+      p_expected_version: effectiveCommand.envelope.expectedVersion,
+      p_slug: effectiveCommand.slug,
+      p_payload: effectiveCommand.payload,
+      p_reason: effectiveCommand.reason,
+      p_command_id: effectiveCommand.envelope.commandId,
+      p_idempotency_key: idempotencyKey,
+      p_request_hash: requestHash,
+      p_correlation_id: correlationId,
+    });
+    if (error) {
+      const message = error.message ?? "";
+      const forbidden = message.includes("FORBIDDEN") || message.includes("FEATURE_DISABLED");
+      const notFound = message.includes("NOT_FOUND");
+      const conflict = message.includes("CONFLICT") || error.code === "40001" || error.code === "23505";
+      const invalid = message.includes("INVALID") || error.code === "22023" || error.code === "23514";
+      const status = forbidden ? 403 : notFound ? 404 : conflict ? 409 : invalid ? 422 : 500;
+      const code =
+        [
+          "CMS_DRAFT_V2_FEATURE_DISABLED",
+          "CMS_DRAFT_V2_FORBIDDEN",
+          "CMS_DRAFT_V2_NOT_FOUND",
+          "CMS_DRAFT_V2_CONFLICT",
+          "CMS_DRAFT_V2_IDEMPOTENCY_CONFLICT",
+          "CMS_DRAFT_V2_PROMOTION_INVALID",
+        ].find((candidate) => message.includes(candidate)) ?? "CMS_DRAFT_V2_PROMOTION_FAILURE";
+      logDraft(status >= 500 ? "error" : "warn", "draft_v2.command.failed", correlationId, {
+        action: effectiveCommand.action,
+        code,
+        status,
+      });
+      return json(
+        req,
+        {
+          error: forbidden
+            ? "Operação indisponível ou sem permissão."
+            : notFound
+              ? "Rascunho não encontrado."
+              : conflict
+                ? "Há uma versão mais recente deste rascunho."
+                : invalid
+                  ? "O cadastro completo não pôde ser criado."
+                  : "Falha ao concluir o cadastro.",
+          code,
+          correlationId,
+          preserved: true,
+        },
+        status,
+      );
+    }
+    logDraft("info", "draft_v2.command.completed", correlationId, {
+      action: effectiveCommand.action,
+      status: data?.status,
+    });
+    return json(req, data);
+  }
+
   const { data, error } = await identity.admin.rpc("cms_execute_draft_v2_command", {
     ...common,
-    p_action: command.action,
-    p_draft_id: command.action === "create" ? null : command.draftId,
-    p_content_type: command.action === "create" ? command.contentType : null,
+    p_action: effectiveCommand.action,
+    p_draft_id: effectiveCommand.action === "create" ? null : effectiveCommand.draftId,
+    p_content_type: effectiveCommand.action === "create" ? effectiveCommand.contentType : null,
     p_working_title:
-      command.action === "create" || command.action === "patch" ? command.workingTitle ?? null : null,
-    p_patch: command.action === "patch" ? command.patches : null,
-    p_reason: command.action === "discard" ? command.reason : null,
-    p_expected_version: command.envelope.expectedVersion ?? null,
-    p_command_id: command.envelope.commandId,
+      effectiveCommand.action === "create" || effectiveCommand.action === "patch"
+        ? effectiveCommand.workingTitle ?? null
+        : null,
+    p_patch: effectiveCommand.action === "patch" ? effectiveCommand.patches : null,
+    p_reason: effectiveCommand.action === "discard" ? effectiveCommand.reason : null,
+    p_expected_version: effectiveCommand.envelope.expectedVersion ?? null,
+    p_command_id: effectiveCommand.envelope.commandId,
     p_idempotency_key: idempotencyKey,
     p_request_hash: requestHash,
     p_correlation_id: correlationId,
@@ -279,22 +388,16 @@ Deno.serve(async (req) => {
 
     let currentVersion: number | undefined;
     let diffRef: string | undefined;
-    if (conflict && command.action !== "create") {
-      const [draftResult, eventResult] = await Promise.all([
-        identity.admin.from("cms_content_drafts_v2").select("lock_version").eq("id", command.draftId).maybeSingle(),
-        identity.admin
-          .from("cms_draft_v2_events")
-          .select("id")
-          .eq("draft_id", command.draftId)
-          .order("occurred_at", { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-      ]);
-      currentVersion = draftResult.data?.lock_version;
-      diffRef = eventResult.data?.id;
+    if (conflict && effectiveCommand.action !== "create") {
+      const { data: diagnostic } = await identity.admin.rpc("cms_draft_v2_conflict_scoped", {
+        ...common,
+        p_draft_id: effectiveCommand.draftId,
+      });
+      currentVersion = diagnostic?.currentVersion;
+      diffRef = diagnostic?.diffRef;
     }
     logDraft(status >= 500 ? "error" : "warn", "draft_v2.command.failed", correlationId, {
-      action: command.action,
+      action: effectiveCommand.action,
       code,
       status,
     });
@@ -323,7 +426,7 @@ Deno.serve(async (req) => {
   }
 
   logDraft("info", "draft_v2.command.completed", correlationId, {
-    action: command.action,
+    action: effectiveCommand.action,
     status: data?.status,
     lockVersion: data?.lockVersion,
   });

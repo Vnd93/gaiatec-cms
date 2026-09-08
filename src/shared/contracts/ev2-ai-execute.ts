@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+const ApprovedAiModel = z.literal("nvidia/nemotron-3.5-lightning:free");
+
 export const Ev2AiExecutionEnvironmentSchema = z.enum(["local", "staging"]);
 export const Ev2AiExecutionRiskSchema = z.enum(["draft", "workflow", "critical"]);
 export const Ev2AiExecutionToolKeySchema = z.enum([
@@ -27,8 +29,12 @@ export const Ev2AiExecutionCapabilitySchema = z
     source: z.string(),
     environment: z.enum(["local", "staging", "production"]),
     siteKey: z.literal("main"),
-    providerMode: z.literal("synthetic"),
-    externalProviderEnabled: z.literal(false),
+    providerMode: z.literal("openrouter"),
+    providerModel: ApprovedAiModel,
+    allowedProvider: z.literal("openrouter").optional(),
+    allowedModel: ApprovedAiModel.optional(),
+    externalProviderEnabled: z.literal(true),
+    externalProviderReady: z.boolean(),
     realDataAllowed: z.literal(false),
     syntheticOnly: z.literal(true),
     requiresAiAssist: z.literal(true),
@@ -149,11 +155,17 @@ export const Ev2AiExecutionWorkspaceSchema = z
         gate: z.literal("G14"),
         dataClass: z.literal("synthetic"),
         productionAllowed: z.literal(false),
-        externalProviderEnabled: z.literal(false),
+        providerMode: z.literal("openrouter"),
+        providerModel: ApprovedAiModel,
+        externalProviderEnabled: z.literal(true),
+        externalProviderReady: z.boolean(),
         maxPlanSteps: z.literal(20),
         approvalMinutes: z.literal(10),
         reviewerSeparationRequired: z.literal(true),
         compensationRequired: z.literal(true),
+        sameRunRequired: z.boolean(),
+        automaticPublishAllowed: z.literal(false),
+        manualFallback: z.literal(true),
       })
       .strict(),
     permissions: z
@@ -194,6 +206,9 @@ export const Ev2AiExecutionMutationResultSchema = z
     applied: z.boolean(),
     published: z.boolean(),
     syntheticOnly: z.literal(true),
+    providerMode: z.literal("openrouter"),
+    providerModel: ApprovedAiModel,
+    realDataAllowed: z.literal(false),
     correlationId: z.uuid(),
   })
   .strict();

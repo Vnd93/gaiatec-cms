@@ -9,6 +9,7 @@ test("public shell and new consumers cannot reintroduce legacy editorial fallbac
     "src/lib/supabase.ts",
     "src/public/catalog-api.ts",
     "src/public/site-shell-context.tsx",
+    "src/public/site-shell-navigation.ts",
     "src/public/pages/CmsProductsPage.tsx",
     "src/public/pages/CmsSearchPage.tsx",
     "src/public/pages/CmsDiscoveryListPage.tsx",
@@ -20,7 +21,10 @@ test("public shell and new consumers cannot reintroduce legacy editorial fallbac
   ];
   for (const file of protectedFiles) {
     const source = await read(file);
-    assert.doesNotMatch(source, /app\/data|useSiteData|site-content|SAFE_NAVIGATION|SAFE_COLUMNS/);
+    assert.doesNotMatch(
+      source,
+      /app\/data|useSiteData|site-content|site-shell-fallback|SAFE_NAVIGATION|SAFE_COLUMNS|FALLBACK_NAVIGATION_ITEMS|navigationItemsWithSafeFallback/,
+    );
   }
   const header = await read("src/app/components/Header.tsx");
   assert.match(header, /autocompletePublished/);
@@ -30,6 +34,8 @@ test("public shell and new consumers cannot reintroduce legacy editorial fallbac
   assert.doesNotMatch(header, /searchIndex/);
   const shell = await read("src/public/site-shell-context.tsx");
   assert.match(shell, /getPublishedSiteShell/);
+  const navigation = await read("src/public/site-shell-navigation.ts");
+  assert.match(navigation, /return items \?\? \[\]/);
   const routes = await read("src/app/routes.tsx");
   assert.doesNotMatch(
     routes,

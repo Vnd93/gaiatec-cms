@@ -50,7 +50,7 @@ describe("media upload package", () => {
 
     expect(validateMediaUploadPackage(files)).toEqual([
       "O original deve ter no máximo 20 MB.",
-      "A variante thumbnail.webp deve usar MIME image/webp.",
+      "A miniatura em WebP deve estar no formato correto.",
     ]);
   });
 
@@ -78,8 +78,60 @@ describe("media upload package", () => {
     );
 
     await expect(uploadMediaPackage(descriptors(), validPackage(), request as typeof fetch)).rejects.toThrow(
-      "Falha ao enviar thumbnail.avif.",
+      "Não foi possível enviar a miniatura em AVIF. Tente novamente.",
     );
     expect(request).toHaveBeenCalledTimes(3);
+  });
+
+  it("neutraliza falhas técnicas de rede sem expor URL ou detalhe da plataforma", async () => {
+    const request = vi.fn(async () => {
+      throw new Error("getaddrinfo ENOTFOUND private-storage.internal");
+    });
+
+    let caught: unknown;
+    try {
+      await uploadMediaPackage(descriptors(), validPackage(), request as typeof fetch);
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toEqual(
+      new Error("Não foi possível enviar as imagens. Verifique sua conexão e tente novamente."),
+    );
+    expect((caught as Error).message).not.toMatch(/ENOTFOUND|private-storage|https?:\/\//);
+  });
+
+  it("propaga cancelamento do operador e interrompe a sequência", async () => {
+    const controller = new AbortController();
+    const request = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      controller.abort(new DOMException("Cancelado pelo operador.", "AbortError"));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      if ((init?.signal as AbortSignal | undefined)?.aborted) throw (init?.signal as AbortSignal).reason;
+      return new Response(null, { status: 200 });
+    });
+
+    await expect(
+      uploadMediaPackage(descriptors(), validPackage(), request as typeof fetch, {
+        signal: controller.signal,
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it("aplica um timeout independente a cada PUT", async () => {
+    vi.useFakeTimers();
+    const request = vi.fn(
+      (_url: string | URL | Request, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject((init.signal as AbortSignal).reason));
+        }),
+    );
+    const upload = uploadMediaPackage(descriptors(), validPackage(), request as typeof fetch, {
+      timeoutMs: 50,
+    });
+    const rejected = expect(upload).rejects.toThrow("O envio demorou mais que o esperado");
+    await vi.advanceTimersByTimeAsync(51);
+    await rejected;
+    vi.useRealTimers();
   });
 });

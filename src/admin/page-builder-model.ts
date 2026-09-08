@@ -3,17 +3,140 @@ import type { CmsPageBlock, CmsPageContent } from "@/shared/contracts/cms-conten
 export type ManagedPageType = "page" | "homepage";
 export type ManagedPageTemplate = "standard" | "institutional" | "landing" | "sector" | "application";
 
+export const PAGE_BLOCK_LABELS = {
+  hero: "Hero",
+  rich_text: "Texto",
+  image: "Imagem",
+  gallery: "Galeria",
+  benefit_grid: "Grade de benefícios",
+  content_grid: "Grade de conteúdo",
+  steps: "Etapas",
+  metrics: "Métricas",
+  testimonial: "Depoimento",
+  faq: "Perguntas frequentes",
+  form: "Formulário",
+  cta: "Chamada para ação",
+  related_content: "Conteúdo relacionado",
+  split_content: "Conteúdo dividido",
+  logo_cloud: "Nuvem de marcas",
+  tabs: "Abas",
+  comparison_table: "Tabela comparativa",
+  alert: "Aviso",
+  timeline: "Linha do tempo",
+  link_list: "Lista de links",
+} satisfies Record<CmsPageBlock["type"], string>;
+
+export const PAGE_BUILDER_BLOCK_TYPES = [
+  "hero",
+  "rich_text",
+  "image",
+  "gallery",
+  "benefit_grid",
+  "content_grid",
+  "steps",
+  "metrics",
+  "testimonial",
+  "faq",
+  "form",
+  "cta",
+  "related_content",
+] as const satisfies readonly CmsPageBlock["type"][];
+
+export type PageBuilderBlockType = (typeof PAGE_BUILDER_BLOCK_TYPES)[number];
+
+export const MANAGED_PAGE_TEMPLATES = [
+  {
+    name: "Institucional padrão",
+    key: "institutional",
+    title: "Nova página",
+    pageKind: "institutional",
+    templateKey: "standard",
+    blockTypes: ["hero", "rich_text", "cta"],
+  },
+  {
+    name: "Landing de campanha",
+    key: "landing",
+    title: "Nova landing page",
+    pageKind: "landing",
+    templateKey: "landing",
+    blockTypes: ["hero", "benefit_grid", "form"],
+  },
+  {
+    name: "Página de setor",
+    key: "sector",
+    title: "Nova página de setor",
+    pageKind: "thematic",
+    templateKey: "technical",
+    blockTypes: ["hero", "content_grid", "cta"],
+  },
+  {
+    name: "Página de aplicação",
+    key: "application",
+    title: "Nova página de aplicação",
+    pageKind: "thematic",
+    templateKey: "technical",
+    blockTypes: ["hero", "steps", "cta"],
+  },
+] as const satisfies readonly {
+  name: string;
+  key: Exclude<ManagedPageTemplate, "standard">;
+  title: string;
+  pageKind: "institutional" | "landing" | "thematic";
+  templateKey: "standard" | "landing" | "technical";
+  blockTypes: readonly PageBuilderBlockType[];
+}[];
+
 const id = () => crypto.randomUUID();
-const now = () => new Date().toISOString();
 
 export type PageBlockReferences = {
   assetId?: string;
   relatedItemId?: string;
+  form?: PublishedFormOption;
 };
 
-export function pageBlockReferenceRequirement(type: CmsPageBlock["type"]): "media" | "relation" | null {
+export type PublishedFormOption = {
+  id: string;
+  formKey: string;
+  versionId: string;
+  title: string;
+};
+
+export function publishedFormForBlock(
+  block: CmsPageBlock,
+  forms: readonly PublishedFormOption[],
+): PublishedFormOption | null {
+  if (block.type !== "form") return null;
+  return (
+    forms.find(
+      (form) =>
+        form.id === block.data.formId &&
+        form.versionId === block.data.formVersionId &&
+        form.formKey === block.data.formKey,
+    ) ?? null
+  );
+}
+
+export function governedFormBindingIssue(
+  blocks: readonly CmsPageBlock[],
+  forms: readonly PublishedFormOption[],
+): string | null {
+  const formBlocks = blocks.filter(
+    (block): block is Extract<CmsPageBlock, { type: "form" }> => block.type === "form",
+  );
+  if (!formBlocks.length) return null;
+  if (!forms.length)
+    return "Nenhum formulário publicado está disponível. Publique uma versão em Marketing > Formulários antes de salvar esta página.";
+  const invalidIndex = formBlocks.findIndex((block) => !publishedFormForBlock(block, forms));
+  if (invalidIndex < 0) return null;
+  return `O bloco de formulário ${invalidIndex + 1} não está vinculado à versão publicada atual. Selecione novamente o formulário antes de salvar ou publicar.`;
+}
+
+export function pageBlockReferenceRequirement(
+  type: CmsPageBlock["type"],
+): "media" | "relation" | "form" | null {
   if (["image", "gallery", "split_content", "logo_cloud"].includes(type)) return "media";
   if (type === "related_content") return "relation";
+  if (type === "form") return "form";
   return null;
 }
 
@@ -126,7 +249,9 @@ export function createPageBlock(
         data: {
           heading: "Fale com a GAIATEC",
           text: "Envie os dados da sua necessidade.",
-          formKey: "contact",
+          formKey: references.form?.formKey ?? "formulario-nao-vinculado",
+          formId: references.form?.id,
+          formVersionId: references.form?.versionId,
           buttonLabel: "Abrir formulário",
         },
       };
@@ -240,47 +365,175 @@ export function createPageBlock(
   }
 }
 
+/**
+ * Creates the form state used by the real editors. Unlike `createPageBlock`,
+ * which is also used by contract fixtures, this helper never pre-populates
+ * publishable copy. Required text stays empty so the shared schema keeps Save
+ * disabled until an operator has deliberately authored every field.
+ */
+export function createEmptyPageBlock(
+  type: CmsPageBlock["type"],
+  references: PageBlockReferences = {},
+): CmsPageBlock {
+  const block = createPageBlock(type, references);
+  switch (block.type) {
+    case "hero":
+      return { ...block, data: { title: "", alignment: block.data.alignment } };
+    case "rich_text":
+      return { ...block, data: { text: "" } };
+    case "image":
+      return { ...block, data: { ...block.data, alt: "" } };
+    case "gallery":
+      return { ...block, data: { assetIds: block.data.assetIds, columns: block.data.columns } };
+    case "benefit_grid":
+      return {
+        ...block,
+        data: { heading: "", items: block.data.items.map((item) => ({ ...item, title: "", text: "" })) },
+      };
+    case "content_grid":
+      return {
+        ...block,
+        data: {
+          heading: "",
+          items: block.data.items.map((item) => ({ id: item.id, title: "" })),
+          columns: block.data.columns,
+        },
+      };
+    case "steps":
+      return {
+        ...block,
+        data: { heading: "", items: block.data.items.map((item) => ({ ...item, title: "", text: "" })) },
+      };
+    case "metrics":
+      return {
+        ...block,
+        data: { items: block.data.items.map((item) => ({ ...item, value: "", label: "" })) },
+      };
+    case "testimonial":
+      return { ...block, data: { quote: "", author: "" } };
+    case "faq":
+      return {
+        ...block,
+        data: {
+          heading: "",
+          items: block.data.items.map((item) => ({ ...item, question: "", answer: "" })),
+        },
+      };
+    case "form":
+      return {
+        ...block,
+        data: {
+          heading: "",
+          formKey: block.data.formKey,
+          formId: block.data.formId,
+          formVersionId: block.data.formVersionId,
+          buttonLabel: "",
+        },
+      };
+    case "cta":
+      return { ...block, data: { heading: "", link: { label: "", href: "" } } };
+    case "related_content":
+      return {
+        ...block,
+        data: { heading: "", itemIds: block.data.itemIds, presentation: block.data.presentation },
+      };
+    case "split_content":
+      return {
+        ...block,
+        data: {
+          heading: "",
+          text: "",
+          assetId: block.data.assetId,
+          alt: "",
+          imagePosition: block.data.imagePosition,
+        },
+      };
+    case "logo_cloud":
+      return {
+        ...block,
+        data: {
+          items: block.data.items.map((item) => ({ id: item.id, assetId: item.assetId, alt: "" })),
+        },
+      };
+    case "tabs":
+      return {
+        ...block,
+        data: {
+          items: block.data.items.map((item) => ({ ...item, label: "", heading: "", text: "" })),
+        },
+      };
+    case "comparison_table":
+      return {
+        ...block,
+        data: {
+          heading: "",
+          caption: "",
+          columns: block.data.columns.map(() => ""),
+          rows: block.data.rows.map((row) => ({ ...row, label: "", values: row.values.map(() => "") })),
+        },
+      };
+    case "alert":
+      return { ...block, data: { heading: "", text: "", severity: block.data.severity } };
+    case "timeline":
+      return {
+        ...block,
+        data: {
+          heading: "",
+          items: block.data.items.map((item) => ({ ...item, label: "", title: "", text: "" })),
+        },
+      };
+    case "link_list":
+      return {
+        ...block,
+        data: {
+          heading: "",
+          items: block.data.items.map((item) => ({ id: item.id, label: "", href: "" })),
+        },
+      };
+  }
+}
+
 export function createInitialPagePayload(
   contentType: ManagedPageType,
   requestedTemplate: ManagedPageTemplate = "standard",
 ): CmsPageContent {
   const homepage = contentType === "homepage";
-  const slug = homepage ? "homepage" : `pagina-${Date.now()}`;
+  const template =
+    MANAGED_PAGE_TEMPLATES.find((candidate) => candidate.key === requestedTemplate) ??
+    MANAGED_PAGE_TEMPLATES[0];
+  const slug = homepage ? "homepage" : "";
   const route = homepage ? "/" : `/${slug}`;
   const common = {
     schemaVersion: 1 as const,
-    title: homepage ? "Homepage GAIATEC" : "Nova página",
-    summary: "Rascunho criado manualmente no site builder.",
+    title: "",
+    summary: undefined,
     pageKind: homepage ? ("home" as const) : ("institutional" as const),
     templateKey: homepage ? ("home" as const) : ("standard" as const),
     route: {
       path: route,
-      navigationLabel: homepage ? "Início" : "Nova página",
-      breadcrumbLabel: homepage ? "Início" : "Nova página",
+      navigationLabel: homepage ? "Início" : undefined,
+      breadcrumbLabel: homepage ? "Início" : undefined,
     },
-    blocks: [createPageBlock("hero"), createPageBlock("rich_text"), createPageBlock("cta")],
+    blocks: [createEmptyPageBlock("hero"), createEmptyPageBlock("rich_text"), createEmptyPageBlock("cta")],
     seo: {
-      title: homepage ? "GAIATEC SISTEMAS" : "Nova página | GAIATEC",
-      description: "Rascunho não indexável criado no novo CMS GAIATEC.",
+      title: "",
+      description: "",
       canonicalPath: route,
       indexable: false,
     },
     provenance: [
       {
         sourceKind: "owner_authored" as const,
-        authorizationReference: "CADASTRO-MANUAL-CMS",
-        authorizationDate: new Date().toISOString().slice(0, 10),
-        rightsScope: "Conteúdo criado manualmente no novo CMS",
-        rightsConfirmed: true as const,
-        commercialOwner: "Administrador GAIATEC",
-        technicalOwner: "Administrador GAIATEC",
-        verifiedAt: now(),
+        rightsConfirmed: false as true,
+        commercialOwner: "",
+        technicalOwner: "",
+        verifiedAt: "",
       },
     ],
-    governanceState: "synthetic_test" as const,
+    governanceState: "awaiting_owner" as const,
     relations: { productIds: [], serviceIds: [], industryIds: [], applicationIds: [], solutionIds: [] },
     retirement: { mode: "not_found" as const },
-    approval: { businessOwner: "Administrador GAIATEC", editorialReviewer: "Revisor a definir" },
+    approval: { businessOwner: "", editorialReviewer: "" },
   };
   return homepage
     ? {
@@ -295,40 +548,16 @@ export function createInitialPagePayload(
         ...common,
         consumerId: "cms.managed-page.v1",
         contentType: "page",
-        pageKind:
-          requestedTemplate === "landing"
-            ? "landing"
-            : requestedTemplate === "sector" || requestedTemplate === "application"
-              ? "thematic"
-              : "institutional",
-        templateKey:
-          requestedTemplate === "landing"
-            ? "landing"
-            : requestedTemplate === "sector" || requestedTemplate === "application"
-              ? "technical"
-              : "standard",
-        title:
-          requestedTemplate === "sector"
-            ? "Nova página de setor"
-            : requestedTemplate === "application"
-              ? "Nova página de aplicação"
-              : requestedTemplate === "landing"
-                ? "Nova landing page"
-                : "Nova página",
-        blocks:
-          requestedTemplate === "landing"
-            ? [createPageBlock("hero"), createPageBlock("benefit_grid"), createPageBlock("form")]
-            : requestedTemplate === "sector"
-              ? [createPageBlock("hero"), createPageBlock("content_grid"), createPageBlock("cta")]
-              : requestedTemplate === "application"
-                ? [createPageBlock("hero"), createPageBlock("steps"), createPageBlock("cta")]
-                : common.blocks,
+        pageKind: template.pageKind,
+        templateKey: template.templateKey,
+        blocks: template.blockTypes.map((type) => createEmptyPageBlock(type)),
       };
 }
 
 export function duplicatePageBlock(block: CmsPageBlock): CmsPageBlock {
   const copy = structuredClone(block);
   copy.id = id();
+  delete copy.anchor;
   if ("items" in copy.data && Array.isArray(copy.data.items))
     copy.data.items = copy.data.items.map((item) => ({ ...item, id: id() })) as never;
   return copy;
@@ -369,20 +598,17 @@ export function duplicateManagedPagePayload(payload: CmsPageContent, slug: strin
       ...payload.provenance.slice(-29),
       {
         sourceKind: "owner_authored",
-        authorizationReference: "DUPLICACAO-MANUAL-CMS",
-        authorizationDate: new Date().toISOString().slice(0, 10),
-        rightsScope: "Página duplicada dentro do novo CMS",
-        rightsConfirmed: true,
-        commercialOwner: "Administrador GAIATEC",
-        technicalOwner: "Administrador GAIATEC",
-        verifiedAt: now(),
+        rightsConfirmed: false as true,
+        commercialOwner: "",
+        technicalOwner: "",
+        verifiedAt: "",
       },
     ],
-    governanceState: "synthetic_test",
+    governanceState: "awaiting_owner",
     retirement: { mode: "not_found" },
     approval: {
-      businessOwner: payload.approval.businessOwner,
-      editorialReviewer: payload.approval.editorialReviewer,
+      businessOwner: "",
+      editorialReviewer: "",
     },
   };
 }

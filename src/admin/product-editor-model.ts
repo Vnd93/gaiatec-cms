@@ -1,4 +1,5 @@
 import type { CmsProductContent, CmsProductFieldVisibility } from "@/shared/contracts/cms-content";
+import { humanValidationIssue } from "./validation-field-label";
 
 export type ProductEditorTab =
   | "identificacao"
@@ -17,6 +18,7 @@ export type ProductEditorTab =
 export type GovernedJsonField =
   | "modelsJson"
   | "specificationsJson"
+  | "identifiersJson"
   | "mediaJson"
   | "documentsJson"
   | "redirectsJson"
@@ -77,8 +79,6 @@ export function createInitialProductDraft() {
     monitoredElementId: "",
     monitoredElementSlug: "",
     monitoredElementLabel: "",
-    commercialModel: "",
-    manufacturerReference: "",
     modelsJson: pretty([
       {
         id: modelId,
@@ -108,6 +108,7 @@ export function createInitialProductDraft() {
         searchable: true,
       },
     ]),
+    identifiersJson: "[]",
     mediaJson: "[]",
     documentsJson: "[]",
     productIds: "",
@@ -154,7 +155,6 @@ export function hydrateProductDraft(
   slug: string,
   current = createInitialProductDraft(),
 ): ProductEditorDraft {
-  const firstModel = product.models[0];
   const richText = product.blocks.find((block) => block.type === "rich_text");
   return {
     ...current,
@@ -189,8 +189,6 @@ export function hydrateProductDraft(
     monitoredElementId: product.controlledClassification?.monitoredElement.id ?? "",
     monitoredElementSlug: product.controlledClassification?.monitoredElement.slug ?? "",
     monitoredElementLabel: product.controlledClassification?.monitoredElement.label ?? "",
-    commercialModel: firstModel?.model ?? "",
-    manufacturerReference: firstModel?.manufacturerReference ?? "",
     modelsJson: pretty(product.models),
     shortDescription: product.commercial.shortDescription,
     valueProposition: product.commercial.valueProposition,
@@ -199,6 +197,7 @@ export function hydrateProductDraft(
     body: richText?.data.text ?? "",
     blocksJson: pretty(product.blocks),
     specificationsJson: pretty(product.specifications),
+    identifiersJson: pretty(product.externalIdentifiers),
     mediaJson: pretty(product.media),
     documentsJson: pretty(product.documents),
     productIds: product.relations.productIds.join("\n"),
@@ -225,10 +224,11 @@ export function hydrateProductDraft(
 }
 
 const governedFields: Array<{ field: GovernedJsonField; tab: ProductEditorTab; label: string }> = [
-  { field: "modelsJson", tab: "identificacao", label: "Modelos e variantes" },
+  { field: "modelsJson", tab: "especificacoes", label: "Modelos e variantes" },
   { field: "specificationsJson", tab: "especificacoes", label: "Atributos tipados" },
-  { field: "mediaJson", tab: "especificacoes", label: "Imagens" },
-  { field: "documentsJson", tab: "especificacoes", label: "Documentos" },
+  { field: "identifiersJson", tab: "especificacoes", label: "Identificadores comerciais e fiscais" },
+  { field: "mediaJson", tab: "relacoes", label: "Imagens" },
+  { field: "documentsJson", tab: "relacoes", label: "Documentos" },
   { field: "redirectsJson", tab: "visibilidade", label: "Redirects" },
   { field: "blocksJson", tab: "comercial", label: "Blocos de conteúdo" },
   { field: "provenanceJson", tab: "governanca", label: "Proveniência" },
@@ -240,26 +240,19 @@ export function buildProductPayload(draft: ProductEditorDraft) {
   for (const definition of governedFields) {
     try {
       const value: unknown = JSON.parse(draft[definition.field]);
-      if (!Array.isArray(value)) throw new Error("o valor deve ser uma lista JSON");
+      if (!Array.isArray(value)) throw new Error("invalid_structured_value");
       parsed[definition.field] = value;
-    } catch (error) {
+    } catch {
       parsed[definition.field] = [];
       jsonErrors.push({
         field: definition.field,
         tab: definition.tab,
-        message: `${definition.label}: ${error instanceof Error ? error.message : "JSON inválido"}.`,
+        message: `${definition.label}: os dados precisam ser reparados antes de continuar.`,
       });
     }
   }
 
   const models = structuredClone(parsed.modelsJson) as Array<Record<string, unknown>>;
-  if (models[0]) {
-    models[0] = {
-      ...models[0],
-      model: draft.commercialModel,
-      manufacturerReference: draft.manufacturerReference,
-    };
-  }
   const blocks = structuredClone(parsed.blocksJson) as Array<Record<string, unknown>>;
   const richText = blocks.find((block) => block.type === "rich_text");
   if (richText) richText.data = { ...((richText.data as Record<string, unknown>) ?? {}), text: draft.body };
@@ -322,6 +315,7 @@ export function buildProductPayload(draft: ProductEditorDraft) {
     technology: draft.technologyOptionLabel,
     models,
     specifications: parsed.specificationsJson,
+    externalIdentifiers: parsed.identifiersJson,
     media: parsed.mediaJson,
     documents: parsed.documentsJson,
     relations: {
@@ -362,7 +356,7 @@ export function tabForProductPath(path: PropertyKey[]): ProductEditorTab {
   if (["classification", "controlledClassification", "function", "technology"].includes(root))
     return "classificacao";
   if (["commercial", "summary", "blocks"].includes(root)) return "comercial";
-  if (root === "specifications") return "especificacoes";
+  if (["specifications", "externalIdentifiers"].includes(root)) return "especificacoes";
   if (["media", "documents"].includes(root)) return "especificacoes";
   if (["relations", "search"].includes(root)) return "relacoes";
   if (root === "fieldVisibility") return "visibilidade";
@@ -376,5 +370,5 @@ export function describeProductValidationIssue(issue: { path: PropertyKey[]; mes
   if (path[0] === "blocks" && path[2] === "data" && path[3] === "text") {
     return "Conteúdo comercial → Descrição completa: preencha este campo antes de salvar o rascunho.";
   }
-  return `${path.join(".")} — ${issue.message}`;
+  return humanValidationIssue(issue);
 }

@@ -1,4 +1,4 @@
-const APPROVED_MODEL = "nvidia/nemotron-3.5-lightning:free";
+export const APPROVED_OPENROUTER_MODEL = "nvidia/nemotron-3.5-lightning:free";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 export type OpenRouterProposal = {
@@ -7,7 +7,7 @@ export type OpenRouterProposal = {
   confidence: number;
   inputTokens: number;
   outputTokens: number;
-  model: typeof APPROVED_MODEL;
+  model: typeof APPROVED_OPENROUTER_MODEL;
 };
 
 function cleanModelText(value: unknown, maxLength: number): string {
@@ -15,16 +15,22 @@ function cleanModelText(value: unknown, maxLength: number): string {
 }
 
 function parseJsonContent(content: string): Record<string, unknown> {
-  const normalized = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  const normalized = content
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/, "");
   const parsed = JSON.parse(normalized) as unknown;
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("OPENROUTER_OUTPUT_INVALID");
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+    throw new Error("OPENROUTER_OUTPUT_INVALID");
   return parsed as Record<string, unknown>;
 }
 
 export function openRouterConfigured(): boolean {
-  return Boolean(Deno.env.get("OPENROUTER_API_KEY")) &&
-    Deno.env.get("OPENROUTER_MODEL") === APPROVED_MODEL &&
-    Deno.env.get("CMS_AI_EXTERNAL_PROVIDER_ENABLED") === "true";
+  return (
+    Boolean(Deno.env.get("OPENROUTER_API_KEY")) &&
+    Deno.env.get("OPENROUTER_MODEL") === APPROVED_OPENROUTER_MODEL &&
+    Deno.env.get("CMS_AI_EXTERNAL_PROVIDER_ENABLED") === "true"
+  );
 }
 
 export async function generateOpenRouterProposal(input: {
@@ -37,7 +43,7 @@ export async function generateOpenRouterProposal(input: {
 }): Promise<OpenRouterProposal> {
   const apiKey = Deno.env.get("OPENROUTER_API_KEY");
   const configuredModel = Deno.env.get("OPENROUTER_MODEL");
-  if (!apiKey || configuredModel !== APPROVED_MODEL) throw new Error("OPENROUTER_NOT_CONFIGURED");
+  if (!apiKey || configuredModel !== APPROVED_OPENROUTER_MODEL) throw new Error("OPENROUTER_NOT_CONFIGURED");
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 25_000);
@@ -52,7 +58,8 @@ export async function generateOpenRouterProposal(input: {
         "X-Title": "GAIATEC CMS",
       },
       body: JSON.stringify({
-        model: APPROVED_MODEL,
+        model: APPROVED_OPENROUTER_MODEL,
+        provider: { data_collection: "deny" },
         temperature: 0.2,
         max_tokens: 900,
         reasoning: { effort: "none", exclude: true },
@@ -79,7 +86,7 @@ export async function generateOpenRouterProposal(input: {
       }),
     });
     if (!response.ok) throw new Error(`OPENROUTER_HTTP_${response.status}`);
-    const body = await response.json() as Record<string, unknown>;
+    const body = (await response.json()) as Record<string, unknown>;
     const choices = Array.isArray(body.choices) ? body.choices : [];
     const first = choices[0] as Record<string, unknown> | undefined;
     const message = first?.message as Record<string, unknown> | undefined;
@@ -98,7 +105,7 @@ export async function generateOpenRouterProposal(input: {
       confidence,
       inputTokens: Math.max(1, Number(usage?.prompt_tokens) || 1),
       outputTokens: Math.max(1, Number(usage?.completion_tokens) || 1),
-      model: APPROVED_MODEL,
+      model: APPROVED_OPENROUTER_MODEL,
     };
   } finally {
     clearTimeout(timeout);

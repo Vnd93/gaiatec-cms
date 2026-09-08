@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Archive, Copy, Eye, Plus, Save, Send, Trash2 } from "lucide-react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { supabase } from "@/lib/supabase";
 import { CmsPageContentSchema, type CmsPageBlock, type CmsPageContent } from "@/shared/contracts/cms-content";
 import { PageBlockEditor, type BuilderMedia, type BuilderRelation } from "../components/PageBlockEditor";
@@ -12,16 +12,28 @@ import { openExternalAfterAsync } from "../open-external-preview";
 import { useDraftBackup } from "../hooks/useDraftBackup";
 import { DraftBackupNotice } from "../components/DraftBackupNotice";
 import {
+  MANAGED_PAGE_TEMPLATES,
+  PAGE_BLOCK_LABELS,
+  PAGE_BUILDER_BLOCK_TYPES,
+  createEmptyPageBlock,
   createInitialPagePayload,
-  createPageBlock,
   duplicateManagedPagePayload,
   duplicatePageBlock,
+  governedFormBindingIssue,
   movePageBlock,
   pageBlockReferenceRequirement,
   pageTypeMeta,
   type ManagedPageType,
+  type PublishedFormOption,
 } from "../page-builder-model";
 import type { ManagedPageTemplate } from "../page-builder-model";
+import { urlSegmentFromText } from "../url-segment";
+import { humanValidationIssue } from "../validation-field-label";
+import {
+  fetchAuthoritativeEditorialItem,
+  INVALIDATED_EDITOR_SNAPSHOT,
+  saveWithPublishedRevisionReconciliation,
+} from "../published-revision-save";
 
 type Loaded = {
   id: string;
@@ -49,75 +61,54 @@ const tabs = [
 ] as const;
 type Tab = (typeof tabs)[number][0];
 
-const blockLabels: Record<CmsPageBlock["type"], string> = {
-  hero: "Hero",
-  rich_text: "Texto",
-  image: "Imagem",
-  gallery: "Galeria",
-  benefit_grid: "Grade de benefícios",
-  content_grid: "Grade de conteúdo",
-  steps: "Etapas",
-  metrics: "Métricas",
-  testimonial: "Depoimento",
-  faq: "Perguntas frequentes",
-  form: "Formulário",
-  cta: "Chamada para ação",
-  related_content: "Conteúdo relacionado",
-  split_content: "Conteúdo dividido",
-  logo_cloud: "Nuvem de marcas",
-  tabs: "Abas",
-  comparison_table: "Tabela comparativa",
-  alert: "Aviso",
-  timeline: "Linha do tempo",
-  link_list: "Lista de links",
+type DuplicateDraftLocationState = {
+  duplicateDraft?: {
+    sourceItemId: string;
+    slug: string;
+    payload: CmsPageContent;
+  };
 };
 
-const legacyBlockTypes = new Set<CmsPageBlock["type"]>([
-  "hero",
-  "rich_text",
-  "image",
-  "gallery",
-  "benefit_grid",
-  "content_grid",
-  "steps",
-  "metrics",
-  "testimonial",
-  "faq",
-  "form",
-  "cta",
-  "related_content",
-]);
+function duplicateDraftFromLocationState(state: unknown) {
+  if (!state || typeof state !== "object" || !("duplicateDraft" in state)) return null;
+  const candidate = (state as DuplicateDraftLocationState).duplicateDraft;
+  if (
+    !candidate ||
+    typeof candidate.sourceItemId !== "string" ||
+    typeof candidate.slug !== "string" ||
+    !candidate.payload ||
+    candidate.payload.contentType !== "page" ||
+    candidate.payload.visual
+  )
+    return null;
+  return candidate;
+}
+
 export default function AdminPageBuilderPage() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { session, profile } = useAdminAuth();
   const visualStudioEnabled = isEv2FeatureEnabled(profile, "ev2.visual_studio");
   const requestedType = searchParams.get("type") === "homepage" ? "homepage" : "page";
   const requestedTemplateParam = searchParams.get("template");
-  const requestedTemplate: ManagedPageTemplate = [
-    "institutional",
-    "landing",
-    "sector",
-    "application",
-  ].includes(requestedTemplateParam ?? "")
-    ? (requestedTemplateParam as ManagedPageTemplate)
-    : "standard";
-  const requestedBlock = (["hero", "benefit_grid", "testimonial", "faq", "form", "cta"] as const).find(
-    (type) => type === searchParams.get("block"),
+  const requestedTemplate: ManagedPageTemplate =
+    MANAGED_PAGE_TEMPLATES.find((template) => template.key === requestedTemplateParam)?.key ?? "standard";
+  const requestedBlock = PAGE_BUILDER_BLOCK_TYPES.find(
+    (type) => type === searchParams.get("block") && pageBlockReferenceRequirement(type) === null,
   );
   const [payload, setPayload] = useState<CmsPageContent>(() => {
     const initial = createInitialPagePayload(requestedType, requestedTemplate);
     return requestedBlock
-      ? { ...initial, blocks: [...initial.blocks, createPageBlock(requestedBlock)] }
+      ? { ...initial, blocks: [...initial.blocks, createEmptyPageBlock(requestedBlock)] }
       : initial;
   });
-  const [slug, setSlug] = useState(() =>
-    requestedType === "homepage" ? "homepage" : `pagina-${Date.now()}`,
-  );
+  const [slug, setSlug] = useState(() => (requestedType === "homepage" ? "homepage" : ""));
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [media, setMedia] = useState<BuilderMedia[]>([]);
   const [relations, setRelations] = useState<BuilderRelation[]>([]);
+  const [forms, setForms] = useState<PublishedFormOption[]>([]);
   const [activeTab, setActiveTab] = useState<Tab>("structure");
   const [blockType, setBlockType] = useState<CmsPageBlock["type"]>("rich_text");
   const [loading, setLoading] = useState(id !== "novo");
@@ -130,6 +121,8 @@ export default function AdminPageBuilderPage() {
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(payload.blocks[0]?.id ?? null);
   const [reason, setReason] = useState("Atualização pelo site builder");
   const [publishAt, setPublishAt] = useState("");
+  const [customAddress, setCustomAddress] = useState(false);
+  const consumedDuplicateDraft = useRef("");
 
   const contentType = payload.contentType as ManagedPageType;
   const meta = pageTypeMeta[contentType];
@@ -140,6 +133,30 @@ export default function AdminPageBuilderPage() {
 
   const update = (patch: Record<string, unknown>) =>
     setPayload((current) => ({ ...current, ...patch }) as CmsPageContent);
+
+  useEffect(() => {
+    if (id !== "novo") return;
+    const duplicateDraft = duplicateDraftFromLocationState(location.state);
+    if (!duplicateDraft) return;
+    const key = `${duplicateDraft.sourceItemId}:${duplicateDraft.slug}`;
+    if (consumedDuplicateDraft.current === key) return;
+    consumedDuplicateDraft.current = key;
+    setLoaded(null);
+    setPayload(duplicateDraft.payload);
+    setSlug(duplicateDraft.slug);
+    setCustomAddress(true);
+    setSavedSnapshot("");
+    setSelectedBlockId(duplicateDraft.payload.blocks[0]?.id ?? null);
+    setActiveTab("structure");
+    setReason(`Duplicação controlada de ${duplicateDraft.payload.title || "página sem título"}`);
+    setPublishAt("");
+    setPreviewFallback("");
+    setError("");
+    setSuccess(
+      "Cópia aberta como rascunho local incompleto. Complete a governança e os direitos antes de criar a página.",
+    );
+    setLoading(false);
+  }, [id, location.state]);
 
   useEffect(() => {
     let active = true;
@@ -155,7 +172,13 @@ export default function AdminPageBuilderPage() {
         .in("content_type", ["product", "service", "industry", "application", "solution", "page"])
         .neq("workflow_status", "trashed")
         .order("updated_at", { ascending: false }),
-    ]).then(([mediaResult, relationResult]) => {
+      supabase
+        .from("cms_form_definitions")
+        .select("id,form_key,active_version_id,title")
+        .eq("status", "published")
+        .not("active_version_id", "is", null)
+        .order("title", { ascending: true }),
+    ]).then(([mediaResult, relationResult, formResult]) => {
       if (!active) return;
       setMedia((mediaResult.data ?? []) as BuilderMedia[]);
       setRelations(
@@ -163,8 +186,22 @@ export default function AdminPageBuilderPage() {
           id: row.id,
           content_type: row.content_type,
           slug: row.slug,
-          label: row.cms_content_drafts?.payload?.title ?? row.slug,
+          label: row.cms_content_drafts?.payload?.title ?? "Conteúdo sem título",
         })),
+      );
+      setForms(
+        (formResult.data ?? []).flatMap((row) =>
+          row.active_version_id
+            ? [
+                {
+                  id: row.id,
+                  formKey: row.form_key,
+                  versionId: row.active_version_id,
+                  title: row.title,
+                },
+              ]
+            : [],
+        ),
       );
     });
     return () => {
@@ -191,13 +228,12 @@ export default function AdminPageBuilderPage() {
           const item = data as unknown as Loaded;
           const parsed = CmsPageContentSchema.safeParse(item.cms_content_drafts.payload);
           if (!parsed.success)
-            setError(
-              `Rascunho incompatível: ${parsed.error.issues[0]?.path.join(".")} — ${parsed.error.issues[0]?.message}`,
-            );
+            setError(`Rascunho incompatível. ${humanValidationIssue(parsed.error.issues[0])}`);
           else {
             setLoaded(item);
             setPayload(parsed.data);
             setSlug(item.slug);
+            setCustomAddress(true);
             setSavedSnapshot(JSON.stringify({ payload: parsed.data, slug: item.slug }));
             setSelectedBlockId((current) => current ?? parsed.data.blocks[0]?.id ?? null);
           }
@@ -210,6 +246,10 @@ export default function AdminPageBuilderPage() {
   }, [id, refreshToken]);
 
   const validation = useMemo(() => CmsPageContentSchema.safeParse(payload), [payload]);
+  const formBindingIssue = useMemo(
+    () => governedFormBindingIssue(payload.blocks, forms),
+    [forms, payload.blocks],
+  );
   const latestRevision = loaded?.cms_content_revisions
     .slice()
     .sort((a, b) => b.revision_number - a.revision_number)[0];
@@ -260,8 +300,10 @@ export default function AdminPageBuilderPage() {
         );
       if ((action === "create" || action === "save") && !validation.success) {
         const issue = validation.error.issues[0];
-        throw new Error(`Página incompleta: ${issue.path.join(".")} — ${issue.message}`);
+        throw new Error(`Página incompleta. ${humanValidationIssue(issue)}`);
       }
+      if (formBindingIssue && ["create", "save", "submit", "approve", "publish", "schedule"].includes(action))
+        throw new Error(formBindingIssue);
       if (action === "save" && visualManaged && loaded) {
         const source = CmsPageContentSchema.parse(loaded.cms_content_drafts.payload);
         if (JSON.stringify(source.blocks) !== JSON.stringify(payload.blocks))
@@ -269,30 +311,40 @@ export default function AdminPageBuilderPage() {
             "Os blocos desta página são controlados pelo Estúdio Visual. Recarregue a página e faça a alteração no branch visual.",
           );
       }
-      if (action === "save" && state === "published" && loaded) {
-        await editorialCommand(session, {
-          action: "reopen",
-          itemId: loaded.id,
-          contentType: null,
-          slug: null,
-          payload: null,
-          expectedLockVersion: null,
-          reason: `Abrir nova versão: ${reason}`,
-        });
-      }
-      const result = await editorialCommand(session, {
-        action,
-        itemId: loaded?.id ?? null,
-        contentType: loaded ? null : contentType,
-        slug,
-        payload: action === "create" || action === "save" ? payload : null,
-        expectedLockVersion: loaded?.cms_content_drafts.lock_version ?? null,
-        reason,
-        ...extras,
+      const publishedItem = action === "save" && state === "published" && loaded ? loaded : null;
+      const result = await saveWithPublishedRevisionReconciliation({
+        reopen: publishedItem
+          ? () =>
+              editorialCommand(session, {
+                action: "reopen",
+                itemId: publishedItem.id,
+                contentType: null,
+                slug: null,
+                payload: null,
+                expectedLockVersion: null,
+                reason: `Abrir nova versão: ${reason}`,
+              })
+          : null,
+        save: () =>
+          editorialCommand(session, {
+            action,
+            itemId: loaded?.id ?? null,
+            contentType: loaded ? null : contentType,
+            slug,
+            payload: action === "create" || action === "save" ? payload : null,
+            expectedLockVersion: loaded?.cms_content_drafts.lock_version ?? null,
+            reason,
+            ...extras,
+          }),
+        invalidateSnapshot: () => setSavedSnapshot(INVALIDATED_EDITOR_SNAPSHOT),
+        reconcile: async () => {
+          if (!publishedItem) return;
+          setLoaded(
+            (await fetchAuthoritativeEditorialItem(publishedItem.id, ["page", "homepage"])) as Loaded,
+          );
+        },
       });
-      setSuccess(
-        `Operação concluída: ${result.status}. Código de acompanhamento ${result.correlationId.slice(0, 8)}.`,
-      );
+      setSuccess("Operação concluída e registrada na auditoria.");
       if (action === "create" || action === "save") setSavedSnapshot(currentSnapshot);
       if (["create", "save", "publish"].includes(action)) backup.clear();
       if (!loaded && result.itemId) navigate(`/admin/paginas/${result.itemId}`, { replace: true });
@@ -341,31 +393,25 @@ export default function AdminPageBuilderPage() {
     setBusy(false);
   }
 
-  async function duplicatePage() {
-    if (!session || !loaded || payload.contentType !== "page" || visualManaged) return;
-    setBusy(true);
+  function duplicatePage() {
+    if (!loaded || payload.contentType !== "page" || visualManaged) return;
     setError("");
     setSuccess("");
     try {
       const suffix = Date.now().toString().slice(-8);
       const duplicateSlug = `${slug.slice(0, 140).replace(/-+$/, "")}-copia-${suffix}`;
-      const duplicatePayload = CmsPageContentSchema.parse(
-        duplicateManagedPagePayload(payload, duplicateSlug),
-      );
-      const result = await editorialCommand(session, {
-        action: "create",
-        itemId: null,
-        contentType: "page",
-        slug: duplicateSlug,
-        payload: duplicatePayload,
-        expectedLockVersion: null,
-        reason: `Duplicação da página ${loaded.id}`,
+      const duplicatePayload = duplicateManagedPagePayload(payload, duplicateSlug);
+      navigate("/admin/paginas/novo?type=page", {
+        state: {
+          duplicateDraft: {
+            sourceItemId: loaded.id,
+            slug: duplicateSlug,
+            payload: duplicatePayload,
+          },
+        } satisfies DuplicateDraftLocationState,
       });
-      if (!result.itemId) throw new Error("A cópia não retornou um identificador válido.");
-      navigate(`/admin/paginas/${result.itemId}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Não foi possível duplicar a página.");
-      setBusy(false);
     }
   }
 
@@ -391,14 +437,14 @@ export default function AdminPageBuilderPage() {
           <p className="admin-eyebrow">SITE BUILDER · {contentType === "homepage" ? "HOMEPAGE" : "PÁGINA"}</p>
           <h1>{payload.title}</h1>
           <p className="admin-help">
-            Editor estruturado: todo bloco abaixo possui consumidor no frontend público.
+            Editor estruturado: todo bloco abaixo possui apresentação correspondente no site público.
           </p>
         </div>
         <div className="admin-heading-actions">
           {loaded && payload.contentType === "page" && can("edit") && (
             <button
               type="button"
-              onClick={() => void duplicatePage()}
+              onClick={duplicatePage}
               disabled={busy || visualManaged}
               title={
                 visualManaged
@@ -441,7 +487,11 @@ export default function AdminPageBuilderPage() {
         </span>
         <span>
           Contrato:{" "}
-          <strong>{validation.success ? "válido" : `${validation.error.issues.length} pendência(s)`}</strong>
+          <strong>
+            {validation.success && !formBindingIssue
+              ? "válido"
+              : `${(validation.success ? 0 : validation.error.issues.length) + (formBindingIssue ? 1 : 0)} pendência(s)`}
+          </strong>
         </span>
       </div>
 
@@ -463,7 +513,7 @@ export default function AdminPageBuilderPage() {
           <dt>Área selecionada e próxima ação</dt>
           <dd>
             {selectedBlock
-              ? `${blockLabels[selectedBlock.type]} · bloco ${selectedBlockIndex + 1} de ${payload.blocks.length} · ${selectedBlock.hidden ? "oculto no site" : "público após publicação"}`
+              ? `${PAGE_BLOCK_LABELS[selectedBlock.type]} · bloco ${selectedBlockIndex + 1} de ${payload.blocks.length} · ${selectedBlock.hidden ? "oculto no site" : "público após publicação"}`
               : "Nenhum bloco selecionado"}
             <br />
             {nextAction}
@@ -520,8 +570,27 @@ export default function AdminPageBuilderPage() {
             <legend>Identificação e template</legend>
             <label>
               Título administrativo e público
-              <input value={payload.title} onChange={(event) => update({ title: event.target.value })} />
+              <input
+                value={payload.title}
+                onChange={(event) => {
+                  const title = event.target.value;
+                  if (!loaded && contentType === "page" && !customAddress) {
+                    const generatedSlug = urlSegmentFromText(title);
+                    const path = generatedSlug ? `/${generatedSlug}` : "/";
+                    setSlug(generatedSlug);
+                    update({
+                      title,
+                      route: { ...payload.route, path },
+                      seo: { ...payload.seo, canonicalPath: path },
+                    });
+                  } else update({ title });
+                }}
+              />
             </label>
+            <p className="admin-help">
+              Endereço público gerado:{" "}
+              <output aria-label="Endereço público gerado">{payload.route.path || "/"}</output>
+            </p>
             <label>
               Resumo
               <textarea
@@ -529,17 +598,6 @@ export default function AdminPageBuilderPage() {
                 value={payload.summary ?? ""}
                 onChange={(event) => update({ summary: event.target.value || undefined })}
               />
-            </label>
-            <label>
-              Identificador da URL
-              <input
-                value={slug}
-                disabled={contentType === "homepage" || Boolean(loaded)}
-                onChange={(event) => setSlug(event.target.value)}
-              />
-              <small>
-                Use letras minúsculas, números e hífens. Depois da criação, a alteração é bloqueada.
-              </small>
             </label>
             <label>
               Tipo de página
@@ -595,8 +653,8 @@ export default function AdminPageBuilderPage() {
             {visualManaged ? (
               <div className="admin-notice" role="status">
                 <p>
-                  Os blocos e o hash visual desta página são versionados pelo Estúdio Visual. Metadados,
-                  relações, SEO e governança continuam editáveis aqui.
+                  Os blocos e a integridade visual desta página são versionados pelo Estúdio Visual.
+                  Metadados, relações, SEO e governança continuam editáveis aqui.
                 </p>
                 {loaded && visualStudioEnabled ? (
                   <Link to={`/admin/estudio-visual/${loaded.id}`}>Abrir Estúdio Visual</Link>
@@ -613,28 +671,28 @@ export default function AdminPageBuilderPage() {
                       value={blockType}
                       onChange={(event) => setBlockType(event.target.value as CmsPageBlock["type"])}
                     >
-                      {Object.entries(blockLabels)
-                        .filter(([value]) => legacyBlockTypes.has(value as CmsPageBlock["type"]))
-                        .map(([value, label]) => (
-                          <option value={value} key={value}>
-                            {label}
-                          </option>
-                        ))}
+                      {PAGE_BUILDER_BLOCK_TYPES.map((type) => (
+                        <option value={type} key={type}>
+                          {PAGE_BLOCK_LABELS[type]}
+                        </option>
+                      ))}
                     </select>
                   </label>
                   <button
                     type="button"
                     onClick={() => {
-                      const block = createPageBlock(blockType, {
+                      const block = createEmptyPageBlock(blockType, {
                         assetId: media[0]?.id,
                         relatedItemId: relations[0]?.id,
+                        form: forms[0],
                       });
                       update({ blocks: [...payload.blocks, block] });
                       setSelectedBlockId(block.id);
                     }}
                     disabled={
                       (pageBlockReferenceRequirement(blockType) === "media" && media.length === 0) ||
-                      (pageBlockReferenceRequirement(blockType) === "relation" && relations.length === 0)
+                      (pageBlockReferenceRequirement(blockType) === "relation" && relations.length === 0) ||
+                      (pageBlockReferenceRequirement(blockType) === "form" && forms.length === 0)
                     }
                   >
                     <Plus size={16} /> Adicionar ao final
@@ -658,13 +716,18 @@ export default function AdminPageBuilderPage() {
                         total={payload.blocks.length}
                         media={media}
                         relations={relations.filter((item) => item.id !== loaded?.id)}
+                        forms={forms}
                         onChange={(next) =>
                           update({
                             blocks: payload.blocks.map((item) => (item.id === block.id ? next : item)),
                           })
                         }
                         onRemove={() => {
-                          if (!window.confirm(`Remover o bloco “${blockLabels[block.type]}” desta página?`))
+                          if (
+                            !window.confirm(
+                              `Remover o bloco “${PAGE_BLOCK_LABELS[block.type]}” desta página?`,
+                            )
+                          )
                             return;
                           update({ blocks: payload.blocks.filter((item) => item.id !== block.id) });
                           setSelectedBlockId(payload.blocks.find((item) => item.id !== block.id)?.id ?? null);
@@ -739,17 +802,25 @@ export default function AdminPageBuilderPage() {
           <fieldset>
             <legend>URL, indexação e retirada</legend>
             <label>
-              Caminho público
+              Endereço público
               <input
                 value={payload.route.path}
                 disabled={contentType === "homepage"}
-                onChange={(event) =>
+                onChange={(event) => {
+                  const path = event.target.value;
+                  if (!loaded && contentType === "page") {
+                    setCustomAddress(true);
+                    setSlug(urlSegmentFromText(path.split("/").filter(Boolean).at(-1) ?? ""));
+                  }
                   update({
-                    route: { ...payload.route, path: event.target.value },
-                    seo: { ...payload.seo, canonicalPath: event.target.value },
-                  })
-                }
+                    route: { ...payload.route, path },
+                    seo: { ...payload.seo, canonicalPath: path },
+                  });
+                }}
               />
+              <small>
+                Gerado pelo título. Altere somente quando precisar de um endereço institucional específico.
+              </small>
             </label>
             <label>
               Meta title
@@ -1142,21 +1213,26 @@ export default function AdminPageBuilderPage() {
         )}
 
         {activeTab !== "workflow" && can("edit") && (
-          <button className="admin-button" disabled={busy || !validation.success}>
+          <button
+            className="admin-button"
+            disabled={busy || !validation.success || Boolean(formBindingIssue)}
+          >
             <Save size={16} /> {loaded ? "Salvar rascunho" : "Criar página"}
           </button>
         )}
       </form>
 
-      {!validation.success && (
+      {(!validation.success || formBindingIssue) && (
         <aside className="admin-contract-issues" aria-live="polite">
           <h2>Pendências antes de salvar</h2>
           <ul>
-            {validation.error.issues.slice(0, 12).map((issue) => (
-              <li key={`${issue.path.join(".")}-${issue.message}`}>
-                {issue.path.join(".")} — {issue.message}
-              </li>
-            ))}
+            {!validation.success &&
+              validation.error.issues
+                .slice(0, 12)
+                .map((issue) => (
+                  <li key={`${issue.path.join(".")}-${issue.message}`}>{humanValidationIssue(issue)}</li>
+                ))}
+            {formBindingIssue && <li>Bloco de formulário — {formBindingIssue}</li>}
           </ul>
         </aside>
       )}

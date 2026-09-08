@@ -3,10 +3,11 @@ import {
   type CmsProductContent,
   type CmsProductFieldVisibility,
 } from "@/shared/contracts/cms-content";
+import { humanValidationMessage, humanValidationPath } from "./validation-field-label";
 
 export const BULK_IMPORT_LIMIT = 500;
 export const BULK_IMPORT_MAX_BYTES = 5 * 1024 * 1024;
-export const BULK_TEMPLATE_VERSION = "GAIATEC-CMS-PRODUTOS-v1";
+export const BULK_TEMPLATE_VERSION = "GAIATEC-CMS-PRODUTOS-v2";
 
 export type BulkTableRow = Record<string, string>;
 export type BulkWorkbookTables = {
@@ -16,23 +17,69 @@ export type BulkWorkbookTables = {
 };
 export type BulkImportError = { sheet: string; row: number; field: string; message: string };
 export type BulkProductCommandRow = { sourceRow: number; slug: string; payload: CmsProductContent };
+export type BulkVocabularyOption = {
+  id: string;
+  slug: string;
+  label: string;
+  active: boolean;
+  sort_order?: number;
+};
+export type BulkVocabularyList = {
+  list_key: string;
+  label: string;
+  active: boolean;
+  options: BulkVocabularyOption[];
+};
+
+export const bulkControlledDimensions = [
+  {
+    column: "categoria_produto",
+    listKey: "product.category",
+    payloadKey: "productCategory",
+    label: "Categoria do produto",
+  },
+  {
+    column: "aplicacao_grandeza",
+    listKey: "product.application_magnitude",
+    payloadKey: "applicationMagnitude",
+    label: "Aplicação ou grandeza",
+  },
+  {
+    column: "tecnologia",
+    listKey: "product.technology",
+    payloadKey: "technology",
+    label: "Tecnologia",
+  },
+  {
+    column: "instalacao_operacao",
+    listKey: "product.installation_operation",
+    payloadKey: "installationOperation",
+    label: "Instalação ou operação",
+  },
+  {
+    column: "elemento_monitorado",
+    listKey: "product.monitored_element",
+    payloadKey: "monitoredElement",
+    label: "Elemento monitorado",
+  },
+] as const;
+
+type BulkControlledPayloadKey = (typeof bulkControlledDimensions)[number]["payloadKey"];
+type BulkControlledRefs = Record<BulkControlledPayloadKey, { id: string; slug: string; label: string }>;
 
 export const bulkRequiredHeaders = {
   products: [
     "template_versao",
-    "slug",
+    "referencia_produto",
     "titulo",
     "marca",
-    "marca_slug",
     "fabricante",
-    "fabricante_slug",
     "linha",
-    "linha_slug",
-    "categoria_produto_id",
-    "aplicacao_grandeza_id",
-    "tecnologia_id",
-    "instalacao_operacao_id",
-    "elemento_monitorado_id",
+    "categoria_produto",
+    "aplicacao_grandeza",
+    "tecnologia",
+    "instalacao_operacao",
+    "elemento_monitorado",
     "funcao",
     "descricao_curta",
     "proposta_valor",
@@ -42,8 +89,15 @@ export const bulkRequiredHeaders = {
     "revisor_comercial",
     "revisor_editorial",
   ],
-  models: ["produto_slug", "modelo_comercial", "referencia_fabricante", "sku", "variante", "codigo_variante"],
-  specifications: ["produto_slug", "chave", "rotulo", "tipo", "valor"],
+  models: [
+    "produto_referencia",
+    "modelo_comercial",
+    "referencia_fabricante",
+    "sku",
+    "variante",
+    "codigo_variante",
+  ],
+  specifications: ["produto_referencia", "chave", "rotulo", "tipo", "valor"],
 } as const;
 
 const splitList = (value: string) =>
@@ -64,6 +118,73 @@ const yes = (value: string, fallback = false) => {
 const optional = (value: string) => (value.trim() ? value.trim() : undefined);
 const decimal = (value: string) =>
   Number(value.includes(",") && !value.includes(".") ? value.replace(",", ".") : value);
+
+const normalizedLookup = (value: string) =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase("pt-BR");
+
+const slugify = (value: string) =>
+  normalizedLookup(value)
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+function productSlug(reference: string, title: string) {
+  const result = slugify(`${reference} ${title}`).slice(0, 160).replace(/-+$/g, "");
+  return result;
+}
+
+export function bulkVocabularyOptionDisplay(option: Pick<BulkVocabularyOption, "label" | "slug">) {
+  return `${option.label} [${option.slug}]`;
+}
+
+export function missingBulkVocabularyLabels(vocabularies: BulkVocabularyList[]) {
+  return bulkControlledDimensions
+    .filter((dimension) => {
+      const list = vocabularies.find(
+        (candidate) => candidate.list_key === dimension.listKey && candidate.active,
+      );
+      return !list?.options.some((option) => option.active);
+    })
+    .map((dimension) => dimension.label);
+}
+
+function resolveControlledTerm(
+  value: string,
+  dimension: (typeof bulkControlledDimensions)[number],
+  vocabularies: BulkVocabularyList[],
+): { ok: true; value: { id: string; slug: string; label: string } } | { ok: false; error: string } {
+  const list = vocabularies.find((candidate) => candidate.list_key === dimension.listKey && candidate.active);
+  const options = (list?.options ?? []).filter((option) => option.active);
+  const lookup = normalizedLookup(value);
+  const matches = options.filter((option) =>
+    [option.label, option.slug, bulkVocabularyOptionDisplay(option)].some(
+      (candidate) => normalizedLookup(candidate) === lookup,
+    ),
+  );
+  if (matches.length === 1) {
+    const [match] = matches;
+    return { ok: true, value: { id: match.id, slug: match.slug, label: match.label } };
+  }
+  const examples = options
+    .slice()
+    .sort((left, right) => (left.sort_order ?? 0) - (right.sort_order ?? 0))
+    .slice(0, 3)
+    .map(bulkVocabularyOptionDisplay)
+    .join(", ");
+  return {
+    ok: false,
+    error:
+      matches.length > 1
+        ? `Nome ambíguo em ${dimension.label}. Use a opção completa com o código entre colchetes.`
+        : options.length
+          ? `Opção não encontrada em ${dimension.label}.${examples ? ` Exemplos válidos: ${examples}.` : ""}`
+          : `${dimension.label} está indisponível. Atualize as listas mestras e tente novamente.`,
+  };
+}
 
 function specificationValue(type: string, value: string) {
   if (type === "number") return decimal(value);
@@ -93,21 +214,24 @@ function fieldVisibility(row: BulkTableRow): CmsProductFieldVisibility {
   };
 }
 
-export function buildBulkProductRows(tables: BulkWorkbookTables) {
+export function buildBulkProductRows(tables: BulkWorkbookTables, vocabularies: BulkVocabularyList[]) {
   const errors: BulkImportError[] = [];
   const rows: BulkProductCommandRow[] = [];
   if (tables.products.length > BULK_IMPORT_LIMIT)
     errors.push({
       sheet: "Produtos",
       row: 1,
-      field: "slug",
+      field: "referencia_produto",
       message: `Limite de ${BULK_IMPORT_LIMIT} produtos por lote.`,
     });
 
+  const references = new Set<string>();
   const slugs = new Set<string>();
   tables.products.slice(0, BULK_IMPORT_LIMIT).forEach((product, index) => {
     const sourceRow = index + 2;
-    const slug = product.slug?.trim() ?? "";
+    const reference = product.referencia_produto?.trim() ?? "";
+    const referenceKey = normalizedLookup(reference);
+    const slug = productSlug(reference, product.titulo?.trim() ?? "");
     if (product.template_versao !== BULK_TEMPLATE_VERSION)
       errors.push({
         sheet: "Produtos",
@@ -115,25 +239,63 @@ export function buildBulkProductRows(tables: BulkWorkbookTables) {
         field: "template_versao",
         message: "Versão da planilha não reconhecida.",
       });
+    if (!reference)
+      errors.push({
+        sheet: "Produtos",
+        row: sourceRow,
+        field: "referencia_produto",
+        message: "Informe a referência comercial, código ERP ou referência do fabricante.",
+      });
+    if (reference.length > 120)
+      errors.push({
+        sheet: "Produtos",
+        row: sourceRow,
+        field: "referencia_produto",
+        message: "A referência comercial deve ter no máximo 120 caracteres.",
+      });
+    if (references.has(referenceKey))
+      errors.push({
+        sheet: "Produtos",
+        row: sourceRow,
+        field: "referencia_produto",
+        message: "Referência comercial duplicada no lote.",
+      });
+    references.add(referenceKey);
+    if (!slug)
+      errors.push({
+        sheet: "Produtos",
+        row: sourceRow,
+        field: "referencia_produto",
+        message: "A referência e o título precisam conter ao menos uma letra ou número.",
+      });
     if (slugs.has(slug))
-      errors.push({ sheet: "Produtos", row: sourceRow, field: "slug", message: "Slug duplicado no lote." });
+      errors.push({
+        sheet: "Produtos",
+        row: sourceRow,
+        field: "referencia_produto",
+        message: "A referência gera o mesmo endereço de outro produto no lote.",
+      });
     slugs.add(slug);
 
-    const modelRows = tables.models.filter((row) => row.produto_slug?.trim() === slug);
-    const specificationRows = tables.specifications.filter((row) => row.produto_slug?.trim() === slug);
+    const modelRows = tables.models.filter(
+      (row) => normalizedLookup(row.produto_referencia ?? "") === referenceKey,
+    );
+    const specificationRows = tables.specifications.filter(
+      (row) => normalizedLookup(row.produto_referencia ?? "") === referenceKey,
+    );
     if (!modelRows.length)
       errors.push({
         sheet: "Modelos",
         row: 1,
-        field: "produto_slug",
-        message: `Nenhum modelo informado para ${slug || `linha ${sourceRow}`}.`,
+        field: "produto_referencia",
+        message: `Nenhum modelo informado para ${reference || `linha ${sourceRow}`}.`,
       });
     if (!specificationRows.length)
       errors.push({
         sheet: "Especificacoes",
         row: 1,
-        field: "produto_slug",
-        message: `Nenhuma especificação informada para ${slug || `linha ${sourceRow}`}.`,
+        field: "produto_referencia",
+        message: `Nenhuma especificação informada para ${reference || `linha ${sourceRow}`}.`,
       });
 
     const modelGroups = new Map<string, BulkTableRow[]>();
@@ -180,28 +342,23 @@ export function buildBulkProductRows(tables: BulkWorkbookTables) {
         : product.fonte_tipo === "empresa_oficial"
           ? "official_company"
           : "owner_authored";
-    const controlledIds = {
-      productCategory: product.categoria_produto_id?.trim() ?? "",
-      applicationMagnitude: product.aplicacao_grandeza_id?.trim() ?? "",
-      technology: product.tecnologia_id?.trim() ?? "",
-      installationOperation: product.instalacao_operacao_id?.trim() ?? "",
-      monitoredElement: product.elemento_monitorado_id?.trim() ?? "",
-    };
-    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    Object.entries(controlledIds).forEach(([field, id]) => {
-      if (!uuidPattern.test(id))
+    const controlledRefs = {} as BulkControlledRefs;
+    let controlledValid = true;
+    for (const dimension of bulkControlledDimensions) {
+      const resolved = resolveControlledTerm(product[dimension.column] ?? "", dimension, vocabularies);
+      if (!resolved.ok) {
+        controlledValid = false;
         errors.push({
           sheet: "Produtos",
           row: sourceRow,
-          field,
-          message: "Informe o UUID de uma opção ativa da lista mestra correspondente.",
+          field: dimension.column,
+          message: resolved.error,
         });
-    });
-    const unresolved = (id: string) => ({
-      id,
-      slug: "resolvido-no-servidor",
-      label: "Resolvido no servidor",
-    });
+      } else {
+        controlledRefs[dimension.payloadKey] = resolved.value;
+      }
+    }
+    if (!controlledValid) return;
     const payloadCandidate = {
       schemaVersion: 1,
       consumerId: "cms.catalog-product.v1",
@@ -210,15 +367,15 @@ export function buildBulkProductRows(tables: BulkWorkbookTables) {
       fieldVisibility: fieldVisibility(product),
       title: product.titulo?.trim() ?? "",
       ...(optional(product.resumo ?? "") ? { summary: optional(product.resumo ?? "") } : {}),
-      brand: { name: product.marca?.trim() ?? "", slug: product.marca_slug?.trim() ?? "" },
+      brand: { name: product.marca?.trim() ?? "", slug: slugify(product.marca ?? "") },
       manufacturer: {
         name: product.fabricante?.trim() ?? "",
-        slug: product.fabricante_slug?.trim() ?? "",
+        slug: slugify(product.fabricante ?? ""),
         ...(optional(product.fabricante_url ?? "")
           ? { officialUrl: optional(product.fabricante_url ?? "") }
           : {}),
       },
-      productLine: { name: product.linha?.trim() ?? "", slug: product.linha_slug?.trim() ?? "" },
+      productLine: { name: product.linha?.trim() ?? "", slug: slugify(product.linha ?? "") },
       classification: {
         segment: "Resolvido no servidor",
         category: "Resolvido no servidor",
@@ -228,11 +385,11 @@ export function buildBulkProductRows(tables: BulkWorkbookTables) {
         family: "Resolvido no servidor",
       },
       controlledClassification: {
-        productCategory: unresolved(controlledIds.productCategory),
-        applicationMagnitude: unresolved(controlledIds.applicationMagnitude),
-        technology: unresolved(controlledIds.technology),
-        installationOperation: unresolved(controlledIds.installationOperation),
-        monitoredElement: unresolved(controlledIds.monitoredElement),
+        productCategory: controlledRefs.productCategory,
+        applicationMagnitude: controlledRefs.applicationMagnitude,
+        technology: controlledRefs.technology,
+        installationOperation: controlledRefs.installationOperation,
+        monitoredElement: controlledRefs.monitoredElement,
       },
       commercial: {
         shortDescription: product.descricao_curta?.trim() ?? "",
@@ -288,8 +445,8 @@ export function buildBulkProductRows(tables: BulkWorkbookTables) {
         errors.push({
           sheet: "Produtos",
           row: sourceRow,
-          field: issue.path.join("."),
-          message: issue.message,
+          field: humanValidationPath(issue.path),
+          message: humanValidationMessage(issue),
         }),
       );
       return;
@@ -297,22 +454,22 @@ export function buildBulkProductRows(tables: BulkWorkbookTables) {
     rows.push({ sourceRow, slug, payload: parsed.data });
   });
 
-  const known = new Set(tables.products.map((row) => row.slug?.trim()));
+  const known = new Set(tables.products.map((row) => normalizedLookup(row.referencia_produto ?? "")));
   (["Modelos", tables.models] as const)[1].forEach((row, index) => {
-    if (!known.has(row.produto_slug?.trim()))
+    if (!known.has(normalizedLookup(row.produto_referencia ?? "")))
       errors.push({
         sheet: "Modelos",
         row: index + 2,
-        field: "produto_slug",
+        field: "produto_referencia",
         message: "Produto não existe na aba Produtos.",
       });
   });
   (["Especificacoes", tables.specifications] as const)[1].forEach((row, index) => {
-    if (!known.has(row.produto_slug?.trim()))
+    if (!known.has(normalizedLookup(row.produto_referencia ?? "")))
       errors.push({
         sheet: "Especificacoes",
         row: index + 2,
-        field: "produto_slug",
+        field: "produto_referencia",
         message: "Produto não existe na aba Produtos.",
       });
   });

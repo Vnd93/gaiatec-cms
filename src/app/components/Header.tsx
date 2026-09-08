@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Search, Phone, ChevronRight, Menu, X, ChevronDown, ArrowRight } from "lucide-react";
-import type { CmsNavigationContent } from "@/shared/contracts/cms-content";
 import { usePublishedSiteShell } from "@/public/site-shell-context";
-import { autocompletePublished } from "@/public/catalog-api";
+import { autocompletePublished, type PublicNavigationItem } from "@/public/catalog-api";
+import { publishedNavigationItems } from "@/public/site-shell-navigation";
 import { MegaMenuPanel } from "./header/MegaMenuPanel";
 
 /** Itens da nav que renderizam o painel V2 (IFM-style) ao invés do dropdown legado. */
@@ -28,36 +28,26 @@ function externalLinkProps(href?: string, newTab = false) {
     : {};
 }
 
-function navigationTree(items: CmsNavigationContent["items"]): NavItem[] {
-  const visible = items.filter((item) => item.visible && item.location === "header");
-  const byParent = new Map<string | null, typeof visible>();
-  for (const item of visible) {
-    const siblings = byParent.get(item.parentId) ?? [];
-    siblings.push(item);
-    byParent.set(item.parentId, siblings);
-  }
-  const build = (parentId: string | null): NavItem[] =>
-    (byParent.get(parentId) ?? [])
-      .sort((left, right) => left.order - right.order)
-      .map((item) => {
-        const children = build(item.id);
-        return {
-          id: item.id,
-          label: item.label,
-          href: item.href,
-          newTab: item.newTab,
-          children: children.length ? children : undefined,
-        };
-      });
-  return build(null);
+function navigationTree(items: PublicNavigationItem[], parentKey = "nav"): NavItem[] {
+  return items
+    .filter((item) => item.location === "header")
+    .map((item, index) => ({
+      id: `${parentKey}-${index + 1}`,
+      label: item.label,
+      href: item.href,
+      newTab: item.newTab,
+      children: item.children?.length
+        ? navigationTree(item.children, `${parentKey}-${index + 1}`)
+        : undefined,
+    }));
 }
 
 export function Header() {
-  const { navigation, settings } = usePublishedSiteShell();
+  const { navigation, settings, loading } = usePublishedSiteShell();
   const effectiveNavItems = useMemo<NavItem[]>(() => {
-    if (!navigation) return [];
-    return navigationTree(navigation.items);
+    return navigationTree(publishedNavigationItems(navigation?.items));
   }, [navigation]);
+  const navigationUnavailable = !loading && effectiveNavItems.length === 0;
   const whatsappDigits = settings?.company.whatsapp.replace(/\D/g, "") ?? "";
   const whatsappHref = whatsappDigits
     ? `https://wa.me/${whatsappDigits.startsWith("55") ? whatsappDigits : `55${whatsappDigits}`}`
@@ -98,7 +88,7 @@ export function Header() {
           setSearchResults(
             result.items.slice(0, 8).map((item) => ({
               href: item.path,
-              category: item.content_type,
+              category: item.kind,
               label: item.payload.title,
             })),
           );
@@ -633,7 +623,7 @@ export function Header() {
                     >
                       {searchLoading ? (
                         <div style={{ padding: "16px 20px", color: "rgba(255,255,255,0.5)", fontSize: 14 }}>
-                          Buscando na projeção publicada…
+                          Buscando no catálogo e no conteúdo…
                         </div>
                       ) : searchResults.length === 0 ? (
                         <div style={{ padding: "16px 20px", color: "rgba(255,255,255,0.5)", fontSize: 14 }}>
@@ -781,6 +771,20 @@ export function Header() {
                     </a>
                   </li>
                 ))}
+                {navigationUnavailable && (
+                  <li>
+                    <span
+                      role="status"
+                      style={{
+                        marginLeft: 24,
+                        color: scrolled ? "#475569" : "rgba(255,255,255,0.72)",
+                        fontSize: 13,
+                      }}
+                    >
+                      Navegação temporariamente indisponível.
+                    </span>
+                  </li>
+                )}
               </ul>
             </nav>
 
@@ -969,6 +973,11 @@ export function Header() {
           )}
 
           <div style={{ marginTop: 16 }}>
+            {navigationUnavailable && (
+              <p role="status" style={{ padding: "16px 24px", color: "rgba(255,255,255,0.72)" }}>
+                Navegação temporariamente indisponível.
+              </p>
+            )}
             {effectiveNavItems.map((item, i) => (
               <div key={item.label} style={{ borderTop: "1px solid rgba(255,255,255,0.1)" }}>
                 {item.children ? (

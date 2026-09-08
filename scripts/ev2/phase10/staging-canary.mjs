@@ -394,10 +394,11 @@ try {
     operatorCapability.json.source + "/" + reviewerCapability.json.source,
   );
   check(
-    "external_provider_disabled",
-    operatorCapability.json.providerMode === "synthetic" &&
-      operatorCapability.json.externalProviderEnabled === false &&
-      operatorCapability.json.externalProviderReady === false &&
+    "approved_provider_ready",
+    operatorCapability.json.providerMode === "openrouter" &&
+      operatorCapability.json.providerModel === "nvidia/nemotron-3.5-lightning:free" &&
+      operatorCapability.json.externalProviderEnabled === true &&
+      operatorCapability.json.externalProviderReady === true &&
       operatorCapability.json.aiExecute === false &&
       operatorCapability.json.realDataAllowed === false,
     JSON.stringify(operatorCapability.json),
@@ -764,8 +765,8 @@ console.log(
       candidateSha: expectedSha,
       checks: checks.length,
       passed: checks.filter((item) => item.result === "PASS").length,
-      providerMode: "synthetic",
-      externalProviderCalls: 0,
+      providerMode: "openrouter",
+      externalProviderCalls: "audited-per-request",
       realDataUsed: false,
       productionMutations: 0,
       stableState: finalEvidence,

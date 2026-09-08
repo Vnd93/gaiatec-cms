@@ -155,6 +155,8 @@ export const Ev2PimProductInputSchema = z
   })
   .strict()
   .superRefine((product, context) => {
+    const normalizeIdentity = (value: string) => value.toLowerCase();
+    const normalizeNaturalKey = (value: string) => value.trim().toLocaleLowerCase("pt-BR");
     const primaryCount = product.models.filter((model) => model.primary && model.status === "active").length;
     if (primaryCount !== 1) {
       context.addIssue({
@@ -163,34 +165,90 @@ export const Ev2PimProductInputSchema = z
         message: "exactly one active model must be primary",
       });
     }
-    const modelIds = product.models.map((model) => model.id);
-    const variantIds = product.models.flatMap((model) => model.variants.map((variant) => variant.id));
-    if (new Set(modelIds).size !== modelIds.length || new Set(variantIds).size !== variantIds.length) {
+    const modelIds = product.models.map((model) => normalizeIdentity(model.id));
+    const variantIds = product.models.flatMap((model) =>
+      model.variants.map((variant) => normalizeIdentity(variant.id)),
+    );
+    if (
+      new Set(modelIds).size !== modelIds.length ||
+      new Set(variantIds).size !== variantIds.length ||
+      modelIds.some((modelId) => variantIds.includes(modelId))
+    ) {
       context.addIssue({ code: "custom", path: ["models"], message: "PIM identities must be unique" });
+    }
+    for (const [modelIndex, model] of product.models.entries()) {
+      const variantCodes = model.variants
+        .map((variant) => normalizeNaturalKey(variant.code ?? ""))
+        .filter(Boolean);
+      if (new Set(variantCodes).size !== variantCodes.length) {
+        context.addIssue({
+          code: "custom",
+          path: ["models", modelIndex, "variants"],
+          message: "variant codes must be unique within a model",
+        });
+      }
     }
     for (const [key, entries] of [
       ["attributes", product.attributes],
       ["externalIdentifiers", product.externalIdentifiers],
       ["provenance", product.provenance],
     ] as const) {
-      const ids = entries.map((entry) => entry.id);
+      const ids = entries.map((entry) => normalizeIdentity(entry.id));
       if (new Set(ids).size !== ids.length) {
         context.addIssue({ code: "custom", path: [key], message: "PIM identities must be unique" });
       }
     }
-    const ownerIds = new Set<string>([
-      product.id,
-      ...product.models.map((model) => model.id),
-      ...product.models.flatMap((model) => model.variants.map((variant) => variant.id)),
-    ]);
+    const productId = normalizeIdentity(product.id);
+    const modelIdSet = new Set(modelIds);
+    const variantIdSet = new Set(variantIds);
+    const attributeIdentities = new Set<string>();
     for (const [index, value] of product.attributes.entries()) {
-      if (!ownerIds.has(value.ownerId)) {
+      const ownerId = normalizeIdentity(value.ownerId);
+      const ownerExists =
+        (value.scope === "product" && ownerId === productId) ||
+        (value.scope === "model" && modelIdSet.has(ownerId)) ||
+        (value.scope === "variant" && variantIdSet.has(ownerId));
+      if (!ownerExists) {
         context.addIssue({
           code: "custom",
           path: ["attributes", index, "ownerId"],
           message: "unknown owner",
         });
       }
+      const identity = `${normalizeIdentity(value.definitionId)}:${value.scope}:${ownerId}`;
+      if (attributeIdentities.has(identity)) {
+        context.addIssue({
+          code: "custom",
+          path: ["attributes", index],
+          message: "attribute definition and owner must be unique",
+        });
+      }
+      attributeIdentities.add(identity);
+    }
+    const externalIdentityKeys = new Set<string>();
+    for (const [index, identifier] of product.externalIdentifiers.entries()) {
+      const ownerId = normalizeIdentity(identifier.ownerId);
+      const ownerExists =
+        (identifier.ownerType === "product" && ownerId === productId) ||
+        (identifier.ownerType === "model" && modelIdSet.has(ownerId)) ||
+        (identifier.ownerType === "variant" && variantIdSet.has(ownerId)) ||
+        identifier.ownerType === "sku";
+      if (!ownerExists) {
+        context.addIssue({
+          code: "custom",
+          path: ["externalIdentifiers", index, "ownerId"],
+          message: "unknown owner",
+        });
+      }
+      const identity = `${identifier.kind}:${normalizeNaturalKey(identifier.value)}`;
+      if (externalIdentityKeys.has(identity)) {
+        context.addIssue({
+          code: "custom",
+          path: ["externalIdentifiers", index, "value"],
+          message: "external identifiers must be unique",
+        });
+      }
+      externalIdentityKeys.add(identity);
     }
   });
 
@@ -370,6 +428,25 @@ export const Ev2PimAttributeCommandSchema = z.discriminatedUnion("action", [
 export const Ev2PimAttributeCatalogResultSchema = z
   .object({
     ...ResponseEnvelope,
+    controlledCategory: z
+      .object({
+        id: UuidSchema,
+        slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+        label: z.string().min(1).max(160),
+        listKey: z.literal("product.category"),
+      })
+      .strict()
+      .nullable()
+      .optional(),
+    masterCategory: z
+      .object({
+        id: UuidSchema,
+        name: z.string().min(1).max(180),
+        entityType: z.literal("category"),
+      })
+      .strict()
+      .nullable()
+      .optional(),
     attributeSet: Ev2PimAttributeSetSchema.nullable(),
     definitions: z.array(Ev2PimAttributeDefinitionSchema),
     units: z.array(Ev2PimUnitSchema),

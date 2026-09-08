@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
 import { GITHUB_SOLE_MAINTAINER, validateProductionReadinessControls } from "../phase16/readiness-lib.mjs";
+import {
+  RELEASE_EVIDENCE_REPOSITORY,
+  STAGING_WORKFLOW_NAME,
+  STAGING_WORKFLOW_PATH,
+} from "./production-prerequisite-gate-lib.mjs";
 
 export const FULL_SHA_PATTERN = /^[a-f0-9]{40}$/;
 export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -44,6 +49,9 @@ export const HISTORICAL_G16_CSP_EVIDENCE_REFERENCE =
 export const HISTORICAL_G16_CSP_CANDIDATE_SHA = "e52b25d903251cf538918d89049a58524c3c9911";
 export const HISTORICAL_G16_CSP_EVIDENCE_SHA256 =
   "8edf047f0eb5da2412c7246978ef831f075e9ddf875ca4e360b421e55800e9bc";
+const HISTORICAL_G12_CANDIDATE_SHA = "e52b25d903251cf538918d89049a58524c3c9911";
+const HISTORICAL_G12_EVIDENCE_FILE = "docs/ev2/fase-12/evidencias/G12_CANARY_e52b25d_2026-09-05.json";
+const HISTORICAL_G12_EVIDENCE_SHA256 = "88411f10217bdcdf08395adea2f73412de38163c2e3a80ef0e8f9a7d41b34299";
 export const HISTORICAL_DPO_EVIDENCE_REFERENCE =
   "docs/ev2/fase-16/REGISTRO_DECLARACAO_GOVERNANCA_DPO_RISCO_2026-09-05.md";
 export const CANONICAL_DPO_DOCUMENT_PATH =
@@ -105,13 +113,24 @@ export function resolveCspEvidenceBinding(control) {
   };
 }
 
-export function validateCspEvidenceBinding(control, evidence, { reportSha256, expectedPolicySha256 } = {}) {
+export function validateCspEvidenceBinding(
+  control,
+  evidence,
+  { reportSha256, expectedPolicySha256, expectedAdminPolicySha256 } = {},
+) {
   const violations = [];
   const binding = resolveCspEvidenceBinding(control);
+  const embeddedPolicyRequired = binding?.historicalFallback !== true;
+  const expectedAdminPolicy = expectedAdminPolicySha256 ?? expectedPolicySha256;
   if (!binding) violations.push("csp_evidence_reference_or_digest_invalid");
   else if (reportSha256 !== binding.evidenceSha256) violations.push("csp_evidence_digest_mismatch");
   if (!SHA256_PATTERN.test(expectedPolicySha256 ?? "") || control?.policySha256 !== expectedPolicySha256)
     violations.push("csp_policy_digest_mismatch");
+  if (
+    !SHA256_PATTERN.test(expectedAdminPolicy ?? "") ||
+    (embeddedPolicyRequired && control?.adminPolicySha256 !== expectedAdminPolicy)
+  )
+    violations.push("csp_admin_policy_digest_mismatch");
   if (evidence?.schemaVersion !== 1) violations.push("csp_evidence_schema_invalid");
   if (evidence?.event !== "ev2.phase16.csp.browser-canary") violations.push("csp_evidence_event_invalid");
   if (!CSP_CANARY_ORIGIN_PATTERN.test(evidence?.origin ?? "")) violations.push("csp_evidence_origin_invalid");
@@ -139,16 +158,25 @@ export function validateCspEvidenceBinding(control, evidence, { reportSha256, ex
       violations.push("csp_evidence_route_violations_present");
   }
 
-  const embeddedPolicyRequired = binding?.historicalFallback !== true;
   if (
     (embeddedPolicyRequired || evidence?.policySha256 !== undefined) &&
     evidence?.policySha256 !== expectedPolicySha256
   )
     violations.push("csp_evidence_policy_digest_mismatch");
+  if (
+    (embeddedPolicyRequired || evidence?.adminPolicySha256 !== undefined) &&
+    evidence?.adminPolicySha256 !==
+      (binding?.historicalFallback === true ? expectedPolicySha256 : expectedAdminPolicy)
+  )
+    violations.push("csp_evidence_admin_policy_digest_mismatch");
   for (const route of routes) {
+    const expectedRoutePolicy =
+      binding?.historicalFallback === true || route?.path !== "/admin/login"
+        ? expectedPolicySha256
+        : expectedAdminPolicy;
     if (
       (embeddedPolicyRequired || route?.policySha256 !== undefined) &&
-      route?.policySha256 !== expectedPolicySha256
+      route?.policySha256 !== expectedRoutePolicy
     )
       violations.push("csp_evidence_route_policy_digest_mismatch");
   }
@@ -344,7 +372,7 @@ export function validateApprovalRecord(
   { expectedSha, expectedEnvironment, expectedChangeReference, now } = {},
 ) {
   const violations = [];
-  if (record?.schemaVersion !== 2) violations.push("schema_version_invalid");
+  if (![2, 3].includes(record?.schemaVersion)) violations.push("schema_version_invalid");
   if (record?.gate !== "G12") violations.push("gate_invalid");
   if (record?.decision !== "approved") violations.push("decision_not_approved");
   if (!isFullSha(record?.candidateSha)) violations.push("candidate_sha_invalid");
@@ -379,6 +407,42 @@ export function validateApprovalRecord(
     violations.push("g12_canary_data_boundary_invalid");
   if (record?.g12Evidence?.productionMutations !== 0)
     violations.push("g12_canary_production_boundary_invalid");
+  if (record?.schemaVersion === 3) {
+    const staging = record?.g12Evidence;
+    if (staging?.repository !== RELEASE_EVIDENCE_REPOSITORY)
+      violations.push("g12_staging_repository_invalid");
+    if (staging?.workflow !== STAGING_WORKFLOW_PATH || staging?.workflowName !== STAGING_WORKFLOW_NAME)
+      violations.push("g12_staging_workflow_invalid");
+    if (!/^[1-9]\d{5,19}$/.test(staging?.runId ?? "") || !Number.isSafeInteger(staging?.runAttempt))
+      violations.push("g12_staging_run_invalid");
+    if (
+      staging?.event !== "workflow_dispatch" ||
+      staging?.ref !== "refs/heads/main" ||
+      staging?.headSha !== record?.candidateSha
+    )
+      violations.push("g12_staging_candidate_binding_invalid");
+    if (!isIsoDate(staging?.completedAt)) violations.push("g12_staging_completed_at_invalid");
+    if (staging?.artifactName !== `staging-${record?.candidateSha}`)
+      violations.push("g12_staging_artifact_name_invalid");
+    if (!/^[1-9]\d{5,19}$/.test(staging?.artifactId ?? ""))
+      violations.push("g12_staging_artifact_id_invalid");
+    if (!/^sha256:[a-f0-9]{64}$/.test(staging?.artifactDigest ?? ""))
+      violations.push("g12_staging_artifact_digest_invalid");
+    if (
+      staging?.candidateArtifactName !==
+      `staging-candidate-${record?.candidateSha}-${staging?.runId}-${staging?.runAttempt}`
+    )
+      violations.push("g12_staging_candidate_artifact_name_invalid");
+    if (!/^[1-9]\d{5,19}$/.test(staging?.candidateArtifactId ?? ""))
+      violations.push("g12_staging_candidate_artifact_id_invalid");
+    if (!/^sha256:[a-f0-9]{64}$/.test(staging?.candidateArtifactDigest ?? ""))
+      violations.push("g12_staging_candidate_artifact_digest_invalid");
+    if (
+      !SHA256_PATTERN.test(staging?.candidateArchiveSha256 ?? "") ||
+      !SHA256_PATTERN.test(staging?.candidateTreeSha256 ?? "")
+    )
+      violations.push("g12_staging_candidate_seal_invalid");
+  }
 
   const operationalGovernance = record?.operationalGovernance;
   if (operationalGovernance?.mode !== OPERATIONAL_GOVERNANCE_MODE)
@@ -433,8 +497,39 @@ export function validateApprovalRecord(
     else if (record.productionAuthorizedBy.trim().toLowerCase() !== GITHUB_SOLE_MAINTAINER)
       violations.push("production_authorizer_must_match_sole_operator");
     if (!isIsoDate(record?.productionAuthorizedAt)) violations.push("production_authorization_time_invalid");
+    if (record?.schemaVersion === 3) {
+      const stagingCompletedAt = Date.parse(record?.g12Evidence?.completedAt ?? "");
+      const backupEvidenceAt = Date.parse(record?.productionReadiness?.backupRestore?.completedAt ?? "");
+      const backupCompletedAt = Date.parse(record?.productionReadiness?.backupRestore?.runCompletedAt ?? "");
+      const emailVerifiedAt = Date.parse(record?.productionReadiness?.emailProvider?.verifiedAt ?? "");
+      const emailCompletedAt = Date.parse(record?.productionReadiness?.emailProvider?.runCompletedAt ?? "");
+      const authorizationAt = Date.parse(record?.productionAuthorizedAt ?? "");
+      if (
+        ![
+          stagingCompletedAt,
+          backupEvidenceAt,
+          backupCompletedAt,
+          emailVerifiedAt,
+          emailCompletedAt,
+          authorizationAt,
+        ].every(Number.isFinite) ||
+        stagingCompletedAt > backupEvidenceAt ||
+        backupEvidenceAt > backupCompletedAt ||
+        backupCompletedAt > emailVerifiedAt ||
+        emailVerifiedAt > emailCompletedAt ||
+        emailCompletedAt > authorizationAt
+      )
+        violations.push("production_prerequisite_chronology_invalid");
+    }
     if (record?.target?.cloudflareProject !== "gaiatec-website")
       violations.push("production_project_invalid");
+    if (
+      record?.schemaVersion === 3 &&
+      (!/^[a-f0-9]{32}$/.test(record?.target?.cloudflareAccountId ?? "") ||
+        !/^[a-f0-9]{32}$/.test(record?.target?.cloudflareZoneId ?? "") ||
+        !/^[a-f0-9]{32}$/.test(record?.target?.cachePurgeTokenId ?? ""))
+    )
+      violations.push("production_cloudflare_identity_invalid");
     const domains = record?.target?.domains;
     if (
       !Array.isArray(domains) ||
@@ -446,6 +541,7 @@ export function validateApprovalRecord(
       violations.push("production_domains_invalid");
     const readiness = validateProductionReadinessControls(record?.productionReadiness, {
       candidateSha: record?.candidateSha,
+      approvalSchemaVersion: record?.schemaVersion,
     });
     violations.push(...readiness.violations.map((item) => `readiness_${item}`));
     if (
@@ -465,6 +561,11 @@ export function validateApprovalRecord(
 export function validateCanaryEvidenceBinding(record, evidence, { reportSha256 } = {}) {
   const violations = [];
   const expected = record?.g12Evidence;
+  const isPinnedHistoricalEvidence =
+    record?.candidateSha === HISTORICAL_G12_CANDIDATE_SHA &&
+    expected?.file === HISTORICAL_G12_EVIDENCE_FILE &&
+    expected?.reportSha256 === HISTORICAL_G12_EVIDENCE_SHA256 &&
+    reportSha256 === HISTORICAL_G12_EVIDENCE_SHA256;
   if (!/^[a-f0-9]{64}$/.test(reportSha256 ?? "") || reportSha256 !== expected?.reportSha256)
     violations.push("g12_evidence_digest_mismatch");
   if (evidence?.schemaVersion !== 1) violations.push("g12_report_schema_invalid");
@@ -473,6 +574,14 @@ export function validateCanaryEvidenceBinding(record, evidence, { reportSha256 }
   if (evidence?.environment !== "staging") violations.push("g12_report_environment_invalid");
   if (evidence?.candidateSha !== record?.candidateSha) violations.push("g12_report_candidate_mismatch");
   if (evidence?.canaryRunId !== expected?.canaryRunId) violations.push("g12_report_run_mismatch");
+  if (
+    !isIsoDate(evidence?.startedAt) ||
+    !isIsoDate(evidence?.finishedAt) ||
+    Date.parse(evidence?.finishedAt ?? "") <= Date.parse(evidence?.startedAt ?? "") ||
+    (record?.schemaVersion === 3 &&
+      Date.parse(evidence?.finishedAt ?? "") > Date.parse(expected?.completedAt ?? ""))
+  )
+    violations.push("g12_report_timeline_invalid");
   if (evidence?.g11AssuranceRunId !== record?.g11EvidenceRunId) violations.push("g11_report_run_mismatch");
   if (
     evidence?.candidateOrigin !== "https://ev2-g12-canary.gaiatec-cms-staging.pages.dev" ||
@@ -539,6 +648,20 @@ export function validateCanaryEvidenceBinding(record, evidence, { reportSha256 }
     const probeEvaluation = probeIsObject ? evaluateProbeWindow(probe) : { healthy: false };
     const routeMetrics = probe?.routeMetrics;
     const requiredRoutes = ["/", "/produtos", "/contato", "/admin/login"];
+    const routeSampleCounts = requiredRoutes.map((route) => routeMetrics?.[route]?.samples);
+    const uniformRouteSampleCount =
+      routeSampleCounts.every((samples) => Number.isInteger(samples) && samples >= 5) &&
+      new Set(routeSampleCounts).size === 1
+        ? routeSampleCounts[0]
+        : null;
+    const currentSampleContract =
+      requiredRoutes.every((route) => routeMetrics?.[route]?.samples === probe?.sampleCount) &&
+      requiredRoutes.length * probe?.sampleCount + 2 === probe?.measuredResponses;
+    const pinnedHistoricalSampleContract =
+      isPinnedHistoricalEvidence &&
+      probe?.sampleCount === probe?.measuredResponses &&
+      uniformRouteSampleCount !== null &&
+      requiredRoutes.length * uniformRouteSampleCount + 2 === probe?.measuredResponses;
     const routeMetricsValid =
       routeMetrics !== null &&
       typeof routeMetrics === "object" &&
@@ -562,9 +685,9 @@ export function validateCanaryEvidenceBinding(record, evidence, { reportSha256 }
       probe?.outcome !== "pass" ||
       !Array.isArray(probe?.violations) ||
       probe.violations.length !== 0 ||
-      probe?.sampleCount !== probe?.measuredResponses ||
-      requiredRoutes.reduce((total, route) => total + (routeMetrics?.[route]?.samples ?? 0), 0) + 2 !==
-        probe?.measuredResponses ||
+      !Number.isInteger(probe?.sampleCount) ||
+      probe.sampleCount < 5 ||
+      (!currentSampleContract && !pinnedHistoricalSampleContract) ||
       !Number.isInteger(probe?.requestTimeoutMs) ||
       probe.requestTimeoutMs < 1_000 ||
       probe.requestTimeoutMs > 30_000 ||
@@ -672,12 +795,28 @@ export function evaluateCodeOwners(content) {
   return { valid: violations.length === 0, violations };
 }
 
+export const G12_CI_WORKFLOW_PATH = ".github/workflows/ci.yml";
+export const G12_CI_REQUIRED_JOBS = ["quality", "database", "browser"];
+
+export function selectLatestCiWorkflowRun(workflowRuns) {
+  return [...(Array.isArray(workflowRuns) ? workflowRuns : [])].sort((left, right) => {
+    const runNumber = Number(right?.run_number ?? 0) - Number(left?.run_number ?? 0);
+    if (runNumber) return runNumber;
+    const runAttempt = Number(right?.run_attempt ?? 0) - Number(left?.run_attempt ?? 0);
+    if (runAttempt) return runAttempt;
+    return Number(right?.id ?? 0) - Number(left?.id ?? 0);
+  })[0];
+}
+
 export function evaluateGithubControls({
   environment,
   comparison,
   branchProtection,
   codeOwners,
   candidateSha,
+  repository,
+  ciWorkflow,
+  ciWorkflowRun,
   checkRuns,
 }) {
   const violations = [];
@@ -704,18 +843,51 @@ export function evaluateGithubControls({
   const codeOwnerResult = evaluateCodeOwners(codeOwners);
   violations.push(...codeOwnerResult.violations);
 
-  const latestChecks = new Map();
+  const workflowId = Number(ciWorkflow?.id);
+  const runId = Number(ciWorkflowRun?.id);
+  const runAttempt = Number(ciWorkflowRun?.run_attempt);
+  if (
+    !Number.isSafeInteger(workflowId) ||
+    workflowId < 1 ||
+    ciWorkflow?.path !== G12_CI_WORKFLOW_PATH ||
+    ciWorkflow?.state !== "active"
+  )
+    violations.push("ci_workflow_identity_invalid");
+  if (
+    !Number.isSafeInteger(runId) ||
+    runId < 1 ||
+    !Number.isSafeInteger(runAttempt) ||
+    runAttempt < 1 ||
+    ciWorkflowRun?.workflow_id !== workflowId ||
+    ciWorkflowRun?.path !== G12_CI_WORKFLOW_PATH ||
+    ciWorkflowRun?.head_sha !== candidateSha ||
+    ciWorkflowRun?.head_branch !== "main" ||
+    ciWorkflowRun?.event !== "push" ||
+    ciWorkflowRun?.status !== "completed" ||
+    ciWorkflowRun?.conclusion !== "success" ||
+    ciWorkflowRun?.head_repository?.full_name !== repository ||
+    ciWorkflowRun?.repository?.full_name !== repository
+  )
+    violations.push("latest_exact_ci_run_not_successful");
+
+  const exactChecks = new Map();
+  const duplicateChecks = new Set();
   for (const run of Array.isArray(checkRuns) ? checkRuns : []) {
     const name = String(run?.name ?? "")
       .toLowerCase()
       .replace(/^.*\/\s*/, "")
       .replace(/\s+\((?:push|pull_request)\)$/, "");
     if (!name) continue;
-    const previous = latestChecks.get(name);
-    if (!previous || Number(run.id) > Number(previous.id)) latestChecks.set(name, run);
+    if (Number(run?.run_id) !== runId) {
+      violations.push("ci_job_run_identity_mismatch");
+      continue;
+    }
+    if (exactChecks.has(name)) duplicateChecks.add(name);
+    else exactChecks.set(name, run);
   }
-  for (const required of ["quality", "database", "browser"]) {
-    const run = latestChecks.get(required);
+  for (const required of G12_CI_REQUIRED_JOBS) {
+    const run = exactChecks.get(required);
+    if (duplicateChecks.has(required)) violations.push(`actual_check_${required}_duplicated`);
     if (run?.status !== "completed" || run?.conclusion !== "success")
       violations.push(`actual_check_${required}_not_successful`);
   }

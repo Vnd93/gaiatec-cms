@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router";
 import { CmsStructuredArticle } from "@/shared/components/CmsStructuredArticle";
 import { getPublishedPost, type PublishedPost } from "../catalog-api";
+import { applyCatalogSeo } from "../catalog-seo";
 import "../site-builder.css";
 
 export default function CmsBlogPostPage() {
@@ -10,13 +11,37 @@ export default function CmsBlogPostPage() {
   const [error, setError] = useState("");
   useEffect(() => {
     let active = true;
+    const canonicalPath = `/blog/${slug}`;
+    setPost(null);
+    setError("");
+    applyCatalogSeo({
+      title: "Artigo em carregamento | GAIATEC",
+      description: "Carregando o artigo técnico solicitado.",
+      canonicalPath,
+      indexable: false,
+    });
     void getPublishedPost(slug)
       .then((result) => {
         if (!active) return;
         setPost(result);
-        document.title = result.seo.title;
+        applyCatalogSeo({
+          title: result.seo.title,
+          description: result.seo.description,
+          canonicalPath: result.seo.canonicalPath,
+          indexable: result.seo.indexable,
+          ogImage: result.seo.socialImage,
+        });
       })
-      .catch(() => active && setError("Artigo não encontrado."));
+      .catch(() => {
+        if (!active) return;
+        setError("Artigo não encontrado.");
+        applyCatalogSeo({
+          title: "Artigo não encontrado | GAIATEC",
+          description: "O artigo solicitado não está disponível.",
+          canonicalPath,
+          indexable: false,
+        });
+      });
     return () => {
       active = false;
     };
@@ -42,10 +67,10 @@ export default function CmsBlogPostPage() {
     <section className="cms-managed-page" aria-label="Artigo do blog">
       <CmsStructuredArticle
         payload={post.payload}
-        publishedAt={post.published_at}
-        mediaUrls={post.media_urls}
-        mediaAlt={post.media_alt}
-        relatedItems={post.related_items}
+        publishedAt={post.publishedAt}
+        mediaUrls={post.mediaUrls}
+        mediaAlt={post.mediaAlt}
+        relatedItems={post.relatedItems}
       />
     </section>
   );

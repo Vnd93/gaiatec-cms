@@ -17,15 +17,14 @@ function collection() {
   return {
     items: [
       {
-        item_id: "20000000-0000-4000-8000-000000000001",
-        revision_id: "20000000-0000-4000-8000-000000000002",
+        key: "/produtos/produto-completo-de-teste",
+        kind: "product",
         slug: "produto-completo-de-teste",
+        path: "/produtos/produto-completo-de-teste",
         payload,
         seo: payload.seo,
-        content_version: 1,
-        etag: "produto-completo-v1",
-        published_at: "2026-08-29T12:00:00.000Z",
-        media_urls: { "medium.webp": "https://media.example.test/product.webp" },
+        publishedAt: "2026-08-29T12:00:00.000Z",
+        mediaUrls: { "media-1:medium.webp": "https://media.example.test/product.webp" },
       },
     ],
     total: 1,

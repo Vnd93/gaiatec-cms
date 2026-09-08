@@ -1,6 +1,7 @@
 import type { Session } from "@supabase/supabase-js";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabase";
 import { cmsEnvironment } from "../ev2-runtime";
+import { operatorErrorMessage } from "../operator-error-message";
 
 export class CmsApiError extends Error {
   readonly status: number;
@@ -21,7 +22,7 @@ export class CmsApiError extends Error {
       preserved?: boolean;
     },
   ) {
-    super(message);
+    super(operatorErrorMessage(message, { source: "remote", status }));
     this.name = "CmsApiError";
     this.status = status;
     this.code = details.code;
@@ -38,18 +39,23 @@ async function invoke<T>(
   body: unknown,
   idempotent: boolean | string = false,
 ): Promise<T> {
-  const response = await fetch(SUPABASE_URL + "/functions/v1/" + fn, {
-    method: "POST",
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: "Bearer " + session.access_token,
-      "Content-Type": "application/json",
-      ...(idempotent
-        ? { "X-Idempotency-Key": typeof idempotent === "string" ? idempotent : crypto.randomUUID() }
-        : {}),
-    },
-    body: JSON.stringify(body),
-  });
+  let response: Response;
+  try {
+    response = await fetch(SUPABASE_URL + "/functions/v1/" + fn, {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: "Bearer " + session.access_token,
+        "Content-Type": "application/json",
+        ...(idempotent
+          ? { "X-Idempotency-Key": typeof idempotent === "string" ? idempotent : crypto.randomUUID() }
+          : {}),
+      },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new CmsApiError("Falha de comunicação com o serviço remoto.", 0, {});
+  }
   const data = (await response.json().catch(() => ({}))) as T & {
     error?: string;
     code?: string;
@@ -92,6 +98,21 @@ export function issuePreview(session: Session, itemId: string, revisionId?: stri
 export function mediaCommand<T>(session: Session, body: Record<string, unknown>) {
   return invoke<T>(session, "cms-media", body);
 }
+export function documentCommand<T>(session: Session, body: Record<string, unknown>) {
+  const envelope = {
+    schemaVersion: 1,
+    commandId: crypto.randomUUID(),
+    correlationId: crypto.randomUUID(),
+    occurredAt: new Date().toISOString(),
+    actorContext: { environment: cmsEnvironment(), siteKey: "main" },
+  };
+  return invoke<T>(
+    session,
+    "cms-documents",
+    { ...body, envelope },
+    body.action === "list" ? false : envelope.commandId,
+  );
+}
 export function damCommand<T>(session: Session, body: Record<string, unknown>, idempotencyKey?: string) {
   return invoke<T>(session, "cms-media", body, idempotencyKey ?? false);
 }
@@ -131,6 +152,7 @@ export function bulkImportCommand<T>(
 
 export type ControlledVocabularyOption = {
   id: string;
+  lock_version?: number;
   slug: string;
   label: string;
   description: string;
@@ -141,6 +163,7 @@ export type ControlledVocabularyOption = {
 };
 export type ControlledVocabularyList = {
   id: string;
+  lock_version?: number;
   list_key: string;
   entity_type: string;
   dimension_key: string;

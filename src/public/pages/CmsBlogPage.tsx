@@ -24,9 +24,7 @@ export default function CmsBlogPage() {
         <div className="cms-page-block__inner is-left">
           <p className="cms-page-eyebrow">CONTEÚDO TÉCNICO</p>
           <h1>Blog</h1>
-          <p className="cms-page-lead">
-            Artigos novos, revisados e publicados pelo fluxo editorial governado.
-          </p>
+          <p className="cms-page-lead">Conteúdo técnico para apoiar decisões de engenharia e operação.</p>
         </div>
       </header>
       <section
@@ -34,17 +32,17 @@ export default function CmsBlogPage() {
         aria-labelledby="blog-list-title"
       >
         <div className="cms-page-block__inner">
-          <h2 id="blog-list-title">Artigos publicados</h2>
+          <h2 id="blog-list-title">Artigos e análises</h2>
           {loading ? (
             <p aria-busy="true">Carregando artigos…</p>
           ) : error ? (
             <p role="alert">{error}</p>
           ) : posts.length === 0 ? (
-            <p>Nenhum artigo novo foi publicado. O site não usa posts do acervo anterior como fallback.</p>
+            <p>Nenhum artigo está disponível no momento. Volte em breve para conferir as novidades.</p>
           ) : (
             <div className="cms-page-grid is-3">
               {posts.map((post) => (
-                <article className="cms-page-card" key={post.item_id}>
+                <article className="cms-page-card" key={post.key}>
                   <p className="cms-page-eyebrow">{post.payload.category.name}</p>
                   <h3>
                     <Link to={post.path}>{post.payload.title}</Link>

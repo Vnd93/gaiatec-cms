@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { z } from "npm:zod@4.4.3";
+import { CmsContentPayloadSchema } from "../../../src/shared/contracts/cms-content.ts";
 import { authenticateCms } from "../_shared/cms-auth.ts";
 import { isConfiguredCmsEnvironment } from "../_shared/ev2-environment.ts";
 import { evaluateQuality, qualityStatus } from "../_shared/cms-quality-rules.ts";
@@ -32,6 +33,18 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json(req, { error: "Método não permitido." }, 405);
   const identity = await authenticateCms(req);
   if (!identity) return json(req, { error: "Sessão inválida." }, 401);
+  const environment = Deno.env.get("CMS_ENVIRONMENT");
+  if (!isConfiguredCmsEnvironment(environment)) {
+    return json(req, { error: "Ambiente do CMS indisponível.", code: "CMS_ENVIRONMENT_INVALID" }, 503);
+  }
+  const { data: actorScope, error: actorScopeError } = await identity.admin.rpc("cms_actor_scope_context", {
+    p_actor_id: identity.user.id,
+    p_environment: environment,
+  });
+  if (actorScopeError || actorScope?.active !== true) {
+    return json(req, { error: "Escopo não autorizado.", code: "CMS_CONTENT_SCOPE_FORBIDDEN" }, 403);
+  }
+  const isQaActor = actorScope?.isQaActor === true;
   const idempotencyKey = req.headers.get("X-Idempotency-Key");
   if (!idempotencyKey || !Uuid.safeParse(idempotencyKey).success) return json(req, { error: "Chave idempotente obrigatória." }, 400);
   let parsed: z.infer<typeof Command>;
@@ -48,8 +61,14 @@ Deno.serve(async (req) => {
     const controlledErrors = [];
     for (const row of parsed.rows) {
       const { data: normalized, error: normalizationError } = await identity.admin.rpc(
-        "cms_normalize_controlled_payload",
-        { p_content_type: "product", p_payload: row.payload, p_require_active: true },
+        "cms_normalize_controlled_payload_scoped",
+        {
+          p_actor_id: identity.user.id,
+          p_environment: environment,
+          p_content_type: "product",
+          p_payload: row.payload,
+          p_require_active: true,
+        },
       );
       if (normalizationError) {
         const listKey = normalizationError.message.match(/product\.[a-z_]+/)?.[0] ?? "classificacao_padronizada";
@@ -59,7 +78,17 @@ Deno.serve(async (req) => {
           field: listKey,
           message: "Identificador de lista mestra desconhecido, inativo ou pertencente a outra dimensão.",
         });
-      } else normalizedRows.push({ ...row, payload: normalized });
+      } else {
+        const validated = CmsContentPayloadSchema.safeParse(normalized);
+        if (!validated.success || validated.data.contentType !== "product") {
+          controlledErrors.push({
+            sheet: "Produtos",
+            row: row.sourceRow,
+            field: "payload",
+            message: "O registro não atende ao contrato integral de produto.",
+          });
+        } else normalizedRows.push({ ...row, payload: validated.data });
+      }
     }
     if (controlledErrors.length) {
       const body = { status: "invalid", total: parsed.rows.length, rows: [], errors: controlledErrors, correlationId };
@@ -89,13 +118,37 @@ Deno.serve(async (req) => {
     return json(req, { ...data, correlationId });
   }
   const editorial = EditorialCommand.parse(parsed);
+  const correlationId = crypto.randomUUID();
+  let contentBundle: any = null;
+  if (editorial.itemId) {
+    const { data: bundle, error: bundleError } = await identity.admin.rpc("cms_content_read_bundle_scoped", {
+      p_actor_id: identity.user.id,
+      p_item_id: editorial.itemId,
+      p_revision_id: editorial.revisionId ?? null,
+      p_environment: environment,
+    });
+    if (bundleError) {
+      return json(req, {
+        error: "Conteúdo temporariamente indisponível.",
+        code: "CMS_CONTENT_SCOPE_UNAVAILABLE",
+        correlationId,
+      }, 503);
+    }
+    if (!bundle) {
+      return json(req, {
+        error: "Conteúdo não encontrado.",
+        code: "CMS_CONTENT_NOT_FOUND",
+        correlationId,
+      }, 404);
+    }
+    contentBundle = bundle;
+  }
   // Give API clients a deterministic conflict response before invoking the
   // transactional command. The database command repeats this check while
   // holding the draft row lock, so this is presentation logic, not the
   // concurrency boundary.
   if (editorial.action === "save" && editorial.itemId && editorial.expectedLockVersion) {
-    const { data: draft } = await identity.admin.from("cms_content_drafts")
-      .select("lock_version").eq("item_id", editorial.itemId).maybeSingle();
+    const draft = contentBundle?.draft;
     if (draft && draft.lock_version !== editorial.expectedLockVersion) {
       return json(req, {
         error: "O conteúdo foi alterado em outra sessão.",
@@ -104,7 +157,6 @@ Deno.serve(async (req) => {
       }, 409);
     }
   }
-  const correlationId = crypto.randomUUID();
   let effectivePayload = editorial.payload;
   if (
     (editorial.action === "create" || editorial.action === "save") &&
@@ -113,8 +165,14 @@ Deno.serve(async (req) => {
   ) {
     const contentType = String(editorial.payload.contentType);
     const { data: normalized, error: normalizationError } = await identity.admin.rpc(
-      "cms_normalize_controlled_payload",
-      { p_content_type: contentType, p_payload: editorial.payload, p_require_active: true },
+      "cms_normalize_controlled_payload_scoped",
+      {
+        p_actor_id: identity.user.id,
+        p_environment: environment,
+        p_content_type: contentType,
+        p_payload: editorial.payload,
+        p_require_active: true,
+      },
     );
     if (normalizationError) {
       return json(req, {
@@ -127,19 +185,32 @@ Deno.serve(async (req) => {
   }
   if ((editorial.action === "create" || editorial.action === "save") && editorial.payload?.contentType === "post") {
     const post = editorial.payload as Record<string, any>;
+    if (!CmsContentPayloadSchema.safeParse(post).success) {
+      return json(req, {
+        error: "O conteúdo não atende ao contrato editorial integral.",
+        code: "CMS_CONTENT_SCHEMA_INVALID",
+        correlationId,
+      }, 422);
+    }
     const tagSlugs = (post.tags ?? []).map((tag: any) => tag.slug).filter(Boolean);
-    const [authorResult, categoryResult, tagResult] = await Promise.all([
-      identity.admin.from("cms_blog_authors").select("id").eq("slug", post.author?.slug ?? "").maybeSingle(),
-      identity.admin.from("cms_blog_categories").select("id").eq("slug", post.category?.slug ?? "").maybeSingle(),
-      tagSlugs.length
-        ? identity.admin.from("cms_blog_tags").select("id,slug").in("slug", tagSlugs)
-        : Promise.resolve({ data: [] }),
-    ]);
-    const tagIds = new Map((tagResult.data ?? []).map((tag: any) => [tag.slug, tag.id]));
+    const { data: taxonomy, error: taxonomyLookupError } = await identity.admin.rpc(
+      "cms_blog_taxonomy_resolve_scoped",
+      {
+        p_actor_id: identity.user.id,
+        p_environment: environment,
+        p_author_slug: post.author?.slug ?? "",
+        p_category_slug: post.category?.slug ?? "",
+        p_tag_slugs: tagSlugs,
+      },
+    );
+    if (taxonomyLookupError || !taxonomy) {
+      return json(req, { error: "Autor ou taxonomia editorial inválidos.", code: "CMS_BLOG_TAXONOMY_INVALID", correlationId }, 422);
+    }
+    const tagIds = new Map(Object.entries(taxonomy.tags ?? {}));
     effectivePayload = {
       ...post,
-      author: { ...post.author, id: authorResult.data?.id ?? post.author?.id },
-      category: { ...post.category, id: categoryResult.data?.id ?? post.category?.id },
+      author: { ...post.author, id: taxonomy.authorId ?? post.author?.id },
+      category: { ...post.category, id: taxonomy.categoryId ?? post.category?.id },
       tags: (post.tags ?? []).map((tag: any) => ({ ...tag, id: tagIds.get(tag.slug) ?? tag.id })),
     };
     const { error: taxonomyError } = await identity.admin.rpc("cms_sync_blog_taxonomy", {
@@ -150,6 +221,20 @@ Deno.serve(async (req) => {
       p_issued_at: identity.claims.issuedAt,
     });
     if (taxonomyError) return json(req, { error: "Autor ou taxonomia editorial inválidos.", code: "CMS_BLOG_TAXONOMY_INVALID", correlationId }, 422);
+  }
+  if (["create", "save", "retire"].includes(editorial.action)) {
+    const validated = CmsContentPayloadSchema.safeParse(effectivePayload);
+    if (
+      !validated.success ||
+      (editorial.contentType && validated.data.contentType !== editorial.contentType)
+    ) {
+      return json(req, {
+        error: "O conteúdo não atende ao contrato editorial integral.",
+        code: "CMS_CONTENT_SCHEMA_INVALID",
+        correlationId,
+      }, 422);
+    }
+    effectivePayload = validated.data;
   }
   if (editorial.action === "retire") {
     if (!editorial.itemId || !editorial.payload || !editorial.expectedLockVersion) {
@@ -200,9 +285,20 @@ Deno.serve(async (req) => {
     }
     return json(req, { ...data, correlationId });
   }
+  if (["submit", "approve", "schedule", "publish", "restore"].includes(editorial.action)) {
+    if (!editorial.itemId) return json(req, { error: "Conteúdo obrigatório." }, 400);
+    const storedPayload = editorial.action === "submit"
+      ? contentBundle?.draft?.payload
+      : contentBundle?.revision?.payload;
+    if (!storedPayload || !CmsContentPayloadSchema.safeParse(storedPayload).success)
+      return json(req, {
+        error: "O conteúdo não atende ao contrato editorial integral.",
+        code: "CMS_CONTENT_SCHEMA_INVALID",
+        correlationId,
+      }, 422);
+  }
   let searchQualityEnabled = false;
   if (["publish", "schedule", "restore"].includes(editorial.action) && editorial.itemId) {
-    const environment = Deno.env.get("CMS_ENVIRONMENT");
     if (isConfiguredCmsEnvironment(environment)) {
       const { data: capability, error: capabilityError } = await identity.admin.rpc("cms_evaluate_feature_flag", {
         p_actor_id: identity.user.id, p_flag_key: "ev2.search_quality", p_environment: environment,
@@ -212,15 +308,9 @@ Deno.serve(async (req) => {
       if (capabilityError) return json(req, { error: "Centro de Qualidade indisponível.", code: "CMS_QUALITY_UNAVAILABLE", correlationId }, 503);
       if (capability?.enabled === true) {
         searchQualityEnabled = true;
-        let revisionQuery = identity.admin.from("cms_content_revisions").select("id,payload,seo").eq("item_id", editorial.itemId).order("revision_number", { ascending: false }).limit(1);
-        if (editorial.revisionId) revisionQuery = revisionQuery.eq("id", editorial.revisionId);
-        const [{ data: revisions, error: revisionError }, { data: waivers, error: waiverError }] = await Promise.all([
-          revisionQuery,
-          identity.admin.from("cms_quality_waivers").select("rule_key").eq("item_id", editorial.itemId).gt("expires_at", new Date().toISOString()),
-        ]);
-        const revision = revisions?.[0];
-        if (revisionError || waiverError || !revision) return json(req, { error: "Qualidade não pôde ser verificada.", code: "CMS_QUALITY_UNAVAILABLE", correlationId }, 503);
-        const waivedRules = new Set((waivers ?? []).map((entry) => entry.rule_key));
+        const revision = contentBundle?.revision;
+        if (!revision) return json(req, { error: "Qualidade não pôde ser verificada.", code: "CMS_QUALITY_UNAVAILABLE", correlationId }, 503);
+        const waivedRules = new Set<string>(contentBundle?.waiverRuleKeys ?? []);
         const findings = evaluateQuality(revision.payload, revision.seo).map((entry) => ({ ...entry, waived: waivedRules.has(entry.ruleKey) }));
         const effectiveFindings = findings.filter((entry) => !entry.waived);
         const qualityState = qualityStatus(effectiveFindings);
@@ -254,7 +344,11 @@ Deno.serve(async (req) => {
   if (error) {
     const knownCode = ["CMS_COMMAND_FORBIDDEN", "CMS_CONTENT_CONFLICT", "CMS_CONTENT_NOT_FOUND",
       "CMS_CONTENT_SCHEMA_INVALID", "CMS_CONTENT_PROVENANCE_INVALID", "CMS_CONSUMER_UNAVAILABLE",
-      "CMS_BLOCK_WITHOUT_RENDERER", "CMS_TRANSITION_INVALID", "CMS_REVISION_NOT_FOUND"]
+      "CMS_BLOCK_WITHOUT_RENDERER", "CMS_TRANSITION_INVALID", "CMS_REVISION_NOT_FOUND",
+      "CMS_PIM_CANONICAL_SKU_REQUIRED", "CMS_PIM_CANONICAL_IDENTITY_CONFLICT",
+      "CMS_PIM_CANONICAL_ATTRIBUTE_INVALID", "CMS_PIM_CANONICAL_SKU_CONFLICT",
+      "CMS_PIM_CANONICAL_IDENTIFIER_CONFLICT",
+      "CMS_PIM_RECONCILIATION_REQUIRED", "CMS_PIM_PUBLIC_DATA_REQUIRED"]
       .find((candidate) => error.message.includes(candidate));
     const constraint = error.message.match(/constraint [\"']([^\"']+)[\"']/i)?.[1];
     const code = error.message.includes("FORBIDDEN") ? 403 : error.message.includes("CONFLICT") || error.code === "40001" ? 409 :
@@ -268,7 +362,9 @@ Deno.serve(async (req) => {
     try { searchIndex = await syncPublicSearchDocument(identity.admin, editorial.itemId); }
     catch {
       searchIndex = "pending";
-      await identity.admin.from("cms_search_index_jobs").insert({ status: "pending", reason: `Sincronização pendente após ${editorial.action}`, requested_by: identity.user.id, correlation_id: correlationId }).then(() => undefined, () => undefined);
+      if (!isQaActor) {
+        await identity.admin.from("cms_search_index_jobs").insert({ status: "pending", reason: `Sincronização pendente após ${editorial.action}`, requested_by: identity.user.id, correlation_id: correlationId }).then(() => undefined, () => undefined);
+      }
     }
   }
   return json(req, { ...data, correlationId, searchIndex });

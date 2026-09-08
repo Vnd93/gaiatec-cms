@@ -21,6 +21,7 @@ export function TurnstileChallenge({ onToken }: { onToken: (token: string) => vo
       if (cancelled || !window.turnstile || !containerRef.current || widgetId) return;
       widgetId = window.turnstile.render(containerRef.current, {
         sitekey: siteKey,
+        action: "lead_capture",
         language: "pt-BR",
         theme: "light",
         callback: (token: string) => onToken(token),

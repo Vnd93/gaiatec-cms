@@ -194,23 +194,59 @@ const Command = z.discriminatedUnion("action", [
       basePayload: z.record(z.string(), z.unknown()),
     })
     .strict(),
+  z
+    .object({
+      action: z.literal("get_reconciliation_plan"),
+      envelope: Envelope,
+      productId: Uuid,
+      contentItemId: Uuid,
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("reconcile_product"),
+      envelope: Envelope.refine((value) => value.expectedVersion !== undefined, {
+        path: ["expectedVersion"],
+        message: "expected version required",
+      }),
+      productId: Uuid,
+      contentItemId: Uuid,
+      expectedDraftVersion: z.number().int().positive(),
+      resolution: z.enum(["equivalence", "retire_acknowledged_gap"]),
+      acknowledgedLegacySha256: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+      reason: z.string().trim().min(3).max(500),
+    })
+    .strict()
+    .superRefine((command, context) => {
+      if (
+        command.resolution === "retire_acknowledged_gap" &&
+        !command.acknowledgedLegacySha256
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["acknowledgedLegacySha256"],
+          message: "legacy snapshot acknowledgement required",
+        });
+      }
+      if (command.resolution === "equivalence" && command.acknowledgedLegacySha256) {
+        context.addIssue({
+          code: "custom",
+          path: ["acknowledgedLegacySha256"],
+          message: "legacy snapshot acknowledgement forbidden",
+        });
+      }
+    }),
 ]);
 
 type PimCommand = z.infer<typeof Command>;
 type Identity = NonNullable<Awaited<ReturnType<typeof authenticateCms>>>;
 type Row = Record<string, any>;
-
-function canonicalize(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonicalize);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([key, item]) => [key, canonicalize(item)]),
-    );
-  }
-  return value;
-}
+type PimActorScope = {
+  isQaActor: boolean;
+  active: boolean;
+  runTag: string | null;
+  status: string | null;
+};
 
 function slugify(value: string) {
   return value
@@ -252,6 +288,23 @@ async function authorized(identity: Identity, permission: string) {
     p_issued_at: identity.claims.issuedAt,
   });
   return data === true;
+}
+
+async function actorReadScope(
+  identity: Identity,
+  environment: "local" | "staging" | "production",
+): Promise<PimActorScope> {
+  const { data, error } = await identity.admin.rpc("cms_actor_scope_context", {
+    p_actor_id: identity.user.id,
+    p_environment: environment,
+  });
+  if (error || typeof data !== "object" || !data) throw new Error("CMS_PIM_ACTOR_SCOPE_UNAVAILABLE");
+  return {
+    isQaActor: data.isQaActor === true,
+    active: data.active === true,
+    runTag: typeof data.runTag === "string" ? data.runTag : null,
+    status: typeof data.status === "string" ? data.status : null,
+  };
 }
 
 function mapSku(row: Row) {
@@ -342,34 +395,33 @@ function mapProduct(row: Row) {
   };
 }
 
-const graphSelect = [
-  "id,content_item_id,name,slug,summary,value_proposition,manufacturer_id,brand_id,line_id,category_id,status,source_type,source_ref,lock_version,updated_at",
-  "cms_pim_product_master_links(id,dimension,entity_id,status)",
-  "cms_pim_models(id,name,mpn,status,is_primary,position,lock_version,cms_pim_variants(id,name,code,axes,status,position,lock_version))",
-  "cms_pim_skus(id,product_id,model_id,variant_id,sku,status,created_at,retired_at)",
-  "cms_pim_attribute_values(id,definition_id,owner_scope,owner_id,value,unit_code,canonical_min,canonical_max,source_type,source_ref,confidence,homologated,active)",
-  "cms_pim_external_identifiers(id,owner_type,owner_id,identifier_kind,identifier_value,issuer,source_type,source_ref)",
-  "cms_pim_provenance(id,source_kind,source_ref,source_sha256,confidence,rights_confirmed,verified_at,active)",
-].join(",");
-
-async function loadProduct(identity: Identity, productId: string) {
-  const { data, error } = await identity.admin.from("cms_pim_products").select(graphSelect).eq("id", productId).maybeSingle();
+async function loadProduct(
+  identity: Identity,
+  productId: string,
+  environment: "local" | "staging" | "production",
+  siteKey: string,
+) {
+  const { data, error } = await identity.admin.rpc("cms_pim_get_product_scoped", {
+    p_actor_id: identity.user.id,
+    p_product_id: productId,
+    p_environment: environment,
+    p_site_key: siteKey,
+  });
   if (error) throw error;
-  return data ? mapProduct(data) : null;
+  return data && typeof data === "object" ? mapProduct(data as Row) : null;
 }
 
 async function queryPim(identity: Identity, command: PimCommand) {
   if (command.action === "list_products") {
-    let query = identity.admin
-      .from("cms_pim_products")
-      .select("id,content_item_id,name,slug,status,lock_version,updated_at,cms_pim_models(id,cms_pim_variants(id)),cms_pim_skus(id,status)")
-      .eq("site_key", command.envelope.actorContext.siteKey)
-      .order("updated_at", { ascending: false })
-      .limit(500);
-    if (!command.includeArchived) query = query.neq("status", "archived");
     const normalizedQuery = normalizeSearch(command.query);
-    if (normalizedQuery) query = query.ilike("normalized_name", `%${normalizedQuery}%`);
-    const { data, error } = await query;
+    const { data, error } = await identity.admin.rpc("cms_pim_list_products_scoped", {
+      p_actor_id: identity.user.id,
+      p_environment: command.envelope.actorContext.environment,
+      p_site_key: command.envelope.actorContext.siteKey,
+      p_query: normalizedQuery,
+      p_include_archived: command.includeArchived,
+      p_limit: 500,
+    });
     if (error) throw error;
     return {
       products: (data ?? []).map((row: Row) => ({
@@ -379,20 +431,44 @@ async function queryPim(identity: Identity, command: PimCommand) {
         slug: row.slug,
         status: row.status,
         lockVersion: row.lock_version,
-        modelCount: row.cms_pim_models?.length ?? 0,
-        variantCount: (row.cms_pim_models ?? []).reduce((sum: number, model: Row) => sum + (model.cms_pim_variants?.length ?? 0), 0),
-        skuCount: (row.cms_pim_skus ?? []).filter((sku: Row) => sku.status === "active").length,
+        modelCount: Number(row.model_count ?? 0),
+        variantCount: Number(row.variant_count ?? 0),
+        skuCount: Number(row.sku_count ?? 0),
         updatedAt: row.updated_at,
       })),
     };
   }
-  if (command.action === "get_product") return { product: await loadProduct(identity, command.productId) };
+  if (command.action === "get_product") {
+    return {
+      product: await loadProduct(
+        identity,
+        command.productId,
+        command.envelope.actorContext.environment,
+        command.envelope.actorContext.siteKey,
+      ),
+    };
+  }
   throw new Error("query not supported");
 }
 
 async function previewV1(identity: Identity, command: Extract<PimCommand, { action: "preview_v1_adapter" }>) {
-  const product = await loadProduct(identity, command.productId);
+  const product = await loadProduct(
+    identity,
+    command.productId,
+    command.envelope.actorContext.environment,
+    command.envelope.actorContext.siteKey,
+  );
   if (!product) throw new Error("CMS_PIM_NOT_FOUND");
+  const requiredMasterId = (id: string | null | undefined) => {
+    if (!id) throw new Error("CMS_PIM_PUBLIC_DATA_REQUIRED");
+    return id;
+  };
+  const brandId = requiredMasterId(product.masterData.brandId);
+  const lineId = requiredMasterId(product.masterData.lineId);
+  const magnitudeId = requiredMasterId(product.masterData.magnitudeIds[0]);
+  const technologyId = requiredMasterId(product.masterData.technologyIds[0]);
+  const installationId = requiredMasterId(product.masterData.installationIds[0]);
+  const monitoredId = requiredMasterId(product.masterData.monitoredElementIds[0]);
   const ids = [...new Set([
     product.masterData.manufacturerId,
     product.masterData.brandId,
@@ -403,50 +479,207 @@ async function previewV1(identity: Identity, command: Extract<PimCommand, { acti
     ...product.masterData.installationIds,
     ...product.masterData.monitoredElementIds,
   ].filter(Boolean))] as string[];
-  const { data: masters, error } = await identity.admin
-    .from("cms_master_entities")
-    .select("id,canonical_name,status")
-    .in("id", ids);
-  if (error) throw error;
-  const labels = new Map((masters ?? []).map((entry) => [entry.id, entry.canonical_name]));
+  const controlledMasterIds = [
+    product.masterData.categoryId,
+    magnitudeId,
+    technologyId,
+    installationId,
+    monitoredId,
+  ];
+  const [mastersResult, controlledResult, catalogResult] = await Promise.all([
+    identity.admin.rpc("cms_pim_master_entities_scoped", {
+      p_actor_id: identity.user.id,
+      p_environment: command.envelope.actorContext.environment,
+      p_site_key: command.envelope.actorContext.siteKey,
+      p_entity_ids: ids,
+    }),
+    identity.admin.rpc("cms_pim_master_controlled_options_scoped", {
+      p_actor_id: identity.user.id,
+      p_environment: command.envelope.actorContext.environment,
+      p_site_key: command.envelope.actorContext.siteKey,
+      p_entity_ids: controlledMasterIds,
+    }),
+    identity.admin.rpc("cms_attributes_catalog_scoped", {
+      p_actor_id: identity.user.id,
+      p_environment: command.envelope.actorContext.environment,
+      p_site_key: command.envelope.actorContext.siteKey,
+      p_category_id: product.masterData.categoryId,
+    }),
+  ]);
+  if (mastersResult.error) throw mastersResult.error;
+  if (controlledResult.error) throw controlledResult.error;
+  if (catalogResult.error) throw catalogResult.error;
+  const masters = mastersResult.data;
+  const labels = new Map<string, string>(
+    (masters ?? []).map((entry: Row) => [String(entry.id), String(entry.canonical_name ?? "")]),
+  );
   if (labels.size !== ids.length) throw new Error("CMS_PIM_MASTER_INVALID");
-  const label = (id: string | null, fallback: string) => (id ? labels.get(id) ?? fallback : fallback);
-  const slug = (id: string | null, fallback: string) => slugify(label(id, fallback));
+  const label = (id: string) => labels.get(id) ?? "";
+  const slug = (id: string) => slugify(label(id));
+  const controlledByMaster = new Map<string, Row>(
+    (controlledResult.data ?? []).map((entry: Row) => [entry.master_entity_id, entry]),
+  );
+  if (controlledByMaster.size !== new Set(controlledMasterIds).size) {
+    throw new Error("CMS_PIM_CONTROLLED_MAPPING_INVALID");
+  }
+  const controlled = (id: string) => {
+    const option = controlledByMaster.get(id);
+    if (!option) throw new Error("CMS_PIM_CONTROLLED_MAPPING_INVALID");
+    return { id: option.option_id, slug: option.option_slug, label: option.option_label };
+  };
+  const catalog = catalogResult.data && typeof catalogResult.data === "object"
+    ? (catalogResult.data as Row)
+    : {};
+  const definitions = new Map<string, Row>(
+    (Array.isArray(catalog.definitions) ? catalog.definitions : []).map((definition: Row) => [
+      definition.id,
+      definition,
+    ]),
+  );
   const skuByOwner = new Map(product.skus.filter((entry: Row) => entry.status === "active").map((entry: Row) => [entry.variantId ?? entry.modelId, entry.sku]));
+  const activeModels = product.models.filter((model: Row) => model.status === "active");
+  if (activeModels.length === 0) throw new Error("CMS_PIM_ACTIVE_SKU_REQUIRED");
+  const activeModelIds = new Set(activeModels.map((model: Row) => String(model.id).toLowerCase()));
+  const activeVariantIds = new Set(
+    activeModels.flatMap((model: Row) =>
+      model.variants
+        .filter((variant: Row) => variant.status === "active")
+        .map((variant: Row) => String(variant.id).toLowerCase()),
+    ),
+  );
+  if (activeModels.some((model: Row) => !String(model.mpn ?? "").trim())) {
+    throw new Error("CMS_PIM_PUBLIC_DATA_REQUIRED");
+  }
+  const resolveModelSku = (model: Row) => {
+    const activeVariants = model.variants.filter((variant: Row) => variant.status === "active");
+    if (activeVariants.length === 0) throw new Error("CMS_PIM_PUBLIC_DATA_REQUIRED");
+    if (activeVariants.some((variant: Row) => !String(skuByOwner.get(variant.id) ?? "").trim())) {
+      throw new Error("CMS_PIM_ACTIVE_SKU_REQUIRED");
+    }
+    const sku = String(skuByOwner.get(model.id) ?? "").trim();
+    if (!sku) throw new Error("CMS_PIM_ACTIVE_SKU_REQUIRED");
+    return { activeVariants, sku };
+  };
   const base = structuredClone(command.basePayload) as Record<string, any>;
-  const manufacturerName = label(product.masterData.manufacturerId, "Fabricante");
-  const brandName = label(product.masterData.brandId, "Marca não informada");
-  const categoryName = label(product.masterData.categoryId, "Categoria");
-  const magnitudeName = label(product.masterData.magnitudeIds[0] ?? null, categoryName);
-  const technologyName = label(product.masterData.technologyIds[0] ?? null, categoryName);
-  const installationName = label(product.masterData.installationIds[0] ?? null, categoryName);
-  const monitoredName = label(product.masterData.monitoredElementIds[0] ?? null, categoryName);
+  const manufacturerName = label(product.masterData.manufacturerId);
+  const brandName = label(brandId);
+  const categoryName = label(product.masterData.categoryId);
+  const magnitudeName = label(magnitudeId);
+  const technologyName = label(technologyId);
+  const installationName = label(installationId);
+  const monitoredName = label(monitoredId);
+  const ownerSurvives = (scope: string, ownerId: unknown) => {
+    if (scope === "product") {
+      return ownerId === undefined || ownerId === null || ownerId === "" || ownerId === product.id;
+    }
+    if (typeof ownerId !== "string") return false;
+    return scope === "model"
+      ? activeModelIds.has(ownerId.toLowerCase())
+      : scope === "variant" && activeVariantIds.has(ownerId.toLowerCase());
+  };
   const payload = {
     ...base,
     title: product.name,
     summary: product.summary || base.summary,
-    brand: { name: brandName, slug: slug(product.masterData.brandId, brandName) },
-    manufacturer: { ...(base.manufacturer ?? {}), name: manufacturerName, slug: slug(product.masterData.manufacturerId, manufacturerName) },
-    productLine: { name: label(product.masterData.lineId, "Linha geral"), slug: slug(product.masterData.lineId, "Linha geral") },
+    brand: { name: brandName, slug: slug(brandId) },
+    manufacturer: { ...(base.manufacturer ?? {}), name: manufacturerName, slug: slug(product.masterData.manufacturerId) },
+    productLine: { name: label(lineId), slug: slug(lineId) },
     classification: { ...(base.classification ?? {}), segment: categoryName, category: magnitudeName, family: installationName },
     controlledClassification: {
-      productCategory: { id: product.masterData.categoryId, slug: slug(product.masterData.categoryId, categoryName), label: categoryName },
-      applicationMagnitude: { id: product.masterData.magnitudeIds[0] ?? product.masterData.categoryId, slug: slug(product.masterData.magnitudeIds[0] ?? null, magnitudeName), label: magnitudeName },
-      technology: { id: product.masterData.technologyIds[0] ?? product.masterData.categoryId, slug: slug(product.masterData.technologyIds[0] ?? null, technologyName), label: technologyName },
-      installationOperation: { id: product.masterData.installationIds[0] ?? product.masterData.categoryId, slug: slug(product.masterData.installationIds[0] ?? null, installationName), label: installationName },
-      monitoredElement: { id: product.masterData.monitoredElementIds[0], slug: slug(product.masterData.monitoredElementIds[0], monitoredName), label: monitoredName },
+      productCategory: controlled(product.masterData.categoryId),
+      applicationMagnitude: controlled(magnitudeId),
+      technology: controlled(technologyId),
+      installationOperation: controlled(installationId),
+      monitoredElement: controlled(monitoredId),
     },
-    technology: product.masterData.technologyIds.map((id: string) => label(id, "")).filter(Boolean).join(", "),
-    models: product.models.map((model: Row) => ({
-      id: model.id,
-      model: model.name,
-      manufacturerReference: model.mpn ?? "Não informado",
-      sku: skuByOwner.get(model.id) ?? model.variants.map((variant: Row) => skuByOwner.get(variant.id)).find(Boolean) ?? "PENDENTE",
-      status: model.status,
-      variants: model.variants.length ? model.variants.map((variant: Row) => ({ id: variant.id, name: variant.name, code: variant.code ?? variant.axes.map((axis: Row) => axis.optionKey).join("-"), order: variant.position })) : [{ id: model.id, name: model.name, code: model.mpn ?? model.name, order: model.position }],
-    })),
+    technology: product.masterData.technologyIds.map((id: string) => label(id)).filter(Boolean).join(", "),
+    models: activeModels.map((model: Row) => {
+      const { activeVariants, sku } = resolveModelSku(model);
+      return {
+        id: model.id,
+        model: model.name,
+        manufacturerReference: String(model.mpn).trim(),
+        sku,
+        status: model.status,
+        variants: activeVariants.map((variant: Row) => ({
+          id: variant.id,
+          name: variant.name,
+          code: variant.code ?? variant.axes.map((axis: Row) => axis.optionKey).join("-"),
+          sku: String(skuByOwner.get(variant.id) ?? "").trim(),
+          order: variant.position,
+        })),
+      };
+    }),
+    specifications: product.attributes.map((attribute: Row) => {
+      const definition = definitions.get(attribute.definitionId);
+      if (!definition) throw new Error("CMS_PIM_ATTRIBUTE_INVALID");
+      if (!ownerSurvives(attribute.scope, attribute.ownerId)) {
+        throw new Error("CMS_PIM_ATTRIBUTE_OWNER_INVALID");
+      }
+      return {
+        id: attribute.id,
+        key: definition.attribute_key,
+        label: definition.label,
+        type: definition.data_type === "decimal" ? "number" : definition.data_type,
+        value: attribute.value,
+        ...(attribute.unitCode ? { unit: attribute.unitCode } : {}),
+        required: definition.required,
+        filterable: definition.filterable,
+        comparable: definition.comparable,
+        searchable: definition.searchable,
+        definitionId: attribute.definitionId,
+        scope: attribute.scope,
+        ...(attribute.scope === "product" ? {} : { ownerId: attribute.ownerId }),
+        sourceType: attribute.sourceType,
+        ...(attribute.sourceRef ? { sourceRef: attribute.sourceRef } : {}),
+        confidence: attribute.confidence,
+        homologated: attribute.homologated,
+      };
+    }),
+    externalIdentifiers: product.externalIdentifiers.map((identifier: Row) => {
+      if (identifier.ownerType === "sku" || !ownerSurvives(identifier.ownerType, identifier.ownerId)) {
+        throw new Error("CMS_PIM_IDENTIFIER_OWNER_UNREPRESENTABLE");
+      }
+      return {
+        id: identifier.id,
+        owner: identifier.ownerType === "product"
+          ? { type: "product" }
+          : { type: identifier.ownerType, id: identifier.ownerId },
+        kind: identifier.kind,
+        value: identifier.value,
+        ...(identifier.issuer ? { issuer: identifier.issuer } : {}),
+        visibility: "internal",
+        sourceType: identifier.sourceType,
+        ...(identifier.sourceRef ? { sourceRef: identifier.sourceRef } : {}),
+      };
+    }),
+    provenance: product.provenance.map((source: Row) => {
+      const baseSource = Array.isArray(base.provenance)
+        ? base.provenance.find((candidate: Row) =>
+            candidate.sourceKind === source.sourceKind &&
+            [candidate.sourcePath, candidate.sourceUrl, candidate.authorizationReference]
+              .includes(source.sourceRef)
+          )
+        : undefined;
+      if (!baseSource || source.rightsConfirmed !== true || !source.verifiedAt) {
+        throw new Error("CMS_PIM_PROVENANCE_UNREPRESENTABLE");
+      }
+      return {
+        ...baseSource,
+        sourceKind: source.sourceKind,
+        ...(source.sourceSha256 ? { sourceSha256: source.sourceSha256 } : {}),
+        rightsConfirmed: true,
+        verifiedAt: source.verifiedAt,
+      };
+    }),
   };
-  return { productId: product.id, payload, warnings: product.skus.length ? [] : ["Há modelos sem SKU gerado."] };
+  return {
+    productId: product.id,
+    payload,
+    warnings: product.contentItemId
+      ? ["Confira o plano autoritativo de reconciliação antes de salvar ou retirar o legado."]
+      : ["O produto legado ainda não está vinculado a um item canônico."],
+  };
 }
 
 Deno.serve(async (req) => {
@@ -505,12 +738,31 @@ Deno.serve(async (req) => {
     p_flag_key: "ev2.pim_v2",
   });
   if (capabilityError) return json(req, { error: "Capacidade indisponível.", correlationId }, 503);
-  if (command.action === "capability") return json(req, { ...capability, commandId: command.envelope.commandId, correlationId });
+  if (command.action === "capability") {
+    return json(req, {
+      ...capability,
+      commandId: command.envelope.commandId,
+      correlationId,
+      canonicalWriter: "cms-content",
+      legacyWriteMode: "read_only",
+      legacyMutationsEnabled: false,
+    });
+  }
   if (capability?.enabled !== true) {
     return json(req, { error: "PIM v2 não habilitado.", code: "CMS_PIM_FEATURE_DISABLED", correlationId }, 403);
   }
   if (!(await authorized(identity, "cms:pim.read"))) {
     return json(req, { error: "Permissão insuficiente.", code: "CMS_PIM_FORBIDDEN", correlationId }, 403);
+  }
+
+  let actorScope: PimActorScope;
+  try {
+    actorScope = await actorReadScope(identity, environment);
+  } catch {
+    return json(req, { error: "Escopo de leitura temporariamente indisponível.", code: "CMS_PIM_ACTOR_SCOPE_UNAVAILABLE", correlationId }, 503);
+  }
+  if (actorScope.isQaActor && !actorScope.active) {
+    return json(req, { error: "Operação indisponível ou sem permissão.", code: "CMS_PIM_QA_SCOPE_INACTIVE", correlationId }, 403);
   }
 
   try {
@@ -520,29 +772,57 @@ Deno.serve(async (req) => {
     if (command.action === "preview_v1_adapter") {
       return json(req, { schemaVersion: 1, commandId: command.envelope.commandId, correlationId, ...(await previewV1(identity, command)) });
     }
-    const idempotencyKey = req.headers.get("X-Idempotency-Key");
-    if (!idempotencyKey || !Uuid.safeParse(idempotencyKey).success) {
-      return json(req, { error: "Chave idempotente obrigatória.", correlationId }, 400);
+    if (command.action === "get_reconciliation_plan") {
+      if (!(await authorized(identity, "cms:pim.archive"))) {
+        return json(req, { error: "Permissão insuficiente.", code: "CMS_PIM_FORBIDDEN", correlationId }, 403);
+      }
+      const { data, error } = await identity.admin.rpc("cms_get_pim_reconciliation_plan", {
+        ...common,
+        p_product_id: command.productId,
+        p_content_item_id: command.contentItemId,
+        p_correlation_id: correlationId,
+      });
+      if (error) throw error;
+      return json(req, {
+        ...(data && typeof data === "object" ? data : {}),
+        schemaVersion: 1,
+        commandId: command.envelope.commandId,
+        correlationId,
+      });
     }
-    if (command.action === "archive_product" && command.envelope.expectedVersion === undefined) {
-      return json(req, { error: "Versão esperada obrigatória.", code: "CMS_PIM_EXPECTED_VERSION_REQUIRED", correlationId }, 400);
+    if (command.action === "reconcile_product") {
+      if (!(await authorized(identity, "cms:pim.archive"))) {
+        return json(req, { error: "Permissão insuficiente.", code: "CMS_PIM_FORBIDDEN", correlationId }, 403);
+      }
+      const requestHash = await sha256(JSON.stringify(command));
+      const { data, error } = await identity.admin.rpc("cms_reconcile_legacy_pim_product", {
+        ...common,
+        p_product_id: command.productId,
+        p_content_item_id: command.contentItemId,
+        p_expected_product_version: command.envelope.expectedVersion,
+        p_expected_draft_version: command.expectedDraftVersion,
+        p_resolution: command.resolution,
+        p_acknowledged_legacy_sha256: command.acknowledgedLegacySha256 ?? null,
+        p_reason: command.reason,
+        p_command_id: command.envelope.commandId,
+        p_idempotency_key: command.envelope.commandId,
+        p_request_hash: requestHash,
+        p_correlation_id: correlationId,
+      });
+      if (error) throw error;
+      return json(req, data);
     }
-    const payload = command.action === "save_product"
-      ? { mode: command.mode, product: command.product, expectedVersion: command.envelope.expectedVersion, reason: command.reason }
-      : { ...Object.fromEntries(Object.entries(command).filter(([key]) => !["action", "envelope"].includes(key))), expectedVersion: command.envelope.expectedVersion };
-    const requestHash = await sha256(JSON.stringify(canonicalize(command)));
-    const { data, error } = await identity.admin.rpc("cms_execute_pim_command", {
-      ...common,
-      p_action: command.action,
-      p_payload: payload,
-      p_command_id: command.envelope.commandId,
-      p_idempotency_key: idempotencyKey,
-      p_request_hash: requestHash,
-      p_correlation_id: correlationId,
+    logPim("warn", "pim.legacy_mutation.blocked", correlationId, {
+      action: command.action,
+      canonicalWriter: "cms-content",
     });
-    if (error) throw error;
-    logPim("info", "pim.command.completed", correlationId, { action: command.action, productId: data?.productId });
-    return json(req, data);
+    return json(req, {
+      error: "O PIM legado está disponível somente para consulta.",
+      code: "CMS_PIM_LEGACY_READ_ONLY",
+      correlationId,
+      canonicalWriter: "cms-content",
+      preserved: true,
+    }, 409);
   } catch (error) {
     const errorRecord = error && typeof error === "object" ? (error as Record<string, unknown>) : {};
     const message =
@@ -560,6 +840,8 @@ Deno.serve(async (req) => {
       ["P0001", "40001", "23505"].includes(databaseCode);
     const invalid =
       message.includes("INVALID") ||
+      message.includes("SKU_REQUIRED") ||
+      message.includes("PUBLIC_DATA_REQUIRED") ||
       message.includes("REQUIRES") ||
       message.includes("INACTIVE") ||
       ["22023", "23514"].includes(databaseCode);
@@ -569,6 +851,11 @@ Deno.serve(async (req) => {
       "CMS_PIM_IDEMPOTENCY_CONFLICT", "CMS_PIM_MASTER_INVALID", "CMS_PIM_MASTER_INACTIVE",
       "CMS_PIM_COMPATIBILITY_INVALID", "CMS_PIM_PRIMARY_MODEL_INVALID", "CMS_PIM_VARIANT_AXES_INVALID",
       "CMS_PIM_ATTRIBUTE_TYPE_INVALID", "CMS_PIM_UNIT_INCOMPATIBLE", "CMS_PIM_SKU_OWNER_INVALID",
+      "CMS_PIM_ACTIVE_SKU_REQUIRED", "CMS_PIM_PUBLIC_DATA_REQUIRED",
+      "CMS_PIM_RECONCILIATION_INVALID", "CMS_PIM_RECONCILIATION_ACK_REQUIRED",
+      "CMS_PIM_RECONCILIATION_ACK_MISMATCH", "CMS_PIM_RECONCILIATION_IDEMPOTENCY_CONFLICT",
+      "CMS_PIM_RECONCILIATION_CONFLICT", "CMS_PIM_RECONCILIATION_FORBIDDEN",
+      "CMS_PIM_RECONCILIATION_NOT_FOUND", "CMS_PIM_RECONCILIATION_REQUIRED",
     ].find((candidate) => message.includes(candidate)) ?? "CMS_PIM_FAILURE";
     logPim(status >= 500 ? "error" : "warn", "pim.command.failed", correlationId, { action: command.action, code, status });
     return json(req, { error: status === 409 ? "Existe uma versão ou identidade mais recente." : status === 422 ? "Os dados normalizados são incompatíveis." : status === 404 ? "Produto PIM não encontrado." : status === 403 ? "Operação indisponível ou sem permissão." : "Falha na operação PIM.", code, correlationId, preserved: true }, status);

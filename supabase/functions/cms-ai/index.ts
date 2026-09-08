@@ -2,7 +2,11 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { z } from "npm:zod@4.4.3";
 import { authenticateCms } from "../_shared/cms-auth.ts";
 import { isConfiguredCmsEnvironment, isProductionOperationEnabled } from "../_shared/ev2-environment.ts";
-import { generateOpenRouterProposal, openRouterConfigured } from "../_shared/openrouter.ts";
+import {
+  APPROVED_OPENROUTER_MODEL,
+  generateOpenRouterProposal,
+  openRouterConfigured,
+} from "../_shared/openrouter.ts";
 import {
   clientAddress,
   consumeRateLimit,
@@ -90,9 +94,15 @@ const AiRequest = z
     prompt: z.string().trim().min(3).max(4000).optional(),
     source: SyntheticSource.optional(),
     proposalKind: ProposalKind.optional(),
-    targetRef: z.string().regex(/^g10x-[a-z0-9-]{3,100}$/).optional(),
+    targetRef: z
+      .string()
+      .regex(/^g10x-[a-z0-9-]{3,100}$/)
+      .optional(),
     proposalId: Uuid.optional(),
-    expectedProposalHash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+    expectedProposalHash: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/)
+      .optional(),
     decision: z.enum(["accepted", "rejected", "edited"]).optional(),
     rationale: z.string().trim().min(3).max(1000).optional(),
     editedFields: z.array(EditedField).min(1).max(50).optional(),
@@ -111,16 +121,12 @@ const AiRequest = z
       issue("prompt", "Sessão, solicitação, fonte e tipo de proposta são obrigatórios.");
     if (
       command.action === "decide_proposal" &&
-      (!command.proposalId ||
-        !command.expectedProposalHash ||
-        !command.decision ||
-        !command.rationale)
+      (!command.proposalId || !command.expectedProposalHash || !command.decision || !command.rationale)
     )
       issue("decision", "Proposta, hash, decisão e justificativa são obrigatórios.");
     if (command.action === "decide_proposal" && command.decision === "edited" && !command.editedFields)
       issue("editedFields", "Campos editados são obrigatórios para esta decisão.");
-    if (command.action === "close_session" && !command.sessionId)
-      issue("sessionId", "Sessão obrigatória.");
+    if (command.action === "close_session" && !command.sessionId) issue("sessionId", "Sessão obrigatória.");
     if (command.action === "record_eval" && !command.eval)
       issue("eval", "Métricas de avaliação obrigatórias.");
   });
@@ -164,6 +170,10 @@ function firstSentence(value: string): string {
   return (match?.[0] ?? value).trim().slice(0, 900);
 }
 
+function containsExecutableAiOutput(value: string): boolean {
+  return /<\/?(?:script|iframe|object|embed|svg)\b|\bjavascript:|\bon(?:error|load|click)\s*=/i.test(value);
+}
+
 function buildSyntheticProposal(
   prompt: string,
   source: SyntheticSourceInput,
@@ -171,7 +181,12 @@ function buildSyntheticProposal(
   targetRef?: string,
 ) {
   const confidence = sourceConfidence(prompt, source.excerpt, kind);
-  const location = source.title + " · " + source.version + " · " + source.locator +
+  const location =
+    source.title +
+    " · " +
+    source.version +
+    " · " +
+    source.locator +
     (source.page ? " · página " + source.page : "");
   const value =
     kind === "locate"
@@ -233,9 +248,7 @@ function errorResponse(req: Request, error: { message?: string; code?: string },
           ? 409
           : marker.includes("FORBIDDEN") || marker.includes("FEATURE_DISABLED")
             ? 403
-            : marker.includes("INVALID") ||
-                marker.includes("REQUIRED") ||
-                marker.includes("UNREDACTED")
+            : marker.includes("INVALID") || marker.includes("REQUIRED") || marker.includes("UNREDACTED")
               ? 400
               : 500;
   const safeMessage =
@@ -253,7 +266,7 @@ function errorResponse(req: Request, error: { message?: string; code?: string },
                 ? "A proposta deve ser decidida por outro revisor autorizado."
                 : marker === "CMS_AI_LOW_CONFIDENCE_PENDING"
                   ? "Campos de baixa confiança precisam ser conferidos e editados antes da decisão."
-              : "A operação assistiva foi recusada com segurança.";
+                  : "A operação assistiva foi recusada com segurança.";
   return json(req, { error: safeMessage, code: marker, correlationId, preserved: true }, status);
 }
 
@@ -273,10 +286,16 @@ Deno.serve(async (req) => {
   }
   const { environment, siteKey } = command.envelope.actorContext;
   const correlationId = command.envelope.correlationId;
-  if (environment === "production" && !isProductionOperationEnabled(environment))
+  if (environment === "production")
     return json(
       req,
-      { error: "Produção não está disponível nesta fase.", code: "CMS_AI_PRODUCTION_GATED", correlationId },
+      {
+        error: "Produção não está disponível nesta fase.",
+        code: isProductionOperationEnabled(environment)
+          ? "CMS_AI_ENVIRONMENT_NOT_AUTHORIZED"
+          : "CMS_AI_PRODUCTION_GATED",
+        correlationId,
+      },
       403,
     );
   const configuredEnvironment = Deno.env.get("CMS_ENVIRONMENT");
@@ -289,7 +308,7 @@ Deno.serve(async (req) => {
       403,
     );
   const externalProviderEnabled = openRouterConfigured();
-  if (environment === "production" && !externalProviderEnabled)
+  if (!externalProviderEnabled && command.action !== "capability")
     return json(
       req,
       {
@@ -350,10 +369,7 @@ Deno.serve(async (req) => {
     p_session_id: identity.claims.sessionId,
     p_issued_at: identity.claims.issuedAt,
   };
-  const { data: capability, error: capabilityError } = await identity.admin.rpc(
-    "cms_ai_capability",
-    context,
-  );
+  const { data: capability, error: capabilityError } = await identity.admin.rpc("cms_ai_capability", context);
   if (capabilityError)
     return json(
       req,
@@ -368,15 +384,24 @@ Deno.serve(async (req) => {
   if (command.action === "capability")
     return json(req, {
       ...capability,
+      providerModel: APPROVED_OPENROUTER_MODEL,
       ...(externalProviderEnabled
         ? {
             providerMode: "openrouter",
             externalProviderEnabled: true,
             externalProviderReady: true,
-            realDataAllowed: true,
+            realDataAllowed: false,
             decisionStatus: "approved",
           }
-        : {}),
+        : {
+            enabled: false,
+            source: "provider_unavailable",
+            providerMode: "openrouter",
+            externalProviderEnabled: true,
+            externalProviderReady: false,
+            realDataAllowed: false,
+            manualFallback: true,
+          }),
       correlationId,
     });
   if (capability?.enabled !== true)
@@ -397,23 +422,9 @@ Deno.serve(async (req) => {
       p_correlation_id: correlationId,
     });
     if (error) return errorResponse(req, error, correlationId);
-    if (!externalProviderEnabled || !data || typeof data !== "object") return json(req, data);
+    if (!data || typeof data !== "object") return json(req, data);
     const workspace = data as Record<string, unknown>;
     const policy = workspace.policy as Record<string, unknown> | undefined;
-    const sessions = Array.isArray(workspace.sessions) ? workspace.sessions : [];
-    const sessionIds = sessions
-      .map((item) => (item as Record<string, unknown>).id)
-      .filter((id): id is string => typeof id === "string");
-    const { data: providerCalls } = sessionIds.length
-      ? await identity.admin
-          .from("cms_ai_provider_calls")
-          .select("session_id")
-          .eq("actor_id", identity.user.id)
-          .eq("provider", "openrouter")
-          .eq("status", "succeeded")
-          .in("session_id", sessionIds)
-      : { data: [] as { session_id: string }[] };
-    const providerSessionIds = new Set((providerCalls ?? []).map((item) => item.session_id));
     return json(req, {
       ...workspace,
       policy: {
@@ -421,14 +432,10 @@ Deno.serve(async (req) => {
         status: "approved",
         providerMode: "openrouter",
         externalProviderEnabled: true,
-        allowedDataClasses: ["business_content"],
+        externalProviderReady: true,
+        allowedDataClasses: ["synthetic"],
+        realDataAllowed: false,
       },
-      sessions: sessions.map((item) => {
-        const session = item as Record<string, unknown>;
-        return providerSessionIds.has(String(session.id))
-          ? { ...session, providerMode: "openrouter", reviewable: true }
-          : session;
-      }),
     });
   }
 
@@ -460,6 +467,29 @@ Deno.serve(async (req) => {
       p_idempotency_key: idempotencyKey,
       p_request_hash: requestHash,
     });
+  const recordProviderCall = (
+    aiSessionId: string,
+    status: "succeeded" | "failed",
+    inputTokens: number,
+    outputTokens: number,
+    errorCode: string | null,
+  ) =>
+    identity.admin.rpc("cms_record_ai_provider_call_scoped", {
+      p_actor_id: identity.user.id,
+      p_ai_session_id: aiSessionId,
+      p_environment: environment,
+      p_site_key: siteKey,
+      p_aal: identity.claims.aal,
+      p_jwt_session_id: identity.claims.sessionId,
+      p_issued_at: identity.claims.issuedAt,
+      p_provider: "openrouter",
+      p_model_key: APPROVED_OPENROUTER_MODEL,
+      p_input_tokens: Math.min(4000, Math.max(1, inputTokens)),
+      p_output_tokens: Math.min(1000, Math.max(1, outputTokens)),
+      p_status: status,
+      p_error_code: errorCode,
+      p_correlation_id: correlationId,
+    });
 
   if (command.action === "start_session") {
     const title = redactAiText(command.title ?? "", 160);
@@ -480,9 +510,17 @@ Deno.serve(async (req) => {
       tokenBudget: 8000,
     });
     if (error) return errorResponse(req, error, correlationId);
-    return json(req, externalProviderEnabled && data && typeof data === "object"
-      ? { ...(data as Record<string, unknown>), providerMode: "openrouter", externalProviderEnabled: true }
-      : data);
+    return json(
+      req,
+      externalProviderEnabled && data && typeof data === "object"
+        ? {
+            ...(data as Record<string, unknown>),
+            providerMode: "openrouter",
+            providerModel: APPROVED_OPENROUTER_MODEL,
+            externalProviderEnabled: true,
+          }
+        : data,
+    );
   }
 
   if (command.action === "generate_proposal") {
@@ -502,10 +540,7 @@ Deno.serve(async (req) => {
       ]),
     ].sort();
     const injectionSignals = [
-      ...new Set([
-        ...detectAiPromptInjection(prompt.value),
-        ...detectAiPromptInjection(sourceExcerpt.value),
-      ]),
+      ...new Set([...detectAiPromptInjection(prompt.value), ...detectAiPromptInjection(sourceExcerpt.value)]),
     ].sort();
     const blocked =
       prompt.blocked ||
@@ -524,8 +559,7 @@ Deno.serve(async (req) => {
       return json(
         req,
         {
-          error:
-            "A solicitação ou a fonte foi bloqueada pela política. Nenhum conteúdo foi processado.",
+          error: "A solicitação ou a fonte foi bloqueada pela política. Nenhum conteúdo foi processado.",
           code: "CMS_AI_SAFETY_BLOCKED",
           correlationId,
           preserved: true,
@@ -541,58 +575,105 @@ Deno.serve(async (req) => {
       excerpt: sourceExcerpt.value,
     };
     let proposal = buildSyntheticProposal(prompt.value, safeSource, command.proposalKind!, command.targetRef);
-    let providerMode = "synthetic";
-    let providerModel = "deterministic-v1";
-    let providerInputTokens: number | null = null;
-    let providerOutputTokens: number | null = null;
-    if (externalProviderEnabled && command.proposalKind !== "locate") {
-      try {
-        const generated = await generateOpenRouterProposal({
-          prompt: prompt.value,
-          sourceTitle: safeSource.title,
-          sourceVersion: safeSource.version,
-          sourceLocator: safeSource.locator,
-          sourceExcerpt: safeSource.excerpt,
-          proposalKind: command.proposalKind!,
-        });
-        const field = proposal.fields[0];
-        proposal = {
-          ...proposal,
-          summary: generated.summary,
-          fields: [{ ...field, value: generated.value, confidence: generated.confidence }],
-          diff: { before: "", after: generated.value },
-          confidence: generated.confidence,
-          hasPendingFields: generated.confidence < AI_LOW_CONFIDENCE_THRESHOLD,
-        };
-        providerMode = "openrouter";
-        providerModel = generated.model;
-        providerInputTokens = generated.inputTokens;
-        providerOutputTokens = generated.outputTokens;
-      } catch (error) {
-        const providerFailure = error instanceof Error && /^OPENROUTER_[A-Z0-9_]+$/.test(error.message)
+    let providerInputTokens: number;
+    let providerOutputTokens: number;
+    try {
+      const generated = await generateOpenRouterProposal({
+        prompt: prompt.value,
+        sourceTitle: safeSource.title,
+        sourceVersion: safeSource.version,
+        sourceLocator: safeSource.locator,
+        sourceExcerpt: safeSource.excerpt,
+        proposalKind: command.proposalKind!,
+      });
+      const safeSummary = redactAiText(generated.summary, 1000);
+      const safeValue = redactAiText(generated.value, 3000);
+      if (
+        safeSummary.categories.length ||
+        safeValue.categories.length ||
+        detectAiPromptInjection(safeSummary.value).length ||
+        detectAiPromptInjection(safeValue.value).length ||
+        containsExecutableAiOutput(safeSummary.value) ||
+        containsExecutableAiOutput(safeValue.value)
+      )
+        throw new Error("OPENROUTER_OUTPUT_UNSAFE");
+      const field = proposal.fields[0];
+      proposal = {
+        ...proposal,
+        summary: safeSummary.value,
+        fields: [{ ...field, value: safeValue.value, confidence: generated.confidence }],
+        diff: { before: "", after: safeValue.value },
+        confidence: generated.confidence,
+        hasPendingFields: generated.confidence < AI_LOW_CONFIDENCE_THRESHOLD,
+      };
+      providerInputTokens = generated.inputTokens;
+      providerOutputTokens = generated.outputTokens;
+    } catch (error) {
+      const providerFailure =
+        error instanceof Error && /^OPENROUTER_[A-Z0-9_]+$/.test(error.message)
           ? error.message
           : "OPENROUTER_REQUEST_FAILED";
-        return json(req, {
+      const normalizedFailure = providerFailure.toLowerCase().slice(0, 64);
+      const { error: providerAuditError } = await recordProviderCall(
+        command.sessionId!,
+        "failed",
+        estimateAiTokens(prompt.value, safeSource.excerpt),
+        1,
+        normalizedFailure,
+      );
+      if (providerAuditError)
+        return json(
+          req,
+          {
+            error: "A chamada externa falhou e a auditoria não pôde ser confirmada; use o cadastro manual.",
+            code: "CMS_AI_PROVIDER_AUDIT_UNAVAILABLE",
+            correlationId,
+            preserved: true,
+          },
+          503,
+        );
+      return json(
+        req,
+        {
           error: "A IA está temporariamente indisponível; o cadastro manual continua funcionando.",
           code: "CMS_AI_PROVIDER_UNAVAILABLE",
           providerFailure,
           correlationId,
           preserved: true,
-        }, 503);
-      }
+        },
+        503,
+      );
     }
+    const { error: providerAuditError } = await recordProviderCall(
+      command.sessionId!,
+      "succeeded",
+      providerInputTokens,
+      providerOutputTokens,
+      null,
+    );
+    if (providerAuditError)
+      return json(
+        req,
+        {
+          error: "A resposta externa não foi armazenada porque a auditoria do provedor falhou.",
+          code: "CMS_AI_PROVIDER_AUDIT_UNAVAILABLE",
+          correlationId,
+          preserved: true,
+        },
+        503,
+      );
     const proposalHash = await sha256(
       JSON.stringify(canonicalize({ ...proposal, source: safeSource, policy: AI_SAFETY_POLICY_VERSION })),
     );
-    const inputTokens = providerInputTokens ?? estimateAiTokens(prompt.value, safeSource.excerpt);
-    const outputTokens = providerOutputTokens ?? estimateAiTokens(
-      proposal.summary,
-      proposal.fields.map((field) => field.value).join(" "),
-    );
+    const inputTokens = providerInputTokens;
+    const outputTokens = providerOutputTokens;
+    const promptHash = await sha256(prompt.value);
     const { data, error } = await execute("generate_proposal", {
       sessionId: command.sessionId,
-      prompt: prompt.value,
-      promptHash: await sha256(prompt.value),
+      // The provider receives the redacted request in memory. Persistence keeps
+      // only this non-reversible metadata marker and the digest.
+      prompt: `request-${promptHash}`,
+      promptHash,
       risk: categories.length ? "redacted" : "safe",
       redactionCategories: categories,
       sourceKind: "synthetic_document",
@@ -612,35 +693,12 @@ Deno.serve(async (req) => {
       proposalHash,
       inputTokens,
       outputTokens,
-      providerMode,
-      providerModel,
-      externalProviderEnabled: providerMode === "openrouter",
+      providerMode: "openrouter",
+      providerModel: APPROVED_OPENROUTER_MODEL,
+      externalProviderEnabled: true,
       policyVersion: AI_SAFETY_POLICY_VERSION,
     });
     if (error) return errorResponse(req, error, correlationId);
-    if (providerMode === "openrouter") {
-      const { error: providerAuditError } = await identity.admin.from("cms_ai_provider_calls").insert({
-        actor_id: identity.user.id,
-        session_id: command.sessionId,
-        provider: providerMode,
-        model_key: providerModel,
-        input_tokens: inputTokens,
-        output_tokens: outputTokens,
-        correlation_id: correlationId,
-        status: "succeeded",
-      });
-      if (providerAuditError)
-        return json(
-          req,
-          {
-            error: "A proposta foi preservada, mas a auditoria do provedor falhou. Recarregue antes de revisar.",
-            code: "CMS_AI_PROVIDER_AUDIT_UNAVAILABLE",
-            correlationId,
-            preserved: true,
-          },
-          503,
-        );
-    }
     return json(req, data);
   }
 

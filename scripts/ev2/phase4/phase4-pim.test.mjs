@@ -34,10 +34,11 @@ test("EV2.4 migration is additive, private and preserves v1", async () => {
   assert.doesNotMatch(sql, /insert into public\.cms_published_projection|update public\.cms_content_items/i);
 });
 
-test("identity, SKU, units and history fail closed", async () => {
-  const [sql, hotfix, databaseTest] = await Promise.all([
+test("identity, SKU, units and historical v2 evidence remain traceable", async () => {
+  const [sql, hotfix, historicalDatabaseTest, currentDatabaseTest] = await Promise.all([
     read("supabase/migrations/0041_ev2_pim_core.sql"),
     read("supabase/migrations/0042_ev2_pim_conflict_sqlstate.sql"),
+    read("supabase/tests/historical/rls_ev2_phase4_pim_mutating_v2.sql.txt"),
     read("supabase/tests/rls_ev2_phase4_pim.test.sql"),
   ]);
   for (const evidence of [
@@ -61,7 +62,10 @@ test("identity, SKU, units and history fail closed", async () => {
   assert.match(sql, /p_payload->>'mode' <> 'update'/);
   assert.match(hotfix, /v_matches <> 2/);
   assert.match(hotfix, /ERRCODE = ''P0001''/);
-  assert.match(databaseTest, /'P0001',\s*'CMS_PIM_CONFLICT'/);
+  assert.match(historicalDatabaseTest, /'P0001',\s*'CMS_PIM_CONFLICT'/);
+  assert.match(historicalDatabaseTest, /HISTORICAL ONLY/);
+  assert.match(currentDatabaseTest, /CMS_PIM_LEGACY_READ_ONLY/);
+  assert.match(currentDatabaseTest, /cms-content consolidation in migration 0078/i);
 });
 
 test("PIM and attribute Edge boundaries are authenticated and production-gated", async () => {
@@ -89,10 +93,12 @@ test("PIM and attribute Edge boundaries are authenticated and production-gated",
 });
 
 test("guided editor uses strict contracts, attribute sets and adapter v1", async () => {
-  const [contract, page, adapter, routes, navigation] = await Promise.all([
+  const [contract, page, adapter, pimEdge, hardening, routes, navigation] = await Promise.all([
     read("src/shared/contracts/ev2-pim.ts"),
     read("src/admin/pages/AdminPimPage.tsx"),
     read("src/admin/pim-v1-adapter.ts"),
+    read("supabase/functions/cms-pim/index.ts"),
+    read("supabase/migrations/0060_cms_pim_publication_integrity.sql"),
     read("src/app/routes.tsx"),
     read("src/admin/admin-navigation.ts"),
   ]);
@@ -101,21 +107,51 @@ test("guided editor uses strict contracts, attribute sets and adapter v1", async
   assert.match(contract, /Ev2PimAttributeCatalogResultSchema/);
   assert.match(page, /isEv2FeatureEnabled\(profile, "ev2\.pim_v2"\)/);
   assert.match(page, /attributesCommand/);
-  assert.match(page, /Especificações técnicas/);
-  assert.match(page, /Preencha as especificações obrigatórias/);
+  assert.match(page, /Visão especializada de produtos/);
+  assert.match(page, /consulta o mesmo cadastro oficial de Produtos/);
+  assert.match(page, /Abrir cadastro completo/);
+  assert.match(page, /Reconciliação autoritativa do produto legado/);
   assert.doesNotMatch(page, /<label>\s*(?:UUID|JSON)/i);
   assert.match(adapter, /pimGraphToV1/);
   assert.match(adapter, /comparePimV1Projection/);
+  assert.match(adapter, /CMS_PIM_ACTIVE_SKU_REQUIRED/);
+  assert.match(adapter, /CMS_PIM_PUBLIC_DATA_REQUIRED/);
+  assert.doesNotMatch(adapter, /["']PENDENTE["']/);
+  assert.doesNotMatch(adapter, /Marca não informada|Linha geral|Não informado/);
+  assert.match(pimEdge, /CMS_PIM_ACTIVE_SKU_REQUIRED/);
+  assert.match(pimEdge, /CMS_PIM_PUBLIC_DATA_REQUIRED/);
+  assert.doesNotMatch(pimEdge, /["']PENDENTE["']/);
+  assert.doesNotMatch(pimEdge, /Marca não informada|Linha geral|Não informado/);
+  assert.match(hardening, /cms_require_pim_active_skus_for_publication/);
+  assert.match(hardening, /CMS_PIM_ACTIVE_SKU_REQUIRED/);
+  assert.match(hardening, /CMS_PIM_PUBLIC_DATA_REQUIRED/);
+  assert.match(hardening, /sku\.status = 'active'/);
+  assert.match(hardening, /variant\.status = 'active'/);
+  assert.match(hardening, /sku_variant\.status = 'active'/);
+  assert.match(hardening, /jsonb_array_length\(v_payload_models\) <> v_active_model_count/);
+  assert.match(hardening, /count\(distinct lower\(payload_model\.value ->> 'id'\)\)/);
+  assert.match(hardening, /payload_model\.value ->> 'model' is distinct from model\.name/);
+  assert.match(hardening, /payload_model\.value ->> 'manufacturerReference'/);
+  assert.match(hardening, /payload_variant\.value ->> 'code'/);
+  assert.match(hardening, /sku\.product_id = v_pim_product_id/);
   assert.match(routes, /path: "pim"/);
   assert.match(navigation, /cms:pim\.read/);
 });
 
-test("G4 database checks preserve units, idempotency and AAL2", async () => {
-  const databaseTest = await read("supabase/tests/rls_ev2_phase4_pim.test.sql");
-  assert.match(databaseTest, /select plan\(35\)/);
-  assert.match(databaseTest, /L\/s ranges are materialized in the canonical m3\/h unit/);
-  assert.match(databaseTest, /an idempotent retry never creates a second SKU/);
-  assert.match(databaseTest, /archival requires an AAL2 session/);
+test("G4 executable database checks enforce the canonical 0078 cutover", async () => {
+  const [databaseTest, consolidationTest] = await Promise.all([
+    read("supabase/tests/rls_ev2_phase4_pim.test.sql"),
+    read("supabase/tests/rls_cms_product_pim_consolidation.test.sql"),
+  ]);
+  assert.match(databaseTest, /select plan\(20\)/);
+  for (const action of ["save_product", "generate_sku", "archive_product"])
+    assert.match(databaseTest, new RegExp(`${action}[\\s\\S]*CMS_PIM_LEGACY_READ_ONLY`));
+  assert.match(databaseTest, /service role cannot insert legacy products directly/);
+  assert.match(databaseTest, /canonical identifiers are claimed atomically at publication/);
+  assert.match(consolidationTest, /select plan\(55\)/);
+  assert.match(consolidationTest, /a second product cannot publish the same normalized SKU/);
+  assert.match(consolidationTest, /required metadata cannot be forged false/);
+  assert.match(consolidationTest, /terminal QA transition cleans shared-container product options/);
 });
 
 test("EV2.4 canary is SHA-pinned, synthetic, isolated and fail-closed", async () => {

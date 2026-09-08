@@ -482,14 +482,17 @@ try {
     `${operatorCapability.json.source}/${reviewerCapability.json.source}`,
   );
   check(
-    "synthetic_provider_boundary",
-    operatorCapability.json.providerMode === "synthetic" &&
-      operatorCapability.json.externalProviderEnabled === false &&
+    "approved_provider_boundary",
+    operatorCapability.json.providerMode === "openrouter" &&
+      operatorCapability.json.providerModel === "nvidia/nemotron-3.5-lightning:free" &&
+      operatorCapability.json.externalProviderEnabled === true &&
+      operatorCapability.json.externalProviderReady === true &&
       operatorCapability.json.realDataAllowed === false &&
       operatorCapability.json.syntheticOnly === true,
     JSON.stringify({
       providerMode: operatorCapability.json.providerMode,
       externalProviderEnabled: operatorCapability.json.externalProviderEnabled,
+      externalProviderReady: operatorCapability.json.externalProviderReady,
       realDataAllowed: operatorCapability.json.realDataAllowed,
     }),
   );
@@ -520,7 +523,10 @@ try {
     "policy_contract",
     workspace.json.policy.gate === "G14" &&
       workspace.json.policy.productionAllowed === false &&
-      workspace.json.policy.externalProviderEnabled === false &&
+      workspace.json.policy.providerMode === "openrouter" &&
+      workspace.json.policy.providerModel === "nvidia/nemotron-3.5-lightning:free" &&
+      workspace.json.policy.externalProviderEnabled === true &&
+      workspace.json.policy.externalProviderReady === true &&
       workspace.json.policy.reviewerSeparationRequired === true,
     JSON.stringify(workspace.json.policy),
   );
@@ -963,7 +969,7 @@ const report = {
   checks: checks.length,
   passed: checks.filter((item) => item.result === "PASS").length,
   checkResults: checks,
-  providerMode: "synthetic",
+  providerMode: "openrouter",
   externalProviderCalls: 0,
   realDataUsed: false,
   productionMutations: 0,

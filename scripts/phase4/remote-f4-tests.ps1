@@ -165,7 +165,7 @@ try {
   $detail = Invoke-Api Get "$ProjectUrl/functions/v1/cms-public?type=detail&slug=$slugA" @{ apikey = $anonKey }
   $list = Invoke-Api Get "$ProjectUrl/functions/v1/cms-public?type=products&segment=Segmento%20sint%C3%A9tico" @{ apikey = $anonKey }
   $search = Invoke-Api Get "$ProjectUrl/functions/v1/cms-public?type=search&q=fixture%20f4" @{ apikey = $anonKey }
-  $compare = Invoke-Api Get "$ProjectUrl/functions/v1/cms-public?type=products&ids=$slugA,$slugB" @{ apikey = $anonKey }
+  $compare = Invoke-Api Get "$ProjectUrl/functions/v1/cms-public?type=products&slugs=$slugA,$slugB" @{ apikey = $anonKey }
   $redirect = Invoke-Api Get "$ProjectUrl/functions/v1/cms-public?type=redirect&path=/catalogo-sintetico/$slugA" @{ apikey = $anonKey }
   $sitemap = Invoke-WebRequest -Method Get -Uri "$ProjectUrl/functions/v1/cms-public?type=sitemap" -Headers @{ apikey = $anonKey } -SkipHttpErrorCheck
   Assert-Check "public_detail_media_schema" ($detail.Status -eq 200 -and @($detail.Json.payload.models[0].variants).Count -eq 1 -and @($detail.Json.media_urls.PSObject.Properties).Count -ge 2) "detalhe/mídia"

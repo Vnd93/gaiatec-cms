@@ -152,7 +152,28 @@ describe("EV2.9 visual contracts", () => {
   });
 
   it("accepts new components only when a governed visual provenance is attached", () => {
-    const page = createInitialPagePayload("page");
+    const page = {
+      ...createInitialPagePayload("page"),
+      title: "Página visual sintética",
+      route: { path: "/pagina-visual-sintetica" },
+      seo: {
+        title: "Página visual sintética | GAIATEC",
+        description: "Página sintética para validar a proveniência governada do Estúdio Visual.",
+        canonicalPath: "/pagina-visual-sintetica",
+        indexable: false,
+      },
+      provenance: [
+        {
+          sourceKind: "owner_authored" as const,
+          rightsConfirmed: true as const,
+          commercialOwner: "Owner sintético",
+          technicalOwner: "Revisor sintético",
+          verifiedAt: "2026-09-07T00:00:00.000Z",
+        },
+      ],
+      governanceState: "synthetic_test" as const,
+      approval: { businessOwner: "Owner sintético", editorialReviewer: "Revisor sintético" },
+    };
     const block = prepareVisualBlock(createPageBlock("split_content", references));
     expect(CmsPageContentSchema.safeParse({ ...page, blocks: [block] }).success).toBe(false);
     expect(

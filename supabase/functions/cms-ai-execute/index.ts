@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { z } from "npm:zod@4.4.3";
 import { authenticateCms } from "../_shared/cms-auth.ts";
 import { isConfiguredCmsEnvironment, isProductionOperationEnabled } from "../_shared/ev2-environment.ts";
+import { APPROVED_OPENROUTER_MODEL, openRouterConfigured } from "../_shared/openrouter.ts";
 import {
   clientAddress,
   consumeRateLimit,
@@ -13,7 +14,6 @@ import {
 } from "../_shared/security.ts";
 import { detectAiPromptInjection, redactAiText } from "../_shared/ai-safety.ts";
 
-const EXTERNAL_PROVIDER_ENABLED = false;
 const Uuid = z.uuid();
 const TargetRef = z.string().regex(/^g14x-[a-z0-9-]{3,100}$/);
 const StepKey = z.string().regex(/^step-[a-z0-9-]{3,60}$/);
@@ -57,7 +57,9 @@ const ExecutionStep = z.discriminatedUnion("toolKey", [
     })
     .strict(),
   z.object({ ...StepBase, toolKey: z.literal("release.publish"), arguments: z.object({}).strict() }).strict(),
-  z.object({ ...StepBase, toolKey: z.literal("release.rollback"), arguments: z.object({}).strict() }).strict(),
+  z
+    .object({ ...StepBase, toolKey: z.literal("release.rollback"), arguments: z.object({}).strict() })
+    .strict(),
 ]);
 
 const AiExecutionRequest = z
@@ -82,7 +84,10 @@ const AiExecutionRequest = z
     runId: Uuid.optional(),
     title: z.string().trim().min(3).max(160).optional(),
     steps: z.array(ExecutionStep).min(1).max(20).optional(),
-    expectedPlanHash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+    expectedPlanHash: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/)
+      .optional(),
     decision: z.enum(["approved", "rejected"]).optional(),
     rationale: z.string().trim().min(3).max(1000).optional(),
   })
@@ -204,7 +209,9 @@ function errorResponse(req: Request, error: { message?: string; code?: string },
             marker.includes("SEPARATION") ||
             marker.includes("APPROVAL_REQUIRED")
           ? 409
-          : marker.includes("FORBIDDEN") || marker.includes("FEATURE_DISABLED") || marker.includes("TOOL_DENIED")
+          : marker.includes("FORBIDDEN") ||
+              marker.includes("FEATURE_DISABLED") ||
+              marker.includes("TOOL_DENIED")
             ? 403
             : marker.includes("INVALID") || marker.includes("REQUIRED") || marker.includes("SYNTHETIC_DATA")
               ? 400
@@ -252,12 +259,14 @@ Deno.serve(async (req) => {
   }
   const { environment, siteKey } = command.envelope.actorContext;
   const correlationId = command.envelope.correlationId;
-  if (environment === "production" && !isProductionOperationEnabled(environment))
+  if (environment === "production")
     return json(
       req,
       {
         error: "Produção não está disponível para a EV2.14.",
-        code: "CMS_AI_EXECUTE_PRODUCTION_GATED",
+        code: isProductionOperationEnabled(environment)
+          ? "CMS_AI_EXECUTE_ENVIRONMENT_NOT_AUTHORIZED"
+          : "CMS_AI_EXECUTE_PRODUCTION_GATED",
         correlationId,
       },
       403,
@@ -271,12 +280,13 @@ Deno.serve(async (req) => {
       { error: "Escopo transacional não autorizado.", code: "CMS_AI_EXECUTE_SCOPE_MISMATCH", correlationId },
       403,
     );
-  if (EXTERNAL_PROVIDER_ENABLED || Deno.env.get("CMS_AI_EXTERNAL_PROVIDER_ENABLED") === "true")
+  const externalProviderReady = openRouterConfigured();
+  if (!externalProviderReady && command.action !== "capability")
     return json(
       req,
       {
-        error: "Provedor externo recusado nesta fase.",
-        code: "CMS_AI_EXECUTE_EXTERNAL_PROVIDER_DENIED",
+        error: "Política do provedor de IA não está configurada de forma segura.",
+        code: "CMS_AI_EXECUTE_PROVIDER_POLICY_MISMATCH",
         correlationId,
       },
       503,
@@ -325,12 +335,20 @@ Deno.serve(async (req) => {
     context,
   );
   if (capabilityError)
-    return json(
-      req,
-      { enabled: false, source: "unavailable", correlationId, manualFallback: true },
-      503,
-    );
-  if (command.action === "capability") return json(req, { ...capability, correlationId });
+    return json(req, { enabled: false, source: "unavailable", correlationId, manualFallback: true }, 503);
+  if (command.action === "capability")
+    return json(req, {
+      ...capability,
+      enabled: capability?.enabled === true && externalProviderReady,
+      correlationId,
+      providerMode: "openrouter",
+      providerModel: APPROVED_OPENROUTER_MODEL,
+      externalProviderEnabled: true,
+      externalProviderReady,
+      realDataAllowed: false,
+      syntheticOnly: true,
+      manualFallback: capability?.enabled !== true || !externalProviderReady,
+    });
   if (mutation && identity.claims.aal !== "aal2")
     return json(
       req,
@@ -359,7 +377,23 @@ Deno.serve(async (req) => {
       ...context,
       p_correlation_id: correlationId,
     });
-    return error ? errorResponse(req, error, correlationId) : json(req, data);
+    if (error) return errorResponse(req, error, correlationId);
+    if (!data || typeof data !== "object") return json(req, data);
+    const workspace = data as Record<string, unknown>;
+    const policy = workspace.policy as Record<string, unknown> | undefined;
+    return json(req, {
+      ...workspace,
+      policy: {
+        ...policy,
+        providerMode: "openrouter",
+        providerModel: APPROVED_OPENROUTER_MODEL,
+        externalProviderEnabled: true,
+        externalProviderReady,
+        realDataAllowed: false,
+        automaticPublishAllowed: false,
+        manualFallback: true,
+      },
+    });
   }
 
   const text = inspectedText(command);
@@ -382,7 +416,10 @@ Deno.serve(async (req) => {
         p_idempotency_key: req.headers.get("X-Idempotency-Key") ?? `g14-denial-${correlationId}`,
         p_request_hash: denialHash,
       })
-      .then(() => undefined, () => undefined);
+      .then(
+        () => undefined,
+        () => undefined,
+      );
     return json(
       req,
       {
@@ -435,6 +472,9 @@ Deno.serve(async (req) => {
       p_idempotency_key: `g14-policy-denial-${denialCommandId}`,
       p_request_hash: denialHash,
     })
-    .then(() => undefined, () => undefined);
+    .then(
+      () => undefined,
+      () => undefined,
+    );
   return errorResponse(req, error, correlationId);
 });

@@ -3,7 +3,8 @@
  * Versionado: ao alterar o TEXTO, incremente a VERSAO (fica registrado em cada
  * assinatura, em rdo_relatorios.termos_versao). Texto livre para edição.
  */
-export const TERMOS_VERSAO = "v2-2026-08-pendente-juridico";
+// Texto aprovado no Gate G1 conforme ADR-010 e respectivo aceite canônico.
+export const TERMOS_VERSAO = "v3-2026-09-adr010-aprovado";
 
 export const TERMOS_TITULO = "Termos de Assinatura Eletrônica — Relatório Diário de Obra";
 
@@ -17,4 +18,4 @@ export const TERMOS_TEXTO = `Ao assinar este Relatório Diário de Obra (RDO), d
 
 4. Reconheço que a força probatória e o nível de assinatura aplicável dependem do contexto, da aceitação das partes e da legislação específica. A correção posterior gera nova versão e preserva a anterior.
 
-A GAIATEC trata os dados deste relatório para acompanhamento e documentação da obra, conforme a política de privacidade e retenção aplicável. Este texto permanece sujeito à aprovação jurídica e de negócio antes do Gate G1.`;
+A GAIATEC trata os dados deste relatório para acompanhamento e documentação da obra, conforme a política de privacidade e retenção aplicável.`;

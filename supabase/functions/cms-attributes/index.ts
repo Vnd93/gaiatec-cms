@@ -35,6 +35,7 @@ const Command = z.discriminatedUnion("action", [
 type AttributeCommand = z.infer<typeof Command>;
 type Identity = NonNullable<Awaited<ReturnType<typeof authenticateCms>>>;
 type Row = Record<string, any>;
+type AttributeActorScope = { isQaActor: boolean; active: boolean };
 
 async function authorized(identity: Identity) {
   const { data } = await identity.admin.rpc("cms_actor_authorized", {
@@ -47,85 +48,78 @@ async function authorized(identity: Identity) {
   return data === true;
 }
 
-async function listCatalog(identity: Identity, categoryId: string) {
-  const [{ data: units, error: unitsError }, { data: attributeSet, error: setError }] = await Promise.all([
-    identity.admin
-      .from("cms_pim_units")
-      .select("code,label,symbol,dimension_key,canonical_code,factor_to_canonical,offset_to_canonical")
-      .eq("active", true)
-      .order("dimension_key")
-      .order("code"),
-    identity.admin
-      .from("cms_pim_attribute_sets")
-      .select("id,category_id,name")
-      .eq("site_key", "main")
-      .eq("category_id", categoryId)
-      .eq("status", "active")
-      .maybeSingle(),
-  ]);
-  if (unitsError) throw unitsError;
-  if (setError) throw setError;
-  if (!attributeSet) {
-    return {
-      attributeSet: null,
-      definitions: [],
-      units: (units ?? []).map(mapUnit),
-    };
-  }
+async function actorReadScope(
+  identity: Identity,
+  environment: "local" | "staging" | "production",
+): Promise<AttributeActorScope> {
+  const { data, error } = await identity.admin.rpc("cms_actor_scope_context", {
+    p_actor_id: identity.user.id,
+    p_environment: environment,
+  });
+  if (error || typeof data !== "object" || !data) throw new Error("CMS_ATTRIBUTES_SCOPE_UNAVAILABLE");
+  return { isQaActor: data.isQaActor === true, active: data.active === true };
+}
 
-  const { data: version, error: versionError } = await identity.admin
-    .from("cms_pim_attribute_set_versions")
-    .select("id,version")
-    .eq("attribute_set_id", attributeSet.id)
-    .eq("status", "active")
-    .maybeSingle();
-  if (versionError) throw versionError;
-  if (!version) {
-    return {
-      attributeSet: null,
-      definitions: [],
-      units: (units ?? []).map(mapUnit),
-    };
-  }
-
-  const { data: assignments, error: assignmentsError } = await identity.admin
-    .from("cms_pim_attribute_set_definitions")
-    .select(
-      "required,inherited,position,cms_pim_attribute_definitions!inner(id,attribute_key,label,description,data_type,canonical_unit_code,enum_options,filterable,comparable,searchable,status)",
-    )
-    .eq("attribute_set_version_id", version.id)
-    .eq("cms_pim_attribute_definitions.status", "active")
-    .order("position");
-  if (assignmentsError) throw assignmentsError;
+async function listCatalog(
+  identity: Identity,
+  categoryOptionId: string,
+  environment: "local" | "staging" | "production",
+  siteKey: string,
+) {
+  const { data, error } = await identity.admin.rpc("cms_product_attributes_catalog_scoped", {
+    p_actor_id: identity.user.id,
+    p_environment: environment,
+    p_site_key: siteKey,
+    p_category_option_id: categoryOptionId,
+  });
+  if (error) throw error;
+  const catalog = data && typeof data === "object" ? (data as Row) : {};
+  const attributeSet = catalog.attribute_set as Row | null | undefined;
+  const definitions = Array.isArray(catalog.definitions) ? catalog.definitions : [];
+  const units = Array.isArray(catalog.units) ? catalog.units : [];
+  const controlledCategory = catalog.controlled_category as Row | null | undefined;
+  const masterCategory = catalog.master_category as Row | null | undefined;
   return {
-    attributeSet: {
-      id: attributeSet.id,
-      categoryId: attributeSet.category_id,
-      name: attributeSet.name,
-      versionId: version.id,
-      version: version.version,
-    },
-    definitions: (assignments ?? []).map((assignment: Row) => {
-      const definition = Array.isArray(assignment.cms_pim_attribute_definitions)
-        ? assignment.cms_pim_attribute_definitions[0]
-        : assignment.cms_pim_attribute_definitions;
-      return {
-        id: definition.id,
-        attributeKey: definition.attribute_key,
-        label: definition.label,
-        description: definition.description,
-        dataType: definition.data_type,
-        canonicalUnitCode: definition.canonical_unit_code,
-        enumOptions: definition.enum_options,
-        filterable: definition.filterable,
-        comparable: definition.comparable,
-        searchable: definition.searchable,
-        required: assignment.required,
-        inherited: assignment.inherited,
-        position: assignment.position,
-      };
-    }),
-    units: (units ?? []).map(mapUnit),
+    controlledCategory: controlledCategory
+      ? {
+          id: controlledCategory.id,
+          slug: controlledCategory.slug,
+          label: controlledCategory.label,
+          listKey: controlledCategory.listKey,
+        }
+      : null,
+    masterCategory: masterCategory
+      ? {
+          id: masterCategory.id,
+          name: masterCategory.name,
+          entityType: masterCategory.entityType,
+        }
+      : null,
+    attributeSet: attributeSet
+      ? {
+          id: attributeSet.id,
+          categoryId: attributeSet.category_id,
+          name: attributeSet.name,
+          versionId: attributeSet.version_id,
+          version: attributeSet.version,
+        }
+      : null,
+    definitions: definitions.map((definition: Row) => ({
+      id: definition.id,
+      attributeKey: definition.attribute_key,
+      label: definition.label,
+      description: definition.description,
+      dataType: definition.data_type,
+      canonicalUnitCode: definition.canonical_unit_code,
+      enumOptions: definition.enum_options,
+      filterable: definition.filterable,
+      comparable: definition.comparable,
+      searchable: definition.searchable,
+      required: definition.required,
+      inherited: definition.inherited,
+      position: definition.position,
+    })),
+    units: units.map(mapUnit),
   };
 }
 
@@ -216,8 +210,29 @@ Deno.serve(async (req) => {
   if (!(await authorized(identity))) {
     return json(req, { error: "Permissão insuficiente.", code: "CMS_ATTRIBUTES_FORBIDDEN", correlationId }, 403);
   }
+  let actorScope: AttributeActorScope;
   try {
-    const catalog = await listCatalog(identity, command.categoryId);
+    actorScope = await actorReadScope(identity, environment);
+  } catch {
+    return json(
+      req,
+      { error: "Escopo de leitura temporariamente indisponível.", code: "CMS_ATTRIBUTES_SCOPE_UNAVAILABLE", correlationId },
+      503,
+    );
+  }
+  if (!actorScope.active) {
+    return json(
+      req,
+      {
+        error: "Operação indisponível ou sem permissão.",
+        code: actorScope.isQaActor ? "CMS_ATTRIBUTES_QA_SCOPE_INACTIVE" : "CMS_ATTRIBUTES_SCOPE_INVALID",
+        correlationId,
+      },
+      403,
+    );
+  }
+  try {
+    const catalog = await listCatalog(identity, command.categoryId, environment, siteKey);
     return json(req, {
       schemaVersion: 1,
       commandId: command.envelope.commandId,

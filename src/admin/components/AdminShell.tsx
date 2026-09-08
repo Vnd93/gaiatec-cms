@@ -4,9 +4,11 @@ import { Link, Outlet, useLocation, useNavigate } from "react-router";
 import {
   adminNavigation,
   adminPageTitle,
+  canAccessAdminRoute,
   canAccessNavigationItem,
   globalSearchTarget,
   isNavigationItemActive,
+  resolveAdminRouteAccess,
   resolveAdminBreadcrumbs,
 } from "../admin-navigation";
 import { useAdminAuth } from "../auth/AdminAuthContext";
@@ -23,10 +25,15 @@ export function AdminShell() {
   const [guideOpen, setGuideOpen] = useState(false);
   const [search, setSearch] = useState("");
   const menuButton = useRef<HTMLButtonElement>(null);
+  const mobileCloseButton = useRef<HTMLButtonElement>(null);
+  const sidebar = useRef<HTMLElement>(null);
+  const main = useRef<HTMLElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
   const location = useLocation();
   const navigate = useNavigate();
   const permissions = useMemo(() => profile?.permissions ?? [], [profile?.permissions]);
+  const routeRequirement = resolveAdminRouteAccess(location.pathname, location.search);
+  const routeAllowed = canAccessAdminRoute(location.pathname, location.search, permissions);
   const visibleGroups = useMemo(
     () =>
       adminNavigation
@@ -72,13 +79,58 @@ export function AdminShell() {
         event.preventDefault();
         searchInput.current?.focus();
       }
-      if (event.key === "Escape" && mobileOpen) {
-        setMobileOpen(false);
-        menuButton.current?.focus();
-      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const drawer = sidebar.current;
+    if (!drawer) return;
+    const restoreTarget = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const mainElement = main.current;
+    const mainWasInert = mainElement?.hasAttribute("inert") ?? false;
+    mainElement?.setAttribute("inert", "");
+    mobileCloseButton.current?.focus();
+
+    const focusable = () =>
+      Array.from(
+        drawer.querySelectorAll<HTMLElement>(
+          'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((element) => !element.hidden && element.getAttribute("aria-hidden") !== "true");
+    const containFocus = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        setMobileOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const candidates = focusable();
+      if (candidates.length === 0) {
+        event.preventDefault();
+        drawer.focus();
+        return;
+      }
+      const first = candidates[0];
+      const last = candidates[candidates.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !drawer.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !drawer.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", containFocus, true);
+    return () => {
+      document.removeEventListener("keydown", containFocus, true);
+      if (!mainWasInert) mainElement?.removeAttribute("inert");
+      if (restoreTarget?.isConnected) restoreTarget.focus();
+    };
   }, [mobileOpen]);
 
   const submitSearch = (event: React.FormEvent) => {
@@ -119,15 +171,28 @@ export function AdminShell() {
       )}
 
       <aside
+        ref={sidebar}
         id="admin-navigation"
         className={mobileOpen ? "admin-sidebar is-open" : "admin-sidebar"}
         aria-label="Menu principal do CMS"
+        role={mobileOpen ? "dialog" : undefined}
+        aria-modal={mobileOpen ? "true" : undefined}
+        tabIndex={mobileOpen ? -1 : undefined}
       >
         <div className="admin-sidebar__heading">
           <Link className="admin-sidebar__brand" to="/admin" aria-label="CMS GAIATEC — visão geral">
             <span>GAIATEC</span>
             <small>CMS</small>
           </Link>
+          <button
+            ref={mobileCloseButton}
+            className="admin-sidebar__mobile-close"
+            type="button"
+            aria-label="Fechar menu administrativo"
+            onClick={() => setMobileOpen(false)}
+          >
+            <X aria-hidden="true" size={20} />
+          </button>
           <button
             className="admin-sidebar__collapse"
             type="button"
@@ -201,7 +266,7 @@ export function AdminShell() {
         </div>
       </aside>
 
-      <main className="admin-main" id="admin-main">
+      <main ref={main} className="admin-main" id="admin-main">
         <nav className="admin-breadcrumbs" aria-label="Caminho da página">
           <ol>
             {breadcrumbs.map((breadcrumb, index) => (
@@ -249,7 +314,25 @@ export function AdminShell() {
         <p className="admin-route-announcer" aria-live="polite">
           {breadcrumbs.at(-1)?.label}. {routeGuidance.task}
         </p>
-        <Outlet />
+        {routeAllowed ? (
+          <Outlet />
+        ) : (
+          <section
+            className="admin-state admin-notice--error"
+            role="alert"
+            aria-labelledby="admin-denied-title"
+          >
+            <p className="admin-eyebrow">AUTORIZAÇÃO</p>
+            <h1 id="admin-denied-title">Acesso negado</h1>
+            <p>
+              Sua sessão CMS não possui a permissão necessária para acessar
+              {routeRequirement ? ` ${routeRequirement.label.toLocaleLowerCase("pt-BR")}` : " esta área"}.
+            </p>
+            <Link className="admin-button admin-button--secondary" to="/admin">
+              Voltar à visão geral
+            </Link>
+          </section>
+        )}
       </main>
     </div>
   );

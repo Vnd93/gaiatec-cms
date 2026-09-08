@@ -1,4 +1,5 @@
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useLayoutEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Link, useLocation } from "react-router";
 import {
   AlertCircle,
@@ -12,6 +13,96 @@ import {
 } from "lucide-react";
 
 type ActionContent = React.ReactNode;
+
+const MODAL_FOCUSABLE_SELECTOR = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  '[tabindex]:not([tabindex="-1"])',
+].join(",");
+
+function ModalPortal({ children }: { children: React.ReactNode }) {
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div data-admin-modal-layer style={{ display: "contents" }}>
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
+function useModalAccessibility({
+  open,
+  dialogRef,
+  initialFocusRef,
+  onDismiss,
+}: {
+  open: boolean;
+  dialogRef: React.RefObject<HTMLElement | null>;
+  initialFocusRef: React.RefObject<HTMLElement | null>;
+  onDismiss: () => void;
+}) {
+  const dismissRef = useRef(onDismiss);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
+  dismissRef.current = onDismiss;
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+
+    restoreFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const layer = dialog.closest<HTMLElement>("[data-admin-modal-layer]");
+    const background = Array.from(document.body.children).filter(
+      (element): element is HTMLElement => element instanceof HTMLElement && element !== layer,
+    );
+    const previousInert = background.map((element) => [element, element.hasAttribute("inert")] as const);
+    background.forEach((element) => element.setAttribute("inert", ""));
+
+    const focusable = () =>
+      Array.from(dialog.querySelectorAll<HTMLElement>(MODAL_FOCUSABLE_SELECTOR)).filter(
+        (element) => !element.hidden && element.getAttribute("aria-hidden") !== "true",
+      );
+    (initialFocusRef.current ?? focusable()[0] ?? dialog).focus();
+
+    const containFocus = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        dismissRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const candidates = focusable();
+      if (candidates.length === 0) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = candidates[0];
+      const last = candidates[candidates.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !dialog.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !dialog.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", containFocus, true);
+    return () => {
+      document.removeEventListener("keydown", containFocus, true);
+      previousInert.forEach(([element, wasInert]) => {
+        if (!wasInert) element.removeAttribute("inert");
+      });
+      const restoreTarget = restoreFocusRef.current;
+      if (restoreTarget?.isConnected) restoreTarget.focus();
+    };
+  }, [dialogRef, initialFocusRef, open]);
+}
 
 export function ModuleTabs({
   label,
@@ -64,59 +155,59 @@ export function RecordDrawer({
   onClose: () => void;
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    closeRef.current?.focus();
-    const closeOnEscape = (event: KeyboardEvent) => event.key === "Escape" && onClose();
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [onClose, open]);
+  const dialogRef = useRef<HTMLElement>(null);
+  const titleId = useId();
+  useModalAccessibility({ open, dialogRef, initialFocusRef: closeRef, onDismiss: onClose });
   if (!open) return null;
   return (
-    <>
-      <button
-        className="admin-record-drawer-backdrop"
-        type="button"
-        aria-label="Fechar resumo"
-        onClick={onClose}
-      />
-      <aside
-        className="admin-record-drawer"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="admin-record-drawer-title"
-      >
-        <header className="admin-record-drawer__header">
-          <div>
-            <p className="admin-eyebrow">{eyebrow}</p>
-            <h2 id="admin-record-drawer-title">{title}</h2>
-            {address && <code>{address}</code>}
-          </div>
-          <button ref={closeRef} type="button" aria-label="Fechar resumo" onClick={onClose}>
-            <X aria-hidden="true" size={18} />
-          </button>
-        </header>
-        {primary && <div className="admin-record-drawer__primary">{primary}</div>}
-        {status && <div className="admin-record-drawer__status">{status}</div>}
-        {fields && (
-          <dl className="admin-record-drawer__fields">
-            {fields.map((field) => (
-              <div key={field.label}>
-                <dt>{field.label}</dt>
-                <dd>{field.value}</dd>
-              </div>
-            ))}
-          </dl>
-        )}
-        {summary && (
-          <section className="admin-record-drawer__summary">
-            <h3>Resumo</h3>
-            {summary}
-          </section>
-        )}
-        {children}
-      </aside>
-    </>
+    <ModalPortal>
+      <>
+        <button
+          className="admin-record-drawer-backdrop"
+          type="button"
+          aria-label="Fechar resumo"
+          onClick={onClose}
+        />
+        <aside
+          ref={dialogRef}
+          className="admin-record-drawer"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          tabIndex={-1}
+        >
+          <header className="admin-record-drawer__header">
+            <div>
+              <p className="admin-eyebrow">{eyebrow}</p>
+              <h2 id={titleId}>{title}</h2>
+              {address && <code>{address}</code>}
+            </div>
+            <button ref={closeRef} type="button" aria-label="Fechar resumo" onClick={onClose}>
+              <X aria-hidden="true" size={18} />
+            </button>
+          </header>
+          {primary && <div className="admin-record-drawer__primary">{primary}</div>}
+          {status && <div className="admin-record-drawer__status">{status}</div>}
+          {fields && (
+            <dl className="admin-record-drawer__fields">
+              {fields.map((field) => (
+                <div key={field.label}>
+                  <dt>{field.label}</dt>
+                  <dd>{field.value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+          {summary && (
+            <section className="admin-record-drawer__summary">
+              <h3>Resumo</h3>
+              {summary}
+            </section>
+          )}
+          {children}
+        </aside>
+      </>
+    </ModalPortal>
   );
 }
 
@@ -290,14 +381,16 @@ export function SectionCard({
 export function FieldGroup({
   legend,
   description,
+  disabled = false,
   children,
 }: {
   legend: string;
   description?: string;
+  disabled?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <fieldset className="admin-field-group">
+    <fieldset className="admin-field-group" disabled={disabled}>
       <legend>{legend}</legend>
       {description && <p className="admin-field-group__description">{description}</p>}
       <div className="admin-field-group__grid">{children}</div>
@@ -332,14 +425,17 @@ export function StepTabs<T extends string>({
   active,
   onChange,
   errors = {},
+  idPrefix,
 }: {
   label: string;
   steps: Array<{ id: T; label: string; description?: string }>;
   active: T;
   onChange: (id: T) => void;
   errors?: Partial<Record<T, number>>;
+  idPrefix?: string;
 }) {
-  const baseId = useId();
+  const generatedId = useId();
+  const baseId = idPrefix ?? generatedId;
   return (
     <div className="admin-step-tabs" role="tablist" aria-label={label}>
       {steps.map((step, index) => {
@@ -357,9 +453,14 @@ export function StepTabs<T extends string>({
             title={step.description}
             onClick={() => onChange(step.id)}
             onKeyDown={(event) => {
-              if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+              if (!["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)) return;
               event.preventDefault();
-              const next = (index + (event.key === "ArrowRight" ? 1 : -1) + steps.length) % steps.length;
+              const next =
+                event.key === "Home"
+                  ? 0
+                  : event.key === "End"
+                    ? steps.length - 1
+                    : (index + (event.key === "ArrowRight" ? 1 : -1) + steps.length) % steps.length;
               onChange(steps[next].id);
               document.getElementById(`${baseId}-tab-${steps[next].id}`)?.focus();
             }}
@@ -533,60 +634,59 @@ export function ConfirmDialog({
   onCancel: () => void;
 }) {
   const cancelRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    cancelRef.current?.focus();
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onCancel();
-    };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [onCancel, open]);
+  const dialogRef = useRef<HTMLElement>(null);
+  const titleId = useId();
+  const descriptionId = useId();
+  useModalAccessibility({ open, dialogRef, initialFocusRef: cancelRef, onDismiss: onCancel });
   if (!open) return null;
   return (
-    <div
-      className="admin-dialog-backdrop"
-      role="presentation"
-      onMouseDown={(event) => event.target === event.currentTarget && onCancel()}
-    >
-      <section
-        className="admin-confirm-dialog"
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="admin-confirm-title"
-        aria-describedby="admin-confirm-description"
+    <ModalPortal>
+      <div
+        className="admin-dialog-backdrop"
+        role="presentation"
+        onMouseDown={(event) => event.target === event.currentTarget && onCancel()}
       >
-        <button
-          className="admin-dialog-close"
-          type="button"
-          aria-label="Fechar confirmação"
-          onClick={onCancel}
+        <section
+          ref={dialogRef}
+          className="admin-confirm-dialog"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          aria-describedby={descriptionId}
+          tabIndex={-1}
         >
-          <X aria-hidden="true" size={20} />
-        </button>
-        <h2 id="admin-confirm-title">{title}</h2>
-        <p id="admin-confirm-description">{description}</p>
-        {children}
-        <div className="admin-confirm-dialog__actions">
           <button
-            ref={cancelRef}
-            className="admin-button admin-button--secondary"
+            className="admin-dialog-close"
             type="button"
+            aria-label="Fechar confirmação"
             onClick={onCancel}
           >
-            {cancelLabel}
+            <X aria-hidden="true" size={20} />
           </button>
-          <button
-            className={dangerous ? "admin-button admin-button--danger" : "admin-button"}
-            type="button"
-            disabled={confirmDisabled}
-            onClick={onConfirm}
-          >
-            {confirmLabel}
-          </button>
-        </div>
-      </section>
-    </div>
+          <h2 id={titleId}>{title}</h2>
+          <p id={descriptionId}>{description}</p>
+          {children}
+          <div className="admin-confirm-dialog__actions">
+            <button
+              ref={cancelRef}
+              className="admin-button admin-button--secondary"
+              type="button"
+              onClick={onCancel}
+            >
+              {cancelLabel}
+            </button>
+            <button
+              className={dangerous ? "admin-button admin-button--danger" : "admin-button"}
+              type="button"
+              disabled={confirmDisabled}
+              onClick={onConfirm}
+            >
+              {confirmLabel}
+            </button>
+          </div>
+        </section>
+      </div>
+    </ModalPortal>
   );
 }
 

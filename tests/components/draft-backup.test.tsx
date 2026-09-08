@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { useState } from "react";
@@ -43,7 +43,9 @@ describe("cópia recuperável de rascunho", () => {
     render(<Harness />);
     await user.clear(screen.getByRole("textbox", { name: "Título" }));
     await user.type(screen.getByRole("textbox", { name: "Título" }), "Cópia local");
-    await vi.advanceTimersByTimeAsync(600);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(600);
+    });
     const key = draftBackupKey("user-a", "product", "item-a");
     expect(localStorage.getItem(key)).toContain("Cópia local");
     await user.click(screen.getByRole("button", { name: "Salvar" }));

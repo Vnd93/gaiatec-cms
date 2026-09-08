@@ -12,21 +12,32 @@ export default function CmsComparePage() {
   const [products, setProducts] = useState<PublishedProduct[]>([]);
   const [error, setError] = useState("");
   useEffect(() => {
+    let active = true;
+    setProducts([]);
+    setError("");
     applyCatalogSeo({
       title: "Comparar produtos | GAIATEC",
+      description: "Compare especificações técnicas dos produtos disponíveis no catálogo GAIATEC.",
       canonicalPath: "/produtos/comparador",
       indexable: false,
     });
     const requested = productParam.split(",").filter(Boolean).slice(0, 4);
     if (requested.length < 2) return;
     void comparePublishedProducts(requested)
-      .then((data) => setProducts(data.items))
-      .catch((caught) => setError(caught instanceof Error ? caught.message : "Falha no comparador."));
+      .then((data) => active && setProducts(data.items))
+      .catch(
+        (caught) => active && setError(caught instanceof Error ? caught.message : "Falha no comparador."),
+      );
+    return () => {
+      active = false;
+    };
   }, [productParam]);
   const attributes = [
     ...new Set(
       products.flatMap((product) =>
-        product.payload.specifications.filter((spec) => spec.comparable).map((spec) => spec.key),
+        product.payload.specifications
+          .filter((spec) => spec.comparable)
+          .map((spec) => `${spec.key}:${spec.scope}:${spec.ownerLabel ?? ""}`),
       ),
     ),
   ];
@@ -64,7 +75,7 @@ export default function CmsComparePage() {
               <tr>
                 <th>Atributo</th>
                 {products.map((product) => (
-                  <th key={product.item_id}>
+                  <th key={product.key}>
                     {product.payload.title}
                     <small>{product.payload.models[0]?.model}</small>
                   </th>
@@ -76,22 +87,25 @@ export default function CmsComparePage() {
                 <tr key={key}>
                   <th>{label}</th>
                   {products.map((product) => (
-                    <td key={product.item_id}>
-                      {product.payload.controlledClassification?.[key]?.label ?? "—"}
-                    </td>
+                    <td key={product.key}>{product.payload.controlledClassification?.[key]?.label ?? "—"}</td>
                   ))}
                 </tr>
               ))}
-              {attributes.map((key) => (
-                <tr key={key}>
+              {attributes.map((identity) => (
+                <tr key={identity}>
                   <th>
                     {products
                       .flatMap((product) => product.payload.specifications)
-                      .find((spec) => spec.key === key)?.label ?? key}
+                      .filter((spec) => `${spec.key}:${spec.scope}:${spec.ownerLabel ?? ""}` === identity)
+                      .map((spec) =>
+                        spec.ownerLabel ? `${spec.label} — ${spec.ownerLabel}` : spec.label,
+                      )[0] ?? identity}
                   </th>
                   {products.map((product) => {
-                    const spec = product.payload.specifications.find((entry) => entry.key === key);
-                    return <td key={product.item_id}>{spec ? formatProductSpecification(spec) : "—"}</td>;
+                    const spec = product.payload.specifications.find(
+                      (entry) => `${entry.key}:${entry.scope}:${entry.ownerLabel ?? ""}` === identity,
+                    );
+                    return <td key={product.key}>{spec ? formatProductSpecification(spec) : "—"}</td>;
                   })}
                 </tr>
               ))}

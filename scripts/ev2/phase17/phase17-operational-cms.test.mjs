@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 
 const read = (file) => readFile(file, "utf8");
@@ -9,6 +9,7 @@ const protectedFunctions = [
   "cms-master-data",
   "cms-pim",
   "cms-attributes",
+  "cms-documents",
   "cms-media",
   "cms-search-admin",
   "cms-quality",
@@ -60,13 +61,16 @@ test("OpenRouter adapter is locked to Nemotron free with no paid fallback", asyn
   assert.match(adapter, /AbortController/);
   assert.doesNotMatch(adapter, /response_format/);
   assert.match(adapter, /reasoning: \{ effort: "none", exclude: true \}/);
+  assert.match(adapter, /provider: \{ data_collection: "deny" \}/);
   assert.doesNotMatch(adapter, /fallback|models:/i);
   assert.doesNotMatch(adapter, /console\.(?:log|debug|info)/);
   assert.match(edge, /CMS_AI_PROVIDER_UNAVAILABLE/);
   assert.match(edge, /OPENROUTER_REQUEST_FAILED/);
-  assert.match(edge, /cms_ai_provider_calls/);
-  assert.match(contract, /"synthetic", "openrouter"/);
-  assert.match(page, /NVIDIA NEMOTRON/);
+  assert.match(edge, /cms_record_ai_provider_call_scoped/);
+  assert.match(edge, /recordProviderCall\([\s\S]*?"failed"/);
+  assert.match(edge, /CMS_AI_PROVIDER_AUDIT_UNAVAILABLE/);
+  assert.match(contract, /Ev2AiProviderModeSchema = z\.literal\("openrouter"\)/);
+  assert.match(page, /Sem cobrança · nenhuma troca automática de serviço/);
   assert.match(page, /não é aplicado nem publicado automaticamente/);
 });
 
@@ -92,6 +96,24 @@ test("synthetic identities detach without weakening immutable audit records", as
   assert.match(migration, /raise exception 'CMS audit records are immutable'/);
 });
 
+test("production database verification tracks the exact repository migration inventory", async () => {
+  const [verifier, manifest] = await Promise.all([
+    read("scripts/ev2/phase12/verify-production-database.mjs"),
+    read("scripts/ev2/phase12/migration-manifest-lib.mjs"),
+  ]);
+  const versions = (await readdir("supabase/migrations"))
+    .map((name) => name.match(/^(\d+)_.*\.sql$/)?.[1])
+    .filter(Boolean)
+    .sort();
+  assert.ok(versions.length > 0);
+  assert.equal(new Set(versions).size, versions.length);
+  assert.equal(versions.at(-1), String(versions.length).padStart(4, "0"));
+  assert.match(verifier, /sourceMigrationManifest\(sourceRoot\)/);
+  assert.match(verifier, /exactMigrationHistorySql\(migrations\)/);
+  assert.match(verifier, /"migration_history_exact"/);
+  assert.match(manifest, /array_agg\(version order by version\)/);
+});
+
 test("historical database assertions follow the production-ready default-off contract", async () => {
   const [runtime, release, drafts] = await Promise.all([
     read("supabase/tests/rls_ev2_phase13_runtime.test.sql"),
@@ -104,11 +126,31 @@ test("historical database assertions follow the production-ready default-off con
 });
 
 test("production workflow enables the controlled EV2 and approved free provider switches", async () => {
-  const workflow = await read(".github/workflows/deploy-production.yml");
+  const [workflow, configurator, secretLibrary] = await Promise.all([
+    read(".github/workflows/deploy-production.yml"),
+    read("scripts/ev2/phase12/configure-production-function-secrets.mjs"),
+    read("scripts/ev2/phase12/production-function-secrets-lib.mjs"),
+  ]);
   assert.match(workflow, /CMS_EV2_PRODUCTION_ENABLED: "true"/);
   assert.match(workflow, /CMS_AI_EXTERNAL_PROVIDER_ENABLED: "true"/);
   assert.match(workflow, /OPENROUTER_API_KEY: \$\{\{ secrets\.OPENROUTER_API_KEY \}\}/);
   assert.match(workflow, /OPENROUTER_MODEL: \$\{\{ vars\.OPENROUTER_MODEL \}\}/);
-  assert.match(workflow, /printf 'CMS_EV2_PRODUCTION_ENABLED=true\\n'/);
-  assert.match(workflow, /printf 'CMS_AI_EXTERNAL_PROVIDER_ENABLED=true\\n'/);
+  assert.match(workflow, /configure-production-function-secrets\.mjs/);
+  assert.match(configurator, /writeFile\(envFile, serializeProductionFunctionSecrets\(secrets\)/);
+  assert.match(configurator, /"secrets",\s*"set",[\s\S]*"--env-file",\s*envFile/);
+  assert.match(secretLibrary, /clean\(env\.CMS_EV2_PRODUCTION_ENABLED\) !== "true"/);
+  assert.match(secretLibrary, /clean\(env\.CMS_AI_EXTERNAL_PROVIDER_ENABLED\) !== "true"/);
+  assert.match(secretLibrary, /CMS_EV2_PRODUCTION_ENABLED: clean\(env\.CMS_EV2_PRODUCTION_ENABLED\)/);
+  assert.match(
+    secretLibrary,
+    /CMS_AI_EXTERNAL_PROVIDER_ENABLED: clean\(env\.CMS_AI_EXTERNAL_PROVIDER_ENABLED\)/,
+  );
+});
+
+test("staging operational canary invokes the pinned Supabase CLI on Windows and Linux", async () => {
+  const canary = await read("scripts/ev2/phase17/staging-canary.mjs");
+  assert.match(canary, /process\.platform === "win32"/);
+  assert.match(canary, /: binary/);
+  assert.match(canary, /: pinned/);
+  assert.match(canary, /result\.error \|\| result\.status !== 0/);
 });

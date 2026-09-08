@@ -15,6 +15,7 @@ import {
   RecordDrawer,
   SectionCard,
 } from "../components/AdminUI";
+import { operatorErrorMessage } from "../operator-error-message";
 
 type Profile = {
   user_id: string;
@@ -28,12 +29,29 @@ type Profile = {
 };
 
 type PendingAction = {
-  action: "set_roles" | "resend_invite" | "suspend" | "reactivate" | "revoke_sessions";
+  action: "resend_invite" | "suspend" | "reactivate" | "revoke_sessions";
   user: Profile;
-  roles?: string[];
 };
 
 const roleOptions = ["super_admin", "admin", "marketing", "commercial", "technical", "editor", "reviewer"];
+const roleLabels: Record<string, string> = {
+  super_admin: "Superadministrador",
+  admin: "Administrador",
+  marketing: "Marketing",
+  commercial: "Comercial",
+  technical: "Técnico",
+  editor: "Editor",
+  reviewer: "Revisor",
+};
+const statusLabels: Record<Profile["status"], string> = {
+  invited: "Convite pendente",
+  active: "Ativo",
+  suspended: "Suspenso",
+};
+
+function roleLabel(role: string): string {
+  return roleLabels[role] ?? "Papel não reconhecido";
+}
 
 export default function AdminUsersPage() {
   const { session, profile } = useAdminAuth();
@@ -43,12 +61,9 @@ export default function AdminUsersPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [invite, setInvite] = useState({ email: "", displayName: "", roles: ["editor"] });
-  const [roleDrafts, setRoleDrafts] = useState<Record<string, string[]>>({});
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
-  const [fullUser, setFullUser] = useState(false);
   const canInvite = profile?.permissions.includes("cms:users.invite") ?? false;
-  const canManage = profile?.permissions.includes("cms:users.manage") ?? false;
   const canSuspend = profile?.permissions.includes("cms:users.suspend") ?? false;
   const canRevoke = profile?.permissions.includes("cms:sessions.revoke") ?? false;
 
@@ -59,9 +74,8 @@ export default function AdminUsersPage() {
     try {
       const result = await usersCommand<{ users: Profile[] }>(session, { action: "list" });
       setItems(result.users);
-      setRoleDrafts(Object.fromEntries(result.users.map((user) => [user.user_id, user.roles])));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Usuários indisponíveis.");
+      setError(operatorErrorMessage(caught, { fallback: "A lista de usuários está indisponível." }));
     } finally {
       setLoading(false);
     }
@@ -82,7 +96,7 @@ export default function AdminUsersPage() {
       await load();
       return true;
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Operação de acesso não concluída.");
+      setError(operatorErrorMessage(caught, { fallback: "A alteração de acesso não foi concluída." }));
       return false;
     } finally {
       setBusy(false);
@@ -98,7 +112,7 @@ export default function AdminUsersPage() {
         displayName: invite.displayName.trim(),
         roles: invite.roles,
       },
-      "Convite criado e enviado com trilha de auditoria.",
+      "Acesso registrado e auditado. Quem já possui conta continua usando a senha atual; novas pessoas recebem o convite por e-mail.",
     );
     if (invited) setInvite({ email: "", displayName: "", roles: ["editor"] });
   }
@@ -108,34 +122,20 @@ export default function AdminUsersPage() {
     const current = pending;
     setPending(null);
     const messages: Record<PendingAction["action"], string> = {
-      set_roles: "Papéis atualizados e permissões recalculadas.",
       resend_invite: "Novo convite enviado.",
-      suspend: "Acesso suspenso e sessões invalidadas.",
+      suspend: "Acesso suspenso e sessões administrativas encerradas.",
       reactivate: "Acesso reativado.",
-      revoke_sessions: "Sessões do usuário revogadas.",
+      revoke_sessions: "Sessões administrativas encerradas.",
     };
-    await run(
-      { action: current.action, userId: current.user.user_id, roles: current.roles ?? [] },
-      messages[current.action],
-    );
-  }
-
-  function toggleRole(userId: string, role: string) {
-    setRoleDrafts((current) => {
-      const roles = current[userId] ?? [];
-      return {
-        ...current,
-        [userId]: roles.includes(role) ? roles.filter((item) => item !== role) : [...roles, role].sort(),
-      };
-    });
+    await run({ action: current.action, userId: current.user.user_id }, messages[current.action]);
   }
 
   return (
     <section>
       <PageHeader
-        eyebrow="IDENTIDADES E SESSÕES"
+        eyebrow="EQUIPE E ACESSOS"
         title="Usuários e acessos"
-        description="Convide identidades, atribua papéis, suspenda acessos e revogue sessões com auditoria."
+        description="Convide pessoas, atribua papéis, suspenda acessos e encerre sessões com auditoria."
       />
       {error && <AdminAlert tone="danger">{error}</AdminAlert>}
       {success && <AdminAlert tone="success">{success}</AdminAlert>}
@@ -147,7 +147,7 @@ export default function AdminUsersPage() {
           title="Convidar usuário"
           description="O convite é pessoal e concede somente os papéis selecionados."
         >
-          <form className="admin-form" onSubmit={submitInvite}>
+          <form className="admin-form" aria-label="Convidar usuário" onSubmit={submitInvite}>
             <FieldGroup legend="Identidade e acesso inicial">
               <label>
                 Nome
@@ -186,7 +186,7 @@ export default function AdminUsersPage() {
                         }))
                       }
                     />
-                    {role}
+                    {roleLabel(role)}
                   </label>
                 ))}
               </fieldset>
@@ -212,11 +212,11 @@ export default function AdminUsersPage() {
         />
       ) : items.length === 0 ? (
         <EmptyState
-          title="Nenhum usuário administrativo"
+          title="Nenhuma pessoa com acesso administrativo"
           description="O cadastro permanece fechado e depende de convite autorizado."
         />
       ) : (
-        <DataTable caption={`${items.length} usuários administrativos`}>
+        <DataTable caption={`${items.length} pessoas com acesso administrativo`}>
           <thead>
             <tr>
               <th>Identidade</th>
@@ -232,7 +232,7 @@ export default function AdminUsersPage() {
                 <td>
                   <strong>{item.display_name}</strong>
                   <small>{item.display_email ?? "E-mail indisponível"}</small>
-                  {item.is_self && <small>Esta é sua identidade</small>}
+                  {item.is_self && <small>Esta é sua conta</small>}
                 </td>
                 <td>
                   <Badge
@@ -244,44 +244,15 @@ export default function AdminUsersPage() {
                           : "warning"
                     }
                   >
-                    {item.status}
+                    {statusLabels[item.status]}
                   </Badge>
-                  <small>MFA: {item.mfa_enrolled_at ? "configurado" : "pendente"}</small>
+                  <small>
+                    Verificação em duas etapas: {item.mfa_enrolled_at ? "configurada" : "pendente"}
+                  </small>
                 </td>
                 <td>
-                  {canManage && !item.is_self && !profile?.rbacScoped ? (
-                    <fieldset className="admin-compact-roles">
-                      <legend className="admin-sr-only">Papéis de {item.display_name}</legend>
-                      {roleOptions.map((role) => (
-                        <label key={role}>
-                          <input
-                            type="checkbox"
-                            checked={(roleDrafts[item.user_id] ?? []).includes(role)}
-                            onChange={() => toggleRole(item.user_id, role)}
-                          />
-                          {role}
-                        </label>
-                      ))}
-                      <button
-                        type="button"
-                        disabled={busy || (roleDrafts[item.user_id] ?? []).length === 0}
-                        onClick={() =>
-                          setPending({
-                            action: "set_roles",
-                            user: item,
-                            roles: roleDrafts[item.user_id] ?? [],
-                          })
-                        }
-                      >
-                        Salvar papéis
-                      </button>
-                    </fieldset>
-                  ) : (
-                    <>
-                      {item.roles.join(", ") || "Nenhum"}
-                      {profile?.rbacScoped && <small>Referência legada; use Acesso por escopo.</small>}
-                    </>
-                  )}
+                  {item.roles.map(roleLabel).join(", ") || "Nenhum"}
+                  <small>Gerencie permissões detalhadas em Acesso por escopo.</small>
                 </td>
                 <td>{item.last_seen_at ? new Date(item.last_seen_at).toLocaleString("pt-BR") : "Nunca"}</td>
                 <td>
@@ -333,7 +304,7 @@ export default function AdminUsersPage() {
         open={Boolean(selectedUser)}
         eyebrow="USUÁRIO"
         title={selectedUser?.display_name ?? ""}
-        address={selectedUser?.display_email ?? selectedUser?.user_id}
+        address={selectedUser?.display_email ?? "E-mail indisponível"}
         status={
           <Badge
             tone={
@@ -344,55 +315,44 @@ export default function AdminUsersPage() {
                   : "warning"
             }
           >
-            {selectedUser?.status}
+            {selectedUser ? statusLabels[selectedUser.status] : ""}
           </Badge>
         }
         fields={[
-          { label: "Papéis", value: selectedUser?.roles.join(", ") || "Nenhum" },
-          { label: "MFA", value: selectedUser?.mfa_enrolled_at ? "Configurado" : "Pendente" },
+          {
+            label: "Papéis",
+            value: selectedUser?.roles.map(roleLabel).join(", ") || "Nenhum",
+          },
+          {
+            label: "Verificação em duas etapas",
+            value: selectedUser?.mfa_enrolled_at ? "Configurada" : "Pendente",
+          },
           {
             label: "Último acesso",
             value: selectedUser?.last_seen_at
               ? new Date(selectedUser.last_seen_at).toLocaleString("pt-BR")
               : "Nunca",
           },
-          ...(fullUser ? [{ label: "Identificador", value: selectedUser?.user_id ?? "" }] : []),
         ]}
-        summary={
-          fullUser
-            ? "Ficha de acesso com identidade, autenticação multifator, papéis e histórico operacional. Alterações permanecem sujeitas ao RBAC e à auditoria."
-            : "Resumo da identidade administrativa e do estado de acesso."
-        }
-        primary={
-          !fullUser ? (
-            <button className="admin-button" type="button" onClick={() => setFullUser(true)}>
-              Ver ficha completa
-            </button>
-          ) : null
-        }
+        summary="Ficha de acesso com identidade, autenticação multifator, papéis e histórico operacional. Alterações permanecem sujeitas ao controle de acesso e à auditoria."
         onClose={() => {
           setSelectedUser(null);
-          setFullUser(false);
         }}
       />
 
       <ConfirmDialog
         open={Boolean(pending)}
         title={
-          pending?.action === "set_roles"
-            ? "Alterar papéis deste usuário?"
-            : pending?.action === "suspend"
-              ? "Suspender este acesso?"
-              : pending?.action === "reactivate"
-                ? "Reativar este acesso?"
-                : pending?.action === "revoke_sessions"
-                  ? "Revogar todas as sessões?"
-                  : "Reenviar o convite?"
+          pending?.action === "suspend"
+            ? "Suspender este acesso?"
+            : pending?.action === "reactivate"
+              ? "Reativar este acesso?"
+              : pending?.action === "revoke_sessions"
+                ? "Revogar as sessões do CMS?"
+                : "Reenviar o convite?"
         }
         description={
-          pending
-            ? `A ação sobre ${pending.user.display_name} será aplicada pelo servidor e registrada na auditoria.`
-            : ""
+          pending ? `A ação sobre ${pending.user.display_name} será aplicada e registrada na auditoria.` : ""
         }
         confirmLabel="Confirmar ação"
         dangerous={pending?.action === "suspend" || pending?.action === "revoke_sessions"}

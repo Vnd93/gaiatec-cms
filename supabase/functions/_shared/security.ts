@@ -1,34 +1,43 @@
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
-
-const DEFAULT_ORIGINS = new Set([
-  "https://gaiatecsistemas.com.br",
-  "https://www.gaiatecsistemas.com.br",
-  "https://gaiatec-cms-staging.pages.dev",
-  "http://127.0.0.1:5173",
-  "http://localhost:5173",
-]);
-
-function configuredOrigins(): Set<string> {
-  const configured = (Deno.env.get("ALLOWED_ORIGINS") ?? "")
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
-  return configured.length ? new Set(configured) : DEFAULT_ORIGINS;
-}
+import {
+  corsResponseOrigin,
+  isExactHostnameAllowed,
+  isExactOriginAllowed,
+  isTurnstileVerificationAccepted,
+} from "./exact-origin-allowlist.ts";
 
 export function isAllowedOrigin(req: Request): boolean {
-  const origin = req.headers.get("Origin");
-  if (!origin) return true;
-  if (configuredOrigins().has(origin)) return true;
-  return /^https:\/\/[a-z0-9-]+\.gaiatec-cms-staging\.pages\.dev$/i.test(origin);
+  return isExactOriginAllowed(req.headers.get("Origin"), Deno.env.get("ALLOWED_ORIGINS"));
+}
+
+export function isAllowedHostname(hostname: string | undefined): boolean {
+  return isExactHostnameAllowed(
+    hostname,
+    Deno.env.get("TURNSTILE_ALLOWED_HOSTNAMES"),
+    Deno.env.get("ALLOWED_ORIGINS"),
+  );
+}
+
+export function isAllowedTurnstileVerification(
+  result: { success?: boolean; hostname?: string; action?: string },
+  secret: string,
+  expectedAction: string,
+): boolean {
+  return isTurnstileVerificationAccepted(result, {
+    secret,
+    environment: Deno.env.get("CMS_ENVIRONMENT"),
+    expectedAction,
+    configuredHostnames: Deno.env.get("TURNSTILE_ALLOWED_HOSTNAMES"),
+    configuredOrigins: Deno.env.get("ALLOWED_ORIGINS"),
+  });
 }
 
 export function corsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get("Origin");
-  const allowedOrigin = origin && isAllowedOrigin(req) ? origin : "https://gaiatecsistemas.com.br";
+  const allowedOrigin = corsResponseOrigin(origin, Deno.env.get("ALLOWED_ORIGINS"));
   return {
     "Access-Control-Allow-Origin": allowedOrigin,
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers":
       "authorization, x-client-info, apikey, content-type, x-supabase-api-version, x-idempotency-key",
     "Access-Control-Max-Age": "600",

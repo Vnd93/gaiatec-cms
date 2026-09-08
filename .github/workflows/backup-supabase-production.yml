@@ -16,16 +16,44 @@ permissions:
   contents: read
 
 concurrency:
-  group: production-backup
+  group: production
   cancel-in-progress: false
 
 jobs:
   backup:
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     environment: production-backup
     steps:
+      - name: Validate production backup trigger before any external request
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_REF: ${{ github.ref }}
+          DISPATCH_ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          SCHEDULE_EXPRESSION: ${{ github.event.schedule }}
+        run: |
+          set -euo pipefail
+          if [ "$DISPATCH_REF" != "refs/heads/main" ]; then
+            echo "::error::Production backup must run from main."
+            exit 1
+          fi
+          case "$EVENT_NAME" in
+            workflow_dispatch)
+              test "${DISPATCH_ACTOR,,}" = vnd93
+              test "${TRIGGERING_ACTOR,,}" = vnd93
+              ;;
+            schedule)
+              if [ "$SCHEDULE_EXPRESSION" != "17 3 * * *" ] && [ "$SCHEDULE_EXPRESSION" != "47 3 * * 0" ]; then
+                echo "::error::Production backup schedule is not approved."
+                exit 1
+              fi
+              ;;
+            *)
+              echo "::error::Production backup trigger is not approved."
+              exit 1
+              ;;
+          esac
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
@@ -33,6 +61,19 @@ jobs:
       - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3
         with:
           version: 2.116.0
+      - name: Install the PostgreSQL 17 session client
+        run: |
+          set -euo pipefail
+          sudo install -d -m 0755 /usr/share/postgresql-common/pgdg
+          curl --proto '=https' --tlsv1.2 -fsSL \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | sudo gpg --batch --yes --dearmor -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg
+          . /etc/os-release
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y postgresql-client-17
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
       - name: Select scheduled mode
         id: mode
         env:
@@ -47,17 +88,20 @@ jobs:
             restore_drill=true
           fi
           echo "restore_drill=$restore_drill" >> "$GITHUB_OUTPUT"
-      - name: Validate fail-closed backup configuration
+      - name: Validate fail-closed backup configuration and PostgreSQL runtime
         env:
           PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
           PRODUCTION_SUPABASE_DB_URL: ${{ secrets.PRODUCTION_SUPABASE_DB_URL }}
+          PRODUCTION_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY }}
           BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
           BACKUP_EXTERNAL_TARGET: github-actions-encrypted-artifact
         run: node scripts/ev2/phase16/validate-backup-config.mjs
-      - name: Create logical dump and encrypted external bundle
+      - name: Create one-snapshot logical dump and encrypted external bundle
         id: backup
         env:
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
           PRODUCTION_SUPABASE_DB_URL: ${{ secrets.PRODUCTION_SUPABASE_DB_URL }}
+          PRODUCTION_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY }}
           BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
           RESTORE_DRILL: ${{ steps.mode.outputs.restore_drill }}
         run: |
@@ -66,93 +110,346 @@ jobs:
           artifact_dir="$RUNNER_TEMP/gaiatec-backup-artifact-$GITHUB_RUN_ID"
           mkdir -p "$plain_dir" "$artifact_dir"
 
+          psql "$PRODUCTION_SUPABASE_DB_URL" --no-psqlrc -X -qAt -v ON_ERROR_STOP=1 \
+            --file scripts/ev2/phase16/fingerprint-roles.sql > "$plain_dir/source-roles-before.tsv"
           supabase db dump --db-url "$PRODUCTION_SUPABASE_DB_URL" --file "$plain_dir/roles.sql" --role-only
-          supabase db dump --db-url "$PRODUCTION_SUPABASE_DB_URL" --file "$plain_dir/schema.sql"
-          # The two Vector Storage metadata tables are platform-maintained and reject
-          # restore writes even when empty; application and regular Storage data remain included.
-          supabase db dump --db-url "$PRODUCTION_SUPABASE_DB_URL" --file "$plain_dir/data.sql" \
-            --data-only --use-copy \
-            --exclude storage.buckets_vectors \
-            --exclude storage.vector_indexes
-          psql "$PRODUCTION_SUPABASE_DB_URL" --no-psqlrc -v ON_ERROR_STOP=1 -Atc \
-            "select schemaname || '.' || tablename from pg_tables where schemaname = 'public' order by 1" \
-            > "$plain_dir/source-public-tables.txt"
-          : > "$plain_dir/source-public-row-counts.tsv"
-          if [ "$RESTORE_DRILL" = "true" ]; then
-            psql "$PRODUCTION_SUPABASE_DB_URL" --no-psqlrc -v ON_ERROR_STOP=1 -At > "$plain_dir/source-public-row-counts.tsv" <<'SQL'
-          select format(
-            'select %L || chr(9) || count(*)::text from %I.%I;',
-            schemaname || '.' || tablename,
-            schemaname,
-            tablename
-          )
+
+          # The keeper exports one REPEATABLE READ snapshot used by every database
+          # dump, application inventory, full Auth/Storage fingerprint and object inventory.
+          coproc SNAPSHOT_KEEPER { stdbuf -oL psql "$PRODUCTION_SUPABASE_DB_URL" --no-psqlrc -X -qAt -F $'\t' -v ON_ERROR_STOP=1; }
+          snapshot_pid="$SNAPSHOT_KEEPER_PID"
+          snapshot_input="${SNAPSHOT_KEEPER[1]}"
+          snapshot_output="${SNAPSHOT_KEEPER[0]}"
+          close_snapshot() {
+            if [ -n "${snapshot_input:-}" ]; then
+              printf 'rollback;\n\\q\n' >&"$snapshot_input" 2>/dev/null || true
+              exec {snapshot_input}>&- || true
+              wait "$snapshot_pid" || true
+              snapshot_input=""
+            fi
+          }
+          trap close_snapshot EXIT
+          printf '%s\n' \
+            'begin isolation level repeatable read read only;' \
+            "select pg_export_snapshot(), to_char(transaction_timestamp() at time zone 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"'), pg_current_wal_lsn();" \
+            >&"$snapshot_input"
+          IFS=$'\t' read -r snapshot_id snapshot_at snapshot_lsn <&"$snapshot_output"
+          [[ "$snapshot_id" =~ ^[0-9A-Fa-f]+-[0-9A-Fa-f]+-[0-9A-Fa-f]+$ ]]
+          [[ "$snapshot_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T ]]
+          [[ "$snapshot_lsn" =~ ^[0-9A-Fa-f]+/[0-9A-Fa-f]+$ ]]
+
+          pg_dump "$PRODUCTION_SUPABASE_DB_URL" --schema-only --no-owner \
+            --schema=public --schema=private --snapshot="$snapshot_id" \
+            --file="$plain_dir/schema.sql"
+          pg_dump "$PRODUCTION_SUPABASE_DB_URL" --data-only --no-owner \
+            --schema=public --schema=private --snapshot="$snapshot_id" \
+            --file="$plain_dir/application-data.sql"
+          pg_dump "$PRODUCTION_SUPABASE_DB_URL" --data-only --no-owner \
+            --schema=auth --snapshot="$snapshot_id" \
+            --exclude-table=auth.schema_migrations \
+            --file="$plain_dir/auth-data.sql"
+          pg_dump "$PRODUCTION_SUPABASE_DB_URL" --data-only --no-owner \
+            --schema=storage --snapshot="$snapshot_id" \
+            --exclude-table=storage.migrations \
+            --exclude-table=storage.schema_migrations \
+            --file="$plain_dir/storage-data.sql"
+
+          psql "$PRODUCTION_SUPABASE_DB_URL" --no-psqlrc -X -qAt -v ON_ERROR_STOP=1 \
+            --set=SNAPSHOT_MODE=true --set=SNAPSHOT_ID="$snapshot_id" \
+            --file scripts/ev2/phase16/fingerprint-auth-storage.sql \
+            > "$plain_dir/source-auth-storage-inventory.tsv"
+          node scripts/ev2/phase16/verify-backup-scope.mjs \
+            --auth-dump "$plain_dir/auth-data.sql" \
+            --storage-dump "$plain_dir/storage-data.sql" \
+            --source-inventory "$plain_dir/source-auth-storage-inventory.tsv" \
+            --output "$plain_dir/backup-source-scope.json"
+
+          psql "$PRODUCTION_SUPABASE_DB_URL" --no-psqlrc -X -v ON_ERROR_STOP=1 \
+            --set=SNAPSHOT_ID="$snapshot_id" -qAt > "$plain_dir/source-application-tables.txt" <<'SQL'
+          begin isolation level repeatable read read only;
+          set transaction snapshot :'SNAPSHOT_ID';
+          select schemaname || '.' || tablename
           from pg_tables
-          where schemaname = 'public'
-          order by 1
-          \gexec
+          where schemaname in ('public', 'private')
+          order by 1;
+          commit;
           SQL
-          fi
+          psql "$PRODUCTION_SUPABASE_DB_URL" --no-psqlrc -X -qAt -v ON_ERROR_STOP=1 \
+            --set=SNAPSHOT_MODE=true --set=SNAPSHOT_ID="$snapshot_id" \
+            --file scripts/ev2/phase16/fingerprint-application.sql \
+            > "$plain_dir/source-application-fingerprints.tsv"
+
+          psql "$PRODUCTION_SUPABASE_DB_URL" --no-psqlrc -X -v ON_ERROR_STOP=1 \
+            --set=SNAPSHOT_ID="$snapshot_id" -qAt > "$plain_dir/storage-object-source.jsonl" <<'SQL'
+          begin isolation level repeatable read read only;
+          set transaction snapshot :'SNAPSHOT_ID';
+          select jsonb_build_object(
+            'bucketId', bucket_id,
+            'name', name,
+            'size', case when metadata ->> 'size' ~ '^\d+$' then (metadata ->> 'size')::bigint else null end,
+            'contentType', coalesce(metadata ->> 'mimetype', 'application/octet-stream'),
+            'cacheControl', coalesce(metadata ->> 'cacheControl', '3600'),
+            'version', to_jsonb(storage.objects) ->> 'version',
+            'updatedAt', to_jsonb(storage.objects) ->> 'updated_at',
+            'eTag', coalesce(metadata ->> 'eTag', metadata ->> 'etag'),
+            'checksum', coalesce(metadata ->> 'checksum', metadata ->> 'sha256')
+          )::text
+          from storage.objects
+          order by bucket_id, name;
+          commit;
+          SQL
+          close_snapshot
+          trap - EXIT
+
+          psql "$PRODUCTION_SUPABASE_DB_URL" --no-psqlrc -X -qAt -v ON_ERROR_STOP=1 \
+            --file scripts/ev2/phase16/fingerprint-roles.sql > "$plain_dir/source-roles-after.tsv"
+          node scripts/ev2/phase16/verify-role-backup.mjs source \
+            --before "$plain_dir/source-roles-before.tsv" \
+            --after "$plain_dir/source-roles-after.tsv" \
+            --roles "$plain_dir/roles.sql" \
+            --output "$plain_dir/role-source-report.json"
+
+          SOURCE_SUPABASE_URL="https://${PRODUCTION_SUPABASE_PROJECT_REF}.supabase.co" \
+          SOURCE_SUPABASE_SERVICE_ROLE_KEY="$PRODUCTION_SUPABASE_SERVICE_ROLE_KEY" \
+          node scripts/ev2/phase16/storage-object-backup.mjs export \
+            --inventory "$plain_dir/storage-object-source.jsonl" \
+            --objects-dir "$plain_dir/storage-objects" \
+            --index "$plain_dir/storage-object-index.json" \
+            --report "$plain_dir/storage-source-report.json"
+
+          psql "$PRODUCTION_SUPABASE_DB_URL" --no-psqlrc -X -v ON_ERROR_STOP=1 -qAt \
+            > "$plain_dir/storage-object-after.jsonl" <<'SQL'
+          select jsonb_build_object(
+            'bucketId', bucket_id,
+            'name', name,
+            'size', case when metadata ->> 'size' ~ '^\d+$' then (metadata ->> 'size')::bigint else null end,
+            'contentType', coalesce(metadata ->> 'mimetype', 'application/octet-stream'),
+            'cacheControl', coalesce(metadata ->> 'cacheControl', '3600'),
+            'version', to_jsonb(storage.objects) ->> 'version',
+            'updatedAt', to_jsonb(storage.objects) ->> 'updated_at',
+            'eTag', coalesce(metadata ->> 'eTag', metadata ->> 'etag'),
+            'checksum', coalesce(metadata ->> 'checksum', metadata ->> 'sha256')
+          )::text
+          from storage.objects
+          order by bucket_id, name;
+          SQL
+          node scripts/ev2/phase16/storage-object-backup.mjs verify-snapshot \
+            --before-inventory "$plain_dir/storage-object-source.jsonl" \
+            --after-inventory "$plain_dir/storage-object-after.jsonl" \
+            --index "$plain_dir/storage-object-index.json" \
+            --report "$plain_dir/storage-source-report.json" \
+            --stability-report "$plain_dir/storage-snapshot-stability.json" \
+            --snapshot-at "$snapshot_at" \
+            --snapshot-lsn "$snapshot_lsn"
 
           archive="$RUNNER_TEMP/gaiatec-supabase-$GITHUB_RUN_ID/backup.tar.gz"
-          encrypted="$artifact_dir/supabase-production-$GITHUB_RUN_ID.tar.gz.gpg"
+          encrypted="$artifact_dir/supabase-production-backup-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.tar.gz.gpg"
           tar -C "$plain_dir" -czf "$archive" \
-            roles.sql schema.sql data.sql source-public-tables.txt source-public-row-counts.tsv
+            roles.sql schema.sql application-data.sql auth-data.sql storage-data.sql \
+            source-application-tables.txt source-application-fingerprints.tsv \
+            source-auth-storage-inventory.tsv backup-source-scope.json role-source-report.json \
+            storage-object-index.json storage-source-report.json storage-snapshot-stability.json storage-objects
           printf '%s' "$BACKUP_ENCRYPTION_PASSPHRASE" | gpg --batch --yes --pinentry-mode loopback \
             --passphrase-fd 0 --symmetric --cipher-algo AES256 --output "$encrypted" "$archive"
           rm -f -- "$archive"
+          node scripts/ev2/phase16/backup-archive-seal.mjs create \
+            --archive "$encrypted" --seal "$artifact_dir/archive-seal.json"
 
           echo "archive=$encrypted" >> "$GITHUB_OUTPUT"
+          echo "archive_seal=$artifact_dir/archive-seal.json" >> "$GITHUB_OUTPUT"
           echo "artifact_dir=$artifact_dir" >> "$GITHUB_OUTPUT"
-      - name: Prove decryption and restore in an ephemeral Supabase
+          echo "source_scope_report=$plain_dir/backup-source-scope.json" >> "$GITHUB_OUTPUT"
+          echo "source_storage_report=$plain_dir/storage-source-report.json" >> "$GITHUB_OUTPUT"
+          echo "storage_stability_report=$plain_dir/storage-snapshot-stability.json" >> "$GITHUB_OUTPUT"
+          echo "source_role_report=$plain_dir/role-source-report.json" >> "$GITHUB_OUTPUT"
+          echo "snapshot_at=$snapshot_at" >> "$GITHUB_OUTPUT"
+          echo "snapshot_lsn=$snapshot_lsn" >> "$GITHUB_OUTPUT"
+      - name: Prove decryption and complete data restore in an ephemeral Supabase
+        id: restore
         if: steps.mode.outputs.restore_drill == 'true'
         env:
           BACKUP_ARCHIVE_PATH: ${{ steps.backup.outputs.archive }}
+          BACKUP_ARCHIVE_SEAL_PATH: ${{ steps.backup.outputs.archive_seal }}
           BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
+          BACKUP_SOURCE_SCOPE_REPORT_PATH: ${{ steps.backup.outputs.source_scope_report }}
+          ROLE_SOURCE_REPORT_PATH: ${{ steps.backup.outputs.source_role_report }}
         run: |
           set -euo pipefail
+          restore_started_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          restore_started_epoch="$(date +%s)"
           restore_dir="$RUNNER_TEMP/gaiatec-supabase-$GITHUB_RUN_ID/restore"
+          artifact_dir="$RUNNER_TEMP/gaiatec-backup-artifact-$GITHUB_RUN_ID"
           mkdir -p "$restore_dir/extracted"
+          install -m 0600 /dev/null "$restore_dir/psql-restore.log"
+          run_restore_psql() {
+            local failure_code="$1"
+            shift
+            if ! "$@" >>"$restore_dir/psql-restore.log" 2>&1; then
+              printf '::error::%s\n' "$failure_code" >&2
+              return 1
+            fi
+          }
+
+          node scripts/ev2/phase16/backup-archive-seal.mjs verify \
+            --archive "$BACKUP_ARCHIVE_PATH" --seal "$BACKUP_ARCHIVE_SEAL_PATH"
           printf '%s' "$BACKUP_ENCRYPTION_PASSPHRASE" | gpg --batch --yes --pinentry-mode loopback \
             --passphrase-fd 0 --decrypt --output "$restore_dir/backup.tar.gz" "$BACKUP_ARCHIVE_PATH"
           tar -C "$restore_dir/extracted" -xzf "$restore_dir/backup.tar.gz"
 
           supabase start
           local_db_url="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
-          psql "$local_db_url" --no-psqlrc -v ON_ERROR_STOP=1 -c \
-            "drop schema if exists public cascade; create schema public; grant all on schema public to postgres, anon, authenticated, service_role;"
-          # Supabase role dumps include single-line, multiline and session-level
-          # platform-managed GUC assignments. Keep the encrypted source intact and
-          # sanitize only the ephemeral drill copy before applying all remaining SQL.
+          run_restore_psql BACKUP_RESTORE_SCHEMA_RESET_FAILED \
+            psql "$local_db_url" --no-psqlrc -X -v ON_ERROR_STOP=1 -c \
+            "drop schema if exists public cascade; drop schema if exists private cascade;"
           node scripts/ev2/phase16/prepare-role-restore.mjs \
             "$restore_dir/extracted/roles.sql" "$restore_dir/roles.restore.sql"
-          psql "$local_db_url" --no-psqlrc -v ON_ERROR_STOP=1 -f "$restore_dir/roles.restore.sql"
-          psql "$local_db_url" --no-psqlrc -v ON_ERROR_STOP=1 -f "$restore_dir/extracted/schema.sql"
-          psql "$local_db_url" --no-psqlrc -v ON_ERROR_STOP=1 -f "$restore_dir/extracted/data.sql"
-          psql "$local_db_url" --no-psqlrc -v ON_ERROR_STOP=1 -Atc \
-            "select schemaname || '.' || tablename from pg_tables where schemaname = 'public' order by 1" \
-            > "$restore_dir/restored-public-tables.txt"
-          psql "$local_db_url" --no-psqlrc -v ON_ERROR_STOP=1 -At > "$restore_dir/restored-public-row-counts.tsv" <<'SQL'
-          select format(
-            'select %L || chr(9) || count(*)::text from %I.%I;',
-            schemaname || '.' || tablename,
-            schemaname,
-            tablename
-          )
-          from pg_tables
-          where schemaname = 'public'
-          order by 1
-          \gexec
+          run_restore_psql BACKUP_RESTORE_PORTABLE_ROLES_FAILED \
+            psql "$local_db_url" --no-psqlrc -X -v ON_ERROR_STOP=1 -f "$restore_dir/roles.restore.sql"
+          psql "$local_db_url" --no-psqlrc -X -qAt -v ON_ERROR_STOP=1 \
+            --file scripts/ev2/phase16/fingerprint-roles.sql > "$restore_dir/restored-roles.tsv"
+          node scripts/ev2/phase16/verify-role-backup.mjs restore \
+            --source-report "$ROLE_SOURCE_REPORT_PATH" \
+            --restored "$restore_dir/restored-roles.tsv" \
+            --output "$artifact_dir/role-restore-report.json"
+          run_restore_psql BACKUP_RESTORE_APPLICATION_SCHEMA_FAILED \
+            psql "$local_db_url" --no-psqlrc -X -v ON_ERROR_STOP=1 -f "$restore_dir/extracted/schema.sql"
+
+          run_restore_psql BACKUP_RESTORE_MANAGED_TABLE_RESET_FAILED \
+            psql "$local_db_url" --no-psqlrc -X -v ON_ERROR_STOP=1 <<'SQL'
+          do $$
+          declare target_tables text;
+          begin
+            select string_agg(format('%I.%I', schemaname, tablename), ', ' order by schemaname, tablename)
+            into target_tables
+            from pg_tables
+            where schemaname in ('auth', 'storage')
+              and schemaname || '.' || tablename not in (
+                'auth.schema_migrations',
+                'storage.migrations',
+                'storage.schema_migrations'
+              );
+            if target_tables is not null then
+              execute 'truncate table ' || target_tables || ' restart identity cascade';
+            end if;
+          end $$;
           SQL
-          diff -u "$restore_dir/extracted/source-public-tables.txt" "$restore_dir/restored-public-tables.txt"
-          diff -u "$restore_dir/extracted/source-public-row-counts.tsv" "$restore_dir/restored-public-row-counts.tsv"
+          run_restore_psql BACKUP_RESTORE_DATA_REPLAY_FAILED \
+            psql "$local_db_url" --no-psqlrc -X -v ON_ERROR_STOP=1 \
+            --set=APPLICATION_DATA="$restore_dir/extracted/application-data.sql" \
+            --set=AUTH_DATA="$restore_dir/extracted/auth-data.sql" \
+            --set=STORAGE_DATA="$restore_dir/extracted/storage-data.sql" <<'SQL'
+          begin;
+          set local session_replication_role = replica;
+          \i :APPLICATION_DATA
+          \i :AUTH_DATA
+          \i :STORAGE_DATA
+          commit;
+          SQL
+
+          psql "$local_db_url" --no-psqlrc -X -v ON_ERROR_STOP=1 -Atc \
+            "select schemaname || '.' || tablename from pg_tables where schemaname in ('public', 'private') order by 1" \
+            > "$restore_dir/restored-application-tables.txt"
+          psql "$local_db_url" --no-psqlrc -X -qAt -v ON_ERROR_STOP=1 \
+            --set=SNAPSHOT_MODE=false --set=SNAPSHOT_ID=unused \
+            --file scripts/ev2/phase16/fingerprint-application.sql \
+            > "$restore_dir/restored-application-fingerprints.tsv"
+          diff -u "$restore_dir/extracted/source-application-tables.txt" "$restore_dir/restored-application-tables.txt"
+          diff -u "$restore_dir/extracted/source-application-fingerprints.tsv" "$restore_dir/restored-application-fingerprints.tsv"
+
+          local_status="$(supabase status -o env)"
+          local_api_url="$(printf '%s\n' "$local_status" | sed -nE 's/^API_URL="?([^\"]+)"?$/\1/p')"
+          local_service_key="$(printf '%s\n' "$local_status" | sed -nE 's/^SERVICE_ROLE_KEY="?([^\"]+)"?$/\1/p')"
+          printf '::add-mask::%s\n' "$local_service_key"
+          test -n "$local_api_url"
+          test -n "$local_service_key"
+          TARGET_SUPABASE_URL="$local_api_url" \
+          TARGET_SUPABASE_SERVICE_ROLE_KEY="$local_service_key" \
+          node scripts/ev2/phase16/storage-object-backup.mjs restore \
+            --index "$restore_dir/extracted/storage-object-index.json" \
+            --objects-dir "$restore_dir/extracted/storage-objects" \
+            --report "$restore_dir/storage-upload-report.json"
+
+          # Upload creates a new metadata row. Reapply the exact Storage snapshot
+          # afterwards so owner, version, metadata and timestamps remain faithful.
+          run_restore_psql BACKUP_RESTORE_STORAGE_METADATA_REAPPLY_FAILED \
+            psql "$local_db_url" --no-psqlrc -X -v ON_ERROR_STOP=1 \
+            --set=STORAGE_DATA="$restore_dir/extracted/storage-data.sql" <<'SQL'
+          begin;
+          set local session_replication_role = replica;
+          do $$
+          declare target_table record;
+          begin
+            for target_table in
+              select schemaname, tablename
+              from pg_tables
+              where schemaname = 'storage'
+                and schemaname || '.' || tablename not in (
+                  'storage.migrations',
+                  'storage.schema_migrations'
+                )
+              order by schemaname, tablename
+            loop
+              execute format('delete from %I.%I', target_table.schemaname, target_table.tablename);
+            end loop;
+          end $$;
+          \i :STORAGE_DATA
+          commit;
+          SQL
+
+          psql "$local_db_url" --no-psqlrc -X -qAt -v ON_ERROR_STOP=1 \
+            --set=SNAPSHOT_MODE=false --set=SNAPSHOT_ID=unused \
+            --file scripts/ev2/phase16/fingerprint-auth-storage.sql \
+            > "$restore_dir/restored-auth-storage-inventory.tsv"
+          node scripts/ev2/phase16/verify-backup-scope.mjs \
+            --auth-dump "$restore_dir/extracted/auth-data.sql" \
+            --storage-dump "$restore_dir/extracted/storage-data.sql" \
+            --source-inventory "$restore_dir/extracted/source-auth-storage-inventory.tsv" \
+            --restored-inventory "$restore_dir/restored-auth-storage-inventory.tsv" \
+            --output "$artifact_dir/backup-restore-scope.json"
+          TARGET_SUPABASE_URL="$local_api_url" \
+          TARGET_SUPABASE_SERVICE_ROLE_KEY="$local_service_key" \
+          node scripts/ev2/phase16/storage-object-backup.mjs verify-restore \
+            --index "$restore_dir/extracted/storage-object-index.json" \
+            --metadata-report "$artifact_dir/backup-restore-scope.json" \
+            --report "$artifact_dir/storage-restore-report.json"
+          unset local_service_key local_api_url local_status
+
+          node scripts/ev2/phase16/backup-archive-seal.mjs verify \
+            --archive "$BACKUP_ARCHIVE_PATH" --seal "$BACKUP_ARCHIVE_SEAL_PATH"
+          restore_completed_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          restore_completed_epoch="$(date +%s)"
+          restore_duration_seconds="$((restore_completed_epoch - restore_started_epoch))"
+          test "$restore_duration_seconds" -gt 0
+          {
+            echo "started_at=$restore_started_at"
+            echo "completed_at=$restore_completed_at"
+            echo "duration_seconds=$restore_duration_seconds"
+            echo "restore_scope_report=$artifact_dir/backup-restore-scope.json"
+            echo "storage_restore_report=$artifact_dir/storage-restore-report.json"
+            echo "role_restore_report=$artifact_dir/role-restore-report.json"
+            echo "passed=true"
+          } >> "$GITHUB_OUTPUT"
       - name: Seal non-sensitive backup evidence
         env:
           BACKUP_ARCHIVE_PATH: ${{ steps.backup.outputs.archive }}
+          BACKUP_ARCHIVE_SEAL_PATH: ${{ steps.backup.outputs.archive_seal }}
           BACKUP_MANIFEST_PATH: ${{ steps.backup.outputs.artifact_dir }}/manifest.json
+          BACKUP_SOURCE_SCOPE_REPORT_PATH: ${{ steps.backup.outputs.source_scope_report }}
+          BACKUP_RESTORE_SCOPE_REPORT_PATH: ${{ steps.restore.outputs.restore_scope_report }}
+          STORAGE_SOURCE_REPORT_PATH: ${{ steps.backup.outputs.source_storage_report }}
+          STORAGE_RESTORE_REPORT_PATH: ${{ steps.restore.outputs.storage_restore_report }}
+          STORAGE_STABILITY_REPORT_PATH: ${{ steps.backup.outputs.storage_stability_report }}
+          ROLE_SOURCE_REPORT_PATH: ${{ steps.backup.outputs.source_role_report }}
+          ROLE_RESTORE_REPORT_PATH: ${{ steps.restore.outputs.role_restore_report }}
           RESTORE_DRILL_PERFORMED: ${{ steps.mode.outputs.restore_drill }}
-          RESTORE_DRILL_PASSED: ${{ steps.mode.outputs.restore_drill }}
+          RESTORE_DRILL_PASSED: ${{ steps.restore.outputs.passed }}
+          RESTORE_DRILL_STARTED_AT: ${{ steps.restore.outputs.started_at }}
+          RESTORE_DRILL_COMPLETED_AT: ${{ steps.restore.outputs.completed_at }}
+          RESTORE_DRILL_DURATION_SECONDS: ${{ steps.restore.outputs.duration_seconds }}
+          BACKUP_SNAPSHOT_AT: ${{ steps.backup.outputs.snapshot_at }}
+          BACKUP_SNAPSHOT_LSN: ${{ steps.backup.outputs.snapshot_lsn }}
         run: node scripts/ev2/phase16/write-backup-manifest.mjs
-      - name: Remove all plaintext dump material
+      - name: Remove all plaintext dump and restore material
         if: always()
         run: |
           target="$RUNNER_TEMP/gaiatec-supabase-$GITHUB_RUN_ID"
@@ -163,7 +460,13 @@ jobs:
           supabase stop --no-backup || true
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: supabase-production-backup-${{ github.run_id }}
-          path: ${{ steps.backup.outputs.artifact_dir }}
+          name: supabase-production-backup-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ steps.backup.outputs.archive }}
+            ${{ steps.backup.outputs.artifact_dir }}/archive-seal.json
+            ${{ steps.backup.outputs.artifact_dir }}/manifest.json
+            ${{ steps.backup.outputs.artifact_dir }}/backup-restore-scope.json
+            ${{ steps.backup.outputs.artifact_dir }}/storage-restore-report.json
+            ${{ steps.backup.outputs.artifact_dir }}/role-restore-report.json
           if-no-files-found: error
           retention-days: 30

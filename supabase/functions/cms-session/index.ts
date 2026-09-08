@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { isConfiguredCmsEnvironment } from "../_shared/ev2-environment.ts";
 import {
   cleanText,
   clientAddress,
@@ -114,6 +115,10 @@ Deno.serve(async (req) => {
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
   const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!url || !anonKey || !serviceRole) return json(req, { error: "Serviço indisponível." }, 503);
+  const configuredEnvironment = Deno.env.get("CMS_ENVIRONMENT");
+  if (!isConfiguredCmsEnvironment(configuredEnvironment)) {
+    return json(req, { error: "Ambiente do CMS indisponível." }, 503);
+  }
 
   const authHeader = req.headers.get("Authorization") ?? "";
   const token = authHeader.replace(/^Bearer\s+/i, "");
@@ -155,9 +160,10 @@ Deno.serve(async (req) => {
     return json(req, { error: "Serviço de proteção indisponível." }, 503);
   }
 
-  const { data, error } = await admin.rpc("cms_resolve_session", {
+  const { data, error } = await admin.rpc("cms_resolve_session_scoped", {
     p_user_id: authData.user.id,
     p_event_type: ACTION_EVENT[action],
+    p_environment: configuredEnvironment,
     p_aal: claims.aal,
     p_session_id: claims.sessionId,
     p_issued_at: claims.issuedAt,
@@ -172,50 +178,45 @@ Deno.serve(async (req) => {
     );
   }
 
-  const configured = Deno.env.get("CMS_ENVIRONMENT");
-  const configuredEnvironment: Environment | null =
-    configured === "local" || configured === "staging" || configured === "production" ? configured : null;
   const ev2DeploymentEnabled =
     configuredEnvironment !== "production" || Deno.env.get("CMS_EV2_PRODUCTION_ENABLED") === "true";
   let resolvedData = data as Record<string, unknown>;
-  if (configuredEnvironment) {
-    const scope = {
-      p_actor_id: authData.user.id,
-      p_environment: configuredEnvironment,
-      p_site_key: "main",
-      p_aal: claims.aal,
-      p_session_id: claims.sessionId,
-      p_issued_at: claims.issuedAt,
-    };
-    const { data: capability, error: capabilityError } = await admin.rpc(
-      "cms_rbac_scope_capability",
+  const scope = {
+    p_actor_id: authData.user.id,
+    p_environment: configuredEnvironment,
+    p_site_key: "main",
+    p_aal: claims.aal,
+    p_session_id: claims.sessionId,
+    p_issued_at: claims.issuedAt,
+  };
+  const { data: capability, error: capabilityError } = await admin.rpc(
+    "cms_rbac_scope_capability",
+    scope,
+  );
+  if (
+    capabilityError &&
+    capabilityError.code !== "PGRST202" &&
+    capabilityError.code !== "42883"
+  )
+    return json(req, { error: "Não foi possível resolver a política de acesso." }, 503);
+  if (
+    !capabilityError &&
+    capability?.enabled !== true &&
+    ["scope_context_ambiguous", "scope_environment_mismatch"].includes(capability?.reasonCode)
+  )
+    return json(req, { error: "A política de acesso está em estado seguro de bloqueio." }, 403);
+  if (!capabilityError && capability?.enabled === true) {
+    const { data: scopedAccess, error: scopedError } = await admin.rpc(
+      "cms_resolve_scoped_access",
       scope,
     );
-    if (
-      capabilityError &&
-      capabilityError.code !== "PGRST202" &&
-      capabilityError.code !== "42883"
-    )
-      return json(req, { error: "Não foi possível resolver a política de acesso." }, 503);
-    if (
-      !capabilityError &&
-      capability?.enabled !== true &&
-      ["scope_context_ambiguous", "scope_environment_mismatch"].includes(capability?.reasonCode)
-    )
-      return json(req, { error: "A política de acesso está em estado seguro de bloqueio." }, 403);
-    if (!capabilityError && capability?.enabled === true) {
-      const { data: scopedAccess, error: scopedError } = await admin.rpc(
-        "cms_resolve_scoped_access",
-        scope,
-      );
-      if (scopedError || !scopedAccess)
-        return json(req, { error: "Não foi possível resolver o acesso escopado." }, 503);
-      resolvedData = { ...resolvedData, ...scopedAccess };
-    }
+    if (scopedError || !scopedAccess)
+      return json(req, { error: "Não foi possível resolver o acesso escopado." }, 503);
+    resolvedData = { ...resolvedData, ...scopedAccess };
   }
 
   let ev2Capabilities: Record<string, unknown> = unavailableManifest(configuredEnvironment);
-  if (configuredEnvironment && ev2DeploymentEnabled && resolvedData.accessGranted === true) {
+  if (ev2DeploymentEnabled && resolvedData.accessGranted === true) {
     const { data: manifest, error: manifestError } = await admin.rpc(
       "cms_runtime_capability_manifest",
       {

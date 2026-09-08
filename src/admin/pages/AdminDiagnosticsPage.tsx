@@ -53,6 +53,26 @@ const unitLabels = {
   percent: "%",
 } as const;
 
+function queueLabel(key: string): string {
+  return queueLabels[key as keyof typeof queueLabels] ?? "Processamento não reconhecido";
+}
+
+function checkLabel(key: string): string {
+  return checkLabels[key] ?? "Verificação não reconhecida";
+}
+
+function operationalEventLabel(eventType: string): string {
+  const normalized = eventType.toLocaleLowerCase("pt-BR");
+  if (normalized.includes("publication") || normalized.includes("projection"))
+    return "Ocorrência na publicação";
+  if (normalized.includes("lead")) return "Ocorrência no atendimento de leads";
+  if (normalized.includes("delivery") || normalized.includes("outbox"))
+    return "Ocorrência no processamento de uma entrega";
+  if (normalized.includes("auth") || normalized.includes("security") || normalized.includes("access"))
+    return "Ocorrência de acesso";
+  return "Ocorrência operacional";
+}
+
 export default function AdminDiagnosticsPage() {
   const { session, profile } = useAdminAuth();
   const candidateEnabled = isEv2FeatureEnabled(profile, "ev2.system_assurance");
@@ -141,9 +161,9 @@ export default function AdminDiagnosticsPage() {
   return (
     <section>
       <PageHeader
-        eyebrow="OBSERVABILIDADE"
+        eyebrow="SAÚDE DO SISTEMA"
         title="Diagnósticos"
-        description="Acompanhe falhas reais, filas, reconciliação e disponibilidade das projeções."
+        description="Acompanhe falhas, processamentos pendentes e consistência das publicações."
         actions={
           <button
             type="button"
@@ -171,7 +191,7 @@ export default function AdminDiagnosticsPage() {
           <div className="admin-metrics">
             <article className={outbox ? "is-alert" : ""}>
               <strong>{outbox}</strong>
-              <span>publicações pendentes/falhas</span>
+              <span>publicações pendentes ou com falha</span>
             </article>
             <article>
               <strong>{eventTotal}</strong>
@@ -189,24 +209,24 @@ export default function AdminDiagnosticsPage() {
             <LoadingSkeleton label="Calculando garantias sistêmicas" rows={3} />
           )}
           {candidateState === "unavailable" && (
-            <AdminAlert title="EV2.11 protegida" tone="info">
-              A capacidade avançada não está autorizada para esta identidade. O diagnóstico estável permanece
+            <AdminAlert title="Diagnóstico avançado protegido" tone="info">
+              A verificação avançada não está autorizada para esta conta. O diagnóstico básico permanece
               disponível.
             </AdminAlert>
           )}
           {candidateState === "error" && (
-            <AdminAlert title="Garantia sistêmica indisponível" tone="warning">
-              Não foi possível obter a fotografia EV2.11. Nenhum dado ou fila foi alterado; use “Atualizar
+            <AdminAlert title="Verificação avançada indisponível" tone="warning">
+              Não foi possível obter a verificação avançada. Nenhum dado foi alterado; use “Atualizar
               diagnóstico” para tentar novamente.
             </AdminAlert>
           )}
           {candidateState === "ready" && snapshot && (
             <SectionCard
-              title="Fotografia sistêmica EV2.11"
-              description="Leitura sem dados pessoais. Esta fotografia apoia o G11, mas não o aprova isoladamente."
+              title="Verificação avançada do sistema"
+              description="Leitura sem dados pessoais que reúne os principais critérios de saúde operacional. Esta verificação não libera uma publicação por conta própria."
               actions={
                 <Badge tone={snapshot.gateReady ? "success" : "warning"}>
-                  {snapshot.gateReady ? "Banco operacional apto" : "Ação necessária"}
+                  {snapshot.gateReady ? "Sistema apto" : "Ação necessária"}
                 </Badge>
               }
             >
@@ -234,11 +254,11 @@ export default function AdminDiagnosticsPage() {
               </div>
               <div className="admin-table-wrap">
                 <table>
-                  <caption>Filas transacionais verificadas</caption>
+                  <caption>Processamentos verificados</caption>
                   <thead>
                     <tr>
-                      <th>Fila</th>
-                      <th>Acionáveis</th>
+                      <th>Processamento</th>
+                      <th>Pendentes</th>
                       <th>Exceções</th>
                       <th>Evento mais antigo</th>
                     </tr>
@@ -246,7 +266,7 @@ export default function AdminDiagnosticsPage() {
                   <tbody>
                     {snapshot.queues.map((queue) => (
                       <tr key={queue.key}>
-                        <td>{queueLabels[queue.key]}</td>
+                        <td>{queueLabel(queue.key)}</td>
                         <td>{queue.actionable}</td>
                         <td>{queue.deadLetter}</td>
                         <td>{queue.oldestLagSeconds}s</td>
@@ -257,7 +277,7 @@ export default function AdminDiagnosticsPage() {
               </div>
               <div className="admin-table-wrap">
                 <table>
-                  <caption>Critérios operacionais calculados no banco</caption>
+                  <caption>Verificações operacionais automáticas</caption>
                   <thead>
                     <tr>
                       <th>Critério</th>
@@ -269,7 +289,7 @@ export default function AdminDiagnosticsPage() {
                   <tbody>
                     {snapshot.checks.map((check) => (
                       <tr key={check.key}>
-                        <td>{checkLabels[check.key] ?? check.key}</td>
+                        <td>{checkLabel(check.key)}</td>
                         <td>
                           <Badge tone={check.passed ? "success" : "danger"}>
                             {check.passed ? "Conforme" : "Não conforme"}
@@ -286,21 +306,24 @@ export default function AdminDiagnosticsPage() {
                   </tbody>
                 </table>
               </div>
-              <p className="admin-help">
-                Captura {new Date(snapshot.capturedAt).toLocaleString("pt-BR")} · suporte{" "}
-                {snapshot.correlationId.slice(0, 8)}.
-              </p>
+              <p className="admin-help">Captura {new Date(snapshot.capturedAt).toLocaleString("pt-BR")}.</p>
+              <details>
+                <summary>Detalhes para suporte</summary>
+                <p>
+                  Referência técnica: <code>{snapshot.correlationId.slice(0, 8)}</code>
+                </p>
+              </details>
             </SectionCard>
           )}
 
           <SectionCard
             title="Alertas operacionais"
-            description="Ocorrências abertas com código de acompanhamento."
+            description="Ocorrências abertas que podem exigir acompanhamento."
           >
             {events.length === 0 ? (
               <EmptyState
                 title="Nenhuma falha aberta"
-                description="Publicação, outbox e processamento não possuem alerta ativo."
+                description="Não há alertas ativos de publicação ou processamento."
               />
             ) : (
               <>
@@ -311,12 +334,31 @@ export default function AdminDiagnosticsPage() {
                 )}
                 {events.map((event) => (
                   <article className="admin-alert" key={event.id}>
-                    <strong>{event.event_type}</strong>
-                    <p>Código: {event.error_code ?? "—"}</p>
-                    <small>
-                      Suporte {event.correlation_id.slice(0, 8)} ·{" "}
-                      {new Date(event.created_at).toLocaleString("pt-BR")}
-                    </small>
+                    <strong>{operationalEventLabel(event.event_type)}</strong>
+                    <p>{new Date(event.created_at).toLocaleString("pt-BR")}</p>
+                    <details>
+                      <summary>Detalhes para suporte</summary>
+                      <dl>
+                        <div>
+                          <dt>Tipo técnico</dt>
+                          <dd>
+                            <code>{event.event_type.slice(0, 80)}</code>
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Código técnico</dt>
+                          <dd>
+                            <code>{event.error_code?.slice(0, 80) ?? "Não informado"}</code>
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Referência</dt>
+                          <dd>
+                            <code>{event.correlation_id.slice(0, 8)}</code>
+                          </dd>
+                        </div>
+                      </dl>
+                    </details>
                   </article>
                 ))}
               </>

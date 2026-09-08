@@ -125,8 +125,10 @@ test("candidate UI, worker and canary expose the governed workflow without chang
   assert.match(page, /isEv2FeatureEnabled\(profile, "ev2\.collaboration_bulk"\)/);
   assert.match(page, /Validar sem alterar/);
   assert.match(page, /Publicar conjunto/);
-  assert.match(page, /Reverter release/);
-  assert.match(routes, /path: "meu-trabalho"/);
+  assert.match(page, /Reverter publicação/);
+  assert.match(routes, /const AdminWorkPage = lazy\(\(\) => import\("\.\.\/admin\/pages\/AdminWorkPage"\)\)/);
+  assert.match(routes, /path: "meu-trabalho", element: lazyWrap\(AdminWorkPage\)/);
+  assert.doesNotMatch(routes, /path: "meu-trabalho"[^\n]*Navigate/);
   assert.match(navigation, /cms:collaboration\.read/);
   assert.match(api, /cms-collaboration/);
   assert.match(api, /cms-bulk/);

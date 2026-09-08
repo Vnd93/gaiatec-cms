@@ -63,7 +63,8 @@ test("admin fields are connected to versioned public consumers", async () => {
   assert.match(publicApi, /loadPublishedForm/);
   assert.match(publicApi, /cms_route_rules/);
   assert.match(publicApi, /kind: "fallback"/);
-  assert.match(leadApi, /active_version_id/);
+  assert.match(leadApi, /cms_public_form_scoped/);
+  assert.match(leadApi, /cms_capture_lead_scoped/);
   assert.match(leadApi, /captchaToken/);
   assert.match(leadApi, /idempotencyKey/);
   assert.match(renderer, /CmsLeadForm/);
@@ -125,6 +126,43 @@ test("critical permissions, unpublishing and governed forms are fail-closed", as
   assert.match(footer, /getPublishedForm/);
 });
 
+test("lead CAPTCHA separates frontend build flags from Edge Function secrets", async () => {
+  const [capture, contact, security, challenge, production, staging, productionBridge, stagingBridge] =
+    await Promise.all([
+      read("supabase/functions/lead-capture/index.ts"),
+      read("supabase/functions/submit-contact/index.ts"),
+      read("supabase/functions/_shared/security.ts"),
+      read("src/app/components/TurnstileChallenge.tsx"),
+      read(".github/workflows/deploy-production.yml"),
+      read(".github/workflows/deploy-staging.yml"),
+      read(".github/workflows/promote-production-frontend-bridge.yml"),
+      read(".github/workflows/promote-staging-frontend-bridge.yml"),
+    ]);
+  assert.match(capture, /CONTACT_CAPTCHA_ALWAYS/);
+  assert.match(capture, /TURNSTILE_EXPECTED_ACTION/);
+  assert.match(capture, /isAllowedTurnstileVerification\(result, secret, expectedAction\)/);
+  assert.match(contact, /TURNSTILE_EXPECTED_ACTION/);
+  assert.match(contact, /isAllowedTurnstileVerification\(result, secret, expectedAction\)/);
+  assert.match(
+    security,
+    /return isExactOriginAllowed\(req\.headers\.get\("Origin"\), Deno\.env\.get\("ALLOWED_ORIGINS"\)\)/,
+  );
+  assert.match(security, /TURNSTILE_ALLOWED_HOSTNAMES/);
+  assert.doesNotMatch(security, /gaiatec-cms-staging\\\.pages\\\.dev\$\/i/);
+  assert.match(challenge, /action: "lead_capture"/);
+  assert.match(production, /CONTACT_CAPTCHA_ALWAYS: "true"/);
+  assert.match(production, /TURNSTILE_SECRET_KEY:/);
+  assert.doesNotMatch(production, /VITE_(?:CONTACT_CAPTCHA_ALWAYS|TURNSTILE_SITE_KEY):/);
+  assert.match(staging, /VITE_CONTACT_CAPTCHA_ALWAYS: "true"/);
+  assert.match(staging, /CONTACT_CAPTCHA_ALWAYS=true/);
+  for (const bridge of [productionBridge, stagingBridge]) {
+    assert.match(bridge, /VITE_CONTACT_CAPTCHA_ALWAYS: "true"/);
+    assert.match(bridge, /VITE_TURNSTILE_SITE_KEY:/);
+    assert.doesNotMatch(bridge, /^\s+CONTACT_CAPTCHA_ALWAYS:/m);
+    assert.doesNotMatch(bridge, /^\s+TURNSTILE_SECRET_KEY:/m);
+  }
+});
+
 test("staging form setup is governed, repeatable and isolated from production", async () => {
   const [setup, cleanup, email, worker, outboxCron] = await Promise.all([
     read("scripts/phase7/configure-staging-forms.mjs"),
@@ -150,11 +188,23 @@ test("staging form setup is governed, repeatable and isolated from production", 
   assert.match(email, /cms@gaiatecsistemas\.com/);
   assert.match(email, /providerFailureReason/);
   assert.match(worker, /lead_notification_\$\{caught\.reason\}/);
-  assert.match(worker, /anonymized_at/);
+  assert.match(worker, /cms_claim_lead_outbox_scoped/);
+  assert.match(worker, /delivery_allowed/);
   assert.match(worker, /leadSkipped/);
   assert.match(outboxCron, /cms-outbox-worker-every-5m/);
   assert.match(outboxCron, /vault\.decrypted_secrets/);
   assert.match(outboxCron, /private\.invoke_outbox_worker/);
   assert.match(outboxCron, /revoke all.+anon, authenticated/);
   assert.doesNotMatch(outboxCron, /OUTBOX_WORKER_SECRET\s*=/);
+});
+
+test("final staging roundtrip is SHA-bound, uses the canonical synthetic tag and cleans up", async () => {
+  const canary = await read("scripts/phase7/staging-roundtrip.mjs");
+  assert.match(canary, /QA-CMS-FINAL-/);
+  assert.match(canary, /GAIATEC_EXPECTED_SHA/);
+  assert.match(canary, /healthResponse\.headers\.get\("x-release"\) === expectedSha/);
+  assert.match(canary, /productionTouched: false/);
+  assert.match(canary, /workflow_status: "archived"/);
+  assert.match(canary, /status: "suspended"/);
+  assert.doesNotMatch(canary, /pending_owner|not_executed_missing_resend_api_key/);
 });

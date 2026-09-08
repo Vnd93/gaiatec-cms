@@ -1,0 +1,765 @@
+name: Promote production frontend bridge
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: SHA A completo, homologado e contido em main
+        required: true
+      approval_record:
+        description: Caminho .github/release-controls/approvals/G12_<sha>.json versionado em main
+        required: true
+      change_reference:
+        description: Identificador da mudança aprovado no G12
+        required: true
+      confirmation:
+        description: Digite AUTORIZO-G12-PRODUCAO:<SHA>
+        required: true
+      staging_bridge_run_id:
+        description: Run do bootstrap staging A sobre backend f48 com canário público completo
+        required: true
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment: production
+    steps:
+      - name: Validate G12 bridge authorization before any external request
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+          DISPATCH_ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          PRODUCTION_AUTHORIZATION: ${{ inputs.confirmation }}
+          STAGING_BRIDGE_RUN_ID: ${{ inputs.staging_bridge_run_id }}
+        run: |
+          set -euo pipefail
+          test "$DISPATCH_REF" = refs/heads/main
+          test "${DISPATCH_ACTOR,,}" = vnd93
+          test "${TRIGGERING_ACTOR,,}" = vnd93
+          test "$(printf '%s' "$CANDIDATE_SHA" | grep -E '^[a-f0-9]{40}$')" = "$CANDIDATE_SHA"
+          test "$(printf '%s' "$STAGING_BRIDGE_RUN_ID" | grep -E '^[1-9][0-9]*$')" = "$STAGING_BRIDGE_RUN_ID"
+          test "$PRODUCTION_AUTHORIZATION" = "AUTORIZO-G12-PRODUCAO:$CANDIDATE_SHA"
+      - name: Checkout release controls from main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          path: control
+      - name: Checkout exact frontend bridge candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+          path: candidate
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: control/.nvmrc
+          cache: npm
+          cache-dependency-path: |
+            control/package-lock.json
+            candidate/package-lock.json
+      - name: Verify exact bridge candidate belongs to current main
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CONTROL_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git -C candidate rev-parse HEAD)" = "$CANDIDATE_SHA"
+          test "$(git -C control rev-parse HEAD)" = "$CONTROL_SHA"
+          git -C control fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          test "$(git -C control rev-parse HEAD)" = "$(git -C control rev-parse origin/main)"
+          git -C control merge-base --is-ancestor "$CANDIDATE_SHA" origin/main
+      - name: Verify control B is the single evidence-only child of bridge A
+        working-directory: control
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          APPROVAL_RECORD: ${{ inputs.approval_record }}
+        run: >-
+          node scripts/ev2/phase12/verify-production-control-delta.mjs
+          --candidate "$CANDIDATE_SHA" --approval "$APPROVAL_RECORD"
+      - name: Verify protected CI for bridge A
+        working-directory: control
+        run: node scripts/ev2/phase12/check-github-controls.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+      - name: Verify protected CI for the evidence-only control commit
+        working-directory: control
+        run: node scripts/ev2/phase12/check-github-controls.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          CANDIDATE_SHA: ${{ github.sha }}
+      - name: Verify production frontend configuration is isolated
+        working-directory: control
+        run: node scripts/ev2/phase12/validate-production-config.mjs
+        env:
+          PRODUCTION_CLOUDFLARE_PROJECT: gaiatec-website
+          PRODUCTION_SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+          PRODUCTION_SUPABASE_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          PRODUCTION_SITE_ORIGIN: ${{ vars.PRODUCTION_SITE_ORIGIN }}
+      - name: Verify immutable G12 approval for bridge A
+        id: approval
+        working-directory: control
+        env:
+          APPROVAL_RECORD: ${{ inputs.approval_record }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CHANGE_REFERENCE: ${{ inputs.change_reference }}
+        run: >-
+          node scripts/ev2/phase12/verify-approval.mjs --file "$APPROVAL_RECORD"
+          --candidate "$CANDIDATE_SHA" --environment production --change-reference "$CHANGE_REFERENCE"
+      - name: Verify exact successful staging run for bridge A
+        id: staging_run
+        working-directory: control
+        env:
+          APPROVAL_RECORD: ${{ inputs.approval_record }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/ev2/phase12/verify-staging-run.mjs --file "$APPROVAL_RECORD"
+      - name: Download exact approval-bound staging evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.staging_run.outputs.evidence_artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ steps.staging_run.outputs.run_id }}
+          path: ${{ runner.temp }}/g12-bridge-staging-evidence
+      - name: Download exact sealed staging artifact for bridge A
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.staging_run.outputs.candidate_artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ steps.staging_run.outputs.run_id }}
+          path: ${{ runner.temp }}/g12-bridge-staging-candidate
+      - name: Verify staging evidence and exact bridge bytes
+        working-directory: control
+        env:
+          APPROVAL_RECORD: ${{ inputs.approval_record }}
+        run: |
+          set -euo pipefail
+          node scripts/ev2/phase12/verify-staging-artifact.mjs \
+            --file "$APPROVAL_RECORD" \
+            --artifact-dir "$RUNNER_TEMP/g12-bridge-staging-evidence"
+          node scripts/ev2/phase12/verify-staging-candidate-artifact.mjs \
+            --file "$APPROVAL_RECORD" \
+            --artifact-dir "$RUNNER_TEMP/g12-bridge-staging-candidate"
+      - name: Resolve exact staging frontend bridge bootstrap
+        id: staging_bridge_run
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          STAGING_BRIDGE_RUN_ID: ${{ inputs.staging_bridge_run_id }}
+        run: >-
+          node scripts/ev2/phase12/verify-staging-frontend-bridge-run.mjs
+          --run-id "$STAGING_BRIDGE_RUN_ID"
+          --expected-release "${{ inputs.candidate_sha }}"
+      - name: Download immutable staging bridge functional evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.staging_bridge_run.outputs.artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ inputs.staging_bridge_run_id }}
+          path: ${{ runner.temp }}/g12-staging-frontend-bridge
+      - name: Reverify staging A to f48 functional contract
+        id: staging_bridge
+        working-directory: control
+        env:
+          EXPECTED_RUN_ID: ${{ inputs.staging_bridge_run_id }}
+          EXPECTED_CONTROL_SHA: ${{ steps.staging_bridge_run.outputs.control_sha }}
+          EXPECTED_RELEASE: ${{ inputs.candidate_sha }}
+        run: >-
+          node scripts/ev2/phase12/verify-staging-frontend-bridge-evidence.mjs
+          --artifact-dir "$RUNNER_TEMP/g12-staging-frontend-bridge"
+      - name: Verify exact approval-bound production backup
+        id: backup_run
+        working-directory: control
+        env:
+          APPROVAL_RECORD: ${{ inputs.approval_record }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/ev2/phase12/verify-production-backup-run.mjs --file "$APPROVAL_RECORD"
+      - name: Download exact approved backup artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.backup_run.outputs.artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ steps.approval.outputs.backup_run_id }}
+          path: ${{ runner.temp }}/g12-bridge-production-backup
+      - name: Verify backup manifest, archive, RPO and restore RTO
+        working-directory: control
+        env:
+          APPROVAL_RECORD: ${{ inputs.approval_record }}
+        run: >-
+          node scripts/ev2/phase12/verify-production-backup-artifact.mjs
+          --file "$APPROVAL_RECORD"
+          --artifact-dir "$RUNNER_TEMP/g12-bridge-production-backup"
+          --report ../g12-bridge-backup-verification.json
+      - name: Verify exact approval-bound production email run
+        id: email_run
+        working-directory: control
+        env:
+          APPROVAL_RECORD: ${{ inputs.approval_record }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/ev2/phase12/verify-production-email-run.mjs --file "$APPROVAL_RECORD"
+      - name: Download exact approved email evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.email_run.outputs.artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ steps.email_run.outputs.run_id }}
+          path: ${{ runner.temp }}/g12-bridge-production-email
+      - name: Verify real delivered email evidence bytes
+        working-directory: control
+        env:
+          APPROVAL_RECORD: ${{ inputs.approval_record }}
+        run: >-
+          node scripts/ev2/phase12/verify-production-email-artifact.mjs
+          --file "$APPROVAL_RECORD"
+          --artifact-dir "$RUNNER_TEMP/g12-bridge-production-email"
+      - name: Install and validate exact bridge A, then discard its non-release build
+        working-directory: candidate
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run check
+          npm audit --audit-level=high
+          rm -rf -- dist
+          test ! -e dist
+      - name: Prove bridge adapter contracts for f48 and forward backend
+        working-directory: candidate
+        run: >-
+          npx vitest run tests/unit/public-bridge-compatibility.test.ts
+          tests/unit/catalog-api-form-binding.test.ts tests/unit/catalog-api-sanitized-content.test.ts
+          tests/unit/lead-api-boundary.test.ts tests/components/cms-page-renderer.test.tsx
+          tests/components/cms-visual-renderer.test.tsx
+      - name: Install isolated Chromium for the functional bridge canaries
+        working-directory: candidate
+        run: npx playwright install --with-deps chromium
+      - name: Refuse local environment inputs before production build
+        working-directory: candidate
+        env:
+          VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}
+        run: |
+          set -euo pipefail
+          test ! -e .env.local
+          test ! -e .env.production.local
+          test ! -e .env.staging.local
+          test "${#VITE_TURNSTILE_SITE_KEY}" -ge 10
+          case "$VITE_TURNSTILE_SITE_KEY" in
+            1x00000000000000000000AA|2x00000000000000000000AB|1x00000000000000000000BB|2x00000000000000000000BB|3x00000000000000000000FF)
+              echo "::error::A production bridge cannot be built with a Turnstile test site key."
+              exit 1
+              ;;
+          esac
+      - name: Build clean production bridge A
+        working-directory: candidate
+        run: npm run build
+        env:
+          VITE_RELEASE: ${{ inputs.candidate_sha }}
+          VITE_CMS_ENVIRONMENT: production
+          VITE_SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
+          VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}
+          VITE_GOOGLE_MAPS_KEY: ${{ vars.GOOGLE_MAPS_BROWSER_KEY }}
+          VITE_CONTACT_CAPTCHA_ALWAYS: "true"
+          VITE_EV2_DRAFT_V2_CANDIDATE: "false"
+          VITE_EV2_MASTER_DATA_CANDIDATE: "false"
+          VITE_EV2_PIM_CANDIDATE: "false"
+          VITE_EV2_DAM_CANDIDATE: "false"
+          VITE_EV2_SEARCH_QUALITY_CANDIDATE: "false"
+          VITE_EV2_COLLABORATION_BULK_CANDIDATE: "false"
+          VITE_EV2_RBAC_SCOPED_CANDIDATE: "false"
+          VITE_EV2_VISUAL_STUDIO_CANDIDATE: "false"
+          VITE_EV2_MULTISITE_CANDIDATE: "false"
+          VITE_EV2_AI_ASSIST_CANDIDATE: "false"
+          VITE_EV2_SYSTEM_ASSURANCE_CANDIDATE: "false"
+      - name: Seal release manifest and production bridge bytes
+        working-directory: candidate
+        env:
+          VITE_RELEASE: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          env -u GITHUB_SHA npm run artifact:manifest
+          node scripts/ev2/phase12/seal-production-dist.mjs \
+            --dist dist \
+            --archive outputs/g12-production-frontend-bridge-dist.tar \
+            --output outputs/g12-production-frontend-bridge-dist-seal.json \
+            --candidate "${{ inputs.candidate_sha }}"
+      - name: Verify candidate checkout and immutable bridge seal
+        working-directory: candidate
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain --untracked-files=all)"
+          node scripts/ev2/phase12/verify-production-dist-seal.mjs \
+            --dist dist \
+            --seal outputs/g12-production-frontend-bridge-dist-seal.json \
+            --candidate "${{ inputs.candidate_sha }}"
+      - name: Capture immutable canonical predecessor before any Pages mutation
+        id: baseline
+        working-directory: control
+        run: node scripts/ev2/phase12/cloudflare-pages.mjs latest-production
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+      - name: Bind canonical predecessor to the G12-approved rollback target
+        env:
+          LIVE_DEPLOYMENT: ${{ steps.baseline.outputs.deployment_id }}
+          LIVE_RELEASE: ${{ steps.baseline.outputs.release }}
+          APPROVED_DEPLOYMENT: ${{ steps.approval.outputs.rollback_deployment_id }}
+          APPROVED_RELEASE: ${{ steps.approval.outputs.rollback_release }}
+        run: |
+          set -euo pipefail
+          test "$LIVE_DEPLOYMENT" = "$APPROVED_DEPLOYMENT"
+          test "$LIVE_RELEASE" = "$APPROVED_RELEASE"
+          test "$LIVE_RELEASE" != "${{ inputs.candidate_sha }}"
+      - name: Checkout the exact approved production predecessor
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ steps.baseline.outputs.release }}
+          fetch-depth: 0
+          path: predecessor
+      - name: Build and seal exact predecessor bytes before the first Pages mutation
+        working-directory: predecessor
+        env:
+          VITE_RELEASE: ${{ steps.baseline.outputs.release }}
+          VITE_CMS_ENVIRONMENT: production
+          VITE_SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
+          VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}
+          VITE_GOOGLE_MAPS_KEY: ${{ vars.GOOGLE_MAPS_BROWSER_KEY }}
+          VITE_CONTACT_CAPTCHA_ALWAYS: "true"
+          VITE_EV2_DRAFT_V2_CANDIDATE: "false"
+          VITE_EV2_MASTER_DATA_CANDIDATE: "false"
+          VITE_EV2_PIM_CANDIDATE: "false"
+          VITE_EV2_DAM_CANDIDATE: "false"
+          VITE_EV2_SEARCH_QUALITY_CANDIDATE: "false"
+          VITE_EV2_COLLABORATION_BULK_CANDIDATE: "false"
+          VITE_EV2_RBAC_SCOPED_CANDIDATE: "false"
+          VITE_EV2_VISUAL_STUDIO_CANDIDATE: "false"
+          VITE_EV2_MULTISITE_CANDIDATE: "false"
+          VITE_EV2_AI_ASSIST_CANDIDATE: "false"
+          VITE_EV2_SYSTEM_ASSURANCE_CANDIDATE: "false"
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ steps.baseline.outputs.release }}"
+          git -C ../control merge-base --is-ancestor \
+            "${{ steps.baseline.outputs.release }}" "${{ inputs.candidate_sha }}"
+          test ! -e .env.local
+          test ! -e .env.production.local
+          test ! -e .env.staging.local
+          npm ci
+          npm run build
+          env -u GITHUB_SHA npm run artifact:manifest
+          mkdir -p outputs
+          node ../control/scripts/ev2/phase12/seal-production-dist.mjs \
+            --dist dist \
+            --archive outputs/g12-production-frontend-bridge-predecessor-dist.tar \
+            --output outputs/g12-production-frontend-bridge-predecessor-dist-seal.json \
+            --candidate "${{ steps.baseline.outputs.release }}"
+          node ../control/scripts/ev2/phase12/verify-production-dist-seal.mjs \
+            --dist dist \
+            --seal outputs/g12-production-frontend-bridge-predecessor-dist-seal.json \
+            --candidate "${{ steps.baseline.outputs.release }}"
+          test -z "$(git status --porcelain --untracked-files=all)"
+      - name: Materialize frontend-only bridge recovery state before any Pages mutation
+        working-directory: control
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CONTROL_SHA: ${{ github.sha }}
+          APPROVAL_RECORD: ${{ inputs.approval_record }}
+          APPROVAL_RECORD_SHA256: ${{ steps.approval.outputs.approval_record_sha256 }}
+          CHANGE_REFERENCE: ${{ inputs.change_reference }}
+          BASELINE_DEPLOYMENT_ID: ${{ steps.baseline.outputs.deployment_id }}
+          BASELINE_RELEASE: ${{ steps.baseline.outputs.release }}
+          BASELINE_CREATED_ON: ${{ steps.baseline.outputs.created_on }}
+          BASELINE_COMMIT_MESSAGE: ${{ steps.baseline.outputs.commit_message }}
+        run: >-
+          node scripts/ev2/phase12/write-production-frontend-bridge-state.mjs
+          --seal ../candidate/outputs/g12-production-frontend-bridge-dist-seal.json
+          --predecessor-seal ../predecessor/outputs/g12-production-frontend-bridge-predecessor-dist-seal.json
+          --output ../g12-production-frontend-bridge-state.json
+      - name: Persist redundant HMAC bridge recovery state before any Pages mutation
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs put
+          --kind production-frontend-bridge
+          --file ../g12-production-frontend-bridge-state.json
+          --wrapper-file ../g12-production-frontend-bridge-recovery-wrapper.json
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          CONTROL_SHA: ${{ github.sha }}
+      - name: Upload HMAC state and exact sealed predecessor bytes before any Pages mutation
+        id: state_artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: production-frontend-bridge-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            g12-production-frontend-bridge-state.json
+            g12-production-frontend-bridge-recovery-wrapper.json
+            predecessor/outputs/g12-production-frontend-bridge-predecessor-dist.tar
+            predecessor/outputs/g12-production-frontend-bridge-predecessor-dist-seal.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Persist the exact sealed bridge artifact for final forward deployment
+        id: dist_upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: production-frontend-bridge-dist-${{ inputs.candidate_sha }}
+          path: |
+            candidate/dist
+            candidate/outputs/g12-production-frontend-bridge-dist.tar
+            candidate/outputs/g12-production-frontend-bridge-dist-seal.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Reconfirm current main before production-project preview
+        working-directory: control
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+      - name: Deploy sealed bridge A to isolated production-project preview
+        id: preview
+        timeout-minutes: 20
+        working-directory: control
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+        run: >-
+          node scripts/ev2/phase12/deploy-sealed-production-dist.mjs
+          --archive ../candidate/outputs/g12-production-frontend-bridge-dist.tar
+          --seal ../candidate/outputs/g12-production-frontend-bridge-dist-seal.json
+          --candidate "${{ inputs.candidate_sha }}"
+          --branch ev2-g12-preflight
+          --wrangler-script ../candidate/node_modules/wrangler/bin/wrangler.js
+      - name: Probe real bridge A preview against the f48 production backend
+        working-directory: control
+        run: node scripts/ev2/phase12/rollout-probe.mjs
+        env:
+          EV2_G12_ORIGIN: ${{ steps.preview.outputs.deployment-url }}
+          EV2_G12_EXPECTED_SHA: ${{ inputs.candidate_sha }}
+          EV2_G12_ENVIRONMENT: production-preview
+          EV2_G12_PROBE_PROFILE: full
+          EV2_G12_SAMPLE_COUNT: "5"
+          EV2_G12_REPORT_PATH: ../g12-production-frontend-bridge-preview.json
+      - name: Browser-prove preview renders without any legacy backend mutation
+        working-directory: candidate
+        run: >-
+          npx playwright test tests/e2e/cms-public-bridge-readonly.spec.ts
+          --project=desktop-chromium --workers=1 --retries=0
+        env:
+          PLAYWRIGHT_BASE_URL: https://gaiatecsistemas.com.br
+          QA_CMS_PUBLIC_BRIDGE_READONLY_REQUIRED: "true"
+          QA_CMS_TARGET_ENVIRONMENT: production
+          QA_CMS_EXPECTED_SHA: ${{ inputs.candidate_sha }}
+          QA_CMS_SEALED_PREVIEW_URL: ${{ steps.preview.outputs.deployment-url }}
+          QA_CMS_BRIDGE_DEPLOYMENT_ORIGIN: ${{ steps.preview.outputs.deployment-url }}
+          QA_CMS_BRIDGE_DEPLOYMENT_ID: ${{ steps.preview.outputs.preview-deployment-id }}
+          QA_CMS_BRIDGE_REPORT_PATH: outputs/g12-production-frontend-bridge-preview-readonly.json
+      - name: Reconfirm main and sealed bytes immediately before promotion
+        working-directory: control
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+          node scripts/ev2/phase12/verify-production-dist-seal.mjs \
+            --dist ../candidate/dist \
+            --seal ../candidate/outputs/g12-production-frontend-bridge-dist-seal.json \
+            --candidate "${{ inputs.candidate_sha }}"
+      - name: Promote the exact sealed frontend bridge with canonical CAS
+        id: promote
+        continue-on-error: true
+        timeout-minutes: 20
+        working-directory: control
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+          EXPECTED_CANONICAL_ID: ${{ steps.baseline.outputs.deployment_id }}
+          EXPECTED_CANONICAL_RELEASE: ${{ steps.baseline.outputs.release }}
+          EXPECTED_CANONICAL_CREATED_ON: ${{ steps.baseline.outputs.created_on }}
+          EXPECTED_CANONICAL_MARKER: ${{ steps.baseline.outputs.commit_message }}
+        run: >-
+          node scripts/ev2/phase12/deploy-sealed-production-dist.mjs
+          --archive ../candidate/outputs/g12-production-frontend-bridge-dist.tar
+          --seal ../candidate/outputs/g12-production-frontend-bridge-dist-seal.json
+          --candidate "${{ inputs.candidate_sha }}"
+          --branch main
+          --commit-message "g12-production-bridge-run-${{ github.run_id }}-${{ github.run_attempt }}"
+          --expected-canonical-id "$EXPECTED_CANONICAL_ID"
+          --expected-canonical-release "$EXPECTED_CANONICAL_RELEASE"
+          --expected-canonical-created-on "$EXPECTED_CANONICAL_CREATED_ON"
+          --expected-canonical-marker "$EXPECTED_CANONICAL_MARKER"
+          --wrangler-script ../candidate/node_modules/wrangler/bin/wrangler.js
+      - name: Probe canonical production bridge A
+        id: production_probe
+        if: steps.promote.outcome == 'success'
+        continue-on-error: true
+        working-directory: control
+        run: node scripts/ev2/phase12/rollout-probe.mjs
+        env:
+          EV2_G12_ORIGIN: https://gaiatecsistemas.com.br
+          EV2_G12_EXPECTED_SHA: ${{ inputs.candidate_sha }}
+          EV2_G12_ENVIRONMENT: production
+          EV2_G12_PRODUCTION_AUTHORIZED: "true"
+          EV2_G12_SAMPLE_COUNT: "20"
+          EV2_G12_REPORT_PATH: ../g12-production-frontend-bridge-production.json
+      - name: Browser-prove canonical bridge renders without any legacy backend mutation
+        id: production_readonly
+        if: steps.production_probe.outcome == 'success'
+        continue-on-error: true
+        working-directory: candidate
+        run: >-
+          npx playwright test tests/e2e/cms-public-bridge-readonly.spec.ts
+          --project=desktop-chromium --workers=1 --retries=0
+        env:
+          PLAYWRIGHT_BASE_URL: https://gaiatecsistemas.com.br
+          QA_CMS_PUBLIC_BRIDGE_READONLY_REQUIRED: "true"
+          QA_CMS_EXPECTED_SHA: ${{ inputs.candidate_sha }}
+          QA_CMS_BRIDGE_DEPLOYMENT_ORIGIN: https://gaiatecsistemas.com.br
+          QA_CMS_BRIDGE_DEPLOYMENT_ID: ${{ steps.promote.outputs.deployment-id }}
+          QA_CMS_BRIDGE_REPORT_PATH: outputs/g12-production-frontend-bridge-production-readonly.json
+      - name: Materialize immutable deployment evidence for rollback baseline A
+        id: bridge_evidence
+        if: steps.production_readonly.outcome == 'success'
+        continue-on-error: true
+        working-directory: control
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CONTROL_SHA: ${{ github.sha }}
+          PRODUCTION_DEPLOYMENT_ID: ${{ steps.promote.outputs.deployment-id }}
+          PRODUCTION_RELEASE: ${{ steps.promote.outputs.deployment-release }}
+          PRODUCTION_CREATED_ON: ${{ steps.promote.outputs.deployment-created-on }}
+          PRODUCTION_COMMIT_MESSAGE: ${{ steps.promote.outputs.deployment-marker }}
+          STAGING_RUN_ID: ${{ steps.staging_run.outputs.run_id }}
+          BACKUP_RUN_ID: ${{ steps.approval.outputs.backup_run_id }}
+          EMAIL_RUN_ID: ${{ steps.email_run.outputs.run_id }}
+          STAGING_BRIDGE_RUN_ID: ${{ inputs.staging_bridge_run_id }}
+          STAGING_BRIDGE_RUN_ATTEMPT: ${{ steps.staging_bridge_run.outputs.run_attempt }}
+          STAGING_BRIDGE_CONTROL_SHA: ${{ steps.staging_bridge_run.outputs.control_sha }}
+          STAGING_BRIDGE_ARTIFACT_ID: ${{ steps.staging_bridge_run.outputs.artifact_id }}
+          STAGING_BRIDGE_ARTIFACT_DIGEST: ${{ steps.staging_bridge_run.outputs.artifact_digest }}
+          PREVIEW_DEPLOYMENT_ORIGIN: ${{ steps.preview.outputs.deployment-url }}
+          PREVIEW_DEPLOYMENT_ID: ${{ steps.preview.outputs.preview-deployment-id }}
+          PREVIEW_CREATED_ON: ${{ steps.preview.outputs.preview-deployment-created-on }}
+        run: >-
+          node scripts/ev2/phase12/write-production-frontend-bridge-evidence.mjs
+          --state ../g12-production-frontend-bridge-state.json
+          --preview-probe ../g12-production-frontend-bridge-preview.json
+          --production-probe ../g12-production-frontend-bridge-production.json
+          --preview-readonly ../candidate/outputs/g12-production-frontend-bridge-preview-readonly.json
+          --production-readonly ../candidate/outputs/g12-production-frontend-bridge-production-readonly.json
+          --staging-evidence "$RUNNER_TEMP/g12-staging-frontend-bridge/staging-frontend-bridge-evidence.json"
+          --output ../g12-production-frontend-bridge-evidence.json
+      - name: Reverify rollback baseline A evidence before upload
+        id: evidence_verify
+        if: steps.bridge_evidence.outcome == 'success'
+        continue-on-error: true
+        working-directory: control
+        env:
+          EXPECTED_RUN_ID: ${{ github.run_id }}
+          EXPECTED_CONTROL_SHA: ${{ github.sha }}
+          EXPECTED_RELEASE: ${{ inputs.candidate_sha }}
+          EXPECTED_DEPLOYMENT_ID: ${{ steps.promote.outputs.deployment-id }}
+        run: >-
+          node scripts/ev2/phase12/verify-production-frontend-bridge-evidence.mjs
+          --file ../g12-production-frontend-bridge-evidence.json
+      - name: Upload immutable frontend bridge rollback evidence
+        id: evidence_upload
+        if: steps.evidence_verify.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: production-frontend-bridge-${{ inputs.candidate_sha }}
+          path: g12-production-frontend-bridge-evidence.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Decide sealed predecessor recovery from a fresh canonical read
+        id: recovery_decision
+        if: >-
+          always() && steps.state_artifact.outcome == 'success' &&
+          steps.evidence_upload.outcome != 'success'
+        continue-on-error: true
+        timeout-minutes: 5
+        working-directory: control
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+          PRODUCTION_BRIDGE_BASELINE_DEPLOYMENT_ID: ${{ steps.baseline.outputs.deployment_id }}
+          PRODUCTION_BRIDGE_BASELINE_RELEASE: ${{ steps.baseline.outputs.release }}
+          PRODUCTION_BRIDGE_BASELINE_CREATED_ON: ${{ steps.baseline.outputs.created_on }}
+          PRODUCTION_BRIDGE_BASELINE_COMMIT_MESSAGE: ${{ steps.baseline.outputs.commit_message }}
+          PRODUCTION_BRIDGE_CANDIDATE_RELEASE: ${{ inputs.candidate_sha }}
+          PRODUCTION_BRIDGE_RUN_MARKER: g12-production-bridge-run-${{ github.run_id }}-${{ github.run_attempt }}
+          PRODUCTION_BRIDGE_COMPENSATION_MARKER: g12-production-bridge-compensation-${{ github.run_id }}-${{ github.run_attempt }}
+        run: node scripts/ev2/phase12/production-frontend-bridge-pages-state.mjs decide
+      - name: Restore exact sealed predecessor only while the owned bridge is canonical
+        id: recover
+        if: always() && steps.recovery_decision.outputs.action == 'restore-predecessor'
+        continue-on-error: true
+        timeout-minutes: 20
+        working-directory: control
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+        run: >-
+          node scripts/ev2/phase12/deploy-sealed-production-dist.mjs
+          --archive ../predecessor/outputs/g12-production-frontend-bridge-predecessor-dist.tar
+          --seal ../predecessor/outputs/g12-production-frontend-bridge-predecessor-dist-seal.json
+          --candidate "${{ steps.baseline.outputs.release }}"
+          --branch main
+          --commit-message "g12-production-bridge-compensation-${{ github.run_id }}-${{ github.run_attempt }}"
+          --expected-canonical-id "${{ steps.recovery_decision.outputs.deployment_id }}"
+          --expected-canonical-release "${{ steps.recovery_decision.outputs.release }}"
+          --expected-canonical-created-on "${{ steps.recovery_decision.outputs.created_on }}"
+          --expected-canonical-marker "${{ steps.recovery_decision.outputs.commit_message }}"
+          --wrangler-script ../candidate/node_modules/wrangler/bin/wrangler.js
+      - name: Recheck ambiguous predecessor recovery before a retry
+        id: recovery_retry_decision
+        if: >-
+          always() && steps.recovery_decision.outputs.action == 'restore-predecessor' &&
+          steps.recover.outcome != 'success'
+        continue-on-error: true
+        timeout-minutes: 5
+        working-directory: control
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+          PRODUCTION_BRIDGE_BASELINE_DEPLOYMENT_ID: ${{ steps.baseline.outputs.deployment_id }}
+          PRODUCTION_BRIDGE_BASELINE_RELEASE: ${{ steps.baseline.outputs.release }}
+          PRODUCTION_BRIDGE_BASELINE_CREATED_ON: ${{ steps.baseline.outputs.created_on }}
+          PRODUCTION_BRIDGE_BASELINE_COMMIT_MESSAGE: ${{ steps.baseline.outputs.commit_message }}
+          PRODUCTION_BRIDGE_CANDIDATE_RELEASE: ${{ inputs.candidate_sha }}
+          PRODUCTION_BRIDGE_RUN_MARKER: g12-production-bridge-run-${{ github.run_id }}-${{ github.run_attempt }}
+          PRODUCTION_BRIDGE_COMPENSATION_MARKER: g12-production-bridge-compensation-${{ github.run_id }}-${{ github.run_attempt }}
+        run: node scripts/ev2/phase12/production-frontend-bridge-pages-state.mjs decide
+      - name: Retry sealed predecessor recovery under a new adjacent CAS
+        id: recover_retry
+        if: always() && steps.recovery_retry_decision.outputs.action == 'restore-predecessor'
+        continue-on-error: true
+        timeout-minutes: 20
+        working-directory: control
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+        run: >-
+          node scripts/ev2/phase12/deploy-sealed-production-dist.mjs
+          --archive ../predecessor/outputs/g12-production-frontend-bridge-predecessor-dist.tar
+          --seal ../predecessor/outputs/g12-production-frontend-bridge-predecessor-dist-seal.json
+          --candidate "${{ steps.baseline.outputs.release }}"
+          --branch main
+          --commit-message "g12-production-bridge-compensation-${{ github.run_id }}-${{ github.run_attempt }}"
+          --expected-canonical-id "${{ steps.recovery_retry_decision.outputs.deployment_id }}"
+          --expected-canonical-release "${{ steps.recovery_retry_decision.outputs.release }}"
+          --expected-canonical-created-on "${{ steps.recovery_retry_decision.outputs.created_on }}"
+          --expected-canonical-marker "${{ steps.recovery_retry_decision.outputs.commit_message }}"
+          --wrangler-script ../candidate/node_modules/wrangler/bin/wrangler.js
+      - name: Prove the sealed predecessor is canonical after reconciliation
+        id: recovery_canonical
+        if: always() && steps.state_artifact.outcome == 'success' && steps.evidence_upload.outcome != 'success'
+        continue-on-error: true
+        timeout-minutes: 5
+        working-directory: control
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+          PRODUCTION_BRIDGE_BASELINE_DEPLOYMENT_ID: ${{ steps.baseline.outputs.deployment_id }}
+          PRODUCTION_BRIDGE_BASELINE_RELEASE: ${{ steps.baseline.outputs.release }}
+          PRODUCTION_BRIDGE_BASELINE_CREATED_ON: ${{ steps.baseline.outputs.created_on }}
+          PRODUCTION_BRIDGE_BASELINE_COMMIT_MESSAGE: ${{ steps.baseline.outputs.commit_message }}
+          PRODUCTION_BRIDGE_CANDIDATE_RELEASE: ${{ inputs.candidate_sha }}
+          PRODUCTION_BRIDGE_RUN_MARKER: g12-production-bridge-run-${{ github.run_id }}-${{ github.run_attempt }}
+          PRODUCTION_BRIDGE_COMPENSATION_MARKER: g12-production-bridge-compensation-${{ github.run_id }}-${{ github.run_attempt }}
+        run: node scripts/ev2/phase12/production-frontend-bridge-pages-state.mjs assert-predecessor
+      - name: Probe restored sealed predecessor after automatic compensation
+        id: recovery_probe
+        if: always() && steps.recovery_canonical.outcome == 'success'
+        continue-on-error: true
+        working-directory: control
+        run: node scripts/ev2/phase12/rollout-probe.mjs
+        env:
+          EV2_G12_ORIGIN: https://gaiatecsistemas.com.br
+          EV2_G12_EXPECTED_SHA: ${{ steps.baseline.outputs.release }}
+          EV2_G12_ENVIRONMENT: production
+          EV2_G12_PRODUCTION_AUTHORIZED: "true"
+          EV2_G12_SAMPLE_COUNT: "20"
+          EV2_G12_REPORT_PATH: ../g12-production-frontend-bridge-recovery.json
+      - name: Clear exact HMAC state only after promotion evidence or proven reconciliation
+        id: clear_recovery_state
+        if: >-
+          always() && steps.state_artifact.outcome == 'success' &&
+          (steps.evidence_upload.outcome == 'success' ||
+          (steps.recovery_canonical.outcome == 'success' && steps.recovery_probe.outcome == 'success'))
+        timeout-minutes: 5
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs clear
+          --kind production-frontend-bridge
+          --file ../g12-production-frontend-bridge-state.json
+          --run-id "${{ github.run_id }}"
+          --run-attempt "${{ github.run_attempt }}"
+          --control-sha "${{ github.sha }}"
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+      - name: Enforce terminal bridge outcome
+        if: always()
+        env:
+          STATE: ${{ steps.state_artifact.outcome }}
+          PROMOTE: ${{ steps.promote.outcome }}
+          PROBE: ${{ steps.production_probe.outcome }}
+          READONLY: ${{ steps.production_readonly.outcome }}
+          EVIDENCE: ${{ steps.bridge_evidence.outcome }}
+          VERIFY: ${{ steps.evidence_verify.outcome }}
+          UPLOAD: ${{ steps.evidence_upload.outcome }}
+          RECOVERY_DECISION: ${{ steps.recovery_decision.outcome }}
+          RECOVER: ${{ steps.recover.outcome }}
+          RECOVERY_RETRY_DECISION: ${{ steps.recovery_retry_decision.outcome }}
+          RECOVER_RETRY: ${{ steps.recover_retry.outcome }}
+          RECOVERY_CANONICAL: ${{ steps.recovery_canonical.outcome }}
+          RECOVERY_PROBE: ${{ steps.recovery_probe.outcome }}
+          CLEAR_STATE: ${{ steps.clear_recovery_state.outcome }}
+        run: |
+          set -euo pipefail
+          if [ "$STATE" = success ] && [ "$PROMOTE" = success ] && [ "$PROBE" = success ] && \
+             [ "$READONLY" = success ] && \
+             [ "$EVIDENCE" = success ] && [ "$VERIFY" = success ] && [ "$UPLOAD" = success ]; then
+            test "$RECOVER" = skipped
+            test "$RECOVER_RETRY" = skipped
+            test "$RECOVERY_PROBE" = skipped
+            test "$CLEAR_STATE" = success
+            exit 0
+          fi
+          test "$RECOVERY_DECISION" = success
+          test "$RECOVERY_CANONICAL" = success
+          test "$RECOVERY_PROBE" = success
+          test "$CLEAR_STATE" = success
+          if [ "$RECOVER" != success ] && [ "$RECOVER_RETRY" != success ]; then
+            test "$RECOVERY_RETRY_DECISION" = success
+          fi
+          echo "::error::Frontend bridge promotion failed and the exact sealed predecessor was restored."
+          exit 1

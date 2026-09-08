@@ -23,22 +23,22 @@ export function CmsManagedPageRoute({ fallback }: { fallback?: React.ReactNode }
         if (!active) return;
         if (resolution.kind === "route") {
           if (
-            (resolution.rule.status_code === 301 || resolution.rule.status_code === 302) &&
-            resolution.rule.destination_path
+            (resolution.rule.status === 301 || resolution.rule.status === 302) &&
+            resolution.rule.destinationPath
           ) {
-            window.location.replace(resolution.rule.destination_path);
+            window.location.replace(resolution.rule.destinationPath);
             return;
           }
           applyCatalogSeo({
             title:
-              resolution.rule.status_code === 410
+              resolution.rule.status === 410
                 ? "Conteúdo retirado | GAIATEC"
                 : "Página não encontrada | GAIATEC",
             description: "O conteúdo solicitado não está disponível.",
             canonicalPath: pathname,
             indexable: false,
           });
-          setRetiredStatus(resolution.rule.status_code === 410 ? 410 : 404);
+          setRetiredStatus(resolution.rule.status === 410 ? 410 : 404);
           setResolved(true);
           return;
         }
@@ -55,10 +55,7 @@ export function CmsManagedPageRoute({ fallback }: { fallback?: React.ReactNode }
           description: result.seo.description,
           canonicalPath: result.payload.route.path,
           indexable: result.seo.indexable,
-          ogImage: result.seo.ogImageId
-            ? (result.media_urls?.[`${result.seo.ogImageId}:large.webp`] ??
-              result.media_urls?.[`${result.seo.ogImageId}:medium.webp`])
-            : undefined,
+          ogImage: result.seo.socialImage,
         });
       })
       .catch(() => {
@@ -88,9 +85,9 @@ export function CmsManagedPageRoute({ fallback }: { fallback?: React.ReactNode }
     return (
       <CmsPageRenderer
         payload={page.payload as CmsPageContent}
-        mediaUrls={page.media_urls}
-        mediaAlt={page.media_alt}
-        relatedItems={page.related_items}
+        mediaUrls={page.mediaUrls}
+        mediaAlt={page.mediaAlt}
+        relatedItems={page.relatedItems}
       />
     );
   if (retiredStatus)

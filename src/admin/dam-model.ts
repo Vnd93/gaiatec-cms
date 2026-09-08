@@ -1,3 +1,5 @@
+import { inspectRasterImage, MAX_RASTER_BYTES, type RasterMime } from "../shared/raster-image-metadata";
+
 export type DamFingerprint = { sha256: string; perceptualHash?: string };
 export type DamRightsState = "valid" | "expiring" | "expired" | "undated";
 
@@ -42,7 +44,12 @@ function bytesToHex(bytes: Uint8Array): string {
 
 async function perceptualDHash(file: File): Promise<string | undefined> {
   if (typeof createImageBitmap !== "function" || typeof document === "undefined") return undefined;
-  const bitmap = await createImageBitmap(file);
+  const bitmap = await createImageBitmap(file, {
+    imageOrientation: "from-image",
+    resizeWidth: 9,
+    resizeHeight: 8,
+    resizeQuality: "high",
+  });
   try {
     const canvas = document.createElement("canvas");
     canvas.width = 9;
@@ -72,7 +79,12 @@ async function perceptualDHash(file: File): Promise<string | undefined> {
 }
 
 export async function fingerprintMediaFile(file: File): Promise<DamFingerprint> {
+  const allowed = new Set<RasterMime>(["image/png", "image/jpeg", "image/webp", "image/avif"]);
+  if (file.size < 1 || file.size > MAX_RASTER_BYTES || !allowed.has(file.type as RasterMime))
+    throw new Error("INVALID_RASTER_METADATA");
   const bytes = new Uint8Array(await file.arrayBuffer());
+  const metadata = inspectRasterImage(bytes);
+  if (metadata.mime !== file.type) throw new Error("DECLARED_IMAGE_TYPE_MISMATCH");
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   const perceptualHash = await perceptualDHash(file).catch(() => undefined);
   return { sha256: bytesToHex(new Uint8Array(digest)), ...(perceptualHash ? { perceptualHash } : {}) };

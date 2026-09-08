@@ -84,6 +84,35 @@ describe("EV2 runtime eligibility", () => {
     expect(isEv2FeatureEnabled({ ev2Capabilities: manifest(["ev2.dam"]) }, "ev2.dam", now)).toBe(false);
   });
 
+  it("tolerates bounded server-ahead clock skew and rejects an implausible future manifest", () => {
+    vi.stubEnv("VITE_CMS_ENVIRONMENT", "staging");
+    const now = Date.now();
+    expect(
+      isEv2FeatureEnabled(
+        {
+          ev2Capabilities: manifest(["ev2.dam"], {
+            environment: "staging",
+            evaluatedAt: new Date(now + 60_000).toISOString(),
+          }),
+        },
+        "ev2.dam",
+        now,
+      ),
+    ).toBe(true);
+    expect(
+      isEv2FeatureEnabled(
+        {
+          ev2Capabilities: manifest(["ev2.dam"], {
+            environment: "staging",
+            evaluatedAt: new Date(now + 121_000).toISOString(),
+          }),
+        },
+        "ev2.dam",
+        now,
+      ),
+    ).toBe(false);
+  });
+
   it("ignores legacy switches and accepts only an individual production override manifest", () => {
     vi.stubEnv("VITE_EV2_DAM_CANDIDATE", "true");
     expect(isEv2FeatureEnabled(undefined, "ev2.dam")).toBe(false);

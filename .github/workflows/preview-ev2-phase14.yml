@@ -7,7 +7,7 @@ on:
         description: SHA completo e exato aprovado para o preview isolado EV2.14
         required: true
       confirmation:
-        description: Digite PREVIEW-G14-STAGING
+        description: Digite PREVIEW-G14-STAGING:<SHA>:SYNTHETIC-PROVIDER-OFF
         required: true
       synthetic_transaction_candidate:
         description: Confirmar candidato sintético, provider-off e sem promoção estável
@@ -26,7 +26,6 @@ jobs:
   preview:
     if: >-
       github.ref_name == 'ev2/fase-14-ia-transacional-controlada' &&
-      inputs.confirmation == 'PREVIEW-G14-STAGING' &&
       inputs.synthetic_transaction_candidate
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -34,6 +33,16 @@ jobs:
     env:
       PREVIEW_DEPLOY_CONFIGURED: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' && secrets.STAGING_SUPABASE_URL != '' && secrets.STAGING_SUPABASE_ANON_KEY != '' }}
     steps:
+      - name: Validate exact G14 preview authorization before checkout
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+          SYNTHETIC_TRANSACTION_CANDIDATE: ${{ inputs.synthetic_transaction_candidate }}
+        run: |
+          set -euo pipefail
+          test "$(printf '%s' "$EXPECTED_SHA" | grep -E '^[a-f0-9]{40}$')" = "$EXPECTED_SHA"
+          test "$SYNTHETIC_TRANSACTION_CANDIDATE" = "true"
+          test "$CONFIRMATION" = "PREVIEW-G14-STAGING:$EXPECTED_SHA:SYNTHETIC-PROVIDER-OFF"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.expected_sha }}

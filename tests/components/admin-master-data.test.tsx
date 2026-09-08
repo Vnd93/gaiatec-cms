@@ -117,7 +117,9 @@ describe("admin master-data candidate", () => {
         expect.any(String),
       ),
     );
-    expect(await screen.findByRole("status")).toHaveTextContent("Alteração auditada");
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Alteração concluída e registrada na auditoria.",
+    );
   });
 
   it("fails closed when the server capability is disabled", async () => {

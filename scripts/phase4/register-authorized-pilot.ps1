@@ -200,7 +200,7 @@ try {
   $detail = Invoke-Api Get "$ProjectUrl/functions/v1/cms-public?type=detail&slug=$slug" @{ apikey=$anonKey }
   $list = Invoke-Api Get "$ProjectUrl/functions/v1/cms-public?type=products&category=Medi%C3%A7%C3%A3o%20de%20vaz%C3%A3o" @{ apikey=$anonKey }
   $search = Invoke-Api Get "$ProjectUrl/functions/v1/cms-public?type=search&q=KF700E" @{ apikey=$anonKey }
-  $compare = Invoke-Api Get "$ProjectUrl/functions/v1/cms-public?type=products&ids=$slug" @{ apikey=$anonKey }
+  $compare = Invoke-Api Get "$ProjectUrl/functions/v1/cms-public?type=products&slugs=$slug" @{ apikey=$anonKey }
   $sitemap = Invoke-WebRequest -Method Get -Uri "$ProjectUrl/functions/v1/cms-public?type=sitemap" -Headers @{ apikey=$anonKey } -SkipHttpErrorCheck
   if ($detail.Status -ne 200 -or $list.Json.total -ne 1 -or $search.Json.total -ne 1 -or $compare.Json.total -ne 1 -or $sitemap.Content -match $slug) { throw "Consumidores públicos divergentes." }
   if (@($detail.Json.media_urls.PSObject.Properties).Count -lt 8 -or @($detail.Json.document_urls.PSObject.Properties).Count -ne 1) { throw "Detalhe não contém duas mídias e PDF assinado." }

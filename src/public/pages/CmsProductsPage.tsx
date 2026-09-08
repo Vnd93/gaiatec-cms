@@ -88,12 +88,9 @@ export default function CmsProductsPage() {
     () =>
       new Map(
         (placements?.placements ?? [])
-          .filter(
-            (placement) =>
-              placement.slot === "catalog_featured" && placement.target.contentType === "product",
-          )
+          .filter((placement) => placement.slot === "catalog_featured" && placement.target.kind === "product")
           .map((placement, index) => [
-            placement.target.itemId,
+            placement.target.path,
             { order: index, label: placement.label || "Produto em destaque" },
           ]),
       ),
@@ -102,8 +99,8 @@ export default function CmsProductsPage() {
   const visibleProducts = useMemo(
     () =>
       (collection?.items ?? []).slice().sort((left, right) => {
-        const leftOrder = featured.get(left.item_id)?.order ?? Number.MAX_SAFE_INTEGER;
-        const rightOrder = featured.get(right.item_id)?.order ?? Number.MAX_SAFE_INTEGER;
+        const leftOrder = featured.get(left.path)?.order ?? Number.MAX_SAFE_INTEGER;
+        const rightOrder = featured.get(right.path)?.order ?? Number.MAX_SAFE_INTEGER;
         return leftOrder - rightOrder;
       }),
     [collection, featured],
@@ -165,7 +162,7 @@ export default function CmsProductsPage() {
         </form>
         <div className="products-catalog__search-note" aria-label="Benefícios do catálogo">
           <span>
-            <ShieldCheck size={18} aria-hidden="true" /> Dados homologados
+            <ShieldCheck size={18} aria-hidden="true" /> Informações técnicas
           </span>
           <span>
             <GitCompareArrows size={18} aria-hidden="true" /> Comparação técnica
@@ -280,12 +277,12 @@ export default function CmsProductsPage() {
             <div className="products-catalog__grid">
               {visibleProducts.map((product, index) => (
                 <ProductCard
-                  key={product.item_id}
+                  key={product.key}
                   product={product}
                   index={index}
                   selected={selected.includes(product.slug)}
                   selectionDisabled={selected.length >= 4 && !selected.includes(product.slug)}
-                  featuredLabel={featured.get(product.item_id)?.label}
+                  featuredLabel={featured.get(product.path)?.label}
                   onSelect={(checked) =>
                     setSelected((current) =>
                       checked

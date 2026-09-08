@@ -10,6 +10,14 @@ import { useDraftBackup } from "../hooks/useDraftBackup";
 import { DraftBackupNotice } from "../components/DraftBackupNotice";
 import { DamPicker, type DamPickerSelection } from "../components/DamPicker";
 import { isEv2FeatureEnabled } from "../ev2-runtime";
+import { EditorialArchiveAction } from "../components/EditorialArchiveAction";
+import { urlSegmentFromText } from "../url-segment";
+import { operatorErrorMessage } from "../operator-error-message";
+import {
+  fetchAuthoritativeEditorialItem,
+  INVALIDATED_EDITOR_SNAPSHOT,
+  saveWithPublishedRevisionReconciliation,
+} from "../published-revision-save";
 
 type Loaded = {
   id: string;
@@ -21,7 +29,6 @@ type Loaded = {
     revision_number: number;
     reason: string;
     created_at: string;
-    payload: Record<string, unknown>;
   }[];
 };
 type RelationKind = "postIds" | "productIds" | "serviceIds" | "applicationIds" | "solutionIds";
@@ -34,6 +41,44 @@ const emptyRelations: Record<RelationKind, string[]> = {
   applicationIds: [],
   solutionIds: [],
 };
+const relationTypeLabels: Record<string, string> = {
+  product: "Produto",
+  service: "Serviço",
+  industry: "Indústria",
+  application: "Aplicação",
+  solution: "Solução",
+  page: "Página",
+  post: "Artigo",
+};
+const editorialStatusLabels: Record<string, string> = {
+  new: "Novo",
+  draft: "Rascunho",
+  in_review: "Em revisão",
+  approved: "Aprovado",
+  scheduled: "Agendado",
+  published: "Publicado",
+  archived: "Arquivado",
+  trashed: "Na lixeira",
+};
+
+function editorialStatusLabel(status: string): string {
+  return editorialStatusLabels[status] ?? "Situação indisponível";
+}
+
+function normalizeTagNames(value: unknown): string[] {
+  const names = Array.isArray(value) ? value : [];
+  const seen = new Set<string>();
+  return names
+    .filter((name): name is string => typeof name === "string")
+    .map((name) => name.trim())
+    .filter((name) => {
+      const key = name.toLocaleLowerCase("pt-BR");
+      if (!name || name.length > 80 || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 20);
+}
 export default function AdminEditorPage() {
   const { id } = useParams(),
     navigate = useNavigate(),
@@ -47,17 +92,18 @@ export default function AdminEditorPage() {
     [previewFallback, setPreviewFallback] = useState(""),
     [refreshToken, setRefreshToken] = useState(0),
     [savedSnapshot, setSavedSnapshot] = useState<string | null>(null),
-    [slug, setSlug] = useState("demo-sintetica-" + Date.now());
-  const [title, setTitle] = useState("Demonstração sintética descartável"),
-    [summary, setSummary] = useState("Conteúdo fictício criado exclusivamente para validar o Gate G3."),
-    [body, setBody] = useState("Este texto não descreve produto, serviço ou informação real da GAIATEC."),
-    [authorName, setAuthorName] = useState("Equipe sintética de validação"),
-    [authorSlug, setAuthorSlug] = useState("equipe-sintetica"),
+    [slug, setSlug] = useState("");
+  const [title, setTitle] = useState(""),
+    [summary, setSummary] = useState(""),
+    [body, setBody] = useState(""),
+    [authorName, setAuthorName] = useState(""),
+    [authorSlug, setAuthorSlug] = useState(""),
     [authorId, setAuthorId] = useState<string>(() => crypto.randomUUID()),
-    [categoryName, setCategoryName] = useState("Validação sintética"),
-    [categorySlug, setCategorySlug] = useState("validacao-sintetica"),
+    [categoryName, setCategoryName] = useState(""),
+    [categorySlug, setCategorySlug] = useState(""),
     [categoryId, setCategoryId] = useState<string>(() => crypto.randomUUID()),
-    [tags, setTags] = useState("teste-local, clean-room"),
+    [tags, setTags] = useState<string[]>([]),
+    [tagDraft, setTagDraft] = useState(""),
     [tagIds, setTagIds] = useState<string[]>(() => Array.from({ length: 20 }, () => crypto.randomUUID())),
     [relationIds, setRelationIds] = useState<Record<RelationKind, string[]>>(emptyRelations),
     [relationOptions, setRelationOptions] = useState<RelationOption[]>([]),
@@ -76,7 +122,17 @@ export default function AdminEditorPage() {
     })),
     [readingMinutes, setReadingMinutes] = useState(3),
     [publishAfter, setPublishAfter] = useState(""),
-    [reason, setReason] = useState("Validação sintética do fluxo editorial");
+    [seoTitle, setSeoTitle] = useState(""),
+    [seoDescription, setSeoDescription] = useState(""),
+    [seoIndexable, setSeoIndexable] = useState(false),
+    [authorizationReference, setAuthorizationReference] = useState(""),
+    [authorizationDate, setAuthorizationDate] = useState(""),
+    [rightsScope, setRightsScope] = useState(""),
+    [rightsConfirmed, setRightsConfirmed] = useState(false),
+    [commercialOwner, setCommercialOwner] = useState(""),
+    [technicalOwner, setTechnicalOwner] = useState(""),
+    [verifiedAt, setVerifiedAt] = useState(""),
+    [reason, setReason] = useState("Criação ou atualização editorial");
   useEffect(() => {
     let active = true;
     void Promise.all([
@@ -106,7 +162,7 @@ export default function AdminEditorPage() {
     void supabase
       .from("cms_content_items")
       .select(
-        "id,slug,workflow_status,cms_content_drafts(payload,lock_version),cms_content_revisions(id,revision_number,reason,created_at,payload)",
+        "id,slug,workflow_status,cms_content_drafts(payload,lock_version),cms_content_revisions(id,revision_number,reason,created_at)",
       )
       .eq("id", id)
       .single()
@@ -132,23 +188,30 @@ export default function AdminEditorPage() {
             readingMinutes?: number;
             publishAfter?: string;
             relations?: Record<RelationKind, string[]>;
+            seo?: { title?: string; description?: string; indexable?: boolean };
+            provenance?: Array<{
+              authorizationReference?: string;
+              authorizationDate?: string;
+              rightsScope?: string;
+              rightsConfirmed?: boolean;
+              commercialOwner?: string;
+              technicalOwner?: string;
+              verifiedAt?: string;
+            }>;
             blocks?: Array<{
               type?: string;
               data?: { assetId?: string; assetIds?: string[]; alt?: string; label?: string; href?: string };
             }>;
           };
-          setAuthorName(structured.author?.name ?? "");
-          setAuthorSlug(structured.author?.slug ?? "");
+          const loadedAuthorName = structured.author?.name ?? "";
+          setAuthorName(loadedAuthorName);
+          setAuthorSlug(structured.author?.slug ?? urlSegmentFromText(loadedAuthorName));
           if (structured.author?.id) setAuthorId(structured.author.id);
-          setCategoryName(structured.category?.name ?? "");
-          setCategorySlug(structured.category?.slug ?? "");
+          const loadedCategoryName = structured.category?.name ?? "";
+          setCategoryName(loadedCategoryName);
+          setCategorySlug(structured.category?.slug ?? urlSegmentFromText(loadedCategoryName));
           if (structured.category?.id) setCategoryId(structured.category.id);
-          setTags(
-            (structured.tags ?? [])
-              .map((tag) => tag.name)
-              .filter(Boolean)
-              .join(", "),
-          );
+          setTags(normalizeTagNames((structured.tags ?? []).map((tag) => tag.name)));
           setTagIds(
             [
               ...(structured.tags ?? [])
@@ -159,6 +222,17 @@ export default function AdminEditorPage() {
           );
           setReadingMinutes(structured.readingMinutes ?? 3);
           setPublishAfter(structured.publishAfter?.slice(0, 16) ?? "");
+          setSeoTitle(structured.seo?.title ?? "");
+          setSeoDescription(structured.seo?.description ?? "");
+          setSeoIndexable(structured.seo?.indexable === true);
+          const provenance = structured.provenance?.[0];
+          setAuthorizationReference(provenance?.authorizationReference ?? "");
+          setAuthorizationDate(provenance?.authorizationDate ?? "");
+          setRightsScope(provenance?.rightsScope ?? "");
+          setRightsConfirmed(provenance?.rightsConfirmed === true);
+          setCommercialOwner(provenance?.commercialOwner ?? "");
+          setTechnicalOwner(provenance?.technicalOwner ?? "");
+          setVerifiedAt(provenance?.verifiedAt ?? "");
           setRelationIds({ ...emptyRelations, ...(structured.relations ?? {}) });
           const image = structured.blocks?.find((block) => block.type === "image")?.data;
           const gallery = structured.blocks?.find((block) => block.type === "gallery")?.data;
@@ -196,21 +270,16 @@ export default function AdminEditorPage() {
       authorName,
       author: { id: authorId, name: authorName, slug: authorSlug },
       category: { id: categoryId, name: categoryName, slug: categorySlug },
-      tags: tags
-        .split(",")
-        .map((tag) => tag.trim())
-        .filter(Boolean)
-        .slice(0, tagIds.length)
-        .map((name, index) => ({
-          id: tagIds[index],
-          name,
-          slug: name
-            .normalize("NFD")
-            .replace(/[\u0300-\u036f]/g, "")
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, "-")
-            .replace(/^-|-$/g, ""),
-        })),
+      tags: tags.slice(0, tagIds.length).map((name, index) => ({
+        id: tagIds[index],
+        name,
+        slug: name
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, ""),
+      })),
       relations: relationIds,
       readingMinutes,
       ...(publishAfter ? { publishAfter: new Date(publishAfter).toISOString() } : {}),
@@ -230,18 +299,21 @@ export default function AdminEditorPage() {
           : []),
       ],
       seo: {
-        title: title.slice(0, 70) || "Demonstração sintética",
-        description: summary.slice(0, 170) || "Validação sintética",
+        title: seoTitle,
+        description: seoDescription,
         canonicalPath: "/blog/" + slug,
-        indexable: false,
+        indexable: seoIndexable,
       },
       provenance: [
         {
           sourceKind: "owner_authored" as const,
-          rightsConfirmed: true as const,
-          commercialOwner: "Owner sintético",
-          technicalOwner: "Owner sintético",
-          verifiedAt: new Date().toISOString(),
+          ...(authorizationReference ? { authorizationReference } : {}),
+          ...(authorizationDate ? { authorizationDate } : {}),
+          ...(rightsScope ? { rightsScope } : {}),
+          rightsConfirmed,
+          commercialOwner,
+          technicalOwner,
+          verifiedAt,
         },
       ],
     }),
@@ -249,6 +321,8 @@ export default function AdminEditorPage() {
       authorId,
       authorName,
       authorSlug,
+      authorizationDate,
+      authorizationReference,
       blockIds,
       body,
       categoryId,
@@ -256,17 +330,25 @@ export default function AdminEditorPage() {
       categorySlug,
       ctaHref,
       ctaLabel,
+      commercialOwner,
       galleryIds,
       imageAlt,
       imageId,
       publishAfter,
       readingMinutes,
       relationIds,
+      rightsConfirmed,
+      rightsScope,
+      seoDescription,
+      seoIndexable,
+      seoTitle,
       slug,
       summary,
       tagIds,
       tags,
+      technicalOwner,
       title,
+      verifiedAt,
     ],
   );
   const currentSnapshot = JSON.stringify({ payload, slug });
@@ -296,6 +378,16 @@ export default function AdminEditorPage() {
       ctaHref,
       readingMinutes,
       publishAfter,
+      seoTitle,
+      seoDescription,
+      seoIndexable,
+      authorizationReference,
+      authorizationDate,
+      rightsScope,
+      rightsConfirmed,
+      commercialOwner,
+      technicalOwner,
+      verifiedAt,
       reason,
     },
     dirty,
@@ -311,7 +403,7 @@ export default function AdminEditorPage() {
       setCategoryName(stored.categoryName);
       setCategorySlug(stored.categorySlug);
       setCategoryId(stored.categoryId);
-      setTags(stored.tags);
+      setTags(normalizeTagNames(stored.tags));
       setTagIds(stored.tagIds);
       setRelationIds(stored.relationIds);
       setImageId(stored.imageId);
@@ -321,12 +413,33 @@ export default function AdminEditorPage() {
       setCtaHref(stored.ctaHref);
       setReadingMinutes(stored.readingMinutes);
       setPublishAfter(stored.publishAfter);
+      setSeoTitle(stored.seoTitle ?? "");
+      setSeoDescription(stored.seoDescription ?? "");
+      setSeoIndexable(stored.seoIndexable === true);
+      setAuthorizationReference(stored.authorizationReference ?? "");
+      setAuthorizationDate(stored.authorizationDate ?? "");
+      setRightsScope(stored.rightsScope ?? "");
+      setRightsConfirmed(stored.rightsConfirmed === true);
+      setCommercialOwner(stored.commercialOwner ?? "");
+      setTechnicalOwner(stored.technicalOwner ?? "");
+      setVerifiedAt(stored.verifiedAt ?? "");
       setReason(stored.reason);
     },
   });
   useEffect(() => {
     if (!loading && savedSnapshot === null) setSavedSnapshot(currentSnapshot);
   }, [currentSnapshot, loading, savedSnapshot]);
+  function addTag() {
+    const name = tagDraft.trim();
+    if (!name || busy || tags.length >= 20) return;
+    if (tags.some((tag) => tag.localeCompare(name, "pt-BR", { sensitivity: "accent" }) === 0)) {
+      setError("Essa tag já foi adicionada.");
+      return;
+    }
+    setTags((current) => [...current, name]);
+    setTagDraft("");
+    setError("");
+  }
   async function run(action: string, extras: Record<string, unknown> = {}) {
     if (!session) return;
     setBusy(true);
@@ -337,39 +450,48 @@ export default function AdminEditorPage() {
         throw new Error("Salve o conteúdo antes de executar uma ação de revisão ou publicação.");
       if ((action === "create" || action === "save") && !CmsContentPayloadSchema.safeParse(payload).success)
         throw new Error("Revise os campos obrigatórios.");
-      if (action === "save" && loaded?.workflow_status === "published") {
-        await editorialCommand(session, {
-          action: "reopen",
-          itemId: loaded.id,
-          contentType: null,
-          slug: null,
-          payload: null,
-          expectedLockVersion: null,
-          reason,
-        });
-      }
-      const result = await editorialCommand(session, {
-        action,
-        itemId: loaded?.id ?? null,
-        contentType: loaded ? null : "post",
-        slug,
-        payload: action === "create" || action === "save" ? payload : null,
-        expectedLockVersion: loaded?.cms_content_drafts.lock_version ?? null,
-        reason,
-        ...extras,
+      const publishedItem = action === "save" && loaded?.workflow_status === "published" ? loaded : null;
+      const result = await saveWithPublishedRevisionReconciliation({
+        reopen: publishedItem
+          ? () =>
+              editorialCommand(session, {
+                action: "reopen",
+                itemId: publishedItem.id,
+                contentType: null,
+                slug: null,
+                payload: null,
+                expectedLockVersion: null,
+                reason,
+              })
+          : null,
+        save: () =>
+          editorialCommand(session, {
+            action,
+            itemId: loaded?.id ?? null,
+            contentType: loaded ? null : "post",
+            slug,
+            payload: action === "create" || action === "save" ? payload : null,
+            expectedLockVersion: loaded?.cms_content_drafts.lock_version ?? null,
+            reason,
+            ...extras,
+          }),
+        invalidateSnapshot: () => setSavedSnapshot(INVALIDATED_EDITOR_SNAPSHOT),
+        reconcile: async () => {
+          if (!publishedItem) return;
+          setLoaded((await fetchAuthoritativeEditorialItem(publishedItem.id, "post")) as Loaded);
+        },
       });
       setSuccess(
-        "Operação concluída: " +
-          result.status +
-          ". Código de acompanhamento " +
-          result.correlationId.slice(0, 8),
+        action === "archive"
+          ? `${loaded?.workflow_status === "published" ? "Conteúdo despublicado e arquivado" : "Conteúdo arquivado"}. A alteração foi registrada na auditoria.`
+          : "Operação concluída e registrada na auditoria.",
       );
       if (action === "create" || action === "save") setSavedSnapshot(currentSnapshot);
-      if (["create", "save", "publish"].includes(action)) backup.clear();
+      if (["create", "save", "publish", "archive"].includes(action)) backup.clear();
       if (!loaded && result.itemId) navigate("/admin/conteudo/" + result.itemId, { replace: true });
       else setRefreshToken((current) => current + 1);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Falha editorial.");
+      setError(operatorErrorMessage(caught, { fallback: "Não foi possível concluir a ação editorial." }));
     } finally {
       setBusy(false);
     }
@@ -384,8 +506,14 @@ export default function AdminEditorPage() {
     );
     if (result.status === "blocked") {
       setPreviewFallback(result.url);
-      setError("O navegador bloqueou a nova aba. Abra o preview pelo link abaixo.");
-    } else if (result.status === "failed") setError(result.error.message);
+      setError("O navegador bloqueou a nova aba. Abra a visualização pelo link abaixo.");
+    } else if (result.status === "failed") {
+      setError(
+        operatorErrorMessage(result.error, {
+          fallback: "Não foi possível abrir a visualização deste conteúdo.",
+        }),
+      );
+    }
     setBusy(false);
   }
   if (loading)
@@ -401,14 +529,16 @@ export default function AdminEditorPage() {
       </div>
     );
   const state = loaded?.workflow_status ?? "new";
+  const stateLabel = editorialStatusLabel(state);
   return (
     <section>
       <UnsavedChangesGuard dirty={dirty && !busy} />
       <DraftBackupNotice backup={backup} />
       <p className="admin-eyebrow">EDITOR E REVISÕES</p>
-      <h1>{loaded ? title : "Novo conteúdo sintético"}</h1>
+      <h1>{loaded ? title : "Novo artigo"}</h1>
       <p className="admin-help">
-        Ambiente limpo: use somente texto fictício e descartável, sem dados comerciais reais.
+        Preencha o conteúdo, as responsabilidades e as informações para mecanismos de busca antes de salvar o
+        rascunho.
       </p>
       <dl className="admin-editor-context" aria-label="Contexto da edição">
         <div>
@@ -419,7 +549,7 @@ export default function AdminEditorPage() {
         </div>
         <div>
           <dt>Situação</dt>
-          <dd>{dirty ? "Alterações não salvas" : `Rascunho salvo · estado ${state}`}</dd>
+          <dd>{dirty ? "Alterações não salvas" : `Rascunho salvo · ${stateLabel}`}</dd>
         </div>
         <div>
           <dt>Impacto público</dt>
@@ -433,7 +563,7 @@ export default function AdminEditorPage() {
             <>
               {" "}
               <a href={previewFallback} target="_blank" rel="noopener noreferrer">
-                Abrir preview em nova aba
+                Abrir visualização em nova aba
               </a>
             </>
           )}
@@ -453,22 +583,21 @@ export default function AdminEditorPage() {
           }}
         >
           <label>
-            Identificador da URL
-            <input
-              value={slug}
-              disabled={Boolean(loaded) || busy}
-              onChange={(e) => setSlug(e.target.value)}
-            />
-            <small>Use letras minúsculas, números e hífens.</small>
-          </label>
-          <label>
             Título
             <input
               value={title}
               disabled={!can("cms:posts.edit") || busy}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => {
+                const nextTitle = e.target.value;
+                setTitle(nextTitle);
+                if (!loaded) setSlug(urlSegmentFromText(nextTitle));
+              }}
             />
           </label>
+          <p className="admin-help">
+            Endereço público gerado:{" "}
+            <output aria-label="Endereço público gerado">/blog/{slug || "aguardando-titulo"}</output>
+          </p>
           <label>
             Resumo
             <textarea
@@ -478,7 +607,7 @@ export default function AdminEditorPage() {
             />
           </label>
           <label>
-            Corpo sintético
+            Corpo do artigo
             <textarea
               rows={8}
               value={body}
@@ -602,11 +731,11 @@ export default function AdminEditorPage() {
               </>
             )}
             <label>
-              Rótulo da CTA opcional
+              Texto da chamada para ação (opcional)
               <input value={ctaLabel} onChange={(event) => setCtaLabel(event.target.value)} />
             </label>
             <label>
-              Destino da CTA
+              Destino da chamada para ação
               <input value={ctaHref} onChange={(event) => setCtaHref(event.target.value)} />
             </label>
           </fieldset>
@@ -617,15 +746,10 @@ export default function AdminEditorPage() {
               <input
                 value={authorName}
                 disabled={!can("cms:posts.edit") || busy}
-                onChange={(e) => setAuthorName(e.target.value)}
-              />
-            </label>
-            <label>
-              Identificador do autor na URL
-              <input
-                value={authorSlug}
-                disabled={!can("cms:posts.edit") || busy}
-                onChange={(e) => setAuthorSlug(e.target.value)}
+                onChange={(e) => {
+                  setAuthorName(e.target.value);
+                  setAuthorSlug(urlSegmentFromText(e.target.value));
+                }}
               />
             </label>
             <label>
@@ -633,25 +757,58 @@ export default function AdminEditorPage() {
               <input
                 value={categoryName}
                 disabled={!can("cms:posts.edit") || busy}
-                onChange={(e) => setCategoryName(e.target.value)}
+                onChange={(e) => {
+                  setCategoryName(e.target.value);
+                  setCategorySlug(urlSegmentFromText(e.target.value));
+                }}
               />
             </label>
-            <label>
-              Identificador da categoria na URL
-              <input
-                value={categorySlug}
-                disabled={!can("cms:posts.edit") || busy}
-                onChange={(e) => setCategorySlug(e.target.value)}
-              />
-            </label>
-            <label>
-              Tags separadas por vírgula
-              <input
-                value={tags}
-                disabled={!can("cms:posts.edit") || busy}
-                onChange={(e) => setTags(e.target.value)}
-              />
-            </label>
+            <div role="group" aria-labelledby="article-tags-title">
+              <p id="article-tags-title">Tags do artigo</p>
+              <div className="admin-inline-fields">
+                <label>
+                  Nova tag
+                  <input
+                    value={tagDraft}
+                    maxLength={80}
+                    disabled={!can("cms:posts.edit") || busy || tags.length >= 20}
+                    onChange={(event) => setTagDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter") return;
+                      event.preventDefault();
+                      addTag();
+                    }}
+                  />
+                </label>
+                <button
+                  type="button"
+                  disabled={!can("cms:posts.edit") || busy || !tagDraft.trim() || tags.length >= 20}
+                  onClick={addTag}
+                >
+                  Adicionar tag
+                </button>
+              </div>
+              {tags.length === 0 ? (
+                <p className="admin-help">Nenhuma tag adicionada.</p>
+              ) : (
+                <ul className="admin-chip-list" aria-label="Tags adicionadas">
+                  {tags.map((tag) => (
+                    <li key={tag}>
+                      <span>{tag}</span>
+                      <button
+                        type="button"
+                        disabled={!can("cms:posts.edit") || busy}
+                        aria-label={`Remover tag ${tag}`}
+                        onClick={() => setTags((current) => current.filter((item) => item !== tag))}
+                      >
+                        Remover
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <small>{tags.length} de 20 tags adicionadas.</small>
+            </div>
           </fieldset>
           <fieldset>
             <legend>Relações editoriais publicadas</legend>
@@ -669,7 +826,8 @@ export default function AdminEditorPage() {
                         checked={relationIds[kind].includes(item.item_id)}
                         onChange={() => toggleRelation(kind, item.item_id)}
                       />{" "}
-                      {item.payload.title ?? item.slug} <small>({item.content_type})</small>
+                      {item.payload.title ?? "Conteúdo sem título"}{" "}
+                      <small>({relationTypeLabels[item.content_type] ?? "Conteúdo"})</small>
                     </label>
                   );
                 })
@@ -695,23 +853,113 @@ export default function AdminEditorPage() {
               onChange={(e) => setPublishAfter(e.target.value)}
             />
           </label>
+          <fieldset>
+            <legend>Apresentação nos mecanismos de busca</legend>
+            <label>
+              Título nos resultados de busca
+              <input
+                maxLength={70}
+                value={seoTitle}
+                disabled={!can("cms:posts.edit") || busy}
+                onChange={(event) => setSeoTitle(event.target.value)}
+              />
+            </label>
+            <label>
+              Descrição nos resultados de busca
+              <textarea
+                maxLength={170}
+                value={seoDescription}
+                disabled={!can("cms:posts.edit") || busy}
+                onChange={(event) => setSeoDescription(event.target.value)}
+              />
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={seoIndexable}
+                disabled={!can("cms:posts.publish") || busy}
+                onChange={(event) => setSeoIndexable(event.target.checked)}
+              />{" "}
+              Permitir indexação após publicação
+            </label>
+            <small>Endereço oficial: /blog/{slug || "aguardando-titulo"}</small>
+          </fieldset>
+          <fieldset>
+            <legend>Proveniência e direitos</legend>
+            <label>
+              Referência de autorização
+              <input
+                maxLength={300}
+                value={authorizationReference}
+                onChange={(event) => setAuthorizationReference(event.target.value)}
+              />
+            </label>
+            <label>
+              Data da autorização
+              <input
+                type="date"
+                value={authorizationDate}
+                onChange={(event) => setAuthorizationDate(event.target.value)}
+              />
+            </label>
+            <label>
+              Escopo dos direitos
+              <input
+                maxLength={300}
+                value={rightsScope}
+                onChange={(event) => setRightsScope(event.target.value)}
+              />
+            </label>
+            <label>
+              Responsável comercial
+              <input
+                maxLength={120}
+                value={commercialOwner}
+                onChange={(event) => setCommercialOwner(event.target.value)}
+              />
+            </label>
+            <label>
+              Responsável técnico
+              <input
+                maxLength={120}
+                value={technicalOwner}
+                onChange={(event) => setTechnicalOwner(event.target.value)}
+              />
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={rightsConfirmed}
+                onChange={(event) => {
+                  setRightsConfirmed(event.target.checked);
+                  if (event.target.checked) setVerifiedAt(new Date().toISOString());
+                }}
+              />{" "}
+              Confirmo os direitos para uso deste conteúdo
+            </label>
+          </fieldset>
           <label>
             Motivo da revisão
-            <input value={reason} onChange={(e) => setReason(e.target.value)} />
+            <input required value={reason} onChange={(e) => setReason(e.target.value)} />
           </label>
-          {can("cms:posts.edit") && (state === "new" || state === "draft" || state === "in_review") && (
-            <button className="admin-button" disabled={busy}>
-              {loaded ? "Salvar com controle de versão" : "Criar rascunho"}
-            </button>
-          )}
+          {can("cms:posts.edit") &&
+            (state === "new" || state === "draft" || state === "in_review" || state === "published") && (
+              <button className="admin-button" disabled={busy}>
+                {state === "published"
+                  ? "Abrir nova versão e salvar"
+                  : loaded
+                    ? "Salvar com controle de versão"
+                    : "Criar rascunho"}
+              </button>
+            )}
         </form>
         <aside className="admin-workflow">
-          <h2>Workflow</h2>
+          <h2>Fluxo editorial</h2>
           <p>
-            Status: <strong>{state}</strong>
+            Situação: <strong>{stateLabel}</strong>
           </p>
           <button onClick={() => void preview()} disabled={!loaded || busy}>
-            Preview do rascunho
+            Visualizar rascunho
           </button>
           {state === "draft" && can("cms:posts.edit") && (
             <button onClick={() => void run("submit")} disabled={busy}>
@@ -750,16 +998,23 @@ export default function AdminEditorPage() {
           )}
           {state === "published" && (
             <a href={"/blog/" + slug} target="_blank" rel="noreferrer">
-              Abrir projeção publicada
+              Abrir artigo no site
             </a>
           )}
+          <EditorialArchiveAction
+            state={state}
+            entityLabel="conteúdo"
+            allowed={can("cms:posts.publish")}
+            busy={busy}
+            onArchive={() => void run("archive")}
+          />
         </aside>
       </div>
       {loaded && (
         <section className="admin-history">
-          <h2>Histórico imutável</h2>
+          <h2>Histórico de versões</h2>
           {loaded.cms_content_revisions.length === 0 ? (
-            <p>Nenhuma revisão congelada.</p>
+            <p>Nenhuma versão registrada.</p>
           ) : (
             loaded.cms_content_revisions
               .sort((a, b) => b.revision_number - a.revision_number)
@@ -768,8 +1023,11 @@ export default function AdminEditorPage() {
                   <summary>
                     Revisão {revision.revision_number} — {revision.reason}
                   </summary>
-                  <pre>{JSON.stringify(revision.payload, null, 2)}</pre>
-                  <button onClick={() => void preview(revision.id)}>Preview desta revisão</button>
+                  <p className="admin-help">
+                    Registrada em {new Date(revision.created_at).toLocaleString("pt-BR")}. Use a
+                    pré-visualização para conferir o conteúdo desta revisão.
+                  </p>
+                  <button onClick={() => void preview(revision.id)}>Visualizar esta revisão</button>
                   {state === "published" && index > 0 && can("cms:posts.publish") && (
                     <button onClick={() => void run("restore", { revisionId: revision.id })}>
                       Restaurar como nova revisão
@@ -781,7 +1039,7 @@ export default function AdminEditorPage() {
         </section>
       )}
       <p className="admin-help">
-        Sessão: {user?.email}. As ações disponíveis refletem permissões reais resolvidas no servidor.
+        Conta: {user?.email}. As ações disponíveis refletem as permissões configuradas para esta conta.
       </p>
     </section>
   );

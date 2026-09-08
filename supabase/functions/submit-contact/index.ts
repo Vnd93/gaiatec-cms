@@ -1,6 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { cleanText, clientAddress, consumeRateLimit, corsHeaders, escapeHtml, isAllowedOrigin, json, readJsonLimited, sha256 } from "../_shared/security.ts";
+import { cleanText, clientAddress, consumeRateLimit, corsHeaders, escapeHtml, isAllowedOrigin, isAllowedTurnstileVerification, json, readJsonLimited, sha256 } from "../_shared/security.ts";
+
+const TURNSTILE_ACTION = "lead_capture";
 
 const CONSENT_VERSION = "privacy-contact-v1-2026-08";
 const CONSENT_TEXT = "Autorizo o tratamento dos dados enviados para responder a esta solicitação e declaro ter lido a Política de Privacidade.";
@@ -18,8 +20,9 @@ async function verifyTurnstile(token: string, ip: string, idempotencyKey: string
     body: new URLSearchParams({ secret, response: token, remoteip: ip, idempotency_key: idempotencyKey }),
   });
   if (!response.ok) return false;
-  const result = await response.json() as { success?: boolean; hostname?: string };
-  return result.success === true;
+  const result = await response.json() as { success?: boolean; hostname?: string; action?: string };
+  const expectedAction = Deno.env.get("TURNSTILE_EXPECTED_ACTION") || TURNSTILE_ACTION;
+  return isAllowedTurnstileVerification(result, secret, expectedAction);
 }
 
 Deno.serve(async (req) => {

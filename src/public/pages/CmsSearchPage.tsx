@@ -16,7 +16,7 @@ const labels: { [key in Tab]: string } = {
   page: "Páginas",
   post: "Blog",
 };
-const contentTypeLabel = (contentType: UnifiedSearchResult["items"][number]["content_type"]) =>
+const contentTypeLabel = (contentType: UnifiedSearchResult["items"][number]["kind"]) =>
   contentType === "homepage" ? labels.page : labels[contentType];
 export default function CmsSearchPage() {
   const [params, setParams] = useSearchParams(),
@@ -91,13 +91,12 @@ export default function CmsSearchPage() {
   useEffect(() => setActiveSuggestion(-1), [query, suggestions]);
   const visible =
     result?.items.filter(
-      (item) =>
-        tab === "all" || item.content_type === tab || (tab === "page" && item.content_type === "homepage"),
+      (item) => tab === "all" || item.kind === tab || (tab === "page" && item.kind === "homepage"),
     ) ?? [];
   const suggestionsOpen = Boolean(suggestions?.items.length);
   return (
     <section className="new-catalog" aria-labelledby="cms-search-title">
-      <p className="new-catalog__eyebrow">BUSCA ÚNICA DA PROJEÇÃO PUBLICADA</p>
+      <p className="new-catalog__eyebrow">BUSCA GAIATEC</p>
       <h1 id="cms-search-title">Buscar catálogo e soluções</h1>
       <form className="new-catalog__toolbar" role="search" onSubmit={(e) => e.preventDefault()}>
         <label>
@@ -134,7 +133,7 @@ export default function CmsSearchPage() {
         {suggestions && suggestions.items.length > 0 && (
           <ul id="cms-autocomplete" className="autocomplete-list" role="listbox" aria-label="Sugestões">
             {suggestions.items.map((item, index) => (
-              <li key={item.item_id} role="none">
+              <li key={item.key} role="none">
                 <a
                   id={`cms-autocomplete-${index}`}
                   href={item.path}
@@ -145,7 +144,7 @@ export default function CmsSearchPage() {
                   <strong>{item.payload.title}</strong>
                   <br />
                   <small>
-                    {contentTypeLabel(item.content_type)} · {item.matched_by}
+                    {contentTypeLabel(item.kind)} · {item.matchedBy}
                   </small>
                 </a>
               </li>
@@ -184,8 +183,7 @@ export default function CmsSearchPage() {
         <div className="new-catalog__state">
           <h2>Nenhum resultado exato</h2>
           <p>
-            A consulta foi registrada anonimamente para revisão. Tente remover uma unidade ou termo, explore
-            as categorias ou envie sua aplicação para a engenharia.
+            Tente remover uma unidade ou termo, explore as categorias ou envie sua aplicação à engenharia.
           </p>
           <a href="/produtos">Explorar produtos</a> · <a href="/aplicacoes">Explorar aplicações</a> ·{" "}
           <a href="/contato">Falar com especialista</a>
@@ -197,25 +195,23 @@ export default function CmsSearchPage() {
           </p>
           <div className="new-catalog__grid">
             {visible.map((item) =>
-              item.content_type === "product" ? (
+              item.kind === "product" ? (
                 <ProductCard
-                  key={item.item_id}
+                  key={item.key}
                   product={item as any}
                   selected={false}
                   showCompare={false}
                   onSelect={() => undefined}
                 />
-              ) : item.content_type === "page" ||
-                item.content_type === "homepage" ||
-                item.content_type === "post" ? (
-                <a className="cms-search-page-card" href={item.path} key={item.item_id}>
-                  <small>{item.content_type === "post" ? "BLOG" : "PÁGINA"}</small>
+              ) : item.kind === "page" || item.kind === "homepage" || item.kind === "post" ? (
+                <a className="cms-search-page-card" href={item.path} key={item.key}>
+                  <small>{item.kind === "post" ? "BLOG" : "PÁGINA"}</small>
                   <h2>{item.payload.title}</h2>
                   {item.payload.summary && <p>{item.payload.summary}</p>}
                   <span>Abrir página</span>
                 </a>
               ) : (
-                <DiscoveryEntityCard key={item.item_id} entity={item as any} />
+                <DiscoveryEntityCard key={item.key} entity={item as any} />
               ),
             )}
           </div>

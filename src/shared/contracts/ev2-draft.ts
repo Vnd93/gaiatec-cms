@@ -136,11 +136,35 @@ export const Ev2DraftCommandSchema = z.discriminatedUnion("action", [
         });
       }
     }),
+  z
+    .object({
+      ...DraftCommandBase,
+      action: z.literal("promote"),
+      draftId: z.string().uuid(),
+      slug: z
+        .string()
+        .trim()
+        .min(1)
+        .max(160)
+        .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+      payload: CmsContentPayloadSchema,
+      reason: z.string().trim().min(3).max(500),
+    })
+    .strict()
+    .superRefine((command, context) => {
+      if (!command.envelope.expectedVersion) {
+        context.addIssue({
+          code: "custom",
+          path: ["envelope", "expectedVersion"],
+          message: "expectedVersion is required",
+        });
+      }
+    }),
 ]);
 
 export const Ev2DraftRecordSchema = Ev2DraftSchema.extend({
   draftId: z.string().uuid(),
-  status: z.enum(["active", "discarded"]),
+  status: z.enum(["active", "discarded", "promoted"]),
   lockVersion: z.number().int().positive(),
   fieldsHash: z.string().regex(/^[0-9a-f]{64}$/),
   createdAt: DatabaseTimestampSchema,
@@ -153,9 +177,10 @@ export const Ev2DraftCommandResultSchema = z
     commandId: z.string().uuid(),
     correlationId: z.string().uuid(),
     draftId: z.string().uuid(),
-    status: z.enum(["active", "discarded"]),
+    status: z.enum(["active", "discarded", "promoted"]),
     lockVersion: z.number().int().positive(),
     savedAt: DatabaseTimestampSchema,
+    itemId: z.string().uuid().optional(),
     replayed: z.boolean(),
   })
   .strict();

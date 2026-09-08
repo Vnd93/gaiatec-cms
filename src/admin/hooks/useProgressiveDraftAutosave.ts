@@ -21,6 +21,7 @@ type MutationResult = {
   lockVersion: number;
   savedAt: string;
   correlationId: string;
+  itemId?: string;
 };
 
 export type ProgressiveDraftRecovery<T> = {
@@ -45,6 +46,7 @@ export type ProgressiveDraftAutosaveState<T> = {
   keepLocalVersion(): void;
   retry(): void;
   flush(): Promise<boolean>;
+  promote(input: { slug: string; payload: Record<string, unknown>; reason: string }): Promise<string | null>;
 };
 
 function envelope(environment: Environment, expectedVersion?: number) {
@@ -178,6 +180,52 @@ export function useProgressiveDraftAutosave<T extends object>({
     }
   }, [environment, recoverable, scheduleRetry, session]);
 
+  const promote = useCallback(
+    async (input: { slug: string; payload: Record<string, unknown>; reason: string }) => {
+      if (!session || !draftIdRef.current || !lockVersionRef.current || syncingRef.current || recoverable) {
+        return null;
+      }
+      syncingRef.current = true;
+      setStatus("syncing");
+      try {
+        const result = await draftV2Command<MutationResult>(
+          session,
+          {
+            action: "promote",
+            envelope: envelope(environment, lockVersionRef.current),
+            draftId: draftIdRef.current,
+            slug: input.slug,
+            payload: input.payload,
+            reason: input.reason,
+          },
+          crypto.randomUUID(),
+        );
+        if (!result.itemId) throw new Error("CMS_DRAFT_V2_PROMOTION_INVALID");
+        draftIdRef.current = null;
+        lockVersionRef.current = null;
+        setDraftId(null);
+        setLockVersion(result.lockVersion);
+        setLastSavedAt(result.savedAt);
+        setCorrelationId(result.correlationId);
+        setStatus("saved");
+        return result.itemId;
+      } catch (caught) {
+        if (caught instanceof CmsApiError && caught.status === 409) {
+          setCurrentVersion(caught.currentVersion ?? null);
+          setDiffRef(caught.diffRef ?? null);
+          setStatus("conflict");
+        } else {
+          setCorrelationId(caught instanceof CmsApiError ? (caught.correlationId ?? null) : null);
+          setStatus("error");
+        }
+        return null;
+      } finally {
+        syncingRef.current = false;
+      }
+    },
+    [environment, recoverable, session],
+  );
+
   useEffect(() => {
     if (!enabled || !session) {
       setFallbackReason(null);
@@ -305,5 +353,6 @@ export function useProgressiveDraftAutosave<T extends object>({
       }
     }, []),
     flush: syncNow,
+    promote,
   };
 }

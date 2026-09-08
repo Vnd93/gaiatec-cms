@@ -87,12 +87,19 @@ test("product adapter remains doubly gated and picker base is reusable", async (
   assert.match(picker, /aria-controls/);
 });
 
-test("staging canary is explicit and rollback always disables the candidate adapter", async () => {
+test("staging canary is explicit and rollback reuses the exact sealed candidate", async () => {
   const deploy = await read(".github/workflows/deploy-staging.yml");
   const preview = await read(".github/workflows/preview.yml");
   const rollback = await read(".github/workflows/rollback-staging.yml");
   assert.match(deploy, /ev2_draft_v2_candidate:/);
   assert.match(deploy, /VITE_CMS_ENVIRONMENT: staging/);
+  assert.match(deploy, /VITE_SUPABASE_URL: \$\{\{ secrets\.STAGING_SUPABASE_URL \}\}/);
+  assert.match(deploy, /VITE_SUPABASE_ANON_KEY: \$\{\{ secrets\.STAGING_SUPABASE_ANON_KEY \}\}/);
+  assert.match(deploy, /candidate_sha="\$\(git rev-parse HEAD\)"/);
+  assert.match(deploy, /git merge-base --is-ancestor "\$candidate_sha" origin\/main/);
+  assert.match(deploy, /VITE_RELEASE: \$\{\{ steps\.candidate\.outputs\.sha \}\}/);
+  assert.match(deploy, /--commit-hash \$\{\{ steps\.candidate\.outputs\.sha \}\}/);
+  assert.doesNotMatch(deploy, /VITE_RELEASE: \$\{\{ github\.sha \}\}/);
   assert.match(deploy, /VITE_EV2_DRAFT_V2_CANDIDATE: \$\{\{ inputs\.ev2_draft_v2_candidate \}\}/);
   assert.match(preview, /VITE_CMS_ENVIRONMENT: staging/);
   assert.match(preview, /workflow_dispatch:[\s\S]+expected_sha:[\s\S]+ev2_draft_v2_candidate:/);
@@ -103,8 +110,15 @@ test("staging canary is explicit and rollback always disables the candidate adap
   );
   assert.match(preview, /git rev-parse HEAD.+inputs\.expected_sha/);
   assert.match(preview, /--branch \$\{\{ github\.event_name == 'workflow_dispatch' && 'ev2-g2-canary'/);
-  assert.match(rollback, /VITE_CMS_ENVIRONMENT: staging/);
-  assert.match(rollback, /VITE_EV2_DRAFT_V2_CANDIDATE: ["']false["']/);
+  assert.match(rollback, /Download only the resolved immutable staging-candidate artifact/);
+  assert.match(rollback, /verify-production-dist-seal\.mjs/);
+  assert.match(rollback, /--dist \.\.\/target-artifact\/dist/);
+  assert.match(rollback, /deploy-sealed-staging-dist\.mjs/);
+  assert.match(rollback, /--archive \.\.\/target-artifact\/outputs\/staging-candidate-dist\.tar/);
+  assert.match(rollback, /--seal \.\.\/target-artifact\/outputs\/staging-candidate-dist-seal\.json/);
+  assert.match(rollback, /--candidate "\$\{\{ steps\.candidate\.outputs\.sha \}\}"/);
+  assert.match(rollback, /EV2_G12_EXPECTED_SHA: \$\{\{ steps\.candidate\.outputs\.sha \}\}/);
+  assert.doesNotMatch(rollback, /VITE_RELEASE: \$\{\{ steps\.candidate\.outputs\.sha \}\}/);
 });
 
 test("remote canary is staging-pinned, synthetic, conflict-aware and self-cleaning", async () => {

@@ -5,15 +5,16 @@ CMS, RDO e site público mantêm autenticação, permissões e estilos separados
 
 ## Navegação
 
-- Trabalho: Visão geral, Leads, Assistente IA e Centro de Qualidade;
-- Catálogo: Produtos, Serviços, Indústrias, Aplicações e Soluções;
-- Conteúdo: Páginas, Editorial e Mídia;
+- Trabalho: Visão geral, Meu trabalho, Leads, Assistente IA e Centro de Qualidade;
+- Catálogo: Produtos, Cadastro em massa, PIM, Dados mestres, Serviços, Indústrias, Aplicações,
+  Soluções, Listas mestras e Busca e sinônimos;
+- Conteúdo: Páginas, Estúdio Visual, Editorial e Mídia;
 - Marketing: Campanhas e Formulários;
-- Site: Navegação, Dados globais e Posicionamentos;
+- Site: Navegação, Dados globais, Posicionamentos e Sites e ambientes;
 - Administração: Usuários e acessos, Auditoria e Diagnósticos.
 
-Subferramentas usam abas internas. A busca global abre Produtos filtrado quando o usuário possui
-`cms:products.read`. Perfil e sessão são acessados pelo bloco do usuário. Rotas EV2 continuam sob
+As ferramentas ficam no grupo do fluxo operacional a que pertencem; Perfil e sessão são acessados
+pelo bloco do usuário. A busca global abre somente um domínio permitido. Rotas EV2 continuam sob
 feature flag e RBAC fail-closed.
 
 ## Padrões de interface
@@ -29,9 +30,18 @@ estados, cards, tabelas, rail e rodapé sticky.
 
 ## Segurança e contratos
 
-Nenhuma affordance substitui autorização: edge functions, RPC e RLS repetem RBAC/MFA. Workflow,
-locks, revisão imutável, outbox e projeção pública permanecem nos contratos existentes. Fabricante,
-OEM, SKU e proveniência classificados como internos nunca são enviados às superfícies públicas.
+O shell também bloqueia a montagem de uma rota direta sem a permissão de leitura correspondente.
+Essa defesa de interface não substitui autorização: edge functions, RPC e RLS repetem RBAC/MFA.
+Workflow, locks, revisão imutável, outbox e projeção pública permanecem nos contratos existentes.
+Fabricante, OEM, SKU e proveniência classificados como internos nunca são enviados às superfícies
+públicas.
+
+PDFs novos nunca ficam publicáveis após mera inspeção estrutural: `cms-documents` relê e calcula o
+SHA-256 dos bytes, mantém o ativo em quarentena e exige atestação AAL2 de um segundo ator com a
+permissão crítica `cms:documents.security_review`. A decisão registra engine, veredito, referência e
+hash da evidência de scanner corporativo, sem armazenar o relatório bruto. Importe legado como
+`legacy-unverified-import-v1`, ainda em quarentena; links públicos assinados forçam download como
+anexo e só são emitidos para ativos aprovados.
 
 A documentação funcional vigente é mantida em
-[`Vnd93/gaiatec-documentacao/docs/30-cms`](https://github.com/Vnd93/gaiatec-documentacao/tree/main/docs/30-cms).
+[`Vnd93/gaiatec-documentacao/docs/30-cms`](https://github.com/Vnd93/gaiatec-documentacao/tree/4f5e2e7638fd9a2c2da17717e641abb7e685ece0/docs/30-cms).

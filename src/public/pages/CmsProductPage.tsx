@@ -10,6 +10,16 @@ export default function CmsProductPage() {
   const [error, setError] = useState("");
   useEffect(() => {
     let active = true;
+    let structuredData: HTMLScriptElement | null = null;
+    const canonicalPath = `/produtos/${slug}`;
+    setProduct(null);
+    setError("");
+    applyCatalogSeo({
+      title: "Produto em carregamento | GAIATEC",
+      description: "Carregando os dados públicos do produto.",
+      canonicalPath,
+      indexable: false,
+    });
     void getPublishedProduct(slug)
       .then((data) => {
         if (!active) return;
@@ -19,14 +29,17 @@ export default function CmsProductPage() {
           description: data.seo.description,
           canonicalPath: data.seo.canonicalPath,
           indexable: data.seo.indexable,
-          ogImage: data.seo.ogImageId
-            ? (data.media_urls?.[`${data.seo.ogImageId}:large.webp`] ??
-              data.media_urls?.[`${data.seo.ogImageId}:medium.webp`])
-            : undefined,
+          ogImage: data.seo.socialImage,
         });
         const script = document.createElement("script");
         script.type = "application/ld+json";
-        script.dataset.cmsProductSchema = "true";
+        const publicGtin = data.payload.externalIdentifiers?.find(
+          (identifier) => identifier.kind === "gtin" && identifier.ownerType === "product",
+        )?.value;
+        const gtinProperty =
+          publicGtin && [8, 12, 13, 14].includes(publicGtin.length)
+            ? { [`gtin${publicGtin.length}`]: publicGtin }
+            : {};
         script.text = JSON.stringify({
           "@context": "https://schema.org",
           "@type": "Product",
@@ -37,6 +50,8 @@ export default function CmsProductPage() {
             ? { manufacturer: { "@type": "Organization", name: data.payload.manufacturer.name } }
             : {}),
           mpn: data.payload.models[0]?.manufacturerReference,
+          sku: data.payload.models[0]?.sku,
+          ...gtinProperty,
           ...(data.payload.controlledClassification?.productCategory
             ? { category: data.payload.controlledClassification.productCategory.label }
             : data.payload.classification
@@ -46,13 +61,21 @@ export default function CmsProductPage() {
           url: canonical,
         });
         document.head.append(script);
+        structuredData = script;
       })
       .catch((caught) => {
-        if (active) setError(caught instanceof Error ? caught.message : "Produto não encontrado.");
+        if (!active) return;
+        setError(caught instanceof Error ? caught.message : "Produto não encontrado.");
+        applyCatalogSeo({
+          title: "Produto não encontrado | GAIATEC",
+          description: "O produto solicitado não está disponível.",
+          canonicalPath,
+          indexable: false,
+        });
       });
     return () => {
       active = false;
-      document.querySelector('script[data-cms-product-schema="true"]')?.remove();
+      structuredData?.remove();
     };
   }, [slug]);
   if (error)
@@ -76,8 +99,9 @@ export default function CmsProductPage() {
   return (
     <CmsProductRenderer
       payload={product.payload}
-      mediaUrls={product.media_urls}
-      documentUrls={product.document_urls}
+      mediaUrls={product.mediaUrls}
+      documentUrls={product.documentUrls}
+      relatedItems={product.relatedItems}
     />
   );
 }

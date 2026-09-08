@@ -6,16 +6,28 @@ import {
   CmsSiteSettingsContentSchema,
 } from "../../src/shared/contracts/cms-content";
 import {
+  MANAGED_PAGE_TEMPLATES,
+  PAGE_BUILDER_BLOCK_TYPES,
+  createEmptyPageBlock,
   createInitialPagePayload,
   createPageBlock,
   duplicateManagedPagePayload,
   duplicatePageBlock,
+  governedFormBindingIssue,
   movePageBlock,
+  publishedFormForBlock,
+  type PublishedFormOption,
 } from "../../src/admin/page-builder-model";
 import { createSiteDocument } from "../../src/admin/site-document-model";
 
 const id = (suffix: number) => `60000000-0000-4000-8000-${String(suffix).padStart(12, "0")}`;
-const references = { assetId: id(901), relatedItemId: id(902) };
+const publishedForm: PublishedFormOption = {
+  id: id(903),
+  formKey: "qa-site-builder",
+  versionId: id(904),
+  title: "Formulário QA Site Builder",
+};
+const references = { assetId: id(901), relatedItemId: id(902), form: publishedForm };
 const seo = {
   title: "Página de teste | GAIATEC",
   description: "Página sintética para validar o contrato governado do site builder GAIATEC.",
@@ -69,57 +81,58 @@ const navigationBase = {
 };
 
 describe("F6 governed site builder contracts", () => {
-  it("creates valid page drafts and a valid structured block for every renderer", () => {
+  it("starts the real editor empty and keeps explicit contract fixtures for every renderer", () => {
     const draft = createInitialPagePayload("page");
-    expect(CmsManagedPageContentSchema.safeParse(draft).success).toBe(true);
+    expect(CmsManagedPageContentSchema.safeParse(draft).success).toBe(false);
+    expect(draft.title).toBe("");
+    expect(draft.seo.title).toBe("");
+    expect(draft.provenance[0]?.rightsConfirmed).toBe(false);
+    expect(
+      CmsManagedPageContentSchema.safeParse({ ...page, blocks: [createEmptyPageBlock("hero")] }).success,
+    ).toBe(false);
 
-    const blockTypes = [
-      "hero",
-      "rich_text",
-      "image",
-      "gallery",
-      "benefit_grid",
-      "content_grid",
-      "steps",
-      "metrics",
-      "testimonial",
-      "faq",
-      "form",
-      "cta",
-      "related_content",
-    ] as const;
-    for (const type of blockTypes) {
+    for (const type of PAGE_BUILDER_BLOCK_TYPES) {
       expect(
-        CmsManagedPageContentSchema.safeParse({ ...draft, blocks: [createPageBlock(type, references)] })
+        CmsManagedPageContentSchema.safeParse({ ...page, blocks: [createPageBlock(type, references)] })
           .success,
       ).toBe(true);
     }
   });
 
   it("materializa modelos aprovados em rascunhos válidos e distintos", () => {
-    for (const template of ["institutional", "landing", "sector", "application"] as const) {
-      const draft = createInitialPagePayload("page", template);
-      expect(CmsManagedPageContentSchema.safeParse(draft).success).toBe(true);
-      expect(draft.blocks.length).toBeGreaterThanOrEqual(3);
+    for (const template of MANAGED_PAGE_TEMPLATES) {
+      const draft = createInitialPagePayload("page", template.key);
+      expect(CmsManagedPageContentSchema.safeParse(draft).success).toBe(false);
+      expect(draft.blocks.map((block) => block.type)).toEqual(template.blockTypes);
+      expect(draft.blocks).toHaveLength(template.blockTypes.length);
+      expect(draft.title).toBe("");
+      expect(draft.pageKind).toBe(template.pageKind);
+      expect(draft.templateKey).toBe(template.templateKey);
     }
+    expect(createInitialPagePayload("page", "standard").blocks.map((block) => block.type)).toEqual(
+      MANAGED_PAGE_TEMPLATES[0].blockTypes,
+    );
     expect(createInitialPagePayload("page", "landing").templateKey).toBe("landing");
     expect(createInitialPagePayload("page", "sector").pageKind).toBe("thematic");
   });
 
   it("duplicates and reorders blocks without reusing identities", () => {
-    const first = createPageBlock("rich_text");
+    const first = { ...createPageBlock("rich_text"), anchor: "texto-principal" };
     const second = createPageBlock("cta");
     const duplicate = duplicatePageBlock(first);
     expect(duplicate.id).not.toBe(first.id);
+    expect(duplicate.anchor).toBeUndefined();
     expect(movePageBlock([first, second], 0, 1).map((block) => block.id)).toEqual([second.id, first.id]);
     expect(movePageBlock([first, second], 0, -1)).toEqual([first, second]);
 
-    const originalPage = createInitialPagePayload("page");
+    const originalPage = CmsManagedPageContentSchema.parse(page);
     const duplicatePage = duplicateManagedPagePayload(originalPage, "pagina-copiada");
-    expect(CmsManagedPageContentSchema.safeParse(duplicatePage).success).toBe(true);
+    expect(CmsManagedPageContentSchema.safeParse(duplicatePage).success).toBe(false);
     expect(duplicatePage.route.path).toBe("/pagina-copiada");
     expect(duplicatePage.seo.indexable).toBe(false);
-    expect(duplicatePage.governanceState).toBe("synthetic_test");
+    expect(duplicatePage.governanceState).toBe("awaiting_owner");
+    expect(duplicatePage.provenance.at(-1)?.rightsConfirmed).toBe(false);
+    expect(duplicatePage.approval).toEqual({ businessOwner: "", editorialReviewer: "" });
     expect(duplicatePage.blocks.map((block) => block.id)).not.toEqual(
       originalPage.blocks.map((block) => block.id),
     );
@@ -143,18 +156,65 @@ describe("F6 governed site builder contracts", () => {
     ).toThrow("Páginas vinculadas ao Estúdio Visual não podem ser duplicadas pelo builder v1");
   });
 
-  it("creates governed global navigation, settings and placement documents", () => {
-    expect(CmsNavigationContentSchema.safeParse(createSiteDocument("navigation")).success).toBe(true);
+  it("requires an exact active form definition and version binding", () => {
+    const block = createPageBlock("form", references);
+
+    expect(publishedFormForBlock(block, [publishedForm])).toEqual(publishedForm);
+    expect(governedFormBindingIssue([block], [publishedForm])).toBeNull();
+    expect(governedFormBindingIssue([block], [{ ...publishedForm, versionId: id(905) }])).toContain(
+      "não está vinculado à versão publicada atual",
+    );
+    expect(governedFormBindingIssue([createPageBlock("form")], [publishedForm])).toContain(
+      "não está vinculado à versão publicada atual",
+    );
+    expect(governedFormBindingIssue([block], [])).toContain("Nenhum formulário publicado está disponível");
+    expect(governedFormBindingIssue([createPageBlock("rich_text")], [])).toBeNull();
+  });
+
+  it("starts global documents incomplete until identity, SEO and rights are explicitly governed", () => {
+    const navigation = createSiteDocument("navigation");
+    expect(CmsNavigationContentSchema.safeParse(navigation).success).toBe(false);
+    expect(navigation.title).toBe("");
+    expect(navigation.provenance[0]?.rightsConfirmed).toBe(false);
+    expect(
+      CmsNavigationContentSchema.safeParse({
+        ...navigation,
+        title: "Navegação global",
+        seo: { ...seo, canonicalPath: "/_site/navigation" },
+        provenance,
+      }).success,
+    ).toBe(true);
+
     const settings = createSiteDocument("site_settings");
     if (settings.contentType !== "site_settings") throw new Error("Fixture de configurações inválida.");
     expect(CmsSiteSettingsContentSchema.safeParse(settings).success).toBe(false);
     expect(
       CmsSiteSettingsContentSchema.safeParse({
         ...settings,
-        company: { ...settings.company, email: "contato@example.test" },
+        title: "Configurações globais",
+        seo: { ...seo, canonicalPath: "/_site/settings" },
+        provenance,
+        company: {
+          name: "GAIATEC SISTEMAS",
+          phone: "",
+          whatsapp: "",
+          email: "contato@example.test",
+          address: "",
+        },
+        defaultCta: { label: "Contato", href: "/contato" },
       }).success,
     ).toBe(true);
-    expect(CmsPlacementContentSchema.safeParse(createSiteDocument("placement")).success).toBe(true);
+
+    const placement = createSiteDocument("placement");
+    expect(CmsPlacementContentSchema.safeParse(placement).success).toBe(false);
+    expect(
+      CmsPlacementContentSchema.safeParse({
+        ...placement,
+        title: "Destaques globais",
+        seo: { ...seo, canonicalPath: "/_site/placements" },
+        provenance,
+      }).success,
+    ).toBe(true);
   });
 
   it("accepts a complete non-indexable managed page", () => {

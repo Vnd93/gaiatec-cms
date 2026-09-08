@@ -43,15 +43,19 @@ function flattenPublicText(value: unknown, output: string[] = []): string[] {
   return output;
 }
 
-async function rebuildIndex(identity: Identity, reason: string, correlationId: string) {
+async function rebuildIndex(identity: Identity, reason: string, correlationId: string, environment: string) {
   const reindexStartedAt = new Date().toISOString();
-  const { data: pending } = await identity.admin.from("cms_search_index_jobs").select("id,status").in("status", ["pending","running"]).order("created_at").limit(1).maybeSingle();
-  if (pending?.status === "running") throw new Error("CMS_SEARCH_REINDEX_IN_PROGRESS");
-  const jobOperation = pending
-    ? identity.admin.from("cms_search_index_jobs").update({ status: "running", reason, requested_by: identity.user.id, correlation_id: correlationId, started_at: new Date().toISOString() }).eq("id", pending.id).eq("status", "pending").select("id").single()
-    : identity.admin.from("cms_search_index_jobs").insert({ status: "running", reason, requested_by: identity.user.id, correlation_id: correlationId, started_at: new Date().toISOString() }).select("id").single();
-  const { data: job, error: jobError } = await jobOperation;
-  if (jobError || !job) throw jobError ?? new Error("CMS_SEARCH_JOB_FAILED");
+  const { data: job, error: jobError } = await identity.admin.rpc("cms_search_begin_global_reindex", {
+    p_actor_id: identity.user.id,
+    p_environment: environment,
+    p_reason: reason,
+    p_correlation_id: correlationId,
+    p_aal: identity.claims.aal,
+    p_session_id: identity.claims.sessionId,
+    p_issued_at: identity.claims.issuedAt,
+  });
+  if (jobError || !job?.jobId) throw jobError ?? new Error("CMS_SEARCH_JOB_FAILED");
+  const jobId = job.jobId as string;
   try {
     const rows: any[] = [];
     const pageSize = 1_000;
@@ -89,11 +93,26 @@ async function rebuildIndex(identity: Identity, reason: string, correlationId: s
     await identity.admin.from("cms_search_documents").delete().lt("indexed_at", reindexStartedAt);
     const { error: pruneError } = await identity.admin.rpc("cms_prune_stale_search_documents");
     if (pruneError) throw pruneError;
-    await identity.admin.from("cms_search_index_jobs").update({ status: "completed", documents_indexed: documents.length, completed_at: new Date().toISOString() }).eq("id", job.id);
-    await identity.admin.from("cms_audit_log").insert({ actor_id: identity.user.id, action: "cms:search.reindexed", target_type: "search_index", target_id: job.id, correlation_id: correlationId, event_data: { documentsIndexed: documents.length, reason } });
-    return { jobId: job.id, documentsIndexed: documents.length };
+    const { error: finishError } = await identity.admin.rpc("cms_search_finish_global_reindex", {
+      p_actor_id: identity.user.id,
+      p_environment: environment,
+      p_job_id: jobId,
+      p_status: "completed",
+      p_documents_indexed: documents.length,
+      p_error_code: null,
+    });
+    if (finishError) throw finishError;
+    await identity.admin.from("cms_audit_log").insert({ actor_id: identity.user.id, action: "cms:search.reindexed", target_type: "search_index", target_id: jobId, correlation_id: correlationId, event_data: { documentsIndexed: documents.length, reason } });
+    return { jobId, documentsIndexed: documents.length };
   } catch (error) {
-    await identity.admin.from("cms_search_index_jobs").update({ status: "failed", error_code: "CMS_SEARCH_REINDEX_FAILED", completed_at: new Date().toISOString() }).eq("id", job.id);
+    await identity.admin.rpc("cms_search_finish_global_reindex", {
+      p_actor_id: identity.user.id,
+      p_environment: environment,
+      p_job_id: jobId,
+      p_status: "failed",
+      p_documents_indexed: 0,
+      p_error_code: "CMS_SEARCH_REINDEX_FAILED",
+    });
     throw error;
   }
 }
@@ -109,21 +128,18 @@ Deno.serve(async (req) => {
   catch { return json(req, { error: "Comando de busca inválido." }, 400); }
   const legacy = Legacy.safeParse(raw);
   if (legacy.success) {
-    const input = legacy.data, permission = input.action === "analytics" ? "cms:search.analytics" : input.action === "list" ? "cms:search.read" : "cms:search.manage";
-    if (!(await authorized(identity, permission))) return json(req, { error: "Permissão insuficiente." }, 403);
-    if (input.action === "list") { const { data, error } = await identity.admin.from("cms_search_synonyms").select("*").order("canonical_term"); return error ? json(req, { error: "Busca indisponível." }, 503) : json(req, { items: data ?? [] }); }
-    if (input.action === "analytics") { const { data, error } = await identity.admin.from("cms_search_events").select("normalized_query,result_count,content_types,refinements,occurred_at").eq("result_count", 0).order("occurred_at", { ascending: false }).limit(100); return error ? json(req, { error: "Analytics indisponível." }, 503) : json(req, { zeroResults: data ?? [] }); }
-    const correlationId = crypto.randomUUID();
-    if (input.action === "remove") { const { error } = await identity.admin.from("cms_search_synonyms").delete().eq("id", input.id); if (error) return json(req, { error: "Sinônimo não removido." }, 422); await identity.admin.from("cms_audit_log").insert({ actor_id: identity.user.id, action: "cms:search.synonym_removed", target_type: "search_synonym", target_id: input.id, correlation_id: correlationId }); return json(req, { ok: true, correlationId }); }
-    const payload = { canonical_term: normalize(input.canonicalTerm), aliases: input.aliases.map(normalize), scope: input.scope, source_reference: input.sourceReference, reason: input.sourceReference, owner_key: "legacy-ui", starts_at: new Date().toISOString(), active: input.active, updated_by: identity.user.id, ...(!input.id ? { created_by: identity.user.id } : {}) };
-    const query = input.id ? identity.admin.from("cms_search_synonyms").update(payload).eq("id", input.id).select().single() : identity.admin.from("cms_search_synonyms").insert(payload).select().single();
-    const { data, error } = await query; if (error) return json(req, { error: "Sinônimo não salvo." }, 422); return json(req, { item: data, correlationId }, input.id ? 200 : 201);
+    return json(req, { error: "Contrato legado desativado; atualize a interface.", code: "CMS_SEARCH_LEGACY_DISABLED" }, 410);
   }
   const parsed = V2.safeParse(raw);
   if (!parsed.success) return json(req, { error: "Comando de busca inválido." }, 400);
   const command = parsed.data, { environment } = command.envelope.actorContext, correlationId = command.envelope.correlationId;
   if (environment === "production" && !isProductionOperationEnabled(environment)) return json(req, { error: "Produção indisponível nesta fase.", code: "CMS_SEARCH_PRODUCTION_GATED", correlationId }, 403);
   if (Deno.env.get("CMS_ENVIRONMENT") !== environment) return json(req, { error: "Escopo não autorizado.", code: "CMS_SEARCH_SCOPE_MISMATCH", correlationId }, 403);
+  const { data: actorScope, error: actorScopeError } = await identity.admin.rpc("cms_actor_scope_context", {
+    p_actor_id: identity.user.id,
+    p_environment: environment,
+  });
+  if (actorScopeError || actorScope?.active !== true) return json(req, { error: "Escopo não autorizado.", code: "CMS_SEARCH_SCOPE_MISMATCH", correlationId }, 403);
   if (command.action === "capability") {
     const { data: feature, error: featureError } = await capability(identity, environment);
     if (featureError) return json(req, { error: "Capacidade indisponível.", correlationId }, 503);
@@ -151,7 +167,16 @@ Deno.serve(async (req) => {
     if (access[1] !== true) return json(req, { error: "Permissão insuficiente." }, 403);
     const allowedTypes = requested.filter((_, index) => access[index + 2] === true);
     if (!allowedTypes.length) return json(req, { items: [], total: 0, correlationId });
-    const { data, error } = await identity.admin.rpc("cms_search_v2", { p_query: normalize(command.query), p_content_types: allowedTypes, p_facets: {}, p_ranges: {}, p_limit: command.limit, p_offset: 0 });
+    const { data, error } = await identity.admin.rpc("cms_search_admin_scoped", {
+      p_actor_id: identity.user.id,
+      p_environment: environment,
+      p_query: normalize(command.query),
+      p_content_types: allowedTypes,
+      p_facets: {},
+      p_ranges: {},
+      p_limit: command.limit,
+      p_offset: 0,
+    });
     return error ? json(req, { error: "Busca administrativa indisponível.", correlationId }, 503) : json(req, { items: data ?? [], total: Number(data?.[0]?.total_count ?? 0), correlationId }, 200, { "Server-Timing": `admin-search;dur=${Math.round(performance.now() - requestStartedAt)}` });
   }
   const { data: feature, error: featureError } = await capability(identity, environment);
@@ -161,27 +186,47 @@ Deno.serve(async (req) => {
   catch { return json(req, { error: "Proteção temporariamente indisponível.", correlationId }, 503); }
   if (command.action === "list_governance") {
     if (!(await authorized(identity, "cms:search.read"))) return json(req, { error: "Permissão insuficiente." }, 403);
-    const [rules, synonyms, jobs] = await Promise.all([identity.admin.from("cms_search_rules").select("*").order("updated_at", { ascending: false }).limit(100), identity.admin.from("cms_search_synonyms").select("*").order("canonical_term"), identity.admin.from("cms_search_index_jobs").select("*").order("created_at", { ascending: false }).limit(10)]);
-    return json(req, { rules: rules.data ?? [], synonyms: synonyms.data ?? [], jobs: jobs.data ?? [], correlationId });
+    const { data, error } = await identity.admin.rpc("cms_search_governance_list_scoped", {
+      p_actor_id: identity.user.id,
+      p_environment: environment,
+    });
+    return error ? json(req, { error: "Governança de busca indisponível.", correlationId }, 503) : json(req, { ...(data ?? { rules: [], synonyms: [], jobs: [] }), correlationId });
   }
   if (command.action === "upsert_synonym") {
     if (!(await authorized(identity, "cms:search.manage"))) return json(req, { error: "Permissão insuficiente." }, 403);
-    const payload = { canonical_term: normalize(command.canonicalTerm), aliases: command.aliases.map(normalize).filter(Boolean), scope: command.scope, source_reference: command.sourceReference, reason: command.reason, owner_key: command.owner, starts_at: command.startsAt, expires_at: command.expiresAt, active: command.active, updated_by: identity.user.id, ...(!command.id ? { created_by: identity.user.id } : {}) };
-    if (!payload.canonical_term || !payload.aliases.length) return json(req, { error: "Sinônimo normalizado vazio.", correlationId }, 422);
-    const operation = command.id ? identity.admin.from("cms_search_synonyms").update({ ...payload, lock_version: command.expectedVersion! + 1 }).eq("id", command.id).eq("lock_version", command.expectedVersion!).select().single() : identity.admin.from("cms_search_synonyms").insert(payload).select().single();
-    const { data, error } = await operation; if (error) return json(req, { error: error.code === "PGRST116" ? "Sinônimo alterado por outra sessão." : "Sinônimo não salvo.", code: error.code === "PGRST116" ? "CMS_SEARCH_CONFLICT" : undefined, correlationId }, error.code === "PGRST116" ? 409 : 422);
-    await identity.admin.from("cms_audit_log").insert({ actor_id: identity.user.id, action: "cms:search.synonym_saved", target_type: "search_synonym", target_id: data.id, correlation_id: correlationId, event_data: { scope: command.scope, reason: command.reason, owner: command.owner, startsAt: command.startsAt, expiresAt: command.expiresAt } });
-    return json(req, { item: data, correlationId }, command.id ? 200 : 201);
+    const canonicalTerm = normalize(command.canonicalTerm), aliases = command.aliases.map(normalize).filter(Boolean);
+    if (!canonicalTerm || !aliases.length) return json(req, { error: "Sinônimo normalizado vazio.", correlationId }, 422);
+    const { data, error } = await identity.admin.rpc("cms_search_governance_command_scoped", {
+      p_actor_id: identity.user.id,
+      p_environment: environment,
+      p_action: command.action,
+      p_payload: { id: command.id, expectedVersion: command.expectedVersion, canonicalTerm, aliases, scope: command.scope, sourceReference: command.sourceReference, reason: command.reason, owner: command.owner, startsAt: command.startsAt, expiresAt: command.expiresAt, active: command.active },
+      p_aal: identity.claims.aal,
+      p_session_id: identity.claims.sessionId,
+      p_issued_at: identity.claims.issuedAt,
+      p_correlation_id: correlationId,
+    });
+    const conflict = error?.message.includes("CONFLICT");
+    if (error) return json(req, { error: conflict ? "Sinônimo alterado por outra sessão." : "Sinônimo não salvo.", code: conflict ? "CMS_SEARCH_CONFLICT" : undefined, correlationId }, conflict ? 409 : 422);
+    return json(req, { ...data, correlationId }, command.id ? 200 : 201);
   }
   if (command.action === "upsert_rule") {
     if (!(await authorized(identity, "cms:search.manage"))) return json(req, { error: "Permissão insuficiente." }, 403);
-    const payload = { rule_kind: command.kind, normalized_query: normalize(command.query), target_item_id: command.targetItemId ?? null, redirect_path: command.redirectPath ?? null, reason: command.reason, owner_key: command.owner, starts_at: command.startsAt, expires_at: command.expiresAt, active: command.active, updated_by: identity.user.id, ...(!command.id ? { created_by: identity.user.id } : {}) };
-    const operation = command.id ? identity.admin.from("cms_search_rules").update({ ...payload, lock_version: command.expectedVersion! + 1 }).eq("id", command.id).eq("lock_version", command.expectedVersion!).select().single() : identity.admin.from("cms_search_rules").insert(payload).select().single();
-    const { data, error } = await operation; if (error) return json(req, { error: error.code === "PGRST116" ? "Regra alterada por outra sessão." : "Regra não salva.", code: error.code === "PGRST116" ? "CMS_SEARCH_CONFLICT" : undefined, correlationId }, error.code === "PGRST116" ? 409 : 422);
-    await identity.admin.from("cms_audit_log").insert({ actor_id: identity.user.id, action: "cms:search.rule_saved", target_type: "search_rule", target_id: data.id, correlation_id: correlationId, event_data: { kind: command.kind, reason: command.reason, owner: command.owner, startsAt: command.startsAt, expiresAt: command.expiresAt } });
-    return json(req, { item: data, correlationId }, command.id ? 200 : 201);
+    const { data, error } = await identity.admin.rpc("cms_search_governance_command_scoped", {
+      p_actor_id: identity.user.id,
+      p_environment: environment,
+      p_action: command.action,
+      p_payload: { id: command.id, expectedVersion: command.expectedVersion, kind: command.kind, normalizedQuery: normalize(command.query), targetItemId: command.targetItemId ?? null, redirectPath: command.redirectPath ?? null, reason: command.reason, owner: command.owner, startsAt: command.startsAt, expiresAt: command.expiresAt, active: command.active },
+      p_aal: identity.claims.aal,
+      p_session_id: identity.claims.sessionId,
+      p_issued_at: identity.claims.issuedAt,
+      p_correlation_id: correlationId,
+    });
+    const conflict = error?.message.includes("CONFLICT");
+    if (error) return json(req, { error: conflict ? "Regra alterada por outra sessão." : "Regra não salva.", code: conflict ? "CMS_SEARCH_CONFLICT" : undefined, correlationId }, conflict ? 409 : 422);
+    return json(req, { ...data, correlationId }, command.id ? 200 : 201);
   }
   if (!(await authorized(identity, "cms:search.reindex"))) return json(req, { error: "Permissão insuficiente." }, 403);
-  try { return json(req, { ...(await rebuildIndex(identity, command.reason, correlationId)), correlationId }); }
+  try { return json(req, { ...(await rebuildIndex(identity, command.reason, correlationId, environment)), correlationId }); }
   catch { return json(req, { error: "Reconstrução do índice falhou sem afetar a busca v1.", code: "CMS_SEARCH_REINDEX_FAILED", correlationId }, 500); }
 });

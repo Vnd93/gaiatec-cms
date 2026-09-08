@@ -30,12 +30,38 @@ test("institutional editor is structured for efficient operation", async () => {
   const editor = await read("src/admin/components/DiscoveryContentEditor.tsx");
   const styles = await read("src/admin/admin.css");
   assert.match(page, /DiscoveryContentEditor/);
-  for (const section of ["Conteúdo", "Busca, CTA e SEO", "Mídia e relações", "Governança", "Avançado"])
+  for (const section of ["Conteúdo", "Busca e divulgação", "Mídia e relações", "Aprovação"])
     assert.match(editor, new RegExp(section));
-  for (const field of ["Título público", "Resumo", "Texto do botão", "Título SEO", "JSON governado"])
+  for (const field of [
+    "Título público",
+    "Endereço público gerado",
+    "Resumo",
+    "Texto do botão",
+    "Título para busca",
+    "Tipo de fonte",
+  ])
     assert.match(editor, new RegExp(field));
+  assert.doesNotMatch(editor, /JSON governado|Editor JSON|>Avançado</);
   assert.match(styles, /\.admin-field-grid/);
   assert.match(styles, /\.admin-workflow-bar/);
+});
+test("new discovery records start empty instead of carrying QA fixture copy into production", async () => {
+  const page = await read("src/admin/pages/AdminDiscoveryPage.tsx");
+  for (const staleFixture of [
+    "Conteúdo sintético descartável",
+    "Fixture técnica para validar o contrato da Fase 5.",
+    "F5-FIXTURE-SINTETICA",
+    "Escopo sintético.",
+    "Mercado sintético",
+    "Ponto sintético",
+    "fixture-sintetica",
+    "kind}-sintetico",
+  ])
+    assert.equal(page.includes(staleFixture), false, `stale production default: ${staleFixture}`);
+  assert.match(page, /governanceState: "awaiting_owner"/);
+  assert.match(page, /\[slug, setSlug\] = useState\(""\)/);
+  assert.match(page, /setSlug\(""\)/);
+  assert.match(page, /rightsConfirmed: false/);
 });
 test("unified search uses only published projection", async () => {
   const fn = await read("supabase/functions/cms-public/index.ts");

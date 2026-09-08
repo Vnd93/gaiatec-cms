@@ -62,6 +62,16 @@ export const adminNavigation: AdminNavigationGroup[] = [
         match: /^\/admin\/?$/,
       },
       {
+        to: "/admin/meu-trabalho",
+        label: "Meu trabalho",
+        description: "Tarefas, releases, operações em massa e rollback.",
+        icon: Inbox,
+        permissions: ["cms:collaboration.read", "cms:releases.read", "cms:bulk.read"],
+        permissionMode: "any",
+        candidate: "ev2.collaboration_bulk",
+        match: /^\/admin\/meu-trabalho(?:\/.*)?$/,
+      },
+      {
         to: "/admin/leads",
         label: "Leads",
         description: "Atendimento, histórico, exportação e anonimização.",
@@ -103,6 +113,32 @@ export const adminNavigation: AdminNavigationGroup[] = [
         match: /^\/admin\/produtos(?:\/(?!importacao(?:\/|$)).*)?$/,
       },
       {
+        to: "/admin/produtos/importacao",
+        label: "Cadastro em massa",
+        description: "Validação e criação governada de lotes.",
+        icon: FileStack,
+        permissions: ["cms:products.edit"],
+        match: /^\/admin\/produtos\/importacao(?:\/.*)?$/,
+      },
+      {
+        to: "/admin/pim",
+        label: "Cadastro técnico",
+        description: "Estrutura técnica de produtos, modelos e variantes.",
+        icon: Boxes,
+        permissions: ["cms:pim.read"],
+        candidate: "ev2.pim_v2",
+        match: /^\/admin\/pim(?:\/.*)?$/,
+      },
+      {
+        to: "/admin/dados-mestres",
+        label: "Dados mestres",
+        description: "Entidades padronizadas, versões e compatibilidades.",
+        icon: Database,
+        permissions: ["cms:masterdata.read"],
+        candidate: "ev2.master_data",
+        match: /^\/admin\/dados-mestres(?:\/.*)?$/,
+      },
+      {
         to: "/admin/descoberta/service",
         label: "Serviços",
         description: "Serviços oferecidos e vínculos do catálogo.",
@@ -134,6 +170,22 @@ export const adminNavigation: AdminNavigationGroup[] = [
         permissions: ["cms:solutions.read"],
         match: /^\/admin\/descoberta\/solution(?:\/.*)?$/,
       },
+      {
+        to: "/admin/listas-mestras",
+        label: "Listas mestras",
+        description: "Categorias e classificações padronizadas.",
+        icon: ClipboardList,
+        permissions: ["cms:vocabularies.read"],
+        match: /^\/admin\/listas-mestras(?:\/.*)?$/,
+      },
+      {
+        to: "/admin/busca",
+        label: "Busca e sinônimos",
+        description: "Dicionário, regras e consultas sem resultado.",
+        icon: SearchCheck,
+        permissions: ["cms:search.read"],
+        match: /^\/admin\/busca(?:\/.*)?$/,
+      },
     ],
   },
   {
@@ -144,10 +196,19 @@ export const adminNavigation: AdminNavigationGroup[] = [
       {
         to: "/admin/paginas",
         label: "Páginas",
-        description: "Páginas por blocos, modelos, biblioteca e tema.",
+        description: "Páginas por blocos, modelos e biblioteca.",
         icon: LayoutTemplate,
         permissions: ["cms:pages.read", "cms:homepage.read"],
         match: /^\/admin\/paginas(?:\/.*)?$/,
+      },
+      {
+        to: "/admin/estudio-visual",
+        label: "Estúdio Visual",
+        description: "Composição visual governada de páginas.",
+        icon: LayoutTemplate,
+        permissions: ["cms:visual.read"],
+        candidate: "ev2.visual_studio",
+        match: /^\/admin\/estudio-visual(?:\/.*)?$/,
       },
       {
         to: "/admin/conteudo",
@@ -216,6 +277,15 @@ export const adminNavigation: AdminNavigationGroup[] = [
         icon: Layers3,
         permissions: ["cms:placements.read"],
       },
+      {
+        to: "/admin/sites",
+        label: "Sites e ambientes",
+        description: "Preparação e governança multisite.",
+        icon: Building2,
+        permissions: ["cms:sites.read"],
+        candidate: "ev2.multisite",
+        match: /^\/admin\/sites(?:\/.*)?$/,
+      },
     ],
   },
   {
@@ -236,7 +306,7 @@ export const adminNavigation: AdminNavigationGroup[] = [
         label: "Auditoria",
         description: "Trilha imutável de todas as ações do CMS.",
         icon: FileClock,
-        permissions: ["cms:diagnostics.read"],
+        permissions: ["cms:audit.read"],
         match: /^\/admin\/auditoria(?:\/.*)?$/,
       },
       {
@@ -255,33 +325,6 @@ export const adminNavigation: AdminNavigationGroup[] = [
     icon: Layers3,
     items: [
       {
-        to: "/admin/produtos/importacao",
-        label: "Cadastro em massa",
-        description: "Validação e criação governada de lotes.",
-        icon: FileStack,
-        permissions: ["cms:products.edit"],
-        match: /^\/admin\/produtos\/importacao(?:\/.*)?$/,
-        menu: false,
-      },
-      {
-        to: "/admin/busca",
-        label: "Busca e sinônimos",
-        description: "Dicionário e consultas sem resultado.",
-        icon: SearchCheck,
-        permissions: ["cms:search.read"],
-        match: /^\/admin\/busca(?:\/.*)?$/,
-        menu: false,
-      },
-      {
-        to: "/admin/listas-mestras",
-        label: "Listas mestras",
-        description: "Categorias e classificações padronizadas.",
-        icon: ClipboardList,
-        permissions: ["cms:vocabularies.read"],
-        match: /^\/admin\/listas-mestras(?:\/.*)?$/,
-        menu: false,
-      },
-      {
         to: "/admin/paginas",
         label: "Páginas e homepage",
         description: "Nome legado preservado para compatibilidade.",
@@ -296,57 +339,6 @@ export const adminNavigation: AdminNavigationGroup[] = [
         description: "Identidade, sessão atual e permissões efetivas.",
         icon: UserRound,
         match: /^\/admin\/perfil(?:\/.*)?$/,
-        menu: false,
-      },
-      {
-        to: "/admin/meu-trabalho",
-        label: "Meu trabalho",
-        description: "Fila consolidada na visão geral.",
-        icon: Inbox,
-        permissions: ["cms:collaboration.read", "cms:releases.read", "cms:bulk.read"],
-        permissionMode: "any",
-        candidate: "ev2.collaboration_bulk",
-        match: /^\/admin\/meu-trabalho(?:\/.*)?$/,
-        menu: false,
-      },
-      {
-        to: "/admin/pim",
-        label: "PIM EV2",
-        description: "Cadastro normalizado de produtos.",
-        icon: Boxes,
-        permissions: ["cms:pim.read"],
-        candidate: "ev2.pim_v2",
-        match: /^\/admin\/pim(?:\/.*)?$/,
-        menu: false,
-      },
-      {
-        to: "/admin/dados-mestres",
-        label: "Dados mestres EV2",
-        description: "Entidades versionadas.",
-        icon: Database,
-        permissions: ["cms:masterdata.read"],
-        candidate: "ev2.master_data",
-        match: /^\/admin\/dados-mestres(?:\/.*)?$/,
-        menu: false,
-      },
-      {
-        to: "/admin/estudio-visual",
-        label: "Estúdio Visual",
-        description: "Estúdio visual governado.",
-        icon: LayoutTemplate,
-        permissions: ["cms:visual.read"],
-        candidate: "ev2.visual_studio",
-        match: /^\/admin\/estudio-visual(?:\/.*)?$/,
-        menu: false,
-      },
-      {
-        to: "/admin/sites",
-        label: "Sites e ambientes",
-        description: "Preparação multisite.",
-        icon: Building2,
-        permissions: ["cms:sites.read"],
-        candidate: "ev2.multisite",
-        match: /^\/admin\/sites(?:\/.*)?$/,
         menu: false,
       },
     ],
@@ -364,6 +356,45 @@ export function isNavigationItemActive(item: AdminNavigationItem, pathname: stri
   const [targetPath, targetQuery = ""] = item.to.split("?");
   if (targetQuery) return pathname === targetPath && new URLSearchParams(search).toString() === targetQuery;
   return item.match?.test(pathname) ?? pathname === targetPath;
+}
+
+export type AdminRouteAccessRequirement = {
+  label: string;
+  permissions: readonly string[];
+  permissionMode: "any" | "all";
+};
+
+export function resolveAdminRouteAccess(pathname: string, search = ""): AdminRouteAccessRequirement | null {
+  if (/^\/admin\/site\/?$/.test(pathname)) {
+    const section = new URLSearchParams(search).get("section");
+    if (section === "site_settings")
+      return { label: "Dados globais", permissions: ["cms:settings.read"], permissionMode: "any" };
+    if (section === "placement")
+      return { label: "Posicionamentos", permissions: ["cms:placements.read"], permissionMode: "any" };
+    return { label: "Navegação", permissions: ["cms:navigation.read"], permissionMode: "any" };
+  }
+
+  const item = adminNavigation
+    .flatMap((group) => group.items)
+    .find((candidate) => isNavigationItemActive(candidate, pathname, search));
+  if (!item?.permissions?.length) return null;
+  return {
+    label: item.label,
+    permissions: item.permissions,
+    permissionMode: item.permissionMode ?? "any",
+  };
+}
+
+export function canAccessAdminRoute(
+  pathname: string,
+  search: string,
+  permissions: readonly string[],
+): boolean {
+  const requirement = resolveAdminRouteAccess(pathname, search);
+  if (!requirement) return true;
+  return requirement.permissionMode === "all"
+    ? requirement.permissions.every((permission) => permissions.includes(permission))
+    : requirement.permissions.some((permission) => permissions.includes(permission));
 }
 
 export type AdminBreadcrumb = { label: string; to?: string };
@@ -416,16 +447,16 @@ export const administrativeRouteInventory = [
   {
     surface: "Assistente controlada",
     route: "/admin/assistente",
-    permission: "cms:ai.read e override individual EV2.10",
+    permission: "leitura da assistente e recurso individual ativado",
   },
   {
     surface: "Execução transacional controlada",
     route: "/admin/assistente/execucao",
-    permission: "cms:ai.* transacional e overrides individuais EV2.14",
+    permission: "execução assistida e recursos individuais ativados",
   },
   { surface: "Produtos", route: "/admin/produtos", permission: "cms:products.read" },
   { surface: "Cadastro em massa", route: "/admin/produtos/importacao", permission: "cms:products.edit" },
-  { surface: "PIM EV2", route: "/admin/pim", permission: "cms:pim.read" },
+  { surface: "Cadastro técnico", route: "/admin/pim", permission: "cms:pim.read" },
   { surface: "Conteúdo editorial", route: "/admin/conteudo", permission: "cms:posts.read" },
   { surface: "Serviços", route: "/admin/descoberta/service", permission: "cms:services.read" },
   { surface: "Indústrias", route: "/admin/descoberta/industry", permission: "cms:industries.read" },
@@ -434,7 +465,7 @@ export const administrativeRouteInventory = [
   { surface: "Busca e sinônimos", route: "/admin/busca", permission: "cms:search.read" },
   { surface: "Centro de Qualidade", route: "/admin/qualidade", permission: "cms:quality.read" },
   { surface: "Listas mestras", route: "/admin/listas-mestras", permission: "cms:vocabularies.read" },
-  { surface: "Dados mestres EV2", route: "/admin/dados-mestres", permission: "cms:masterdata.read" },
+  { surface: "Dados mestres", route: "/admin/dados-mestres", permission: "cms:masterdata.read" },
   {
     surface: "Páginas e homepage",
     route: "/admin/paginas",
@@ -451,6 +482,6 @@ export const administrativeRouteInventory = [
   { surface: "Sites e ambientes", route: "/admin/sites", permission: "cms:sites.read" },
   { surface: "Perfil e sessão", route: "/admin/perfil", permission: "sessão CMS ativa" },
   { surface: "Usuários e acessos", route: "/admin/usuarios", permission: "cms:users.read" },
-  { surface: "Auditoria", route: "/admin/auditoria", permission: "cms:diagnostics.read" },
+  { surface: "Auditoria", route: "/admin/auditoria", permission: "cms:audit.read" },
   { surface: "Diagnósticos", route: "/admin/diagnosticos", permission: "cms:diagnostics.read" },
 ] as const;

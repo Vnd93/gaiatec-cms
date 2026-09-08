@@ -15,8 +15,12 @@ on:
       confirmation:
         description: Digite AUTORIZO-G12-PRODUCAO:<SHA>
         required: true
+      frontend_bridge_run_id:
+        description: Run bem-sucedido que promoveu o frontend-only A e fixou o rollback operacional
+        required: true
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -25,13 +29,42 @@ concurrency:
 
 jobs:
   deploy:
-    if: >-
-      github.ref == 'refs/heads/main' &&
-      inputs.confirmation == format('AUTORIZO-G12-PRODUCAO:{0}', inputs.candidate_sha)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 240
     environment: production
+    outputs:
+      mutation_marker_id: ${{ steps.mutation_marker_upload.outputs.artifact-id }}
+      mutation_marker_digest: ${{ steps.mutation_marker_upload.outputs.artifact-digest }}
+      release_artifact_id: ${{ steps.production_release_evidence.outputs.artifact-id }}
+      release_artifact_digest: ${{ steps.production_release_evidence.outputs.artifact-digest }}
+      backend_artifact_id: ${{ steps.production_backend_evidence.outputs.artifact-id }}
+      backend_artifact_digest: ${{ steps.production_backend_evidence.outputs.artifact-digest }}
+      baseline_release: ${{ steps.baseline.outputs.release }}
+      baseline_deployment_id: ${{ steps.baseline.outputs.deployment_id }}
+      baseline_created_on: ${{ steps.baseline.outputs.created_on }}
+      baseline_commit_message: ${{ steps.baseline.outputs.commit_message }}
+      promoted_deployment_id: ${{ steps.promote.outputs.deployment-id }}
+      promoted_release: ${{ steps.promote.outputs.deployment-release }}
+      promoted_run_marker: ${{ steps.promote.outputs.deployment-marker }}
+      promoted_created_on: ${{ steps.promote.outputs.deployment-created-on }}
+      approval_record_sha256: ${{ steps.approval.outputs.approval_record_sha256 }}
     steps:
+      - name: Validate production dispatch authorization before any mutation
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+          DISPATCH_ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          PRODUCTION_AUTHORIZATION: ${{ inputs.confirmation }}
+          FRONTEND_BRIDGE_RUN_ID: ${{ inputs.frontend_bridge_run_id }}
+        run: |
+          set -euo pipefail
+          test "$DISPATCH_REF" = refs/heads/main
+          test "${DISPATCH_ACTOR,,}" = vnd93
+          test "${TRIGGERING_ACTOR,,}" = vnd93
+          test "$(printf '%s' "$CANDIDATE_SHA" | grep -E '^[a-f0-9]{40}$')" = "$CANDIDATE_SHA"
+          test "$(printf '%s' "$FRONTEND_BRIDGE_RUN_ID" | grep -E '^[1-9][0-9]*$')" = "$FRONTEND_BRIDGE_RUN_ID"
+          test "$PRODUCTION_AUTHORIZATION" = "AUTORIZO-G12-PRODUCAO:$CANDIDATE_SHA"
       - name: Checkout release controls from main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -56,16 +89,35 @@ jobs:
       - name: Verify exact candidate belongs to main
         env:
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CONTROL_SHA: ${{ github.sha }}
         run: |
+          set -euo pipefail
           test "$(printf '%s' "$CANDIDATE_SHA" | grep -E '^[a-f0-9]{40}$')" = "$CANDIDATE_SHA"
           test "$(git -C candidate rev-parse HEAD)" = "$CANDIDATE_SHA"
+          test "$(git -C control rev-parse HEAD)" = "$CONTROL_SHA"
+          git -C control fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          test "$(git -C control rev-parse HEAD)" = "$(git -C control rev-parse origin/main)"
           git -C control merge-base --is-ancestor "$CANDIDATE_SHA" origin/main
+      - name: Verify control B is the single evidence-only child of candidate A
+        working-directory: control
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          APPROVAL_RECORD: ${{ inputs.approval_record }}
+        run: >-
+          node scripts/ev2/phase12/verify-production-control-delta.mjs
+          --candidate "$CANDIDATE_SHA" --approval "$APPROVAL_RECORD"
       - name: Verify protected GitHub controls
         working-directory: control
         run: node scripts/ev2/phase12/check-github-controls.mjs
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+      - name: Verify CI and protected controls for the evidence-only control commit
+        working-directory: control
+        run: node scripts/ev2/phase12/check-github-controls.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          CANDIDATE_SHA: ${{ github.sha }}
       - name: Verify production configuration is isolated
         working-directory: control
         run: node scripts/ev2/phase12/validate-production-config.mjs
@@ -86,10 +138,10 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           PRODUCTION_SITE_ORIGIN: ${{ vars.PRODUCTION_SITE_ORIGIN }}
           ALLOWED_ORIGINS: https://gaiatecsistemas.com.br,https://www.gaiatecsistemas.com.br
+          TURNSTILE_ALLOWED_HOSTNAMES: gaiatecsistemas.com.br,www.gaiatecsistemas.com.br
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           EMAIL_FROM: ${{ vars.EMAIL_FROM }}
           LEAD_NOTIFICATION_TO: ${{ vars.LEAD_NOTIFICATION_TO }}
-          VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}
           TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
           RATE_LIMIT_SALT: ${{ secrets.RATE_LIMIT_SALT }}
           EVIDENCE_SALT: ${{ secrets.EVIDENCE_SALT }}
@@ -110,47 +162,252 @@ jobs:
         run: >-
           node scripts/ev2/phase12/verify-approval.mjs --file "$APPROVAL_RECORD"
           --candidate "$CANDIDATE_SHA" --environment production --change-reference "$CHANGE_REFERENCE"
-      - name: Install and validate exact candidate
+      - name: Resolve the exact successful frontend-only bridge run
+        id: frontend_bridge_run
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          FRONTEND_BRIDGE_RUN_ID: ${{ inputs.frontend_bridge_run_id }}
+        run: >-
+          node scripts/ev2/phase12/verify-production-frontend-bridge-run.mjs
+          --run-id "$FRONTEND_BRIDGE_RUN_ID"
+          --expected-release "${{ inputs.candidate_sha }}"
+      - name: Download immutable frontend bridge evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.frontend_bridge_run.outputs.artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ inputs.frontend_bridge_run_id }}
+          path: ${{ runner.temp }}/g12-production-frontend-bridge-evidence
+      - name: Download the exact sealed frontend bridge bytes
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.frontend_bridge_run.outputs.dist_artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ inputs.frontend_bridge_run_id }}
+          path: ${{ runner.temp }}/g12-production-frontend-bridge-dist
+      - name: Verify bridge evidence and exact sealed rollback bytes
+        id: frontend_bridge
+        working-directory: control
+        env:
+          EXPECTED_RUN_ID: ${{ inputs.frontend_bridge_run_id }}
+          EXPECTED_CONTROL_SHA: ${{ steps.frontend_bridge_run.outputs.control_sha }}
+          EXPECTED_RELEASE: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          node scripts/ev2/phase12/verify-production-frontend-bridge-evidence.mjs \
+            --artifact-dir "$RUNNER_TEMP/g12-production-frontend-bridge-evidence"
+          node scripts/ev2/phase12/verify-production-dist-seal.mjs \
+            --dist "$RUNNER_TEMP/g12-production-frontend-bridge-dist/dist" \
+            --seal "$RUNNER_TEMP/g12-production-frontend-bridge-dist/outputs/g12-production-frontend-bridge-dist-seal.json" \
+            --candidate "${{ inputs.candidate_sha }}"
+      - name: Cross-check sealed bridge bytes against verified evidence
+        run: |
+          set -euo pipefail
+          test "$(node -p "require(process.env.RUNNER_TEMP + '/g12-production-frontend-bridge-dist/outputs/g12-production-frontend-bridge-dist-seal.json').archiveSha256")" = \
+            "${{ steps.frontend_bridge.outputs.dist_archive_sha256 }}"
+          test "$(node -p "require(process.env.RUNNER_TEMP + '/g12-production-frontend-bridge-dist/outputs/g12-production-frontend-bridge-dist-seal.json').treeSha256")" = \
+            "${{ steps.frontend_bridge.outputs.dist_tree_sha256 }}"
+      - name: Verify the exact successful staging run and both immutable artifact digests
+        id: staging_run
+        working-directory: control
+        env:
+          APPROVAL_RECORD: ${{ inputs.approval_record }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/ev2/phase12/verify-staging-run.mjs --file "$APPROVAL_RECORD"
+      - name: Download the exact approval-bound staging evidence artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.staging_run.outputs.evidence_artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ steps.staging_run.outputs.run_id }}
+          path: ${{ runner.temp }}/g12-approved-staging-evidence
+      - name: Download the exact approval-bound sealed staging candidate artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.staging_run.outputs.candidate_artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ steps.staging_run.outputs.run_id }}
+          path: ${{ runner.temp }}/g12-approved-staging-candidate
+      - name: Verify exact-candidate canary bytes and sealed staging candidate binding
+        working-directory: control
+        env:
+          APPROVAL_RECORD: ${{ inputs.approval_record }}
+        run: >-
+          node scripts/ev2/phase12/verify-staging-artifact.mjs
+          --file "$APPROVAL_RECORD"
+          --artifact-dir "$RUNNER_TEMP/g12-approved-staging-evidence"
+      - name: Materialize and verify the exact sealed candidate tested in staging
+        working-directory: control
+        env:
+          APPROVAL_RECORD: ${{ inputs.approval_record }}
+        run: >-
+          node scripts/ev2/phase12/verify-staging-candidate-artifact.mjs
+          --file "$APPROVAL_RECORD"
+          --artifact-dir "$RUNNER_TEMP/g12-approved-staging-candidate"
+      - name: Verify approval-bound mail, AI and dedicated cache-purge configuration
+        working-directory: control
+        run: node scripts/ev2/phase12/validate-production-backend-config.mjs
+        env:
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          PRODUCTION_SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+          PRODUCTION_SUPABASE_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
+          PRODUCTION_SUPABASE_DB_URL: ${{ secrets.PRODUCTION_SUPABASE_DB_URL }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PRODUCTION_SITE_ORIGIN: ${{ vars.PRODUCTION_SITE_ORIGIN }}
+          ALLOWED_ORIGINS: https://gaiatecsistemas.com.br,https://www.gaiatecsistemas.com.br
+          TURNSTILE_ALLOWED_HOSTNAMES: gaiatecsistemas.com.br,www.gaiatecsistemas.com.br
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          EMAIL_FROM: ${{ vars.EMAIL_FROM }}
+          LEAD_NOTIFICATION_TO: ${{ vars.LEAD_NOTIFICATION_TO }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
+          RATE_LIMIT_SALT: ${{ secrets.RATE_LIMIT_SALT }}
+          EVIDENCE_SALT: ${{ secrets.EVIDENCE_SALT }}
+          LEAD_EVIDENCE_SALT: ${{ secrets.LEAD_EVIDENCE_SALT }}
+          OUTBOX_WORKER_SECRET: ${{ secrets.OUTBOX_WORKER_SECRET }}
+          CMS_EV2_PRODUCTION_ENABLED: "true"
+          CMS_AI_EXTERNAL_PROVIDER_ENABLED: "true"
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
+          CONTACT_CAPTCHA_ALWAYS: "true"
+          REQUIRE_APPROVAL_BINDINGS: "true"
+          APPROVED_EMAIL_FROM_SHA256: ${{ steps.approval.outputs.approved_email_from_sha256 }}
+          APPROVED_LEAD_NOTIFICATION_TO_SHA256: ${{ steps.approval.outputs.approved_notification_to_sha256 }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
+          CLOUDFLARE_CACHE_PURGE_TOKEN_ID: ${{ vars.CLOUDFLARE_CACHE_PURGE_TOKEN_ID }}
+          CLOUDFLARE_CACHE_PURGE_TOKEN: ${{ secrets.CLOUDFLARE_CACHE_PURGE_TOKEN }}
+      - name: Verify the bound production backup run and immutable artifact metadata
+        id: backup_run
+        working-directory: control
+        env:
+          APPROVAL_RECORD: ${{ inputs.approval_record }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/ev2/phase12/verify-production-backup-run.mjs --file "$APPROVAL_RECORD"
+      - name: Download the exact approved backup artifact by immutable artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.backup_run.outputs.artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ steps.approval.outputs.backup_run_id }}
+          path: ${{ runner.temp }}/g12-approved-production-backup
+      - name: Verify backup manifest, encrypted archive digest, RPO and restore RTO
+        working-directory: control
+        env:
+          APPROVAL_RECORD: ${{ inputs.approval_record }}
+        run: >-
+          node scripts/ev2/phase12/verify-production-backup-artifact.mjs
+          --file "$APPROVAL_RECORD"
+          --artifact-dir "$RUNNER_TEMP/g12-approved-production-backup"
+          --report ../g12-production-backup-verification.json
+      - name: Verify the exact successful email-delivery run and immutable artifact digest
+        id: email_run
+        working-directory: control
+        env:
+          APPROVAL_RECORD: ${{ inputs.approval_record }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/ev2/phase12/verify-production-email-run.mjs --file "$APPROVAL_RECORD"
+      - name: Download the exact approval-bound delivery evidence artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.email_run.outputs.artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ steps.email_run.outputs.run_id }}
+          path: ${{ runner.temp }}/g12-approved-production-email
+      - name: Verify real delivered status and exact-candidate email evidence bytes
+        working-directory: control
+        env:
+          APPROVAL_RECORD: ${{ inputs.approval_record }}
+        run: >-
+          node scripts/ev2/phase12/verify-production-email-artifact.mjs
+          --file "$APPROVAL_RECORD"
+          --artifact-dir "$RUNNER_TEMP/g12-approved-production-email"
+      - name: Checkout the approved backend rollback baseline
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ steps.approval.outputs.rollback_release }}
+          fetch-depth: 0
+          path: rollback-backend
+      - name: Install and validate exact candidate, then discard its non-release build
         working-directory: candidate
         run: |
+          set -euo pipefail
           npm ci
           npm run check
           npm audit --audit-level=high
-      - name: Build production shell with every EV2 candidate default-off
+          test -d dist
+          rm -rf -- dist
+          test ! -e dist
+      - name: Install the isolated browser before any production mutation
         working-directory: candidate
-        run: npm run build
-        env:
-          VITE_RELEASE: ${{ inputs.candidate_sha }}
-          VITE_CMS_ENVIRONMENT: production
-          VITE_SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
-          VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}
-          VITE_EV2_DRAFT_V2_CANDIDATE: "false"
-          VITE_EV2_MASTER_DATA_CANDIDATE: "false"
-          VITE_EV2_PIM_CANDIDATE: "false"
-          VITE_EV2_DAM_CANDIDATE: "false"
-          VITE_EV2_SEARCH_QUALITY_CANDIDATE: "false"
-          VITE_EV2_COLLABORATION_BULK_CANDIDATE: "false"
-          VITE_EV2_RBAC_SCOPED_CANDIDATE: "false"
-          VITE_EV2_VISUAL_STUDIO_CANDIDATE: "false"
-          VITE_EV2_MULTISITE_CANDIDATE: "false"
-          VITE_EV2_AI_ASSIST_CANDIDATE: "false"
-          VITE_EV2_SYSTEM_ASSURANCE_CANDIDATE: "false"
-      - name: Seal release manifest
+        run: npx playwright install --with-deps chromium
+      - name: Prove append-only backend and prior-frontend compatibility
         working-directory: candidate
-        run: env -u GITHUB_SHA npm run artifact:manifest
-        env:
-          VITE_RELEASE: ${{ inputs.candidate_sha }}
-      - name: Deploy the same artifact to an isolated production-project preview
+        run: |
+          mkdir -p outputs
+          node scripts/ev2/phase12/verify-backend-forward-compatibility.mjs \
+            --candidate . --baseline ../rollback-backend --report outputs/g12-backend-compatibility.json
+      - name: Refuse local env inputs before materializing sealed bridge bytes
+        working-directory: candidate
+        run: |
+          test ! -e .env.local
+          test ! -e .env.production.local
+      - name: Materialize the exact bridge artifact without rebuilding
+        working-directory: control
+        run: |
+          set -euo pipefail
+          test ! -e ../candidate/dist
+          mkdir -p ../candidate/outputs
+          cp -a "$RUNNER_TEMP/g12-production-frontend-bridge-dist/dist" ../candidate/dist
+          cp "$RUNNER_TEMP/g12-production-frontend-bridge-dist/outputs/g12-production-frontend-bridge-dist.tar" \
+            ../candidate/outputs/g12-production-dist.tar
+          cp "$RUNNER_TEMP/g12-production-frontend-bridge-dist/outputs/g12-production-frontend-bridge-dist-seal.json" \
+            ../candidate/outputs/g12-production-dist-seal.json
+          node scripts/ev2/phase12/verify-production-dist-seal.mjs \
+            --dist ../candidate/dist \
+            --seal ../candidate/outputs/g12-production-dist-seal.json \
+            --candidate "${{ inputs.candidate_sha }}"
+      - name: Generate the clean SHA-bound production coverage inventory
+        working-directory: candidate
+        run: node scripts/qa/cms-coverage-inventory.mjs --output outputs/cms-coverage-production.json
+      - name: Verify exact candidate checkout is clean before remote publication
+        working-directory: candidate
+        run: test -z "$(git status --porcelain --untracked-files=all)"
+      - name: Reconfirm control B is still the main tip before remote preview publication
+        working-directory: control
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+      - name: Deploy the single sealed artifact to an isolated production-project preview
         id: preflight
-        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: control
-          command: >-
-            pages deploy ../candidate/dist --project-name gaiatec-website --branch ev2-g12-preflight
-            --commit-hash ${{ inputs.candidate_sha }} --commit-dirty=false
+        timeout-minutes: 20
+        working-directory: control
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+        run: >-
+          node scripts/ev2/phase12/deploy-sealed-production-dist.mjs
+          --archive ../candidate/outputs/g12-production-dist.tar
+          --seal ../candidate/outputs/g12-production-dist-seal.json
+          --candidate "${{ inputs.candidate_sha }}"
+          --branch ev2-g12-preflight
+          --wrangler-script ../candidate/node_modules/wrangler/bin/wrangler.js
       - name: Probe immutable shell in the isolated production-project preview
         working-directory: control
         run: node scripts/ev2/phase12/rollout-probe.mjs
@@ -161,6 +418,21 @@ jobs:
           EV2_G12_PROBE_PROFILE: technical
           EV2_G12_SAMPLE_COUNT: "5"
           EV2_G12_REPORT_PATH: ../g12-preflight-technical.json
+      - name: Require the complete corporate MFA preflight configuration
+        working-directory: candidate
+        run: node scripts/qa/prepare-production-authenticated-preflight.mjs
+        env:
+          PLAYWRIGHT_BASE_URL: https://gaiatecsistemas.com.br
+          QA_CMS_PRODUCTION_READONLY_PREFLIGHT_REQUIRED: "true"
+          QA_CMS_PRODUCTION_PREFLIGHT_REPORT_PATH: outputs/cms-production-readonly-preflight.json
+          QA_CMS_EXPECTED_SHA: ${{ inputs.candidate_sha }}
+          QA_CMS_SEALED_PREVIEW_URL: ${{ steps.preflight.outputs.deployment-url }}
+          QA_CMS_SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+          QA_CMS_SUPABASE_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
+          QA_CMS_CORPORATE_EMAIL: ${{ secrets.PRODUCTION_AUTH_CANARY_EMAIL }}
+          QA_CMS_CORPORATE_PASSWORD: ${{ secrets.PRODUCTION_AUTH_CANARY_PASSWORD }}
+          QA_CMS_CORPORATE_TOTP_SECRET: ${{ secrets.PRODUCTION_AUTH_CANARY_TOTP_SECRET }}
+          QA_CMS_CORPORATE_EMAIL_DOMAIN: ${{ vars.PRODUCTION_AUTH_CANARY_EMAIL_DOMAIN }}
       - name: Capture approved rollback baseline
         id: baseline
         working-directory: control
@@ -169,26 +441,107 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_PAGES_PROJECT: gaiatec-website
-      - name: Confirm live baseline equals the approved rollback target
+      - name: Confirm live baseline is the immutable frontend bridge A
         env:
           LIVE_DEPLOYMENT: ${{ steps.baseline.outputs.deployment_id }}
           LIVE_RELEASE: ${{ steps.baseline.outputs.release }}
-          APPROVED_DEPLOYMENT: ${{ steps.approval.outputs.rollback_deployment_id }}
-          APPROVED_RELEASE: ${{ steps.approval.outputs.rollback_release }}
+          BRIDGE_DEPLOYMENT: ${{ steps.frontend_bridge.outputs.production_deployment_id }}
+          BRIDGE_RELEASE: ${{ steps.frontend_bridge.outputs.production_release }}
+          BRIDGE_CREATED_ON: ${{ steps.frontend_bridge.outputs.production_created_on }}
+          BRIDGE_MARKER: ${{ steps.frontend_bridge.outputs.production_commit_message }}
+          LIVE_CREATED_ON: ${{ steps.baseline.outputs.created_on }}
+          LIVE_MARKER: ${{ steps.baseline.outputs.commit_message }}
+          APPROVED_PREDECESSOR_DEPLOYMENT: ${{ steps.approval.outputs.rollback_deployment_id }}
+          APPROVED_PREDECESSOR_RELEASE: ${{ steps.approval.outputs.rollback_release }}
+          BRIDGE_PREDECESSOR_DEPLOYMENT: ${{ steps.frontend_bridge.outputs.predecessor_deployment_id }}
+          BRIDGE_PREDECESSOR_RELEASE: ${{ steps.frontend_bridge.outputs.predecessor_release }}
         run: |
-          test "$LIVE_DEPLOYMENT" = "$APPROVED_DEPLOYMENT"
-          test "$LIVE_RELEASE" = "$APPROVED_RELEASE"
-      - name: Apply the exact candidate migrations to the isolated production database
+          set -euo pipefail
+          test "$LIVE_DEPLOYMENT" = "$BRIDGE_DEPLOYMENT"
+          test "$LIVE_RELEASE" = "$BRIDGE_RELEASE"
+          test "$LIVE_CREATED_ON" = "$BRIDGE_CREATED_ON"
+          test "$LIVE_MARKER" = "$BRIDGE_MARKER"
+          test "$LIVE_RELEASE" = "${{ inputs.candidate_sha }}"
+          test "$APPROVED_PREDECESSOR_DEPLOYMENT" = "$BRIDGE_PREDECESSOR_DEPLOYMENT"
+          test "$APPROVED_PREDECESSOR_RELEASE" = "$BRIDGE_PREDECESSOR_RELEASE"
+          test "$APPROVED_PREDECESSOR_RELEASE" != "$LIVE_RELEASE"
+      - name: Reconfirm control B is still the main tip before arming production mutation
+        working-directory: control
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+      - name: Arm the durable production mutation marker
+        working-directory: control
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          BASELINE_DEPLOYMENT_ID: ${{ steps.baseline.outputs.deployment_id }}
+          BASELINE_RELEASE: ${{ steps.baseline.outputs.release }}
+          BASELINE_CREATED_ON: ${{ steps.baseline.outputs.created_on }}
+          BASELINE_COMMIT_MESSAGE: ${{ steps.baseline.outputs.commit_message }}
+          BRIDGE_RUN_ID: ${{ inputs.frontend_bridge_run_id }}
+          BRIDGE_RUN_ATTEMPT: ${{ steps.frontend_bridge_run.outputs.run_attempt }}
+          BRIDGE_CONTROL_SHA: ${{ steps.frontend_bridge_run.outputs.control_sha }}
+          BRIDGE_EVIDENCE_ARTIFACT_ID: ${{ steps.frontend_bridge_run.outputs.artifact_id }}
+          BRIDGE_EVIDENCE_ARTIFACT_DIGEST: ${{ steps.frontend_bridge_run.outputs.artifact_digest }}
+          BRIDGE_DIST_ARTIFACT_ID: ${{ steps.frontend_bridge_run.outputs.dist_artifact_id }}
+          BRIDGE_DIST_ARTIFACT_DIGEST: ${{ steps.frontend_bridge_run.outputs.dist_artifact_digest }}
+          BRIDGE_DEPLOYMENT_ID: ${{ steps.frontend_bridge.outputs.production_deployment_id }}
+          BRIDGE_RELEASE: ${{ steps.frontend_bridge.outputs.production_release }}
+          BRIDGE_CREATED_ON: ${{ steps.frontend_bridge.outputs.production_created_on }}
+          BRIDGE_COMMIT_MESSAGE: ${{ steps.frontend_bridge.outputs.production_commit_message }}
+          BRIDGE_PREDECESSOR_DEPLOYMENT_ID: ${{ steps.frontend_bridge.outputs.predecessor_deployment_id }}
+          BRIDGE_PREDECESSOR_RELEASE: ${{ steps.frontend_bridge.outputs.predecessor_release }}
+          BRIDGE_PREDECESSOR_CREATED_ON: ${{ steps.frontend_bridge.outputs.predecessor_created_on }}
+          BRIDGE_PREDECESSOR_COMMIT_MESSAGE: ${{ steps.frontend_bridge.outputs.predecessor_commit_message }}
+          APPROVAL_RECORD: ${{ inputs.approval_record }}
+          APPROVAL_RECORD_SHA256: ${{ steps.approval.outputs.approval_record_sha256 }}
+          APPROVED_ROLLBACK_RELEASE: ${{ steps.approval.outputs.rollback_release }}
+          CHANGE_REFERENCE: ${{ inputs.change_reference }}
+          CONTROL_SHA: ${{ github.sha }}
+        run: >-
+          node scripts/ev2/phase12/write-production-mutation-marker.mjs
+          --output ../g12-production-mutation-marker.json
+      - name: Persist the mutation marker before the first remote mutation
+        id: mutation_marker_upload
+        timeout-minutes: 10
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: production-mutation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: g12-production-mutation-marker.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Persist redundant marker in the locked production control variable
+        timeout-minutes: 5
+        working-directory: control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          PRODUCTION_MARKER_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          CONTROL_SHA: ${{ github.sha }}
+        run: >-
+          node scripts/ev2/phase12/production-mutation-marker-store.mjs put
+          --file ../g12-production-mutation-marker.json
+          --artifact-id "${{ steps.mutation_marker_upload.outputs.artifact-id }}"
+          --artifact-digest "${{ steps.mutation_marker_upload.outputs.artifact-digest }}"
+          --artifact-name "production-mutation-${{ github.run_id }}-${{ github.run_attempt }}"
+      - name: Verify exact candidate checkout remains clean before production mutation
+        working-directory: candidate
+        run: test -z "$(git status --porcelain --untracked-files=all)"
+      - name: Apply the exact candidate expand-only migrations to production
+        id: database_migration
+        timeout-minutes: 20
         working-directory: candidate
         env:
           PRODUCTION_SUPABASE_DB_URL: ${{ secrets.PRODUCTION_SUPABASE_DB_URL }}
-        run: supabase db push --db-url "$PRODUCTION_SUPABASE_DB_URL" --include-all --yes
+        run: timeout 18m supabase db push --db-url "$PRODUCTION_SUPABASE_DB_URL" --include-all --yes
       - name: Configure production Edge Function secrets without exposing their values
+        timeout-minutes: 10
         working-directory: control
         env:
           PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           ALLOWED_ORIGINS: https://gaiatecsistemas.com.br,https://www.gaiatecsistemas.com.br
+          TURNSTILE_ALLOWED_HOSTNAMES: gaiatecsistemas.com.br,www.gaiatecsistemas.com.br
           PUBLIC_SITE_ORIGIN: https://gaiatecsistemas.com.br
           RATE_LIMIT_SALT: ${{ secrets.RATE_LIMIT_SALT }}
           EVIDENCE_SALT: ${{ secrets.EVIDENCE_SALT }}
@@ -200,54 +553,46 @@ jobs:
           OUTBOX_WORKER_SECRET: ${{ secrets.OUTBOX_WORKER_SECRET }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
-        run: |
-          umask 077
-          secrets_file="$RUNNER_TEMP/g12-production-functions.env"
-          trap 'rm -f "$secrets_file"' EXIT
-          {
-            printf 'ALLOWED_ORIGINS=%s\n' "$ALLOWED_ORIGINS"
-            printf 'PUBLIC_SITE_ORIGIN=%s\n' "$PUBLIC_SITE_ORIGIN"
-            printf 'RATE_LIMIT_SALT=%s\n' "$RATE_LIMIT_SALT"
-            printf 'EVIDENCE_SALT=%s\n' "$EVIDENCE_SALT"
-            printf 'LEAD_EVIDENCE_SALT=%s\n' "$LEAD_EVIDENCE_SALT"
-            printf 'TURNSTILE_SECRET_KEY=%s\n' "$TURNSTILE_SECRET_KEY"
-            printf 'CONTACT_CAPTCHA_ALWAYS=true\n'
-            printf 'CONTACT_NOTIFY_EMAIL=%s\n' "$LEAD_NOTIFICATION_TO"
-            printf 'CONTACT_FROM_EMAIL=%s\n' "$EMAIL_FROM"
-            printf 'RESEND_API_KEY=%s\n' "$RESEND_API_KEY"
-            printf 'EMAIL_FROM=%s\n' "$EMAIL_FROM"
-            printf 'LEAD_NOTIFICATION_TO=%s\n' "$LEAD_NOTIFICATION_TO"
-            printf 'CMS_ENVIRONMENT=production\n'
-            printf 'CMS_ADMIN_ORIGIN=https://gaiatecsistemas.com.br\n'
-            printf 'CMS_ADMIN_URL=https://gaiatecsistemas.com.br/admin\n'
-            printf 'OUTBOX_WORKER_SECRET=%s\n' "$OUTBOX_WORKER_SECRET"
-            printf 'CMS_EV2_PRODUCTION_ENABLED=true\n'
-            printf 'CMS_AI_EXTERNAL_PROVIDER_ENABLED=true\n'
-            printf 'OPENROUTER_API_KEY=%s\n' "$OPENROUTER_API_KEY"
-            printf 'OPENROUTER_MODEL=%s\n' "$OPENROUTER_MODEL"
-          } > "$secrets_file"
-          supabase secrets set --project-ref "$PRODUCTION_SUPABASE_PROJECT_REF" --env-file "$secrets_file"
-          rm -f "$secrets_file"
-          trap - EXIT
+          CMS_EV2_PRODUCTION_ENABLED: "true"
+          CMS_AI_EXTERNAL_PROVIDER_ENABLED: "true"
+          APPROVED_EMAIL_FROM_SHA256: ${{ steps.approval.outputs.approved_email_from_sha256 }}
+          APPROVED_LEAD_NOTIFICATION_TO_SHA256: ${{ steps.approval.outputs.approved_notification_to_sha256 }}
+          APPROVED_CLOUDFLARE_TARGET_SHA256: ${{ steps.approval.outputs.approved_cloudflare_target_sha256 }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
+          CLOUDFLARE_CACHE_PURGE_TOKEN_ID: ${{ vars.CLOUDFLARE_CACHE_PURGE_TOKEN_ID }}
+          CLOUDFLARE_CACHE_PURGE_TOKEN: ${{ secrets.CLOUDFLARE_CACHE_PURGE_TOKEN }}
+        run: >-
+          node scripts/ev2/phase12/configure-production-function-secrets.mjs
+          | tee ../g12-production-edge-secrets.json
       - name: Deploy the complete exact-candidate Edge Function inventory
+        id: backend_functions
+        timeout-minutes: 45
         working-directory: control
         env:
           PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: node scripts/ev2/phase12/deploy-production-functions.mjs --source ../candidate
+        run: >-
+          node scripts/ev2/phase12/deploy-production-functions.mjs
+          --source ../candidate --rollback-source ../rollback-backend
+          --candidate "${{ inputs.candidate_sha }}"
+          --report ../candidate/outputs/g12-production-function-deployment.json
       - name: Lock production authentication to approved domains
+        timeout-minutes: 10
         working-directory: control
         env:
           PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: node scripts/ev2/phase12/configure-production-auth.mjs
+        run: node scripts/ev2/phase12/configure-production-auth.mjs | tee ../g12-production-auth.json
       - name: Bind the scheduled outbox worker through Supabase Vault
+        timeout-minutes: 10
         working-directory: control
         env:
           PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           OUTBOX_WORKER_SECRET: ${{ secrets.OUTBOX_WORKER_SECRET }}
-        run: node scripts/ev2/phase12/configure-production-vault.mjs
+        run: node scripts/ev2/phase12/configure-production-vault.mjs | tee ../g12-production-vault.json
       - name: Verify database, RLS, cron, Vault and deployed function modes
         working-directory: control
         env:
@@ -255,38 +600,47 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           supabase functions list --project-ref "$PRODUCTION_SUPABASE_PROJECT_REF" --output json > ../g12-production-functions.json
-          node scripts/ev2/phase12/verify-production-functions.mjs --file ../g12-production-functions.json
-          node scripts/ev2/phase12/verify-production-database.mjs | tee ../g12-production-backend.json
-      - name: Publish the approved clean-room launch content through the governed CMS flow
+          node scripts/ev2/phase12/verify-production-functions.mjs \
+            --file ../g12-production-functions.json \
+            --receipt ../candidate/outputs/g12-production-function-deployment.json \
+            --source ../candidate \
+            --candidate "${{ inputs.candidate_sha }}" \
+            --project-ref "$PRODUCTION_SUPABASE_PROJECT_REF"
+          node scripts/ev2/phase12/verify-production-database.mjs --source . | tee ../g12-production-backend.json
+      - name: Seal the active backend identity for immutable rollback evidence
         working-directory: control
         env:
-          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
-          PRODUCTION_SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
-          PRODUCTION_SUPABASE_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
-          PRODUCTION_AUTHORIZATION: ${{ inputs.confirmation }}
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
         run: |
-          keys_json="$(supabase projects api-keys --project-ref "$PRODUCTION_SUPABASE_PROJECT_REF" --reveal --output json)"
-          service_key="$(printf '%s' "$keys_json" | node -e 'let value="";process.stdin.on("data",chunk=>value+=chunk).on("end",()=>{const key=JSON.parse(value).find(item=>item.id==="service_role")?.api_key;if(!key)process.exit(1);process.stdout.write(key)})')"
-          printf '::add-mask::%s\n' "$service_key"
-          GAIATEC_SUPABASE_URL="$PRODUCTION_SUPABASE_URL" \
-          GAIATEC_SUPABASE_ANON_KEY="$PRODUCTION_SUPABASE_ANON_KEY" \
-          GAIATEC_SUPABASE_SERVICE_ROLE_KEY="$service_key" \
-          GAIATEC_SUPABASE_PROJECT_REF="$PRODUCTION_SUPABASE_PROJECT_REF" \
-          GAIATEC_CMS_TARGET_ENVIRONMENT=production \
-          GAIATEC_PRODUCTION_CANDIDATE_SHA="$CANDIDATE_SHA" \
-          GAIATEC_PRODUCTION_AUTHORIZATION="$PRODUCTION_AUTHORIZATION" \
-          node scripts/phase9/publish-staging-clean-room-pages.mjs | tee ../g12-production-content.json
-          GAIATEC_SUPABASE_URL="$PRODUCTION_SUPABASE_URL" \
-          GAIATEC_SUPABASE_ANON_KEY="$PRODUCTION_SUPABASE_ANON_KEY" \
-          GAIATEC_SUPABASE_SERVICE_ROLE_KEY="$service_key" \
-          GAIATEC_SUPABASE_PROJECT_REF="$PRODUCTION_SUPABASE_PROJECT_REF" \
-          GAIATEC_CMS_TARGET_ENVIRONMENT=production \
-          GAIATEC_PRODUCTION_CANDIDATE_SHA="$CANDIDATE_SHA" \
-          GAIATEC_PRODUCTION_AUTHORIZATION="$PRODUCTION_AUTHORIZATION" \
-          node scripts/phase7/configure-staging-forms.mjs | tee ../g12-production-forms.json
-          unset service_key keys_json
+          evidence_dir=../candidate/outputs/production-backend-evidence
+          mkdir -p "$evidence_dir"
+          node scripts/ev2/phase12/create-production-backend-evidence.mjs \
+            --source ../candidate \
+            --functions ../g12-production-functions.json \
+            --database ../g12-production-backend.json \
+            --output "$evidence_dir/manifest.json"
+          install -m 600 ../g12-production-functions.json "$evidence_dir/functions.json"
+          install -m 600 ../g12-production-backend.json "$evidence_dir/database.json"
+      - name: Probe public, anonymous, CORS and secret boundaries
+        working-directory: candidate
+        run: node scripts/ev2/phase12/probe-supabase-boundary.mjs | tee ../g12-production-boundary.json
+        env:
+          CMS_BACKEND_ENVIRONMENT: production
+          CMS_BACKEND_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+          CMS_BACKEND_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
+          CMS_BACKEND_ORIGIN: https://gaiatecsistemas.com.br
+      - name: Prove the live approved baseline against the candidate backend
+        working-directory: control
+        run: node scripts/ev2/phase12/rollout-probe.mjs
+        env:
+          EV2_G12_ORIGIN: https://gaiatecsistemas.com.br
+          EV2_G12_EXPECTED_SHA: ${{ steps.baseline.outputs.release }}
+          EV2_G12_ENVIRONMENT: production
+          EV2_G12_PRODUCTION_AUTHORIZED: "true"
+          EV2_G12_PROBE_PROFILE: full
+          EV2_G12_SAMPLE_COUNT: "20"
+          EV2_G12_REPORT_PATH: ../g12-production-baseline-forward-backend.json
       - name: Probe the complete candidate against the prepared production backend
         working-directory: control
         run: node scripts/ev2/phase12/rollout-probe.mjs
@@ -297,16 +651,224 @@ jobs:
           EV2_G12_PROBE_PROFILE: full
           EV2_G12_SAMPLE_COUNT: "5"
           EV2_G12_REPORT_PATH: ../g12-preflight-probe.json
-      - name: Promote the already-tested artifact
-        id: promote
-        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
+      - name: Provision the exact confirmed corporate MFA operator on the prepared backend
+        id: production_operator
+        timeout-minutes: 5
+        working-directory: control
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          G12_APPROVAL_RECORD_SHA256: ${{ steps.approval.outputs.approval_record_sha256 }}
+          G12_PRODUCTION_AUTHORIZATION: ${{ inputs.confirmation }}
+          PRODUCTION_OPERATOR_WINDOW_MINUTES: "525600"
+          PRODUCTION_OPERATOR_REQUEST_ID: ${{ github.run_id }}
+          PRODUCTION_OPERATOR_EMAIL: ${{ secrets.PRODUCTION_OPERATOR_EMAIL }}
+          PRODUCTION_AUTH_CANARY_EMAIL: ${{ secrets.PRODUCTION_AUTH_CANARY_EMAIL }}
+          PRODUCTION_AUTH_CANARY_EMAIL_DOMAIN: ${{ vars.PRODUCTION_AUTH_CANARY_EMAIL_DOMAIN }}
+          PRODUCTION_OPERATOR_REPORT_PATH: ../candidate/outputs/cms-production-operator-provisioning.json
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          PRODUCTION_SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+          PRODUCTION_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/ev2/phase12/provision-production-operator.mjs
+      - name: Authenticate the authorized corporate operator against the exact sealed preview
+        id: corporate_authenticated_preflight
+        timeout-minutes: 5
+        working-directory: candidate
+        run: >-
+          npx playwright test tests/e2e/cms-production-readonly-preflight.spec.ts
+          --project=desktop-chromium --workers=1 --retries=0 --grep @preflight
+        env:
+          PLAYWRIGHT_BASE_URL: https://gaiatecsistemas.com.br
+          QA_CMS_PRODUCTION_READONLY_PREFLIGHT_REQUIRED: "true"
+          QA_CMS_PRODUCTION_PREFLIGHT_REPORT_PATH: outputs/cms-production-readonly-preflight.json
+          QA_CMS_EXPECTED_SHA: ${{ inputs.candidate_sha }}
+          QA_CMS_CANONICAL_BASELINE_SHA: ${{ steps.baseline.outputs.release }}
+          QA_CMS_TARGET_ENVIRONMENT: production
+          QA_CMS_PRODUCTION_AUTHORIZATION: ${{ inputs.confirmation }}
+          QA_CMS_SEALED_PREVIEW_URL: ${{ steps.preflight.outputs.deployment-url }}
+          QA_CMS_SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+          QA_CMS_SUPABASE_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
+          QA_CMS_CORPORATE_EMAIL: ${{ secrets.PRODUCTION_AUTH_CANARY_EMAIL }}
+          QA_CMS_CORPORATE_PASSWORD: ${{ secrets.PRODUCTION_AUTH_CANARY_PASSWORD }}
+          QA_CMS_CORPORATE_TOTP_SECRET: ${{ secrets.PRODUCTION_AUTH_CANARY_TOTP_SECRET }}
+          QA_CMS_CORPORATE_EMAIL_DOMAIN: ${{ vars.PRODUCTION_AUTH_CANARY_EMAIL_DOMAIN }}
+      - name: Provision an isolated production MFA actor for the sealed preview cycle
+        id: production_browser_fixture
+        timeout-minutes: 10
+        working-directory: candidate
+        run: node scripts/qa/cms-browser-fixture.mjs setup
+        env:
+          QA_CMS_EXPECTED_SHA: ${{ inputs.candidate_sha }}
+          QA_CMS_TARGET_ENVIRONMENT: production
+          QA_CMS_PRODUCTION_AUTHORIZATION: ${{ inputs.confirmation }}
+          QA_CMS_PROVISION_AUTH_LIFECYCLE: "true"
+          QA_CMS_FIXTURE_STATE_PATH: outputs/cms-browser-production-state.json
+          QA_CMS_FIXTURE_REPORT_PATH: outputs/cms-browser-production-setup.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Persist the credential-free QA cleanup state for the finalizer
+        id: production_qa_state
+        timeout-minutes: 5
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: control
-          command: >-
-            pages deploy ../candidate/dist --project-name gaiatec-website --branch main
-            --commit-hash ${{ inputs.candidate_sha }} --commit-dirty=false
+          name: production-qa-state-${{ github.run_id }}-${{ github.run_attempt }}
+          path: candidate/outputs/cms-browser-production-state.json
+          if-no-files-found: error
+          retention-days: 1
+      - name: Create the complete UI-owned production fixture on the exact sealed preview
+        timeout-minutes: 55
+        working-directory: candidate
+        run: |
+          set -euo pipefail
+          npx playwright test tests/e2e/cms-auth-lifecycle.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @mutating
+          npx playwright test tests/e2e/cms-final-coverage.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @ui-bootstrap
+          npx playwright test tests/e2e/cms-admin-ops-cycles.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @mutating
+          npx playwright test tests/e2e/cms-secondary-ui-cycles.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @mutating
+          npx playwright test tests/e2e/cms-security-boundaries.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @security-production
+        env:
+          PLAYWRIGHT_BASE_URL: https://gaiatecsistemas.com.br
+          QA_CMS_SEALED_PREVIEW_URL: ${{ steps.preflight.outputs.deployment-url }}
+          QA_CMS_AUTH_REPORT_PATH: outputs/cms-auth-lifecycle-production.json
+          QA_CMS_REPORT_PATH: outputs/cms-final-coverage-production.json
+          QA_CMS_ADMIN_OPS_REPORT_PATH: outputs/cms-admin-ops-cycles-production.json
+          QA_CMS_SECONDARY_REPORT_PATH: outputs/cms-secondary-ui-cycles-production.json
+          QA_CMS_SECURITY_REPORT_PATH: outputs/cms-security-boundaries-production.json
+          QA_CMS_UI_CREATED_STATE_PATH: outputs/cms-ui-created-state.json
+          QA_CMS_PRODUCTION_SECURITY_REQUIRED: "true"
+          QA_CMS_EXPECTED_SHA: ${{ inputs.candidate_sha }}
+          QA_CMS_TARGET_ENVIRONMENT: production
+          QA_CMS_PRODUCTION_AUTHORIZATION: ${{ inputs.confirmation }}
+      - name: Execute every semantic route control on the exact sealed preview
+        timeout-minutes: 25
+        working-directory: candidate
+        run: >-
+          npx playwright test tests/e2e/cms-final-coverage.spec.ts
+          --project=desktop-chromium --workers=1 --retries=0 --grep @semantic
+        env:
+          PLAYWRIGHT_BASE_URL: https://gaiatecsistemas.com.br
+          QA_CMS_SEALED_PREVIEW_URL: ${{ steps.preflight.outputs.deployment-url }}
+          QA_CMS_REPORT_PATH: outputs/cms-final-coverage-production.json
+          QA_CMS_UI_CREATED_STATE_PATH: outputs/cms-ui-created-state.json
+          QA_CMS_EXPECTED_SHA: ${{ inputs.candidate_sha }}
+          QA_CMS_TARGET_ENVIRONMENT: production
+          QA_CMS_PRODUCTION_AUTHORIZATION: ${{ inputs.confirmation }}
+      - name: Revoke the production browser actor after sealed-preview homologation
+        id: production_browser_cleanup
+        timeout-minutes: 15
+        if: always() && steps.production_browser_fixture.outcome != 'skipped'
+        working-directory: candidate
+        run: node scripts/qa/cms-browser-fixture.mjs cleanup
+        env:
+          QA_CMS_EXPECTED_SHA: ${{ inputs.candidate_sha }}
+          QA_CMS_TARGET_ENVIRONMENT: production
+          QA_CMS_PRODUCTION_AUTHORIZATION: ${{ inputs.confirmation }}
+          QA_CMS_FIXTURE_STATE_PATH: outputs/cms-browser-production-state.json
+          QA_CMS_FIXTURE_REPORT_PATH: outputs/cms-browser-production-cleanup.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Materialize the sanitized terminal QA state for the successful finalizer
+        if: always() && steps.production_browser_cleanup.outcome == 'success'
+        timeout-minutes: 2
+        working-directory: candidate
+        run: >-
+          node scripts/qa/materialize-cms-terminal-state.mjs
+          --input outputs/cms-browser-production-state.json
+          --output outputs/terminal-state/cms-browser-production-state.json
+          --candidate "${{ inputs.candidate_sha }}"
+      - name: Persist the credential-free terminal QA state after successful cleanup
+        id: production_qa_terminal_state
+        if: always() && steps.production_browser_cleanup.outcome == 'success'
+        timeout-minutes: 5
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: production-qa-terminal-state-${{ github.run_id }}-${{ github.run_attempt }}
+          path: candidate/outputs/terminal-state/cms-browser-production-state.json
+          if-no-files-found: error
+          retention-days: 1
+      - name: Prove the sealed-preview publication outbox and cache invalidation converged
+        id: production_outbox_canary
+        timeout-minutes: 10
+        working-directory: control
+        env:
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: >-
+          node scripts/ev2/phase12/verify-production-outbox-canary.mjs
+          --state ../candidate/outputs/cms-browser-production-state.json
+          --report ../g12-production-outbox-canary.json
+          --candidate "${{ inputs.candidate_sha }}"
+      - name: Recheck zero active synthetic residue against production
+        id: production_residue
+        timeout-minutes: 5
+        working-directory: control
+        env:
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: >-
+          node scripts/ev2/phase12/verify-production-residue.mjs
+          --state ../candidate/outputs/cms-browser-production-state.json
+          --cleanup ../candidate/outputs/cms-browser-production-cleanup.json
+          --report ../g12-production-residue.json
+          --candidate "${{ inputs.candidate_sha }}"
+      - name: Materialize the exact terminal production coverage matrix before promotion
+        id: production_terminal_coverage
+        timeout-minutes: 5
+        working-directory: candidate
+        run: >-
+          node scripts/qa/materialize-cms-terminal-coverage.mjs
+          --inventory outputs/cms-coverage-production.json
+          --runtime outputs/cms-final-coverage-production.json
+          --auth outputs/cms-auth-lifecycle-production.json
+          --admin outputs/cms-admin-ops-cycles-production.json
+          --secondary outputs/cms-secondary-ui-cycles-production.json
+          --security outputs/cms-security-boundaries-production.json
+          --cleanup outputs/cms-browser-production-cleanup.json
+          --residue ../g12-production-residue.json
+          --sha "${{ inputs.candidate_sha }}"
+          --environment production
+          --output outputs/cms-terminal-coverage-matrix-production.json
+      - name: Promote the exact same single sealed artifact after every preview gate
+        id: promote
+        timeout-minutes: 20
+        working-directory: control
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+          EXPECTED_CANONICAL_ID: ${{ steps.baseline.outputs.deployment_id }}
+          EXPECTED_CANONICAL_RELEASE: ${{ steps.baseline.outputs.release }}
+          EXPECTED_CANONICAL_CREATED_ON: ${{ steps.baseline.outputs.created_on }}
+          EXPECTED_CANONICAL_MARKER: ${{ steps.baseline.outputs.commit_message }}
+        run: >-
+          node scripts/ev2/phase12/deploy-sealed-production-dist.mjs
+          --archive ../candidate/outputs/g12-production-dist.tar
+          --seal ../candidate/outputs/g12-production-dist-seal.json
+          --candidate "${{ inputs.candidate_sha }}"
+          --branch main
+          --commit-message "g12-production-run-${{ github.run_id }}-${{ github.run_attempt }}"
+          --expected-canonical-id "$EXPECTED_CANONICAL_ID"
+          --expected-canonical-release "$EXPECTED_CANONICAL_RELEASE"
+          --expected-canonical-created-on "$EXPECTED_CANONICAL_CREATED_ON"
+          --expected-canonical-marker "$EXPECTED_CANONICAL_MARKER"
+          --wrangler-script ../candidate/node_modules/wrangler/bin/wrangler.js
+      - name: Prove corporate MFA and canonical SEO after promotion
+        id: production_postdeploy_smoke
+        timeout-minutes: 8
+        working-directory: candidate
+        run: >-
+          npx playwright test tests/e2e/cms-production-postdeploy-smoke.spec.ts
+          --project=desktop-chromium --workers=1 --retries=0 --grep @postdeploy
+        env:
+          PLAYWRIGHT_BASE_URL: https://gaiatecsistemas.com.br
+          QA_CMS_PRODUCTION_POSTDEPLOY_REQUIRED: "true"
+          QA_CMS_PRODUCTION_POSTDEPLOY_REPORT_PATH: outputs/cms-production-postdeploy-smoke.json
+          QA_CMS_FIXTURE_STATE_PATH: outputs/cms-browser-production-state.json
+          QA_CMS_EXPECTED_SHA: ${{ inputs.candidate_sha }}
+          QA_CMS_TARGET_ENVIRONMENT: production
+          QA_CMS_PRODUCTION_AUTHORIZATION: ${{ inputs.confirmation }}
+          QA_CMS_SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+          QA_CMS_SUPABASE_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
+          QA_CMS_CORPORATE_EMAIL: ${{ secrets.PRODUCTION_AUTH_CANARY_EMAIL }}
+          QA_CMS_CORPORATE_PASSWORD: ${{ secrets.PRODUCTION_AUTH_CANARY_PASSWORD }}
+          QA_CMS_CORPORATE_TOTP_SECRET: ${{ secrets.PRODUCTION_AUTH_CANARY_TOTP_SECRET }}
+          QA_CMS_CORPORATE_EMAIL_DOMAIN: ${{ vars.PRODUCTION_AUTH_CANARY_EMAIL_DOMAIN }}
       - name: Probe production after promotion
         id: production_probe
         continue-on-error: true
@@ -319,35 +881,817 @@ jobs:
           EV2_G12_PRODUCTION_AUTHORIZED: "true"
           EV2_G12_SAMPLE_COUNT: "20"
           EV2_G12_REPORT_PATH: ../g12-production-probe.json
-      - name: Automatically restore the approved prior production deployment
-        if: steps.production_probe.outcome == 'failure'
+      - name: Verify every mandatory success evidence file before upload
+        id: production_evidence_index
+        if: >-
+          always() && steps.production_postdeploy_smoke.outcome == 'success' &&
+          steps.production_probe.outcome == 'success' &&
+          steps.production_terminal_coverage.outcome == 'success' &&
+          steps.production_browser_cleanup.outcome == 'success' &&
+          steps.production_qa_terminal_state.outcome == 'success' &&
+          steps.production_outbox_canary.outcome == 'success' &&
+          steps.production_residue.outcome == 'success'
+        continue-on-error: true
         working-directory: control
-        run: node scripts/ev2/phase12/cloudflare-pages.mjs rollback
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
-          CLOUDFLARE_DEPLOYMENT_ID: ${{ steps.baseline.outputs.deployment_id }}
-          CLOUDFLARE_EXPECTED_RELEASE: ${{ steps.baseline.outputs.release }}
-      - name: Confirm rollback routes after a failed production probe
-        if: steps.production_probe.outcome == 'failure'
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: >-
+          node scripts/ev2/phase12/index-production-release-evidence.mjs
+          --root ..
+          --output ../candidate/outputs/g12-production-evidence-index.json
+          --candidate "$CANDIDATE_SHA"
+          --run-id "${{ github.run_id }}"
+          --run-attempt "${{ github.run_attempt }}"
+          --control-sha "${{ github.sha }}"
+          --baseline-release "${{ steps.baseline.outputs.release }}"
+      - name: Seal the validated success evidence into one immutable archive
+        id: production_evidence_archive
+        if: always() && steps.production_evidence_index.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 10
         working-directory: control
-        run: node scripts/phase2/http-smoke.mjs https://gaiatecsistemas.com.br
-      - name: Fail the release after automatic rollback
-        if: steps.production_probe.outcome == 'failure'
-        run: exit 1
-      - if: always()
+        run: >-
+          node scripts/ev2/phase12/seal-production-release-evidence.mjs
+          --root ..
+          --index ../candidate/outputs/g12-production-evidence-index.json
+          --archive ../candidate/outputs/g12-production-release-evidence.tar
+          --seal ../candidate/outputs/g12-production-release-evidence-seal.json
+      - name: Capture the mandatory successful production release evidence
+        id: production_release_evidence
+        if: >-
+          always() && steps.production_probe.outcome == 'success' &&
+          steps.production_browser_cleanup.outcome == 'success' &&
+          steps.production_evidence_index.outcome == 'success' &&
+          steps.production_evidence_archive.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 10
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: production-release-${{ inputs.candidate_sha }}
           path: |
-            candidate/dist/release-manifest.json
-            g12-preflight-technical.json
-            g12-preflight-probe.json
-            g12-production-backend.json
-            g12-production-content.json
-            g12-production-forms.json
-            g12-production-functions.json
-            g12-production-probe.json
-          if-no-files-found: warn
+            candidate/outputs/g12-production-release-evidence.tar
+            candidate/outputs/g12-production-release-evidence-seal.json
+          if-no-files-found: error
           retention-days: 90
+      - name: Capture the immutable backend identity required by rollback
+        id: production_backend_evidence
+        if: >-
+          always() && steps.production_probe.outcome == 'success' &&
+          steps.production_browser_cleanup.outcome == 'success' &&
+          steps.production_evidence_index.outcome == 'success' &&
+          steps.production_evidence_archive.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 10
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: production-backend-${{ inputs.candidate_sha }}
+          path: candidate/outputs/production-backend-evidence
+          if-no-files-found: error
+          retention-days: 90
+      - name: Restore the approved prior Pages deployment after any post-mutation failure
+        id: pages_recovery
+        if: >-
+          always() && steps.baseline.outcome == 'success' &&
+          steps.promote.outcome != 'skipped' &&
+          (failure() || steps.production_probe.outcome == 'failure' ||
+          steps.production_evidence_index.outcome == 'failure' ||
+          steps.production_evidence_archive.outcome == 'failure' ||
+          steps.production_release_evidence.outcome == 'failure' ||
+          steps.production_backend_evidence.outcome == 'failure')
+        working-directory: control
+        run: node scripts/ev2/phase12/cloudflare-pages.mjs reconcile
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+          CLOUDFLARE_BASELINE_DEPLOYMENT_ID: ${{ steps.baseline.outputs.deployment_id }}
+          CLOUDFLARE_BASELINE_RELEASE: ${{ steps.baseline.outputs.release }}
+          CLOUDFLARE_BASELINE_CREATED_ON: ${{ steps.baseline.outputs.created_on }}
+          CLOUDFLARE_BASELINE_COMMIT_MESSAGE: ${{ steps.baseline.outputs.commit_message }}
+          CLOUDFLARE_OWNED_DEPLOYMENT_ID: ${{ steps.promote.outputs.deployment-id }}
+          CLOUDFLARE_OWNED_RELEASE: ${{ inputs.candidate_sha }}
+          CLOUDFLARE_OWNED_RUN_MARKER: g12-production-run-${{ github.run_id }}-${{ github.run_attempt }}
+          CLOUDFLARE_OWNED_CREATED_ON: ${{ steps.promote.outputs.deployment-created-on }}
+      - name: Converge all candidate migrations after any failed production mutation
+        id: recovery_database
+        timeout-minutes: 20
+        if: >-
+          always() && steps.database_migration.outcome != 'skipped' &&
+          (failure() || steps.production_probe.outcome == 'failure' ||
+          steps.production_evidence_index.outcome == 'failure' ||
+          steps.production_evidence_archive.outcome == 'failure' ||
+          steps.production_release_evidence.outcome == 'failure' ||
+          steps.production_backend_evidence.outcome == 'failure')
+        working-directory: candidate
+        env:
+          PRODUCTION_SUPABASE_DB_URL: ${{ secrets.PRODUCTION_SUPABASE_DB_URL }}
+        run: timeout 18m supabase db push --db-url "$PRODUCTION_SUPABASE_DB_URL" --include-all --yes
+      - name: Converge the forward-compatible candidate Edge Functions after failure
+        id: recovery_functions
+        timeout-minutes: 45
+        if: >-
+          always() && steps.database_migration.outcome != 'skipped' &&
+          (failure() || steps.production_probe.outcome == 'failure' ||
+          steps.production_evidence_index.outcome == 'failure' ||
+          steps.production_evidence_archive.outcome == 'failure' ||
+          steps.production_release_evidence.outcome == 'failure' ||
+          steps.production_backend_evidence.outcome == 'failure') &&
+          steps.recovery_database.outcome == 'success'
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/deploy-production-functions.mjs
+          --source ../candidate --rollback-source ../rollback-backend
+          --candidate "${{ inputs.candidate_sha }}"
+          --report ../candidate/outputs/g12-production-function-recovery.json
+        env:
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Reconverge production Edge Function secrets after failure
+        id: recovery_function_secrets
+        timeout-minutes: 10
+        if: >-
+          always() && steps.database_migration.outcome != 'skipped' &&
+          (failure() || steps.production_probe.outcome == 'failure' ||
+          steps.production_evidence_index.outcome == 'failure' ||
+          steps.production_evidence_archive.outcome == 'failure' ||
+          steps.production_release_evidence.outcome == 'failure' ||
+          steps.production_backend_evidence.outcome == 'failure') &&
+          steps.recovery_functions.outcome == 'success'
+        working-directory: control
+        env:
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          ALLOWED_ORIGINS: https://gaiatecsistemas.com.br,https://www.gaiatecsistemas.com.br
+          TURNSTILE_ALLOWED_HOSTNAMES: gaiatecsistemas.com.br,www.gaiatecsistemas.com.br
+          PUBLIC_SITE_ORIGIN: https://gaiatecsistemas.com.br
+          RATE_LIMIT_SALT: ${{ secrets.RATE_LIMIT_SALT }}
+          EVIDENCE_SALT: ${{ secrets.EVIDENCE_SALT }}
+          LEAD_EVIDENCE_SALT: ${{ secrets.LEAD_EVIDENCE_SALT }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          EMAIL_FROM: ${{ vars.EMAIL_FROM }}
+          LEAD_NOTIFICATION_TO: ${{ vars.LEAD_NOTIFICATION_TO }}
+          OUTBOX_WORKER_SECRET: ${{ secrets.OUTBOX_WORKER_SECRET }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
+          CMS_EV2_PRODUCTION_ENABLED: "true"
+          CMS_AI_EXTERNAL_PROVIDER_ENABLED: "true"
+          APPROVED_EMAIL_FROM_SHA256: ${{ steps.approval.outputs.approved_email_from_sha256 }}
+          APPROVED_LEAD_NOTIFICATION_TO_SHA256: ${{ steps.approval.outputs.approved_notification_to_sha256 }}
+          APPROVED_CLOUDFLARE_TARGET_SHA256: ${{ steps.approval.outputs.approved_cloudflare_target_sha256 }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
+          CLOUDFLARE_CACHE_PURGE_TOKEN_ID: ${{ vars.CLOUDFLARE_CACHE_PURGE_TOKEN_ID }}
+          CLOUDFLARE_CACHE_PURGE_TOKEN: ${{ secrets.CLOUDFLARE_CACHE_PURGE_TOKEN }}
+        run: >-
+          node scripts/ev2/phase12/configure-production-function-secrets.mjs
+          | tee ../g12-production-recovery-edge-secrets.json
+      - name: Reconverge production Auth policy after failure
+        id: recovery_auth
+        timeout-minutes: 10
+        if: >-
+          always() && steps.database_migration.outcome != 'skipped' &&
+          (failure() || steps.production_probe.outcome == 'failure' ||
+          steps.production_evidence_index.outcome == 'failure' ||
+          steps.production_evidence_archive.outcome == 'failure' ||
+          steps.production_release_evidence.outcome == 'failure' ||
+          steps.production_backend_evidence.outcome == 'failure') &&
+          steps.recovery_functions.outcome == 'success'
+        working-directory: control
+        env:
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: >-
+          node scripts/ev2/phase12/configure-production-auth.mjs
+          | tee ../g12-production-recovery-auth.json
+      - name: Reconverge production Vault outbox binding after failure
+        id: recovery_vault
+        timeout-minutes: 10
+        if: >-
+          always() && steps.database_migration.outcome != 'skipped' &&
+          (failure() || steps.production_probe.outcome == 'failure' ||
+          steps.production_evidence_index.outcome == 'failure' ||
+          steps.production_evidence_archive.outcome == 'failure' ||
+          steps.production_release_evidence.outcome == 'failure' ||
+          steps.production_backend_evidence.outcome == 'failure') &&
+          steps.recovery_functions.outcome == 'success'
+        working-directory: control
+        env:
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          OUTBOX_WORKER_SECRET: ${{ secrets.OUTBOX_WORKER_SECRET }}
+        run: >-
+          node scripts/ev2/phase12/configure-production-vault.mjs
+          | tee ../g12-production-recovery-vault.json
+      - name: Prove migrations, RLS, cron, outbox, Vault and Functions after recovery
+        id: recovery_verification
+        if: >-
+          always() && steps.recovery_database.outcome == 'success' &&
+          steps.recovery_functions.outcome == 'success' &&
+          steps.recovery_function_secrets.outcome == 'success' &&
+          steps.recovery_auth.outcome == 'success' &&
+          steps.recovery_vault.outcome == 'success'
+        working-directory: control
+        env:
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          supabase functions list --project-ref "$PRODUCTION_SUPABASE_PROJECT_REF" --output json > ../g12-production-recovery-functions.json
+          node scripts/ev2/phase12/verify-production-functions.mjs \
+            --file ../g12-production-recovery-functions.json \
+            --receipt ../candidate/outputs/g12-production-function-recovery.json \
+            --source ../candidate \
+            --candidate "${{ inputs.candidate_sha }}" \
+            --project-ref "$PRODUCTION_SUPABASE_PROJECT_REF"
+          node scripts/ev2/phase12/verify-production-database.mjs --source . | tee ../g12-production-recovery-database.json
+      - name: Re-probe public, anonymous, CORS and secret boundaries after recovery
+        id: recovery_boundary
+        if: >-
+          always() && steps.recovery_verification.outcome == 'success'
+        working-directory: candidate
+        run: >-
+          node scripts/ev2/phase12/probe-supabase-boundary.mjs
+          | tee ../g12-production-recovery-boundary.json
+        env:
+          CMS_BACKEND_ENVIRONMENT: production
+          CMS_BACKEND_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+          CMS_BACKEND_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
+          CMS_BACKEND_ORIGIN: https://gaiatecsistemas.com.br
+      - name: Confirm the prior Pages release operates with the recovered forward backend
+        if: >-
+          always() && steps.baseline.outcome == 'success' &&
+          steps.recovery_verification.outcome == 'success' &&
+          steps.recovery_boundary.outcome == 'success' &&
+          (steps.promote.outcome == 'skipped' || steps.pages_recovery.outcome == 'success')
+        working-directory: control
+        run: node scripts/ev2/phase12/rollout-probe.mjs
+        env:
+          EV2_G12_ORIGIN: https://gaiatecsistemas.com.br
+          EV2_G12_EXPECTED_SHA: ${{ steps.baseline.outputs.release }}
+          EV2_G12_ENVIRONMENT: production
+          EV2_G12_PRODUCTION_AUTHORIZED: "true"
+          EV2_G12_SAMPLE_COUNT: "20"
+          EV2_G12_REPORT_PATH: ../g12-production-rollback-probe.json
+      - name: Retry production browser cleanup after rollback and backend recovery
+        if: >-
+          always() && steps.production_browser_fixture.outcome != 'skipped' &&
+          steps.production_browser_cleanup.outcome == 'failure'
+        working-directory: candidate
+        run: node scripts/qa/cms-browser-fixture.mjs cleanup
+        env:
+          QA_CMS_EXPECTED_SHA: ${{ inputs.candidate_sha }}
+          QA_CMS_TARGET_ENVIRONMENT: production
+          QA_CMS_PRODUCTION_AUTHORIZATION: ${{ inputs.confirmation }}
+          QA_CMS_FIXTURE_STATE_PATH: outputs/cms-browser-production-state.json
+          QA_CMS_FIXTURE_REPORT_PATH: outputs/cms-browser-production-cleanup-retry.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Capture optional diagnostics for a failed or compensated release
+        if: >-
+          always() && (failure() || steps.production_probe.outcome == 'failure' ||
+          steps.production_evidence_index.outcome == 'failure' ||
+          steps.production_evidence_archive.outcome == 'failure' ||
+          steps.production_release_evidence.outcome == 'failure' ||
+          steps.production_backend_evidence.outcome == 'failure')
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: production-failure-${{ inputs.candidate_sha }}
+          path: |
+            candidate/outputs/cms-browser-production-setup.json
+            candidate/outputs/cms-browser-production-cleanup.json
+            candidate/outputs/cms-browser-production-cleanup-retry.json
+            candidate/outputs/cms-auth-lifecycle-production.json
+            candidate/outputs/cms-coverage-production.json
+            candidate/outputs/cms-production-operator-provisioning.json
+            candidate/outputs/cms-production-postdeploy-smoke.json
+            candidate/outputs/cms-production-readonly-preflight.json
+            candidate/outputs/cms-final-coverage-production.json
+            candidate/outputs/cms-admin-ops-cycles-production.json
+            candidate/outputs/cms-secondary-ui-cycles-production.json
+            candidate/outputs/cms-security-boundaries-production.json
+            candidate/outputs/cms-terminal-coverage-matrix-production.json
+            g12-production-probe.json
+            g12-production-recovery-auth.json
+            g12-production-recovery-boundary.json
+            g12-production-recovery-database.json
+            g12-production-recovery-edge-secrets.json
+            g12-production-recovery-functions.json
+            g12-production-rollback-probe.json
+            g12-production-recovery-vault.json
+          if-no-files-found: ignore
+          retention-days: 90
+      - name: Fail the release after mandatory evidence failure or automatic compensation
+        if: >-
+          always() && (steps.production_probe.outcome == 'failure' ||
+          steps.production_evidence_index.outcome == 'failure' ||
+          steps.production_evidence_archive.outcome == 'failure' ||
+          steps.production_release_evidence.outcome == 'failure' ||
+          steps.production_backend_evidence.outcome == 'failure')
+        run: exit 1
+
+  finalize:
+    name: Finalize and prove the terminal production state
+    if: always()
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    environment: production
+    steps:
+      - name: Checkout the exact workflow controls
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          path: control
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: control/.nvmrc
+      - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3
+        with:
+          version: 2.116.0
+      - name: Resolve the immutable marker artifact metadata
+        id: marker_meta
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          PRODUCTION_MARKER_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          EXPECTED_CONTROL_SHA: ${{ github.sha }}
+          EXPECTED_ARTIFACT_ID: ${{ needs.deploy.outputs.mutation_marker_id }}
+          EXPECTED_ARTIFACT_DIGEST: ${{ needs.deploy.outputs.mutation_marker_digest }}
+        run: >-
+          node scripts/ev2/phase12/resolve-production-run-artifact.mjs
+          --run-id "${{ github.run_id }}"
+          --run-attempt "${{ github.run_attempt }}"
+          --name "production-mutation-${{ github.run_id }}-${{ github.run_attempt }}"
+          --marker-fallback ../marker/g12-production-mutation-marker.json
+          --allow-missing
+      - name: Download the exact durable marker by artifact ID
+        id: marker_download
+        if: >-
+          always() && steps.marker_meta.outcome == 'success' &&
+          steps.marker_meta.outputs.source == 'artifact'
+        timeout-minutes: 5
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.marker_meta.outputs.artifact_id }}
+          digest-mismatch: error
+          path: marker
+      - name: Recover marker from the redundant HMAC control after artifact download failure
+        id: marker_variable_fallback
+        if: >-
+          always() && steps.marker_meta.outcome == 'success' &&
+          steps.marker_meta.outputs.source == 'artifact' &&
+          steps.marker_download.outcome != 'success'
+        timeout-minutes: 5
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          PRODUCTION_MARKER_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          EXPECTED_CONTROL_SHA: ${{ github.sha }}
+          EXPECTED_ARTIFACT_ID: ${{ steps.marker_meta.outputs.artifact_id }}
+          EXPECTED_ARTIFACT_DIGEST: ${{ steps.marker_meta.outputs.artifact_digest }}
+        run: >-
+          node scripts/ev2/phase12/resolve-production-run-artifact.mjs
+          --run-id "${{ github.run_id }}"
+          --run-attempt "${{ github.run_attempt }}"
+          --name "production-mutation-${{ github.run_id }}-${{ github.run_attempt }}"
+          --marker-fallback ../marker-variable/g12-production-mutation-marker.json
+          --variable-only
+      - name: Verify marker binding before recovery or terminal checks
+        id: marker
+        if: >-
+          always() && steps.marker_meta.outcome == 'success' &&
+          (steps.marker_meta.outputs.source == 'variable' ||
+          steps.marker_download.outcome == 'success' ||
+          steps.marker_variable_fallback.outcome == 'success')
+        working-directory: control
+        env:
+          EXPECTED_RUN_ID: ${{ github.run_id }}
+          EXPECTED_RUN_ATTEMPT: ${{ github.run_attempt }}
+          EXPECTED_CONTROL_SHA: ${{ github.sha }}
+        run: |
+          marker_file=../marker/g12-production-mutation-marker.json
+          if [ "${{ steps.marker_variable_fallback.outcome }}" = "success" ]; then
+            marker_file=../marker-variable/g12-production-mutation-marker.json
+          fi
+          node scripts/ev2/phase12/read-production-mutation-marker.mjs --file "$marker_file"
+      - name: No-op safely when no mutation marker exists
+        if: steps.marker_meta.outputs.found != 'true'
+        run: echo "No production mutation was armed; finalizer has no remote state to change."
+      - name: Checkout the exact armed candidate
+        id: finalizer_candidate_checkout
+        if: always() && steps.marker.outcome == 'success'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ steps.marker.outputs.candidate_sha }}
+          fetch-depth: 0
+          path: candidate
+      - name: Checkout the exact approved baseline
+        id: finalizer_baseline_checkout
+        if: always() && steps.marker.outcome == 'success'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ steps.marker.outputs.baseline_release }}
+          fetch-depth: 0
+          path: rollback-backend
+      - name: Revalidate approval and recover confidential bindings
+        id: finalizer_approval
+        if: always() && steps.marker.outcome == 'success'
+        working-directory: control
+        env:
+          APPROVAL_RECORD: ${{ steps.marker.outputs.approval_record }}
+          CANDIDATE_SHA: ${{ steps.marker.outputs.candidate_sha }}
+          CHANGE_REFERENCE: ${{ steps.marker.outputs.change_reference }}
+        run: >-
+          node scripts/ev2/phase12/verify-approval.mjs --file "$APPROVAL_RECORD"
+          --candidate "$CANDIDATE_SHA" --environment production --change-reference "$CHANGE_REFERENCE"
+          --effective-at "${{ steps.marker.outputs.armed_at }}"
+      - name: Install candidate runtime needed for confidential cleanup
+        if: always() && steps.finalizer_candidate_checkout.outcome == 'success'
+        timeout-minutes: 15
+        working-directory: candidate
+        run: npm ci --ignore-scripts
+      - name: Download the credential-free terminal QA state for a successful release
+        id: finalizer_terminal_qa_state
+        if: >-
+          always() && steps.marker.outcome == 'success' && needs.deploy.result == 'success'
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: production-qa-terminal-state-${{ github.run_id }}-${{ github.run_attempt }}
+          path: candidate/outputs
+      - name: Download the credential-free seed QA state only for failed-release compensation
+        id: finalizer_seed_qa_state
+        if: >-
+          always() && steps.marker.outcome == 'success' && needs.deploy.result != 'success'
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: production-qa-state-${{ github.run_id }}-${{ github.run_attempt }}
+          path: candidate/outputs
+      - name: Fail closed on an absent or ambiguous QA state selection
+        id: finalizer_qa_state_selection
+        if: always() && steps.marker.outcome == 'success'
+        env:
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
+          TERMINAL_STATE_OUTCOME: ${{ steps.finalizer_terminal_qa_state.outcome }}
+          SEED_STATE_OUTCOME: ${{ steps.finalizer_seed_qa_state.outcome }}
+        run: |
+          set -euo pipefail
+          if [ "$DEPLOY_RESULT" = success ]; then
+            test "$TERMINAL_STATE_OUTCOME" = success
+            test "$SEED_STATE_OUTCOME" = skipped
+          else
+            test "$TERMINAL_STATE_OUTCOME" = skipped
+            test "$SEED_STATE_OUTCOME" = success
+          fi
+      - name: Resolve successful release artifact metadata
+        id: finalizer_release_meta
+        if: always() && steps.marker.outcome == 'success' && needs.deploy.result == 'success'
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EXPECTED_ARTIFACT_ID: ${{ needs.deploy.outputs.release_artifact_id }}
+          EXPECTED_ARTIFACT_DIGEST: ${{ needs.deploy.outputs.release_artifact_digest }}
+        run: >-
+          node scripts/ev2/phase12/resolve-production-run-artifact.mjs
+          --run-id "${{ github.run_id }}"
+          --run-attempt "${{ github.run_attempt }}"
+          --name "production-release-${{ steps.marker.outputs.candidate_sha }}"
+      - name: Download the exact successful release artifact
+        id: finalizer_release_download
+        if: always() && steps.finalizer_release_meta.outcome == 'success'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.finalizer_release_meta.outputs.artifact_id }}
+          digest-mismatch: error
+          path: finalizer-release
+      - name: Verify and materialize the uploaded release archive
+        if: always() && steps.finalizer_release_download.outcome == 'success'
+        working-directory: control
+        run: |
+          node scripts/ev2/phase12/verify-production-release-evidence-archive.mjs \
+            --archive ../finalizer-release/g12-production-release-evidence.tar \
+            --seal ../finalizer-release/g12-production-release-evidence-seal.json \
+            --candidate "${{ steps.marker.outputs.candidate_sha }}" \
+            --run-id "${{ github.run_id }}" \
+            --run-attempt "${{ github.run_attempt }}" \
+            --control-sha "${{ github.sha }}" \
+            --materialize ../finalizer-release/materialized
+      - name: Resolve successful backend artifact metadata
+        id: finalizer_backend_meta
+        if: always() && steps.marker.outcome == 'success' && needs.deploy.result == 'success'
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EXPECTED_ARTIFACT_ID: ${{ needs.deploy.outputs.backend_artifact_id }}
+          EXPECTED_ARTIFACT_DIGEST: ${{ needs.deploy.outputs.backend_artifact_digest }}
+        run: >-
+          node scripts/ev2/phase12/resolve-production-run-artifact.mjs
+          --run-id "${{ github.run_id }}"
+          --run-attempt "${{ github.run_attempt }}"
+          --name "production-backend-${{ steps.marker.outputs.candidate_sha }}"
+      - name: Download exact backend evidence by artifact ID
+        if: always() && steps.finalizer_backend_meta.outcome == 'success'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.finalizer_backend_meta.outputs.artifact_id }}
+          digest-mismatch: error
+          path: finalizer-backend
+      - name: Restore approved Pages baseline before backend recovery
+        id: finalizer_pages_recovery
+        if: always() && steps.marker.outcome == 'success' && needs.deploy.result != 'success'
+        timeout-minutes: 10
+        working-directory: control
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+          CLOUDFLARE_BASELINE_DEPLOYMENT_ID: ${{ steps.marker.outputs.baseline_deployment_id }}
+          CLOUDFLARE_BASELINE_RELEASE: ${{ steps.marker.outputs.baseline_release }}
+          CLOUDFLARE_BASELINE_CREATED_ON: ${{ steps.marker.outputs.baseline_created_on }}
+          CLOUDFLARE_BASELINE_COMMIT_MESSAGE: ${{ steps.marker.outputs.baseline_commit_message }}
+          CLOUDFLARE_OWNED_DEPLOYMENT_ID: ${{ needs.deploy.outputs.promoted_deployment_id }}
+          CLOUDFLARE_OWNED_RELEASE: ${{ steps.marker.outputs.candidate_sha }}
+          CLOUDFLARE_OWNED_RUN_MARKER: ${{ steps.marker.outputs.pages_run_marker }}
+          CLOUDFLARE_OWNED_CREATED_ON: ${{ needs.deploy.outputs.promoted_created_on }}
+        run: node scripts/ev2/phase12/cloudflare-pages.mjs reconcile
+      - name: Converge expand-only database after failure or timeout
+        id: finalizer_recovery_database
+        if: >-
+          always() && steps.marker.outcome == 'success' && needs.deploy.result != 'success' &&
+          steps.finalizer_candidate_checkout.outcome == 'success'
+        timeout-minutes: 20
+        working-directory: candidate
+        env:
+          PRODUCTION_SUPABASE_DB_URL: ${{ secrets.PRODUCTION_SUPABASE_DB_URL }}
+        run: timeout 18m supabase db push --db-url "$PRODUCTION_SUPABASE_DB_URL" --include-all --yes
+      - name: Converge all Functions to the one candidate backend target
+        id: finalizer_recovery_functions
+        if: >-
+          always() && steps.marker.outcome == 'success' && needs.deploy.result != 'success' &&
+          steps.finalizer_recovery_database.outcome == 'success' &&
+          steps.finalizer_baseline_checkout.outcome == 'success'
+        timeout-minutes: 45
+        working-directory: control
+        env:
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: >-
+          node scripts/ev2/phase12/deploy-production-functions.mjs
+          --source ../candidate --rollback-source ../rollback-backend
+          --candidate "${{ steps.marker.outputs.candidate_sha }}"
+          --report ../candidate/outputs/g12-production-function-finalizer.json
+      - name: Converge candidate secrets only after Functions reached candidate
+        id: finalizer_recovery_secrets
+        if: always() && steps.finalizer_recovery_functions.outcome == 'success'
+        timeout-minutes: 10
+        working-directory: control
+        env: &production_function_secret_environment
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          ALLOWED_ORIGINS: https://gaiatecsistemas.com.br,https://www.gaiatecsistemas.com.br
+          TURNSTILE_ALLOWED_HOSTNAMES: gaiatecsistemas.com.br,www.gaiatecsistemas.com.br
+          PUBLIC_SITE_ORIGIN: https://gaiatecsistemas.com.br
+          RATE_LIMIT_SALT: ${{ secrets.RATE_LIMIT_SALT }}
+          EVIDENCE_SALT: ${{ secrets.EVIDENCE_SALT }}
+          LEAD_EVIDENCE_SALT: ${{ secrets.LEAD_EVIDENCE_SALT }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          EMAIL_FROM: ${{ vars.EMAIL_FROM }}
+          LEAD_NOTIFICATION_TO: ${{ vars.LEAD_NOTIFICATION_TO }}
+          OUTBOX_WORKER_SECRET: ${{ secrets.OUTBOX_WORKER_SECRET }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
+          CMS_EV2_PRODUCTION_ENABLED: "true"
+          CMS_AI_EXTERNAL_PROVIDER_ENABLED: "true"
+          APPROVED_EMAIL_FROM_SHA256: ${{ steps.finalizer_approval.outputs.approved_email_from_sha256 }}
+          APPROVED_LEAD_NOTIFICATION_TO_SHA256: ${{ steps.finalizer_approval.outputs.approved_notification_to_sha256 }}
+          APPROVED_CLOUDFLARE_TARGET_SHA256: ${{ steps.finalizer_approval.outputs.approved_cloudflare_target_sha256 }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
+          CLOUDFLARE_CACHE_PURGE_TOKEN_ID: ${{ vars.CLOUDFLARE_CACHE_PURGE_TOKEN_ID }}
+          CLOUDFLARE_CACHE_PURGE_TOKEN: ${{ secrets.CLOUDFLARE_CACHE_PURGE_TOKEN }}
+        run: node scripts/ev2/phase12/configure-production-function-secrets.mjs
+      - name: Converge Auth after the single candidate target is established
+        id: finalizer_recovery_auth
+        if: always() && steps.finalizer_recovery_functions.outcome == 'success'
+        timeout-minutes: 10
+        working-directory: control
+        env:
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/ev2/phase12/configure-production-auth.mjs
+      - name: Converge Vault after the single candidate target is established
+        id: finalizer_recovery_vault
+        if: always() && steps.finalizer_recovery_functions.outcome == 'success'
+        timeout-minutes: 10
+        working-directory: control
+        env:
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          OUTBOX_WORKER_SECRET: ${{ secrets.OUTBOX_WORKER_SECRET }}
+        run: node scripts/ev2/phase12/configure-production-vault.mjs
+      - name: Retry credential-free QA cleanup during recovery
+        id: finalizer_cleanup
+        if: >-
+          always() && steps.marker.outcome == 'success' && needs.deploy.result != 'success' &&
+          steps.finalizer_seed_qa_state.outcome == 'success'
+        timeout-minutes: 15
+        working-directory: candidate
+        env:
+          QA_CMS_EXPECTED_SHA: ${{ steps.marker.outputs.candidate_sha }}
+          QA_CMS_TARGET_ENVIRONMENT: production
+          QA_CMS_PRODUCTION_AUTHORIZATION: AUTORIZO-G12-PRODUCAO:${{ steps.marker.outputs.candidate_sha }}
+          QA_CMS_FIXTURE_STATE_PATH: outputs/cms-browser-production-state.json
+          QA_CMS_FIXTURE_REPORT_PATH: outputs/cms-browser-production-finalizer-cleanup.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/qa/cms-browser-fixture.mjs cleanup
+      - name: Select the exact Function receipt for terminal verification
+        if: always() && steps.marker.outcome == 'success'
+        run: |
+          if [ "${{ needs.deploy.result }}" = "success" ]; then
+            cp finalizer-release/materialized/candidate/outputs/g12-production-function-deployment.json terminal-function-receipt.json
+          else
+            cp candidate/outputs/g12-production-function-finalizer.json terminal-function-receipt.json
+          fi
+      - name: Recheck exact Functions, database, secrets, Auth and Vault
+        if: always() && steps.marker.outcome == 'success'
+        timeout-minutes: 15
+        working-directory: control
+        env: *production_function_secret_environment
+        run: |
+          supabase functions list --project-ref "$PRODUCTION_SUPABASE_PROJECT_REF" --output json > ../terminal-functions.json
+          node scripts/ev2/phase12/verify-production-functions.mjs \
+            --file ../terminal-functions.json \
+            --receipt ../terminal-function-receipt.json \
+            --source ../candidate \
+            --candidate "${{ steps.marker.outputs.candidate_sha }}" \
+            --project-ref "$PRODUCTION_SUPABASE_PROJECT_REF"
+          node scripts/ev2/phase12/verify-production-database.mjs --source . > ../terminal-database.json
+          node scripts/ev2/phase12/configure-production-function-secrets.mjs --verify-only > ../terminal-secrets.json
+          node scripts/ev2/phase12/configure-production-auth.mjs --verify-only > ../terminal-auth.json
+          node scripts/ev2/phase12/configure-production-vault.mjs --verify-only > ../terminal-vault.json
+      - name: Recheck public boundary and canonical Pages release
+        if: always() && steps.marker.outcome == 'success'
+        timeout-minutes: 10
+        working-directory: control
+        env:
+          CMS_BACKEND_ENVIRONMENT: production
+          CMS_BACKEND_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+          CMS_BACKEND_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
+          CMS_BACKEND_ORIGIN: https://gaiatecsistemas.com.br
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+        run: |
+          node scripts/ev2/phase12/probe-supabase-boundary.mjs > ../terminal-boundary.json
+          node scripts/ev2/phase12/cloudflare-pages.mjs latest-production > ../terminal-pages.json
+      - name: Prove terminal outbox/cache state with the real synthetic cycle
+        if: >-
+          always() && steps.marker.outcome == 'success' &&
+          ((needs.deploy.result == 'success' && steps.finalizer_terminal_qa_state.outcome == 'success') ||
+          (needs.deploy.result != 'success' && steps.finalizer_seed_qa_state.outcome == 'success'))
+        timeout-minutes: 10
+        working-directory: control
+        env:
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          recovery_args=()
+          if [ "${{ needs.deploy.result }}" != success ]; then
+            recovery_args=(--recovery-no-tombstone)
+          fi
+          node scripts/ev2/phase12/verify-production-outbox-canary.mjs \
+            "${recovery_args[@]}" \
+            --state ../candidate/outputs/cms-browser-production-state.json \
+            --report ../terminal-outbox.json \
+            --candidate "${{ steps.marker.outputs.candidate_sha }}"
+      - name: Prove zero terminal synthetic residue
+        if: always() && steps.marker.outcome == 'success'
+        timeout-minutes: 5
+        working-directory: control
+        env:
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          cleanup_args=()
+          recovery_args=()
+          if [ "${{ needs.deploy.result }}" = "success" ]; then
+            cleanup_args=(--cleanup ../finalizer-release/materialized/candidate/outputs/cms-browser-production-cleanup.json)
+          elif [ "${{ steps.finalizer_cleanup.outcome }}" = "success" ]; then
+            cleanup_args=(--cleanup ../candidate/outputs/cms-browser-production-finalizer-cleanup.json)
+            recovery_args=(--recovery-no-tombstone)
+          fi
+          node scripts/ev2/phase12/verify-production-residue.mjs \
+            "${cleanup_args[@]}" \
+            "${recovery_args[@]}" \
+            --state ../candidate/outputs/cms-browser-production-state.json \
+            --report ../terminal-residue.json \
+            --candidate "${{ steps.marker.outputs.candidate_sha }}"
+      - name: Write terminal evidence bound to artifact IDs and digests
+        if: always() && steps.marker.outcome == 'success'
+        working-directory: control
+        env:
+          MARKER_ARTIFACT_ID: ${{ steps.marker_meta.outputs.artifact_id }}
+          MARKER_ARTIFACT_DIGEST: ${{ steps.marker_meta.outputs.artifact_digest }}
+          RELEASE_ARTIFACT_ID: ${{ steps.finalizer_release_meta.outputs.artifact_id }}
+          RELEASE_ARTIFACT_DIGEST: ${{ steps.finalizer_release_meta.outputs.artifact_digest }}
+          BACKEND_ARTIFACT_ID: ${{ steps.finalizer_backend_meta.outputs.artifact_id }}
+          BACKEND_ARTIFACT_DIGEST: ${{ steps.finalizer_backend_meta.outputs.artifact_digest }}
+        run: >-
+          node scripts/ev2/phase12/write-production-terminal-evidence.mjs
+          --outcome "${{ needs.deploy.result == 'success' && 'active' || 'recovered' }}"
+          --candidate "${{ steps.marker.outputs.candidate_sha }}"
+          --control-sha "${{ github.sha }}"
+          --run-id "${{ github.run_id }}"
+          --run-attempt "${{ github.run_attempt }}"
+          --baseline-release "${{ steps.marker.outputs.baseline_release }}"
+          --pages ../terminal-pages.json
+          --functions ../terminal-functions.json
+          --function-receipt ../terminal-function-receipt.json
+          --secrets ../terminal-secrets.json
+          --auth ../terminal-auth.json
+          --vault ../terminal-vault.json
+          --database ../terminal-database.json
+          --boundary ../terminal-boundary.json
+          --residue ../terminal-residue.json
+          --outbox ../terminal-outbox.json
+          --output ../terminal-production-evidence.json
+      - name: Upload mandatory terminal evidence
+        id: terminal_evidence_upload
+        if: always() && steps.marker.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 10
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: production-terminal-${{ github.run_id }}-${{ github.run_attempt }}
+          path: terminal-production-evidence.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Compare and clear redundant marker after fully evidenced success
+        id: finalizer_marker_clear
+        if: >-
+          always() && needs.deploy.result == 'success' && !failure() &&
+          steps.marker.outcome == 'success' &&
+          steps.terminal_evidence_upload.outcome == 'success'
+        timeout-minutes: 5
+        working-directory: control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          PRODUCTION_MARKER_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: >-
+          node scripts/ev2/phase12/production-mutation-marker-store.mjs clear
+          --run-id "${{ github.run_id }}"
+          --run-attempt "${{ github.run_attempt }}"
+          --control-sha "${{ github.sha }}"
+      - name: Compensate Pages if final verification or mandatory upload fails
+        id: finalizer_terminal_compensation
+        if: >-
+          always() && steps.marker.outcome == 'success' &&
+          (failure() || steps.terminal_evidence_upload.outcome != 'success')
+        timeout-minutes: 10
+        working-directory: control
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+          CLOUDFLARE_BASELINE_DEPLOYMENT_ID: ${{ steps.marker.outputs.baseline_deployment_id }}
+          CLOUDFLARE_BASELINE_RELEASE: ${{ steps.marker.outputs.baseline_release }}
+          CLOUDFLARE_BASELINE_CREATED_ON: ${{ steps.marker.outputs.baseline_created_on }}
+          CLOUDFLARE_BASELINE_COMMIT_MESSAGE: ${{ steps.marker.outputs.baseline_commit_message }}
+          CLOUDFLARE_OWNED_DEPLOYMENT_ID: ${{ needs.deploy.outputs.promoted_deployment_id }}
+          CLOUDFLARE_OWNED_RELEASE: ${{ steps.marker.outputs.candidate_sha }}
+          CLOUDFLARE_OWNED_RUN_MARKER: ${{ steps.marker.outputs.pages_run_marker }}
+          CLOUDFLARE_OWNED_CREATED_ON: ${{ needs.deploy.outputs.promoted_created_on }}
+        run: node scripts/ev2/phase12/cloudflare-pages.mjs reconcile
+      - name: Verify terminal compensation against the forward backend
+        if: always() && steps.finalizer_terminal_compensation.outcome == 'success'
+        timeout-minutes: 10
+        working-directory: control
+        env:
+          EV2_G12_ORIGIN: https://gaiatecsistemas.com.br
+          EV2_G12_EXPECTED_SHA: ${{ steps.marker.outputs.baseline_release }}
+          EV2_G12_ENVIRONMENT: production
+          EV2_G12_PRODUCTION_AUTHORIZED: "true"
+          EV2_G12_PROBE_PROFILE: full
+          EV2_G12_SAMPLE_COUNT: "20"
+        run: node scripts/ev2/phase12/rollout-probe.mjs
+      - name: Fail closed when the terminal artifact was not captured
+        if: >-
+          always() && steps.marker.outcome == 'success' &&
+          steps.terminal_evidence_upload.outcome != 'success'
+        run: exit 1
+      - name: Fail closed when the production deploy job was skipped
+        if: always() && needs.deploy.result == 'skipped'
+        run: |
+          echo "::error title=G12_PRODUCTION_DEPLOY_SKIPPED::production dispatch did not execute its authorization gate"
+          exit 1

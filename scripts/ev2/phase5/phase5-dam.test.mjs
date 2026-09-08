@@ -63,6 +63,9 @@ test("cms-media v2 is authenticated, rate-limited, idempotent and keeps v1 actio
     "cms_execute_dam_command",
     "cms_finalize_dam_asset",
     "cms_prepare_dam_gc",
+    "cms_list_dam_gc_candidates",
+    "cms_complete_dam_gc",
+    "cms_claim_dam_finalization",
     "match_asset",
     "preview_replacement",
     "finalize_upload",
@@ -70,10 +73,14 @@ test("cms-media v2 is authenticated, rate-limited, idempotent and keeps v1 actio
     assert.match(edge, new RegExp(evidence.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(edge, /V1Input/);
   assert.match(edge, /z\.literal\("create"\)/);
-  assert.match(edge, /raster-signature-v2/);
-  assert.match(edge, /80_000_000/);
-  assert.match(edge, /replacementCount/);
-  assert.match(edge, /"pending", "failed", "processing", "blocked"/);
+  assert.match(edge, /raster-metadata-v3/);
+  assert.match(edge, /MAX_RASTER_BYTES/);
+  assert.match(edge, /inspectRasterImage/);
+  assert.match(edge, /containedRasterDimensions/);
+  assert.match(edge, /cms_archive_legacy_media/);
+  assert.match(edge, /cms_restore_legacy_media/);
+  assert.doesNotMatch(edge, /from\("cms_dam_gc_jobs"\)/);
+  assert.doesNotMatch(edge, /from\("cms_media_assets"\)\.delete/);
   assert.doesNotMatch(edge, /SUPABASE_SERVICE_ROLE_KEY\s*=/);
 });
 

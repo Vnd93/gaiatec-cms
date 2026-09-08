@@ -3,6 +3,10 @@ import { z } from "npm:zod@4.4.3";
 import { authenticateCms } from "../_shared/cms-auth.ts";
 import { corsHeaders, isAllowedOrigin, json, readJsonLimited, sha256 } from "../_shared/security.ts";
 import { resolveMediaAssets } from "../_shared/cms-media-resolution.ts";
+import {
+  resolveDocumentAssets,
+  type DocumentResolutionClient,
+} from "../_shared/cms-document-resolution.ts";
 
 const Issue = z.object({ itemId: z.uuid(), revisionId: z.uuid().nullish(), maxUses: z.number().int().min(1).max(50).default(10), minutes: z.number().int().min(1).max(30).default(15) }).strict();
 
@@ -19,8 +23,15 @@ Deno.serve(async (req) => {
     const { data, error } = await admin.rpc("cms_consume_preview", { p_token_hash: await sha256(token) });
     if (error) return json(req, { error: "Preview expirado ou indisponível." }, 410,
       { "X-Robots-Tag": "noindex, nofollow, noarchive", "Cache-Control": "private, no-store, max-age=0" });
+    const previewExpiresAt = Date.parse(String(data?.expiresAt ?? ""));
+    const remainingSeconds = Math.floor((previewExpiresAt - Date.now()) / 1_000);
+    if (!Number.isFinite(previewExpiresAt) || remainingSeconds < 1)
+      return json(req, { error: "Preview expirado ou indisponível." }, 410,
+        { "X-Robots-Tag": "noindex, nofollow, noarchive", "Cache-Control": "private, no-store, max-age=0" });
+    // URLs auxiliares nunca sobrevivem ao token e ficam limitadas a uma janela
+    // curta mesmo quando o preview possui validade maior.
+    const assetTtlSeconds = Math.min(60, remainingSeconds);
     const payload = data?.payload;
-    const documentUrls: Record<string, string> = {};
     const media = payload?.media ?? [];
     const blockAssetIds = (payload?.blocks ?? []).flatMap((block: any) => [
       block.data?.assetId,
@@ -29,16 +40,25 @@ Deno.serve(async (req) => {
     ].filter(Boolean));
     const assetIds = [...new Set([...media.map((entry: any) => entry.assetId), ...blockAssetIds, payload?.seo?.ogImageId].filter(Boolean))];
     const primaryId = media.find((entry: any) => entry.role === "primary")?.assetId;
-    const { mediaUrls, mediaAlt } = await resolveMediaAssets(admin, assetIds, primaryId, 1800);
+    const { mediaUrls, mediaAlt } = await resolveMediaAssets(admin, assetIds, primaryId, assetTtlSeconds);
     const documents = (payload?.documents ?? []).filter((document: any) => document.storagePath);
-    const { data: signedDocuments } = documents.length
-      ? await admin.storage.from("cms-documents-private").createSignedUrls(documents.map((document: any) => document.storagePath), 1800)
-      : { data: [] };
-    documents.forEach((document: any, index: number) => {
-      const signedUrl = signedDocuments?.[index]?.signedUrl;
-      if (signedUrl) documentUrls[document.id] = signedUrl;
-    });
-    return json(req, { ...data, media_urls: mediaUrls, media_alt: mediaAlt, document_urls: documentUrls }, 200, { "X-Robots-Tag": "noindex, nofollow, noarchive", "Cache-Control": "private, no-store, max-age=0" });
+    const documentUrls = await resolveDocumentAssets(
+      admin as unknown as DocumentResolutionClient,
+      documents,
+      assetTtlSeconds,
+    );
+    const canonicalPayload = payload && typeof payload === "object"
+      ? {
+          ...payload,
+          documents: Array.isArray(payload.documents)
+            ? payload.documents.map((document: any) => ({
+                ...document,
+                id: typeof document?.id === "string" ? document.id.toLowerCase() : document?.id,
+              }))
+            : payload.documents,
+        }
+      : payload;
+    return json(req, { ...data, payload: canonicalPayload, media_urls: mediaUrls, media_alt: mediaAlt, document_urls: documentUrls }, 200, { "X-Robots-Tag": "noindex, nofollow, noarchive", "Cache-Control": "private, no-store, max-age=0" });
   }
   if (req.method !== "POST") return json(req, { error: "Método não permitido." }, 405);
   const identity = await authenticateCms(req);

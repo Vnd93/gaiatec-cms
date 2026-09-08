@@ -89,10 +89,10 @@ test("stable identities and slugs are reproducible", () => {
   assert.equal(slugify("Módulo de Telemetria MT-331"), "modulo-de-telemetria-mt-331");
 });
 
-test("Edge adapter keeps an unknown brand distinct from its manufacturer", () => {
+test("Edge adapter rejects incomplete public identity instead of materializing placeholders", () => {
   const edge = readFileSync(path.resolve(directory, "../../../supabase/functions/cms-pim/index.ts"), "utf8");
-  assert.match(edge, /const brandName = label\(product\.masterData\.brandId, "Marca não informada"\)/);
-  assert.doesNotMatch(edge, /brand:\s*\{\s*name:\s*label\(product\.masterData\.brandId, manufacturerName\)/);
+  assert.match(edge, /CMS_PIM_PUBLIC_DATA_REQUIRED/);
+  assert.doesNotMatch(edge, /"Marca não informada"|"Linha geral"|"Não informado"/);
 });
 
 test("operational actor is suspended with a database-supported status", () => {

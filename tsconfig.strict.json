@@ -3,6 +3,7 @@
   "compilerOptions": {
     "noCheck": false,
     "strict": true,
+    "allowImportingTsExtensions": true,
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true
   },

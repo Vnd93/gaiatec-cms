@@ -46,11 +46,12 @@ test("migration 0054 keeps F-016 additive, synthetic and inaccessible to clients
   assert.doesNotMatch(sql, /environment in \([^)]*'production'/);
 });
 
-test("edge gateway rejects production, external providers and unsafe input", () => {
+test("edge gateway rejects production, pins provider policy and rejects unsafe input", () => {
   const edge = read("supabase/functions/cms-ai-execute/index.ts");
-  assert.match(edge, /const EXTERNAL_PROVIDER_ENABLED = false/);
   assert.match(edge, /CMS_AI_EXECUTE_PRODUCTION_GATED/);
-  assert.match(edge, /CMS_AI_EXECUTE_EXTERNAL_PROVIDER_DENIED/);
+  assert.match(edge, /CMS_AI_EXECUTE_PROVIDER_POLICY_MISMATCH/);
+  assert.match(edge, /APPROVED_OPENROUTER_MODEL/);
+  assert.match(edge, /openRouterConfigured/);
   assert.match(edge, /detectAiPromptInjection/);
   assert.match(edge, /redactAiText/);
   assert.match(edge, /identity\.claims\.aal !== "aal2"/);
@@ -60,7 +61,8 @@ test("edge gateway rejects production, external providers and unsafe input", () 
   assert.match(edge, /database_policy_denial/);
   assert.doesNotMatch(edge, /fetch\([^)]*https?:\/\//);
   assert.ok(
-    edge.indexOf('mutation && identity.claims.aal !== "aal2"') < edge.indexOf("capability?.enabled !== true"),
+    edge.indexOf('mutation && identity.claims.aal !== "aal2"') <
+      edge.indexOf("if (capability?.enabled !== true"),
     "MFA denial must precede the generic feature-disabled response for mutations",
   );
 });
@@ -70,7 +72,7 @@ test("frontend requires both runtime capabilities and exposes no real target inp
   const runtime = read("src/admin/ev2-runtime.ts");
   assert.match(page, /isEv2FeatureEnabled\(profile, "ev2\.ai_assist"\)/);
   assert.match(page, /isEv2FeatureEnabled\(profile, "ev2\.ai_execute"\)/);
-  assert.match(page, /Somente <strong>alvos sintéticos g14x-\*<\/strong>/);
+  assert.match(page, /Somente <strong>alvos sintéticos de ensaio<\/strong>/);
   assert.match(page, /expectedPlanHash: plan\.planHash/);
   assert.match(page, /Aprovar por 10 minutos/);
   assert.match(page, /Executar compensação/);
@@ -97,6 +99,10 @@ test("edge serves the complete administrative inventory as private SPA routes", 
     "/admin/produtos",
     "/admin/produtos/importacao",
     "/admin/descoberta/service",
+    "/admin/descoberta/service/novo",
+    "/admin/descoberta/industry/novo",
+    "/admin/descoberta/application/novo",
+    "/admin/descoberta/solution/novo",
     "/admin/busca",
     "/admin/qualidade",
     "/admin/auditoria",
@@ -129,6 +135,16 @@ test("edge serves the complete administrative inventory as private SPA routes", 
   );
   assert.equal(invalid.status, 404);
   assert.match(invalid.headers.get("cache-control") ?? "", /private, no-store/);
+
+  for (const route of [
+    "/admin/descoberta/service/NOVO",
+    "/admin/descoberta/service/novo/extra",
+    "/admin/descoberta/unknown/novo",
+  ]) {
+    const response = await worker.fetch(new Request(`https://staging.example${route}`), env);
+    assert.equal(response.status, 404, route);
+    assert.match(response.headers.get("cache-control") ?? "", /private, no-store/, route);
+  }
 });
 
 test("the immutable contract fixes closed tools and non-production policy", () => {
@@ -164,7 +180,11 @@ test("rehearsal and canary executors are locked to the isolated staging target",
   assert.match(canary, /outputs\/ev2\/fase-14\/evidencias/);
   assert.match(canary, /mkdirSync\(evidenceRoot, \{ recursive: true \}\)/);
   assert.doesNotMatch(canary, /scope_type:\s*"environment"/);
-  assert.match(workflow, /PREVIEW-G14-STAGING/);
+  assert.match(workflow, /PREVIEW-G14-STAGING:<SHA>:SYNTHETIC-PROVIDER-OFF/);
+  assert.match(
+    workflow,
+    /test "\$CONFIRMATION" = "PREVIEW-G14-STAGING:\$EXPECTED_SHA:SYNTHETIC-PROVIDER-OFF"/,
+  );
   assert.match(workflow, /--branch ev2-g14-canary/);
   assert.doesNotMatch(workflow, /gaiatec-website|--branch main|deploy:production/);
   assert.match(genericPreview, /head\.ref != 'ev2\/fase-14-ia-transacional-controlada'/);

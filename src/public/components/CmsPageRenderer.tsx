@@ -2,19 +2,31 @@ import { useEffect, useState } from "react";
 import { ArrowRight, CheckCircle2, Quote } from "lucide-react";
 import { Link } from "react-router";
 import type { CmsPageBlock } from "@/shared/contracts/cms-content";
-import type { CmsFormVersion } from "@/shared/contracts/cms-content";
-import { getPublishedForm } from "../catalog-api";
+import { getPublishedForm, type PublicFormVersion } from "../catalog-api";
 import { CmsLeadForm } from "./CmsLeadForm";
-import { ContactSection } from "../../app/components/ContactSection";
 import "../site-builder.css";
 
 export type CmsRelatedItem = {
-  item_id: string;
   title: string;
   summary?: string;
   path: string;
-  content_type: string;
+  kind: string;
 };
+
+const relatedKindLabels: Record<string, string> = {
+  product: "Produto",
+  service: "Serviço",
+  industry: "Setor",
+  application: "Aplicação",
+  solution: "Solução",
+  page: "Página",
+  homepage: "Página inicial",
+  post: "Artigo",
+  campaign: "Campanha",
+};
+
+const relatedKindLabel = (kind: string) => relatedKindLabels[kind] ?? "Conteúdo";
+const publicCmsPathPattern = /^\/(?:[a-z0-9]+(?:-[a-z0-9]+)*\/?)*$/;
 
 const assetUrl = (assetId: string | undefined, mediaUrls: Record<string, string>) => {
   if (!assetId) return "";
@@ -26,6 +38,57 @@ const assetUrl = (assetId: string | undefined, mediaUrls: Record<string, string>
   );
 };
 
+const isPublicInternetHostname = (hostname: string) => {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (
+    !host.includes(".") ||
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".local") ||
+    host.endsWith(".internal") ||
+    host === "::" ||
+    host === "::1" ||
+    /^(?:fc|fd|fe[89ab])/i.test(host)
+  )
+    return false;
+  const ipv4 = host.split(".").map(Number);
+  if (ipv4.length !== 4 || ipv4.some((part) => !Number.isInteger(part) || part < 0 || part > 255))
+    return true;
+  const [first, second] = ipv4;
+  return !(
+    first === 0 ||
+    first === 10 ||
+    first === 127 ||
+    (first === 100 && second >= 64 && second <= 127) ||
+    (first === 169 && second === 254) ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168) ||
+    first >= 224
+  );
+};
+
+const safeCmsHref = (value: string): { href: string; external: boolean } | null => {
+  if (publicCmsPathPattern.test(value)) return { href: value, external: false };
+  try {
+    const parsed = new URL(value);
+    if (
+      parsed.protocol !== "https:" ||
+      parsed.username ||
+      parsed.password ||
+      !isPublicInternetHostname(parsed.hostname) ||
+      [...parsed.searchParams.keys()].some((key) =>
+        /^(?:access[_-]?token|refresh[_-]?token|token|api[_-]?key|apikey|key|secret|signature|sig|credential|authorization|password)$/i.test(
+          key,
+        ),
+      )
+    )
+      return null;
+    return { href: parsed.href, external: true };
+  } catch {
+    return null;
+  }
+};
+
 const CmsLink = ({
   href,
   children,
@@ -35,14 +98,14 @@ const CmsLink = ({
   children: React.ReactNode;
   className?: string;
 }) => {
-  if (!href.startsWith("/") && !/^https?:\/\//i.test(href))
-    return <span className={className}>{children}</span>;
-  return /^https?:\/\//i.test(href) ? (
-    <a className={className} href={href} target="_blank" rel="noopener noreferrer">
+  const destination = safeCmsHref(href);
+  if (!destination) return <span className={className}>{children}</span>;
+  return destination.external ? (
+    <a className={className} href={destination.href} target="_blank" rel="noopener noreferrer">
       {children}
     </a>
   ) : (
-    <Link className={className} to={href}>
+    <Link className={className} to={destination.href}>
       {children}
     </Link>
   );
@@ -50,34 +113,61 @@ const CmsLink = ({
 
 function GovernedForm({
   formKey,
+  formVersion,
+  exactForm,
   heading,
-  campaignId,
-  productId,
+  campaignPath,
+  productSlug,
 }: {
   formKey: string;
+  formVersion?: number;
+  exactForm?: PublicFormVersion;
   heading: string;
-  campaignId?: string;
-  productId?: string;
+  campaignPath?: string;
+  productSlug?: string;
 }) {
-  const [form, setForm] = useState<CmsFormVersion | null>(null);
-  const [unavailable, setUnavailable] = useState(false);
+  const safeFormVersion =
+    Number.isSafeInteger(formVersion) && Number(formVersion) >= 1 ? Number(formVersion) : null;
+  const binding = safeFormVersion === null ? null : `${formKey}:${safeFormVersion}`;
+  const [resolution, setResolution] = useState<{
+    binding: string;
+    form: PublicFormVersion | null;
+    unavailable: boolean;
+  } | null>(null);
+  const exactFormMatches =
+    binding !== null && exactForm?.key === formKey && exactForm.version === safeFormVersion;
   useEffect(() => {
     let active = true;
-    void getPublishedForm(formKey)
+    if (exactFormMatches) return undefined;
+    if (!binding || safeFormVersion === null) return undefined;
+    void getPublishedForm(formKey, safeFormVersion)
       .then((value) => {
         if (!active) return;
-        setForm(value);
-        setUnavailable(value === null);
+        const compatible = value?.key === formKey && value.version === safeFormVersion ? value : null;
+        setResolution({ binding, form: compatible, unavailable: compatible === null });
       })
-      .catch(() => active && setUnavailable(true));
+      .catch(() => active && setResolution({ binding, form: null, unavailable: true }));
     return () => {
       active = false;
     };
-  }, [formKey]);
-  if (unavailable)
+  }, [binding, exactFormMatches, formKey, safeFormVersion]);
+  if (exactFormMatches)
+    return (
+      <CmsLeadForm form={exactForm} heading={heading} campaignPath={campaignPath} productSlug={productSlug} />
+    );
+  if (!binding) return <p role="status">Formulário temporariamente indisponível. Use a página de contato.</p>;
+  const current = resolution?.binding === binding ? resolution : null;
+  if (current?.unavailable)
     return <p role="status">Formulário temporariamente indisponível. Use a página de contato.</p>;
-  if (!form) return <p aria-busy="true">Carregando formulário…</p>;
-  return <CmsLeadForm form={form} heading={heading} campaignId={campaignId} productId={productId} />;
+  if (!current?.form) return <p aria-busy="true">Carregando formulário…</p>;
+  return (
+    <CmsLeadForm
+      form={current.form}
+      heading={heading}
+      campaignPath={campaignPath}
+      productSlug={productSlug}
+    />
+  );
 }
 
 function TabsBlock({ block }: { block: Extract<CmsPageBlock, { type: "tabs" }> }) {
@@ -131,12 +221,14 @@ function BlockRenderer({
   mediaAlt,
   relatedItems,
   leadContext,
+  governedForm,
 }: {
   block: CmsPageBlock;
   mediaUrls: Record<string, string>;
   mediaAlt: Record<string, string>;
   relatedItems: CmsRelatedItem[];
-  leadContext?: { campaignId?: string; productId?: string };
+  leadContext?: { campaignPath?: string; productSlug?: string };
+  governedForm?: PublicFormVersion;
 }) {
   if (block.hidden) return null;
   const className = `cms-page-block cms-page-block--${block.type} cms-page-block--${block.tone} cms-page-block--${block.width}${block.layout ? " cms-page-block--visual" : ""}`;
@@ -158,7 +250,6 @@ function BlockRenderer({
     "data-hidden-desktop": block.layout?.desktop.hidden || undefined,
     "data-hidden-tablet": block.layout?.tablet.hidden || undefined,
     "data-hidden-mobile": block.layout?.mobile.hidden || undefined,
-    "data-component-version": block.componentVersion,
   };
 
   if (block.type === "hero") {
@@ -222,7 +313,7 @@ function BlockRenderer({
           {image ? (
             <img src={image} alt={block.data.alt} style={{ objectFit: block.data.fit }} />
           ) : (
-            <div className="cms-page-media-missing">Imagem ainda não publicada</div>
+            <div className="cms-page-media-missing">Imagem indisponível</div>
           )}
           {block.data.caption && <figcaption>{block.data.caption}</figcaption>}
         </figure>
@@ -367,7 +458,13 @@ function BlockRenderer({
     );
 
   if (block.type === "related_content") {
-    const selected = relatedItems.filter((item) => block.data.itemIds.includes(item.item_id));
+    const relatedByPath = new Map(relatedItems.map((item) => [item.path, item]));
+    const selected = [...new Set(block.data.itemIds)]
+      .filter((path) => publicCmsPathPattern.test(path))
+      .flatMap((path) => {
+        const item = relatedByPath.get(path);
+        return item ? [item] : [];
+      });
     return (
       <section {...common}>
         <div className="cms-page-block__inner">
@@ -377,8 +474,8 @@ function BlockRenderer({
               className={block.data.presentation === "cards" ? "cms-page-card-grid" : "cms-page-related-list"}
             >
               {selected.map((item) => (
-                <CmsLink className="cms-page-content-card" href={item.path} key={item.item_id}>
-                  <small>{item.content_type}</small>
+                <CmsLink className="cms-page-content-card" href={item.path} key={item.path}>
+                  <small>{relatedKindLabel(item.kind)}</small>
                   <h3>{item.title}</h3>
                   {item.summary && <p>{item.summary}</p>}
                   <span>
@@ -388,7 +485,7 @@ function BlockRenderer({
               ))}
             </div>
           ) : (
-            <p>Nenhum conteúdo relacionado está publicado.</p>
+            <p>Nenhum conteúdo relacionado está disponível.</p>
           )}
         </div>
       </section>
@@ -404,7 +501,7 @@ function BlockRenderer({
             {image ? (
               <img src={image} alt={block.data.alt} loading="lazy" />
             ) : (
-              <div className="cms-page-media-missing">Imagem ainda não publicada</div>
+              <div className="cms-page-media-missing">Imagem indisponível</div>
             )}
           </div>
           <div className="cms-page-split__copy">
@@ -544,44 +641,37 @@ function BlockRenderer({
     );
 
   if (block.type === "form") {
-    if (block.data.formId && block.data.formVersionId)
+    if (
+      (block.data.formId && block.data.formVersionId) ||
+      ("governed" in block.data && block.data.governed === true)
+    )
       return (
         <section {...common}>
           <div className="cms-page-block__inner">
             <GovernedForm
               formKey={block.data.formKey}
+              formVersion={
+                "formVersion" in block.data && Number.isSafeInteger(block.data.formVersion)
+                  ? Number(block.data.formVersion)
+                  : undefined
+              }
+              exactForm={governedForm}
               heading={block.data.heading}
-              campaignId={leadContext?.campaignId}
-              productId={leadContext?.productId}
+              campaignPath={leadContext?.campaignPath}
+              productSlug={leadContext?.productSlug}
             />
           </div>
         </section>
       );
-    if (block.data.formKey !== "newsletter")
-      return (
-        <div {...common} id={undefined} className={`${className} cms-page-form-embedded`}>
-          <ContactSection
-            variant={block.tone === "brand" || block.tone === "dark" ? "brand" : "light"}
-            heading={block.data.heading}
-            introduction={block.data.text}
-            submitLabel={block.data.buttonLabel}
-            sectionId={block.anchor || `form-${block.id}`}
-            initialEnquiryType={block.data.formKey === "lead" ? "Orçamento" : ""}
-            formKey={block.data.formKey === "lead" ? "contato-principal" : block.data.formKey}
-          />
-        </div>
-      );
-    const href = block.data.formKey === "newsletter" ? "/#newsletter" : "/contato";
     return (
       <section {...common}>
-        <div className="cms-page-block__inner cms-page-form-placeholder">
-          <div>
-            <p className="cms-page-eyebrow">FORMULÁRIO</p>
-            <h2>{block.data.heading}</h2>
-            {block.data.text && <p>{block.data.text}</p>}
-          </div>
-          <CmsLink className="cms-page-button" href={href}>
-            {block.data.buttonLabel} <ArrowRight size={17} aria-hidden="true" />
+        <div className="cms-page-block__inner">
+          <h2>{block.data.heading}</h2>
+          <p role="status">
+            Formulário temporariamente indisponível. Use a página de contato para falar com a GAIATEC.
+          </p>
+          <CmsLink className="cms-page-button" href="/contato">
+            Abrir página de contato <ArrowRight size={17} aria-hidden="true" />
           </CmsLink>
         </div>
       </section>
@@ -612,6 +702,7 @@ export function CmsPageRenderer({
   mediaAlt = {},
   relatedItems = [],
   leadContext,
+  governedForm,
   preview = false,
   viewport,
   themeStyle,
@@ -620,7 +711,8 @@ export function CmsPageRenderer({
   mediaUrls?: Record<string, string>;
   mediaAlt?: Record<string, string>;
   relatedItems?: CmsRelatedItem[];
-  leadContext?: { campaignId?: string; productId?: string };
+  leadContext?: { campaignPath?: string; productSlug?: string };
+  governedForm?: PublicFormVersion;
   preview?: boolean;
   viewport?: "desktop" | "tablet" | "mobile";
   themeStyle?: React.CSSProperties;
@@ -632,15 +724,10 @@ export function CmsPageRenderer({
     else units.push({ id: block.groupId ?? block.id, groupId: block.groupId, blocks: [block] });
   }
   return (
-    <article
-      className="cms-managed-page"
-      data-cms-renderer="managed-page"
-      data-cms-breakpoint={viewport}
-      style={themeStyle}
-    >
+    <article className="cms-managed-page" data-cms-breakpoint={viewport} style={themeStyle}>
       {preview && (
         <div className="cms-page-preview-banner" role="status">
-          Preview privado — alterações ainda não publicadas
+          Preview privado — visualização restrita para revisão
         </div>
       )}
       {units.map((unit) => {
@@ -651,11 +738,12 @@ export function CmsPageRenderer({
             mediaAlt={mediaAlt}
             relatedItems={relatedItems}
             leadContext={leadContext}
+            governedForm={governedForm}
             key={block.id}
           />
         ));
         return unit.groupId ? (
-          <div className="cms-page-visual-group" data-visual-group={unit.groupId} key={unit.id}>
+          <div className="cms-page-visual-group" key={unit.id}>
             {rendered}
           </div>
         ) : (

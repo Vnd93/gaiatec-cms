@@ -1,3 +1,5 @@
+import { operatorErrorMessage } from "./operator-error-message";
+
 export type OpenExternalPreviewResult =
   { status: "opened"; url: string } | { status: "blocked"; url: string } | { status: "failed"; error: Error };
 
@@ -20,7 +22,11 @@ export async function openExternalAfterAsync(
     target.location.replace(url);
     return { status: "opened", url };
   } catch (caught) {
-    const error = caught instanceof Error ? caught : new Error("Visualização indisponível.");
+    const error = new Error(
+      operatorErrorMessage(caught, {
+        fallback: "Não foi possível preparar a visualização.",
+      }),
+    );
     if (target) {
       target.document.title = "Visualização indisponível";
       target.document.body.textContent = `${error.message} Feche esta aba e tente novamente.`;

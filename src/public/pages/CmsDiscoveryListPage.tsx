@@ -53,7 +53,7 @@ export default function CmsDiscoveryListPage({ contentType }: { contentType: Dis
   }, [contentType, path, query, title]);
   return (
     <section className="new-catalog" aria-labelledby={`discovery-${contentType}-title`}>
-      <p className="new-catalog__eyebrow">PROJEÇÃO PUBLICADA NOVA</p>
+      <p className="new-catalog__eyebrow">PORTFÓLIO GAIATEC</p>
       <h1 id={`discovery-${contentType}-title`}>{title}</h1>
       <form className="new-catalog__toolbar" onSubmit={(e) => e.preventDefault()}>
         <label>
@@ -75,13 +75,13 @@ export default function CmsDiscoveryListPage({ contentType }: { contentType: Dis
         </div>
       ) : result.items.length === 0 ? (
         <div className="new-catalog__state">
-          <h2>Nenhum conteúdo publicado</h2>
-          <p>Os cadastros definitivos serão feitos pelo novo /admin após aprovação dos owners.</p>
+          <h2>Nenhum item encontrado</h2>
+          <p>Remova o filtro ou faça uma busca mais ampla para explorar o portfólio.</p>
         </div>
       ) : (
         <div className="new-catalog__grid">
           {result.items.map((item) => (
-            <DiscoveryEntityCard key={item.item_id} entity={item as any} />
+            <DiscoveryEntityCard key={item.key} entity={item as any} />
           ))}
         </div>
       )}

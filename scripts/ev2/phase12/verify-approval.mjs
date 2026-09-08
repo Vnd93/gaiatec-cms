@@ -1,6 +1,8 @@
 import { appendFile, readFile } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
-import { CONTENT_SECURITY_POLICY } from "../../../cloudflare/_worker.js";
+import { contentSecurityPolicy } from "../../../cloudflare/_worker.js";
+import { backupEvidenceRepositoryPath, validateBackupEvidenceBinding } from "../phase16/readiness-lib.mjs";
+import { productionCloudflareApprovalTarget } from "./production-backend-lib.mjs";
 import {
   approvalRecordFilenameMatchesCandidate,
   canonicalTextSha256,
@@ -21,6 +23,7 @@ const relativeFile = argument("file");
 const expectedSha = argument("candidate");
 const expectedEnvironment = argument("environment");
 const expectedChangeReference = argument("change-reference");
+const effectiveAt = argument("effective-at");
 if (!relativeFile || !expectedSha || !expectedEnvironment || !expectedChangeReference)
   throw new Error(
     "G12_APPROVAL_INPUT_REQUIRED: --file, --candidate, --environment and --change-reference are mandatory.",
@@ -34,14 +37,24 @@ if (
 )
   throw new Error("G12_APPROVAL_PATH_REFUSED: use the immutable approvals/G12_<sha>.json convention.");
 
-const record = JSON.parse(await readFile(approvalPath, "utf8"));
+const approvalBytes = await readFile(approvalPath);
+const record = JSON.parse(approvalBytes.toString("utf8"));
+if (expectedEnvironment === "production" && record?.schemaVersion !== 3)
+  throw new Error("G12_APPROVAL_SCHEMA_REFUSED: production deploys require schemaVersion 3.");
 if (!approvalRecordFilenameMatchesCandidate(relativeFile.replaceAll("\\", "/"), record.candidateSha))
   throw new Error("G12_APPROVAL_FILENAME_REFUSED: embedded SHA must match the approved candidate.");
+let validationTime = new Date();
+if (effectiveAt) {
+  const parsedEffectiveAt = new Date(effectiveAt);
+  if (!Number.isFinite(parsedEffectiveAt.getTime()) || parsedEffectiveAt.toISOString() !== effectiveAt)
+    throw new Error("G12_APPROVAL_EFFECTIVE_AT_REFUSED: recovery time must be a canonical marker timestamp.");
+  validationTime = parsedEffectiveAt;
+}
 const result = validateApprovalRecord(record, {
   expectedSha,
   expectedEnvironment,
   expectedChangeReference,
-  now: new Date(),
+  now: validationTime,
 });
 if (!result.valid) throw new Error(`G12_APPROVAL_REFUSED:${result.violations.join(",")}`);
 
@@ -60,6 +73,21 @@ const binding = validateCanaryEvidenceBinding(record, evidence, {
 if (!binding.valid) throw new Error(`G12_EVIDENCE_REFUSED:${binding.violations.join(",")}`);
 
 if (record.environment === "production") {
+  const backupControl = record.productionReadiness.backupRestore;
+  const backupEvidenceFile = backupEvidenceRepositoryPath(backupControl);
+  if (!backupEvidenceFile)
+    throw new Error("G12_BACKUP_EVIDENCE_REFUSED: invalid path or missing evidence digest.");
+  const backupEvidencePath = resolve(backupEvidenceFile);
+  if (dirname(backupEvidencePath) !== evidenceRoot)
+    throw new Error("G12_BACKUP_EVIDENCE_REFUSED: evidence must be a versioned release control.");
+  const backupEvidenceBytes = await readFile(backupEvidencePath);
+  const backupEvidence = JSON.parse(backupEvidenceBytes.toString("utf8"));
+  const backupResult = validateBackupEvidenceBinding(backupControl, backupEvidence, {
+    evidenceSha256: canonicalTextSha256(backupEvidenceBytes),
+  });
+  if (!backupResult.valid)
+    throw new Error(`G12_BACKUP_EVIDENCE_REFUSED:${backupResult.violations.join(",")}`);
+
   const governanceDpoReference = resolveDpoEvidenceReference(record.operationalGovernance.evidenceReference, {
     candidateSha: record.candidateSha,
   });
@@ -86,7 +114,8 @@ if (record.environment === "production") {
   const cspEvidence = JSON.parse(cspEvidenceBytes.toString("utf8"));
   const cspResult = validateCspEvidenceBinding(cspControl, cspEvidence, {
     reportSha256: canonicalTextSha256(cspEvidenceBytes),
-    expectedPolicySha256: canonicalTextSha256(CONTENT_SECURITY_POLICY),
+    expectedPolicySha256: canonicalTextSha256(contentSecurityPolicy()),
+    expectedAdminPolicySha256: canonicalTextSha256(contentSecurityPolicy("/admin")),
   });
   if (!cspResult.valid) throw new Error(`G12_CSP_EVIDENCE_REFUSED:${cspResult.violations.join(",")}`);
 }
@@ -94,7 +123,30 @@ if (record.environment === "production") {
 if (process.env.GITHUB_OUTPUT)
   await appendFile(
     process.env.GITHUB_OUTPUT,
-    `rollback_deployment_id=${record.rollback.deploymentId}\nrollback_release=${record.rollback.release}\n`,
+    [
+      `rollback_deployment_id=${record.rollback.deploymentId}`,
+      `rollback_release=${record.rollback.release}`,
+      `approval_record_sha256=${canonicalTextSha256(approvalBytes)}`,
+      `approved_email_from_sha256=${canonicalTextSha256(record.productionReadiness.emailProvider.from.trim())}`,
+      `approved_notification_to_sha256=${canonicalTextSha256(record.productionReadiness.emailProvider.notificationTo.trim())}`,
+      `approved_cloudflare_target_sha256=${canonicalTextSha256(
+        productionCloudflareApprovalTarget({
+          accountId: record.target.cloudflareAccountId,
+          zoneId: record.target.cloudflareZoneId,
+          cachePurgeTokenId: record.target.cachePurgeTokenId,
+        }),
+      )}`,
+      ...(record.schemaVersion === 3
+        ? [
+            `backup_run_id=${record.productionReadiness.backupRestore.backupRunId}`,
+            `backup_run_attempt=${record.productionReadiness.backupRestore.backupRunAttempt}`,
+            `backup_artifact_name=${record.productionReadiness.backupRestore.artifactName}`,
+            `staging_run_id=${record.g12Evidence.runId}`,
+            `email_run_id=${record.productionReadiness.emailProvider.emailRunId}`,
+          ]
+        : []),
+      "",
+    ].join("\n"),
     "utf8",
   );
 
@@ -108,5 +160,7 @@ console.log(
     owners: Object.keys(record.owners).length,
     evidenceFile: record.g12Evidence.file,
     evidenceBound: true,
+    validationMode: effectiveAt ? "armed-recovery" : "current-window",
+    effectiveAt: validationTime.toISOString(),
   }),
 );

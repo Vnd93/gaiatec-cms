@@ -42,7 +42,8 @@ test("CMS session function verifies JWT, origin and rate limit", async () => {
 test("Admin frontend provides closed login, recovery and MFA routes", async () => {
   const [context, routes] = await Promise.all([readFile(contextPath, "utf8"), readFile(routesPath, "utf8")]);
   assert.match(context, /signInWithPassword/);
-  assert.match(context, /resetPasswordForEmail/);
+  assert.match(context, /\/functions\/v1\/cms-recovery/);
+  assert.doesNotMatch(context, /resetPasswordForEmail/);
   assert.match(context, /mfa\.enroll/);
   assert.match(context, /mfa\.challenge/);
   assert.match(context, /mfa\.verify/);

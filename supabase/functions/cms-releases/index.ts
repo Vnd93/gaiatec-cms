@@ -115,6 +115,14 @@ const ComposedReleaseCommand = z
     }
   });
 const ReleaseRequest = z.union([ReleaseCommand, ComposedReleaseCommand]);
+type ReleaseRequestValue = z.infer<typeof ReleaseRequest>;
+type ComposedReleaseCommandValue = z.infer<typeof ComposedReleaseCommand>;
+
+function isComposedReleaseCommand(
+  command: ReleaseRequestValue,
+): command is ComposedReleaseCommandValue {
+  return command.envelope.schemaVersion === 2;
+}
 
 function canonicalize(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -154,14 +162,13 @@ Deno.serve(async (req) => {
   const identity = await authenticateCms(req);
   if (!identity) return json(req, { error: "Sessão inválida." }, 401);
 
-  let command: z.infer<typeof ReleaseRequest>;
+  let command: ReleaseRequestValue;
   try {
     command = ReleaseRequest.parse(await readJsonLimited(req, 32 * 1024));
   } catch {
     return json(req, { error: "Comando de release inválido.", code: "CMS_RELEASE_COMMAND_INVALID" }, 400);
   }
-  const readOnly =
-    command.envelope.schemaVersion === 2 && ["list", "status"].includes(command.action);
+  const readOnly = isComposedReleaseCommand(command) && ["list", "status"].includes(command.action);
   const idempotencyKey = req.headers.get("X-Idempotency-Key");
   if (!readOnly && (!idempotencyKey || !Uuid.safeParse(idempotencyKey).success)) {
     return json(req, { error: "Chave idempotente obrigatória." }, 400);
@@ -230,7 +237,7 @@ Deno.serve(async (req) => {
     p_issued_at: identity.claims.issuedAt,
   };
 
-  if (command.envelope.schemaVersion === 2) {
+  if (isComposedReleaseCommand(command)) {
     let data: Record<string, unknown> | null = null;
     let error: { message: string; code?: string } | null = null;
     if (readOnly) {

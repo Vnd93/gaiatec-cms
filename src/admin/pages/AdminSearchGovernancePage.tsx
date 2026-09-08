@@ -5,6 +5,7 @@ import { ProductModuleTabs } from "../components/AdminModuleTabs";
 import { cmsEnvironment, isEv2FeatureEnabled } from "../ev2-runtime";
 import { searchGovernanceCommand } from "../api/cms-api";
 import { AdminAlert, ConfirmDialog } from "../components/AdminUI";
+import { operatorErrorMessage } from "../operator-error-message";
 type Synonym = {
   id: string;
   canonical_term: string;
@@ -31,6 +32,51 @@ type SearchRule = {
   expires_at: string;
   active: boolean;
 };
+const contentTypeLabels: Record<string, string> = {
+  product: "Produto",
+  service: "Serviço",
+  industry: "Indústria",
+  application: "Aplicação",
+  solution: "Solução",
+  post: "Artigo",
+  page: "Página",
+  homepage: "Página inicial",
+  campaign: "Campanha",
+};
+const matchLabels: Record<string, string> = {
+  title: "Título",
+  summary: "Resumo",
+  keyword: "Palavra-chave",
+  synonym: "Sinônimo",
+  model: "Modelo",
+  specification: "Especificação",
+};
+const ruleKindLabels: Record<SearchRule["rule_kind"], string> = {
+  pin: "Fixar no início",
+  bury: "Rebaixar",
+  redirect: "Redirecionar",
+};
+const scopeLabels: Record<string, string> = {
+  all: "Todo o site",
+  product: "Produtos",
+  service: "Serviços",
+  industry: "Indústrias",
+  application: "Aplicações",
+  solution: "Soluções",
+};
+const searchUpdateStatusLabels: Record<string, string> = {
+  pending: "Aguardando atualização",
+  queued: "Aguardando atualização",
+  processing: "Atualização em andamento",
+  running: "Atualização em andamento",
+  completed: "Atualização concluída",
+  succeeded: "Atualização concluída",
+  failed: "Atualização não concluída",
+};
+
+function searchUpdateStatusLabel(status: string): string {
+  return searchUpdateStatusLabels[status] ?? "Situação indisponível";
+}
 const envelope = () => ({
   schemaVersion: 1 as const,
   commandId: crypto.randomUUID(),
@@ -45,7 +91,8 @@ export default function AdminSearchGovernancePage() {
     [items, setItems] = useState<Synonym[]>([]),
     [zeros, setZeros] = useState<any[]>([]),
     [canonical, setCanonical] = useState(""),
-    [aliases, setAliases] = useState(""),
+    [aliases, setAliases] = useState<string[]>([]),
+    [aliasDraft, setAliasDraft] = useState(""),
     [scope, setScope] = useState("all"),
     [source, setSource] = useState(""),
     [synonymOwner, setSynonymOwner] = useState(""),
@@ -63,6 +110,8 @@ export default function AdminSearchGovernancePage() {
     >([]),
     [ruleKind, setRuleKind] = useState<"pin" | "bury" | "redirect">("pin"),
     [ruleQuery, setRuleQuery] = useState(""),
+    [ruleTargetQuery, setRuleTargetQuery] = useState(""),
+    [ruleCandidates, setRuleCandidates] = useState<SearchItem[]>([]),
     [ruleTarget, setRuleTarget] = useState(""),
     [ruleReason, setRuleReason] = useState(""),
     [ruleOwner, setRuleOwner] = useState(""),
@@ -96,8 +145,8 @@ export default function AdminSearchGovernancePage() {
           setJobs(governance.jobs);
         }
       }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Busca indisponível.");
+    } catch (caught) {
+      setError(operatorErrorMessage(caught, { fallback: "As configurações de busca estão indisponíveis." }));
     } finally {
       setLoading(false);
     }
@@ -123,7 +172,9 @@ export default function AdminSearchGovernancePage() {
         })
           .then((result) => active && setSearchItems(result.items))
           .catch(
-            (caught) => active && setError(caught instanceof Error ? caught.message : "Busca indisponível."),
+            (caught) =>
+              active &&
+              setError(operatorErrorMessage(caught, { fallback: "Não foi possível concluir a busca." })),
           ),
       180,
     );
@@ -132,16 +183,43 @@ export default function AdminSearchGovernancePage() {
       window.clearTimeout(timer);
     };
   }, [adminQuery, session, v2Enabled]);
+  useEffect(() => {
+    if (!session || !v2Enabled || ruleKind === "redirect" || ruleTargetQuery.trim().length < 2) {
+      setRuleCandidates([]);
+      return;
+    }
+    let active = true;
+    const timer = window.setTimeout(
+      () =>
+        void searchGovernanceCommand<{ items: SearchItem[] }>(session, {
+          action: "admin_search",
+          envelope: envelope(),
+          query: ruleTargetQuery,
+          contentTypes: [],
+          limit: 30,
+        })
+          .then((result) => {
+            if (!active) return;
+            setRuleCandidates(result.items);
+            setRuleTarget((current) =>
+              current && result.items.some((item) => item.item_id === current) ? current : "",
+            );
+          })
+          .catch(() => active && setRuleCandidates([])),
+      180,
+    );
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [ruleKind, ruleTargetQuery, session, v2Enabled]);
 
   async function submitSynonym(event: React.FormEvent) {
     event.preventDefault();
     if (!session || busy) return;
-    const aliasList = aliases
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean);
+    const aliasList = aliases.map((value) => value.trim()).filter(Boolean);
     if (aliasList.length > 50 || aliasList.some((value) => value.length > 120)) {
-      setError("Informe no máximo 50 aliases, com até 120 caracteres cada.");
+      setError("Informe no máximo 50 variações, com até 120 caracteres cada.");
       return;
     }
     setBusy(true);
@@ -166,17 +244,30 @@ export default function AdminSearchGovernancePage() {
         active: true,
       });
       setCanonical("");
-      setAliases("");
+      setAliases([]);
+      setAliasDraft("");
       setSource("");
       setSynonymOwner("");
       setSynonymExpires("");
       setSuccess("Sinônimo salvo e registrado na auditoria.");
       await load();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Sinônimo não salvo.");
+      setError(operatorErrorMessage(caught, { fallback: "Não foi possível salvar o sinônimo." }));
     } finally {
       setBusy(false);
     }
+  }
+
+  function addAlias() {
+    const alias = aliasDraft.trim();
+    if (!alias || busy || aliases.length >= 50) return;
+    if (aliases.some((value) => value.localeCompare(alias, "pt-BR", { sensitivity: "accent" }) === 0)) {
+      setError("Essa variação já foi adicionada.");
+      return;
+    }
+    setAliases((current) => [...current, alias]);
+    setAliasDraft("");
+    setError("");
   }
 
   async function confirmRemove() {
@@ -190,7 +281,7 @@ export default function AdminSearchGovernancePage() {
       setRemoving(null);
       await load();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Sinônimo não removido.");
+      setError(operatorErrorMessage(caught, { fallback: "Não foi possível remover o sinônimo." }));
       setRemoving(null);
     } finally {
       setBusy(false);
@@ -207,10 +298,10 @@ export default function AdminSearchGovernancePage() {
         envelope: envelope(),
         reason: "Reconstrução manual autorizada no Centro de Busca",
       });
-      setSuccess(`Índice reconstruído com ${result.documentsIndexed} documento(s) públicos sanitizados.`);
+      setSuccess(`Busca pública atualizada com ${result.documentsIndexed} documento(s).`);
       await load();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Índice não reconstruído.");
+      setError(operatorErrorMessage(caught, { fallback: "Não foi possível atualizar a busca pública." }));
     } finally {
       setBusy(false);
     }
@@ -236,14 +327,16 @@ export default function AdminSearchGovernancePage() {
         expiresAt,
         active: true,
       });
-      setSuccess("Regra governada salva com vigência e auditoria.");
+      setSuccess("Regra de resultado salva com vigência e auditoria.");
       setRuleQuery("");
+      setRuleTargetQuery("");
+      setRuleCandidates([]);
       setRuleTarget("");
       setRuleReason("");
       setRuleExpires("");
       await load();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Regra não salva.");
+      setError(operatorErrorMessage(caught, { fallback: "Não foi possível salvar a regra de resultado." }));
     } finally {
       setBusy(false);
     }
@@ -252,8 +345,8 @@ export default function AdminSearchGovernancePage() {
     <section>
       <div className="admin-page-heading">
         <div>
-          <p className="admin-eyebrow">BUSCA ÚNICA</p>
-          <h1>Sinônimos e zero resultado</h1>
+          <p className="admin-eyebrow">BUSCA E RELEVÂNCIA</p>
+          <h1>Sinônimos e buscas sem resultado</h1>
         </div>
       </div>
       <ProductModuleTabs />
@@ -267,7 +360,7 @@ export default function AdminSearchGovernancePage() {
         <>
           <form className="admin-editor-grid" role="search" onSubmit={(event) => event.preventDefault()}>
             <label>
-              Busca global permitida
+              Pesquisar no conteúdo público
               <input
                 type="search"
                 value={adminQuery}
@@ -299,8 +392,8 @@ export default function AdminSearchGovernancePage() {
                         <br />
                         <small>{item.summary}</small>
                       </td>
-                      <td>{item.content_type}</td>
-                      <td>{item.matched_by}</td>
+                      <td>{contentTypeLabels[item.content_type] ?? "Conteúdo"}</td>
+                      <td>{matchLabels[item.matched_by] ?? "Correspondência encontrada"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -309,25 +402,29 @@ export default function AdminSearchGovernancePage() {
           )}
           {profile?.permissions.includes("cms:search.reindex") && (
             <button type="button" disabled={busy} onClick={() => void reindex()}>
-              Reconstruir índice público sanitizado
+              Atualizar busca pública
             </button>
           )}
           {jobs[0] && (
             <p>
               <small>
-                Último índice: {jobs[0].status} · {jobs[0].documents_indexed} documentos ·{" "}
-                {new Date(jobs[0].created_at).toLocaleString("pt-BR")}
+                Última atualização: {searchUpdateStatusLabel(jobs[0].status)} · {jobs[0].documents_indexed}{" "}
+                documentos · {new Date(jobs[0].created_at).toLocaleString("pt-BR")}
               </small>
             </p>
           )}
           {canManage && (
             <form className="admin-editor-grid" onSubmit={submitRule}>
-              <h2>Relevância governada</h2>
+              <h2>Ordenação dos resultados</h2>
               <label>
                 Regra
                 <select
                   value={ruleKind}
-                  onChange={(event) => setRuleKind(event.target.value as typeof ruleKind)}
+                  onChange={(event) => {
+                    setRuleKind(event.target.value as typeof ruleKind);
+                    setRuleTarget("");
+                    setRuleCandidates([]);
+                  }}
                 >
                   <option value="pin">Fixar</option>
                   <option value="bury">Rebaixar</option>
@@ -338,10 +435,53 @@ export default function AdminSearchGovernancePage() {
                 Consulta
                 <input required value={ruleQuery} onChange={(event) => setRuleQuery(event.target.value)} />
               </label>
-              <label>
-                {ruleKind === "redirect" ? "Caminho de destino" : "UUID do conteúdo"}
-                <input required value={ruleTarget} onChange={(event) => setRuleTarget(event.target.value)} />
-              </label>
+              {ruleKind === "redirect" ? (
+                <label>
+                  Caminho de destino
+                  <input
+                    required
+                    placeholder="/pagina-de-destino"
+                    pattern="/(?:[a-z0-9]+(?:-[a-z0-9]+)*/?)*"
+                    value={ruleTarget}
+                    onChange={(event) => setRuleTarget(event.target.value)}
+                  />
+                </label>
+              ) : (
+                <>
+                  <label>
+                    Localizar conteúdo
+                    <input
+                      type="search"
+                      minLength={2}
+                      placeholder="Digite o título ou endereço"
+                      value={ruleTargetQuery}
+                      onChange={(event) => setRuleTargetQuery(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Conteúdo {ruleKind === "pin" ? "a fixar" : "a rebaixar"}
+                    <select
+                      required
+                      value={ruleTarget}
+                      onChange={(event) => setRuleTarget(event.target.value)}
+                    >
+                      <option value="">
+                        {ruleTargetQuery.trim().length < 2
+                          ? "Pesquise um conteúdo primeiro"
+                          : ruleCandidates.length
+                            ? "Selecione o conteúdo"
+                            : "Nenhum conteúdo encontrado"}
+                      </option>
+                      {ruleCandidates.map((item) => (
+                        <option key={item.item_id} value={item.item_id}>
+                          {item.title} — {contentTypeLabels[item.content_type] ?? "Conteúdo"} (
+                          {item.public_path})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </>
+              )}
               <label>
                 Motivo
                 <input
@@ -389,8 +529,8 @@ export default function AdminSearchGovernancePage() {
             <ul>
               {rules.map((rule) => (
                 <li key={rule.id}>
-                  <strong>{rule.rule_kind}</strong> “{rule.normalized_query}” · {rule.owner_key} · até{" "}
-                  {new Date(rule.expires_at).toLocaleString("pt-BR")}
+                  <strong>{ruleKindLabels[rule.rule_kind] ?? "Regra"}</strong> “{rule.normalized_query}” ·{" "}
+                  responsável {rule.owner_key} · até {new Date(rule.expires_at).toLocaleString("pt-BR")}
                 </li>
               ))}
             </ul>
@@ -400,7 +540,7 @@ export default function AdminSearchGovernancePage() {
       {canManage && (
         <form className="admin-editor-grid" onSubmit={submitSynonym}>
           <label>
-            Conceito canônico
+            Termo principal
             <input
               required
               maxLength={120}
@@ -408,10 +548,52 @@ export default function AdminSearchGovernancePage() {
               onChange={(e) => setCanonical(e.target.value)}
             />
           </label>
-          <label>
-            Aliases separados por vírgula
-            <input required maxLength={6049} value={aliases} onChange={(e) => setAliases(e.target.value)} />
-          </label>
+          <div role="group" aria-labelledby="search-aliases-title">
+            <p id="search-aliases-title">Variações do termo</p>
+            <div className="admin-inline-fields">
+              <label>
+                Nova variação
+                <input
+                  maxLength={120}
+                  value={aliasDraft}
+                  disabled={busy || aliases.length >= 50}
+                  onChange={(event) => setAliasDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter") return;
+                    event.preventDefault();
+                    addAlias();
+                  }}
+                />
+              </label>
+              <button
+                type="button"
+                disabled={busy || !aliasDraft.trim() || aliases.length >= 50}
+                onClick={addAlias}
+              >
+                Adicionar variação
+              </button>
+            </div>
+            {aliases.length === 0 ? (
+              <p className="admin-help">Adicione pelo menos uma forma equivalente de pesquisar.</p>
+            ) : (
+              <ul className="admin-chip-list" aria-label="Variações adicionadas">
+                {aliases.map((alias) => (
+                  <li key={alias}>
+                    <span>{alias}</span>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      aria-label={`Remover variação ${alias}`}
+                      onClick={() => setAliases((current) => current.filter((item) => item !== alias))}
+                    >
+                      Remover
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <small>{aliases.length} de 50 variações adicionadas.</small>
+          </div>
           <label>
             Escopo
             <select value={scope} onChange={(e) => setScope(e.target.value)}>
@@ -424,7 +606,7 @@ export default function AdminSearchGovernancePage() {
             </select>
           </label>
           <label>
-            Fonte/autorização
+            Fonte ou autorização
             <input
               required
               minLength={3}
@@ -460,7 +642,7 @@ export default function AdminSearchGovernancePage() {
             disabled={
               busy ||
               !canonical ||
-              !aliases ||
+              aliases.length === 0 ||
               source.trim().length < 3 ||
               (v2Enabled && (synonymOwner.trim().length < 2 || !synonymExpires))
             }
@@ -471,20 +653,25 @@ export default function AdminSearchGovernancePage() {
       )}
       {loading ? (
         <div className="admin-state" aria-busy="true">
-          Carregando governança…
+          Carregando configurações de busca…
         </div>
       ) : (
         <>
-          <h2>Dicionário governado</h2>
+          <h2>Termos equivalentes</h2>
           {items.length === 0 ? (
             <div className="admin-state">
-              Nenhum sinônimo adicional. A normalização técnica continua ativa.
+              Nenhum sinônimo adicional. A busca continua usando os termos padrão do conteúdo.
             </div>
           ) : (
             <ul>
               {items.map((item) => (
                 <li key={item.id}>
-                  <strong>{item.canonical_term}</strong>: {item.aliases.join(", ")} ({item.scope}){" "}
+                  <strong>{item.canonical_term}</strong> ({scopeLabels[item.scope] ?? "Área específica"})
+                  <ul aria-label={`Variações de ${item.canonical_term}`}>
+                    {item.aliases.map((alias) => (
+                      <li key={alias}>{alias}</li>
+                    ))}
+                  </ul>{" "}
                   {canManage && (
                     <button type="button" disabled={busy} onClick={() => setRemoving(item)}>
                       Remover

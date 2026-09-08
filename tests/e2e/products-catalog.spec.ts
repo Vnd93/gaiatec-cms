@@ -1,5 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 
+const governedImageUrl =
+  "https://media.gaiatec-qa.invalid/functions/v1/cms-public?type=media&kind=product&slug=produto-imagem-governada&slot=primary";
+const onePixelPng = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=",
+  "base64",
+);
+
 async function mockProductCatalog(page: Page) {
   await page.route("**/functions/v1/cms-public?**", async (route) => {
     const url = new URL(route.request().url());
@@ -11,14 +18,12 @@ async function mockProductCatalog(page: Page) {
       body: JSON.stringify({
         items: [
           {
-            item_id: "20000000-0000-4000-8000-000000000001",
-            revision_id: "20000000-0000-4000-8000-000000000002",
+            kind: "product",
             slug: "produto-e2e-controlado",
+            path: "/produtos/produto-e2e-controlado",
             payload: {
-              contentType: "product",
               title: "Produto E2E controlado",
               summary: "Produto sintético exclusivo do teste local.",
-              pilotState: "homologated",
               commercial: {
                 shortDescription: "Descrição pública para validar filtros e comparação.",
                 valueProposition: "Teste local.",
@@ -33,16 +38,20 @@ async function mockProductCatalog(page: Page) {
                 installationOperation: { slug: "clamp-on", label: "Clamp-On" },
                 monitoredElement: { slug: "liquidos", label: "Líquidos" },
               },
-              models: [{ id: "modelo-e2e", model: "MODELO-E2E", status: "active", variants: [] }],
+              models: [{ model: "MODELO-E2E", status: "active", variants: [] }],
               specifications: [],
               media: [],
               documents: [],
               blocks: [],
             },
-            seo: {},
-            content_version: 1,
-            etag: "e2e-v1",
-            published_at: "2026-08-30T12:00:00.000Z",
+            seo: {
+              title: "Produto E2E controlado | GAIATEC",
+              description: "Produto sintético para validar filtros e comparação no navegador local.",
+              canonicalPath: "/produtos/produto-e2e-controlado",
+              indexable: false,
+            },
+            publishedAt: "2026-08-30T12:00:00.000Z",
+            relatedItems: [],
           },
         ],
         total: 1,
@@ -56,6 +65,71 @@ async function mockProductCatalog(page: Page) {
         query: "",
       }),
     });
+  });
+}
+
+async function mockPublishedProductWithGovernedImage(page: Page) {
+  await page.route("**/functions/v1/cms-public?**", async (route) => {
+    const url = new URL(route.request().url());
+    const type = url.searchParams.get("type");
+    const json = (body: unknown, status = 200) =>
+      route.fulfill({
+        status,
+        contentType: "application/json; charset=utf-8",
+        body: JSON.stringify(body),
+      });
+
+    if (type === "media") {
+      return route.fulfill({
+        status: 200,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Content-Type": "image/png",
+          "Cross-Origin-Resource-Policy": "cross-origin",
+        },
+        body: onePixelPng,
+      });
+    }
+    if (type === "detail") {
+      return json({
+        kind: "product",
+        slug: "produto-imagem-governada",
+        path: "/produtos/produto-imagem-governada",
+        payload: {
+          title: "Produto com imagem governada",
+          summary: "Publicação sintética para validar entrega cross-site de mídia.",
+          commercial: {
+            shortDescription: "Imagem entregue pelo proxy público governado.",
+            valueProposition: "Validação exclusiva do navegador local.",
+            benefits: [],
+            differentiators: [],
+          },
+          media: [
+            {
+              role: "primary",
+              alt: "Imagem pública governada",
+              image: { src: governedImageUrl, alt: "Imagem pública governada" },
+            },
+          ],
+          models: [],
+          specifications: [],
+          documents: [],
+          blocks: [],
+        },
+        seo: {
+          title: "Produto com imagem governada | GAIATEC",
+          description: "Publicação sintética para validar entrega segura de mídia.",
+          canonicalPath: "/produtos/produto-imagem-governada",
+          indexable: false,
+        },
+        publishedAt: "2026-09-08T12:00:00.000Z",
+        relatedItems: [],
+      });
+    }
+    if (type === "site-shell") return json({ navigation: null, settings: null, placements: null });
+    if (type === "campaign-placements") return json({ items: [] });
+    if (type === "form") return route.fulfill({ status: 204 });
+    return json({ error: "Fixture pública ausente." }, 404);
   });
 }
 
@@ -108,4 +182,36 @@ test("product catalog remains usable on a narrow viewport", async ({ page }, tes
   expect(filterBox?.width ?? Infinity).toBeLessThanOrEqual(viewportWidth);
   expect(await page.locator("main").count()).toBe(1);
   expect(await page.locator("body").evaluate((body) => body.scrollWidth <= body.clientWidth + 1)).toBe(true);
+});
+
+test("published governed image loads cross-site without a CORP browser failure", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop-chromium", "cross-site delivery contract");
+  const corpConsoleFailures: string[] = [];
+  const corpRequestFailures: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error" && /corp|not.?same.?site|blocked by response/i.test(message.text())) {
+      corpConsoleFailures.push(message.text());
+    }
+  });
+  page.on("requestfailed", (request) => {
+    if (request.url() === governedImageUrl) {
+      corpRequestFailures.push(request.failure()?.errorText ?? "unknown image request failure");
+    }
+  });
+  await mockPublishedProductWithGovernedImage(page);
+
+  const mediaResponsePromise = page.waitForResponse((response) => response.url() === governedImageUrl);
+  await page.goto("/produtos/produto-imagem-governada", { waitUntil: "networkidle" });
+  const mediaResponse = await mediaResponsePromise;
+  const image = page.getByRole("img", { name: "Imagem pública governada" });
+
+  await expect(image).toBeVisible();
+  await expect
+    .poll(() => image.evaluate((element) => (element as HTMLImageElement).naturalWidth))
+    .toBeGreaterThan(0);
+  expect(mediaResponse.headers()["cross-origin-resource-policy"]).toBe("cross-origin");
+  expect(corpConsoleFailures).toEqual([]);
+  expect(corpRequestFailures).toEqual([]);
 });

@@ -6,6 +6,49 @@ export const CmsSlugSchema = z
   .max(160);
 const RequiredText = z.string().trim().min(1);
 const Sha256 = z.string().regex(/^[0-9a-f]{64}$/);
+function isPublicInternetHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (
+    !host.includes(".") ||
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".local") ||
+    host.endsWith(".internal") ||
+    host === "::" ||
+    host === "::1" ||
+    /^(?:fc|fd|fe[89ab])/i.test(host)
+  )
+    return false;
+  const ipv4 = host.split(".").map(Number);
+  if (ipv4.length !== 4 || ipv4.some((part) => !Number.isInteger(part) || part < 0 || part > 255))
+    return true;
+  const [first, second] = ipv4;
+  return !(
+    first === 0 ||
+    first === 10 ||
+    first === 127 ||
+    (first === 100 && second >= 64 && second <= 127) ||
+    (first === 169 && second === 254) ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168) ||
+    first >= 224
+  );
+}
+export const CmsHttpUrlSchema = z
+  .url()
+  .max(500)
+  .refine((value) => {
+    try {
+      const parsed = new URL(value);
+      return ["http:", "https:"].includes(parsed.protocol) && !parsed.username && !parsed.password;
+    } catch {
+      return false;
+    }
+  }, "Somente URLs HTTP ou HTTPS são aceitas.");
+export const CmsOfficialHttpsUrlSchema = CmsHttpUrlSchema.refine((value) => {
+  const parsed = new URL(value);
+  return parsed.protocol === "https:" && isPublicInternetHostname(parsed.hostname);
+}, "URLs oficiais devem usar HTTPS e não podem conter credenciais.");
 export const CmsConsumerIdSchema = z.string().regex(/^cms\.[a-z][a-z0-9_.-]+\.v[0-9]+$/);
 
 export const CmsControlledTermRefSchema = z
@@ -20,7 +63,7 @@ export const CmsControlledTermRefSchema = z
 export const CmsProvenanceSchema = z
   .object({
     sourceKind: z.enum(["official_manufacturer", "official_company", "owner_authored"]),
-    sourceUrl: z.url().optional(),
+    sourceUrl: CmsOfficialHttpsUrlSchema.optional(),
     sourcePath: RequiredText.max(500).optional(),
     fileModifiedAt: z.iso.datetime().optional(),
     documentVersion: z.string().trim().min(1).max(80).optional(),
@@ -156,7 +199,7 @@ export const CmsProductContentSchema = z
       .object({
         name: RequiredText.max(120),
         slug: CmsSlugSchema,
-        officialUrl: z.url().optional(),
+        officialUrl: CmsOfficialHttpsUrlSchema.optional(),
       })
       .strict(),
     productLine: z.object({ name: RequiredText.max(120), slug: CmsSlugSchema }).strict(),
@@ -204,6 +247,7 @@ export const CmsProductContentSchema = z
                     id: z.uuid(),
                     name: RequiredText.max(160),
                     code: RequiredText.max(120),
+                    sku: RequiredText.max(120).optional(),
                     order: z.number().int().min(0).max(999),
                   })
                   .strict(),
@@ -235,11 +279,51 @@ export const CmsProductContentSchema = z
             filterable: z.boolean(),
             comparable: z.boolean(),
             searchable: z.boolean(),
+            definitionId: z.uuid().optional(),
+            scope: z.enum(["product", "model", "variant"]).optional(),
+            ownerId: z.uuid().optional(),
+            sourceType: z.enum(["manual", "import", "legacy"]).optional(),
+            sourceRef: z.string().trim().max(300).optional(),
+            confidence: z.number().min(0).max(1).optional(),
+            homologated: z.boolean().optional(),
           })
           .strict(),
       )
       .min(1)
       .max(200),
+    externalIdentifiers: z
+      .array(
+        z
+          .object({
+            id: z.uuid(),
+            owner: z.discriminatedUnion("type", [
+              z.object({ type: z.literal("product") }).strict(),
+              z.object({ type: z.literal("model"), id: z.uuid() }).strict(),
+              z.object({ type: z.literal("variant"), id: z.uuid() }).strict(),
+            ]),
+            kind: z.enum(["erp", "gtin", "ncm", "other"]),
+            value: RequiredText.max(180),
+            issuer: z.string().trim().max(160).optional(),
+            visibility: z.enum(["public", "internal"]).default("internal"),
+            sourceType: z.enum(["manual", "import", "legacy"]).default("manual"),
+            sourceRef: z.string().trim().max(300).optional(),
+          })
+          .strict()
+          .superRefine((identifier, context) => {
+            if (identifier.kind === "gtin" && !/^\d{8}(?:\d{4}(?:\d{1,2})?)?$/.test(identifier.value)) {
+              context.addIssue({
+                code: "custom",
+                path: ["value"],
+                message: "GTIN deve conter 8, 12, 13 ou 14 dígitos.",
+              });
+            }
+            if (identifier.kind === "ncm" && !/^\d{8}$/.test(identifier.value)) {
+              context.addIssue({ code: "custom", path: ["value"], message: "NCM deve conter 8 dígitos." });
+            }
+          }),
+      )
+      .max(100)
+      .default([]),
     media: z
       .array(
         z
@@ -257,26 +341,39 @@ export const CmsProductContentSchema = z
       .array(
         z
           .object({
-            id: z.uuid(),
+            id: z.uuid().transform((value) => value.toLowerCase()),
             kind: z.enum(["datasheet", "manual", "certificate", "drawing", "software", "other"]),
             title: RequiredText.max(180),
-            officialUrl: z.url().optional(),
-            storagePath: z
-              .string()
-              .regex(/^cms-documents\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+$/)
-              .optional(),
+            storagePath: z.string().regex(/^cms-documents\/[0-9a-f-]{36}\/[A-Za-z0-9._-]+\.pdf$/),
             sha256: Sha256,
             revision: RequiredText.max(80),
-            language: RequiredText.max(20),
+            language: z
+              .string()
+              .trim()
+              .regex(/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})?$/),
             visibility: z.enum(["public", "private"]),
             rightsConfirmed: z.literal(true),
           })
           .strict()
-          .refine((value) => Boolean(value.officialUrl || value.storagePath), {
-            message: "Documento exige URL oficial ou arquivo privado.",
+          .refine((value) => value.storagePath.split("/")[1]?.toLowerCase() === value.id.toLowerCase(), {
+            message: "O caminho governado deve pertencer ao mesmo documento.",
           }),
       )
-      .max(30),
+      .max(30)
+      .superRefine((documents, context) => {
+        const seen = new Set<string>();
+        documents.forEach((document, index) => {
+          const id = document.id.toLowerCase();
+          if (seen.has(id)) {
+            context.addIssue({
+              code: "custom",
+              path: [index, "id"],
+              message: "Documento duplicado.",
+            });
+          }
+          seen.add(id);
+        });
+      }),
     relations: z
       .object({
         productIds: z.array(z.uuid()).max(50),
@@ -313,6 +410,213 @@ export const CmsProductContentSchema = z
   })
   .strict()
   .superRefine((value, context) => {
+    const normalizeIdentity = (candidate: string) => candidate.trim().toLocaleLowerCase("pt-BR");
+    const modelIds = new Set<string>();
+    const variantIds = new Set<string>();
+    const skus = new Set<string>();
+    value.models.forEach((model, modelIndex) => {
+      const variantCodes = new Set<string>();
+      const modelId = normalizeIdentity(model.id);
+      if (modelIds.has(modelId)) {
+        context.addIssue({
+          code: "custom",
+          path: ["models", modelIndex, "id"],
+          message: "Modelo duplicado.",
+        });
+      }
+      modelIds.add(modelId);
+
+      const modelSku = normalizeIdentity(model.sku);
+      if (skus.has(modelSku)) {
+        context.addIssue({
+          code: "custom",
+          path: ["models", modelIndex, "sku"],
+          message: "SKU duplicado.",
+        });
+      }
+      skus.add(modelSku);
+
+      model.variants.forEach((variant, variantIndex) => {
+        const variantId = normalizeIdentity(variant.id);
+        if (variantIds.has(variantId)) {
+          context.addIssue({
+            code: "custom",
+            path: ["models", modelIndex, "variants", variantIndex, "id"],
+            message: "Variante duplicada.",
+          });
+        }
+        variantIds.add(variantId);
+
+        const variantCode = normalizeIdentity(variant.code);
+        if (variantCodes.has(variantCode)) {
+          context.addIssue({
+            code: "custom",
+            path: ["models", modelIndex, "variants", variantIndex, "code"],
+            message: "Código de variante duplicado.",
+          });
+        }
+        variantCodes.add(variantCode);
+
+        if (variant.sku) {
+          const variantSku = normalizeIdentity(variant.sku);
+          if (skus.has(variantSku)) {
+            context.addIssue({
+              code: "custom",
+              path: ["models", modelIndex, "variants", variantIndex, "sku"],
+              message: "SKU duplicado.",
+            });
+          }
+          skus.add(variantSku);
+        }
+      });
+    });
+    value.models.forEach((model, modelIndex) => {
+      model.variants.forEach((variant, variantIndex) => {
+        if (modelIds.has(normalizeIdentity(variant.id))) {
+          context.addIssue({
+            code: "custom",
+            path: ["models", modelIndex, "variants", variantIndex, "id"],
+            message: "Modelo e variante não podem compartilhar a mesma identidade.",
+          });
+        }
+      });
+    });
+    const specificationIds = new Set<string>();
+    const specificationIdentities = new Set<string>();
+    value.specifications.forEach((specification, index) => {
+      const specificationId = normalizeIdentity(specification.id);
+      const specificationIdentity = [
+        normalizeIdentity(specification.definitionId ?? specification.key),
+        specification.scope ?? "product",
+        specification.ownerId ? normalizeIdentity(specification.ownerId) : "product",
+      ].join(":");
+      if (specificationIds.has(specificationId)) {
+        context.addIssue({
+          code: "custom",
+          path: ["specifications", index, "id"],
+          message: "Atributo técnico duplicado.",
+        });
+      }
+      if (specificationIdentities.has(specificationIdentity)) {
+        context.addIssue({
+          code: "custom",
+          path: ["specifications", index, "key"],
+          message: "Atributo técnico duplicado para o mesmo escopo.",
+        });
+      }
+      specificationIds.add(specificationId);
+      specificationIdentities.add(specificationIdentity);
+      if (
+        specification.type === "range" &&
+        typeof specification.value === "object" &&
+        !Array.isArray(specification.value) &&
+        specification.value.min > specification.value.max
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["specifications", index, "value"],
+          message: "O limite mínimo não pode exceder o máximo.",
+        });
+      }
+      const valueMatchesType =
+        (specification.type === "text" && typeof specification.value === "string") ||
+        (specification.type === "number" && typeof specification.value === "number") ||
+        (specification.type === "boolean" && typeof specification.value === "boolean") ||
+        (specification.type === "enum" && Array.isArray(specification.value)) ||
+        (specification.type === "range" &&
+          typeof specification.value === "object" &&
+          !Array.isArray(specification.value));
+      if (!valueMatchesType) {
+        context.addIssue({
+          code: "custom",
+          path: ["specifications", index, "value"],
+          message: "O valor não corresponde ao tipo do atributo técnico.",
+        });
+      }
+      if (
+        specification.homologated === true &&
+        (!specification.definitionId ||
+          !specification.scope ||
+          !specification.sourceType ||
+          specification.confidence === undefined)
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["specifications", index],
+          message: "Atributo homologado exige definição, escopo, origem e confiança governados.",
+        });
+      }
+      if (["import", "legacy"].includes(specification.sourceType ?? "") && !specification.sourceRef?.trim()) {
+        context.addIssue({
+          code: "custom",
+          path: ["specifications", index, "sourceRef"],
+          message: "Importação ou base anterior exige evidência da origem.",
+        });
+      }
+      if (
+        specification.scope === "model" &&
+        (!specification.ownerId || !modelIds.has(normalizeIdentity(specification.ownerId)))
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["specifications", index, "ownerId"],
+          message: "O modelo selecionado não pertence a este produto.",
+        });
+      }
+      if (
+        specification.scope === "variant" &&
+        (!specification.ownerId || !variantIds.has(normalizeIdentity(specification.ownerId)))
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["specifications", index, "ownerId"],
+          message: "A variante selecionada não pertence a este produto.",
+        });
+      }
+      if ((specification.scope ?? "product") === "product" && specification.ownerId) {
+        context.addIssue({
+          code: "custom",
+          path: ["specifications", index, "ownerId"],
+          message: "Atributo do produto não deve apontar para modelo ou variante.",
+        });
+      }
+    });
+    const identifierIds = new Set<string>();
+    const identifierKeys = new Set<string>();
+    value.externalIdentifiers.forEach((identifier, index) => {
+      const identifierId = normalizeIdentity(identifier.id);
+      if (identifierIds.has(identifierId)) {
+        context.addIssue({
+          code: "custom",
+          path: ["externalIdentifiers", index, "id"],
+          message: "Identificador comercial duplicado.",
+        });
+      }
+      identifierIds.add(identifierId);
+      if (identifier.owner.type === "model" && !modelIds.has(normalizeIdentity(identifier.owner.id))) {
+        context.addIssue({
+          code: "custom",
+          path: ["externalIdentifiers", index, "owner"],
+          message: "O modelo selecionado não pertence a este produto.",
+        });
+      }
+      if (identifier.owner.type === "variant" && !variantIds.has(normalizeIdentity(identifier.owner.id))) {
+        context.addIssue({
+          code: "custom",
+          path: ["externalIdentifiers", index, "owner"],
+          message: "A variante selecionada não pertence a este produto.",
+        });
+      }
+      const key = `${identifier.kind}:${identifier.value.toLocaleLowerCase("pt-BR")}`;
+      if (identifierKeys.has(key)) {
+        context.addIssue({
+          code: "custom",
+          path: ["externalIdentifiers", index, "value"],
+          message: "Identificador comercial duplicado.",
+        });
+      }
+      identifierKeys.add(key);
+    });
     if (value.pilotState === "homologated" && !value.approval.homologatedAt) {
       context.addIssue({
         code: "custom",
@@ -445,6 +749,7 @@ export const CmsIndustryContentSchema = z
     ...BaseContent,
     ...GovernedDiscovery,
     contentType: z.literal("industry"),
+    displayOrder: z.number().int().min(0).max(999).default(999),
     marketName: RequiredText.max(160),
     challenges: z.array(RequiredText.max(500)).min(1).max(30),
     evidence: z.array(RequiredText.max(500)).min(1).max(30),
@@ -531,6 +836,8 @@ export const CmsPostContentSchema = z
   })
   .strict();
 
+export const CmsPublicPostContentSchema = CmsPostContentSchema.omit({ provenance: true });
+
 const visualSpan = (columns: number) =>
   z
     .object({
@@ -567,10 +874,7 @@ const PageInternalPathSchema = z
   .string()
   .regex(/^\/(?:[a-z0-9]+(?:-[a-z0-9]+)*\/?)*$/)
   .max(300);
-const PageHttpUrlSchema = z
-  .url()
-  .max(500)
-  .refine((value) => /^https?:\/\//i.test(value), "Somente URLs HTTP ou HTTPS são aceitas.");
+const PageHttpUrlSchema = CmsHttpUrlSchema;
 const PageHrefSchema = z.union([PageInternalPathSchema, PageHttpUrlSchema]);
 
 const PageLinkSchema = z
@@ -763,7 +1067,15 @@ export const CmsPageBlockSchema = z.discriminatedUnion("type", [
           formVersionId: z.uuid().optional(),
           buttonLabel: RequiredText.max(120),
         })
-        .strict(),
+        .strict()
+        .superRefine((value, context) => {
+          if (Boolean(value.formId) !== Boolean(value.formVersionId))
+            context.addIssue({
+              code: "custom",
+              path: [value.formId ? "formVersionId" : "formId"],
+              message: "Formulário governado exige definição e versão juntas.",
+            });
+        }),
     })
     .strict(),
   z
@@ -1454,6 +1766,33 @@ export const CmsCampaignContentSchema = z
       });
   });
 
+const {
+  provenance: _campaignProvenance,
+  governanceState: _campaignGovernanceState,
+  approval: _campaignApproval,
+  placements: _campaignPlacements,
+  expiry: _campaignExpiry,
+  ...CmsPublicCampaignContentShape
+} = CmsCampaignContentSchema.shape;
+
+export const CmsPublicCampaignContentSchema = z
+  .object(CmsPublicCampaignContentShape)
+  .strict()
+  .superRefine((value, context) => {
+    if (new Date(value.window.endsAt) <= new Date(value.window.startsAt))
+      context.addIssue({
+        code: "custom",
+        path: ["window", "endsAt"],
+        message: "Término deve ser posterior ao início.",
+      });
+    if (value.seo.canonicalPath !== value.route.path)
+      context.addIssue({
+        code: "custom",
+        path: ["seo", "canonicalPath"],
+        message: "Canonical deve coincidir com a landing page.",
+      });
+  });
+
 export const CmsLeadCaptureSchema = z
   .object({
     formId: z.uuid(),
@@ -1530,6 +1869,20 @@ export const CmsContentPayloadSchema = z.discriminatedUnion("contentType", [
 ]);
 
 export type CmsContentPayload = z.infer<typeof CmsContentPayloadSchema>;
+
+export function omitLegacyExternalProductDocuments(payload: unknown): unknown {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
+  const record = payload as Record<string, unknown>;
+  if (record.contentType !== "product" || !Array.isArray(record.documents)) return payload;
+  const documents = record.documents.filter(
+    (document) =>
+      !document ||
+      typeof document !== "object" ||
+      Array.isArray(document) ||
+      !Object.prototype.hasOwnProperty.call(document, "officialUrl"),
+  );
+  return documents.length === record.documents.length ? payload : { ...record, documents };
+}
 export type CmsProductContent = z.infer<typeof CmsProductContentSchema>;
 export type CmsProductFieldVisibility = z.infer<typeof CmsProductFieldVisibilitySchema>;
 export type CmsServiceContent = z.infer<typeof CmsServiceContentSchema>;
@@ -1537,11 +1890,13 @@ export type CmsIndustryContent = z.infer<typeof CmsIndustryContentSchema>;
 export type CmsApplicationContent = z.infer<typeof CmsApplicationContentSchema>;
 export type CmsSolutionContent = z.infer<typeof CmsSolutionContentSchema>;
 export type CmsPostContent = z.infer<typeof CmsPostContentSchema>;
+export type CmsPublicPostContent = z.infer<typeof CmsPublicPostContentSchema>;
 export type CmsPageContent = z.infer<typeof CmsPageContentSchema>;
 export type CmsPageBlock = z.infer<typeof CmsPageBlockSchema>;
 export type CmsNavigationContent = z.infer<typeof CmsNavigationContentSchema>;
 export type CmsSiteSettingsContent = z.infer<typeof CmsSiteSettingsContentSchema>;
 export type CmsPlacementContent = z.infer<typeof CmsPlacementContentSchema>;
 export type CmsCampaignContent = z.infer<typeof CmsCampaignContentSchema>;
+export type CmsPublicCampaignContent = z.infer<typeof CmsPublicCampaignContentSchema>;
 export type CmsFormVersion = z.infer<typeof CmsFormVersionSchema>;
 export type CmsLeadCapture = z.infer<typeof CmsLeadCaptureSchema>;

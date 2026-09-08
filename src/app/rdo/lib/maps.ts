@@ -1,8 +1,7 @@
 /** Google Maps Embed API (grátis, iframe). A chave é pública por natureza —
  *  deve ser RESTRITA por referrer (gaiatecsistemas.com.br/*) no console do Google. */
 
-export const GOOGLE_MAPS_KEY: string =
-  import.meta.env.VITE_GOOGLE_MAPS_KEY || "AIzaSyAEeGDLlVzkkDRlF1WP2oG5fRr7KKV5cS8";
+export const GOOGLE_MAPS_KEY: string = import.meta.env.VITE_GOOGLE_MAPS_KEY?.trim() ?? "";
 
 export const hasMapsKey = (): boolean => Boolean(GOOGLE_MAPS_KEY);
 

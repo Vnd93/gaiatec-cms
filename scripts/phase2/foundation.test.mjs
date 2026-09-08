@@ -41,4 +41,56 @@ test("preview and private paths are fail-closed in edge configuration", async ()
   assert.match(worker, /noindex, nofollow, noarchive/);
   assert.match(worker, /private, no-store/);
   assert.match(worker, /frame-src[^;]*https:\/\/www\.openstreetmap\.org/);
+  assert.doesNotMatch(
+    worker,
+    /export\s+(?:const|let|var)\s+/,
+    "Cloudflare module workers reject named exports that are not callable entrypoints",
+  );
+  assert.match(worker, /telemetryRoute\(url\.pathname\)/);
+  assert.doesNotMatch(worker, /route:\s*url\.pathname/);
+  assert.doesNotMatch(worker, /headers\.set\("X-Correlation-ID"/);
+});
+
+test("edge telemetry redacts capability tokens and internal identifiers", async () => {
+  const { default: worker, telemetryRoute } = await import("../../cloudflare/_worker.js");
+  assert.equal(telemetryRoute(`/preview/${"s".repeat(43)}`), "/preview/:token");
+  assert.equal(telemetryRoute("/relatorio-de-obra/assinar/capability-secret"), "/relatorio-de-obra/:route");
+  assert.equal(telemetryRoute("/relatorio-de-obra/relatorio/private-reference"), "/relatorio-de-obra/:route");
+  assert.equal(telemetryRoute("/admin/conteudo/81000000-0000-4000-8000-000000000001"), "/admin/:route");
+  const sensitivePaths = [
+    "/foo/cliente%40empresa.com",
+    "/admin/paginas/018f7777-7777-7777-8777-777777777777",
+    `/arquivo/${"a".repeat(64)}`,
+    `/assets/chunk-${"b".repeat(40)}.wasm`,
+    "/sitemap-clienteconfidencial.xml",
+    "/página/Cliente-Confidencial-☎",
+  ];
+  for (const path of sensitivePaths) {
+    const safe = telemetryRoute(path);
+    assert.doesNotMatch(safe, /cliente|018f|a{16}|b{16}|confidencial|☎/i);
+  }
+
+  const captured = [];
+  const originalLog = console.log;
+  console.log = (message) => captured.push(String(message));
+  const token = "customer-private-capability-token";
+  const release = "c".repeat(40);
+  try {
+    await worker.fetch(
+      new Request(`https://gaiatecsistemas.com.br/relatorio-de-obra/assinar/${token}`, {
+        headers: { "x-correlation-id": "incoming-private-reference" },
+      }),
+      {
+        CF_PAGES_BRANCH: "main",
+        CF_PAGES_COMMIT_SHA: release,
+        ASSETS: { fetch: async () => new Response("<!doctype html><title>GAIATEC</title>") },
+      },
+    );
+  } finally {
+    console.log = originalLog;
+  }
+  const serialized = captured.join("\n");
+  assert.doesNotMatch(serialized, new RegExp(token));
+  assert.doesNotMatch(serialized, /incoming-private-reference/);
+  assert.doesNotMatch(serialized, new RegExp(release));
 });

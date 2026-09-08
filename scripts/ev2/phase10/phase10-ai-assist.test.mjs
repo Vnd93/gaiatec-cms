@@ -92,7 +92,8 @@ test("contracts and UI expose source, confidence, diff, cost and manual fallback
     read("cloudflare/_worker.js"),
     read("src/admin/admin-route-guidance.ts"),
   ]);
-  assert.match(contract, /externalProviderEnabled: z\.boolean\(\)/);
+  assert.match(contract, /externalProviderEnabled: z\.literal\(true\)/);
+  assert.match(contract, /Ev2AiProviderModeSchema = z\.literal\("openrouter"\)/);
   assert.match(contract, /aiExecute: z\.literal\(false\)/);
   assert.match(contract, /sourceTitle/);
   assert.match(contract, /sourceVersion/);
@@ -100,15 +101,15 @@ test("contracts and UI expose source, confidence, diff, cost and manual fallback
   assert.match(contract, /Ev2AiDiffSchema/);
   assert.match(page, /isEv2FeatureEnabled\(profile, "ev2\.ai_assist"\)/);
   assert.match(page, /Fonte técnica obrigatória/);
-  assert.match(page, /Diff proposto/);
-  assert.match(page, /Permissões efetivas/);
+  assert.match(page, /Alterações propostas/);
+  assert.match(page, /Acesso disponível/);
   assert.match(page, /Qualidade:/);
   assert.match(page, /Encerrar sessão/);
   assert.match(page, /aguarda confirmação/);
   assert.match(page, /fila de revisão/);
   assert.match(page, /selectedProposal\.hasPendingFields/);
   assert.match(page, /Operação manual sempre disponível/);
-  assert.match(page, /Modelo gratuito/);
+  assert.match(page, /Sem cobrança/);
   assert.match(navigation, /candidate: "ev2\.ai_assist"/);
   assert.match(routes, /path: "assistente"/);
   assert.match(shell, /!item\.candidate \|\| isEv2FeatureEnabled\(profile, item\.candidate\)/);
@@ -155,7 +156,7 @@ test("rehearsal, canary and workflow remain reproducible", async () => {
   assert.match(canary, /review_queue_segregated/);
   assert.match(canary, /low_confidence_acceptance_blocked/);
   assert.match(canary, /synthetic_residue_zero/);
-  assert.match(canary, /external_provider_disabled/);
+  assert.match(canary, /approved_provider_ready/);
   assert.match(workflow, /expected_sha/);
   assert.match(workflow, /VITE_EV2_AI_ASSIST_CANDIDATE/);
   assert.match(workflow, /ev2-g10-canary/);

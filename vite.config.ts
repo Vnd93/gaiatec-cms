@@ -46,6 +46,12 @@ export default defineConfig({
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
   assetsInclude: ["**/*.svg", "**/*.csv"],
 
+  // The admin AVIF encoder uses a module Web Worker and splits its WASM glue.
+  // ES output is required for that worker graph; public routes do not load it.
+  worker: {
+    format: "es",
+  },
+
   build: {
     // Consumido pelo orçamento EV2.6 para distinguir imports iniciais de lazy chunks.
     manifest: true,

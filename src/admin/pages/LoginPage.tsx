@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { useAdminAuth } from "../auth/AdminAuthContext";
+import { safeAdminDestination } from "../auth/admin-auth-route";
 import { AdminError, AdminFrame } from "../components/AdminFrame";
 import { AdminAlert } from "../components/AdminUI";
+import { operatorErrorMessage } from "../operator-error-message";
 
 export default function AdminLoginPage() {
   const { status, signIn } = useAdminAuth();
@@ -12,19 +14,32 @@ export default function AdminLoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const destination = safeAdminDestination((location.state as { from?: unknown } | null)?.from);
 
   useEffect(() => {
-    if (status === "ready") navigate("/admin", { replace: true });
-    if (status === "mfa_enroll" || status === "mfa_challenge") navigate("/admin/mfa", { replace: true });
-  }, [navigate, status]);
+    if (status === "ready") navigate(destination, { replace: true });
+    if (status === "mfa_enroll" || status === "mfa_challenge")
+      navigate("/admin/mfa", { replace: true, state: { from: destination } });
+    if (status === "password_update") navigate("/admin/definir-senha", { replace: true });
+    if (status === "unauthorized" || status === "temporarily_unavailable")
+      navigate(destination, { replace: true });
+  }, [destination, navigate, status]);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
     setBusy(true);
-    const result = await signIn(email, password);
-    setBusy(false);
-    if (result.error) setError(result.error);
+    try {
+      const result = await signIn(email, password);
+      if (result.error)
+        setError(
+          operatorErrorMessage(result.error, { fallback: "Não foi possível entrar. Tente novamente." }),
+        );
+    } catch (caught) {
+      setError(operatorErrorMessage(caught, { fallback: "Não foi possível entrar. Tente novamente." }));
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (

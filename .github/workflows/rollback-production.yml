@@ -9,14 +9,21 @@ on:
       expected_release:
         description: SHA completo do deployment que será restaurado
         required: true
+      forward_backend_release:
+        description: SHA completo do backend expand-only que permanecerá ativo
+        required: true
+      forward_backend_run_id:
+        description: Run ID produtivo imutável que selou o backend ainda ativo
+        required: true
       change_reference:
         description: Identificador do incidente ou mudança
         required: true
       confirmation:
-        description: Digite ROLLBACK-G12-PRODUCTION
+        description: Digite ROLLBACK-G12-PRODUCTION:<expected_release>:<deployment_id>:<forward_backend_release>:<forward_backend_run_id>
         required: true
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -24,36 +31,1254 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  rollback:
-    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'ROLLBACK-G12-PRODUCTION'
+  prepare:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     environment: production
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Validate production rollback dispatch authorization before any external request
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+          DISPATCH_ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          DEPLOYMENT_ID: ${{ inputs.deployment_id }}
+          EXPECTED_RELEASE: ${{ inputs.expected_release }}
+          FORWARD_BACKEND_RELEASE: ${{ inputs.forward_backend_release }}
+          FORWARD_BACKEND_RUN_ID: ${{ inputs.forward_backend_run_id }}
+          CHANGE_REFERENCE: ${{ inputs.change_reference }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          if [ "$DISPATCH_REF" != "refs/heads/main" ]; then
+            echo "::error::Production rollback must be dispatched from main."
+            exit 1
+          fi
+          if [ "${DISPATCH_ACTOR,,}" != "vnd93" ] || [ "${TRIGGERING_ACTOR,,}" != "vnd93" ]; then
+            echo "::error::Production rollback is restricted to the approved operator."
+            exit 1
+          fi
+          expected_confirmation="ROLLBACK-G12-PRODUCTION:$EXPECTED_RELEASE:$DEPLOYMENT_ID:$FORWARD_BACKEND_RELEASE:$FORWARD_BACKEND_RUN_ID"
+          if [ "$CONFIRMATION" != "$expected_confirmation" ]; then
+            echo "::error::Production rollback confirmation is invalid."
+            exit 1
+          fi
+          if ! [[ "$DEPLOYMENT_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]]; then
+            echo "::error::deployment_id must be a canonical lowercase UUID."
+            exit 1
+          fi
+          if ! [[ "$EXPECTED_RELEASE" =~ ^[a-f0-9]{40}$ ]]; then
+            echo "::error::expected_release must be a full lowercase Git SHA."
+            exit 1
+          fi
+          if ! [[ "$FORWARD_BACKEND_RELEASE" =~ ^[a-f0-9]{40}$ ]]; then
+            echo "::error::forward_backend_release must be a full lowercase Git SHA."
+            exit 1
+          fi
+          if ! [[ "$FORWARD_BACKEND_RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::forward_backend_run_id must be a positive Actions run ID."
+            exit 1
+          fi
+          if [ -z "$CHANGE_REFERENCE" ]; then
+            echo "::error::change_reference is required."
+            exit 1
+          fi
+      - name: Checkout current release controls
+        timeout-minutes: 5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+          path: control
+      - name: Checkout exact backend rollback baseline
+        timeout-minutes: 5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.expected_release }}
+          fetch-depth: 0
+          path: baseline
+      - name: Checkout exact forward-compatible backend
+        timeout-minutes: 5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.forward_backend_release }}
+          fetch-depth: 0
+          path: backend
+      - name: Download immutable evidence for the retained production backend
+        timeout-minutes: 5
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: production-backend-${{ inputs.forward_backend_release }}
+          path: backend-evidence
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.forward_backend_run_id }}
+      - name: Install pinned Supabase CLI
+        timeout-minutes: 5
+        uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3
+        with:
+          version: 2.116.0
       - name: Verify protected GitHub controls
-        run: node scripts/ev2/phase12/check-github-controls.mjs
+        timeout-minutes: 5
+        working-directory: control
+        run: timeout 4m node scripts/ev2/phase12/check-github-controls.mjs
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
           CANDIDATE_SHA: ${{ inputs.expected_release }}
-      - name: Validate immutable rollback inputs
+      - name: Verify protected GitHub controls for the retained backend
+        timeout-minutes: 5
+        working-directory: control
+        run: timeout 4m node scripts/ev2/phase12/check-github-controls.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          CANDIDATE_SHA: ${{ inputs.forward_backend_release }}
+      - name: Verify CI and protected controls for the current rollback control commit
+        timeout-minutes: 5
+        working-directory: control
+        run: timeout 4m node scripts/ev2/phase12/check-github-controls.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          CANDIDATE_SHA: ${{ github.sha }}
+      - name: Validate immutable rollback inputs and static ancestry
+        working-directory: control
         env:
           DEPLOYMENT_ID: ${{ inputs.deployment_id }}
           EXPECTED_RELEASE: ${{ inputs.expected_release }}
+          FORWARD_BACKEND_RELEASE: ${{ inputs.forward_backend_release }}
+          FORWARD_BACKEND_RUN_ID: ${{ inputs.forward_backend_run_id }}
           CHANGE_REFERENCE: ${{ inputs.change_reference }}
         run: |
-          test "$(printf '%s' "$DEPLOYMENT_ID" | grep -E '^[0-9a-f-]{36}$')" = "$DEPLOYMENT_ID"
+          set -euo pipefail
+          test "$(printf '%s' "$DEPLOYMENT_ID" | grep -E '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')" = "$DEPLOYMENT_ID"
           test "$(printf '%s' "$EXPECTED_RELEASE" | grep -E '^[a-f0-9]{40}$')" = "$EXPECTED_RELEASE"
+          test "$(printf '%s' "$FORWARD_BACKEND_RELEASE" | grep -E '^[a-f0-9]{40}$')" = "$FORWARD_BACKEND_RELEASE"
+          test "$(printf '%s' "$FORWARD_BACKEND_RUN_ID" | grep -E '^[1-9][0-9]*$')" = "$FORWARD_BACKEND_RUN_ID"
           test -n "$CHANGE_REFERENCE"
-      - name: Restore exact prior production deployment
-        run: node scripts/ev2/phase12/cloudflare-pages.mjs rollback
+          test "$(git -C ../baseline rev-parse HEAD)" = "$EXPECTED_RELEASE"
+          test "$(git -C ../backend rev-parse HEAD)" = "$FORWARD_BACKEND_RELEASE"
+          git merge-base --is-ancestor "$EXPECTED_RELEASE" "$FORWARD_BACKEND_RELEASE"
+          git merge-base --is-ancestor "$FORWARD_BACKEND_RELEASE" origin/main
+      - name: Prove the prior frontend is compatible with the retained backend
+        timeout-minutes: 5
+        working-directory: backend
+        run: >-
+          timeout 4m node scripts/ev2/phase12/verify-backend-forward-compatibility.mjs
+          --candidate . --baseline ../baseline --report g12-backend-compatibility.json
+      - name: Prove the retained backend evidence and live schema before any mutation
+        timeout-minutes: 10
+        working-directory: control
+        env:
+          FORWARD_BACKEND_RELEASE: ${{ inputs.forward_backend_release }}
+          FORWARD_BACKEND_RUN_ID: ${{ inputs.forward_backend_run_id }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          timeout 4m supabase functions list --project-ref "$PRODUCTION_SUPABASE_PROJECT_REF" --output json > ../g12-production-rollback-preflight-functions.json
+          timeout 2m node ../backend/scripts/ev2/phase12/verify-production-functions.mjs --file ../g12-production-rollback-preflight-functions.json
+          timeout 4m node ../backend/scripts/ev2/phase12/verify-production-database.mjs --source ../backend | tee ../g12-production-rollback-preflight-database.json
+          timeout 4m node scripts/ev2/phase12/verify-production-backend-evidence.mjs \
+            --source ../backend \
+            --manifest ../backend-evidence/manifest.json \
+            --sealed-functions ../backend-evidence/functions.json \
+            --sealed-database ../backend-evidence/database.json \
+            --live-functions ../g12-production-rollback-preflight-functions.json \
+            | tee ../g12-production-rollback-preflight-backend-evidence.json
+      - name: Capture the exact canonical production deployment before mutation
+        id: original_production
+        timeout-minutes: 5
+        working-directory: control
+        run: timeout 4m node scripts/ev2/phase12/cloudflare-pages.mjs latest-production
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_PAGES_PROJECT: gaiatec-website
-          CLOUDFLARE_DEPLOYMENT_ID: ${{ inputs.deployment_id }}
-          CLOUDFLARE_EXPECTED_RELEASE: ${{ inputs.expected_release }}
-      - name: Verify restored public routes
-        run: node scripts/phase2/http-smoke.mjs https://gaiatecsistemas.com.br
+      - name: Prove the captured canonical frontend before mutation
+        timeout-minutes: 8
+        working-directory: control
+        run: timeout 7m node scripts/ev2/phase12/rollout-probe.mjs
+        env:
+          EV2_G12_ORIGIN: https://gaiatecsistemas.com.br
+          EV2_G12_EXPECTED_SHA: ${{ steps.original_production.outputs.release }}
+          EV2_G12_ENVIRONMENT: production
+          EV2_G12_PRODUCTION_AUTHORIZED: "true"
+          EV2_G12_PROBE_PROFILE: full
+          EV2_G12_SAMPLE_COUNT: "20"
+          EV2_G12_REPORT_PATH: ../g12-production-rollback-original-probe.json
+      - name: Probe retained backend boundaries before mutation
+        timeout-minutes: 5
+        working-directory: backend
+        run: timeout 4m node scripts/ev2/phase12/probe-supabase-boundary.mjs | tee ../g12-production-rollback-original-boundary.json
+        env:
+          CMS_BACKEND_ENVIRONMENT: production
+          CMS_BACKEND_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+          CMS_BACKEND_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
+          CMS_BACKEND_ORIGIN: https://gaiatecsistemas.com.br
+      - name: Validate target chronology and persist immutable pre-mutation state
+        timeout-minutes: 5
+        working-directory: control
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+          ORIGINAL_DEPLOYMENT: ${{ steps.original_production.outputs.deployment_id }}
+          ORIGINAL_RELEASE: ${{ steps.original_production.outputs.release }}
+          TARGET_DEPLOYMENT: ${{ inputs.deployment_id }}
+          TARGET_RELEASE: ${{ inputs.expected_release }}
+          FORWARD_BACKEND_RELEASE: ${{ inputs.forward_backend_release }}
+          FORWARD_BACKEND_RUN_ID: ${{ inputs.forward_backend_run_id }}
+          CHANGE_REFERENCE: ${{ inputs.change_reference }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+          WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+          CONTROL_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git cat-file -e "$ORIGINAL_RELEASE^{commit}"
+          git merge-base --is-ancestor "$TARGET_RELEASE" "$ORIGINAL_RELEASE"
+          git merge-base --is-ancestor "$ORIGINAL_RELEASE" "$FORWARD_BACKEND_RELEASE"
+          timeout 4m node <<'NODE'
+          const { readFileSync, writeFileSync } = require("node:fs");
+
+          const required = (name) => {
+            const value = process.env[name] || "";
+            if (!value) throw new Error("G12_ROLLBACK_STATE_INPUT_REQUIRED:" + name);
+            return value;
+          };
+          const base =
+            "https://api.cloudflare.com/client/v4/accounts/" +
+            required("CLOUDFLARE_ACCOUNT_ID") +
+            "/pages/projects/" +
+            required("CLOUDFLARE_PAGES_PROJECT");
+          async function cloudflare(path) {
+            const response = await fetch(base + path, {
+              headers: { Authorization: "Bearer " + required("CLOUDFLARE_API_TOKEN") },
+              signal: AbortSignal.timeout(30000),
+            });
+            const payload = await response.json().catch(() => null);
+            if (!response.ok || payload?.success !== true)
+              throw new Error("G12_ROLLBACK_STATE_CLOUDFLARE_FAILED:" + response.status);
+            return payload.result;
+          }
+          function commitMatches(deployment, expected) {
+            const raw = String(deployment?.deployment_trigger?.metadata?.commit_hash || "").toLowerCase();
+            return /^[a-f0-9]{7,40}$/.test(raw) && expected.startsWith(raw);
+          }
+          (async () => {
+            const { buildProductionRollbackEvidenceBundle } = await import(
+              "./scripts/ev2/phase12/production-rollback-evidence-bundle-lib.mjs"
+            );
+            const originalId = required("ORIGINAL_DEPLOYMENT");
+            const originalRelease = required("ORIGINAL_RELEASE");
+            const targetId = required("TARGET_DEPLOYMENT");
+            const targetRelease = required("TARGET_RELEASE");
+            const [project, original, target] = await Promise.all([
+              cloudflare(""),
+              cloudflare("/deployments/" + originalId),
+              cloudflare("/deployments/" + targetId),
+            ]);
+            if (
+              project?.canonical_deployment?.id !== originalId ||
+              original?.id !== originalId ||
+              original?.environment !== "production" ||
+              !commitMatches(original, originalRelease)
+            )
+              throw new Error("G12_ROLLBACK_ORIGINAL_IDENTITY_CHANGED");
+            if (
+              target?.id !== targetId ||
+              target?.environment !== "production" ||
+              !commitMatches(target, targetRelease)
+            )
+              throw new Error("G12_ROLLBACK_TARGET_IDENTITY_INVALID");
+            const originalCreated = Date.parse(original.created_on);
+            const targetCreated = Date.parse(target.created_on);
+            if (
+              !Number.isFinite(originalCreated) ||
+              !Number.isFinite(targetCreated) ||
+              targetCreated > originalCreated
+            )
+              throw new Error("G12_ROLLBACK_TARGET_IS_NOT_PRIOR");
+            const evidence = buildProductionRollbackEvidenceBundle({
+              manifest: readFileSync("../backend-evidence/manifest.json"),
+              functions: readFileSync("../backend-evidence/functions.json"),
+              database: readFileSync("../backend-evidence/database.json"),
+            });
+            const state = {
+              schemaVersion: 3,
+              event: "g12.production.rollback.prepared",
+              changeReference: required("CHANGE_REFERENCE"),
+              original: {
+                deploymentId: originalId,
+                release: originalRelease,
+                createdOn: original.created_on,
+              },
+              target: {
+                deploymentId: targetId,
+                release: targetRelease,
+                createdOn: target.created_on,
+              },
+              retainedBackend: {
+                release: required("FORWARD_BACKEND_RELEASE"),
+                runId: required("FORWARD_BACKEND_RUN_ID"),
+                manifestSha256: evidence.files.manifest.sha256,
+                functionsSha256: evidence.files.functions.sha256,
+                databaseSha256: evidence.files.database.sha256,
+                evidence,
+              },
+              workflow: {
+                runId: required("WORKFLOW_RUN_ID"),
+                runAttempt: Number(required("WORKFLOW_RUN_ATTEMPT")),
+                controlSha: required("CONTROL_SHA"),
+              },
+              recordedAt: new Date().toISOString(),
+              sensitiveValuesLogged: false,
+            };
+            writeFileSync("../rollback-production-state.json", JSON.stringify(state, null, 2) + "\n", {
+              mode: 0o600,
+            });
+          })().catch((error) => {
+            console.error(error.message);
+            process.exitCode = 1;
+          });
+          NODE
+      - name: Persist redundant HMAC production rollback state before mutation
+        timeout-minutes: 5
+        working-directory: control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          CONTROL_SHA: ${{ github.sha }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs put
+          --kind production-rollback --file ../rollback-production-state.json
+      - name: Upload mandatory original state before mutation
+        timeout-minutes: 5
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: production-rollback-state-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            rollback-production-state.json
+            backend/g12-backend-compatibility.json
+            backend-evidence/database.json
+            backend-evidence/functions.json
+            backend-evidence/manifest.json
+            g12-production-rollback-original-boundary.json
+            g12-production-rollback-original-probe.json
+            g12-production-rollback-preflight-backend-evidence.json
+            g12-production-rollback-preflight-database.json
+            g12-production-rollback-preflight-functions.json
+          if-no-files-found: error
+          retention-days: 90
+
+  rollback:
+    needs: prepare
+    if: needs.prepare.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+    steps:
+      - name: Checkout current release controls
+        timeout-minutes: 5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          path: control
+      - name: Checkout exact forward-compatible backend
+        timeout-minutes: 5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.forward_backend_release }}
+          fetch-depth: 0
+          path: backend
+      - name: Download mandatory original state and immutable backend seals
+        timeout-minutes: 5
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: production-rollback-state-${{ github.run_id }}-${{ github.run_attempt }}
+          path: handoff
+      - name: Install pinned Supabase CLI
+        timeout-minutes: 5
+        uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3
+        with:
+          version: 2.116.0
+      - name: Validate mandatory handoff and expose immutable identities
+        id: rollback_state
+        working-directory: control
+        env:
+          EXPECTED_RELEASE: ${{ inputs.expected_release }}
+          FORWARD_BACKEND_RELEASE: ${{ inputs.forward_backend_release }}
+          FORWARD_BACKEND_RUN_ID: ${{ inputs.forward_backend_run_id }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+          WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const { createHash } = require("node:crypto");
+          const { appendFileSync, readFileSync } = require("node:fs");
+          const state = JSON.parse(readFileSync("../handoff/rollback-production-state.json", "utf8"));
+          const digest = (path) => createHash("sha256").update(readFileSync(path)).digest("hex");
+          const fail = (message) => {
+            throw new Error("G12_ROLLBACK_HANDOFF_REJECTED:" + message);
+          };
+          if (state.schemaVersion !== 3 || state.event !== "g12.production.rollback.prepared")
+            fail("schema");
+          if (
+            state.workflow?.runId !== process.env.WORKFLOW_RUN_ID ||
+            Number(state.workflow?.runAttempt) !== Number(process.env.WORKFLOW_RUN_ATTEMPT)
+          )
+            fail("workflow");
+          if (
+            state.target?.release !== process.env.EXPECTED_RELEASE ||
+            state.retainedBackend?.release !== process.env.FORWARD_BACKEND_RELEASE ||
+            state.retainedBackend?.runId !== process.env.FORWARD_BACKEND_RUN_ID
+          )
+            fail("identity");
+          for (const [field, file] of [
+            ["manifestSha256", "../handoff/backend-evidence/manifest.json"],
+            ["functionsSha256", "../handoff/backend-evidence/functions.json"],
+            ["databaseSha256", "../handoff/backend-evidence/database.json"],
+          ]) {
+            if (state.retainedBackend[field] !== digest(file)) fail(field);
+          }
+          const lines = {
+            original_deployment: state.original.deploymentId,
+            original_release: state.original.release,
+            target_deployment: state.target.deploymentId,
+            target_release: state.target.release,
+            manifest_sha256: state.retainedBackend.manifestSha256,
+            functions_sha256: state.retainedBackend.functionsSha256,
+            database_sha256: state.retainedBackend.databaseSha256,
+          };
+          appendFileSync(
+            process.env.GITHUB_OUTPUT,
+            Object.entries(lines)
+              .map(([key, value]) => key + "=" + value + "\n")
+              .join(""),
+          );
+          NODE
+          original_release="$(node -p "require('../handoff/rollback-production-state.json').original.release")"
+          git merge-base --is-ancestor "${{ inputs.expected_release }}" "$original_release"
+          git merge-base --is-ancestor "$original_release" "${{ inputs.forward_backend_release }}"
+      - name: Reconfirm the canonical deployment immediately before mutation
+        id: original_recheck
+        timeout-minutes: 5
+        working-directory: control
+        run: timeout 4m node scripts/ev2/phase12/cloudflare-pages.mjs latest-production
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+      - name: Refuse a changed canonical deployment before mutation
+        env:
+          CAPTURED_DEPLOYMENT: ${{ steps.rollback_state.outputs.original_deployment }}
+          CAPTURED_RELEASE: ${{ steps.rollback_state.outputs.original_release }}
+          RECHECKED_DEPLOYMENT: ${{ steps.original_recheck.outputs.deployment_id }}
+          RECHECKED_RELEASE: ${{ steps.original_recheck.outputs.release }}
+        run: |
+          set -euo pipefail
+          test "$RECHECKED_DEPLOYMENT" = "$CAPTURED_DEPLOYMENT"
+          test "$RECHECKED_RELEASE" = "$CAPTURED_RELEASE"
+      - name: Restore exact prior production Pages deployment
+        id: restore_target
+        timeout-minutes: 5
+        continue-on-error: true
+        working-directory: control
+        run: timeout 4m node scripts/ev2/phase12/cloudflare-pages.mjs rollback
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+          CLOUDFLARE_DEPLOYMENT_ID: ${{ steps.rollback_state.outputs.target_deployment }}
+          CLOUDFLARE_EXPECTED_RELEASE: ${{ steps.rollback_state.outputs.target_release }}
+          CLOUDFLARE_EXPECTED_CURRENT_DEPLOYMENT_ID: ${{ steps.original_recheck.outputs.deployment_id }}
+          CLOUDFLARE_EXPECTED_CURRENT_RELEASE: ${{ steps.original_recheck.outputs.release }}
+          CLOUDFLARE_EXPECTED_CURRENT_CREATED_ON: ${{ steps.original_recheck.outputs.created_on }}
+          CLOUDFLARE_EXPECTED_CURRENT_COMMIT_MESSAGE: ${{ steps.original_recheck.outputs.commit_message }}
+      - name: Repeat immutable retained backend evidence after target activation
+        id: target_backend_evidence
+        if: always() && steps.restore_target.outcome == 'success'
+        timeout-minutes: 10
+        continue-on-error: true
+        working-directory: backend
+        env:
+          FORWARD_BACKEND_RELEASE: ${{ inputs.forward_backend_release }}
+          FORWARD_BACKEND_RUN_ID: ${{ inputs.forward_backend_run_id }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          timeout 4m supabase functions list --project-ref "$PRODUCTION_SUPABASE_PROJECT_REF" --output json > ../g12-production-rollback-target-functions.json
+          timeout 2m node scripts/ev2/phase12/verify-production-functions.mjs --file ../g12-production-rollback-target-functions.json
+          timeout 4m node scripts/ev2/phase12/verify-production-database.mjs --source . | tee ../g12-production-rollback-target-database.json
+          timeout 4m node ../control/scripts/ev2/phase12/verify-production-backend-evidence.mjs \
+            --source . \
+            --manifest ../handoff/backend-evidence/manifest.json \
+            --sealed-functions ../handoff/backend-evidence/functions.json \
+            --sealed-database ../handoff/backend-evidence/database.json \
+            --live-functions ../g12-production-rollback-target-functions.json \
+            | tee ../g12-production-rollback-target-backend-evidence.json
+      - name: Verify restored frontend against the retained backend
+        id: target_frontend_probe
+        if: always() && steps.restore_target.outcome == 'success'
+        timeout-minutes: 8
+        continue-on-error: true
+        working-directory: control
+        run: timeout 7m node scripts/ev2/phase12/rollout-probe.mjs
+        env:
+          EV2_G12_ORIGIN: https://gaiatecsistemas.com.br
+          EV2_G12_EXPECTED_SHA: ${{ inputs.expected_release }}
+          EV2_G12_ENVIRONMENT: production
+          EV2_G12_PRODUCTION_AUTHORIZED: "true"
+          EV2_G12_PROBE_PROFILE: full
+          EV2_G12_SAMPLE_COUNT: "20"
+          EV2_G12_REPORT_PATH: ../g12-production-rollback-target-probe.json
+      - name: Probe retained public, anonymous, CORS and secret boundaries
+        id: target_boundary_probe
+        if: always() && steps.restore_target.outcome == 'success'
+        timeout-minutes: 5
+        continue-on-error: true
+        working-directory: backend
+        run: timeout 4m node scripts/ev2/phase12/probe-supabase-boundary.mjs | tee ../g12-production-rollback-target-boundary.json
+        env:
+          CMS_BACKEND_ENVIRONMENT: production
+          CMS_BACKEND_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+          CMS_BACKEND_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
+          CMS_BACKEND_ORIGIN: https://gaiatecsistemas.com.br
+      - name: Confirm the target deployment is now exactly canonical
+        id: target_canonical
+        if: always() && steps.restore_target.outcome == 'success'
+        timeout-minutes: 5
+        continue-on-error: true
+        working-directory: control
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if timeout 1m node scripts/ev2/phase12/cloudflare-pages.mjs latest-production; then
+              exit 0
+            fi
+            [ "$attempt" -eq 3 ] || sleep 5
+          done
+          exit 1
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+      - name: Seal non-sensitive target outcome evidence
+        id: seal_target_evidence
+        if: always()
+        continue-on-error: true
+        working-directory: control
+        env:
+          ROLLBACK_JOB_STATUS: ${{ job.status }}
+          RESTORE_TARGET_OUTCOME: ${{ steps.restore_target.outcome }}
+          TARGET_BACKEND_EVIDENCE_OUTCOME: ${{ steps.target_backend_evidence.outcome }}
+          TARGET_FRONTEND_OUTCOME: ${{ steps.target_frontend_probe.outcome }}
+          TARGET_BOUNDARY_OUTCOME: ${{ steps.target_boundary_probe.outcome }}
+          TARGET_CANONICAL_OUTCOME: ${{ steps.target_canonical.outcome }}
+          OBSERVED_TARGET_DEPLOYMENT: ${{ steps.target_canonical.outputs.deployment_id }}
+          OBSERVED_TARGET_RELEASE: ${{ steps.target_canonical.outputs.release }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+          WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          node <<'NODE'
+          const { readFileSync, writeFileSync } = require("node:fs");
+          const state = JSON.parse(readFileSync("../handoff/rollback-production-state.json", "utf8"));
+          const payload = {
+            schemaVersion: 2,
+            event: "g12.production.rollback.target.completed",
+            original: state.original,
+            target: state.target,
+            retainedBackend: state.retainedBackend,
+            observedCanonical: {
+              deploymentId: process.env.OBSERVED_TARGET_DEPLOYMENT || null,
+              release: process.env.OBSERVED_TARGET_RELEASE || null,
+            },
+            outcomes: {
+              job: process.env.ROLLBACK_JOB_STATUS,
+              mutation: process.env.RESTORE_TARGET_OUTCOME,
+              backendEvidence: process.env.TARGET_BACKEND_EVIDENCE_OUTCOME,
+              frontend: process.env.TARGET_FRONTEND_OUTCOME,
+              boundaries: process.env.TARGET_BOUNDARY_OUTCOME,
+              canonicalIdentity: process.env.TARGET_CANONICAL_OUTCOME,
+            },
+            workflow: {
+              runId: process.env.WORKFLOW_RUN_ID,
+              runAttempt: Number(process.env.WORKFLOW_RUN_ATTEMPT),
+            },
+            recordedAt: new Date().toISOString(),
+            sensitiveValuesLogged: false,
+          };
+          writeFileSync("../g12-production-rollback-target-outcome.json", JSON.stringify(payload, null, 2) + "\n", {
+            mode: 0o600,
+          });
+          NODE
+      - name: Upload target rollback evidence before deciding success
+        id: target_evidence_upload
+        if: always()
+        timeout-minutes: 5
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: production-rollback-target-${{ inputs.expected_release }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            g12-production-rollback-target-*.json
+            g12-production-rollback-target-outcome.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Evaluate the target rollback and its evidence
+        id: target_gate
+        if: always()
+        env:
+          RESTORE_TARGET_OUTCOME: ${{ steps.restore_target.outcome }}
+          TARGET_BACKEND_EVIDENCE_OUTCOME: ${{ steps.target_backend_evidence.outcome }}
+          TARGET_FRONTEND_OUTCOME: ${{ steps.target_frontend_probe.outcome }}
+          TARGET_BOUNDARY_OUTCOME: ${{ steps.target_boundary_probe.outcome }}
+          TARGET_CANONICAL_OUTCOME: ${{ steps.target_canonical.outcome }}
+          TARGET_EVIDENCE_SEAL_OUTCOME: ${{ steps.seal_target_evidence.outcome }}
+          TARGET_EVIDENCE_UPLOAD_OUTCOME: ${{ steps.target_evidence_upload.outcome }}
+          TARGET_DEPLOYMENT: ${{ steps.rollback_state.outputs.target_deployment }}
+          TARGET_RELEASE: ${{ steps.rollback_state.outputs.target_release }}
+          OBSERVED_TARGET_DEPLOYMENT: ${{ steps.target_canonical.outputs.deployment_id }}
+          OBSERVED_TARGET_RELEASE: ${{ steps.target_canonical.outputs.release }}
+        run: |
+          set -euo pipefail
+          failed=0
+          for name in RESTORE_TARGET_OUTCOME TARGET_BACKEND_EVIDENCE_OUTCOME \
+            TARGET_FRONTEND_OUTCOME TARGET_BOUNDARY_OUTCOME TARGET_CANONICAL_OUTCOME \
+            TARGET_EVIDENCE_SEAL_OUTCOME TARGET_EVIDENCE_UPLOAD_OUTCOME; do
+            value="${!name}"
+            if [ "$value" != success ]; then
+              echo "::error title=G12_PRODUCTION_ROLLBACK_TARGET_FAILED::$name=$value"
+              failed=1
+            fi
+          done
+          if [ "$OBSERVED_TARGET_DEPLOYMENT" != "$TARGET_DEPLOYMENT" ] || \
+             [ "$OBSERVED_TARGET_RELEASE" != "$TARGET_RELEASE" ]; then
+            echo "::error title=G12_PRODUCTION_ROLLBACK_TARGET_FAILED::canonical identity mismatch"
+            failed=1
+          fi
+          test "$failed" -eq 0
+
+  finalize:
+    needs: [prepare, rollback]
+    if: always() && needs.prepare.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment: production
+    steps:
+      - name: Checkout current release controls for independent finalization
+        timeout-minutes: 5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          path: control
+      - name: Download mandatory original state for independent finalization
+        id: finalizer_state_artifact
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: production-rollback-state-${{ github.run_id }}-${{ github.run_attempt }}
+          path: handoff
+      - name: Recover HMAC production rollback state after artifact failure
+        id: finalizer_state_variable
+        if: always() && steps.finalizer_state_artifact.outcome != 'success'
+        continue-on-error: true
+        timeout-minutes: 5
+        working-directory: control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs get
+          --kind production-rollback --file ../handoff/rollback-production-state.json
+          --run-id "${{ github.run_id }}" --run-attempt "${{ github.run_attempt }}"
+          --control-sha "${{ github.sha }}"
+      - name: Validate independent finalizer handoff
+        id: finalizer_state
+        working-directory: control
+        env:
+          EXPECTED_RELEASE: ${{ inputs.expected_release }}
+          FORWARD_BACKEND_RELEASE: ${{ inputs.forward_backend_release }}
+          FORWARD_BACKEND_RUN_ID: ${{ inputs.forward_backend_run_id }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+          WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+          WORKFLOW_CONTROL_SHA: ${{ github.sha }}
+          STATE_ARTIFACT_OUTCOME: ${{ steps.finalizer_state_artifact.outcome }}
+          STATE_VARIABLE_OUTCOME: ${{ steps.finalizer_state_variable.outcome }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const { createHash } = require("node:crypto");
+          const { appendFileSync, readFileSync } = require("node:fs");
+          const state = JSON.parse(readFileSync("../handoff/rollback-production-state.json", "utf8"));
+          const digest = (path) => createHash("sha256").update(readFileSync(path)).digest("hex");
+          const reject = (reason) => {
+            throw new Error("G12_ROLLBACK_FINALIZER_HANDOFF_REJECTED:" + reason);
+          };
+          if (process.env.STATE_ARTIFACT_OUTCOME !== "success" && process.env.STATE_VARIABLE_OUTCOME !== "success")
+            reject("unavailable");
+          if (state.schemaVersion !== 3 || state.event !== "g12.production.rollback.prepared")
+            reject("schema");
+          if (
+            state.workflow?.runId !== process.env.WORKFLOW_RUN_ID ||
+            Number(state.workflow?.runAttempt) !== Number(process.env.WORKFLOW_RUN_ATTEMPT) ||
+            state.workflow?.controlSha !== process.env.WORKFLOW_CONTROL_SHA
+          )
+            reject("workflow");
+          if (
+            state.target?.release !== process.env.EXPECTED_RELEASE ||
+            state.retainedBackend?.release !== process.env.FORWARD_BACKEND_RELEASE ||
+            state.retainedBackend?.runId !== process.env.FORWARD_BACKEND_RUN_ID
+          )
+            reject("identity");
+          if (process.env.STATE_ARTIFACT_OUTCOME === "success")
+            for (const [field, file] of [
+              ["manifestSha256", "../handoff/backend-evidence/manifest.json"],
+              ["functionsSha256", "../handoff/backend-evidence/functions.json"],
+              ["databaseSha256", "../handoff/backend-evidence/database.json"],
+            ]) {
+              if (state.retainedBackend[field] !== digest(file)) reject(field);
+            }
+          appendFileSync(
+            process.env.GITHUB_OUTPUT,
+            [
+              "original_deployment=" + state.original.deploymentId,
+              "original_release=" + state.original.release,
+              "target_deployment=" + state.target.deploymentId,
+              "target_release=" + state.target.release,
+              "manifest_sha256=" + state.retainedBackend.manifestSha256,
+              "functions_sha256=" + state.retainedBackend.functionsSha256,
+              "database_sha256=" + state.retainedBackend.databaseSha256,
+            ].join("\n") + "\n",
+          );
+          NODE
+          target_release="$(node -p "require('../handoff/rollback-production-state.json').target.release")"
+          original_release="$(node -p "require('../handoff/rollback-production-state.json').original.release")"
+          git cat-file -e "$target_release^{commit}"
+          git cat-file -e "$original_release^{commit}"
+          git cat-file -e "${{ inputs.forward_backend_release }}^{commit}"
+          git merge-base --is-ancestor "$target_release" "$original_release"
+          git merge-base --is-ancestor "$original_release" "${{ inputs.forward_backend_release }}"
+      - name: Materialize HMAC-bound backend evidence
+        id: finalizer_materialize_backend_evidence
+        if: always() && steps.finalizer_state.outcome == 'success'
+        timeout-minutes: 5
+        continue-on-error: true
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/materialize-production-rollback-evidence.mjs
+          --state ../handoff/rollback-production-state.json
+          --output ../recovered-backend-evidence
+      - name: Observe canonical production before compensation decision
+        id: finalizer_initial_canonical
+        timeout-minutes: 5
+        continue-on-error: true
+        working-directory: control
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if timeout 1m node scripts/ev2/phase12/cloudflare-pages.mjs latest-production; then
+              exit 0
+            fi
+            [ "$attempt" -eq 3 ] || sleep 5
+          done
+          exit 1
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+      - name: Immediately compensate an unvalidated target before backend tooling
+        id: early_restore_original
+        if: always() && needs.rollback.result != 'success'
+        timeout-minutes: 8
+        continue-on-error: true
+        working-directory: control
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+          CLOUDFLARE_DEPLOYMENT_ID: ${{ steps.finalizer_state.outputs.original_deployment }}
+          CLOUDFLARE_EXPECTED_RELEASE: ${{ steps.finalizer_state.outputs.original_release }}
+          OWNED_TARGET_DEPLOYMENT: ${{ steps.finalizer_state.outputs.target_deployment }}
+          OWNED_TARGET_RELEASE: ${{ steps.finalizer_state.outputs.target_release }}
+          ORIGINAL_DEPLOYMENT: ${{ steps.finalizer_state.outputs.original_deployment }}
+          ORIGINAL_RELEASE: ${{ steps.finalizer_state.outputs.original_release }}
+        run: |
+          set -euo pipefail
+          observe() {
+            local output_file
+            output_file="$(mktemp)"
+            GITHUB_OUTPUT="$output_file" timeout 1m node scripts/ev2/phase12/cloudflare-pages.mjs latest-production
+            observed_deployment="$(grep '^deployment_id=' "$output_file" | cut -d= -f2-)"
+            observed_release="$(grep '^release=' "$output_file" | cut -d= -f2-)"
+            observed_created_on="$(grep '^created_on=' "$output_file" | cut -d= -f2-)"
+            observed_commit_message="$(grep '^commit_message=' "$output_file" | cut -d= -f2-)"
+          }
+          for attempt in 1 2; do
+            observe
+            if [ "$observed_deployment" = "$ORIGINAL_DEPLOYMENT" ] && [ "$observed_release" = "$ORIGINAL_RELEASE" ]; then
+              echo "action=confirmed-original" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if [ "$observed_deployment" != "$OWNED_TARGET_DEPLOYMENT" ] || [ "$observed_release" != "$OWNED_TARGET_RELEASE" ]; then
+              echo "action=external-conflict" >> "$GITHUB_OUTPUT"
+              echo "::error title=G12_PRODUCTION_ROLLBACK_EXTERNAL_DEPLOYMENT::early finalizer refused to overwrite an external canonical deployment"
+              exit 1
+            fi
+            CLOUDFLARE_EXPECTED_CURRENT_DEPLOYMENT_ID="$observed_deployment" \
+            CLOUDFLARE_EXPECTED_CURRENT_RELEASE="$observed_release" \
+            CLOUDFLARE_EXPECTED_CURRENT_CREATED_ON="$observed_created_on" \
+            CLOUDFLARE_EXPECTED_CURRENT_COMMIT_MESSAGE="$observed_commit_message" \
+              timeout 2m node scripts/ev2/phase12/cloudflare-pages.mjs rollback || true
+            [ "$attempt" -eq 2 ] || sleep 5
+          done
+          observe
+          if [ "$observed_deployment" = "$ORIGINAL_DEPLOYMENT" ] && [ "$observed_release" = "$ORIGINAL_RELEASE" ]; then
+            echo "action=restored-original" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$observed_deployment" != "$OWNED_TARGET_DEPLOYMENT" ] || [ "$observed_release" != "$OWNED_TARGET_RELEASE" ]; then
+            echo "action=external-conflict" >> "$GITHUB_OUTPUT"
+            echo "::error title=G12_PRODUCTION_ROLLBACK_EXTERNAL_DEPLOYMENT::early finalizer preserved a concurrent external deployment"
+            exit 1
+          fi
+          echo "action=unresolved-owned-target" >> "$GITHUB_OUTPUT"
+          exit 1
+      - name: Checkout exact forward-compatible backend for independent finalization
+        id: finalizer_backend_checkout
+        timeout-minutes: 5
+        continue-on-error: true
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.forward_backend_release }}
+          fetch-depth: 0
+          path: backend
+      - name: Install pinned Supabase CLI for independent finalization
+        id: finalizer_supabase_cli
+        timeout-minutes: 5
+        continue-on-error: true
+        uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3
+        with:
+          version: 2.116.0
+      - name: Repeat immutable backend evidence before finalizer decision
+        id: final_target_backend_evidence
+        if: always()
+        timeout-minutes: 10
+        continue-on-error: true
+        working-directory: backend
+        env:
+          FORWARD_BACKEND_RELEASE: ${{ inputs.forward_backend_release }}
+          FORWARD_BACKEND_RUN_ID: ${{ inputs.forward_backend_run_id }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          timeout 4m supabase functions list --project-ref "$PRODUCTION_SUPABASE_PROJECT_REF" --output json > ../g12-production-rollback-final-target-functions.json
+          timeout 2m node scripts/ev2/phase12/verify-production-functions.mjs --file ../g12-production-rollback-final-target-functions.json
+          timeout 4m node scripts/ev2/phase12/verify-production-database.mjs --source . | tee ../g12-production-rollback-final-target-database.json
+          timeout 4m node ../control/scripts/ev2/phase12/verify-production-backend-evidence.mjs \
+            --source . \
+            --manifest ../recovered-backend-evidence/manifest.json \
+            --sealed-functions ../recovered-backend-evidence/functions.json \
+            --sealed-database ../recovered-backend-evidence/database.json \
+            --live-functions ../g12-production-rollback-final-target-functions.json \
+            | tee ../g12-production-rollback-final-target-backend-evidence.json
+      - name: Select fail-closed finalization mode
+        id: finalizer_mode
+        env:
+          ROLLBACK_JOB_RESULT: ${{ needs.rollback.result }}
+          BACKEND_CHECKOUT_OUTCOME: ${{ steps.finalizer_backend_checkout.outcome }}
+          SUPABASE_CLI_OUTCOME: ${{ steps.finalizer_supabase_cli.outcome }}
+          TARGET_BACKEND_EVIDENCE_OUTCOME: ${{ steps.final_target_backend_evidence.outcome }}
+          CANONICAL_OUTCOME: ${{ steps.finalizer_initial_canonical.outcome }}
+          CURRENT_DEPLOYMENT: ${{ steps.finalizer_initial_canonical.outputs.deployment_id }}
+          CURRENT_RELEASE: ${{ steps.finalizer_initial_canonical.outputs.release }}
+          ORIGINAL_DEPLOYMENT: ${{ steps.finalizer_state.outputs.original_deployment }}
+          ORIGINAL_RELEASE: ${{ steps.finalizer_state.outputs.original_release }}
+          TARGET_DEPLOYMENT: ${{ steps.finalizer_state.outputs.target_deployment }}
+          TARGET_RELEASE: ${{ steps.finalizer_state.outputs.target_release }}
+        run: |
+          set -euo pipefail
+          mode=external_conflict
+          if [ "$CANONICAL_OUTCOME" = success ] && \
+             [ "$CURRENT_DEPLOYMENT" = "$TARGET_DEPLOYMENT" ] && \
+             [ "$CURRENT_RELEASE" = "$TARGET_RELEASE" ] && \
+             [ "$ROLLBACK_JOB_RESULT" = success ] && \
+             [ "$BACKEND_CHECKOUT_OUTCOME" = success ] && \
+             [ "$SUPABASE_CLI_OUTCOME" = success ] && \
+             [ "$TARGET_BACKEND_EVIDENCE_OUTCOME" = success ]; then
+            mode=target
+          elif [ "$CANONICAL_OUTCOME" = success ] && \
+               [ "$CURRENT_DEPLOYMENT" = "$TARGET_DEPLOYMENT" ] && \
+               [ "$CURRENT_RELEASE" = "$TARGET_RELEASE" ] && \
+               [ "$TARGET_DEPLOYMENT" != "$ORIGINAL_DEPLOYMENT" ]; then
+            mode=compensate
+          elif [ "$CANONICAL_OUTCOME" = success ] && \
+               [ "$CURRENT_DEPLOYMENT" = "$ORIGINAL_DEPLOYMENT" ] && \
+               [ "$CURRENT_RELEASE" = "$ORIGINAL_RELEASE" ] && \
+               [ "$ROLLBACK_JOB_RESULT" != success ]; then
+            mode=recovered
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "G12 rollback finalization mode: $mode"
+      - name: Restore the exact original production deployment after target failure
+        id: restore_original
+        if: >-
+          always() && (needs.rollback.result != 'success' ||
+          steps.final_target_backend_evidence.outcome != 'success' ||
+          steps.finalizer_mode.outputs.mode != 'target')
+        timeout-minutes: 8
+        continue-on-error: true
+        working-directory: control
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+          CLOUDFLARE_DEPLOYMENT_ID: ${{ steps.finalizer_state.outputs.original_deployment }}
+          CLOUDFLARE_EXPECTED_RELEASE: ${{ steps.finalizer_state.outputs.original_release }}
+          OWNED_TARGET_DEPLOYMENT: ${{ steps.finalizer_state.outputs.target_deployment }}
+          OWNED_TARGET_RELEASE: ${{ steps.finalizer_state.outputs.target_release }}
+          ORIGINAL_DEPLOYMENT: ${{ steps.finalizer_state.outputs.original_deployment }}
+          ORIGINAL_RELEASE: ${{ steps.finalizer_state.outputs.original_release }}
+        run: |
+          set -euo pipefail
+          recheck_file="$(mktemp)"
+          GITHUB_OUTPUT="$recheck_file" timeout 3m node scripts/ev2/phase12/cloudflare-pages.mjs latest-production
+          current_deployment="$(grep '^deployment_id=' "$recheck_file" | cut -d= -f2-)"
+          current_release="$(grep '^release=' "$recheck_file" | cut -d= -f2-)"
+          current_created_on="$(grep '^created_on=' "$recheck_file" | cut -d= -f2-)"
+          current_commit_message="$(grep '^commit_message=' "$recheck_file" | cut -d= -f2-)"
+          echo "observed_deployment=$current_deployment" >> "$GITHUB_OUTPUT"
+          echo "observed_release=$current_release" >> "$GITHUB_OUTPUT"
+          if [ "$current_deployment" = "$ORIGINAL_DEPLOYMENT" ] && [ "$current_release" = "$ORIGINAL_RELEASE" ]; then
+            echo "action=already-original" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$current_deployment" = "$OWNED_TARGET_DEPLOYMENT" ] && [ "$current_release" = "$OWNED_TARGET_RELEASE" ]; then
+            echo "action=restore-original" >> "$GITHUB_OUTPUT"
+            CLOUDFLARE_EXPECTED_CURRENT_DEPLOYMENT_ID="$current_deployment" \
+            CLOUDFLARE_EXPECTED_CURRENT_RELEASE="$current_release" \
+            CLOUDFLARE_EXPECTED_CURRENT_CREATED_ON="$current_created_on" \
+            CLOUDFLARE_EXPECTED_CURRENT_COMMIT_MESSAGE="$current_commit_message" \
+              timeout 4m node scripts/ev2/phase12/cloudflare-pages.mjs rollback
+            exit 0
+          fi
+          echo "action=external-conflict" >> "$GITHUB_OUTPUT"
+          echo "::error title=G12_PRODUCTION_ROLLBACK_EXTERNAL_DEPLOYMENT::refusing to overwrite a canonical deployment not owned by this rollback"
+          exit 1
+      - name: Resolve an ambiguous compensation response without overwriting external production
+        id: restore_original_retry
+        if: always() && steps.restore_original.outcome == 'failure'
+        timeout-minutes: 8
+        continue-on-error: true
+        working-directory: control
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+          CLOUDFLARE_DEPLOYMENT_ID: ${{ steps.finalizer_state.outputs.original_deployment }}
+          CLOUDFLARE_EXPECTED_RELEASE: ${{ steps.finalizer_state.outputs.original_release }}
+          OWNED_TARGET_DEPLOYMENT: ${{ steps.finalizer_state.outputs.target_deployment }}
+          OWNED_TARGET_RELEASE: ${{ steps.finalizer_state.outputs.target_release }}
+          ORIGINAL_DEPLOYMENT: ${{ steps.finalizer_state.outputs.original_deployment }}
+          ORIGINAL_RELEASE: ${{ steps.finalizer_state.outputs.original_release }}
+        run: |
+          set -euo pipefail
+          recheck_file="$(mktemp)"
+          GITHUB_OUTPUT="$recheck_file" timeout 3m node scripts/ev2/phase12/cloudflare-pages.mjs latest-production
+          current_deployment="$(grep '^deployment_id=' "$recheck_file" | cut -d= -f2-)"
+          current_release="$(grep '^release=' "$recheck_file" | cut -d= -f2-)"
+          current_created_on="$(grep '^created_on=' "$recheck_file" | cut -d= -f2-)"
+          current_commit_message="$(grep '^commit_message=' "$recheck_file" | cut -d= -f2-)"
+          echo "observed_deployment=$current_deployment" >> "$GITHUB_OUTPUT"
+          echo "observed_release=$current_release" >> "$GITHUB_OUTPUT"
+          if [ "$current_deployment" = "$ORIGINAL_DEPLOYMENT" ] && [ "$current_release" = "$ORIGINAL_RELEASE" ]; then
+            echo "action=confirmed-original" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$current_deployment" = "$OWNED_TARGET_DEPLOYMENT" ] && [ "$current_release" = "$OWNED_TARGET_RELEASE" ]; then
+            echo "action=retry-restore-original" >> "$GITHUB_OUTPUT"
+            CLOUDFLARE_EXPECTED_CURRENT_DEPLOYMENT_ID="$current_deployment" \
+            CLOUDFLARE_EXPECTED_CURRENT_RELEASE="$current_release" \
+            CLOUDFLARE_EXPECTED_CURRENT_CREATED_ON="$current_created_on" \
+            CLOUDFLARE_EXPECTED_CURRENT_COMMIT_MESSAGE="$current_commit_message" \
+              timeout 4m node scripts/ev2/phase12/cloudflare-pages.mjs rollback
+            exit 0
+          fi
+          echo "action=external-conflict" >> "$GITHUB_OUTPUT"
+          echo "::error title=G12_PRODUCTION_ROLLBACK_EXTERNAL_DEPLOYMENT::ambiguous response resolved to an external canonical deployment; no overwrite attempted"
+          exit 1
+      - name: Re-probe the original frontend after compensation
+        id: compensation_frontend_probe
+        if: always() && (steps.restore_original.outcome == 'success' || steps.restore_original_retry.outcome == 'success')
+        timeout-minutes: 8
+        continue-on-error: true
+        working-directory: control
+        run: timeout 7m node scripts/ev2/phase12/rollout-probe.mjs
+        env:
+          EV2_G12_ORIGIN: https://gaiatecsistemas.com.br
+          EV2_G12_EXPECTED_SHA: ${{ steps.finalizer_state.outputs.original_release }}
+          EV2_G12_ENVIRONMENT: production
+          EV2_G12_PRODUCTION_AUTHORIZED: "true"
+          EV2_G12_PROBE_PROFILE: full
+          EV2_G12_SAMPLE_COUNT: "20"
+          EV2_G12_REPORT_PATH: ../g12-production-rollback-compensation-probe.json
+      - name: Re-probe public boundaries after compensation
+        id: compensation_boundary_probe
+        if: always() && (steps.restore_original.outcome == 'success' || steps.restore_original_retry.outcome == 'success')
+        timeout-minutes: 5
+        continue-on-error: true
+        working-directory: backend
+        run: timeout 4m node scripts/ev2/phase12/probe-supabase-boundary.mjs | tee ../g12-production-rollback-compensation-boundary.json
+        env:
+          CMS_BACKEND_ENVIRONMENT: production
+          CMS_BACKEND_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+          CMS_BACKEND_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
+          CMS_BACKEND_ORIGIN: https://gaiatecsistemas.com.br
+      - name: Repeat immutable backend evidence after compensation
+        id: compensation_backend_evidence
+        if: always() && (steps.restore_original.outcome == 'success' || steps.restore_original_retry.outcome == 'success')
+        timeout-minutes: 10
+        continue-on-error: true
+        working-directory: backend
+        env:
+          FORWARD_BACKEND_RELEASE: ${{ inputs.forward_backend_release }}
+          FORWARD_BACKEND_RUN_ID: ${{ inputs.forward_backend_run_id }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          timeout 4m supabase functions list --project-ref "$PRODUCTION_SUPABASE_PROJECT_REF" --output json > ../g12-production-rollback-compensation-functions.json
+          timeout 2m node scripts/ev2/phase12/verify-production-functions.mjs --file ../g12-production-rollback-compensation-functions.json
+          timeout 4m node scripts/ev2/phase12/verify-production-database.mjs --source . | tee ../g12-production-rollback-compensation-database.json
+          timeout 4m node ../control/scripts/ev2/phase12/verify-production-backend-evidence.mjs \
+            --source . \
+            --manifest ../recovered-backend-evidence/manifest.json \
+            --sealed-functions ../recovered-backend-evidence/functions.json \
+            --sealed-database ../recovered-backend-evidence/database.json \
+            --live-functions ../g12-production-rollback-compensation-functions.json \
+            | tee ../g12-production-rollback-compensation-backend-evidence.json
+      - name: Observe canonical production after compensation
+        id: compensation_canonical
+        if: always()
+        timeout-minutes: 5
+        continue-on-error: true
+        working-directory: control
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if timeout 1m node scripts/ev2/phase12/cloudflare-pages.mjs latest-production; then
+              exit 0
+            fi
+            [ "$attempt" -eq 3 ] || sleep 5
+          done
+          exit 1
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+      - name: Seal non-sensitive compensation evidence
+        id: seal_compensation_evidence
+        if: always()
+        continue-on-error: true
+        working-directory: control
+        env:
+          ROLLBACK_JOB_RESULT: ${{ needs.rollback.result }}
+          FINALIZER_MODE: ${{ steps.finalizer_mode.outputs.mode }}
+          EARLY_RESTORE_OUTCOME: ${{ steps.early_restore_original.outcome }}
+          EARLY_RESTORE_ACTION: ${{ steps.early_restore_original.outputs.action }}
+          RESTORE_ORIGINAL_OUTCOME: ${{ steps.restore_original.outcome }}
+          RESTORE_ORIGINAL_RETRY_OUTCOME: ${{ steps.restore_original_retry.outcome }}
+          RESTORE_ORIGINAL_ACTION: ${{ steps.restore_original.outputs.action }}
+          RESTORE_ORIGINAL_RETRY_ACTION: ${{ steps.restore_original_retry.outputs.action }}
+          TARGET_BACKEND_EVIDENCE_OUTCOME: ${{ steps.final_target_backend_evidence.outcome }}
+          COMPENSATION_BACKEND_EVIDENCE_OUTCOME: ${{ steps.compensation_backend_evidence.outcome }}
+          FRONTEND_OUTCOME: ${{ steps.compensation_frontend_probe.outcome }}
+          BOUNDARY_OUTCOME: ${{ steps.compensation_boundary_probe.outcome }}
+          CANONICAL_OUTCOME: ${{ steps.compensation_canonical.outcome }}
+          OBSERVED_DEPLOYMENT: ${{ steps.compensation_canonical.outputs.deployment_id }}
+          OBSERVED_RELEASE: ${{ steps.compensation_canonical.outputs.release }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+          WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          node <<'NODE'
+          const { readFileSync, writeFileSync } = require("node:fs");
+          const state = JSON.parse(readFileSync("../handoff/rollback-production-state.json", "utf8"));
+          const payload = {
+            schemaVersion: 2,
+            event: "g12.production.rollback.finalized",
+            original: state.original,
+            target: state.target,
+            retainedBackend: state.retainedBackend,
+            mode: process.env.FINALIZER_MODE,
+            observedCanonical: {
+              deploymentId: process.env.OBSERVED_DEPLOYMENT || null,
+              release: process.env.OBSERVED_RELEASE || null,
+            },
+            outcomes: {
+              rollbackJob: process.env.ROLLBACK_JOB_RESULT,
+              earlyCompensation: process.env.EARLY_RESTORE_OUTCOME,
+              earlyCompensationAction: process.env.EARLY_RESTORE_ACTION || null,
+              compensationMutation: process.env.RESTORE_ORIGINAL_OUTCOME,
+              compensationRetry: process.env.RESTORE_ORIGINAL_RETRY_OUTCOME,
+              compensationAction:
+                process.env.RESTORE_ORIGINAL_RETRY_ACTION ||
+                process.env.RESTORE_ORIGINAL_ACTION ||
+                null,
+              targetBackendEvidence: process.env.TARGET_BACKEND_EVIDENCE_OUTCOME,
+              compensationBackendEvidence: process.env.COMPENSATION_BACKEND_EVIDENCE_OUTCOME,
+              frontend: process.env.FRONTEND_OUTCOME,
+              boundaries: process.env.BOUNDARY_OUTCOME,
+              canonicalIdentity: process.env.CANONICAL_OUTCOME,
+            },
+            workflow: {
+              runId: process.env.WORKFLOW_RUN_ID,
+              runAttempt: Number(process.env.WORKFLOW_RUN_ATTEMPT),
+            },
+            recordedAt: new Date().toISOString(),
+            sensitiveValuesLogged: false,
+          };
+          writeFileSync("../g12-production-rollback-compensation-outcome.json", JSON.stringify(payload, null, 2) + "\n", {
+            mode: 0o600,
+          });
+          NODE
+      - name: Upload compensation evidence before reporting failure
+        id: compensation_evidence_upload
+        if: always()
+        timeout-minutes: 5
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: production-rollback-final-${{ inputs.expected_release }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            g12-production-rollback-compensation-outcome.json
+            g12-production-rollback-compensation-backend-evidence.json
+            g12-production-rollback-compensation-boundary.json
+            g12-production-rollback-compensation-database.json
+            g12-production-rollback-compensation-functions.json
+            g12-production-rollback-compensation-probe.json
+            g12-production-rollback-final-target-backend-evidence.json
+            g12-production-rollback-final-target-database.json
+            g12-production-rollback-final-target-functions.json
+            recovered-backend-evidence/database.json
+            recovered-backend-evidence/functions.json
+            recovered-backend-evidence/manifest.json
+            handoff/rollback-production-state.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Recheck canonical production immediately before terminal gate
+        id: terminal_canonical
+        if: always()
+        timeout-minutes: 5
+        continue-on-error: true
+        working-directory: control
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if timeout 1m node scripts/ev2/phase12/cloudflare-pages.mjs latest-production; then
+              exit 0
+            fi
+            [ "$attempt" -eq 3 ] || sleep 5
+          done
+          exit 1
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+      - name: Compare and clear production rollback state after target evidence
+        id: clear_recovery_state
+        if: >-
+          always() && needs.rollback.result == 'success' &&
+          steps.finalizer_materialize_backend_evidence.outcome == 'success' &&
+          steps.final_target_backend_evidence.outcome == 'success' &&
+          steps.compensation_evidence_upload.outcome == 'success' &&
+          steps.terminal_canonical.outcome == 'success' &&
+          steps.terminal_canonical.outputs.deployment_id == steps.finalizer_state.outputs.target_deployment &&
+          steps.terminal_canonical.outputs.release == steps.finalizer_state.outputs.target_release
+        timeout-minutes: 5
+        working-directory: control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs clear
+          --kind production-rollback --file ../handoff/rollback-production-state.json
+          --run-id "${{ github.run_id }}" --run-attempt "${{ github.run_attempt }}"
+          --control-sha "${{ github.sha }}"
+      - name: Report target failure and compensation outcome
+        if: always()
+        working-directory: control
+        env:
+          ROLLBACK_JOB_RESULT: ${{ needs.rollback.result }}
+          FINALIZER_MODE: ${{ steps.finalizer_mode.outputs.mode }}
+          RESTORE_ORIGINAL_OUTCOME: ${{ steps.restore_original.outcome }}
+          RESTORE_ORIGINAL_RETRY_OUTCOME: ${{ steps.restore_original_retry.outcome }}
+          FINAL_TARGET_BACKEND_EVIDENCE_OUTCOME: ${{ steps.final_target_backend_evidence.outcome }}
+          COMPENSATION_BACKEND_EVIDENCE_OUTCOME: ${{ steps.compensation_backend_evidence.outcome }}
+          COMPENSATION_FRONTEND_OUTCOME: ${{ steps.compensation_frontend_probe.outcome }}
+          COMPENSATION_BOUNDARY_OUTCOME: ${{ steps.compensation_boundary_probe.outcome }}
+          COMPENSATION_CANONICAL_OUTCOME: ${{ steps.compensation_canonical.outcome }}
+          COMPENSATION_EVIDENCE_SEAL_OUTCOME: ${{ steps.seal_compensation_evidence.outcome }}
+          COMPENSATION_EVIDENCE_UPLOAD_OUTCOME: ${{ steps.compensation_evidence_upload.outcome }}
+          TERMINAL_CANONICAL_OUTCOME: ${{ steps.terminal_canonical.outcome }}
+          TERMINAL_DEPLOYMENT: ${{ steps.terminal_canonical.outputs.deployment_id }}
+          TERMINAL_RELEASE: ${{ steps.terminal_canonical.outputs.release }}
+          INITIAL_FINALIZER_DEPLOYMENT: ${{ steps.finalizer_initial_canonical.outputs.deployment_id }}
+          INITIAL_FINALIZER_RELEASE: ${{ steps.finalizer_initial_canonical.outputs.release }}
+          ORIGINAL_DEPLOYMENT: ${{ steps.finalizer_state.outputs.original_deployment }}
+          ORIGINAL_RELEASE: ${{ steps.finalizer_state.outputs.original_release }}
+          TARGET_DEPLOYMENT: ${{ steps.finalizer_state.outputs.target_deployment }}
+          TARGET_RELEASE: ${{ steps.finalizer_state.outputs.target_release }}
+          FORWARD_BACKEND_RELEASE: ${{ inputs.forward_backend_release }}
+          FORWARD_BACKEND_RUN_ID: ${{ inputs.forward_backend_run_id }}
+          MATERIALIZE_BACKEND_EVIDENCE_OUTCOME: ${{ steps.finalizer_materialize_backend_evidence.outcome }}
+          EXPECTED_MANIFEST_SHA256: ${{ steps.finalizer_state.outputs.manifest_sha256 }}
+          EXPECTED_FUNCTIONS_SHA256: ${{ steps.finalizer_state.outputs.functions_sha256 }}
+          EXPECTED_DATABASE_SHA256: ${{ steps.finalizer_state.outputs.database_sha256 }}
+          CLEAR_RECOVERY_STATE_OUTCOME: ${{ steps.clear_recovery_state.outcome }}
+        run: |
+          set -euo pipefail
+          state_release="$(node -p "require('../handoff/rollback-production-state.json').retainedBackend.release")"
+          state_run_id="$(node -p "require('../handoff/rollback-production-state.json').retainedBackend.runId")"
+          test "$state_release" = "$FORWARD_BACKEND_RELEASE"
+          test "$state_run_id" = "$FORWARD_BACKEND_RUN_ID"
+          test "$MATERIALIZE_BACKEND_EVIDENCE_OUTCOME" = success
+          test "$(sha256sum ../recovered-backend-evidence/manifest.json | cut -d' ' -f1)" = "$EXPECTED_MANIFEST_SHA256"
+          test "$(sha256sum ../recovered-backend-evidence/functions.json | cut -d' ' -f1)" = "$EXPECTED_FUNCTIONS_SHA256"
+          test "$(sha256sum ../recovered-backend-evidence/database.json | cut -d' ' -f1)" = "$EXPECTED_DATABASE_SHA256"
+          test "$COMPENSATION_CANONICAL_OUTCOME" = success
+          test "$COMPENSATION_EVIDENCE_SEAL_OUTCOME" = success
+          test "$COMPENSATION_EVIDENCE_UPLOAD_OUTCOME" = success
+          test "$TERMINAL_CANONICAL_OUTCOME" = success
+
+          if [ "$ROLLBACK_JOB_RESULT" = success ] && [ "$FINAL_TARGET_BACKEND_EVIDENCE_OUTCOME" = success ]; then
+            test "$CLEAR_RECOVERY_STATE_OUTCOME" = success
+            test "$FINALIZER_MODE" = target
+            test "$TERMINAL_DEPLOYMENT" = "$TARGET_DEPLOYMENT"
+            test "$TERMINAL_RELEASE" = "$TARGET_RELEASE"
+            echo "G12 production rollback completed and terminally revalidated."
+            exit 0
+          fi
+
+          if [ "$FINALIZER_MODE" = external_conflict ]; then
+            test "$TERMINAL_DEPLOYMENT" = "$INITIAL_FINALIZER_DEPLOYMENT"
+            test "$TERMINAL_RELEASE" = "$INITIAL_FINALIZER_RELEASE"
+            echo "::error title=G12_PRODUCTION_ROLLBACK_EXTERNAL_DEPLOYMENT::canonical production changed outside this run; external deployment was not overwritten"
+            exit 1
+          fi
+
+          test "$FINALIZER_MODE" = compensate -o "$FINALIZER_MODE" = recovered
+          if [ "$FINALIZER_MODE" = compensate ]; then
+            if [ "$RESTORE_ORIGINAL_OUTCOME" != success ]; then
+              test "$RESTORE_ORIGINAL_RETRY_OUTCOME" = success
+            fi
+          fi
+          test "$COMPENSATION_BACKEND_EVIDENCE_OUTCOME" = success
+          test "$COMPENSATION_FRONTEND_OUTCOME" = success
+          test "$COMPENSATION_BOUNDARY_OUTCOME" = success
+          test "$TERMINAL_DEPLOYMENT" = "$ORIGINAL_DEPLOYMENT"
+          test "$TERMINAL_RELEASE" = "$ORIGINAL_RELEASE"
+          echo "::error title=G12_PRODUCTION_ROLLBACK_TARGET_FAILED_COMPENSATED::original production was restored and revalidated"
+          exit 1

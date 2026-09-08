@@ -35,6 +35,10 @@ test("CMS Edge Function validates identity, origin, input and rate limits", asyn
   assert.match(source, /consume ratelimit|consumeratelimit/);
   assert.match(source, /cms_apply_user_command/);
   assert.match(source, /inviteuserbyemail/);
+  assert.match(source, /findexistingauthuserbyemail/);
+  assert.match(source, /listusers/);
+  assert.match(source, /existing_identity/);
+  assert.match(source, /cms_invitation_nonce/);
   assert.match(source, /deleteuser/);
   assert.match(source, /cms_admin_origin/);
   assert.doesNotMatch(source, /rdo_user_access/);

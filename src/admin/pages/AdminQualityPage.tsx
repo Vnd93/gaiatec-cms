@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
+import { supabase } from "@/lib/supabase";
 import { qualityCommand } from "../api/cms-api";
 import { useAdminAuth } from "../auth/AdminAuthContext";
 import { cmsEnvironment, isEv2FeatureEnabled } from "../ev2-runtime";
 import { AdminAlert } from "../components/AdminUI";
+import { operatorErrorMessage } from "../operator-error-message";
 
 type QualityRun = {
   id: string;
@@ -14,6 +16,105 @@ type QualityRun = {
   finding_counts: { errors?: number; warnings?: number; recommendations?: number; waived?: number };
   checked_at: string;
 };
+
+type ContentOption = {
+  id: string;
+  content_type: string;
+  slug: string;
+  cms_content_drafts: { payload?: { title?: string } } | Array<{ payload?: { title?: string } }> | null;
+};
+
+const contentTypeLabels: Record<string, string> = {
+  product: "Produto",
+  service: "Serviço",
+  industry: "Indústria",
+  application: "Aplicação",
+  solution: "Solução",
+  post: "Artigo",
+  page: "Página",
+  homepage: "Página inicial",
+  campaign: "Campanha",
+  navigation: "Navegação",
+  site_settings: "Dados globais",
+  placement: "Posicionamentos",
+};
+
+const fieldLabels: Record<string, string> = {
+  "seo.title": "Título para mecanismos de busca",
+  "seo.description": "Descrição para mecanismos de busca",
+  "seo.canonicalPath": "Endereço oficial",
+  blocks: "Conteúdo da página",
+  media: "Mídia",
+  title: "Título",
+  summary: "Resumo",
+};
+
+const qualityResultLabels: Record<string, string> = {
+  passed: "Conforme",
+  warning: "Com alertas",
+  blocked: "Bloqueado",
+};
+
+const findingMessages: Record<string, string> = {
+  "content.title_required": "Informe o título.",
+  "content.summary_required": "Considere adicionar um resumo.",
+  "seo.title_length": "Reduza o título exibido nos resultados de busca para até 60 caracteres.",
+  "seo.description_required": "Informe a descrição exibida nos resultados de busca.",
+  "seo.description_length": "Use entre 50 e 160 caracteres na descrição dos resultados de busca.",
+  "seo.canonical_required": "Defina o endereço oficial antes de permitir a indexação.",
+  "media.alt_required": "Informe o texto alternativo da mídia.",
+  "media.rights_required": "Confirme os direitos de uso da mídia.",
+  "pim.specification_recommended": "Considere adicionar as especificações técnicas do produto.",
+  "pim.searchable_requires_homologation":
+    "Revise e aprove a especificação antes de disponibilizá-la na busca.",
+  "links.invalid_url": "Corrija o endereço informado.",
+};
+
+function qualityResultLabel(status: string): string {
+  return qualityResultLabels[status] ?? "Resultado indisponível";
+}
+
+function findingMessage(ruleKey: string): string {
+  return findingMessages[ruleKey] ?? "Revise este campo antes de publicar.";
+}
+
+function draftTitle(item: ContentOption): string {
+  const draft = Array.isArray(item.cms_content_drafts) ? item.cms_content_drafts[0] : item.cms_content_drafts;
+  return draft?.payload?.title?.trim() || item.slug.replaceAll("-", " ");
+}
+
+function contentLabel(item: ContentOption): string {
+  return `${draftTitle(item)} — ${contentTypeLabels[item.content_type] ?? "Conteúdo"}`;
+}
+
+function fieldLabel(path: string): string {
+  const normalized = path.replace(/^payload\./, "");
+  if (fieldLabels[path]) return fieldLabels[path];
+  if (fieldLabels[normalized]) return fieldLabels[normalized];
+  const indexed = normalized.match(/^(blocks|media|specifications)\[(\d+)\]/);
+  if (indexed) {
+    const [, collection, rawIndex] = indexed;
+    const itemNumber = Number(rawIndex) + 1;
+    if (collection === "blocks") return `Bloco ${itemNumber}`;
+    if (collection === "media") return `Mídia ${itemNumber}`;
+    return `Especificação ${itemNumber}`;
+  }
+  return "Campo do conteúdo";
+}
+
+function contentEditPath(item: ContentOption | undefined, findingCategory = ""): string {
+  if (!item) return "/admin/conteudo";
+  if (findingCategory.toLowerCase().includes("media")) return "/admin/midia";
+  if (item.content_type === "product") {
+    return `/admin/produtos/${item.id}?etapa=${findingCategory.toLowerCase().includes("seo") ? "seo" : "dados"}`;
+  }
+  if (["service", "industry", "application", "solution"].includes(item.content_type)) {
+    return `/admin/descoberta/${item.content_type}/${item.id}`;
+  }
+  if (["page", "homepage"].includes(item.content_type)) return `/admin/paginas/${item.id}`;
+  if (item.content_type === "campaign") return `/admin/marketing/campanhas/${item.id}`;
+  return `/admin/conteudo/${item.id}`;
+}
 
 const envelope = () => ({
   schemaVersion: 1 as const,
@@ -27,6 +128,7 @@ export default function AdminQualityPage() {
   const { session, profile } = useAdminAuth();
   const candidateEnabled = isEv2FeatureEnabled(profile, "ev2.search_quality");
   const [runs, setRuns] = useState<QualityRun[]>([]),
+    [contentOptions, setContentOptions] = useState<ContentOption[]>([]),
     [findings, setFindings] = useState<
       Array<{
         ruleKey: string;
@@ -68,14 +170,28 @@ export default function AdminQualityPage() {
       });
       setEnabled(capability.enabled);
       if (!capability.enabled) return;
-      const result = await qualityCommand<{ items: QualityRun[] }>(session, {
-        action: "list",
-        envelope: envelope(),
-        limit: 50,
-      });
+      const [result, contentResult] = await Promise.all([
+        qualityCommand<{ items: QualityRun[] }>(session, {
+          action: "list",
+          envelope: envelope(),
+          limit: 50,
+        }),
+        supabase
+          .from("cms_content_items")
+          .select("id,content_type,slug,cms_content_drafts(payload)")
+          .neq("workflow_status", "archived")
+          .order("updated_at", { ascending: false })
+          .limit(500),
+      ]);
       setRuns(result.items);
+      if (contentResult.error) throw new Error("A lista de conteúdos não pôde ser carregada.");
+      const available = (contentResult.data ?? []) as unknown as ContentOption[];
+      setContentOptions(available);
+      setItemId((current) =>
+        current && available.some((item) => item.id === current) ? current : (available[0]?.id ?? ""),
+      );
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Centro de Qualidade indisponível.");
+      setError(operatorErrorMessage(caught, { fallback: "O Centro de Qualidade está indisponível." }));
     }
   }, [candidateEnabled, session]);
   useEffect(() => {
@@ -102,11 +218,11 @@ export default function AdminQualityPage() {
       }>(session, { action: "run", envelope: envelope(), itemId, trigger: "manual" }, true);
       setFindings(result.findings);
       setSuccess(
-        `Verificação concluída: ${result.status}. ${result.counts.errors ?? 0} erro(s), ${result.counts.warnings ?? 0} alerta(s).`,
+        `Verificação concluída: ${qualityResultLabel(result.status)}. ${result.counts.errors ?? 0} erro(s), ${result.counts.warnings ?? 0} alerta(s).`,
       );
       await load();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Verificação não concluída.");
+      setError(operatorErrorMessage(caught, { fallback: "A verificação não foi concluída." }));
     } finally {
       setBusy(false);
     }
@@ -134,7 +250,7 @@ export default function AdminQualityPage() {
       setReason("");
       setExpiresAt("");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Exceção não registrada.");
+      setError(operatorErrorMessage(caught, { fallback: "A exceção temporária não foi registrada." }));
     } finally {
       setBusy(false);
     }
@@ -144,16 +260,19 @@ export default function AdminQualityPage() {
     return (
       <section>
         <h1>Centro de Qualidade</h1>
-        <div className="admin-state">Capacidade EV2.6 não elegível para esta sessão.</div>
+        <div className="admin-state">O Centro de Qualidade não está disponível para esta conta.</div>
       </section>
     );
   return (
     <section>
       <div className="admin-page-heading">
         <div>
-          <p className="admin-eyebrow">EV2.6 · QUALIDADE DETERMINÍSTICA</p>
+          <p className="admin-eyebrow">QUALIDADE DE CONTEÚDO</p>
           <h1>Centro de Qualidade</h1>
-          <p>Valida SEO, acessibilidade, links, mídia, conteúdo e PIM antes da publicação.</p>
+          <p>
+            Verifica a apresentação na busca, a acessibilidade, os links, as mídias e os dados de produto
+            antes da publicação.
+          </p>
         </div>
       </div>
       {error && (
@@ -163,13 +282,13 @@ export default function AdminQualityPage() {
       )}
       {success && <AdminAlert tone="success">{success}</AdminAlert>}
       {!enabled ? (
-        <div className="admin-state">A capacidade está desligada para este usuário.</div>
+        <div className="admin-state">As verificações de qualidade estão desativadas para esta conta.</div>
       ) : (
         <>
           <div className="admin-metrics" aria-label="Pendências por categoria">
             <article>
               <strong>{categoryCounts.seo}</strong>
-              <span>SEO</span>
+              <span>busca</span>
             </article>
             <article>
               <strong>{categoryCounts.links}</strong>
@@ -185,17 +304,27 @@ export default function AdminQualityPage() {
             </article>
           </div>
           <p className="admin-help">
-            Varredura diária automática; a execução manual abaixo atualiza o diagnóstico do item
-            imediatamente.
+            Uma verificação automática acontece diariamente. A verificação manual abaixo atualiza as
+            orientações deste conteúdo imediatamente.
           </p>
           <div className="admin-editor-grid">
             <label>
-              ID do conteúdo
-              <input
+              Conteúdo a verificar
+              <select
                 value={itemId}
-                onChange={(event) => setItemId(event.target.value)}
-                placeholder="UUID do item"
-              />
+                onChange={(event) => {
+                  setItemId(event.target.value);
+                  setFindings([]);
+                  setRuleKey("");
+                }}
+              >
+                <option value="">Selecione um conteúdo</option>
+                {contentOptions.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {contentLabel(item)}
+                  </option>
+                ))}
+              </select>
             </label>
             {canRun && (
               <button type="button" disabled={busy || !itemId} onClick={() => void runQuality()}>
@@ -207,12 +336,18 @@ export default function AdminQualityPage() {
             <div className="admin-editor-grid" aria-labelledby="quality-waiver-title">
               <h2 id="quality-waiver-title">Exceção temporária</h2>
               <label>
-                Regra
-                <input
-                  value={ruleKey}
-                  onChange={(event) => setRuleKey(event.target.value)}
-                  placeholder="seo.canonical_required"
-                />
+                Achado a dispensar
+                <select value={ruleKey} onChange={(event) => setRuleKey(event.target.value)}>
+                  <option value="">Selecione um achado da verificação</option>
+                  {findings
+                    .filter((finding) => !finding.waived)
+                    .map((finding) => (
+                      <option key={`${finding.ruleKey}:${finding.fieldPath}`} value={finding.ruleKey}>
+                        {fieldLabel(finding.fieldPath)} — {findingMessage(finding.ruleKey)}
+                      </option>
+                    ))}
+                </select>
+                <small>Execute a verificação do conteúdo antes de registrar uma exceção.</small>
               </label>
               <label>
                 Motivo
@@ -255,27 +390,24 @@ export default function AdminQualityPage() {
                 <tbody>
                   {findings.map((finding) => (
                     <tr key={`${finding.ruleKey}:${finding.fieldPath}`}>
+                      <td>{fieldLabel(finding.fieldPath)}</td>
                       <td>
-                        <code>{finding.fieldPath}</code>
+                        {finding.waived
+                          ? "Dispensado"
+                          : finding.severity === "error"
+                            ? "Erro"
+                            : finding.severity === "warning"
+                              ? "Alerta"
+                              : "Recomendação"}
                       </td>
-                      <td>{finding.waived ? "dispensado" : finding.severity}</td>
-                      <td>
-                        {finding.message}
-                        <br />
-                        <small>
-                          {finding.ruleKey} · {finding.category}
-                        </small>
-                      </td>
+                      <td>{findingMessage(finding.ruleKey)}</td>
                       <td>
                         <Link
                           className="admin-table-action"
-                          to={
-                            finding.category.toLowerCase().includes("media")
-                              ? "/admin/midia"
-                              : `/admin/produtos/${itemId}?etapa=${
-                                  finding.category.toLowerCase().includes("seo") ? "seo" : "dados"
-                                }`
-                          }
+                          to={contentEditPath(
+                            contentOptions.find((item) => item.id === itemId),
+                            finding.category,
+                          )}
                         >
                           Corrigir
                         </Link>
@@ -303,9 +435,11 @@ export default function AdminQualityPage() {
                   {runs.map((run) => (
                     <tr key={run.id}>
                       <td>
-                        <code>{run.item_id}</code>
+                        {contentOptions.find((item) => item.id === run.item_id)
+                          ? contentLabel(contentOptions.find((item) => item.id === run.item_id)!)
+                          : "Conteúdo não disponível nesta sessão"}
                       </td>
-                      <td>{run.status}</td>
+                      <td>{qualityResultLabel(run.status)}</td>
                       <td>
                         {run.finding_counts.errors ?? 0} erros · {run.finding_counts.warnings ?? 0} alertas ·{" "}
                         {run.finding_counts.waived ?? 0} dispensados

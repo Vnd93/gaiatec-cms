@@ -1,0 +1,430 @@
+name: Finalize failed production deploy
+
+on:
+  workflow_run:
+    workflows: [Deploy production]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    if: >-
+      github.event.workflow_run.conclusion != 'success' &&
+      github.event.workflow_run.event == 'workflow_dispatch' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.path == '.github/workflows/deploy-production.yml' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    environment: production
+    steps:
+      - name: Checkout the exact control SHA that armed the failed workflow
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          path: control
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: control/.nvmrc
+      - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3
+        with:
+          version: 2.116.0
+      - name: Resolve exact marker artifact metadata
+        id: marker_meta
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          PRODUCTION_MARKER_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          EXPECTED_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: >-
+          node scripts/ev2/phase12/resolve-production-run-artifact.mjs
+          --run-id "${{ github.event.workflow_run.id }}"
+          --run-attempt "${{ github.event.workflow_run.run_attempt }}"
+          --name "production-mutation-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}"
+          --marker-fallback ../marker/g12-production-mutation-marker.json
+          --allow-missing
+      - name: No-op when the source run failed before mutation was armed
+        if: steps.marker_meta.outputs.found != 'true'
+        run: echo "Artifact API confirmed that no production mutation marker exists."
+      - name: Download exact marker artifact from the failed source run
+        id: marker_download
+        if: >-
+          always() && steps.marker_meta.outcome == 'success' &&
+          steps.marker_meta.outputs.source == 'artifact'
+        timeout-minutes: 5
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.marker_meta.outputs.artifact_id }}
+          digest-mismatch: error
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: marker
+      - name: Recover marker from the redundant HMAC control after artifact download failure
+        id: marker_variable_fallback
+        if: >-
+          always() && steps.marker_meta.outcome == 'success' &&
+          steps.marker_meta.outputs.source == 'artifact' &&
+          steps.marker_download.outcome != 'success'
+        timeout-minutes: 5
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          PRODUCTION_MARKER_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          EXPECTED_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+          EXPECTED_ARTIFACT_ID: ${{ steps.marker_meta.outputs.artifact_id }}
+          EXPECTED_ARTIFACT_DIGEST: ${{ steps.marker_meta.outputs.artifact_digest }}
+        run: >-
+          node scripts/ev2/phase12/resolve-production-run-artifact.mjs
+          --run-id "${{ github.event.workflow_run.id }}"
+          --run-attempt "${{ github.event.workflow_run.run_attempt }}"
+          --name "production-mutation-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}"
+          --marker-fallback ../marker-variable/g12-production-mutation-marker.json
+          --variable-only
+      - name: Verify source-run marker identity
+        id: marker
+        if: >-
+          always() && steps.marker_meta.outcome == 'success' &&
+          (steps.marker_meta.outputs.source == 'variable' ||
+          steps.marker_download.outcome == 'success' ||
+          steps.marker_variable_fallback.outcome == 'success')
+        working-directory: control
+        env:
+          EXPECTED_RUN_ID: ${{ github.event.workflow_run.id }}
+          EXPECTED_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          EXPECTED_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          marker_file=../marker/g12-production-mutation-marker.json
+          if [ "${{ steps.marker_variable_fallback.outcome }}" = "success" ]; then
+            marker_file=../marker-variable/g12-production-mutation-marker.json
+          fi
+          node scripts/ev2/phase12/read-production-mutation-marker.mjs --file "$marker_file"
+      - name: Checkout exact candidate
+        id: candidate_checkout
+        if: always() && steps.marker.outcome == 'success'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ steps.marker.outputs.candidate_sha }}
+          fetch-depth: 0
+          path: candidate
+      - name: Checkout exact approved baseline
+        id: baseline_checkout
+        if: always() && steps.marker.outcome == 'success'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ steps.marker.outputs.baseline_release }}
+          fetch-depth: 0
+          path: rollback-backend
+      - name: Revalidate immutable approval
+        id: approval
+        if: always() && steps.marker.outcome == 'success'
+        working-directory: control
+        env:
+          APPROVAL_RECORD: ${{ steps.marker.outputs.approval_record }}
+          CANDIDATE_SHA: ${{ steps.marker.outputs.candidate_sha }}
+          CHANGE_REFERENCE: ${{ steps.marker.outputs.change_reference }}
+        run: >-
+          node scripts/ev2/phase12/verify-approval.mjs --file "$APPROVAL_RECORD"
+          --candidate "$CANDIDATE_SHA" --environment production --change-reference "$CHANGE_REFERENCE"
+          --effective-at "${{ steps.marker.outputs.armed_at }}"
+      - name: Install candidate runtime for credential-free cleanup
+        if: always() && steps.candidate_checkout.outcome == 'success'
+        timeout-minutes: 15
+        working-directory: candidate
+        run: npm ci --ignore-scripts
+      - name: Download the credential-free seed QA state for failed-release compensation
+        id: qa_seed_state
+        if: always() && steps.marker.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: production-qa-state-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: candidate/outputs
+      - name: Fail closed when the failed release has no unambiguous seed QA state
+        if: always() && steps.marker.outcome == 'success'
+        env:
+          SOURCE_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          SEED_STATE_OUTCOME: ${{ steps.qa_seed_state.outcome }}
+        run: |
+          set -euo pipefail
+          test "$SOURCE_CONCLUSION" != success
+          test "$SEED_STATE_OUTCOME" = success
+      - name: Restore approved Pages deployment idempotently
+        id: pages_recovery
+        timeout-minutes: 10
+        if: always() && steps.marker.outcome == 'success'
+        working-directory: control
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+          CLOUDFLARE_BASELINE_DEPLOYMENT_ID: ${{ steps.marker.outputs.baseline_deployment_id }}
+          CLOUDFLARE_BASELINE_RELEASE: ${{ steps.marker.outputs.baseline_release }}
+          CLOUDFLARE_BASELINE_CREATED_ON: ${{ steps.marker.outputs.baseline_created_on }}
+          CLOUDFLARE_BASELINE_COMMIT_MESSAGE: ${{ steps.marker.outputs.baseline_commit_message }}
+          CLOUDFLARE_OWNED_RELEASE: ${{ steps.marker.outputs.candidate_sha }}
+          CLOUDFLARE_OWNED_RUN_MARKER: ${{ steps.marker.outputs.pages_run_marker }}
+        run: node scripts/ev2/phase12/cloudflare-pages.mjs reconcile
+      - name: Converge forward-only database target
+        id: database
+        timeout-minutes: 20
+        if: >-
+          always() && steps.marker.outcome == 'success' &&
+          steps.candidate_checkout.outcome == 'success'
+        working-directory: candidate
+        env:
+          PRODUCTION_SUPABASE_DB_URL: ${{ secrets.PRODUCTION_SUPABASE_DB_URL }}
+        run: timeout 18m supabase db push --db-url "$PRODUCTION_SUPABASE_DB_URL" --include-all --yes
+      - name: Converge every Function to candidate and seal remote digests
+        id: functions
+        timeout-minutes: 45
+        if: >-
+          always() && steps.marker.outcome == 'success' && steps.database.outcome == 'success' &&
+          steps.baseline_checkout.outcome == 'success'
+        working-directory: control
+        env:
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: >-
+          node scripts/ev2/phase12/deploy-production-functions.mjs
+          --source ../candidate --rollback-source ../rollback-backend
+          --candidate "${{ steps.marker.outputs.candidate_sha }}"
+          --report ../candidate/outputs/g12-production-function-watchdog.json
+      - name: Converge exact secrets after candidate Functions
+        id: secrets
+        timeout-minutes: 10
+        if: always() && steps.functions.outcome == 'success'
+        working-directory: control
+        env: &production_function_secret_environment
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          ALLOWED_ORIGINS: https://gaiatecsistemas.com.br,https://www.gaiatecsistemas.com.br
+          TURNSTILE_ALLOWED_HOSTNAMES: gaiatecsistemas.com.br,www.gaiatecsistemas.com.br
+          PUBLIC_SITE_ORIGIN: https://gaiatecsistemas.com.br
+          RATE_LIMIT_SALT: ${{ secrets.RATE_LIMIT_SALT }}
+          EVIDENCE_SALT: ${{ secrets.EVIDENCE_SALT }}
+          LEAD_EVIDENCE_SALT: ${{ secrets.LEAD_EVIDENCE_SALT }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          EMAIL_FROM: ${{ vars.EMAIL_FROM }}
+          LEAD_NOTIFICATION_TO: ${{ vars.LEAD_NOTIFICATION_TO }}
+          OUTBOX_WORKER_SECRET: ${{ secrets.OUTBOX_WORKER_SECRET }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
+          CMS_EV2_PRODUCTION_ENABLED: "true"
+          CMS_AI_EXTERNAL_PROVIDER_ENABLED: "true"
+          APPROVED_EMAIL_FROM_SHA256: ${{ steps.approval.outputs.approved_email_from_sha256 }}
+          APPROVED_LEAD_NOTIFICATION_TO_SHA256: ${{ steps.approval.outputs.approved_notification_to_sha256 }}
+          APPROVED_CLOUDFLARE_TARGET_SHA256: ${{ steps.approval.outputs.approved_cloudflare_target_sha256 }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
+          CLOUDFLARE_CACHE_PURGE_TOKEN_ID: ${{ vars.CLOUDFLARE_CACHE_PURGE_TOKEN_ID }}
+          CLOUDFLARE_CACHE_PURGE_TOKEN: ${{ secrets.CLOUDFLARE_CACHE_PURGE_TOKEN }}
+        run: node scripts/ev2/phase12/configure-production-function-secrets.mjs
+      - name: Converge exact Auth policy
+        id: auth
+        timeout-minutes: 10
+        if: always() && steps.functions.outcome == 'success'
+        working-directory: control
+        env:
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/ev2/phase12/configure-production-auth.mjs
+      - name: Converge exact Vault binding
+        id: vault
+        timeout-minutes: 10
+        if: always() && steps.functions.outcome == 'success'
+        working-directory: control
+        env:
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          OUTBOX_WORKER_SECRET: ${{ secrets.OUTBOX_WORKER_SECRET }}
+        run: node scripts/ev2/phase12/configure-production-vault.mjs
+      - name: Complete credential-free QA cleanup when an actor existed
+        id: cleanup
+        timeout-minutes: 15
+        if: >-
+          always() && steps.marker.outcome == 'success' && steps.qa_seed_state.outcome == 'success'
+        working-directory: candidate
+        env:
+          QA_CMS_EXPECTED_SHA: ${{ steps.marker.outputs.candidate_sha }}
+          QA_CMS_TARGET_ENVIRONMENT: production
+          QA_CMS_PRODUCTION_AUTHORIZATION: AUTORIZO-G12-PRODUCAO:${{ steps.marker.outputs.candidate_sha }}
+          QA_CMS_FIXTURE_STATE_PATH: outputs/cms-browser-production-state.json
+          QA_CMS_FIXTURE_REPORT_PATH: outputs/cms-browser-production-watchdog-cleanup.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/qa/cms-browser-fixture.mjs cleanup
+      - name: Verify exact backend configuration and remote Function receipt
+        timeout-minutes: 15
+        if: always() && steps.marker.outcome == 'success'
+        working-directory: control
+        env: *production_function_secret_environment
+        run: |
+          supabase functions list --project-ref "$PRODUCTION_SUPABASE_PROJECT_REF" --output json > ../watchdog-functions.json
+          node scripts/ev2/phase12/verify-production-functions.mjs \
+            --file ../watchdog-functions.json \
+            --receipt ../candidate/outputs/g12-production-function-watchdog.json \
+            --source ../candidate \
+            --candidate "${{ steps.marker.outputs.candidate_sha }}" \
+            --project-ref "$PRODUCTION_SUPABASE_PROJECT_REF"
+          node scripts/ev2/phase12/verify-production-database.mjs --source . > ../watchdog-database.json
+          node scripts/ev2/phase12/configure-production-function-secrets.mjs --verify-only > ../watchdog-secrets.json
+          node scripts/ev2/phase12/configure-production-auth.mjs --verify-only > ../watchdog-auth.json
+          node scripts/ev2/phase12/configure-production-vault.mjs --verify-only > ../watchdog-vault.json
+      - name: Verify Pages, boundary and forward-backend compatibility
+        timeout-minutes: 10
+        if: always() && steps.marker.outcome == 'success'
+        working-directory: control
+        env:
+          CMS_BACKEND_ENVIRONMENT: production
+          CMS_BACKEND_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+          CMS_BACKEND_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
+          CMS_BACKEND_ORIGIN: https://gaiatecsistemas.com.br
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+          EV2_G12_ORIGIN: https://gaiatecsistemas.com.br
+          EV2_G12_EXPECTED_SHA: ${{ steps.marker.outputs.baseline_release }}
+          EV2_G12_ENVIRONMENT: production
+          EV2_G12_PRODUCTION_AUTHORIZED: "true"
+          EV2_G12_PROBE_PROFILE: full
+          EV2_G12_SAMPLE_COUNT: "20"
+        run: |
+          node scripts/ev2/phase12/probe-supabase-boundary.mjs > ../watchdog-boundary.json
+          node scripts/ev2/phase12/cloudflare-pages.mjs latest-production > ../watchdog-pages.json
+          node scripts/ev2/phase12/rollout-probe.mjs
+      - name: Verify real synthetic outbox/cache convergence
+        timeout-minutes: 10
+        if: >-
+          always() && steps.marker.outcome == 'success' && steps.qa_seed_state.outcome == 'success'
+        working-directory: control
+        env:
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: >-
+          node scripts/ev2/phase12/verify-production-outbox-canary.mjs
+          --recovery-no-tombstone
+          --state ../candidate/outputs/cms-browser-production-state.json
+          --report ../watchdog-outbox.json
+          --candidate "${{ steps.marker.outputs.candidate_sha }}"
+      - name: Verify zero active QA residue
+        timeout-minutes: 5
+        if: always() && steps.marker.outcome == 'success'
+        working-directory: control
+        env:
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          cleanup_args=()
+          if [ "${{ steps.cleanup.outcome }}" = "success" ]; then
+            cleanup_args=(--cleanup ../candidate/outputs/cms-browser-production-watchdog-cleanup.json)
+          fi
+          node scripts/ev2/phase12/verify-production-residue.mjs \
+            "${cleanup_args[@]}" \
+            --recovery-no-tombstone \
+            --state ../candidate/outputs/cms-browser-production-state.json \
+            --report ../watchdog-residue.json \
+            --candidate "${{ steps.marker.outputs.candidate_sha }}"
+      - name: Seal watchdog terminal recovery evidence
+        if: always() && steps.marker.outcome == 'success'
+        working-directory: control
+        env:
+          MARKER_ARTIFACT_ID: ${{ steps.marker_meta.outputs.artifact_id }}
+          MARKER_ARTIFACT_DIGEST: ${{ steps.marker_meta.outputs.artifact_digest }}
+        run: >-
+          node scripts/ev2/phase12/write-production-terminal-evidence.mjs
+          --outcome recovered
+          --candidate "${{ steps.marker.outputs.candidate_sha }}"
+          --control-sha "${{ github.event.workflow_run.head_sha }}"
+          --run-id "${{ github.event.workflow_run.id }}"
+          --run-attempt "${{ github.event.workflow_run.run_attempt }}"
+          --baseline-release "${{ steps.marker.outputs.baseline_release }}"
+          --pages ../watchdog-pages.json
+          --functions ../watchdog-functions.json
+          --function-receipt ../candidate/outputs/g12-production-function-watchdog.json
+          --secrets ../watchdog-secrets.json
+          --auth ../watchdog-auth.json
+          --vault ../watchdog-vault.json
+          --database ../watchdog-database.json
+          --boundary ../watchdog-boundary.json
+          --residue ../watchdog-residue.json
+          --outbox ../watchdog-outbox.json
+          --output ../watchdog-terminal-evidence.json
+      - name: Upload mandatory watchdog recovery evidence
+        id: watchdog_evidence_upload
+        if: always() && steps.marker.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 10
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: production-watchdog-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+          path: watchdog-terminal-evidence.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Compare and clear the recovered redundant marker
+        id: marker_clear
+        if: >-
+          always() && !failure() && steps.marker.outcome == 'success' &&
+          steps.watchdog_evidence_upload.outcome == 'success'
+        timeout-minutes: 5
+        working-directory: control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          PRODUCTION_MARKER_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: >-
+          node scripts/ev2/phase12/production-mutation-marker-store.mjs clear
+          --run-id "${{ github.event.workflow_run.id }}"
+          --run-attempt "${{ github.event.workflow_run.run_attempt }}"
+          --control-sha "${{ github.event.workflow_run.head_sha }}"
+      - name: Retry Pages compensation after any watchdog failure
+        id: terminal_pages_compensation
+        if: >-
+          always() && steps.marker.outcome == 'success' &&
+          (failure() || steps.watchdog_evidence_upload.outcome != 'success')
+        timeout-minutes: 10
+        working-directory: control
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-website
+          CLOUDFLARE_BASELINE_DEPLOYMENT_ID: ${{ steps.marker.outputs.baseline_deployment_id }}
+          CLOUDFLARE_BASELINE_RELEASE: ${{ steps.marker.outputs.baseline_release }}
+          CLOUDFLARE_BASELINE_CREATED_ON: ${{ steps.marker.outputs.baseline_created_on }}
+          CLOUDFLARE_BASELINE_COMMIT_MESSAGE: ${{ steps.marker.outputs.baseline_commit_message }}
+          CLOUDFLARE_OWNED_RELEASE: ${{ steps.marker.outputs.candidate_sha }}
+          CLOUDFLARE_OWNED_RUN_MARKER: ${{ steps.marker.outputs.pages_run_marker }}
+        run: node scripts/ev2/phase12/cloudflare-pages.mjs reconcile
+      - name: Verify retry compensation against the forward backend
+        if: always() && steps.terminal_pages_compensation.outcome == 'success'
+        timeout-minutes: 10
+        working-directory: control
+        env:
+          EV2_G12_ORIGIN: https://gaiatecsistemas.com.br
+          EV2_G12_EXPECTED_SHA: ${{ steps.marker.outputs.baseline_release }}
+          EV2_G12_ENVIRONMENT: production
+          EV2_G12_PRODUCTION_AUTHORIZED: "true"
+          EV2_G12_PROBE_PROFILE: full
+          EV2_G12_SAMPLE_COUNT: "20"
+        run: node scripts/ev2/phase12/rollout-probe.mjs
+      - name: Fail closed when watchdog evidence was not captured
+        if: >-
+          always() && steps.marker.outcome == 'success' &&
+          steps.watchdog_evidence_upload.outcome != 'success'
+        run: exit 1

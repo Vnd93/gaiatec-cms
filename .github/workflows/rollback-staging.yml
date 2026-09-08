@@ -4,42 +4,565 @@ on:
   workflow_dispatch:
     inputs:
       git_ref:
-        description: Commit imutável anteriormente aprovado
+        description: SHA completo do frontend anteriormente aprovado
+        required: true
+      backend_ref:
+        description: SHA completo do backend forward-compatible que permanece ativo
+        required: true
+      source_run_id:
+        description: Run ID bem-sucedido de Deploy staging que reteve o candidato
+        required: true
+      source_run_attempt:
+        description: Tentativa exata do run de Deploy staging
+        required: true
+        default: "1"
+      candidate_artifact_id:
+        description: Artifact ID imutável do staging-candidate
+        required: true
+      candidate_artifact_digest:
+        description: Digest sha256 completo do staging-candidate
         required: true
       confirmation:
-        description: Digite ROLLBACK-STAGING
+        description: Digite ROLLBACK-STAGING:<git_ref>:<backend_ref>:<source_run_id>:<source_run_attempt>:<candidate_artifact_id>
         required: true
 
 permissions:
+  actions: read
   contents: read
+
+concurrency:
+  group: staging
+  cancel-in-progress: false
 
 jobs:
   rollback:
-    if: inputs.confirmation == 'ROLLBACK-STAGING'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 120
     environment: staging
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Validate staging rollback dispatch authorization before any mutation
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+          DISPATCH_ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          FRONTEND_REF: ${{ inputs.git_ref }}
+          BACKEND_REF: ${{ inputs.backend_ref }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ inputs.source_run_attempt }}
+          CANDIDATE_ARTIFACT_ID: ${{ inputs.candidate_artifact_id }}
+          CANDIDATE_ARTIFACT_DIGEST: ${{ inputs.candidate_artifact_digest }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          if [ "$DISPATCH_REF" != "refs/heads/main" ]; then
+            echo "::error::Staging rollback must be dispatched from main."
+            exit 1
+          fi
+          if [ "${DISPATCH_ACTOR,,}" != "vnd93" ] || [ "${TRIGGERING_ACTOR,,}" != "vnd93" ]; then
+            echo "::error::Staging rollback is restricted to the approved operator."
+            exit 1
+          fi
+          expected_confirmation="ROLLBACK-STAGING:$FRONTEND_REF:$BACKEND_REF:$SOURCE_RUN_ID:$SOURCE_RUN_ATTEMPT:$CANDIDATE_ARTIFACT_ID"
+          if [ "$CONFIRMATION" != "$expected_confirmation" ]; then
+            echo "::error::Staging rollback confirmation is invalid."
+            exit 1
+          fi
+          if ! [[ "$FRONTEND_REF" =~ ^[a-f0-9]{40}$ ]]; then
+            echo "::error::git_ref must be a full lowercase Git SHA."
+            exit 1
+          fi
+          if ! [[ "$BACKEND_REF" =~ ^[a-f0-9]{40}$ ]]; then
+            echo "::error::backend_ref must be a full lowercase Git SHA."
+            exit 1
+          fi
+          for value in "$SOURCE_RUN_ID" "$SOURCE_RUN_ATTEMPT" "$CANDIDATE_ARTIFACT_ID"; do
+            if ! [[ "$value" =~ ^[1-9][0-9]*$ ]]; then
+              echo "::error::source run, attempt and artifact ID must be positive integers."
+              exit 1
+            fi
+          done
+          if ! [[ "$CANDIDATE_ARTIFACT_DIGEST" =~ ^(sha256:)?[a-f0-9]{64}$ ]]; then
+            echo "::error::candidate_artifact_digest must be a complete SHA-256 digest."
+            exit 1
+          fi
+      - name: Checkout exact frontend rollback target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.git_ref }}
+          fetch-depth: 0
+          path: frontend
+      - name: Checkout exact forward-compatible backend
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.backend_ref }}
+          fetch-depth: 0
+          path: backend
+      - name: Checkout trusted rollback controls from main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          path: control
+      - name: Resolve and verify the exact rollback candidate
+        id: candidate
+        working-directory: frontend
+        env:
+          BACKEND_REF: ${{ inputs.backend_ref }}
+        run: |
+          candidate_sha="$(git rev-parse HEAD)"
+          git fetch origin main
+          test "$(printf '%s' "$candidate_sha" | grep -E '^[a-f0-9]{40}$')" = "$candidate_sha"
+          git merge-base --is-ancestor "$candidate_sha" origin/main
+          test "$(printf '%s' "$BACKEND_REF" | grep -E '^[a-f0-9]{40}$')" = "$BACKEND_REF"
+          test "$(git -C ../backend rev-parse HEAD)" = "$BACKEND_REF"
+          git merge-base --is-ancestor "$candidate_sha" "$BACKEND_REF"
+          git merge-base --is-ancestor "$BACKEND_REF" origin/main
+          test -z "$(git status --porcelain)"
+          printf 'sha=%s\n' "$candidate_sha" >> "$GITHUB_OUTPUT"
+      - name: Resolve staging-candidate by source run, artifact ID and digest
+        id: target_artifact
+        timeout-minutes: 5
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ inputs.source_run_attempt }}
+          CANDIDATE_ARTIFACT_ID: ${{ inputs.candidate_artifact_id }}
+          CANDIDATE_ARTIFACT_DIGEST: ${{ inputs.candidate_artifact_digest }}
+        run: >-
+          node scripts/ev2/phase12/resolve-staging-candidate-artifact.mjs
+          --run-id "$SOURCE_RUN_ID"
+          --run-attempt "$SOURCE_RUN_ATTEMPT"
+          --artifact-id "$CANDIDATE_ARTIFACT_ID"
+          --artifact-digest "$CANDIDATE_ARTIFACT_DIGEST"
+          --candidate "${{ steps.candidate.outputs.sha }}"
+      - name: Prove target ancestry against its trusted staging control revision
+        working-directory: control
+        run: |
+          git cat-file -e "${{ steps.target_artifact.outputs.control_sha }}^{commit}"
+          git merge-base --is-ancestor \
+            "${{ steps.candidate.outputs.sha }}" "${{ steps.target_artifact.outputs.control_sha }}"
+          git merge-base --is-ancestor \
+            "${{ steps.target_artifact.outputs.control_sha }}" origin/main
+      - name: Download only the resolved immutable staging-candidate artifact
+        timeout-minutes: 10
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.target_artifact.outputs.artifact_id }}
+          digest-mismatch: error
+          path: target-artifact
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.source_run_id }}
+      - name: Verify the downloaded target archive and seal before any mutation
+        working-directory: control
+        run: |
+          node scripts/ev2/phase12/verify-production-dist-seal.mjs \
+            --dist ../target-artifact/dist \
+            --seal ../target-artifact/outputs/staging-candidate-dist-seal.json \
+            --candidate "${{ steps.candidate.outputs.sha }}"
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version-file: .nvmrc
+          node-version-file: control/.nvmrc
           cache: npm
-      - run: npm ci
-      - run: npm run build:staging
-        env:
-          VITE_RELEASE: ${{ inputs.git_ref }}
-          VITE_CMS_ENVIRONMENT: staging
-          VITE_EV2_DRAFT_V2_CANDIDATE: "false"
-      - run: npm run artifact:manifest
-        env:
-          GITHUB_SHA: ${{ inputs.git_ref }}
-      - id: deploy
-        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
+          cache-dependency-path: control/package-lock.json
+      - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name gaiatec-cms-staging --branch Remodelagem
-      - run: npm run smoke:http -- "${{ steps.deploy.outputs.deployment-url }}"
+          version: 2.116.0
+      - name: Verify rollback target against the retained backend
+        working-directory: backend
+        run: >-
+          node scripts/ev2/phase12/verify-backend-forward-compatibility.mjs
+          --candidate . --baseline ../frontend --report g12-backend-compatibility.json
+      - name: Capture immutable live staging state before any remote mutation
+        id: original_staging
+        timeout-minutes: 3
+        working-directory: control
+        run: node scripts/ev2/phase12/staging-pages-state.mjs capture-current
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-cms-staging
+          CLOUDFLARE_PAGES_BRANCH: ev2-g17-canary
+      - name: Probe the exact live staging baseline before any mutation
+        timeout-minutes: 10
+        working-directory: control
+        run: node scripts/ev2/phase12/rollout-probe.mjs
+        env:
+          EV2_G12_ORIGIN: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
+          EV2_G12_EXPECTED_SHA: ${{ steps.original_staging.outputs.release }}
+          EV2_G12_ENVIRONMENT: staging
+          EV2_G12_PROBE_PROFILE: full
+          EV2_G12_SAMPLE_COUNT: "5"
+          EV2_G12_REPORT_PATH: ../g12-staging-rollback-original-probe.json
+      - name: Checkout exact live baseline for deterministic recovery fallback
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ steps.original_staging.outputs.release }}
+          fetch-depth: 0
+          path: recovery-source
+      - name: Seal deterministic original recovery bytes before mutation
+        working-directory: recovery-source
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor HEAD "${{ inputs.backend_ref }}"
+          npm ci
+          npm run build:staging
+          env -u GITHUB_SHA npm run artifact:manifest
+          mkdir -p outputs
+          node ../control/scripts/ev2/phase12/seal-production-dist.mjs \
+            --dist dist \
+            --archive outputs/staging-rollback-recovery-dist.tar \
+            --output outputs/staging-rollback-recovery-dist-seal.json \
+            --candidate "${{ steps.original_staging.outputs.release }}"
+        env:
+          VITE_RELEASE: ${{ steps.original_staging.outputs.release }}
+          VITE_CMS_ENVIRONMENT: staging
+          VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          VITE_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_STAGING_SITE_KEY }}
+          VITE_GOOGLE_MAPS_KEY: ${{ vars.GOOGLE_MAPS_BROWSER_KEY }}
+          VITE_CONTACT_CAPTCHA_ALWAYS: "true"
+          VITE_EV2_DRAFT_V2_CANDIDATE: "false"
+      - name: Persist credential-free staging rollback state
+        id: rollback_state
+        working-directory: control
+        env:
+          ORIGINAL_DEPLOYMENT: ${{ steps.original_staging.outputs.deployment_id }}
+          ORIGINAL_RELEASE: ${{ steps.original_staging.outputs.release }}
+          ORIGINAL_CREATED_ON: ${{ steps.original_staging.outputs.created_on }}
+          ORIGINAL_COMMIT_MESSAGE: ${{ steps.original_staging.outputs.commit_message }}
+          TARGET_RELEASE: ${{ steps.candidate.outputs.sha }}
+          BACKEND_RELEASE: ${{ inputs.backend_ref }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ inputs.source_run_attempt }}
+          TARGET_ARTIFACT_ID: ${{ steps.target_artifact.outputs.artifact_id }}
+          TARGET_ARTIFACT_DIGEST: ${{ steps.target_artifact.outputs.artifact_digest }}
+          TARGET_ARTIFACT_NAME: ${{ steps.target_artifact.outputs.artifact_name }}
+          CONTROL_SHA: ${{ github.sha }}
+        run: |
+          node <<'NODE'
+          const { appendFileSync, readFileSync, writeFileSync } = require("node:fs");
+          const targetSeal = JSON.parse(readFileSync("../target-artifact/outputs/staging-candidate-dist-seal.json", "utf8"));
+          const recoverySeal = JSON.parse(readFileSync("../recovery-source/outputs/staging-rollback-recovery-dist-seal.json", "utf8"));
+          const identity = (seal) => ({
+            schemaVersion: seal.schemaVersion, candidateSha: seal.candidateSha,
+            fileCount: seal.fileCount, byteCount: seal.byteCount, treeSha256: seal.treeSha256,
+            archiveFile: seal.archiveFile, archiveBytes: seal.archiveBytes,
+            archiveSha256: seal.archiveSha256,
+          });
+          const runId = process.env.GITHUB_RUN_ID;
+          const runAttempt = Number(process.env.GITHUB_RUN_ATTEMPT);
+          const state = {
+            schemaVersion: 1,
+            event: "g12.staging.rollback.prepared",
+            workflow: { runId, runAttempt, controlSha: process.env.CONTROL_SHA },
+            project: "gaiatec-cms-staging", branch: "ev2-g17-canary",
+            runMarker: `g12-staging-rollback-${runId}-${runAttempt}`,
+            compensationMarker: `g12-staging-rollback-compensation-${runId}-${runAttempt}`,
+            original: {
+              deploymentId: process.env.ORIGINAL_DEPLOYMENT,
+              release: process.env.ORIGINAL_RELEASE,
+              createdOn: process.env.ORIGINAL_CREATED_ON,
+              commitMessage: process.env.ORIGINAL_COMMIT_MESSAGE,
+            },
+            target: {
+              release: process.env.TARGET_RELEASE,
+              sourceRunId: process.env.SOURCE_RUN_ID,
+              sourceRunAttempt: Number(process.env.SOURCE_RUN_ATTEMPT),
+              artifact: { id: process.env.TARGET_ARTIFACT_ID, digest: process.env.TARGET_ARTIFACT_DIGEST, name: process.env.TARGET_ARTIFACT_NAME },
+              seal: identity(targetSeal),
+            },
+            recovery: { release: process.env.ORIGINAL_RELEASE, seal: identity(recoverySeal) },
+            retainedBackend: { release: process.env.BACKEND_RELEASE },
+            recordedAt: new Date().toISOString(), sensitiveValuesLogged: false,
+          };
+          writeFileSync("../rollback-staging-state.json", JSON.stringify(state, null, 2) + "\n", { mode: 0o600 });
+          appendFileSync(process.env.GITHUB_OUTPUT, `run_marker=${state.runMarker}\ncompensation_marker=${state.compensationMarker}\n`);
+          NODE
+      - name: Persist redundant HMAC rollback state before the first remote mutation
+        timeout-minutes: 5
+        working-directory: control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          CONTROL_SHA: ${{ github.sha }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs put
+          --kind staging-rollback --file ../rollback-staging-state.json
+      - name: Upload redundant staging rollback state
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: staging-rollback-state-${{ github.run_id }}-${{ github.run_attempt }}
+          path: rollback-staging-state.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload sealed rollback recovery bytes
+        continue-on-error: true
+        timeout-minutes: 10
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: staging-rollback-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            recovery-source/dist
+            recovery-source/outputs/staging-rollback-recovery-dist.tar
+            recovery-source/outputs/staging-rollback-recovery-dist-seal.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Converge the retained staging schema and Edge Functions
+        id: backend_convergence
+        continue-on-error: true
+        working-directory: backend
+        env:
+          BACKEND_REF: ${{ inputs.backend_ref }}
+          STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          test "$STAGING_SUPABASE_PROJECT_REF" = "glcqsosxwgmlhzgcsnzv"
+          supabase link --project-ref "$STAGING_SUPABASE_PROJECT_REF" --yes
+          supabase db push --linked --include-all --yes
+          node scripts/ev2/phase12/deploy-staging-functions.mjs \
+            --source . --rollback-source . --candidate "$BACKEND_REF" \
+            --report ../g12-staging-rollback-function-deployment.json
+          supabase functions list --project-ref "$STAGING_SUPABASE_PROJECT_REF" --output json > ../g12-staging-rollback-functions.json
+          node scripts/ev2/phase12/verify-production-functions.mjs \
+            --file ../g12-staging-rollback-functions.json \
+            --receipt ../g12-staging-rollback-function-deployment.json \
+            --source . --candidate "$BACKEND_REF" \
+            --environment staging --project-ref "$STAGING_SUPABASE_PROJECT_REF"
+          node scripts/ev2/phase12/verify-staging-database.mjs --source . | tee ../g12-staging-rollback-database.json
+      - name: Install exact locked Wrangler after durable pre-state
+        if: always() && steps.backend_convergence.outcome == 'success'
+        timeout-minutes: 10
+        working-directory: control
+        run: npm ci --ignore-scripts
+      - name: Reconfirm original staging immediately before Pages mutation
+        id: original_recheck
+        if: always() && steps.backend_convergence.outcome == 'success'
+        timeout-minutes: 3
+        continue-on-error: true
+        working-directory: control
+        env: &staging_rollback_environment
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-cms-staging
+          CLOUDFLARE_PAGES_BRANCH: ev2-g17-canary
+          STAGING_ORIGINAL_DEPLOYMENT: ${{ steps.original_staging.outputs.deployment_id }}
+          STAGING_ORIGINAL_RELEASE: ${{ steps.original_staging.outputs.release }}
+          STAGING_ORIGINAL_CREATED_ON: ${{ steps.original_staging.outputs.created_on }}
+          STAGING_ORIGINAL_COMMIT_MESSAGE: ${{ steps.original_staging.outputs.commit_message }}
+          STAGING_CANDIDATE_RELEASE: ${{ steps.candidate.outputs.sha }}
+          STAGING_RUN_MARKER: ${{ steps.rollback_state.outputs.run_marker }}
+          STAGING_COMPENSATION_MARKER: ${{ steps.rollback_state.outputs.compensation_marker }}
+        run: node scripts/ev2/phase12/staging-pages-state.mjs assert-original
+      - name: Restore only the exact retained and sealed staging-candidate bytes
+        id: deploy
+        if: always() && steps.backend_convergence.outcome == 'success' && steps.original_recheck.outcome == 'success'
+        timeout-minutes: 20
+        continue-on-error: true
+        working-directory: control
+        env: *staging_rollback_environment
+        run: >-
+          node scripts/ev2/phase12/deploy-sealed-staging-dist.mjs
+          --archive ../target-artifact/outputs/staging-candidate-dist.tar
+          --seal ../target-artifact/outputs/staging-candidate-dist-seal.json
+          --candidate "${{ steps.candidate.outputs.sha }}"
+          --branch ev2-g17-canary
+          --commit-message "${{ steps.rollback_state.outputs.run_marker }}"
+          --wrangler-script node_modules/wrangler/bin/wrangler.js
+      - name: Confirm only this rollback target became canonical
+        id: target_canonical
+        if: always() && steps.deploy.outcome == 'success'
+        timeout-minutes: 3
+        continue-on-error: true
+        working-directory: control
+        env: *staging_rollback_environment
+        run: node scripts/ev2/phase12/staging-pages-state.mjs assert-owned
+      - name: Verify the restored frontend with the retained backend
+        id: target_probe
+        if: always() && steps.target_canonical.outcome == 'success'
+        continue-on-error: true
+        working-directory: backend
+        run: node scripts/ev2/phase12/rollout-probe.mjs
+        env:
+          EV2_G12_ORIGIN: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
+          EV2_G12_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          EV2_G12_ENVIRONMENT: staging
+          EV2_G12_PROBE_PROFILE: full
+          EV2_G12_SAMPLE_COUNT: "5"
+          EV2_G12_REPORT_PATH: ../g12-staging-rollback-probe.json
+      - name: Probe retained public, anonymous, CORS and secret boundaries
+        id: target_boundary
+        if: always() && steps.target_canonical.outcome == 'success'
+        continue-on-error: true
+        working-directory: backend
+        run: node scripts/ev2/phase12/probe-supabase-boundary.mjs | tee ../g12-staging-rollback-boundary.json
+        env:
+          CMS_BACKEND_ENVIRONMENT: staging
+          CMS_BACKEND_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          CMS_BACKEND_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          CMS_BACKEND_ORIGIN: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
+      - name: Seal credential-free rollback evidence
+        id: target_evidence
+        if: always()
+        continue-on-error: true
+        working-directory: control
+        env:
+          BACKEND_OUTCOME: ${{ steps.backend_convergence.outcome }}
+          DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+          CANONICAL_OUTCOME: ${{ steps.target_canonical.outcome }}
+          PROBE_OUTCOME: ${{ steps.target_probe.outcome }}
+          BOUNDARY_OUTCOME: ${{ steps.target_boundary.outcome }}
+        run: |
+          node <<'NODE'
+          const { readFileSync, writeFileSync } = require("node:fs");
+          const state = JSON.parse(readFileSync("../rollback-staging-state.json", "utf8"));
+          writeFileSync("../g12-staging-rollback-evidence.json", JSON.stringify({
+            schemaVersion: 1, event: "g12.staging.rollback.target_evaluated",
+            workflow: state.workflow, original: state.original, target: state.target,
+            retainedBackend: state.retainedBackend,
+            outcomes: { backend: process.env.BACKEND_OUTCOME, pagesMutation: process.env.DEPLOY_OUTCOME,
+              canonicalIdentity: process.env.CANONICAL_OUTCOME, frontendProbe: process.env.PROBE_OUTCOME,
+              boundaryProbe: process.env.BOUNDARY_OUTCOME },
+            recordedAt: new Date().toISOString(), sensitiveValuesLogged: false,
+          }, null, 2) + "\n", { mode: 0o600 });
+          NODE
+      - name: Upload mandatory target rollback evidence
+        id: target_evidence_upload
+        if: always() && steps.target_evidence.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: staging-rollback-${{ steps.candidate.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            rollback-staging-state.json
+            backend/g12-backend-compatibility.json
+            g12-staging-rollback-database.json
+            g12-staging-rollback-boundary.json
+            g12-staging-rollback-function-deployment.json
+            g12-staging-rollback-functions.json
+            g12-staging-rollback-original-probe.json
+            g12-staging-rollback-probe.json
+            g12-staging-rollback-evidence.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Decide compensation without overwriting an external deployment
+        id: compensation_decision
+        if: >-
+          always() &&
+          (steps.backend_convergence.outcome != 'success' || steps.deploy.outcome != 'success' ||
+          steps.target_canonical.outcome != 'success' || steps.target_probe.outcome != 'success' ||
+          steps.target_boundary.outcome != 'success' || steps.target_evidence.outcome != 'success' ||
+          steps.target_evidence_upload.outcome != 'success')
+        timeout-minutes: 3
+        continue-on-error: true
+        working-directory: control
+        env: *staging_rollback_environment
+        run: node scripts/ev2/phase12/staging-pages-state.mjs decide
+      - name: Compensate only the still-canonical rollback target
+        id: compensation
+        if: always() && steps.compensation_decision.outputs.action == 'restore-original'
+        timeout-minutes: 20
+        continue-on-error: true
+        working-directory: control
+        env: *staging_rollback_environment
+        run: >-
+          node scripts/ev2/phase12/staging-pages-state.mjs compensate
+          --dist ../recovery-source/dist
+          --seal ../recovery-source/outputs/staging-rollback-recovery-dist-seal.json
+      - name: Retry ambiguous rollback compensation safely
+        id: compensation_retry
+        if: always() && steps.compensation_decision.outputs.action == 'restore-original' && steps.compensation.outcome != 'success'
+        timeout-minutes: 20
+        continue-on-error: true
+        working-directory: control
+        env: *staging_rollback_environment
+        run: >-
+          node scripts/ev2/phase12/staging-pages-state.mjs compensate
+          --dist ../recovery-source/dist
+          --seal ../recovery-source/outputs/staging-rollback-recovery-dist-seal.json
+      - name: Re-probe original staging after compensation
+        id: compensation_probe
+        if: >-
+          always() && steps.compensation_decision.outcome == 'success' &&
+          (steps.compensation_decision.outputs.action == 'already-original' ||
+          steps.compensation.outcome == 'success' || steps.compensation_retry.outcome == 'success')
+        timeout-minutes: 10
+        continue-on-error: true
+        working-directory: control
+        run: node scripts/ev2/phase12/rollout-probe.mjs
+        env:
+          EV2_G12_ORIGIN: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
+          EV2_G12_EXPECTED_SHA: ${{ steps.original_staging.outputs.release }}
+          EV2_G12_ENVIRONMENT: staging
+          EV2_G12_PROBE_PROFILE: full
+          EV2_G12_SAMPLE_COUNT: "5"
+          EV2_G12_REPORT_PATH: ../g12-staging-rollback-compensation-probe.json
+      - name: Upload mandatory compensation evidence
+        id: compensation_evidence_upload
+        if: always() && steps.compensation_probe.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: staging-rollback-compensation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            rollback-staging-state.json
+            g12-staging-rollback-compensation-probe.json
+            g12-staging-rollback-evidence.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Clear redundant recovery state only after proven target success
+        id: clear_recovery_state
+        if: >-
+          always() && steps.backend_convergence.outcome == 'success' && steps.deploy.outcome == 'success' &&
+          steps.target_canonical.outcome == 'success' && steps.target_probe.outcome == 'success' &&
+          steps.target_boundary.outcome == 'success' && steps.target_evidence.outcome == 'success' &&
+          steps.target_evidence_upload.outcome == 'success'
+        timeout-minutes: 5
+        working-directory: control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs clear
+          --kind staging-rollback --file ../rollback-staging-state.json
+          --run-id "${{ github.run_id }}" --run-attempt "${{ github.run_attempt }}"
+          --control-sha "${{ github.sha }}"
+      - name: Enforce fail-closed rollback, compensation and evidence outcome
+        if: always()
+        env:
+          BACKEND_OUTCOME: ${{ steps.backend_convergence.outcome }}
+          DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+          CANONICAL_OUTCOME: ${{ steps.target_canonical.outcome }}
+          PROBE_OUTCOME: ${{ steps.target_probe.outcome }}
+          BOUNDARY_OUTCOME: ${{ steps.target_boundary.outcome }}
+          TARGET_EVIDENCE_OUTCOME: ${{ steps.target_evidence.outcome }}
+          TARGET_EVIDENCE_UPLOAD_OUTCOME: ${{ steps.target_evidence_upload.outcome }}
+          CLEAR_OUTCOME: ${{ steps.clear_recovery_state.outcome }}
+          COMPENSATION_DECISION_OUTCOME: ${{ steps.compensation_decision.outcome }}
+          COMPENSATION_ACTION: ${{ steps.compensation_decision.outputs.action }}
+          COMPENSATION_OUTCOME: ${{ steps.compensation.outcome }}
+          COMPENSATION_RETRY_OUTCOME: ${{ steps.compensation_retry.outcome }}
+          COMPENSATION_PROBE_OUTCOME: ${{ steps.compensation_probe.outcome }}
+          COMPENSATION_EVIDENCE_OUTCOME: ${{ steps.compensation_evidence_upload.outcome }}
+        run: |
+          set -euo pipefail
+          if [ "$BACKEND_OUTCOME" = success ] && [ "$DEPLOY_OUTCOME" = success ] && \
+             [ "$CANONICAL_OUTCOME" = success ] && [ "$PROBE_OUTCOME" = success ] && \
+             [ "$BOUNDARY_OUTCOME" = success ] && [ "$TARGET_EVIDENCE_OUTCOME" = success ] && \
+             [ "$TARGET_EVIDENCE_UPLOAD_OUTCOME" = success ] && [ "$CLEAR_OUTCOME" = success ]; then
+            exit 0
+          fi
+          test "$COMPENSATION_DECISION_OUTCOME" = success
+          test "$COMPENSATION_ACTION" = already-original -o "$COMPENSATION_ACTION" = restore-original
+          if [ "$COMPENSATION_ACTION" = restore-original ]; then
+            test "$COMPENSATION_OUTCOME" = success -o "$COMPENSATION_RETRY_OUTCOME" = success
+          fi
+          test "$COMPENSATION_PROBE_OUTCOME" = success
+          test "$COMPENSATION_EVIDENCE_OUTCOME" = success
+          echo "::error title=G12_STAGING_ROLLBACK_FAILED_COMPENSATED::original staging was restored and evidenced"
+          exit 1

@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 
-type Variant = { id: string; name: string; code: string; order: number };
+type Variant = { id: string; name: string; code: string; sku?: string; order: number };
 type Model = {
   id: string;
   model: string;
@@ -29,18 +29,40 @@ export function ProductModelsEditor({
     }
   }, [value]);
   const update = (models: Model[]) => onChange(JSON.stringify(models, null, 2));
-  if (!parsed)
+  if (!parsed) {
+    const reset = () =>
+      update([
+        {
+          id: uid(),
+          model: "",
+          manufacturerReference: "",
+          sku: "",
+          status: "active",
+          variants: [{ id: uid(), name: "", code: "", order: 0 }],
+        },
+      ]);
     return (
       <div role="alert" className="admin-notice--error">
-        A estrutura de modelos está inválida. Corrija-a na área avançada.
+        <p>A lista de modelos não pôde ser aberta. O rascunho foi preservado.</p>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => {
+            if (window.confirm("Substituir somente a lista de modelos inválida por uma lista vazia?"))
+              reset();
+          }}
+        >
+          Iniciar nova lista de modelos
+        </button>
       </div>
     );
+  }
   return (
     <div className="admin-model-editor">
       <div className="admin-section-heading">
         <div>
           <h3>Modelos e variantes</h3>
-          <p>Interface principal para ordenar, ativar e manter as configurações comerciais.</p>
+          <p>Ordene e mantenha modelos, referências do fabricante, códigos comerciais e variantes.</p>
         </div>
         <button
           type="button"
@@ -69,9 +91,9 @@ export function ProductModelsEditor({
             <tr>
               <th>Ordem</th>
               <th>Modelo comercial</th>
-              <th>Referência interna</th>
-              <th>SKU interno</th>
-              <th>Estado</th>
+              <th>Referência do fabricante</th>
+              <th>Código comercial</th>
+              <th>Situação</th>
               <th>Variantes</th>
               <th>Ações</th>
             </tr>
@@ -110,7 +132,7 @@ export function ProductModelsEditor({
                 </td>
                 <td>
                   <input
-                    aria-label={`SKU ${index + 1}`}
+                    aria-label={`Código comercial do modelo ${index + 1}`}
                     value={model.sku}
                     disabled={disabled}
                     onChange={(event) =>
@@ -124,7 +146,7 @@ export function ProductModelsEditor({
                 </td>
                 <td>
                   <select
-                    aria-label={`Estado ${index + 1}`}
+                    aria-label={`Situação do modelo ${index + 1}`}
                     value={model.status}
                     disabled={disabled}
                     onChange={(event) =>
@@ -164,8 +186,8 @@ export function ProductModelsEditor({
                           }
                         />
                         <input
-                          aria-label={`Código da variante ${variantIndex + 1} do modelo ${index + 1}`}
-                          placeholder="Código interno"
+                          aria-label={`Referência da variante ${variantIndex + 1} do modelo ${index + 1}`}
+                          placeholder="Referência comercial"
                           value={variant.code}
                           disabled={disabled}
                           onChange={(event) =>
@@ -176,6 +198,28 @@ export function ProductModelsEditor({
                                       ...entry,
                                       variants: entry.variants.map((item, j) =>
                                         j === variantIndex ? { ...item, code: event.target.value } : item,
+                                      ),
+                                    }
+                                  : entry,
+                              ),
+                            )
+                          }
+                        />
+                        <input
+                          aria-label={`Código comercial da variante ${variantIndex + 1} do modelo ${index + 1}`}
+                          placeholder="Código específico (opcional)"
+                          value={variant.sku ?? ""}
+                          disabled={disabled}
+                          onChange={(event) =>
+                            update(
+                              parsed.map((entry, i) =>
+                                i === index
+                                  ? {
+                                      ...entry,
+                                      variants: entry.variants.map((item, j) =>
+                                        j === variantIndex
+                                          ? { ...item, sku: event.target.value || undefined }
+                                          : item,
                                       ),
                                     }
                                   : entry,

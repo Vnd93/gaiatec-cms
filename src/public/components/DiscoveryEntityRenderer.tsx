@@ -10,12 +10,12 @@ const labels = {
 export function DiscoveryEntityCard({ entity }: { entity: PublishedDiscovery }) {
   return (
     <article className="discovery-card">
-      <p className="new-catalog__eyebrow">{labels[entity.content_type]}</p>
+      <p className="new-catalog__eyebrow">{labels[entity.kind]}</p>
       <h2>
         <a href={entity.path}>{entity.payload.title}</a>
       </h2>
       <p>{entity.payload.summary}</p>
-      {entity.matched_by && <small>Encontrado por: {entity.matched_by}</small>}
+      {entity.matchedBy && <small>Encontrado por: {entity.matchedBy}</small>}
     </article>
   );
 }
@@ -31,8 +31,8 @@ export function DiscoveryEntityRenderer({
   const primary = p.media?.find((media: any) => media.role === "primary");
   const image =
     primary &&
-    (entity.media_urls?.[`${primary.assetId}:large.avif`] ??
-      entity.media_urls?.[`${primary.assetId}:large.webp`]);
+    (entity.mediaUrls?.[`${primary.assetId}:large.avif`] ??
+      entity.mediaUrls?.[`${primary.assetId}:large.webp`]);
   const sections: Array<[string, string[]]> = [];
   if (p.challenges) sections.push(["Desafios", p.challenges]);
   if (p.evidence) sections.push(["Evidências", p.evidence]);
@@ -40,15 +40,23 @@ export function DiscoveryEntityRenderer({
   if (p.executionSteps) sections.push(["Etapas de execução", p.executionSteps]);
   if (p.benefits) sections.push(["Benefícios comprováveis", p.benefits]);
   if (p.components) sections.push(["Componentes", p.components]);
+  const ctaHref =
+    typeof p.cta?.href === "string" && /^\/(?!\/)[A-Za-z0-9/_#?=&.%+-]*$/.test(p.cta.href)
+      ? p.cta.href
+      : "/contato";
   return (
     <section className="new-catalog discovery-detail">
-      {preview && <div className="new-catalog__state">Preview privado — conteúdo não publicado.</div>}
+      {preview && (
+        <div className="new-catalog__state">Preview privado — visualização restrita para revisão.</div>
+      )}
       <p className="new-catalog__eyebrow">
-        {labels[entity.content_type]} ·{" "}
-        {p.governanceState === "homologated" ? "homologado" : "aguardando owner"}
+        {labels[entity.kind]}
+        {preview
+          ? ` · ${p.governanceState === "homologated" ? "homologado" : "aguardando revisão"}`
+          : " · visão geral"}
       </p>
       <h1>{p.title}</h1>
-      {entity.content_type === "service" && p.serviceKindRef?.label && (
+      {entity.kind === "service" && p.serviceKindRef?.label && (
         <p className="new-catalog__chips" aria-label="Categoria do serviço">
           <span>{p.serviceKindRef.label}</span>
         </p>
@@ -94,7 +102,7 @@ export function DiscoveryEntityRenderer({
           <h2>Pontos da aplicação</h2>
           <div className="discovery-points">
             {p.points.map((point: any) => (
-              <article key={point.id}>
+              <article key={`${point.title}-${point.variable}`}>
                 <h3>{point.title}</h3>
                 <p>
                   <strong>Necessidade:</strong> {point.need}
@@ -115,14 +123,14 @@ export function DiscoveryEntityRenderer({
         </section>
       )}
       <section>
-        <h2>Relações publicadas</h2>
+        <h2>Itens relacionados</h2>
         <p>
-          {Object.values(p.relations ?? {}).some((ids: any) => ids.length)
-            ? "Produtos, serviços, indústrias, aplicações e soluções relacionados estão vinculados pela projeção publicada."
-            : "Nenhuma relação homologada foi cadastrada."}
+          {entity.relatedItems?.length
+            ? "Explore os produtos, serviços, indústrias, aplicações e soluções relacionados a este conteúdo."
+            : "Nenhum item relacionado está disponível no momento."}
         </p>
       </section>
-      <a className="discovery-detail__cta" href={p.cta?.href ?? "/contato"}>
+      <a className="discovery-detail__cta" href={ctaHref}>
         {p.cta?.label ?? "Falar com especialista"}
       </a>
     </section>

@@ -16,6 +16,18 @@ type CampaignRow = {
   } | null;
 };
 
+const campaignStatusLabels: Record<string, string> = {
+  draft: "Rascunho",
+  in_review: "Em revisão",
+  approved: "Aprovada",
+  published: "Publicada",
+  archived: "Arquivada",
+};
+
+function campaignStatusLabel(status: string | undefined): string {
+  return status ? (campaignStatusLabels[status] ?? "Situação indisponível") : "Situação indisponível";
+}
+
 export default function AdminMarketingPage() {
   const { profile } = useAdminAuth();
   const [items, setItems] = useState<CampaignRow[]>([]);
@@ -27,17 +39,24 @@ export default function AdminMarketingPage() {
 
   useEffect(() => {
     let active = true;
-    void supabase
-      .from("cms_content_items")
-      .select("id,slug,workflow_status,updated_at,cms_content_drafts(payload)")
-      .eq("content_type", "campaign")
-      .order("updated_at", { ascending: false })
-      .then(({ data, error: loadError }) => {
+    const load = async () => {
+      try {
+        const { data, error: loadError } = await supabase
+          .from("cms_content_items")
+          .select("id,slug,workflow_status,updated_at,cms_content_drafts(payload)")
+          .eq("content_type", "campaign")
+          .order("updated_at", { ascending: false });
         if (!active) return;
         if (loadError) setError("Não foi possível carregar as campanhas.");
         else setItems((data ?? []) as unknown as CampaignRow[]);
         setLoading(false);
-      });
+      } catch {
+        if (!active) return;
+        setError("Não foi possível carregar as campanhas.");
+        setLoading(false);
+      }
+    };
+    void load();
     return () => {
       active = false;
     };
@@ -60,10 +79,10 @@ export default function AdminMarketingPage() {
     <section>
       <div className="admin-page-heading">
         <div>
-          <p className="admin-eyebrow">MARKETING GOVERNADO</p>
-          <h1>Campanhas e landing pages</h1>
+          <p className="admin-eyebrow">MARKETING</p>
+          <h1>Campanhas e páginas de campanha</h1>
           <p className="admin-help">
-            Períodos, destaques, formulários, tracking consentido e expiração em uma única fonte.
+            Organize períodos, destaques, formulários, origem autorizada e encerramento em um só lugar.
           </p>
         </div>
         <div className="admin-heading-actions">
@@ -87,7 +106,7 @@ export default function AdminMarketingPage() {
               maxLength={120}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Título ou URL"
+              placeholder="Título ou endereço público"
             />
           </span>
         </label>
@@ -104,7 +123,7 @@ export default function AdminMarketingPage() {
       ) : visible.length === 0 ? (
         <div className="admin-state">
           <h2>Nenhuma campanha cadastrada</h2>
-          <p>Crie a primeira campanha no CMS novo. Nenhum material anterior será importado.</p>
+          <p>Crie a primeira campanha. Nenhum material anterior será importado automaticamente.</p>
         </div>
       ) : (
         <div className="admin-table-wrap">
@@ -112,9 +131,9 @@ export default function AdminMarketingPage() {
             <thead>
               <tr>
                 <th>Campanha</th>
-                <th>URL</th>
+                <th>Endereço público</th>
                 <th>Período</th>
-                <th>Status</th>
+                <th>Situação</th>
                 <th>Ação</th>
               </tr>
             </thead>
@@ -131,7 +150,7 @@ export default function AdminMarketingPage() {
                     </td>
                     <td>{campaignWindowLabel(payload?.window)}</td>
                     <td>
-                      <span className="admin-status">{item.workflow_status}</span>
+                      <span className="admin-status">{campaignStatusLabel(item.workflow_status)}</span>
                     </td>
                     <td>
                       <button type="button" onClick={() => setSelected(item)}>
@@ -155,7 +174,7 @@ export default function AdminMarketingPage() {
         }
         status={
           <Badge tone={selected?.workflow_status === "published" ? "success" : "info"}>
-            {selected?.workflow_status.replaceAll("_", " ")}
+            {campaignStatusLabel(selected?.workflow_status)}
           </Badge>
         }
         fields={
@@ -169,7 +188,7 @@ export default function AdminMarketingPage() {
               ]
             : undefined
         }
-        summary="Campanha governada com landing page, vigência e expiração automática."
+        summary="Campanha com página pública, período de exibição e encerramento automático."
         primary={selected && <Link to={`/admin/marketing/campanhas/${selected.id}`}>Ver ficha completa</Link>}
         onClose={() => setSelected(null)}
       />

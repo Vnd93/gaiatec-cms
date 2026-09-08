@@ -1,5 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { listAllAuthUsers } from "../_shared/auth-admin-pagination.ts";
+import { listAllActiveRdoAdminIds } from "../_shared/rdo-access-pagination.ts";
 import { assinarClienteEmail, relatorioAssinadoEmail, relatorioFinalizadoEmail, sendEmail, type ResumoRelatorio } from "../_shared/email.ts";
 import { cleanText, clientAddress, consumeRateLimit, corsHeaders, isAllowedOrigin, json, readJsonLimited, sha256 } from "../_shared/security.ts";
 
@@ -94,10 +96,18 @@ Deno.serve(async (req) => {
     finalizadoEm: new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "medium", timeZone: "America/Sao_Paulo" }).format(new Date(report.finalized_at ?? Date.now())),
   };
 
-  const { data: accesses } = await admin.from("rdo_user_access").select("user_id").eq("active", true).eq("role", "rdo_admin");
-  const adminIds = new Set((accesses ?? []).map((item) => item.user_id));
-  const { data: users } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-  const recipients = (users?.users ?? []).filter((user) => adminIds.has(user.id)).map((user) => user.email ?? "").filter(Boolean);
+  const { ids: accessIds, error: accessDirectoryError } = await listAllActiveRdoAdminIds(admin);
+  if (accessDirectoryError) {
+    await admin.from("rdo_notification_outbox").update({ status: "failed", last_error: "rdo_access_directory_unavailable" }).eq("idempotency_key", key);
+    return json(req, { error: "Diretório de destinatários indisponível." }, 503);
+  }
+  const adminIds = new Set(accessIds);
+  const { users, error: directoryError } = await listAllAuthUsers(admin);
+  if (directoryError) {
+    await admin.from("rdo_notification_outbox").update({ status: "failed", last_error: "auth_directory_unavailable" }).eq("idempotency_key", key);
+    return json(req, { error: "Diretório de destinatários indisponível." }, 503);
+  }
+  const recipients = users.filter((user) => adminIds.has(user.id)).map((user) => user.email ?? "").filter(Boolean);
   if (recipients.length === 0) {
     await admin.from("rdo_notification_outbox").update({ status: "failed", last_error: "no_active_rdo_admin" }).eq("idempotency_key", key);
     return json(req, { error: "Nenhum administrador RDO ativo para receber a notificação." }, 503);

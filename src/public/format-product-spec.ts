@@ -1,6 +1,11 @@
 import type { CmsProductContent } from "@/shared/contracts/cms-content";
 
-type Specification = CmsProductContent["specifications"][number];
+type CanonicalSpecification = CmsProductContent["specifications"][number];
+type Specification = Pick<
+  CanonicalSpecification,
+  "key" | "label" | "type" | "value" | "unit" | "required" | "filterable" | "comparable" | "searchable"
+> &
+  Partial<Pick<CanonicalSpecification, "id">>;
 
 export function formatProductSpecification(spec: Specification) {
   const { value } = spec;

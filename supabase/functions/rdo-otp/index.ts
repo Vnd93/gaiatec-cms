@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { findAuthUserByEmail } from "../_shared/auth-admin-pagination.ts";
 import { otpEmail, sendEmail } from "../_shared/email.ts";
 import { clientAddress, consumeRateLimit, corsHeaders, isAllowedOrigin, json, readJsonLimited } from "../_shared/security.ts";
 
@@ -35,9 +36,8 @@ Deno.serve(async (req) => {
   }
 
   // Não cria usuário. Acesso exige convite nominal e allowlist ativa no RDO.
-  const { data: listed, error: listError } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  const { user, error: listError } = await findAuthUserByEmail(admin, email);
   if (listError) return json(req, { error: "Serviço indisponível." }, 503);
-  const user = listed.users.find((candidate) => candidate.email?.toLowerCase() === email);
   if (!user) return generic(req);
 
   const { data: access } = await admin.from("rdo_user_access").select("active").eq("user_id", user.id).maybeSingle();

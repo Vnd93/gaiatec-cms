@@ -41,7 +41,6 @@ export function PagesModuleTabs() {
         { label: "Páginas", to: "/admin/paginas", end: true },
         { label: "Modelos", to: "/admin/paginas?tab=modelos" },
         { label: "Blocos", to: "/admin/paginas?tab=blocos" },
-        { label: "Tema do site", to: "/admin/paginas?tab=tema" },
       ]}
     />
   );

@@ -116,11 +116,17 @@ function workspace(correlationId: string) {
       gate: "G14",
       dataClass: "synthetic",
       productionAllowed: false,
-      externalProviderEnabled: false,
+      providerMode: "openrouter",
+      providerModel: "nvidia/nemotron-3.5-lightning:free",
+      externalProviderEnabled: true,
+      externalProviderReady: true,
       maxPlanSteps: 20,
       approvalMinutes: 10,
       reviewerSeparationRequired: true,
       compensationRequired: true,
+      sameRunRequired: true,
+      automaticPublishAllowed: false,
+      manualFallback: true,
     },
     permissions: { canPlan: true, canApprove: true, canExecute: true, canCompensate: false },
     tools,
@@ -148,8 +154,10 @@ function responseFor(body: Record<string, unknown>) {
       source: "individual_overrides",
       environment: "staging",
       siteKey: "main",
-      providerMode: "synthetic",
-      externalProviderEnabled: false,
+      providerMode: "openrouter",
+      providerModel: "nvidia/nemotron-3.5-lightning:free",
+      externalProviderEnabled: true,
+      externalProviderReady: true,
       realDataAllowed: false,
       syntheticOnly: true,
       requiresAiAssist: true,
@@ -173,6 +181,9 @@ function responseFor(body: Record<string, unknown>) {
     applied: false,
     published: false,
     syntheticOnly: true,
+    providerMode: "openrouter",
+    providerModel: "nvidia/nemotron-3.5-lightning:free",
+    realDataAllowed: false,
     correlationId: requestEnvelope.correlationId,
   };
 }
@@ -203,10 +214,13 @@ describe("EV2.14 transactional AI surface", () => {
     await waitFor(() =>
       expect(screen.getByRole("heading", { name: "Execução transacional controlada" })).toBeVisible(),
     );
-    expect(screen.getByText(/alvos sintéticos g14x-\*/i)).toBeVisible();
+    expect(screen.getByText(/alvos sintéticos de ensaio/i)).toBeVisible();
+    expect(screen.queryByLabelText(/referência g14x/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(TARGET_REF)).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Adicionar ao plano" }));
-    expect(screen.getByText(/espera v1/i)).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Validar dry-run e solicitar revisão" }));
+    expect(screen.getByText(/versão conferida automaticamente/i)).toBeVisible();
+    expect(screen.queryByText(/draft\.apply_patch|espera v1/i)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Validar simulação e solicitar revisão" }));
 
     await waitFor(() =>
       expect(mocks.command).toHaveBeenCalledWith(
@@ -218,7 +232,7 @@ describe("EV2.14 transactional AI surface", () => {
               toolKey: "draft.apply_patch",
               targetRef: TARGET_REF,
               expectedVersion: 1,
-              arguments: { patch: { summary: "Resumo sintético preparado pelo plano G14." } },
+              arguments: { patch: { summary: "Resumo sintético preparado pelo plano de ensaio." } },
             }),
           ],
         }),
@@ -229,6 +243,7 @@ describe("EV2.14 transactional AI surface", () => {
       expect(mocks.command.mock.calls.filter(([, body]) => body.action === "workspace")).toHaveLength(2),
     );
     expect(screen.queryByLabelText(/json/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/correlação:/i)).not.toBeInTheDocument();
   });
 
   it("offers approval only for another planner and sends the immutable hash", async () => {
@@ -275,17 +290,17 @@ describe("EV2.14 transactional AI surface", () => {
     });
 
     await user.click(screen.getByRole("button", { name: "Adicionar ao plano" }));
-    await user.click(screen.getByRole("button", { name: "Validar dry-run e solicitar revisão" }));
+    await user.click(screen.getByRole("button", { name: "Validar simulação e solicitar revisão" }));
 
     const retry = await screen.findByRole("button", { name: "Repetir comando pendente" });
     const initialAttempts = mocks.command.mock.calls.filter(([, body]) => body.action === "create_plan");
     expect(initialAttempts).toHaveLength(2);
     expect(initialAttempts[1][1]).toEqual(initialAttempts[0][1]);
     expect(initialAttempts[1][2]).toBe(initialAttempts[0][2]);
-    expect(screen.getByRole("button", { name: "Validar dry-run e solicitar revisão" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Validar simulação e solicitar revisão" })).toBeDisabled();
 
     await user.click(retry);
-    expect(await screen.findByText(/dry-run validado e plano sintético criado/i)).toBeVisible();
+    expect(await screen.findByText(/simulação segura validada e plano sintético criado/i)).toBeVisible();
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: "Repetir comando pendente" })).toBeNull(),
     );
@@ -309,9 +324,9 @@ describe("EV2.14 transactional AI surface", () => {
         : Promise.resolve(responseFor(body)),
     );
     await user.click(screen.getByRole("button", { name: "Adicionar ao plano" }));
-    await user.click(screen.getByRole("button", { name: "Validar dry-run e solicitar revisão" }));
+    await user.click(screen.getByRole("button", { name: "Validar simulação e solicitar revisão" }));
 
-    expect(await screen.findByText(/dry-run validado e plano sintético criado/i)).toBeVisible();
+    expect(await screen.findByText(/simulação segura validada e plano sintético criado/i)).toBeVisible();
     expect(screen.getByRole("alert")).toHaveTextContent(/operação confirmada pelo servidor/i);
     expect(screen.getByRole("alert")).toHaveTextContent(/não repita o comando/i);
   });

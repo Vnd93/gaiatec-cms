@@ -5,11 +5,25 @@ import { usePublishedSiteShell } from "../site-shell-context";
 import { getCampaignPlacements } from "../catalog-api";
 import "../site-placements.css";
 
+const placementKindLabels: Record<string, string> = {
+  product: "Produto",
+  service: "Serviço",
+  industry: "Setor",
+  application: "Aplicação",
+  solution: "Solução",
+  page: "Página",
+  homepage: "Página inicial",
+  post: "Artigo",
+  campaign: "Campanha",
+};
+
+const placementKindLabel = (kind: string) => placementKindLabels[kind] ?? "Conteúdo";
+
 export function GlobalAnnouncement() {
   const { placements } = usePublishedSiteShell();
   const [dismissed, setDismissed] = useState<string[]>([]);
   const announcements = (placements?.placements ?? []).filter(
-    (placement) => placement.slot === "global_announcement" && !dismissed.includes(placement.id),
+    (placement) => placement.slot === "global_announcement" && !dismissed.includes(placement.target.path),
   );
   if (!announcements.length) return null;
   const announcement = announcements[0];
@@ -23,7 +37,7 @@ export function GlobalAnnouncement() {
       <button
         type="button"
         aria-label="Fechar aviso"
-        onClick={() => setDismissed((current) => [...current, announcement.id])}
+        onClick={() => setDismissed((current) => [...current, announcement.target.path])}
       >
         <X size={16} aria-hidden="true" />
       </button>
@@ -35,7 +49,7 @@ export function ContextualPlacements({ position }: { position: "before" | "after
   const { pathname } = useLocation();
   const { placements } = usePublishedSiteShell();
   const [campaigns, setCampaigns] = useState<
-    Array<{ id: string; slot: string; campaign: { path: string; title: string; summary: string } }>
+    Array<{ slot: string; campaign: { path: string; title: string; summary: string } }>
   >([]);
   useEffect(() => {
     let active = true;
@@ -69,8 +83,8 @@ export function ContextualPlacements({ position }: { position: "before" | "after
         <h2 id="site-placements-title">Conteúdos selecionados pela GAIATEC</h2>
         <div className="site-placements__grid">
           {active.map((placement) => (
-            <Link to={placement.target.path} key={placement.id}>
-              <span>{placement.label || placement.target.contentType}</span>
+            <Link to={placement.target.path} key={`${placement.slot}:${placement.target.path}`}>
+              <span>{placement.label || placementKindLabel(placement.target.kind)}</span>
               <strong>{placement.target.title}</strong>
               {placement.target.summary && <p>{placement.target.summary}</p>}
               <small>
@@ -79,7 +93,7 @@ export function ContextualPlacements({ position }: { position: "before" | "after
             </Link>
           ))}
           {contextual.map((placement) => (
-            <Link to={placement.campaign.path} key={placement.id}>
+            <Link to={placement.campaign.path} key={`${placement.slot}:${placement.campaign.path}`}>
               <span>CAMPANHA</span>
               <strong>{placement.campaign.title}</strong>
               <p>{placement.campaign.summary}</p>

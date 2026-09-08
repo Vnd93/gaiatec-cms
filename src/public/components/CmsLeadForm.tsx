@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { TurnstileChallenge } from "@/app/components/TurnstileChallenge";
-import type { CmsFormVersion } from "@/shared/contracts/cms-content";
+import type { PublicFormVersion } from "../catalog-api";
 import { submitGovernedLead, type LeadFieldValue } from "../lead-api";
 
 type Props = {
-  form: CmsFormVersion;
-  campaignId?: string;
-  productId?: string;
+  form: PublicFormVersion;
+  campaignPath?: string;
+  productSlug?: string;
   heading?: string;
   showHeader?: boolean;
   appearance?: "default" | "contact";
@@ -26,8 +26,8 @@ function fieldAutocomplete(key: string, type: string) {
 
 export function CmsLeadForm({
   form,
-  campaignId,
-  productId,
+  campaignPath,
+  productSlug,
   heading,
   showHeader = true,
   appearance = "default",
@@ -35,13 +35,15 @@ export function CmsLeadForm({
   source,
   initialValues = {},
 }: Props) {
+  const captchaAlways = import.meta.env.VITE_CONTACT_CAPTCHA_ALWAYS === "true";
   const [values, setValues] = useState<Record<string, LeadFieldValue>>(() => ({ ...initialValues }));
+  const [honeypot, setHoneypot] = useState("");
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
-  const [captchaRequired, setCaptchaRequired] = useState(false);
+  const [captchaRequired, setCaptchaRequired] = useState(captchaAlways);
   const [captchaToken, setCaptchaToken] = useState("");
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -58,16 +60,17 @@ export function CmsLeadForm({
         form,
         fields,
         idempotencyKey,
-        source: source ?? (campaignId ? "campaign" : productId ? "product" : "site"),
-        campaignId,
-        productId,
+        source: source ?? (campaignPath ? "campaign" : productSlug ? "product" : "site"),
+        campaignPath,
+        productSlug,
         consentAccepted: consent,
-        honeypot: String(values.website ?? ""),
+        honeypot,
         captchaToken: captchaToken || undefined,
       });
       setValues({ ...initialValues });
+      setHoneypot("");
       setConsent(false);
-      setCaptchaRequired(false);
+      setCaptchaRequired(captchaAlways);
       setCaptchaToken("");
       setIdempotencyKey(crypto.randomUUID());
       setMessage(`${form.successMessage}${result.reference ? ` Protocolo ${result.reference}.` : ""}`);
@@ -82,12 +85,14 @@ export function CmsLeadForm({
   return (
     <form
       className={`cms-lead-form cms-lead-form--${appearance} cms-lead-form--${appearance}-${tone}`}
+      data-form-key={form.key}
+      data-form-version={form.version}
       onSubmit={submit}
       {...(showHeader
-        ? { "aria-labelledby": `form-title-${form.versionId}` }
+        ? { "aria-labelledby": `form-title-${form.key}` }
         : { "aria-label": heading ?? form.title })}
     >
-      {showHeader && <h2 id={`form-title-${form.versionId}`}>{heading ?? form.title}</h2>}
+      {showHeader && <h2 id={`form-title-${form.key}`}>{heading ?? form.title}</h2>}
       {showHeader && <p>{form.purpose}</p>}
       <div className="cms-lead-form__honeypot" aria-hidden="true">
         <label>
@@ -96,8 +101,8 @@ export function CmsLeadForm({
             name="website"
             tabIndex={-1}
             autoComplete="off"
-            value={String(values.website ?? "")}
-            onChange={(event) => setValues((current) => ({ ...current, website: event.target.value }))}
+            value={honeypot}
+            onChange={(event) => setHoneypot(event.target.value)}
           />
         </label>
       </div>
@@ -106,10 +111,10 @@ export function CmsLeadForm({
         .sort((a, b) => a.order - b.order)
         .filter((field) => field.type !== "hidden")
         .map((field) => {
-          const id = `${form.versionId}-${field.key}`;
+          const id = `${form.key}-${field.key}`;
           if (field.type === "checkbox")
             return (
-              <label className="cms-lead-form__checkbox" key={field.id} htmlFor={id}>
+              <label className="cms-lead-form__checkbox" key={field.key} htmlFor={id}>
                 <input
                   id={id}
                   name={field.key}
@@ -124,7 +129,15 @@ export function CmsLeadForm({
               </label>
             );
           return (
-            <label key={field.id} htmlFor={id} data-field-key={field.key} data-field-type={field.type}>
+            <label
+              key={field.key}
+              htmlFor={id}
+              className={
+                ["textarea", "select"].includes(field.type) || field.key === "empresa"
+                  ? "cms-lead-form__field cms-lead-form__field--wide"
+                  : "cms-lead-form__field"
+              }
+            >
               {field.label}
               {field.required ? " *" : ""}
               {field.type === "textarea" ? (
@@ -185,11 +198,11 @@ export function CmsLeadForm({
         </span>
       </label>
       {captchaRequired && <TurnstileChallenge onToken={setCaptchaToken} />}
-      <button className="cms-page-button" type="submit" disabled={busy}>
+      <button className="cms-page-button" type="submit" disabled={busy || (captchaRequired && !captchaToken)}>
         {busy ? "Enviando…" : form.submitLabel}
       </button>
       {message && (
-        <p role="status" className="cms-lead-form__success">
+        <p role="status" className="cms-lead-form__success" data-form-submission-status="success">
           {message}
         </p>
       )}

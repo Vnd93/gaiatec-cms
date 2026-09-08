@@ -1,0 +1,252 @@
+name: Deploy staging watchdog
+
+on:
+  workflow_run:
+    workflows: ["Deploy staging"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: staging
+  cancel-in-progress: false
+
+jobs:
+  compensate-incomplete-staging-deploy:
+    if: >-
+      (github.event.workflow_run.conclusion == 'cancelled' ||
+      github.event.workflow_run.conclusion == 'failure' ||
+      github.event.workflow_run.conclusion == 'timed_out') &&
+      github.event.workflow_run.event == 'workflow_dispatch' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.path == '.github/workflows/deploy-staging.yml' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: staging
+    steps:
+      - name: Checkout the exact trusted staging control revision
+        timeout-minutes: 5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          path: control
+      - name: Recover HMAC staging state independently of artifacts
+        id: variable_state
+        continue-on-error: true
+        timeout-minutes: 5
+        working-directory: control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs get
+          --kind staging-deploy --file ../state-variable/staging-deploy-state.json
+          --run-id "${{ github.event.workflow_run.id }}"
+          --run-attempt "${{ github.event.workflow_run.run_attempt }}"
+          --control-sha "${{ github.event.workflow_run.head_sha }}"
+      - name: Download mandatory pre-mutation state from the incomplete run
+        id: artifact_state
+        if: always() && steps.variable_state.outcome != 'success'
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: staging-deploy-state-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+          digest-mismatch: error
+          path: state
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+      - name: Validate incomplete-run state and immutable ancestry
+        id: watchdog_state
+        working-directory: control
+        env:
+          VARIABLE_STATE_OUTCOME: ${{ steps.variable_state.outcome }}
+          ARTIFACT_STATE_OUTCOME: ${{ steps.artifact_state.outcome }}
+          TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
+          TRIGGER_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          TRIGGER_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          TRIGGER_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const { appendFileSync, readFileSync } = require("node:fs");
+          const statePath = process.env.VARIABLE_STATE_OUTCOME === "success"
+            ? "../state-variable/staging-deploy-state.json"
+            : "../state/staging-deploy-state.json";
+          if (process.env.VARIABLE_STATE_OUTCOME !== "success" && process.env.ARTIFACT_STATE_OUTCOME !== "success")
+            throw new Error("G12_STAGING_WATCHDOG_STATE_UNAVAILABLE");
+          const state = JSON.parse(readFileSync(statePath, "utf8"));
+          const sha = /^[a-f0-9]{40}$/;
+          const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+          if (
+            !["cancelled", "failure", "timed_out"].includes(process.env.TRIGGER_CONCLUSION) ||
+            state.schemaVersion !== 1 || state.event !== "g12.staging.deploy.prepared" ||
+            state.workflow?.runId !== process.env.TRIGGER_RUN_ID ||
+            Number(state.workflow?.runAttempt) !== Number(process.env.TRIGGER_RUN_ATTEMPT) ||
+            state.workflow?.controlSha !== process.env.TRIGGER_HEAD_SHA ||
+            state.project !== "gaiatec-cms-staging" || state.branch !== "ev2-g17-canary" ||
+            !sha.test(state.candidateRelease || "") || !sha.test(state.original?.release || "") ||
+            !uuid.test(state.original?.deploymentId || "") ||
+            !Number.isFinite(Date.parse(state.original?.createdOn || "")) ||
+            typeof state.original?.commitMessage !== "string" || /[\r\n\0]/.test(state.original.commitMessage) ||
+            state.runMarker !== `g12-staging-run-${process.env.TRIGGER_RUN_ID}-${process.env.TRIGGER_RUN_ATTEMPT}` ||
+            state.compensationMarker !== `g12-staging-deploy-compensation-${process.env.TRIGGER_RUN_ID}-${process.env.TRIGGER_RUN_ATTEMPT}`
+          ) throw new Error("G12_STAGING_WATCHDOG_STATE_REFUSED");
+          appendFileSync(process.env.GITHUB_OUTPUT, [
+            `candidate_release=${state.candidateRelease}`,
+            `original_release=${state.original.release}`,
+            `original_deployment=${state.original.deploymentId}`,
+            `original_created_on=${new Date(state.original.createdOn).toISOString()}`,
+            `original_commit_message=${state.original.commitMessage}`,
+            `run_marker=${state.runMarker}`,
+            `compensation_marker=${state.compensationMarker}`,
+            `state_path=${statePath}`,
+          ].join("\n") + "\n");
+          NODE
+          git cat-file -e "${{ github.event.workflow_run.head_sha }}^{commit}"
+          if [ "$VARIABLE_STATE_OUTCOME" = success ]; then
+            state_file=../state-variable/staging-deploy-state.json
+          else
+            state_file=../state/staging-deploy-state.json
+          fi
+          original_release="$(node -p "require('$state_file').original.release")"
+          candidate_release="$(node -p "require('$state_file').candidateRelease")"
+          git cat-file -e "$original_release^{commit}"
+          git cat-file -e "$candidate_release^{commit}"
+          git merge-base --is-ancestor "$original_release" "$candidate_release"
+          git merge-base --is-ancestor "$candidate_release" "${{ github.event.workflow_run.head_sha }}"
+      - name: Recheck the canonical alias before any watchdog compensation
+        id: watchdog_decision
+        timeout-minutes: 3
+        continue-on-error: true
+        working-directory: control
+        env: &staging_watchdog_environment
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-cms-staging
+          CLOUDFLARE_PAGES_BRANCH: ev2-g17-canary
+          STAGING_ORIGINAL_DEPLOYMENT: ${{ steps.watchdog_state.outputs.original_deployment }}
+          STAGING_ORIGINAL_RELEASE: ${{ steps.watchdog_state.outputs.original_release }}
+          STAGING_ORIGINAL_CREATED_ON: ${{ steps.watchdog_state.outputs.original_created_on }}
+          STAGING_ORIGINAL_COMMIT_MESSAGE: ${{ steps.watchdog_state.outputs.original_commit_message }}
+          STAGING_CANDIDATE_RELEASE: ${{ steps.watchdog_state.outputs.candidate_release }}
+          STAGING_RUN_MARKER: ${{ steps.watchdog_state.outputs.run_marker }}
+          STAGING_COMPENSATION_MARKER: ${{ steps.watchdog_state.outputs.compensation_marker }}
+        run: node scripts/ev2/phase12/staging-pages-state.mjs decide
+      - name: Download the exact sealed recovery artifact when the owned candidate remains active
+        id: recovery_artifact
+        if: >-
+          always() && steps.watchdog_decision.outputs.action == 'restore-original'
+        continue-on-error: true
+        timeout-minutes: 10
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: staging-recovery-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+          digest-mismatch: error
+          path: recovery
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+      - name: Install the exact locked Wrangler only when compensation is required
+        if: >-
+          always() && steps.watchdog_decision.outputs.action == 'restore-original' &&
+          steps.recovery_artifact.outcome == 'success'
+        timeout-minutes: 10
+        working-directory: control
+        run: npm ci --ignore-scripts
+      - name: Compensate only the still-canonical candidate owned by the incomplete run
+        id: watchdog_compensation
+        if: >-
+          always() && steps.watchdog_decision.outputs.action == 'restore-original'
+        timeout-minutes: 15
+        continue-on-error: true
+        working-directory: control
+        env: *staging_watchdog_environment
+        run: >-
+          node scripts/ev2/phase12/staging-pages-state.mjs compensate
+          --dist ../recovery/dist
+          --seal ../recovery/outputs/staging-baseline-dist-seal.json
+      - name: Retry ambiguous watchdog compensation after a fresh canonical recheck
+        id: watchdog_compensation_retry
+        if: >-
+          always() && steps.watchdog_decision.outputs.action == 'restore-original' &&
+          steps.recovery_artifact.outcome == 'success' &&
+          steps.watchdog_compensation.outcome != 'success'
+        timeout-minutes: 15
+        continue-on-error: true
+        working-directory: control
+        env: *staging_watchdog_environment
+        run: >-
+          node scripts/ev2/phase12/staging-pages-state.mjs compensate
+          --dist ../recovery/dist
+          --seal ../recovery/outputs/staging-baseline-dist-seal.json
+      - name: Terminal canonical recheck after watchdog reconciliation
+        if: >-
+          always() &&
+          (steps.watchdog_decision.outputs.action == 'already-original' ||
+          steps.watchdog_compensation.outcome == 'success' ||
+          steps.watchdog_compensation_retry.outcome == 'success')
+        timeout-minutes: 3
+        working-directory: control
+        env: *staging_watchdog_environment
+        run: node scripts/ev2/phase12/staging-pages-state.mjs assert-original
+      - name: Probe the restored staging frontend against the forward backend
+        id: watchdog_probe
+        if: >-
+          always() &&
+          (steps.watchdog_decision.outputs.action == 'already-original' ||
+          steps.watchdog_compensation.outcome == 'success' ||
+          steps.watchdog_compensation_retry.outcome == 'success')
+        timeout-minutes: 10
+        working-directory: control
+        env:
+          EV2_G12_ORIGIN: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
+          EV2_G12_EXPECTED_SHA: ${{ steps.watchdog_state.outputs.original_release }}
+          EV2_G12_ENVIRONMENT: staging
+          EV2_G12_PROBE_PROFILE: full
+          EV2_G12_SAMPLE_COUNT: "5"
+          EV2_G12_REPORT_PATH: ../g12-staging-watchdog-probe.json
+        run: node scripts/ev2/phase12/rollout-probe.mjs
+      - name: Upload mandatory watchdog terminal evidence
+        id: watchdog_evidence_upload
+        if: always() && steps.watchdog_probe.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: staging-watchdog-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+          path: g12-staging-watchdog-probe.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Compare and clear redundant deploy state after watchdog evidence
+        id: clear_recovery_state
+        if: always() && steps.watchdog_probe.outcome == 'success' && steps.watchdog_evidence_upload.outcome == 'success'
+        timeout-minutes: 5
+        working-directory: control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs clear
+          --kind staging-deploy --file "${{ steps.watchdog_state.outputs.state_path }}"
+          --run-id "${{ github.event.workflow_run.id }}"
+          --run-attempt "${{ github.event.workflow_run.run_attempt }}"
+          --control-sha "${{ github.event.workflow_run.head_sha }}"
+      - name: Fail closed if the watchdog could not prove the original staging release
+        if: >-
+          always() &&
+          (steps.watchdog_state.outcome != 'success' ||
+          steps.watchdog_decision.outcome != 'success' ||
+          steps.watchdog_probe.outcome != 'success' ||
+          steps.watchdog_evidence_upload.outcome != 'success' ||
+          steps.clear_recovery_state.outcome != 'success' ||
+          (steps.watchdog_decision.outputs.action == 'restore-original' &&
+          steps.watchdog_compensation.outcome != 'success' &&
+          steps.watchdog_compensation_retry.outcome != 'success'))
+        run: exit 1

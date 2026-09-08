@@ -1,15 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { damCommand } from "../api/cms-api";
 import { useAdminAuth } from "../auth/AdminAuthContext";
 import { cmsEnvironment } from "../ev2-runtime";
 import { fingerprintMediaFile } from "../dam-model";
 import {
-  mediaVariantSlots,
   uploadMediaPackage,
-  validateMediaUploadPackage,
+  validateOriginalMediaFile,
   type MediaUploadDescriptor,
-  type MediaUploadSlot,
 } from "../media-upload-model";
+import { createResponsiveMediaPackage } from "../responsive-media";
+import { rightsExpiryAtOperationalDayEnd } from "../rights-expiry";
 import {
   Ev2DamAssetListResultSchema,
   Ev2DamAssetResultSchema,
@@ -18,8 +18,16 @@ import {
   type Ev2DamAsset,
   type Ev2DamCollection,
 } from "@/shared/contracts/ev2-dam";
+import { operatorErrorMessage } from "../operator-error-message";
 
 const CMS_ENVIRONMENT = cmsEnvironment();
+
+const rightsStateLabels: Record<Ev2DamAsset["rightsState"], string> = {
+  valid: "Direitos válidos",
+  expiring: "Direitos próximos do vencimento",
+  expired: "Direitos vencidos",
+  undated: "Direitos sem vencimento",
+};
 
 function envelope() {
   return {
@@ -29,6 +37,15 @@ function envelope() {
     occurredAt: new Date().toISOString(),
     actorContext: { environment: CMS_ENVIRONMENT, siteKey: "main" },
   };
+}
+
+function isSelectableAsset(asset: Ev2DamAsset) {
+  return (
+    asset.processingStatus === "ready" &&
+    asset.scanStatus === "clean" &&
+    asset.rightsState !== "expired" &&
+    asset.archivedAt === null
+  );
 }
 
 export type DamPickerSelection = Pick<Ev2DamAsset, "id" | "originalFilename" | "altText" | "previewUrl">;
@@ -57,7 +74,7 @@ export function DamPicker({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
-  const [files, setFiles] = useState<Partial<Record<MediaUploadSlot, File>>>({});
+  const [original, setOriginal] = useState<File | undefined>();
   const [sourceReference, setSourceReference] = useState("");
   const [ownerName, setOwnerName] = useState("GAIATEC SISTEMAS");
   const [licenseName, setLicenseName] = useState("Uso autorizado pela GAIATEC");
@@ -65,6 +82,14 @@ export function DamPicker({
   const [rightsExpiresOn, setRightsExpiresOn] = useState("");
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
   const [similarHash, setSimilarHash] = useState("");
+  const [preparationMessage, setPreparationMessage] = useState("");
+  const uploadAbortController = useRef<AbortController | null>(null);
+  const latestValue = useRef(value);
+  const latestOnChange = useRef(onChange);
+  const latestMultiple = useRef(multiple);
+  latestValue.current = value;
+  latestOnChange.current = onChange;
+  latestMultiple.current = multiple;
   const canUpload = profile?.permissions.includes("cms:media.upload") ?? false;
 
   async function load() {
@@ -92,13 +117,11 @@ export function DamPicker({
           pageSize: 50,
         }),
       );
-      setItems(
-        result.items.filter((asset) => asset.processingStatus === "ready" && asset.rightsState !== "expired"),
-      );
+      setItems(result.items.filter(isSelectableAsset));
       setCollections(result.collections);
     } catch (caught) {
       setCapability("error");
-      setError(caught instanceof Error ? caught.message : "Seletor de mídia indisponível.");
+      setError(operatorErrorMessage(caught, { fallback: "Seletor de mídia indisponível." }));
     } finally {
       setLoading(false);
     }
@@ -108,50 +131,97 @@ export function DamPicker({
     if (open) void load();
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function toggle(asset: Ev2DamAsset) {
-    const selection = {
+  useEffect(
+    () => () => {
+      const operation = uploadAbortController.current;
+      uploadAbortController.current = null;
+      operation?.abort(new DOMException("Envio interrompido ao fechar o seletor.", "AbortError"));
+    },
+    [],
+  );
+
+  function selectionFromAsset(asset: Ev2DamAsset): DamPickerSelection {
+    return {
       id: asset.id,
       originalFilename: asset.originalFilename,
       altText: asset.altText,
       previewUrl: asset.previewUrl,
     };
-    if (!multiple) {
-      onChange([selection]);
+  }
+
+  function select(asset: Ev2DamAsset) {
+    if (!isSelectableAsset(asset)) return;
+    const selection = selectionFromAsset(asset);
+    if (!latestMultiple.current) {
+      latestOnChange.current([selection]);
       setOpen(false);
       return;
     }
-    onChange(
-      value.some((current) => current.id === asset.id)
-        ? value.filter((current) => current.id !== asset.id)
-        : [...value, selection],
+    const currentValue = latestValue.current;
+    if (!currentValue.some((current) => current.id === asset.id)) {
+      latestOnChange.current([...currentValue, selection]);
+    }
+  }
+
+  function toggle(asset: Ev2DamAsset) {
+    if (busy || disabled || !isSelectableAsset(asset)) return;
+    const selection = selectionFromAsset(asset);
+    if (!latestMultiple.current) {
+      latestOnChange.current([selection]);
+      setOpen(false);
+      return;
+    }
+    const currentValue = latestValue.current;
+    latestOnChange.current(
+      currentValue.some((current) => current.id === asset.id)
+        ? currentValue.filter((current) => current.id !== asset.id)
+        : [...currentValue, selection],
     );
   }
 
-  function chooseFile(slot: MediaUploadSlot, file?: File) {
-    setFiles((current) => {
-      const next = { ...current };
-      if (file) next[slot] = file;
-      else delete next[slot];
-      return next;
-    });
-    if (slot === "original") setSimilarHash("");
+  function chooseFile(file?: File) {
+    if (busy) return;
+    setOriginal(file);
+    setSimilarHash("");
+  }
+
+  function cancelQuickUpload() {
+    const operation = uploadAbortController.current;
+    if (!operation || operation.signal.aborted) return;
+    setPreparationMessage("Cancelando envio…");
+    operation.abort(new DOMException("Envio cancelado pelo operador.", "AbortError"));
   }
 
   async function quickUpload(event: React.FormEvent) {
     event.preventDefault();
-    if (!session || busy) return;
-    const issues = validateMediaUploadPackage(files);
+    if (!session || busy || uploadAbortController.current) return;
+    const issues = validateOriginalMediaFile(original);
     if (sourceReference.trim().length < 3) issues.push("Informe a referência da origem.");
+    if (ownerName.trim().length < 2) issues.push("Informe o proprietário.");
+    if (licenseName.trim().length < 2) issues.push("Informe a licença.");
     if (!altText.trim()) issues.push("Informe o texto alternativo.");
     if (!rightsConfirmed) issues.push("Confirme os direitos de uso.");
     if (issues.length) {
       setError(issues[0]!);
       return;
     }
+    const operation = new AbortController();
+    uploadAbortController.current = operation;
+    const submitted = {
+      original: original!,
+      sourceReference: sourceReference.trim(),
+      ownerName: ownerName.trim(),
+      licenseName: licenseName.trim(),
+      altText: altText.trim(),
+      rightsExpiresOn,
+      similarHash,
+    };
     setBusy(true);
     setError("");
+    let reservedAssetId = "";
     try {
-      const fingerprint = await fingerprintMediaFile(files.original!);
+      const fingerprint = await fingerprintMediaFile(submitted.original);
+      operation.signal.throwIfAborted();
       const matches = Ev2DamMatchResultSchema.parse(
         await damCommand(session, {
           action: "match_asset",
@@ -160,15 +230,21 @@ export function DamPicker({
           maximumDistance: 8,
         }),
       );
+      operation.signal.throwIfAborted();
       if (matches.exact) {
-        toggle(matches.exact);
+        if (!isSelectableAsset(matches.exact)) {
+          setError("O arquivo já existe, mas ainda não está liberado para uso.");
+          return;
+        }
+        select(matches.exact);
         setError("Arquivo já existente reutilizado; nenhum upload foi necessário.");
         return;
       }
-      if (matches.similar.length && similarHash !== fingerprint.sha256) {
+      const selectableSimilar = matches.similar.filter(isSelectableAsset);
+      if (selectableSimilar.length && submitted.similarHash !== fingerprint.sha256) {
         setItems((current) => [
-          ...matches.similar,
-          ...current.filter((item) => !matches.similar.some((match) => match.id === item.id)),
+          ...selectableSimilar,
+          ...current.filter((item) => !selectableSimilar.some((match) => match.id === item.id)),
         ]);
         setSimilarHash(fingerprint.sha256);
         setError(
@@ -176,21 +252,29 @@ export function DamPicker({
         );
         return;
       }
+      setPreparationMessage("Preparando versões para diferentes telas…");
+      const responsiveFiles = await createResponsiveMediaPackage(submitted.original, {
+        onProgress: (progress) => {
+          if (uploadAbortController.current === operation && !operation.signal.aborted) {
+            setPreparationMessage(`${progress.message}…`);
+          }
+        },
+        signal: operation.signal,
+      });
+      operation.signal.throwIfAborted();
       const reservation = await damCommand<{ assetId: string; uploads: MediaUploadDescriptor[] }>(session, {
         action: "reserve_upload",
         envelope: envelope(),
         metadata: {
-          originalFilename: files.original!.name,
-          declaredMime: files.original!.type,
+          originalFilename: submitted.original.name,
+          declaredMime: submitted.original.type,
           sourceKind: "owner_authored",
-          sourceReference,
+          sourceReference: submitted.sourceReference,
           rightsConfirmed: true,
-          rightsExpiresAt: rightsExpiresOn
-            ? new Date(`${rightsExpiresOn}T23:59:59.000Z`).toISOString()
-            : null,
-          licenseName,
-          ownerName,
-          altText,
+          rightsExpiresAt: rightsExpiryAtOperationalDayEnd(submitted.rightsExpiresOn),
+          licenseName: submitted.licenseName,
+          ownerName: submitted.ownerName,
+          altText: submitted.altText,
           caption: null,
           credit: null,
           focalX: 0.5,
@@ -198,12 +282,20 @@ export function DamPicker({
           ...fingerprint,
         },
       });
-      await uploadMediaPackage(reservation.uploads, files);
+      reservedAssetId = reservation.assetId;
+      operation.signal.throwIfAborted();
+      setPreparationMessage("Enviando as imagens com segurança…");
+      await uploadMediaPackage(reservation.uploads, responsiveFiles, fetch, {
+        signal: operation.signal,
+      });
+      operation.signal.throwIfAborted();
       await damCommand(session, {
         action: "finalize_upload",
         envelope: envelope(),
         assetId: reservation.assetId,
       });
+      operation.signal.throwIfAborted();
+      reservedAssetId = "";
       const result = Ev2DamAssetResultSchema.parse(
         await damCommand(session, {
           action: "get_asset",
@@ -211,16 +303,48 @@ export function DamPicker({
           assetId: reservation.assetId,
         }),
       );
-      toggle(result.asset);
-      setFiles({});
-      setShowUpload(false);
-      setSourceReference("");
-      setAltText("");
-      setRightsConfirmed(false);
+      operation.signal.throwIfAborted();
+      if (uploadAbortController.current === operation) {
+        select(result.asset);
+        setOriginal(undefined);
+        setShowUpload(false);
+        setSourceReference("");
+        setAltText("");
+        setRightsConfirmed(false);
+      }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Não foi possível enviar a imagem.");
+      if (reservedAssetId) {
+        const abortEnvelope = envelope();
+        try {
+          await damCommand(
+            session,
+            {
+              action: "abort_upload",
+              envelope: abortEnvelope,
+              assetId: reservedAssetId,
+              reasonCode: operation.signal.aborted ? "client_cancelled" : "client_upload_failed",
+            },
+            abortEnvelope.commandId,
+          );
+        } catch {
+          // Preserve the original error; stale reservations are also covered by the server watchdog.
+        }
+      }
+      if (uploadAbortController.current === operation) {
+        setError(
+          operation.signal.aborted
+            ? reservedAssetId
+              ? "Envio cancelado. A reserva temporária foi encaminhada para limpeza segura."
+              : "Envio cancelado antes da reserva da imagem."
+            : operatorErrorMessage(caught, { fallback: "Não foi possível enviar a imagem." }),
+        );
+      }
     } finally {
-      setBusy(false);
+      if (uploadAbortController.current === operation) {
+        uploadAbortController.current = null;
+        setPreparationMessage("");
+        setBusy(false);
+      }
     }
   }
 
@@ -235,7 +359,8 @@ export function DamPicker({
               {asset.originalFilename}
               <button
                 type="button"
-                disabled={disabled}
+                aria-label={`Remover ${asset.originalFilename}`}
+                disabled={disabled || busy}
                 onClick={() => onChange(value.filter((current) => current.id !== asset.id))}
               >
                 Remover
@@ -246,23 +371,31 @@ export function DamPicker({
       ) : (
         <p className="admin-help">Nenhuma imagem selecionada.</p>
       )}
-      <button type="button" disabled={disabled} onClick={() => setOpen((current) => !current)}>
+      <button type="button" disabled={disabled || busy} onClick={() => setOpen((current) => !current)}>
         {open ? "Fechar biblioteca" : "Escolher ou enviar imagem"}
       </button>
       {open && (
         <div className="admin-dam-picker__panel">
           {capability === "disabled" ? (
-            <p>O DAM EV2.5 não está habilitado para esta sessão.</p>
+            <p>A biblioteca de mídia não está disponível para esta sessão.</p>
           ) : (
             <>
               <div className="admin-dam-picker__filters">
                 <label>
                   Buscar
-                  <input value={query} onChange={(event) => setQuery(event.target.value)} />
+                  <input
+                    disabled={disabled || busy}
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                  />
                 </label>
                 <label>
                   Coleção
-                  <select value={collectionId} onChange={(event) => setCollectionId(event.target.value)}>
+                  <select
+                    disabled={disabled || busy}
+                    value={collectionId}
+                    onChange={(event) => setCollectionId(event.target.value)}
+                  >
                     <option value="">Todas</option>
                     {collections.map((collection) => (
                       <option key={collection.id} value={collection.id}>
@@ -271,7 +404,7 @@ export function DamPicker({
                     ))}
                   </select>
                 </label>
-                <button type="button" onClick={() => void load()} disabled={loading}>
+                <button type="button" onClick={() => void load()} disabled={disabled || loading || busy}>
                   Filtrar
                 </button>
               </div>
@@ -288,48 +421,47 @@ export function DamPicker({
                     <button
                       type="button"
                       key={asset.id}
+                      disabled={disabled || busy}
                       className={value.some((current) => current.id === asset.id) ? "is-selected" : ""}
                       onClick={() => toggle(asset)}
                     >
                       {asset.previewUrl && <img src={asset.previewUrl} alt="" />}
                       <strong>{asset.originalFilename}</strong>
                       <span>{asset.altText}</span>
-                      <small>Direitos: {asset.rightsState}</small>
+                      <small>{rightsStateLabels[asset.rightsState]}</small>
                     </button>
                   ))}
                 </div>
               )}
               {canUpload && (
                 <>
-                  <button type="button" onClick={() => setShowUpload((current) => !current)}>
+                  <button
+                    type="button"
+                    disabled={disabled || busy}
+                    onClick={() => setShowUpload((current) => !current)}
+                  >
                     {showUpload ? "Cancelar envio" : "Enviar nova imagem sem sair"}
                   </button>
                   {showUpload && (
                     <form className="admin-form admin-dam-picker__upload" onSubmit={quickUpload}>
                       <label>
-                        Original
+                        Imagem original
                         <input
                           type="file"
                           required
+                          disabled={disabled || busy}
                           accept="image/png,image/jpeg,image/webp,image/avif"
-                          onChange={(event) => chooseFile("original", event.target.files?.[0])}
+                          onChange={(event) => chooseFile(event.target.files?.[0])}
                         />
+                        <small>As versões otimizadas para outras telas são preparadas automaticamente.</small>
                       </label>
-                      {mediaVariantSlots.map((slot) => (
-                        <label key={slot}>
-                          {slot}
-                          <input
-                            type="file"
-                            required
-                            accept={slot.endsWith(".webp") ? "image/webp" : "image/avif"}
-                            onChange={(event) => chooseFile(slot, event.target.files?.[0])}
-                          />
-                        </label>
-                      ))}
                       <label>
                         Referência da origem
                         <input
                           required
+                          disabled={disabled || busy}
+                          minLength={3}
+                          maxLength={500}
                           value={sourceReference}
                           onChange={(event) => setSourceReference(event.target.value)}
                         />
@@ -338,6 +470,9 @@ export function DamPicker({
                         Proprietário
                         <input
                           required
+                          disabled={disabled || busy}
+                          minLength={2}
+                          maxLength={120}
                           value={ownerName}
                           onChange={(event) => setOwnerName(event.target.value)}
                         />
@@ -346,6 +481,9 @@ export function DamPicker({
                         Licença
                         <input
                           required
+                          disabled={disabled || busy}
+                          minLength={2}
+                          maxLength={120}
                           value={licenseName}
                           onChange={(event) => setLicenseName(event.target.value)}
                         />
@@ -354,6 +492,7 @@ export function DamPicker({
                         Direitos válidos até
                         <input
                           type="date"
+                          disabled={disabled || busy}
                           value={rightsExpiresOn}
                           onChange={(event) => setRightsExpiresOn(event.target.value)}
                         />
@@ -362,6 +501,8 @@ export function DamPicker({
                         Texto alternativo
                         <textarea
                           required
+                          disabled={disabled || busy}
+                          maxLength={300}
                           value={altText}
                           onChange={(event) => setAltText(event.target.value)}
                         />
@@ -369,18 +510,29 @@ export function DamPicker({
                       <label className="admin-checkbox-row">
                         <input
                           type="checkbox"
+                          disabled={disabled || busy}
                           checked={rightsConfirmed}
                           onChange={(event) => setRightsConfirmed(event.target.checked)}
                         />
                         Confirmo origem e direitos
                       </label>
-                      <button type="submit" disabled={busy}>
+                      <button type="submit" disabled={disabled || busy}>
                         {busy
                           ? "Validando…"
                           : similarHash
                             ? "Confirmar imagem distinta"
                             : "Verificar e enviar"}
                       </button>
+                      {busy && (
+                        <button type="button" onClick={cancelQuickUpload}>
+                          Cancelar envio em andamento
+                        </button>
+                      )}
+                      {preparationMessage && (
+                        <p role="status" aria-live="polite">
+                          {preparationMessage}
+                        </p>
+                      )}
                     </form>
                   )}
                 </>

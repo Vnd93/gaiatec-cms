@@ -126,8 +126,9 @@ describe("EV2.9 visual public renderer", () => {
     expect(operation).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tabpanel")).toHaveTextContent("Conteúdo selecionado.");
 
-    const first = container.querySelector(`[data-component-version="1"]`);
+    const first = container.querySelector(".cms-page-block--split_content");
     expect(first).not.toHaveAttribute("data-hidden-desktop");
+    expect(first).not.toHaveAttribute("data-component-version");
     expect(first).toHaveStyle({ "--cms-span-desktop": "12" });
     expect(container.querySelector("script, iframe")).not.toBeInTheDocument();
   });
@@ -156,8 +157,9 @@ describe("EV2.9 visual public renderer", () => {
     const page = container.querySelector(".cms-managed-page");
     expect(page).toHaveAttribute("data-cms-breakpoint", "mobile");
     expect(page).toHaveStyle({ "--cms-brand": "#0757d8" });
-    const group = container.querySelector(`[data-visual-group="${groupId}"]`);
+    const group = container.querySelector(".cms-page-visual-group");
     expect(group).toHaveClass("cms-page-visual-group");
+    expect(group).not.toHaveAttribute("data-visual-group");
     expect(group?.children).toHaveLength(2);
     expect(group?.children[1]).toHaveAttribute("data-hidden-mobile", "true");
   });

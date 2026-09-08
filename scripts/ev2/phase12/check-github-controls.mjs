@@ -1,4 +1,8 @@
-import { evaluateGithubControls } from "./release-guard-lib.mjs";
+import {
+  evaluateGithubControls,
+  G12_CI_REQUIRED_JOBS,
+  selectLatestCiWorkflowRun,
+} from "./release-guard-lib.mjs";
 import { readFile } from "node:fs/promises";
 
 const repository = process.env.GITHUB_REPOSITORY ?? "";
@@ -22,16 +26,21 @@ async function github(path) {
 const environment = await github("/environments/production");
 const comparison = await github(`/compare/${candidateSha}...main`);
 const branchProtection = await github("/branches/main/protection");
+const ciWorkflow = await github("/actions/workflows/ci.yml");
 const workflowRunsPayload = await github(
-  `/actions/runs?head_sha=${candidateSha}&status=completed&per_page=100`,
+  `/actions/workflows/${ciWorkflow.id}/runs?branch=main&event=push&head_sha=${candidateSha}&per_page=100`,
 );
-const successfulRuns = (workflowRunsPayload?.workflow_runs ?? []).filter(
-  (run) => run?.head_sha === candidateSha && run?.conclusion === "success",
-);
-const workflowJobsPayloads = await Promise.all(
-  successfulRuns.map((run) => github(`/actions/runs/${run.id}/jobs?filter=latest&per_page=100`)),
-);
-const workflowJobs = workflowJobsPayloads.flatMap((payload) => payload?.jobs ?? []);
+const ciWorkflowRun = selectLatestCiWorkflowRun(workflowRunsPayload?.workflow_runs);
+const validRunId = Number.isSafeInteger(Number(ciWorkflowRun?.id)) && Number(ciWorkflowRun?.id) > 0;
+const validRunAttempt =
+  Number.isSafeInteger(Number(ciWorkflowRun?.run_attempt)) && Number(ciWorkflowRun?.run_attempt) > 0;
+const workflowJobsPayload =
+  validRunId && validRunAttempt
+    ? await github(
+        `/actions/runs/${ciWorkflowRun.id}/attempts/${ciWorkflowRun.run_attempt}/jobs?per_page=100`,
+      )
+    : { jobs: [] };
+const workflowJobs = workflowJobsPayload?.jobs ?? [];
 const codeOwners = await readFile(".github/CODEOWNERS", "utf8").catch(() => "");
 const result = evaluateGithubControls({
   environment,
@@ -39,6 +48,9 @@ const result = evaluateGithubControls({
   branchProtection,
   codeOwners,
   candidateSha,
+  repository,
+  ciWorkflow,
+  ciWorkflowRun,
   checkRuns: workflowJobs,
 });
 if (!result.valid) throw new Error(`G12_GITHUB_CONTROLS_BLOCKED:${result.violations.join(",")}`);
@@ -51,6 +63,8 @@ console.log(
     governanceMode: "sole-maintainer-direct-main",
     maintainerLogin: "Vnd93",
     independentApprovals: 0,
-    requiredChecks: ["quality", "database", "browser"],
+    ciWorkflowRunId: ciWorkflowRun.id,
+    ciWorkflowRunAttempt: ciWorkflowRun.run_attempt,
+    requiredChecks: G12_CI_REQUIRED_JOBS,
   }),
 );

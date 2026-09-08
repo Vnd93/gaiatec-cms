@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Navigate, useNavigate } from "react-router";
 import { useAdminAuth } from "../auth/AdminAuthContext";
 import { AdminError, AdminFrame } from "../components/AdminFrame";
+import { operatorErrorMessage } from "../operator-error-message";
 
 export default function AdminSetPasswordPage() {
   const { session, status, updatePassword } = useAdminAuth();
@@ -19,10 +20,24 @@ export default function AdminSetPasswordPage() {
     if (password.length < 12) return setError("Use pelo menos 12 caracteres.");
     if (password !== confirmation) return setError("As senhas não coincidem.");
     setBusy(true);
-    const result = await updatePassword(password);
-    setBusy(false);
-    if (result.error) setError(result.error);
-    else navigate("/admin", { replace: true });
+    try {
+      const result = await updatePassword(password);
+      if (result.error)
+        setError(
+          operatorErrorMessage(result.error, {
+            fallback: "Não foi possível salvar a nova senha. Tente novamente.",
+          }),
+        );
+      else navigate("/admin", { replace: true });
+    } catch (caught) {
+      setError(
+        operatorErrorMessage(caught, {
+          fallback: "Não foi possível salvar a nova senha. Tente novamente.",
+        }),
+      );
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (

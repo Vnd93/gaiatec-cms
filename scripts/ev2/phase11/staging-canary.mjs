@@ -6,6 +6,13 @@ import { createClient } from "@supabase/supabase-js";
 import { percentile, runHttpLoadProbe, serverTimingDuration } from "./system-assurance-lib.mjs";
 import { resolveStableBaseline } from "./stable-baseline-lib.mjs";
 import { validateHealthContract, validateReleaseManifest } from "../phase12/release-guard-lib.mjs";
+import {
+  assertQaActorLease,
+  completeQaActorLease,
+  createQaRunTag,
+  qaActorMetadata,
+  QA_ACTOR_LEASE_TTL_MINUTES,
+} from "../../qa/qa-actor-lease.mjs";
 
 const TARGET = {
   ref: "glcqsosxwgmlhzgcsnzv",
@@ -20,6 +27,8 @@ if (!/^https:\/\/ev2-g(?:11|12)-canary\.gaiatec-cms-staging\.pages\.dev$/.test(T
 const expectedSha = process.env.EV2_G11_EXPECTED_SHA;
 if (!/^[0-9a-f]{40}$/.test(expectedSha ?? ""))
   throw new Error("Defina EV2_G11_EXPECTED_SHA com o SHA completo explicitamente autorizado.");
+const qaRunTag = createQaRunTag(expectedSha);
+const supabaseAccessToken = process.env.SUPABASE_ACCESS_TOKEN ?? "";
 
 const canaryStartedAt = new Date().toISOString();
 const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
@@ -101,6 +110,8 @@ async function request(url, { method = "GET", headers = {}, body, allowed = [200
 }
 
 async function loadContext() {
+  if (supabaseAccessToken.length < 24)
+    throw new Error("Token de gestão do staging indisponível para revogação de sessão.");
   const project = supabaseJson(["projects", "list"]).find((entry) => entry.ref === TARGET.ref);
   if (!project || project.name !== TARGET.name || project.region !== TARGET.region || project.linked !== true)
     throw new Error("ALVO RECUSADO: o projeto vinculado não é o staging autorizado.");
@@ -133,6 +144,27 @@ async function rpc(ctx, name, body) {
     body,
     allowed: [200, 204],
   });
+}
+
+async function leaseRpc(ctx, name, body) {
+  const response = await rpc(ctx, name, body);
+  return response.json;
+}
+
+async function managementQuery(query) {
+  const response = await fetch(`https://api.supabase.com/v1/projects/${TARGET.ref}/database/query`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${supabaseAccessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ query }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) throw new Error("Consulta segura de gestão do staging falhou.");
+  const payload = await response.json().catch(() => null);
+  if (!Array.isArray(payload)) throw new Error("Resposta de gestão do staging inválida.");
+  return payload;
 }
 
 function envelope(environment = "staging") {
@@ -221,10 +253,17 @@ async function createActor(ctx, roleKey, label) {
       email,
       password,
       email_confirm: true,
-      user_metadata: { synthetic: true, phase: "ev2-g11", label, expires_in_minutes: 30 },
+      user_metadata: qaActorMetadata(qaRunTag, expectedSha, "staging"),
     },
   });
   actorIds.push(created.json.id);
+  const identity = {
+    actorId: created.json.id,
+    runTag: qaRunTag,
+    candidateSha: expectedSha,
+    environment: "staging",
+  };
+  const lease = await assertQaActorLease((name, body) => leaseRpc(ctx, name, body), identity, "active");
   await rest(ctx, "cms_profiles", {
     method: "POST",
     prefer: "return=representation",
@@ -265,7 +304,7 @@ async function createActor(ctx, roleKey, label) {
         prefer: "return=minimal",
         body: { mfa_enrolled_at: new Date().toISOString() },
       });
-      return { id: created.json.id, email, token, aal1Token };
+      return { id: created.json.id, email, token, aal1Token, identity, lease };
     }
     lastError = verified.error ?? new Error("AAL2 ausente.");
     await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
@@ -284,9 +323,9 @@ async function installOverride(ctx, actorId, createdBy) {
       scope_type: "user",
       scope_key: actorId,
       enabled: true,
-      reason: "Canary sintético EV2.11 autorizado por 30 minutos.",
+      reason: `Canary sintético EV2.11 autorizado por ${QA_ACTOR_LEASE_TTL_MINUTES} minutos.`,
       starts_at: new Date(now - 1000).toISOString(),
-      expires_at: new Date(now + 29 * 60_000).toISOString(),
+      expires_at: new Date(now + QA_ACTOR_LEASE_TTL_MINUTES * 60_000).toISOString(),
       created_by: createdBy,
     },
   });
@@ -457,47 +496,214 @@ async function createSyntheticLead(ctx) {
 }
 
 async function closeSyntheticResidue(ctx) {
-  if (leadId && operator) {
+  const cleanupErrors = [];
+  const attempt = async (label, operation) => {
+    try {
+      await operation();
+    } catch (error) {
+      cleanupErrors.push(new Error(label, { cause: error }));
+    }
+  };
+  await attempt("lead_anonymization", async () => {
+    if (!leadId || !operator) return;
     await leads(ctx, operator, {
       action: "anonymize_lead",
       leadId,
       reason: "Encerramento e anonimização da fixture sintética G11",
     });
-  }
-  if (broadOverrideId)
-    await rest(ctx, "cms_feature_flag_overrides", { method: "DELETE", query: "id=eq." + broadOverrideId });
-  if (actorIds.length) {
-    await rest(ctx, "cms_feature_flag_overrides", {
-      method: "DELETE",
-      query: "flag_key=eq.ev2.system_assurance&scope_type=eq.user&scope_key=in.(" + actorIds.join(",") + ")",
-    });
-    const now = new Date().toISOString();
-    for (const actorId of actorIds)
-      await rest(ctx, "cms_profiles", {
-        method: "PATCH",
-        query: "user_id=eq." + actorId,
-        prefer: "return=minimal",
-        body: { status: "suspended", suspended_at: now, suspended_by: operator?.id ?? actorId },
+  });
+  await attempt("broad_override_cleanup", async () => {
+    if (broadOverrideId)
+      await rest(ctx, "cms_feature_flag_overrides", {
+        method: "DELETE",
+        query: "id=eq." + broadOverrideId,
       });
-    for (const actorId of actorIds)
-      await request(ctx.url + "/auth/v1/admin/users/" + actorId, {
+  });
+  if (!actorIds.length) {
+    if (cleanupErrors.length) throw new AggregateError(cleanupErrors, "Falha no encerramento sintético G11.");
+    return;
+  }
+
+  const actorFilter = actorIds.join(",");
+  let ownedItemIds = [];
+  await attempt("owned_content_inventory", async () => {
+    const items = await rest(ctx, "cms_content_items", {
+      query: `created_by=in.(${actorFilter})&select=id`,
+    });
+    ownedItemIds = items.json.map((item) => item.id);
+  });
+  if (ownedItemIds.length) {
+    const itemFilter = ownedItemIds.join(",");
+    let liveProjections = [];
+    await attempt("public_projection_inventory", async () => {
+      const projections = await rest(ctx, "cms_published_projection", {
+        query: `item_id=in.(${itemFilter})&select=item_id,revision_id`,
+      });
+      liveProjections = projections.json;
+    });
+    if (liveProjections.length)
+      await attempt("public_withdrawal_outbox", () =>
+        rest(ctx, "cms_publication_outbox", {
+          method: "POST",
+          query: "on_conflict=item_id,revision_id,event_type",
+          prefer: "resolution=ignore-duplicates,return=minimal",
+          body: liveProjections.map((projection) => ({
+            item_id: projection.item_id,
+            revision_id: projection.revision_id,
+            event_type: "unpublish",
+            correlation_id: randomUUID(),
+          })),
+        }),
+      );
+    await attempt("publication_cleanup", async () => {
+      await rest(ctx, "cms_publications", { method: "DELETE", query: `item_id=in.(${itemFilter})` });
+      await rest(ctx, "cms_published_projection", {
+        method: "DELETE",
+        query: `item_id=in.(${itemFilter})`,
+      });
+    });
+    await attempt("route_cleanup", () =>
+      rest(ctx, "cms_route_rules", {
+        method: "PATCH",
+        query: `item_id=in.(${itemFilter})&active=eq.true`,
+        prefer: "return=minimal",
+        body: { active: false },
+      }),
+    );
+    await attempt("content_archive", () =>
+      rest(ctx, "cms_content_items", {
+        method: "PATCH",
+        query: `id=in.(${itemFilter})&workflow_status=neq.archived`,
+        prefer: "return=minimal",
+        body: {
+          workflow_status: "archived",
+          archived_at: new Date().toISOString(),
+          scheduled_for: null,
+          deleted_at: null,
+          deleted_by: null,
+        },
+      }),
+    );
+  }
+
+  for (const actorId of actorIds) {
+    const now = new Date().toISOString();
+    await attempt(`overrides:${actorId}`, () =>
+      rest(ctx, "cms_feature_flag_overrides", {
+        method: "DELETE",
+        query: `scope_type=eq.user&scope_key=eq.${actorId}`,
+      }),
+    );
+    await attempt(`scoped_roles:${actorId}`, () =>
+      rest(ctx, "cms_scoped_role_assignments", {
+        method: "PATCH",
+        query: `user_id=eq.${actorId}&revoked_at=is.null`,
+        prefer: "return=minimal",
+        body: {
+          revoked_at: now,
+          revoked_by: actorId,
+          revocation_reason: "QA synthetic G11 cleanup",
+        },
+      }),
+    );
+    await attempt(`legacy_roles:${actorId}`, () =>
+      rest(ctx, "cms_user_roles", { method: "DELETE", query: `user_id=eq.${actorId}` }),
+    );
+    await attempt(`rdo_access:${actorId}`, () =>
+      rest(ctx, "rdo_user_access", {
+        method: "PATCH",
+        query: `user_id=eq.${actorId}&active=eq.true`,
+        prefer: "return=minimal",
+        body: {
+          active: false,
+          suspended_at: now,
+          suspended_by: actorId,
+          updated_at: now,
+        },
+      }),
+    );
+    await attempt(`profile:${actorId}`, () =>
+      rest(ctx, "cms_profiles", {
+        method: "PATCH",
+        query: `user_id=eq.${actorId}`,
+        prefer: "return=minimal",
+        body: {
+          status: "suspended",
+          suspended_at: now,
+          suspended_by: actorId,
+          sessions_valid_after: now,
+        },
+      }),
+    );
+    await attempt(`sessions:${actorId}`, () =>
+      managementQuery(`delete from auth.sessions where user_id = '${actorId}'::uuid`),
+    );
+    await attempt(`credentials:${actorId}`, () =>
+      request(ctx.url + "/auth/v1/admin/users/" + actorId, {
         method: "PUT",
         headers: ctx.serviceHeaders,
-        body: { ban_duration: "876000h" },
-      });
+        body: {
+          password: "Revoked!" + randomBytes(32).toString("base64url") + "9Z",
+          ban_duration: "876000h",
+        },
+      }),
+    );
+    await attempt(`lease:${actorId}`, () =>
+      completeQaActorLease((name, body) => leaseRpc(ctx, name, body), {
+        actorId,
+        runTag: qaRunTag,
+        candidateSha: expectedSha,
+        environment: "staging",
+      }),
+    );
   }
+  if (cleanupErrors.length)
+    throw new AggregateError(cleanupErrors, "Falha no encerramento sintético G11; watchdog permanece ativo.");
 }
 
 async function residue(ctx) {
-  const [profiles, overrides, leadsResult, authUsers, retainedActors, retainedLeads] = await Promise.all([
+  const actorFilter = actorIds.join(",");
+  const [
+    profiles,
+    overrides,
+    legacyRoles,
+    scopedRoles,
+    rdoAccess,
+    ownedItems,
+    leadsResult,
+    authUsers,
+    retainedActors,
+    retainedLeads,
+    retainedAudit,
+    leaseStatuses,
+    sessionRows,
+  ] = await Promise.all([
     actorIds.length
       ? rest(ctx, "cms_profiles", {
-          query: "user_id=in.(" + actorIds.join(",") + ")&status=eq.active&select=user_id",
+          query: `user_id=in.(${actorFilter})&status=neq.suspended&select=user_id`,
         })
       : Promise.resolve({ json: [] }),
     actorIds.length
       ? rest(ctx, "cms_feature_flag_overrides", {
-          query: "flag_key=eq.ev2.system_assurance&scope_key=in.(" + actorIds.join(",") + ")&select=id",
+          query: `scope_type=eq.user&scope_key=in.(${actorFilter})&select=id`,
+        })
+      : Promise.resolve({ json: [] }),
+    actorIds.length
+      ? rest(ctx, "cms_user_roles", { query: `user_id=in.(${actorFilter})&select=user_id` })
+      : Promise.resolve({ json: [] }),
+    actorIds.length
+      ? rest(ctx, "cms_scoped_role_assignments", {
+          query: `user_id=in.(${actorFilter})&revoked_at=is.null&select=id`,
+        })
+      : Promise.resolve({ json: [] }),
+    actorIds.length
+      ? rest(ctx, "rdo_user_access", {
+          query: `user_id=in.(${actorFilter})&active=eq.true&select=user_id`,
+        })
+      : Promise.resolve({ json: [] }),
+    actorIds.length
+      ? rest(ctx, "cms_content_items", {
+          query: `created_by=in.(${actorFilter})&workflow_status=neq.archived&select=id`,
         })
       : Promise.resolve({ json: [] }),
     leadId
@@ -519,6 +725,32 @@ async function residue(ctx) {
     rest(ctx, "cms_leads", {
       query: "origin_source=eq.ev2-g11-canary&anonymized_at=not.is.null&select=id",
     }),
+    actorIds.length
+      ? rest(ctx, "cms_audit_log", {
+          query: `target_type=eq.qa_fixture&target_id=eq.${qaRunTag}&actor_id=in.(${actorFilter})&select=id`,
+        })
+      : Promise.resolve({ json: [] }),
+    Promise.all(
+      actorIds.map((actorId) =>
+        assertQaActorLease(
+          (name, body) => leaseRpc(ctx, name, body),
+          {
+            actorId,
+            runTag: qaRunTag,
+            candidateSha: expectedSha,
+            environment: "staging",
+          },
+          "cleaned",
+        ),
+      ),
+    ),
+    actorIds.length
+      ? managementQuery(
+          `select count(*)::integer as count from auth.sessions where user_id in (${actorIds
+            .map((actorId) => `'${actorId}'::uuid`)
+            .join(",")})`,
+        )
+      : Promise.resolve([{ count: 0 }]),
   ]);
   return {
     activeActors: profiles.json.length,
@@ -528,9 +760,16 @@ async function residue(ctx) {
       return !Number.isFinite(bannedUntil) || bannedUntil <= Date.now();
     }).length,
     activeOverrides: overrides.json.length,
+    activeLegacyRoles: legacyRoles.json.length,
+    activeScopedRoles: scopedRoles.json.length,
+    activeRdoAccess: rdoAccess.json.length,
+    activeOwnedContent: ownedItems.json.length,
+    activeSessions: Number(sessionRows[0]?.count ?? 0),
     personalLeadPayloads: leadsResult.json.length,
     retainedSyntheticActors: retainedActors.json.length,
     retainedAnonymizedLeads: retainedLeads.json.length,
+    retainedLeaseAuditEvents: retainedAudit.json.length,
+    cleanedLeases: leaseStatuses.length,
     semantics: "zero-active-residue; retained tombstones are counted separately",
   };
 }
@@ -553,6 +792,14 @@ try {
 
   operator = await createActor(context, "super_admin", "operator");
   reviewer = await createActor(context, "technical", "reviewer");
+  check(
+    "qa_actor_watchdog_leases_active",
+    [operator, reviewer].every(
+      (actor) =>
+        actor.lease.status === "active" && actor.lease.ttlSeconds === QA_ACTOR_LEASE_TTL_MINUTES * 60,
+    ),
+    qaRunTag,
+  );
   await installOverride(context, operator.id, operator.id);
   await installOverride(context, reviewer.id, operator.id);
 
@@ -835,7 +1082,14 @@ try {
         remaining.activeActors === 0 &&
           remaining.activeCredentials === 0 &&
           remaining.activeOverrides === 0 &&
-          remaining.personalLeadPayloads === 0,
+          remaining.activeLegacyRoles === 0 &&
+          remaining.activeScopedRoles === 0 &&
+          remaining.activeRdoAccess === 0 &&
+          remaining.activeOwnedContent === 0 &&
+          remaining.activeSessions === 0 &&
+          remaining.personalLeadPayloads === 0 &&
+          remaining.cleanedLeases === actorIds.length &&
+          remaining.retainedLeaseAuditEvents >= actorIds.length * 2,
         JSON.stringify(remaining),
       );
     }

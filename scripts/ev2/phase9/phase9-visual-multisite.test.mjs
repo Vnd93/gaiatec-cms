@@ -168,7 +168,7 @@ test("candidate UI exposes governed editor and site registry only for eligible r
   assert.match(sites, /isEv2FeatureEnabled\(profile, "ev2\.multisite"\)/);
   assert.match(sites, /create_candidate/);
   assert.match(sites, /\.invalid/);
-  assert.match(builder, /Os blocos e o hash visual desta página são versionados/);
+  assert.match(builder, /Os blocos e a integridade visual desta página são versionados/);
   assert.match(builder, /JSON\.stringify\(source\.blocks\) !== JSON\.stringify\(payload\.blocks\)/);
   assert.match(shell, /!item\.candidate \|\| isEv2FeatureEnabled\(profile, item\.candidate\)/);
   assert.match(routes, /path: "estudio-visual\/:itemId"/);

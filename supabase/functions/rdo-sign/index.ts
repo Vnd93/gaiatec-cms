@@ -1,7 +1,10 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { listAllAuthUsers } from "../_shared/auth-admin-pagination.ts";
+import { listAllActiveRdoAdminIds } from "../_shared/rdo-access-pagination.ts";
 import { relatorioAssinadoEmail, sendEmail, type ResumoRelatorio } from "../_shared/email.ts";
 import { CANONICAL_PDF_VERSION, generateCanonicalRdoPdf } from "../_shared/canonical-pdf.ts";
+import { validatePassivePdf } from "../_shared/cms-pdf-validation.ts";
 import { cleanText, clientAddress, consumeRateLimit, corsHeaders, isAllowedOrigin, json, readJsonLimited, sha256, sha256Bytes } from "../_shared/security.ts";
 
 const MAX_SIGNATURE_BYTES = 500_000;
@@ -12,7 +15,7 @@ function decodePdf(value: string): Uint8Array {
   const encoded = value.startsWith("data:") ? value.slice(value.indexOf(",") + 1) : value;
   const bytes = Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0));
   if (bytes.length > 14_000_000) throw new Error("PDF_TOO_LARGE");
-  if (!(bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46)) throw new Error("INVALID_PDF");
+  if (validatePassivePdf(bytes)) throw new Error("INVALID_PDF");
   return bytes;
 }
 
@@ -25,11 +28,13 @@ async function notifySigned(admin: any, resendKey: string, report: Record<string
     local: [cleanText(report.local_endereco, 300), cleanText(report.local_numero, 40)].filter(Boolean).join(", "), fotos: photoCount,
     assinatura: "Assinado", finalizadoEm: new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "medium", timeZone: "America/Sao_Paulo" }).format(new Date()),
   };
-  const { data: accessRows } = await admin.from("rdo_user_access").select("user_id").eq("active", true).eq("role", "rdo_admin");
-  const ids = new Set(((accessRows ?? []) as Array<{ user_id: string }>).map((item) => item.user_id));
-  const { data: listed } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-  const listedUsers = (listed?.users ?? []) as Array<{ id: string; email?: string | null }>;
+  const { ids: accessIds, error: accessDirectoryError } = await listAllActiveRdoAdminIds(admin);
+  if (accessDirectoryError) throw new Error("RDO_ACCESS_DIRECTORY_UNAVAILABLE");
+  const ids = new Set(accessIds);
+  const { users: listedUsers, error: directoryError } = await listAllAuthUsers(admin);
+  if (directoryError) throw new Error("AUTH_DIRECTORY_UNAVAILABLE");
   const recipients: string[] = listedUsers.filter((user) => ids.has(user.id)).map((user) => user.email ?? "").filter(Boolean);
+  if (recipients.length === 0) throw new Error("NO_ACTIVE_RDO_ADMIN");
   if (report.email_cliente) recipients.push(String(report.email_cliente));
   if (recipients.length) await sendEmail(resendKey, [...new Set(recipients)], relatorioAssinadoEmail(summary));
 }

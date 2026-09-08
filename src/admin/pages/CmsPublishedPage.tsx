@@ -2,6 +2,14 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabase";
 import { CmsStructuredArticle, type CmsArticlePayload } from "@/shared/components/CmsStructuredArticle";
+import { operatorErrorMessage } from "../operator-error-message";
+
+const publishedUnavailableMessage = "Não foi possível carregar este conteúdo.";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export default function CmsPublishedPage() {
   const { slug = "" } = useParams();
   const [payload, setPayload] = useState<CmsArticlePayload | null>(null),
@@ -18,12 +26,40 @@ export default function CmsPublishedPage() {
       headers: { apikey: SUPABASE_ANON_KEY },
     })
       .then(async (response) => {
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error);
-        setPayload(data.payload);
-        document.title = data.seo?.title ?? data.payload.title;
+        if (!response.ok) {
+          setError(
+            operatorErrorMessage(undefined, {
+              fallback: publishedUnavailableMessage,
+              source: "remote",
+              status: response.status,
+            }),
+          );
+          return;
+        }
+        const data: unknown = await response.json().catch(() => null);
+        if (
+          !isRecord(data) ||
+          !isRecord(data.payload) ||
+          typeof data.payload.title !== "string" ||
+          !Array.isArray(data.payload.blocks)
+        ) {
+          setError(publishedUnavailableMessage);
+          return;
+        }
+        const article = data.payload as CmsArticlePayload;
+        setPayload(article);
+        document.title =
+          isRecord(data.seo) && typeof data.seo.title === "string" ? data.seo.title : article.title;
       })
-      .catch((caught) => setError(caught instanceof Error ? caught.message : "Conteúdo não encontrado."));
+      .catch((caught) =>
+        setError(
+          operatorErrorMessage(caught, {
+            fallback: publishedUnavailableMessage,
+            source: "remote",
+            status: 0,
+          }),
+        ),
+      );
   }, [slug]);
   return (
     <main className="cms-preview-page" data-admin-surface>

@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { supabase } from "@/lib/supabase";
-import { CmsProductContentSchema } from "@/shared/contracts/cms-content";
+import { CmsProductContentSchema, omitLegacyExternalProductDocuments } from "@/shared/contracts/cms-content";
+import {
+  Ev2PimAttributeCatalogResultSchema,
+  type Ev2PimAttributeCatalogResult,
+} from "@/shared/contracts/ev2-pim";
 import {
   buildProductPayload,
   createInitialProductDraft,
   describeProductValidationIssue,
   hydrateProductDraft,
   tabForProductPath,
-  type GovernedJsonField,
   type ProductEditorDraft,
   type ProductEditorTab,
 } from "../product-editor-model";
@@ -16,6 +19,7 @@ import { useAdminAuth } from "../auth/AdminAuthContext";
 import { UnsavedChangesGuard } from "../components/UnsavedChangesGuard";
 import {
   controlledVocabularyCommand,
+  attributesCommand,
   editorialCommand,
   issuePreview,
   type ControlledVocabularyList,
@@ -29,8 +33,37 @@ import { EntityPicker } from "../components/EntityPicker";
 import { useProgressiveDraftAutosave } from "../hooks/useProgressiveDraftAutosave";
 import { ProgressiveDraftStatus } from "../components/ProgressiveDraftStatus";
 import { cmsEnvironment, isEv2FeatureEnabled } from "../ev2-runtime";
+import { EditorialArchiveAction } from "../components/EditorialArchiveAction";
+import { ProductDocumentsEditor } from "../components/ProductDocumentsEditor";
+import {
+  ProductBlocksEditor,
+  ProductIdentifiersEditor,
+  ProductMediaEditor,
+  ProductOgImagePicker,
+  ProductProvenanceEditor,
+  ProductRedirectsEditor,
+  ProductRelationsEditor,
+  ProductSpecificationsEditor,
+  type ProductRelationOption,
+} from "../components/ProductSemanticEditors";
+import { humanValidationIssue } from "../validation-field-label";
+import {
+  fetchAuthoritativeEditorialItem,
+  INVALIDATED_EDITOR_SNAPSHOT,
+  saveWithPublishedRevisionReconciliation,
+} from "../published-revision-save";
 
 const CMS_ENVIRONMENT = cmsEnvironment();
+
+function attributeEnvelope() {
+  return {
+    schemaVersion: 1 as const,
+    commandId: crypto.randomUUID(),
+    correlationId: crypto.randomUUID(),
+    occurredAt: new Date().toISOString(),
+    actorContext: { environment: CMS_ENVIRONMENT, siteKey: "main" },
+  };
+}
 
 type Loaded = {
   id: string;
@@ -55,6 +88,25 @@ const tabs: [ProductStage, string][] = [
   ["relacoes", "Mídia"],
   ["visibilidade", "SEO e publicação"],
 ];
+
+const workflowLabels: Record<string, string> = {
+  new: "Novo",
+  draft: "Rascunho",
+  in_review: "Em revisão",
+  approved: "Aprovado",
+  published: "Publicado",
+  archived: "Arquivado",
+};
+
+function pathSegment(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 160);
+}
 
 function stageForTab(tab: ProductEditorTab): ProductStage {
   if (["identificacao", "classificacao", "comercial"].includes(tab)) return "identificacao";
@@ -91,7 +143,6 @@ function ControlledTermSelect({
       options={(list?.options ?? []).map((option) => ({
         id: option.id,
         label: option.label,
-        secondaryLabel: option.slug,
         disabled: !option.active,
       }))}
       onChange={(option, input) =>
@@ -101,20 +152,75 @@ function ControlledTermSelect({
   );
 }
 
-const jsonHelp: Record<GovernedJsonField, string> = {
-  modelsJson:
-    "Lista validada de modelos, SKU, status e variantes. O modelo comercial e a referência do fabricante do primeiro item são espelhados pelos campos acima.",
-  specificationsJson:
-    "Lista validada de atributos text, number, boolean, enum ou range, incluindo unidade e flags required/filterable/comparable/searchable.",
-  mediaJson:
-    "Lista validada de ativos da biblioteca com role, ALT, legenda e ordem. Nenhum caminho de arquivo do frontend é aceito.",
-  documentsJson:
-    "Lista validada de documentos com tipo, URL ou storage privado, hash, revisão, idioma, visibilidade e direitos.",
-  redirectsJson: "Lista validada de sourcePath e statusCode 301/302.",
-  blocksJson:
-    "Lista validada de blocos rich_text, image, gallery, cta, specifications e related_content. A descrição completa espelha o primeiro rich_text.",
-  provenanceJson: "Lista validada de fontes, hashes, autorização, direitos, owners e datas de verificação.",
-};
+function ProductTextList({
+  label,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  disabled?: boolean;
+  onChange(value: string): void;
+}) {
+  const items = value === "" ? [""] : value.split(/\r?\n|,/);
+  const commit = (next: string[]) => onChange(next.join("\n"));
+  const move = (index: number, offset: -1 | 1) => {
+    const target = index + offset;
+    if (target < 0 || target >= items.length) return;
+    const next = [...items];
+    [next[index], next[target]] = [next[target], next[index]];
+    commit(next);
+  };
+
+  return (
+    <fieldset className="admin-semantic-editor">
+      <legend>{label}</legend>
+      <p className="admin-help">Adicione cada item separadamente.</p>
+      {items.map((item, index) => (
+        <div className="admin-inline-fields" key={`${label}-${index}`}>
+          <label>
+            {index === 0 ? label : `${label} ${index + 1}`}
+            <input
+              value={item}
+              maxLength={240}
+              disabled={disabled}
+              onChange={(event) =>
+                commit(
+                  items.map((current, currentIndex) =>
+                    currentIndex === index ? event.target.value : current,
+                  ),
+                )
+              }
+            />
+          </label>
+          <button type="button" disabled={disabled || index === 0} onClick={() => move(index, -1)}>
+            Mover para cima
+          </button>
+          <button
+            type="button"
+            disabled={disabled || index === items.length - 1}
+            onClick={() => move(index, 1)}
+          >
+            Mover para baixo
+          </button>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() =>
+              commit(items.length === 1 ? [""] : items.filter((_, current) => current !== index))
+            }
+          >
+            Remover
+          </button>
+        </div>
+      ))}
+      <button type="button" disabled={disabled || items.length >= 30} onClick={() => commit([...items, ""])}>
+        Adicionar item em {label.toLocaleLowerCase("pt-BR")}
+      </button>
+    </fieldset>
+  );
+}
 
 export default function AdminProductEditorPage() {
   const { id } = useParams();
@@ -137,8 +243,29 @@ export default function AdminProductEditorPage() {
   const [savedSnapshot, setSavedSnapshot] = useState(() => JSON.stringify(draft));
   const [vocabularies, setVocabularies] = useState<ControlledVocabularyList[]>([]);
   const [vocabularyError, setVocabularyError] = useState("");
+  const [attributeCatalog, setAttributeCatalog] = useState<Ev2PimAttributeCatalogResult | null>(null);
+  const [attributeCatalogLoading, setAttributeCatalogLoading] = useState(false);
+  const [attributeCatalogError, setAttributeCatalogError] = useState("");
+  const [relationOptions, setRelationOptions] = useState<ProductRelationOption[]>([]);
+  const [relationError, setRelationError] = useState("");
   const set = (key: keyof ProductEditorDraft, value: string | boolean) =>
     setDraft((current) => ({ ...current, [key]: value }));
+  const setProductTitle = (value: string) =>
+    setDraft((current) => ({
+      ...current,
+      title: value,
+      ...(id === "novo" ? { slug: pathSegment(value) || current.slug } : {}),
+    }));
+  const setNamedEntity = (
+    nameKey: "brandName" | "manufacturerName" | "lineName",
+    addressKey: "brandSlug" | "manufacturerSlug" | "lineSlug",
+    value: string,
+  ) =>
+    setDraft((current) => ({
+      ...current,
+      [nameKey]: value,
+      [addressKey]: pathSegment(value),
+    }));
   const setVisibility = (key: keyof ProductEditorDraft["fieldVisibility"], value: "public" | "internal") =>
     setDraft((current) => ({
       ...current,
@@ -169,6 +296,105 @@ export default function AdminProductEditorPage() {
   }, [session]);
 
   useEffect(() => {
+    if (!session || !draft.productCategoryId) {
+      setAttributeCatalog(null);
+      setAttributeCatalogLoading(false);
+      setAttributeCatalogError("");
+      return;
+    }
+    let active = true;
+    setAttributeCatalog(null);
+    setAttributeCatalogLoading(true);
+    setAttributeCatalogError("");
+    void attributesCommand<unknown>(session, {
+      action: "list_catalog",
+      envelope: attributeEnvelope(),
+      categoryId: draft.productCategoryId,
+    })
+      .then((result) => {
+        if (!active) return;
+        const parsed = Ev2PimAttributeCatalogResultSchema.safeParse(result);
+        if (!parsed.success) throw new Error("Catálogo técnico retornou uma estrutura inválida.");
+        setAttributeCatalog(parsed.data);
+        if (!parsed.data.attributeSet || parsed.data.definitions.length === 0) {
+          setAttributeCatalogError(
+            "A categoria selecionada ainda não possui um conjunto de atributos ativo. O rascunho pode ser preservado, mas não pode ser homologado ou publicado.",
+          );
+        }
+      })
+      .catch((caught) => {
+        if (!active) return;
+        setAttributeCatalogError(
+          caught instanceof Error
+            ? `Não foi possível carregar os atributos controlados: ${caught.message}`
+            : "Não foi possível carregar os atributos controlados.",
+        );
+      })
+      .finally(() => {
+        if (active) setAttributeCatalogLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [draft.productCategoryId, session]);
+
+  useEffect(() => {
+    if (!session) return;
+    let active = true;
+    void supabase
+      .from("cms_content_items")
+      .select("id,slug,content_type,workflow_status,cms_content_drafts(payload)")
+      .in("content_type", ["product", "application", "industry", "service"])
+      .order("updated_at", { ascending: false })
+      .then(({ data, error: loadError }) => {
+        if (!active) return;
+        if (loadError) {
+          setRelationError("Não foi possível carregar os vínculos do catálogo.");
+          return;
+        }
+        const options = (data ?? []).flatMap((row) => {
+          if (row.id === id || row.workflow_status === "archived") return [];
+          const rawDraft = Array.isArray(row.cms_content_drafts)
+            ? row.cms_content_drafts[0]
+            : row.cms_content_drafts;
+          const payload = rawDraft?.payload;
+          const label =
+            payload && typeof payload === "object" && !Array.isArray(payload)
+              ? [payload.title, payload.name].find((value) => typeof value === "string" && value.trim())
+              : undefined;
+          const kind = row.content_type as ProductRelationOption["kind"];
+          if (!["product", "application", "industry", "service"].includes(kind)) return [];
+          return [
+            {
+              id: row.id,
+              kind,
+              label:
+                typeof label === "string"
+                  ? label
+                  : row.slug
+                      .replaceAll("-", " ")
+                      .replace(/(^|\s)\p{L}/gu, (letter: string) => letter.toUpperCase()),
+              description: `${
+                kind === "product"
+                  ? "Produto"
+                  : kind === "application"
+                    ? "Aplicação"
+                    : kind === "industry"
+                      ? "Indústria"
+                      : "Serviço"
+              } · ${workflowLabels[row.workflow_status] ?? "Cadastro editorial"}`,
+            },
+          ];
+        });
+        setRelationOptions(options);
+        setRelationError("");
+      });
+    return () => {
+      active = false;
+    };
+  }, [id, session]);
+
+  useEffect(() => {
     if (!id || id === "novo") return;
     let active = true;
     void supabase
@@ -184,10 +410,26 @@ export default function AdminProductEditorPage() {
         if (loadError) setError("Produto indisponível ou sem permissão.");
         else {
           const item = data as unknown as Loaded;
-          const parsed = CmsProductContentSchema.safeParse(item.cms_content_drafts.payload);
+          const compatiblePayload = omitLegacyExternalProductDocuments(item.cms_content_drafts.payload);
+          const originalDocuments = Array.isArray(item.cms_content_drafts.payload.documents)
+            ? item.cms_content_drafts.payload.documents.length
+            : 0;
+          const compatibleDocuments =
+            compatiblePayload &&
+            typeof compatiblePayload === "object" &&
+            !Array.isArray(compatiblePayload) &&
+            Array.isArray((compatiblePayload as Record<string, unknown>).documents)
+              ? ((compatiblePayload as Record<string, unknown>).documents as unknown[]).length
+              : 0;
+          const parsed = CmsProductContentSchema.safeParse(compatiblePayload);
           if (!parsed.success) {
-            setError(`Rascunho incompatível com o contrato: ${parsed.error.issues[0]?.path.join(".")}.`);
+            setError(`Rascunho incompatível. ${humanValidationIssue(parsed.error.issues[0])}`);
           } else {
+            if (compatibleDocuments < originalDocuments)
+              setError(
+                `${originalDocuments - compatibleDocuments} documento(s) externo(s) legado(s) foram omitidos. ` +
+                  "Faça a ingestão pela biblioteca governada antes de republicar.",
+              );
             setLoaded(item);
             setDraft((current) => {
               const hydrated = hydrateProductDraft(parsed.data, item.slug, current);
@@ -279,7 +521,22 @@ export default function AdminProductEditorPage() {
           }
           setSavedSnapshot(currentSnapshot);
           backup.clear();
-          setSuccess("Rascunho incompleto salvo de forma privada no fluxo EV2.");
+          if (built.jsonErrors.length || !validation?.success) {
+            setSuccess("Rascunho incompleto salvo de forma privada. Continue quando estiver pronto.");
+            return true;
+          }
+          const promotedItemId = await progressiveDraft.promote({
+            slug: draft.slug || pathSegment(draft.title),
+            payload: built.payload,
+            reason: draft.reason,
+          });
+          if (!promotedItemId) {
+            throw new Error(
+              "O rascunho foi preservado, mas o cadastro oficial não pôde ser concluído. Tente novamente.",
+            );
+          }
+          setSuccess("Cadastro oficial criado a partir do rascunho salvo.");
+          navigate(`/admin/produtos/${promotedItemId}`, { replace: true });
           return true;
         }
         if (built.jsonErrors[0]) {
@@ -292,32 +549,52 @@ export default function AdminProductEditorPage() {
           throw new Error(`Cadastro incompleto: ${describeProductValidationIssue(first)}`);
         }
       }
-      if (action === "save" && loaded?.workflow_status === "published") {
-        await editorialCommand(session, {
-          action: "reopen",
-          itemId: loaded.id,
-          contentType: null,
-          slug: null,
-          payload: null,
-          expectedLockVersion: null,
-          reason: draft.reason,
-        });
-      }
-      const result = await editorialCommand(session, {
-        action,
-        itemId: loaded?.id ?? null,
-        contentType: loaded ? null : "product",
-        slug: draft.slug,
-        payload: action === "create" || action === "save" ? built.payload : null,
-        expectedLockVersion: loaded?.cms_content_drafts.lock_version ?? null,
-        reason: draft.reason,
-        ...extras,
+      const publishedItem = action === "save" && loaded?.workflow_status === "published" ? loaded : null;
+      const result = await saveWithPublishedRevisionReconciliation({
+        reopen: publishedItem
+          ? () =>
+              editorialCommand(session, {
+                action: "reopen",
+                itemId: publishedItem.id,
+                contentType: null,
+                slug: null,
+                payload: null,
+                expectedLockVersion: null,
+                reason: draft.reason,
+              })
+          : null,
+        save: () =>
+          editorialCommand(session, {
+            action,
+            itemId: loaded?.id ?? null,
+            contentType: loaded ? null : "product",
+            slug: draft.slug || pathSegment(draft.title),
+            payload: action === "create" || action === "save" ? built.payload : null,
+            expectedLockVersion: loaded?.cms_content_drafts.lock_version ?? null,
+            reason: draft.reason,
+            ...extras,
+          }),
+        invalidateSnapshot: () => setSavedSnapshot(INVALIDATED_EDITOR_SNAPSHOT),
+        reconcile: async () => {
+          if (!publishedItem) return;
+          setLoaded((await fetchAuthoritativeEditorialItem(publishedItem.id, "product")) as Loaded);
+        },
       });
       setSuccess(
-        `Operação concluída: ${result.status}. Código de acompanhamento ${result.correlationId.slice(0, 8)}.`,
+        action === "archive"
+          ? `${loaded?.workflow_status === "published" ? "Produto despublicado e arquivado" : "Produto arquivado"}.`
+          : action === "publish"
+            ? "Produto publicado com sucesso."
+            : action === "submit"
+              ? "Produto enviado para revisão."
+              : action === "approve"
+                ? "Revisão aprovada."
+                : action === "restore"
+                  ? "Revisão restaurada como novo rascunho."
+                  : "Rascunho salvo com sucesso.",
       );
       if (action === "create" || action === "save") setSavedSnapshot(currentSnapshot);
-      if (["create", "save", "publish"].includes(action)) backup.clear();
+      if (["create", "save", "publish", "archive"].includes(action)) backup.clear();
       if (!loaded && result.itemId) navigate(`/admin/produtos/${result.itemId}`, { replace: true });
       else setRefreshToken((current) => current + 1);
       return true;
@@ -380,23 +657,6 @@ export default function AdminProductEditorPage() {
       />
     </label>
   );
-  const governedArea = (label: string, field: GovernedJsonField) => {
-    const jsonError = built.jsonErrors.find((entry) => entry.field === field);
-    return (
-      <div className="admin-governed-json">
-        {area(`${label} — JSON governado`, field, 12)}
-        <p
-          className={jsonError ? "admin-notice admin-notice--error" : "admin-help"}
-          role={jsonError ? "alert" : undefined}
-        >
-          {jsonError
-            ? jsonError.message
-            : `${jsonHelp[field]} JSON válido: ${built.counts[field]} registro(s).`}
-        </p>
-      </div>
-    );
-  };
-
   return (
     <section>
       <UnsavedChangesGuard dirty={dirty && !busy} />
@@ -453,12 +713,13 @@ export default function AdminProductEditorPage() {
         <div>
           <dt>Produto em edição</dt>
           <dd>
-            {draft.title || "Sem título"} · /produtos/{draft.slug}
+            {draft.title || "Sem título"} ·{" "}
+            {draft.slug ? `/produtos/${draft.slug}` : "endereço gerado ao salvar"}
           </dd>
         </div>
         <div>
           <dt>Situação</dt>
-          <dd>{dirty ? "Alterações não salvas" : `Rascunho salvo · estado ${state}`}</dd>
+          <dd>{dirty ? "Alterações não salvas" : `Rascunho salvo · ${workflowLabels[state] ?? state}`}</dd>
         </div>
         <div>
           <dt>Impacto público</dt>
@@ -542,17 +803,53 @@ export default function AdminProductEditorPage() {
           {activeStage === "identificacao" && (
             <fieldset>
               <legend>Marca, fabricante, linha, modelo comercial e referência do fabricante</legend>
-              {input("Slug", "slug")}
-              {input("Nome comercial do produto", "title")}
-              {input("Marca comercial", "brandName")}
-              {input("Slug da marca", "brandSlug")}
-              {input("Fabricante/OEM nominal", "manufacturerName")}
-              {input("Slug do fabricante/OEM", "manufacturerSlug")}
+              <label>
+                Nome comercial do produto
+                <input
+                  required
+                  maxLength={180}
+                  value={draft.title}
+                  onChange={(event) => setProductTitle(event.target.value)}
+                  disabled={busy}
+                />
+              </label>
+              <label>
+                Marca comercial
+                <input
+                  required
+                  maxLength={160}
+                  value={draft.brandName}
+                  onChange={(event) => setNamedEntity("brandName", "brandSlug", event.target.value)}
+                  disabled={busy}
+                />
+              </label>
+              <label>
+                Fabricante/OEM nominal
+                <input
+                  required
+                  maxLength={160}
+                  value={draft.manufacturerName}
+                  onChange={(event) =>
+                    setNamedEntity("manufacturerName", "manufacturerSlug", event.target.value)
+                  }
+                  disabled={busy}
+                />
+              </label>
               {input("Site oficial do fabricante/OEM", "manufacturerUrl", "url")}
-              {input("Linha", "lineName")}
-              {input("Slug da linha", "lineSlug")}
-              {input("Modelo comercial GAIATEC", "commercialModel")}
-              {input("Referência/modelo do fabricante", "manufacturerReference")}
+              <label>
+                Linha
+                <input
+                  required
+                  maxLength={160}
+                  value={draft.lineName}
+                  onChange={(event) => setNamedEntity("lineName", "lineSlug", event.target.value)}
+                  disabled={busy}
+                />
+              </label>
+              <p className="admin-help">
+                Os endereços amigáveis da marca, do fabricante, da linha e do produto são gerados e validados
+                automaticamente. Modelos, referências e códigos são mantidos uma única vez na etapa Modelos.
+              </p>
             </fieldset>
           )}
           {activeStage === "identificacao" && (
@@ -602,13 +899,24 @@ export default function AdminProductEditorPage() {
               {area("Resumo", "summary")}
               {area("Descrição curta", "shortDescription")}
               {area("Proposta de valor", "valueProposition")}
-              {area("Benefícios — um por linha", "benefits")}
-              {area("Diferenciais — um por linha", "differentiators")}
-              {area("Descrição completa (obrigatória) — espelha o primeiro bloco rich_text", "body", 7)}
-              <details className="admin-advanced-panel">
-                <summary>Área avançada — JSON dos blocos</summary>
-                {governedArea("Blocos completos", "blocksJson")}
-              </details>
+              <ProductTextList
+                label="Benefícios"
+                value={draft.benefits}
+                disabled={busy}
+                onChange={(value) => set("benefits", value)}
+              />
+              <ProductTextList
+                label="Diferenciais"
+                value={draft.differentiators}
+                disabled={busy}
+                onChange={(value) => set("differentiators", value)}
+              />
+              <ProductBlocksEditor
+                value={draft.blocksJson}
+                onChange={(value) => set("blocksJson", value)}
+                onPrimaryTextChange={(value) => set("body", value)}
+                disabled={busy}
+              />
             </fieldset>
           )}
           {activeStage === "especificacoes" && (
@@ -619,24 +927,65 @@ export default function AdminProductEditorPage() {
                 onChange={(value) => set("modelsJson", value)}
                 disabled={busy}
               />
-              <details className="admin-advanced-panel">
-                <summary>Área avançada — estrutura JSON de modelos</summary>
-                {governedArea("Modelos e variantes completos", "modelsJson")}
-              </details>
-              {governedArea("Especificações", "specificationsJson")}
+              <ProductSpecificationsEditor
+                value={draft.specificationsJson}
+                modelsValue={draft.modelsJson}
+                definitions={attributeCatalog?.definitions ?? []}
+                units={attributeCatalog?.units ?? []}
+                catalogLoading={attributeCatalogLoading}
+                catalogError={attributeCatalogError}
+                onChange={(value) => set("specificationsJson", value)}
+                disabled={busy}
+              />
+              <ProductIdentifiersEditor
+                value={draft.identifiersJson}
+                modelsValue={draft.modelsJson}
+                onChange={(value) => set("identifiersJson", value)}
+                disabled={busy}
+              />
             </fieldset>
           )}
           {activeStage === "relacoes" && (
             <fieldset>
               <legend>Mídia, documentos e recomendações relacionadas</legend>
-              {governedArea("Mídias", "mediaJson")}
-              {governedArea("Documentos", "documentsJson")}
-              {area("Produtos relacionados", "productIds")}
-              {area("Aplicações", "applicationIds")}
-              {area("Setores", "sectorIds")}
-              {area("Serviços", "serviceIds")}
-              {area("Sinônimos", "synonyms")}
-              {area("Palavras-chave", "keywords")}
+              <ProductMediaEditor
+                value={draft.mediaJson}
+                onChange={(value) => set("mediaJson", value)}
+                disabled={busy || !can("cms:products.edit")}
+              />
+              <ProductDocumentsEditor
+                value={draft.documentsJson}
+                onChange={(value) => set("documentsJson", value)}
+                disabled={busy || !can("cms:products.edit")}
+              />
+              <ProductRelationsEditor
+                values={{
+                  productIds: draft.productIds,
+                  applicationIds: draft.applicationIds,
+                  sectorIds: draft.sectorIds,
+                  serviceIds: draft.serviceIds,
+                }}
+                options={relationOptions}
+                onChange={(key, value) => set(key, value)}
+                disabled={busy || Boolean(relationError)}
+              />
+              {relationError && (
+                <p className="admin-notice admin-notice--error" role="alert">
+                  {relationError} O rascunho foi preservado; tente recarregar antes de alterar os vínculos.
+                </p>
+              )}
+              <ProductTextList
+                label="Sinônimos"
+                value={draft.synonyms}
+                disabled={busy}
+                onChange={(value) => set("synonyms", value)}
+              />
+              <ProductTextList
+                label="Palavras-chave"
+                value={draft.keywords}
+                disabled={busy}
+                onChange={(value) => set("keywords", value)}
+              />
               <p className="admin-help">Relação com produto não publicado é negada na publicação.</p>
             </fieldset>
           )}
@@ -684,12 +1033,17 @@ export default function AdminProductEditorPage() {
               <h3>SEO, canonical e redirects</h3>
               {input("Meta title", "seoTitle")}
               {area("Meta description", "seoDescription")}
-              {input("Canonical path", "canonicalPath")}
-              {input("UUID da imagem Open Graph", "ogImageId")}
-              <details className="admin-advanced-panel">
-                <summary>Área avançada — redirects</summary>
-                {governedArea("Redirects", "redirectsJson")}
-              </details>
+              {input("Endereço canônico no site", "canonicalPath")}
+              <ProductOgImagePicker
+                value={draft.ogImageId}
+                onChange={(value) => set("ogImageId", value)}
+                disabled={busy}
+              />
+              <ProductRedirectsEditor
+                value={draft.redirectsJson}
+                onChange={(value) => set("redirectsJson", value)}
+                disabled={busy}
+              />
               <label className="admin-checkbox">
                 <input
                   type="checkbox"
@@ -711,7 +1065,11 @@ export default function AdminProductEditorPage() {
                   <option value="synthetic_test">Teste sintético</option>
                 </select>
               </label>
-              {governedArea("Fontes e direitos", "provenanceJson")}
+              <ProductProvenanceEditor
+                value={draft.provenanceJson}
+                onChange={(value) => set("provenanceJson", value)}
+                disabled={busy}
+              />
               {input("Owner do portfólio", "portfolioOwner")}
               {input("Revisor técnico", "technicalReviewer")}
               {input("Revisor comercial", "commercialReviewer")}
@@ -724,7 +1082,7 @@ export default function AdminProductEditorPage() {
               <legend>Workflow, preview e histórico imutável</legend>
               {input("Motivo da revisão", "reason")}
               <p>
-                Status: <strong>{state}</strong>
+                Situação: <strong>{workflowLabels[state] ?? "Em preparação"}</strong>
               </p>
               <button type="button" onClick={() => void preview()} disabled={!loaded || busy}>
                 Preview fiel
@@ -757,6 +1115,13 @@ export default function AdminProductEditorPage() {
                   Ver produto público
                 </a>
               )}
+              <EditorialArchiveAction
+                state={state}
+                entityLabel="produto"
+                allowed={can("cms:products.publish")}
+                busy={busy}
+                onArchive={() => void run("archive")}
+              />
               {loaded?.cms_content_revisions
                 .slice()
                 .sort((a, b) => b.revision_number - a.revision_number)
@@ -787,7 +1152,9 @@ export default function AdminProductEditorPage() {
         <aside className="admin-editor-rail" aria-label="Status do cadastro">
           <section>
             <h2>Status do cadastro</h2>
-            <span className={`admin-status admin-status--${state}`}>{state.replaceAll("_", " ")}</span>
+            <span className={`admin-status admin-status--${state}`}>
+              {workflowLabels[state] ?? "Em preparação"}
+            </span>
             <p>{dirty ? "Há alterações locais não salvas." : "Rascunho sincronizado com o CMS."}</p>
           </section>
           <section>
@@ -810,13 +1177,15 @@ export default function AdminProductEditorPage() {
                   window.setTimeout(() => document.getElementById(`product-tab-${tab}`)?.focus(), 0);
                 }}
               >
-                {issue.path.join(".")}
+                {describeProductValidationIssue(issue)}
               </button>
             ))}
           </section>
           <section>
             <h2>Visibilidade</h2>
-            <p>Campos internos são removidos da API, busca, filtros, SEO, sitemap e JSON-LD.</p>
+            <p>
+              Informações marcadas como internas não aparecem no site público nem nos resultados de busca.
+            </p>
           </section>
           <section>
             <h2>Última atualização</h2>
@@ -830,7 +1199,7 @@ export default function AdminProductEditorPage() {
         <p>
           Completude do contrato:{" "}
           {built.jsonErrors.length
-            ? `${built.jsonErrors.length} JSON(s) inválido(s)`
+            ? `${built.jsonErrors.length} estrutura(s) precisam de reparo`
             : validation?.success
               ? "100% — pronto para workflow"
               : `${contractIssues.length} pendência(s)`}
@@ -840,7 +1209,7 @@ export default function AdminProductEditorPage() {
           <ul>
             {contractIssues.slice(0, 8).map((issue) => (
               <li key={`${issue.path.join(".")}-${issue.message}`}>
-                {issue.path.join(".")} — {issue.message}
+                {describeProductValidationIssue(issue)}
               </li>
             ))}
           </ul>

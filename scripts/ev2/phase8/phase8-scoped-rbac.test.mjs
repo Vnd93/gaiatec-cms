@@ -88,7 +88,7 @@ test("candidate UI and session consume scoped access without replacing v1", asyn
     read("src/shared/contracts/ev2-rbac.ts"),
   ]);
   assert.match(page, /ScopedAccessPanel/);
-  assert.match(page, /profile\?\.rbacScoped/);
+  assert.doesNotMatch(page, /rbacScoped/);
   assert.match(panel, /isEv2FeatureEnabled\(profile, "ev2\.rbac_scoped"\)/);
   assert.match(panel, /Nova concessão/);
   assert.match(panel, /Temporária \/ delegada/);

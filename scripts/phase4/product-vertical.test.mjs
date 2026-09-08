@@ -48,19 +48,23 @@ test("F4 product contract covers the full clean-room vertical", async () => {
 });
 
 test("F4 admin editor exposes every governed section and workflow", async () => {
-  const [editor, list] = await Promise.all([
+  const [editor, list, modelsEditor] = await Promise.all([
     read("src/admin/pages/AdminProductEditorPage.tsx"),
     read("src/admin/pages/AdminProductsPage.tsx"),
+    read("src/admin/components/ProductModelsEditor.tsx"),
   ]);
   for (const label of ["Dados essenciais", "Modelos", "Mídia", "SEO e publicação"])
     assert.match(editor, new RegExp(label));
   assert.match(editor, /Preview fiel/);
   assert.match(editor, /Restaurar como nova revisão/);
   assert.match(editor, /cms:products\.approve/);
-  assert.match(editor, /Modelos e variantes completos/);
+  assert.match(editor, /Modelos, variantes e atributos técnicos/);
+  assert.match(editor, /mantidos uma única vez na etapa Modelos/);
   assert.match(editor, /Especificações/);
-  assert.match(editor, /JSON governado/);
-  assert.match(editor, /Referência\/modelo do fabricante/);
+  assert.match(editor, /ProductModelsEditor/);
+  assert.doesNotMatch(editor, /<label>\s*(?:UUID|JSON)/i);
+  assert.match(modelsEditor, /Referência do fabricante/);
+  assert.match(modelsEditor, /Código comercial da variante/);
   assert.match(editor, /onKeyDown/);
   assert.match(editor, /ArrowRight/);
   assert.match(editor, /role="tabpanel"/);
@@ -103,6 +107,13 @@ test("F4 product collections remain isolated from discovery content", async () =
   const publicApi = await read("supabase/functions/cms-public/index.ts");
   assert.match(client, /type: "products", contentType: "product"/);
   assert.match(publicApi, /type === "products" \? "product" : null/);
+});
+
+test("public sitemap applies the content-type partition requested by the Worker", async () => {
+  const publicApi = await read("supabase/functions/cms-public/index.ts");
+  assert.match(publicApi, /url\.searchParams\.get\("contentTypes"\)/);
+  assert.match(publicApi, /\.in\("content_type", sitemapTypes\)/);
+  assert.doesNotMatch(publicApi, /requestedTypes\.includes\(row\.content_type\)/);
 });
 
 test("F4 route and security boundaries include products, search, preview and admin", async () => {

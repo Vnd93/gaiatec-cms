@@ -7,26 +7,22 @@ import type {
 export type SiteDocumentType = "navigation" | "site_settings" | "placement";
 export type SiteDocumentPayload = CmsNavigationContent | CmsSiteSettingsContent | CmsPlacementContent;
 
-const uid = () => crypto.randomUUID();
 const provenance = () => [
   {
     sourceKind: "owner_authored" as const,
-    authorizationReference: "CONFIGURACAO-MANUAL-CMS",
-    authorizationDate: new Date().toISOString().slice(0, 10),
-    rightsScope: "Configuração criada no novo CMS",
-    rightsConfirmed: true as const,
-    commercialOwner: "Administrador GAIATEC",
-    technicalOwner: "Administrador GAIATEC",
-    verifiedAt: new Date().toISOString(),
+    rightsConfirmed: false as true,
+    commercialOwner: "",
+    technicalOwner: "",
+    verifiedAt: "",
   },
 ];
-const base = (title: string, path: string) => ({
+const base = (path: string) => ({
   schemaVersion: 1 as const,
-  title,
+  title: "",
   blocks: [],
   seo: {
-    title,
-    description: "Documento global e não indexável do novo CMS GAIATEC.",
+    title: "",
+    description: "",
     canonicalPath: path,
     indexable: false,
   },
@@ -36,106 +32,31 @@ const base = (title: string, path: string) => ({
 export function createSiteDocument(type: SiteDocumentType): SiteDocumentPayload {
   if (type === "navigation")
     return {
-      ...base("Navegação global", "/_site/navigation"),
+      ...base("/_site/navigation"),
       consumerId: "cms.site-navigation.v1",
       contentType: "navigation",
-      items: [
-        {
-          id: uid(),
-          parentId: null,
-          location: "header",
-          label: "Produtos",
-          href: "/produtos",
-          order: 0,
-          newTab: false,
-          visible: true,
-        },
-        {
-          id: uid(),
-          parentId: null,
-          location: "header",
-          label: "Serviços",
-          href: "/servicos",
-          order: 1,
-          newTab: false,
-          visible: true,
-        },
-        {
-          id: uid(),
-          parentId: null,
-          location: "header",
-          label: "Indústrias",
-          href: "/industrias",
-          order: 2,
-          newTab: false,
-          visible: true,
-        },
-        {
-          id: uid(),
-          parentId: null,
-          location: "header",
-          label: "Aplicações",
-          href: "/aplicacoes",
-          order: 3,
-          newTab: false,
-          visible: true,
-        },
-        {
-          id: uid(),
-          parentId: null,
-          location: "header",
-          label: "Soluções",
-          href: "/solucoes",
-          order: 4,
-          newTab: false,
-          visible: true,
-        },
-        {
-          id: uid(),
-          parentId: null,
-          location: "header",
-          label: "Contato",
-          href: "/contato",
-          order: 5,
-          newTab: false,
-          visible: true,
-        },
-      ],
+      items: [],
     };
   if (type === "site_settings")
     return {
-      ...base("Configurações globais", "/_site/settings"),
+      ...base("/_site/settings"),
       consumerId: "cms.site-settings.v1",
       contentType: "site_settings",
       company: {
-        name: "GAIATEC SISTEMAS",
+        name: "",
         phone: "",
         whatsapp: "",
         email: "",
         address: "",
       },
       socialLinks: [],
-      defaultCta: { label: "Falar com especialista", href: "/contato" },
+      defaultCta: { label: "", href: "" },
     };
-  const start = new Date();
-  const end = new Date(start.getTime() + 30 * 86400000);
   return {
-    ...base("Destaques e posicionamentos", "/_site/placements"),
+    ...base("/_site/placements"),
     consumerId: "cms.site-placements.v1",
     contentType: "placement",
-    placements: [
-      {
-        id: uid(),
-        slot: "home_featured",
-        targetType: "product",
-        targetId: uid(),
-        label: "Destaque temporário",
-        startsAt: start.toISOString(),
-        endsAt: end.toISOString(),
-        priority: 0,
-        enabled: false,
-      },
-    ],
+    placements: [],
   };
 }
 

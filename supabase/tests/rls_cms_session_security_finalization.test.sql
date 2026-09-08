@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(39);
+select plan(43);
 
 insert into auth.users(
   id,instance_id,aud,role,email,encrypted_password,email_confirmed_at,
@@ -14,19 +14,23 @@ insert into auth.users(
 ('83000000-0000-4000-8000-000000000003','00000000-0000-0000-0000-000000000000',
  'authenticated','authenticated','session-finalizer-revoke@example.test','',now(),'{}','{}',now(),now()),
 ('83000000-0000-4000-8000-000000000004','00000000-0000-0000-0000-000000000000',
- 'authenticated','authenticated','session-finalizer-lifecycle@example.test','',now(),'{}','{}',now(),now());
+ 'authenticated','authenticated','session-finalizer-lifecycle@example.test','',now(),'{}','{}',now(),now()),
+('83000000-0000-4000-8000-000000000005','00000000-0000-0000-0000-000000000000',
+ 'authenticated','authenticated','session-finalizer-scoped@example.test','',now(),'{}','{}',now(),now());
 
 insert into public.cms_profiles(user_id,display_name,display_email,status) values
 ('83000000-0000-4000-8000-000000000001','Session finalizer super','session-finalizer-super@example.test','active'),
 ('83000000-0000-4000-8000-000000000002','Session finalizer admin','session-finalizer-admin@example.test','active'),
 ('83000000-0000-4000-8000-000000000003','Session finalizer revoke target','session-finalizer-revoke@example.test','active'),
-('83000000-0000-4000-8000-000000000004','Session finalizer lifecycle target','session-finalizer-lifecycle@example.test','active');
+('83000000-0000-4000-8000-000000000004','Session finalizer lifecycle target','session-finalizer-lifecycle@example.test','active'),
+('83000000-0000-4000-8000-000000000005','Session finalizer scoped target','session-finalizer-scoped@example.test','active');
 
 insert into public.cms_user_roles(user_id,role_key) values
 ('83000000-0000-4000-8000-000000000001','super_admin'),
 ('83000000-0000-4000-8000-000000000002','admin'),
 ('83000000-0000-4000-8000-000000000003','editor'),
-('83000000-0000-4000-8000-000000000004','editor');
+('83000000-0000-4000-8000-000000000004','editor'),
+('83000000-0000-4000-8000-000000000005','editor');
 
 insert into public.rdo_user_access(user_id,role,active) values
 ('83000000-0000-4000-8000-000000000002','rdo_admin',true),
@@ -83,16 +87,28 @@ select is(public.cms_actor_authorized(
 
 insert into public.cms_scoped_role_assignments(
   user_id,role_key,site_key,environment,grant_type,reason,valid_from,granted_by
-) values(
+) values
+(
   '83000000-0000-4000-8000-000000000002','admin','main','local','direct',
   'Scoped admin MFA regression',now()-interval '1 minute',
+  '83000000-0000-4000-8000-000000000001'
+),
+(
+  '83000000-0000-4000-8000-000000000005','support','main','local','direct',
+  'Scoped support MFA regression',now()-interval '1 minute',
   '83000000-0000-4000-8000-000000000001'
 );
 insert into public.cms_feature_flag_overrides(
   flag_key,environment,scope_type,scope_key,enabled,reason,starts_at,expires_at,created_by
-) values(
+) values
+(
   'ev2.rbac_scoped','local','user','83000000-0000-4000-8000-000000000002',true,
   'Scoped admin MFA regression',now()-interval '1 minute',now()+interval '1 hour',
+  '83000000-0000-4000-8000-000000000001'
+),
+(
+  'ev2.rbac_scoped','local','user','83000000-0000-4000-8000-000000000005',true,
+  'Scoped support MFA regression',now()-interval '1 minute',now()+interval '1 hour',
   '83000000-0000-4000-8000-000000000001'
 );
 
@@ -119,6 +135,30 @@ select is(public.cms_actor_authorized(
   '83000000-0000-4000-8000-000000000002','cms:products.publish','aal2',
   '83000000-0000-4000-8000-000000000102',clock_timestamp()
 ),true,'the scoped critical permission is authorized at AAL2');
+
+select is((public.cms_resolve_session_scoped(
+  '83000000-0000-4000-8000-000000000005','login_success','local','aal1',
+  'session-finalizer-scoped-support',clock_timestamp(),gen_random_uuid()
+)->'roles')::text,'["support"]',
+  'session resolution replaces a legacy role with the effective scoped role');
+select is((public.cms_resolve_session_scoped(
+  '83000000-0000-4000-8000-000000000005','login_success','local','aal1',
+  'session-finalizer-scoped-support',clock_timestamp(),gen_random_uuid()
+)->>'mfaRequired')::boolean,true,
+  'session resolution derives MFA from a scoped critical support role');
+select is((public.cms_resolve_session_scoped(
+  '83000000-0000-4000-8000-000000000005','login_success','local','aal1',
+  'session-finalizer-scoped-support',clock_timestamp(),gen_random_uuid()
+)->>'accessGranted')::boolean,false,
+  'the scoped support session remains closed at AAL1');
+select ok((select reason_code='mfa_required' and not mfa_verified
+  from public.cms_login_events
+  where user_id='83000000-0000-4000-8000-000000000005'
+    and event_type='login_success'
+    and session_id_hash=encode(extensions.digest(
+      'session-finalizer-scoped-support','sha256'
+    ),'hex')),
+  'the immutable login event records scoped MFA before the Edge response');
 
 select is((select count(*)::integer from public.cms_login_events
   where user_id='83000000-0000-4000-8000-000000000003'

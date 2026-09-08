@@ -94,7 +94,7 @@ test("database deployment preflights require the exact 0081 RPC and service-only
   }
 });
 
-test("database preflights require every 0082-0086 contract, exact ACL and semantic guards", async () => {
+test("database preflights require every 0082-0087 contract, exact ACL and semantic guards", async () => {
   const [contracts, canary, ...verifiers] = await Promise.all([
     read("scripts/ev2/phase12/migration-manifest-lib.mjs"),
     read("scripts/ev2/phase12/staging-migrations-canary.mjs"),
@@ -127,6 +127,11 @@ test("database preflights require every 0082-0086 contract, exact ACL and semant
     "private.cms_prepare_qa_actor_terminal_forms_leads_cleanup()",
     "private.cms_ai_terminalize_qa_actor_graph()",
     "public.cms_open_draft_after_edit()",
+    "public.cms_resolve_session_unscoped_0070(uuid,text,text,text,timestamptz,uuid)",
+    "private.cms_resolve_session_core_0087(uuid,text,text,text,text,timestamptz,uuid)",
+    "public.cms_execute_visual_command(uuid,text,uuid,uuid,jsonb,bigint,bigint,text,text,text,text,timestamptz,uuid,uuid,text,uuid)",
+    "public.cms_execute_site_command(uuid,text,text,jsonb,bigint,text,text,text,text,timestamptz,uuid,uuid,text,uuid)",
+    "private.cms_crb_terminalize_qa_graph()",
   ])
     assert.ok(contracts.includes(signature), `missing exact RPC contract ${signature}`);
   for (const verifier of [canary, ...verifiers]) {
@@ -152,6 +157,11 @@ test("database preflights require every 0082-0086 contract, exact ACL and semant
     assert.match(verifier, /qa_actor_runtime_repairs_0086_functions_locked/);
     assert.match(verifier, /qa_actor_runtime_repairs_0086_semantics_exact/);
     assert.match(verifier, /qaActorRuntimeRepairsSemanticSql/);
+    assert.match(verifier, /runtime_integrity_repairs_0087_rpcs_present/);
+    assert.match(verifier, /runtime_integrity_repairs_0087_rpcs_privileges_exact/);
+    assert.match(verifier, /runtime_integrity_repairs_0087_functions_locked/);
+    assert.match(verifier, /runtime_integrity_repairs_0087_semantics_exact/);
+    assert.match(verifier, /runtimeIntegrityRepairsSemanticSql/);
   }
   assert.match(contracts, /has_function_privilege\('service_role'/);
   assert.match(contracts, /has_function_privilege\('authenticated'/);
@@ -183,6 +193,34 @@ test("database preflights require every 0082-0086 contract, exact ACL and semant
   assert.match(contracts, /cms_draft_edit_opens_workflow/);
   assert.match(contracts, /trigger_row\.tgenabled = 'O'/);
   assert.match(contracts, /trigger_row\.tgfoid = to_regprocedure\(required\.signature\)/);
+  assert.match(contracts, /not like '%update public\.cms_login_events%'/);
+  assert.match(contracts, /cardinality\(role_keys\) > 0/);
+  assert.match(contracts, /scope_capability ->> ''reasonCode'' = ''feature_disabled''/);
+  assert.match(contracts, /with effective_assignment as materialized/);
+  assert.match(contracts, /bool_or\(permission\.critical\)/);
+  assert.match(contracts, /cardinality\(v_roles\) > 0/);
+  assert.match(contracts, /''rbacScoped'', coalesce/);
+  assert.match(contracts, /''rbacScopeReasonCode'', coalesce/);
+  assert.match(contracts, /''scope'', case/);
+  assert.match(contracts, /session_or_scope_invalid/);
+  assert.match(contracts, /cms_system_lock_actor_scope\(p_user_id/);
+  assert.match(contracts, /cms_system_lock_actor_scope\(p_actor_id/);
+  assert.match(contracts, /procedure_row\.prosecdef/);
+  assert.match(contracts, /language_row\.lanname = 'plpgsql'/);
+  assert.match(contracts, /42cf04573ac27b48140b96b7dd4706b1ceee61838dc44983ebe7089e6d0afc4d/);
+  assert.match(contracts, /fbe2c71fb695023b953a871c5f132e2dcf6b65a78265eb27441bda8cf1ef038f/);
+  assert.match(contracts, /p_event_type is null/);
+  assert.match(contracts, /p_aal is null/);
+  assert.match(contracts, /or p_action is null/);
+  assert.match(contracts, /or p_environment is null/);
+  assert.match(contracts, /or p_site_key is distinct from ''main''/);
+  assert.match(contracts, /CMS_VISUAL_COMMAND_INVALID/);
+  assert.match(contracts, /CMS_VISUAL_MFA_REQUIRED/);
+  assert.match(contracts, /cms_visual_assert_available/);
+  assert.match(contracts, /CMS_SITES_COMMAND_INVALID/);
+  assert.match(contracts, /CMS_SITES_MFA_REQUIRED/);
+  assert.match(contracts, /cms_sites_assert_available/);
+  assert.match(contracts, /cms_prepare_qa_actor_terminal_crb_cleanup/);
 });
 
 test("canary proves refresh-resistant session revocation without banning Auth", async () => {
@@ -206,6 +244,7 @@ test("canary proves refresh-resistant session revocation without banning Auth", 
   assert.match(source, /"0084"/);
   assert.match(source, /"0085"/);
   assert.match(source, /"0086"/);
+  assert.match(source, /"0087"/);
   assert.match(source, /migrationManifest: sourceMigrations/);
   assert.doesNotMatch(source, /console\.(?:log|error)\([^)]*(?:password|refreshToken|totpSecret)/);
 });

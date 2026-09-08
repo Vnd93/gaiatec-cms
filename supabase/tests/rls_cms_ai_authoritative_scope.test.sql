@@ -263,14 +263,38 @@ select ok(private.cms_ai_plan_actor_ids('75000000-0000-4000-8000-000000000201')
     '75000000-0000-4000-8000-000000000003'::uuid
   ],'lease lock graph includes both planner and target owner');
 
-select has_policy('public','cms_ai_sessions','cms_ai_sessions_authoritative_read',
-  'sessions have an authoritative RLS policy');
-select has_policy('public','cms_ai_synthetic_targets','cms_ai_targets_authoritative_read',
-  'targets have an authoritative RLS policy');
-select has_policy('public','cms_ai_execution_plans','cms_ai_plans_authoritative_read',
-  'plans have an authoritative RLS policy');
-select has_policy('public','cms_ai_provider_calls','cms_ai_provider_calls_authoritative_read',
-  'provider evidence has an authoritative RLS policy');
+select ok(
+  exists (
+    select 1 from pg_catalog.pg_policies
+    where schemaname = 'public' and tablename = 'cms_ai_sessions'
+      and policyname = 'cms_ai_sessions_authoritative_read'
+  ),
+  'sessions have an authoritative RLS policy'
+);
+select ok(
+  exists (
+    select 1 from pg_catalog.pg_policies
+    where schemaname = 'public' and tablename = 'cms_ai_synthetic_targets'
+      and policyname = 'cms_ai_targets_authoritative_read'
+  ),
+  'targets have an authoritative RLS policy'
+);
+select ok(
+  exists (
+    select 1 from pg_catalog.pg_policies
+    where schemaname = 'public' and tablename = 'cms_ai_execution_plans'
+      and policyname = 'cms_ai_plans_authoritative_read'
+  ),
+  'plans have an authoritative RLS policy'
+);
+select ok(
+  exists (
+    select 1 from pg_catalog.pg_policies
+    where schemaname = 'public' and tablename = 'cms_ai_provider_calls'
+      and policyname = 'cms_ai_provider_calls_authoritative_read'
+  ),
+  'provider evidence has an authoritative RLS policy'
+);
 
 select * from finish();
 rollback;

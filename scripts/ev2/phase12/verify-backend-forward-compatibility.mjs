@@ -153,6 +153,13 @@ const compatibilityTests = {
     "supabase/tests/rls_cms_ai_authoritative_scope.test.sql",
     "tests/contracts/cms-qa-actor-runtime-repairs.test.ts",
   ],
+  "0087": [
+    "supabase/tests/rls_cms_session_security_finalization.test.sql",
+    "supabase/tests/rls_cms_system_rbac_scope.test.sql",
+    "supabase/tests/rls_cms_visual_multisite_scope.test.sql",
+    "supabase/tests/rls_cms_collaboration_release_bulk_scope.test.sql",
+    "tests/contracts/cms-runtime-integrity-repairs.test.ts",
+  ],
 };
 for (const migration of additions) {
   const version = migration.version;

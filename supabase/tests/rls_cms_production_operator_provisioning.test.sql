@@ -223,8 +223,8 @@ insert into public.cms_feature_flag_overrides(
 select throws_ok(
   $$select public.cms_provision_production_operator(
     encode(digest(convert_to('broad-0077@example.test','UTF8'),'sha256'),'hex'),
-    repeat('a',40),'production',1440,gen_random_uuid(),repeat('b',64),
-    encode(digest(convert_to('AUTORIZO-G12-PRODUCAO:'||repeat('a',40),'UTF8'),'sha256'),'hex'),gen_random_uuid(),'770077'
+    repeat('d',40),'production',1440,gen_random_uuid(),repeat('b',64),
+    encode(digest(convert_to('AUTORIZO-G12-PRODUCAO:'||repeat('d',40),'UTF8'),'sha256'),'hex'),gen_random_uuid(),'770077'
   )$$,'42501','CMS_PRODUCTION_OPERATOR_BROAD_OVERRIDE_FORBIDDEN',
   'a broad production override fails closed');
 select is((select count(*)::integer from public.cms_profiles

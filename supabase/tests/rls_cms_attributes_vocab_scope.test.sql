@@ -625,6 +625,11 @@ select is(
   'terminal cleanup preserves an immutable audit record'
 );
 
+select set_config(
+  'cms.qa_mutation_actor_id',
+  '71000000-0000-4000-8000-000000000001',
+  true
+);
 insert into public.cms_controlled_lists (
   id, list_key, entity_type, dimension_key, label, created_by, updated_by
 ) values (

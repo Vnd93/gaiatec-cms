@@ -20,6 +20,11 @@ insert into public.cms_profiles (
 insert into public.cms_user_roles (user_id, role_key)
 values ('92000000-0000-4000-8000-000000000010', 'super_admin');
 
+select set_config(
+  'cms.qa_mutation_actor_id',
+  '92000000-0000-4000-8000-000000000010',
+  true
+);
 insert into public.cms_form_definitions (
   id, form_key, title, purpose, created_by, updated_by
 ) values (

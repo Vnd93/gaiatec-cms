@@ -8,6 +8,8 @@ import {
   CMS_LEAD_ORIGIN_BINDING_0084_OWNER_ONLY_HELPERS,
   CMS_PUBLIC_RELATION_LIMIT_0085_OWNER_ONLY_HELPERS,
   CMS_QA_ACTOR_RUNTIME_REPAIRS_0086_OWNER_ONLY_FUNCTIONS,
+  CMS_RUNTIME_INTEGRITY_REPAIRS_0087_OWNER_ONLY_FUNCTIONS,
+  CMS_RUNTIME_INTEGRITY_REPAIRS_0087_SERVICE_ONLY_RPCS,
   CMS_MEDIA_UPLOAD_ABORT_0082_RPCS,
   CMS_MEDIA_UPLOAD_ABORT_0082_OWNER_ONLY_HELPERS,
   CMS_SESSION_REFRESH_REVOCATION_0083_RPCS,
@@ -17,6 +19,7 @@ import {
   ownerOnlyFunctionContractSql,
   publicRelationLimitSemanticSql,
   qaActorRuntimeRepairsSemanticSql,
+  runtimeIntegrityRepairsSemanticSql,
   sessionRefreshRevocationSemanticSql,
   serviceOnlyRpcContractSql,
   sourceMigrationManifest,
@@ -79,6 +82,7 @@ const scenarioCoverage = [
   "0084",
   "0085",
   "0086",
+  "0087",
 ];
 const accessToken = process.env.SUPABASE_ACCESS_TOKEN ?? "";
 const expectedSha = process.env.G12_MIGRATION_CANARY_EXPECTED_SHA ?? "";
@@ -545,6 +549,15 @@ async function preflightMigrations() {
       CMS_QA_ACTOR_RUNTIME_REPAIRS_0086_OWNER_ONLY_FUNCTIONS,
     )},
     ${qaActorRuntimeRepairsSemanticSql("qa_actor_runtime_repairs_0086_semantics_exact")},
+    ${serviceOnlyRpcContractSql(
+      "runtime_integrity_repairs_0087_rpcs",
+      CMS_RUNTIME_INTEGRITY_REPAIRS_0087_SERVICE_ONLY_RPCS,
+    )},
+    ${ownerOnlyFunctionContractSql(
+      "runtime_integrity_repairs_0087_functions_locked",
+      CMS_RUNTIME_INTEGRITY_REPAIRS_0087_OWNER_ONLY_FUNCTIONS,
+    )},
+    ${runtimeIntegrityRepairsSemanticSql("runtime_integrity_repairs_0087_semantics_exact")},
     has_function_privilege('service_role', 'public.cms_qa_rate_limit_proof(uuid,text,text,text,text,text)', 'EXECUTE')
       and not has_function_privilege('authenticated', 'public.cms_qa_rate_limit_proof(uuid,text,text,text,text,text)', 'EXECUTE')
       and not has_function_privilege('anon', 'public.cms_qa_rate_limit_proof(uuid,text,text,text,text,text)', 'EXECUTE')
@@ -712,6 +725,22 @@ async function preflightMigrations() {
   check(
     "qa_actor_runtime_repairs_0086_semantics_exact",
     row?.qa_actor_runtime_repairs_0086_semantics_exact === true,
+  );
+  check(
+    "runtime_integrity_repairs_0087_rpcs_present",
+    row?.runtime_integrity_repairs_0087_rpcs_present === true,
+  );
+  check(
+    "runtime_integrity_repairs_0087_rpcs_privileges_exact",
+    row?.runtime_integrity_repairs_0087_rpcs_privileges_exact === true,
+  );
+  check(
+    "runtime_integrity_repairs_0087_functions_locked",
+    row?.runtime_integrity_repairs_0087_functions_locked === true,
+  );
+  check(
+    "runtime_integrity_repairs_0087_semantics_exact",
+    row?.runtime_integrity_repairs_0087_semantics_exact === true,
   );
   check("qa_actor_auth_triggers_0061_present", row?.qa_actor_auth_triggers === true);
   check("qa_actor_watchdog_cron_0061_active", row?.qa_actor_watchdog_cron === true);

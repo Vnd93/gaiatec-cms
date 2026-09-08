@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
-select plan(7);
+select plan(9);
 
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -32,10 +32,11 @@ select isnt(has_table_privilege('authenticated', 'public.cms_profiles', 'INSERT'
   'authenticated users still cannot self-enroll in the CMS');
 
 update public.cms_profiles
-set status='suspended', sessions_valid_after='2000-01-01 00:00:00+00'
+set status='suspended', suspended_at=clock_timestamp(),
+    sessions_valid_after='2000-01-01 00:00:00+00'
 where user_id='62000000-0000-4000-8000-000000000001';
 select lives_ok(
-  $$update public.cms_profiles set status='active'
+  $$update public.cms_profiles set status='active', suspended_at=null, suspended_by=null
     where user_id='62000000-0000-4000-8000-000000000001'$$,
   'CMS reactivation remains available without changing shared Auth state'
 );
@@ -43,6 +44,22 @@ select ok(
   (select sessions_valid_after > now() - interval '1 minute'
    from public.cms_profiles where user_id='62000000-0000-4000-8000-000000000001'),
   'reactivation invalidates Auth tokens issued while the CMS profile was suspended'
+);
+select throws_ok(
+  $$select public.cms_resolve_session_scoped(
+      '62000000-0000-4000-8000-000000000001',null,'local','aal1',
+      'roleless-invalid-event',clock_timestamp()+interval '1 second',
+      '62000000-0000-4000-8000-000000000002')$$,
+  '22023','CMS_SESSION_INPUT_INVALID',
+  'session resolution rejects a null event before writing login evidence'
+);
+select is(
+  (public.cms_resolve_session_scoped(
+    '62000000-0000-4000-8000-000000000001','login_success','local','aal1',
+    'roleless-session',clock_timestamp()+interval '1 second',
+    '62000000-0000-4000-8000-000000000003')->>'accessGranted')::boolean,
+  false,
+  'an active CMS profile without an assigned role never gains access'
 );
 select isnt(
   has_function_privilege('authenticated', 'public.cms_invalidate_sessions_on_reactivation()', 'EXECUTE'),

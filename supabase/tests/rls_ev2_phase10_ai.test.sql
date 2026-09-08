@@ -125,8 +125,8 @@ select is((select default_enabled from public.cms_feature_flags where flag_key =
 select is((select default_enabled from public.cms_feature_flags where flag_key = 'ev2.ai_execute'), false, 'execute flag remains off by default');
 select is((select count(*)::integer from public.cms_ai_tools where active), 4, 'exactly four F-015 tools are active');
 select is((select count(*)::integer from public.cms_ai_tools where mutates_cms), 0, 'no tool mutates the CMS');
-select is((select provider_mode from public.cms_ai_policy_versions where version = 1), 'synthetic', 'provider is synthetic');
-select is((select external_provider_enabled from public.cms_ai_policy_versions where version = 1), false, 'external provider is disabled');
+select is((select provider_mode from public.cms_ai_policy_versions where version = 1), 'openrouter', 'OpenRouter is the canonical provider');
+select is((select external_provider_enabled from public.cms_ai_policy_versions where version = 1), true, 'the authoritative external provider is enabled');
 select ok(
   to_regprocedure('private.cms_purge_expired_ai_data(integer)') is not null,
   'bounded retention purge is installed'
@@ -157,8 +157,8 @@ select is(
     '51000000-0000-4000-8000-000000000101', 'local', 'main', 'aal2',
     'g10-operator-session', now() - interval '1 minute'
   ) ->> 'providerMode',
-  'synthetic',
-  'capability exposes only the synthetic provider'
+  'openrouter',
+  'capability exposes only the canonical provider'
 );
 select ok(
   private.cms_ai_contains_sensitive_text('{"text":"qa@example.com"}'::jsonb),
@@ -258,7 +258,11 @@ from (
         'confidence', 0.98,
         'proposalHash', repeat('d', 64),
         'inputTokens', 20,
-        'outputTokens', 15
+        'outputTokens', 15,
+        'providerMode', 'openrouter',
+        'providerModel', 'nvidia/nemotron-3.5-lightning:free',
+        'externalProviderEnabled', true,
+        'policyVersion', 'f015-v1'
       ),
       p_idempotency_key => 'g10-generate-proposal-0001',
       p_request_hash => repeat('e', 64),

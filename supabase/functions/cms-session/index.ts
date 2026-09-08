@@ -181,38 +181,55 @@ Deno.serve(async (req) => {
   const ev2DeploymentEnabled =
     configuredEnvironment !== "production" || Deno.env.get("CMS_EV2_PRODUCTION_ENABLED") === "true";
   let resolvedData = data as Record<string, unknown>;
-  const scope = {
-    p_actor_id: authData.user.id,
-    p_environment: configuredEnvironment,
-    p_site_key: "main",
-    p_aal: claims.aal,
-    p_session_id: claims.sessionId,
-    p_issued_at: claims.issuedAt,
-  };
-  const { data: capability, error: capabilityError } = await admin.rpc(
-    "cms_rbac_scope_capability",
-    scope,
-  );
-  if (
-    capabilityError &&
-    capabilityError.code !== "PGRST202" &&
-    capabilityError.code !== "42883"
-  )
-    return json(req, { error: "Não foi possível resolver a política de acesso." }, 503);
-  if (
-    !capabilityError &&
-    capability?.enabled !== true &&
-    ["scope_context_ambiguous", "scope_environment_mismatch"].includes(capability?.reasonCode)
-  )
-    return json(req, { error: "A política de acesso está em estado seguro de bloqueio." }, 403);
-  if (!capabilityError && capability?.enabled === true) {
-    const { data: scopedAccess, error: scopedError } = await admin.rpc(
-      "cms_resolve_scoped_access",
+  const atomicScopeReason =
+    typeof resolvedData.rbacScopeReasonCode === "string"
+      ? resolvedData.rbacScopeReasonCode
+      : null;
+  const hasAtomicScopeResolution =
+    typeof resolvedData.rbacScoped === "boolean" && atomicScopeReason !== null;
+  if (hasAtomicScopeResolution) {
+    const coherentScopeState = resolvedData.rbacScoped
+      ? atomicScopeReason === "enabled"
+      : atomicScopeReason === "feature_disabled";
+    if (!coherentScopeState)
+      return json(req, { error: "A política de acesso está em estado seguro de bloqueio." }, 403);
+  } else {
+    // Compatibility bridge for the short deployment interval before migration
+    // 0087 is present. Once the atomic marker exists, no second RBAC snapshot is
+    // allowed to overwrite the immutable session decision.
+    const scope = {
+      p_actor_id: authData.user.id,
+      p_environment: configuredEnvironment,
+      p_site_key: "main",
+      p_aal: claims.aal,
+      p_session_id: claims.sessionId,
+      p_issued_at: claims.issuedAt,
+    };
+    const { data: capability, error: capabilityError } = await admin.rpc(
+      "cms_rbac_scope_capability",
       scope,
     );
-    if (scopedError || !scopedAccess)
-      return json(req, { error: "Não foi possível resolver o acesso escopado." }, 503);
-    resolvedData = { ...resolvedData, ...scopedAccess };
+    if (
+      capabilityError &&
+      capabilityError.code !== "PGRST202" &&
+      capabilityError.code !== "42883"
+    )
+      return json(req, { error: "Não foi possível resolver a política de acesso." }, 503);
+    if (
+      !capabilityError &&
+      capability?.enabled !== true &&
+      ["scope_context_ambiguous", "scope_environment_mismatch"].includes(capability?.reasonCode)
+    )
+      return json(req, { error: "A política de acesso está em estado seguro de bloqueio." }, 403);
+    if (!capabilityError && capability?.enabled === true) {
+      const { data: scopedAccess, error: scopedError } = await admin.rpc(
+        "cms_resolve_scoped_access",
+        scope,
+      );
+      if (scopedError || !scopedAccess)
+        return json(req, { error: "Não foi possível resolver o acesso escopado." }, 503);
+      resolvedData = { ...resolvedData, ...scopedAccess };
+    }
   }
 
   let ev2Capabilities: Record<string, unknown> = unavailableManifest(configuredEnvironment);

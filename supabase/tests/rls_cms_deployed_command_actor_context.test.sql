@@ -29,9 +29,9 @@ select ok(
 select ok(
   strpos(
     pg_get_functiondef('public.cms_execute_pim_command(uuid,text,jsonb,text,text,text,text,timestamptz,uuid,uuid,text,uuid)'::regprocedure),
-    'set_config(''cms.qa_mutation_actor_id'', p_actor_id::text, true)'
+    'CMS_PIM_LEGACY_READ_ONLY'
   ) > 0,
-  'PIM command binds the mutation actor transaction-locally'
+  'the deployed legacy PIM command remains fail-closed and performs no mutation'
 );
 select ok(
   strpos(

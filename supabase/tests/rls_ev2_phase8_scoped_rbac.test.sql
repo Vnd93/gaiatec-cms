@@ -82,13 +82,13 @@ select is(
   true,
   'legacy authorization is preserved while the flag is disabled'
 );
-select throws_ok(
-  $$select public.cms_get_scoped_assignments(
+select is(
+  jsonb_array_length(public.cms_get_scoped_assignments(
     '48000000-0000-4000-8000-000000000001', 'local', 'main', 'aal2',
     'g8-operator-session', now() - interval '1 minute', null
-  )$$,
-  '42501', 'CMS_SCOPE_FORBIDDEN',
-  'scope RPC rejects a legacy-only caller even when that role has the permission'
+  )->'items'),
+  0,
+  'a legacy super admin can bootstrap the empty scoped assignment catalog while the flag is disabled'
 );
 
 insert into public.cms_scoped_role_assignments(

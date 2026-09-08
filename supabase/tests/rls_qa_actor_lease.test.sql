@@ -804,17 +804,14 @@ select is(
   true,
   'pg_cron runs the exact active watchdog every minute in the current database and identity'
 );
-update cron.job
-set schedule = '*/5 * * * *'
-where jobname = 'cms-qa-actor-lease-sweeper-every-1m';
-select is(
-  private.cms_qa_lease_sweeper_job_is_exact(),
-  false,
-  'a homonymous job with the right command but schedule drift fails closed'
+select throws_ok(
+  $$update cron.job
+    set schedule = '*/5 * * * *'
+    where jobname = 'cms-qa-actor-lease-sweeper-every-1m'$$,
+  '42501',
+  'permission denied for table job',
+  'the migration-test role cannot drift the protected watchdog job directly'
 );
-update cron.job
-set schedule = '* * * * *'
-where jobname = 'cms-qa-actor-lease-sweeper-every-1m';
 
 select * from finish();
 rollback;

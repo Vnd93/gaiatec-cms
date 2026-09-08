@@ -279,15 +279,17 @@ insert into public.cms_content_revisions(
     'title', 'Produto com documentos duplicados',
     'documents', jsonb_build_array(
       jsonb_build_object(
-        'id', '57000000-0000-4000-8000-000000000024', 'kind', 'manual',
-        'title', 'Manual externo', 'officialUrl', 'https://docs.example.test/manual.pdf',
-        'sha256', repeat('a',64), 'revision', '1', 'language', 'pt-BR',
+        'id', '57000000-0000-4000-8000-000000000010', 'kind', 'manual',
+        'title', 'Manual QA',
+        'storagePath', 'cms-documents/57000000-0000-4000-8000-000000000010/manual.pdf',
+        'sha256', repeat('b',64), 'revision', '1', 'language', 'pt-BR',
         'visibility', 'public', 'rightsConfirmed', true
       ),
       jsonb_build_object(
-        'id', '57000000-0000-4000-8000-000000000024', 'kind', 'manual',
-        'title', 'Manual externo', 'officialUrl', 'https://docs.example.test/manual.pdf',
-        'sha256', repeat('a',64), 'revision', '1', 'language', 'pt-BR',
+        'id', '57000000-0000-4000-8000-000000000010', 'kind', 'manual',
+        'title', 'Manual QA',
+        'storagePath', 'cms-documents/57000000-0000-4000-8000-000000000010/manual.pdf',
+        'sha256', repeat('b',64), 'revision', '1', 'language', 'pt-BR',
         'visibility', 'public', 'rightsConfirmed', true
       )
     )
@@ -307,6 +309,7 @@ select throws_ok(
   'preview rejects duplicated document identities before creating an anonymous capability'
 );
 alter table public.cms_published_projection disable trigger cms_phase7_projection_validate;
+alter table public.cms_published_projection disable trigger cms_claim_product_identifiers_0078;
 select throws_ok(
   $$insert into public.cms_published_projection(
     item_id, revision_id, content_type, slug, schema_version, consumer_id,
@@ -322,6 +325,7 @@ select throws_ok(
   '23514', 'CMS_PRODUCT_DOCUMENT_SHAPE_INVALID',
   'publication rejects duplicated document identities even when an upstream schema trigger is bypassed'
 );
+alter table public.cms_published_projection enable trigger cms_claim_product_identifiers_0078;
 alter table public.cms_published_projection enable trigger cms_phase7_projection_validate;
 alter table public.cms_published_projection disable trigger cms_phase7_projection_validate;
 insert into public.cms_published_projection(
@@ -332,7 +336,7 @@ insert into public.cms_published_projection(
   '57000000-0000-4000-8000-000000000021', 'post', 'document-reference-test', 1,
   (select consumer_id from public.cms_capability_registry order by consumer_id limit 1),
   'fixture',
-  '{"title":"Document reference fixture","documents":[{"id":"57000000-0000-4000-8000-000000000010"}]}'::jsonb,
+  '{"title":"Document reference fixture","documents":[{"id":"57000000-0000-4000-8000-000000000010","storagePath":"cms-documents/57000000-0000-4000-8000-000000000010/manual.pdf"}]}'::jsonb,
   '{}', 1, 'cms:post:57000000-0000-4000-8000-000000000020',
   '"' || repeat('d',64) || '"', now()
 );

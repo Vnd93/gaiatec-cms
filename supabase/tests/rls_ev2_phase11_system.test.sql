@@ -227,6 +227,11 @@ update public.cms_content_items
 set workflow_status = 'archived', archived_at = now()
 where id = '51100000-0000-4000-8000-000000000221';
 
+select set_config(
+  'cms.qa_mutation_actor_id',
+  '51100000-0000-4000-8000-000000000101',
+  true
+);
 insert into public.cms_form_definitions (
   id, form_key, title, purpose, created_by, updated_by
 ) values (
@@ -253,7 +258,7 @@ insert into public.cms_leads (
   '51100000-0000-4000-8000-000000000203', 'LD-G11-SYNTHETIC',
   '51100000-0000-4000-8000-000000000201', '51100000-0000-4000-8000-000000000202',
   '51100000-0000-4000-8000-000000000204', '{"synthetic":true}'::jsonb,
-  '/g11-synthetic', 'g11_test', now() + interval '30 minutes', now() + interval '30 days'
+  '/g11-synthetic', 'website', now() + interval '30 minutes', now() + interval '30 days'
 );
 insert into public.cms_lead_consents (
   lead_id, accepted, consent_text, consent_version, policy_path, evidence_hash, technical_evidence

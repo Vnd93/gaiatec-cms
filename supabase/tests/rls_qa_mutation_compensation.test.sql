@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
-select plan(65);
+select plan(66);
 
 select has_table(
   'private',
@@ -737,9 +737,20 @@ set workflow_status = 'published',
     updated_by = '64000000-0000-4000-8000-000000000003'
 where id = '64000000-0000-4000-8000-000000000102';
 
+select set_config(
+  'cms.qa_mutation_actor_id',
+  '64000000-0000-4000-8000-000000000001',
+  true
+);
 update private.cms_qa_actor_leases
 set status = 'cleaned', cleaned_at = now()
 where actor_id = '64000000-0000-4000-8000-000000000003';
+
+select is(
+  current_setting('cms.qa_mutation_actor_id', true),
+  '64000000-0000-4000-8000-000000000001',
+  'terminal collaboration cleanup restores the caller mutation actor context'
+);
 
 select is(
   (select status from private.cms_qa_global_mutation_journal

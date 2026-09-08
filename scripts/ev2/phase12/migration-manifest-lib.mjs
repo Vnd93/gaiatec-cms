@@ -30,6 +30,11 @@ export const G12_PINNED_MIGRATION_TAIL = Object.freeze([
     file: "0086_cms_qa_actor_runtime_repairs.sql",
     sha256: "b351e4029074427d7f4f868d14cc3e425d9f7730d247c3318c95efdd3e05283b",
   }),
+  Object.freeze({
+    version: "0087",
+    file: "0087_cms_runtime_integrity_repairs.sql",
+    sha256: "84290c14445a39d310ce8c78df7a1b849d8e73b476ec8d5fb827e92cbe8d0be7",
+  }),
 ]);
 
 export const CMS_MEDIA_UPLOAD_ABORT_0082_RPCS = Object.freeze([
@@ -66,6 +71,24 @@ export const CMS_QA_ACTOR_RUNTIME_REPAIRS_0086_OWNER_ONLY_FUNCTIONS = Object.fre
   "private.cms_ai_terminalize_qa_actor_graph()",
   "public.cms_open_draft_after_edit()",
 ]);
+
+export const CMS_RUNTIME_INTEGRITY_REPAIRS_0087_SERVICE_ONLY_RPCS = Object.freeze([
+  "public.cms_resolve_session_scoped(uuid,text,text,text,text,timestamptz,uuid)",
+  "public.cms_resolve_scoped_access(uuid,text,text,text,text,timestamptz)",
+  "public.cms_execute_visual_command(uuid,text,uuid,uuid,jsonb,bigint,bigint,text,text,text,text,timestamptz,uuid,uuid,text,uuid)",
+  "public.cms_execute_site_command(uuid,text,text,jsonb,bigint,text,text,text,text,timestamptz,uuid,uuid,text,uuid)",
+]);
+
+export const CMS_RUNTIME_INTEGRITY_REPAIRS_0087_OWNER_ONLY_FUNCTIONS = Object.freeze([
+  "private.cms_resolve_session_core_0087(uuid,text,text,text,text,timestamptz,uuid)",
+  "public.cms_resolve_session_unscoped_0070(uuid,text,text,text,timestamptz,uuid)",
+  "private.cms_crb_terminalize_qa_graph()",
+]);
+
+export const CMS_RUNTIME_INTEGRITY_REPAIRS_0087_CRB_PROSRC_SHA256 = Object.freeze({
+  baseline: "42cf04573ac27b48140b96b7dd4706b1ceee61838dc44983ebe7089e6d0afc4d",
+  transformed: "fbe2c71fb695023b953a871c5f132e2dcf6b65a78265eb27441bda8cf1ef038f",
+});
 
 export const CMS_MEDIA_UPLOAD_ABORT_0082_OWNER_ONLY_HELPERS = Object.freeze([
   "public.cms_block_media_delete()",
@@ -495,6 +518,169 @@ export function qaActorRuntimeRepairsSemanticSql(alias) {
             and trigger_row.tgenabled = 'O'
             and trigger_row.tgfoid = to_regprocedure(required.signature)
         ) <> 1
+      )
+    , false) as ${alias}`;
+}
+
+export function runtimeIntegrityRepairsSemanticSql(alias) {
+  if (!/^[a-z][a-z0-9_]*$/.test(alias)) fail("runtime-integrity-repairs-alias");
+  const sessionCore = "private.cms_resolve_session_core_0087(uuid,text,text,text,text,timestamptz,uuid)";
+  const sessionScoped = "public.cms_resolve_session_scoped(uuid,text,text,text,text,timestamptz,uuid)";
+  const sessionUnscoped = "public.cms_resolve_session_unscoped_0070(uuid,text,text,text,timestamptz,uuid)";
+  const scopedAccess = "public.cms_resolve_scoped_access(uuid,text,text,text,text,timestamptz)";
+  const visual =
+    "public.cms_execute_visual_command(uuid,text,uuid,uuid,jsonb,bigint,bigint,text,text,text,text,timestamptz,uuid,uuid,text,uuid)";
+  const sites =
+    "public.cms_execute_site_command(uuid,text,text,jsonb,bigint,text,text,text,text,timestamptz,uuid,uuid,text,uuid)";
+  const crbCleanup = "private.cms_crb_terminalize_qa_graph()";
+  const normalized = (signature) =>
+    `regexp_replace(pg_get_functiondef(to_regprocedure('${signature}')), '[[:space:]]+', ' ', 'g')`;
+  const sessionCoreDefinition = normalized(sessionCore);
+  const sessionScopedDefinition = normalized(sessionScoped);
+  const sessionUnscopedDefinition = normalized(sessionUnscoped);
+  const scopedAccessDefinition = normalized(scopedAccess);
+  const visualDefinition = normalized(visual);
+  const sitesDefinition = normalized(sites);
+  const crbDefinition = normalized(crbCleanup);
+  const crbRestore =
+    "perform set_config( ''cms.qa_mutation_actor_id'', coalesce(v_previous_actor, ''''), true );";
+  const crbException = "exception when others then";
+  const loginInsert = "insert into public.cms_login_events";
+  const coreLeaseLock = "perform private.cms_system_lock_actor_scope(p_user_id, p_environment);";
+  const accessLeaseLock = "perform private.cms_system_lock_actor_scope(p_actor_id, p_environment);";
+  const advisoryLock = "perform pg_advisory_xact_lock(hashtextextended(";
+  return `coalesce(
+      ${sessionScopedDefinition}
+        like '%private.cms_resolve_session_core_0087(%'
+      and ${sessionScopedDefinition}
+        not like '%update public.cms_login_events%'
+      and ${sessionUnscopedDefinition}
+        like '%private.cms_resolve_session_core_0087(%'
+      and ${sessionUnscopedDefinition}
+        not like '%update public.cms_login_events%'
+      and ${sessionCoreDefinition}
+        like '%${loginInsert}%'
+      and ${sessionCoreDefinition}
+        not like '%update public.cms_login_events%'
+      and (
+        length(${sessionCoreDefinition})
+          - length(replace(${sessionCoreDefinition}, '${loginInsert}', ''))
+      ) / length('${loginInsert}') = 1
+      and ${sessionCoreDefinition}
+        like '%permission.critical%'
+      and ${sessionCoreDefinition}
+        like '%p_event_type is null%'
+      and ${sessionCoreDefinition}
+        like '%p_aal is null%'
+      and ${sessionCoreDefinition}
+        like '%cardinality(role_keys) > 0%'
+      and ${sessionCoreDefinition}
+        like '%scope_capability ->> ''reasonCode'' = ''feature_disabled''%'
+      and ${sessionCoreDefinition}
+        like '%role_keys := array[]::text[];%'
+      and ${sessionCoreDefinition}
+        like '%permission_keys := array[]::text[];%'
+      and ${sessionCoreDefinition}
+        like '%access_granted := false;%'
+      and ${sessionCoreDefinition}
+        like '%''rbacScoped'', coalesce(%'
+      and ${sessionCoreDefinition}
+        like '%''rbacScopeReasonCode'', coalesce(%'
+      and ${sessionCoreDefinition}
+        like '%''scope'', case%'
+      and ${sessionCoreDefinition}
+        like '%scope_capability ->> ''reasonCode'', ''session_or_scope_invalid''%'
+      and strpos(${sessionCoreDefinition}, '${coreLeaseLock}') > 0
+      and strpos(${sessionCoreDefinition}, '${advisoryLock}') >
+        strpos(${sessionCoreDefinition}, '${coreLeaseLock}')
+      and strpos(${sessionCoreDefinition}, 'select profile.status into profile_status') >
+        strpos(${sessionCoreDefinition}, '${advisoryLock}')
+      and strpos(${sessionCoreDefinition}, 'scope_capability := public.cms_rbac_scope_capability(') > 0
+      and strpos(${sessionCoreDefinition}, 'scoped_access := public.cms_resolve_scoped_access(') >
+        strpos(${sessionCoreDefinition}, 'scope_capability := public.cms_rbac_scope_capability(')
+      and strpos(${sessionCoreDefinition}, '${loginInsert}') >
+        strpos(${sessionCoreDefinition}, 'scoped_access := public.cms_resolve_scoped_access(')
+      and ${scopedAccessDefinition}
+        not like '%insert into public.cms_login_events%'
+      and ${scopedAccessDefinition}
+        not like '%update public.cms_login_events%'
+      and ${scopedAccessDefinition}
+        like '%with effective_assignment as materialized (%'
+      and ${scopedAccessDefinition}
+        like '%bool_or(permission.critical)%'
+      and ${scopedAccessDefinition}
+        like '%cardinality(v_roles) > 0%'
+      and strpos(${scopedAccessDefinition}, '${accessLeaseLock}') > 0
+      and strpos(${scopedAccessDefinition}, '${advisoryLock}') >
+        strpos(${scopedAccessDefinition}, '${accessLeaseLock}')
+      and strpos(${scopedAccessDefinition}, 'with effective_assignment as materialized (') >
+        strpos(${scopedAccessDefinition}, '${advisoryLock}')
+      and ${visualDefinition}
+        like '%or p_action is null%'
+      and ${visualDefinition}
+        like '%or p_environment is null%'
+      and ${visualDefinition}
+        like '%or p_site_key is distinct from ''main''%'
+      and ${visualDefinition}
+        like '%if p_aal is distinct from ''aal2'' then%'
+      and strpos(${visualDefinition}, 'CMS_VISUAL_COMMAND_INVALID') > 0
+      and strpos(${visualDefinition}, 'CMS_VISUAL_MFA_REQUIRED') >
+        strpos(${visualDefinition}, 'CMS_VISUAL_COMMAND_INVALID')
+      and strpos(${visualDefinition}, 'perform private.cms_visual_assert_available(') >
+        strpos(${visualDefinition}, 'CMS_VISUAL_MFA_REQUIRED')
+      and ${sitesDefinition}
+        like '%or p_action is null%'
+      and ${sitesDefinition}
+        like '%or p_environment is null%'
+      and ${sitesDefinition}
+        like '%or p_site_key is distinct from ''main''%'
+      and ${sitesDefinition}
+        like '%if p_aal is distinct from ''aal2'' then%'
+      and strpos(${sitesDefinition}, 'CMS_SITES_COMMAND_INVALID') > 0
+      and strpos(${sitesDefinition}, 'CMS_SITES_MFA_REQUIRED') >
+        strpos(${sitesDefinition}, 'CMS_SITES_COMMAND_INVALID')
+      and strpos(${sitesDefinition}, 'perform private.cms_sites_assert_available(') >
+        strpos(${sitesDefinition}, 'CMS_SITES_MFA_REQUIRED')
+      and ${crbDefinition}
+        like '%v_previous_actor text := current_setting(''cms.qa_mutation_actor_id'', true);%'
+      and strpos(${crbDefinition}, '${crbRestore}') > 0
+      and strpos(${crbDefinition}, '${crbRestore}') <
+        strpos(${crbDefinition}, '${crbException}')
+      and strpos(${crbDefinition}, '${crbException}') > 0
+      and strpos(
+        substr(${crbDefinition}, strpos(${crbDefinition}, '${crbException}')),
+        '${crbRestore}'
+      ) > 0
+      and exists (
+        select 1
+        from pg_catalog.pg_proc procedure_row
+        join pg_catalog.pg_language language_row
+          on language_row.oid = procedure_row.prolang
+        where procedure_row.oid = to_regprocedure('${crbCleanup}')
+          and procedure_row.prosecdef
+          and language_row.lanname = 'plpgsql'
+          and coalesce(
+            'search_path=pg_catalog, public, private, pg_temp'
+              = any(procedure_row.proconfig),
+            false
+          )
+          and encode(extensions.digest(convert_to(replace(replace(
+            procedure_row.prosrc, E'\\r\\n', E'\\n'
+          ), E'\\r', E'\\n'), 'UTF8'), 'sha256'), 'hex')
+            = '${CMS_RUNTIME_INTEGRITY_REPAIRS_0087_CRB_PROSRC_SHA256.transformed}'
+          and encode(extensions.digest(convert_to(replace(replace(
+            procedure_row.prosrc, E'\\r\\n', E'\\n'
+          ), E'\\r', E'\\n'), 'UTF8'), 'sha256'), 'hex')
+            <> '${CMS_RUNTIME_INTEGRITY_REPAIRS_0087_CRB_PROSRC_SHA256.baseline}'
+      )
+      and (
+        select count(*) = 1
+        from pg_catalog.pg_trigger trigger_row
+        where trigger_row.tgrelid = 'private.cms_qa_actor_leases'::regclass
+          and trigger_row.tgname = 'cms_prepare_qa_actor_terminal_crb_cleanup'
+          and not trigger_row.tgisinternal
+          and trigger_row.tgenabled = 'O'
+          and trigger_row.tgfoid = to_regprocedure('${crbCleanup}')
       )
     , false) as ${alias}`;
 }

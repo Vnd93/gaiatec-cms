@@ -410,9 +410,10 @@ select ok(
   ) ? 'symbolId'),
   'AAL2 creates a same-site symbol'
 );
-update public.cms_page_branches
-set base_draft_version = 2
-where branch_key = 'g9-visual-a';
+update public.cms_content_drafts
+set lock_version = 2,
+    updated_by = '49000000-0000-4000-8000-000000000101'
+where item_id = '49000000-0000-4000-8000-000000000201';
 select throws_ok(
   $$select pg_temp.visual_command(
     'apply_to_draft',
@@ -424,9 +425,10 @@ select throws_ok(
   'PT409', 'CMS_VISUAL_DRAFT_CONFLICT',
   'apply rejects drift from the branch base draft version'
 );
-update public.cms_page_branches
-set base_draft_version = 1
-where branch_key = 'g9-visual-a';
+update public.cms_content_drafts
+set lock_version = 1,
+    updated_by = '49000000-0000-4000-8000-000000000101'
+where item_id = '49000000-0000-4000-8000-000000000201';
 select is(
   (pg_temp.visual_command(
     'apply_to_draft',

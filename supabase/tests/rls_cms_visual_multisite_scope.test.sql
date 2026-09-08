@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(41);
+select plan(47);
 
 select has_function('public','cms_get_visual_catalog',
   array['uuid','text','text','text','text','timestamp with time zone','uuid'],
@@ -29,6 +29,55 @@ select isnt(has_function_privilege('service_role',
 select isnt(has_function_privilege('service_role',
   'public.cms_execute_site_command_unscoped_0074(uuid,text,text,jsonb,bigint,text,text,text,text,timestamptz,uuid,uuid,text,uuid)',
   'EXECUTE'),true,'service role cannot bypass the site wrapper');
+
+select throws_ok($call$
+  select public.cms_execute_visual_command(
+    '74000000-0000-4000-8000-000000000001',null,null,null,'{}',null,null,
+    'staging','main','aal2','visual-null-action',now(),
+    '74000000-0000-4000-8000-000000000351','74000000-0000-4000-8000-000000000352',
+    repeat('a',64),'74000000-0000-4000-8000-000000000353'
+  )
+$call$,'22023','CMS_VISUAL_COMMAND_INVALID','visual commands reject a null action');
+select throws_ok($call$
+  select public.cms_execute_visual_command(
+    '74000000-0000-4000-8000-000000000001','create_branch',null,null,'{}',null,null,
+    null,'main','aal2','visual-null-environment',now(),
+    '74000000-0000-4000-8000-000000000354','74000000-0000-4000-8000-000000000355',
+    repeat('b',64),'74000000-0000-4000-8000-000000000356'
+  )
+$call$,'22023','CMS_VISUAL_COMMAND_INVALID','visual commands reject a null environment');
+select throws_ok($call$
+  select public.cms_execute_visual_command(
+    '74000000-0000-4000-8000-000000000001','create_branch',null,null,'{}',null,null,
+    'staging',null,'aal2','visual-null-site',now(),
+    '74000000-0000-4000-8000-000000000357','74000000-0000-4000-8000-000000000358',
+    repeat('c',64),'74000000-0000-4000-8000-000000000359'
+  )
+$call$,'22023','CMS_VISUAL_COMMAND_INVALID','visual commands reject a null site key');
+select throws_ok($call$
+  select public.cms_execute_site_command(
+    '74000000-0000-4000-8000-000000000001',null,'g9x-null-action','{}',null,
+    'staging','main','aal2','site-null-action',now(),
+    '74000000-0000-4000-8000-000000000361','74000000-0000-4000-8000-000000000362',
+    repeat('d',64),'74000000-0000-4000-8000-000000000363'
+  )
+$call$,'22023','CMS_SITES_COMMAND_INVALID','site commands reject a null action');
+select throws_ok($call$
+  select public.cms_execute_site_command(
+    '74000000-0000-4000-8000-000000000001','create_candidate','g9x-null-environment','{}',null,
+    null,'main','aal2','site-null-environment',now(),
+    '74000000-0000-4000-8000-000000000364','74000000-0000-4000-8000-000000000365',
+    repeat('e',64),'74000000-0000-4000-8000-000000000366'
+  )
+$call$,'22023','CMS_SITES_COMMAND_INVALID','site commands reject a null environment');
+select throws_ok($call$
+  select public.cms_execute_site_command(
+    '74000000-0000-4000-8000-000000000001','create_candidate','g9x-null-site','{}',null,
+    'staging',null,'aal2','site-null-site',now(),
+    '74000000-0000-4000-8000-000000000367','74000000-0000-4000-8000-000000000368',
+    repeat('f',64),'74000000-0000-4000-8000-000000000369'
+  )
+$call$,'22023','CMS_SITES_COMMAND_INVALID','site commands reject a null site key');
 
 insert into auth.users(
   id,instance_id,aud,role,email,encrypted_password,email_confirmed_at,
@@ -259,7 +308,7 @@ insert into public.cms_page_branches(
   created_by,updated_by,correlation_id
 ) values (
   '74000000-0000-4000-8000-000000000331','49000000-0000-4000-8000-000000000001',
-  'staging','74000000-0000-4000-8000-000000000101','corporate-branch','draft',1,
+  'staging','74000000-0000-4000-8000-000000000101','corporate-staging-branch','draft',1,
   '74000000-0000-4000-8000-000000000001','74000000-0000-4000-8000-000000000001',
   '74000000-0000-4000-8000-000000000332'
 );
@@ -271,6 +320,24 @@ insert into public.cms_visual_documents(
   '{"schemaVersion":1,"registryVersion":1,"nodes":[],"bindings":[]}',repeat('1',64),
   '74000000-0000-4000-8000-000000000001','74000000-0000-4000-8000-000000000001',
   '74000000-0000-4000-8000-000000000334'
+);
+insert into public.cms_page_branches(
+  id,site_id,environment,item_id,branch_key,status,base_draft_version,
+  created_by,updated_by,correlation_id
+) values (
+  '74000000-0000-4000-8000-000000000335','49000000-0000-4000-8000-000000000001',
+  'local','74000000-0000-4000-8000-000000000101','corporate-local-branch','draft',1,
+  '74000000-0000-4000-8000-000000000001','74000000-0000-4000-8000-000000000001',
+  '74000000-0000-4000-8000-000000000336'
+);
+insert into public.cms_visual_documents(
+  id,branch_id,site_id,environment,document,document_hash,created_by,updated_by,correlation_id
+) values (
+  '74000000-0000-4000-8000-000000000337','74000000-0000-4000-8000-000000000335',
+  '49000000-0000-4000-8000-000000000001','local',
+  '{"schemaVersion":1,"registryVersion":1,"nodes":[],"bindings":[]}',repeat('2',64),
+  '74000000-0000-4000-8000-000000000001','74000000-0000-4000-8000-000000000001',
+  '74000000-0000-4000-8000-000000000338'
 );
 
 select is(private.cms_visual_branch_scope_allowed(
@@ -340,7 +407,7 @@ select set_config('request.jwt.claims',jsonb_build_object(
 )::text,true);
 select is((select array_agg(id order by id)::text from public.cms_page_branches
   where id::text like '74000000-%'),
-  array['74000000-0000-4000-8000-000000000331'::uuid]::text,
+  array['74000000-0000-4000-8000-000000000335'::uuid]::text,
   'corporate RLS excludes every ever-QA visual graph');
 select is((select array_agg(id order by id)::text from public.cms_sites
   where id in ('74000000-0000-4000-8000-000000000202','74000000-0000-4000-8000-000000000203')),

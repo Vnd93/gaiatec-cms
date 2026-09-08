@@ -421,7 +421,8 @@ insert into public.cms_content_items(
 insert into public.cms_content_drafts(item_id,payload,seo,provenance,updated_by)
 values (
   '82000000-0000-4000-8000-000000000301',
-  '{"title":"Página segura de uso","blocks":[]}'::jsonb,'{}','{}',
+  '{"title":"Página segura de uso","blocks":[]}'::jsonb,'{}',
+  '[{"sourceKind":"owner_authored","rightsConfirmed":true,"commercialOwner":"QA-CMS-FINAL","technicalOwner":"QA-CMS-FINAL"}]'::jsonb,
   '82000000-0000-4000-8000-000000000001'
 );
 select throws_ok(

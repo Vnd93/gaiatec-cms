@@ -178,6 +178,11 @@ insert into public.cms_feature_flag_overrides(
   true, 'Teste QA transacional do isolamento DAM', now() + interval '1 hour',
   '47000000-0000-4000-8000-000000000002'
 );
+select set_config(
+  'cms.qa_mutation_actor_id',
+  '47000000-0000-4000-8000-000000000002',
+  true
+);
 select lives_ok(
   $$insert into public.cms_media_assets(
     id, storage_path, original_filename, declared_mime, sha256, source_kind,
@@ -226,16 +231,27 @@ insert into public.cms_content_items(
   '47000000-0000-4000-8000-000000000002',
   '47000000-0000-4000-8000-000000000002'
 );
+select set_config(
+  'cms.qa_mutation_actor_id',
+  '47000000-0000-4000-8000-000000000001',
+  true
+);
 insert into public.cms_media_variants(
   id, asset_id, variant_key, format, width, height, transform_path
-) values
-  (
+) values (
     '47000000-0000-4000-8000-000000000040',
     '47000000-0000-4000-8000-000000000010',
     'thumbnail', 'webp', 64, 64,
     'cms/47000000-0000-4000-8000-000000000010/thumbnail.webp'
-  ),
-  (
+  );
+select set_config(
+  'cms.qa_mutation_actor_id',
+  '47000000-0000-4000-8000-000000000002',
+  true
+);
+insert into public.cms_media_variants(
+  id, asset_id, variant_key, format, width, height, transform_path
+) values (
     '47000000-0000-4000-8000-000000000041',
     '47000000-0000-4000-8000-000000000015',
     'thumbnail', 'webp', 64, 64,

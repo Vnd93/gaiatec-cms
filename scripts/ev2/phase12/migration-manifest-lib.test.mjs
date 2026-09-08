@@ -8,6 +8,9 @@ import {
   CMS_LEAD_ORIGIN_BINDING_0084_OWNER_ONLY_HELPERS,
   CMS_PUBLIC_RELATION_LIMIT_0085_OWNER_ONLY_HELPERS,
   CMS_QA_ACTOR_RUNTIME_REPAIRS_0086_OWNER_ONLY_FUNCTIONS,
+  CMS_RUNTIME_INTEGRITY_REPAIRS_0087_CRB_PROSRC_SHA256,
+  CMS_RUNTIME_INTEGRITY_REPAIRS_0087_OWNER_ONLY_FUNCTIONS,
+  CMS_RUNTIME_INTEGRITY_REPAIRS_0087_SERVICE_ONLY_RPCS,
   CMS_MEDIA_UPLOAD_ABORT_0082_RPCS,
   CMS_MEDIA_UPLOAD_ABORT_0082_OWNER_ONLY_HELPERS,
   CMS_SESSION_REFRESH_REVOCATION_0083_RPCS,
@@ -19,6 +22,7 @@ import {
   ownerOnlyFunctionContractSql,
   publicRelationLimitSemanticSql,
   qaActorRuntimeRepairsSemanticSql,
+  runtimeIntegrityRepairsSemanticSql,
   sessionRefreshRevocationSemanticSql,
   serviceOnlyRpcContractSql,
   sourceMigrationManifest,
@@ -72,9 +76,9 @@ test("the repository migration history is contiguous", () => {
   assert.equal(manifest[0].version, "0001");
   assert.equal(manifest.at(-1)?.version, String(manifest.length).padStart(4, "0"));
   assert.deepEqual(G12_PINNED_MIGRATION_TAIL.at(-1), {
-    version: "0086",
-    file: "0086_cms_qa_actor_runtime_repairs.sql",
-    sha256: "b351e4029074427d7f4f868d14cc3e425d9f7730d247c3318c95efdd3e05283b",
+    version: "0087",
+    file: "0087_cms_runtime_integrity_repairs.sql",
+    sha256: "84290c14445a39d310ce8c78df7a1b849d8e73b476ec8d5fb827e92cbe8d0be7",
   });
   assert.deepEqual(manifest.slice(-G12_PINNED_MIGRATION_TAIL.length), G12_PINNED_MIGRATION_TAIL);
   for (const migration of manifest.slice(-G12_PINNED_MIGRATION_TAIL.length)) {
@@ -84,9 +88,9 @@ test("the repository migration history is contiguous", () => {
   }
 });
 
-test("the pinned 0082 to 0086 tail fails closed on filename, order or raw-byte digest drift", () => {
+test("the pinned 0082 to 0087 tail fails closed on filename, order or raw-byte digest drift", () => {
   const files = Object.fromEntries(
-    Array.from({ length: 86 }, (_, index) => {
+    Array.from({ length: 87 }, (_, index) => {
       const version = String(index + 1).padStart(4, "0");
       const file =
         G12_PINNED_MIGRATION_TAIL.find((migration) => migration.version === version)?.file ??
@@ -102,9 +106,9 @@ test("the pinned 0082 to 0086 tail fails closed on filename, order or raw-byte d
   }
 });
 
-test("a real pinned 0082 to 0085 baseline remains readable by the 0086 candidate verifier", () => {
+test("a real pinned 0082 to 0086 baseline remains readable by the 0087 candidate verifier", () => {
   const files = Object.fromEntries(
-    Array.from({ length: 85 }, (_, index) => {
+    Array.from({ length: 86 }, (_, index) => {
       const version = String(index + 1).padStart(4, "0");
       const pinned = G12_PINNED_MIGRATION_TAIL.find((migration) => migration.version === version);
       return pinned
@@ -115,10 +119,10 @@ test("a real pinned 0082 to 0085 baseline remains readable by the 0086 candidate
   const root = fixture(files);
   try {
     const manifest = sourceMigrationManifest(root);
-    assert.equal(manifest.at(-1)?.version, "0085");
+    assert.equal(manifest.at(-1)?.version, "0086");
     assert.deepEqual(
-      manifest.slice(-4),
-      G12_PINNED_MIGRATION_TAIL.filter(({ version }) => version <= "0085"),
+      manifest.slice(-5),
+      G12_PINNED_MIGRATION_TAIL.filter(({ version }) => version <= "0086"),
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -329,6 +333,94 @@ test("0086 semantic preflight proves fail-closed capture, generated cleanup corr
   assert.throws(
     () => qaActorRuntimeRepairsSemanticSql("unsafe-alias"),
     /G12_MIGRATION_MANIFEST_INVALID:qa-actor-runtime-repairs-alias/,
+  );
+});
+
+test("0087 repaired scoped RPCs have exact service-only ACL and helpers remain owner-only", () => {
+  const scoped = serviceOnlyRpcContractSql(
+    "runtime_integrity_repairs_0087_rpcs",
+    CMS_RUNTIME_INTEGRITY_REPAIRS_0087_SERVICE_ONLY_RPCS,
+  );
+  const underlying = ownerOnlyFunctionContractSql(
+    "runtime_integrity_repairs_0087_functions_locked",
+    CMS_RUNTIME_INTEGRITY_REPAIRS_0087_OWNER_ONLY_FUNCTIONS,
+  );
+  for (const signature of CMS_RUNTIME_INTEGRITY_REPAIRS_0087_SERVICE_ONLY_RPCS)
+    assert.ok(scoped.includes(signature), signature);
+  for (const signature of CMS_RUNTIME_INTEGRITY_REPAIRS_0087_OWNER_ONLY_FUNCTIONS)
+    assert.ok(underlying.includes(signature), signature);
+  assert.match(scoped, /has_function_privilege\('service_role'/);
+  assert.match(scoped, /coalesce\(grantee\.rolname, 'PUBLIC'\) <> 'service_role'/);
+  assert.match(underlying, /privilege_row\.grantee <> procedure_row\.proowner/);
+});
+
+test("0087 semantic preflight proves immutable session evidence, command gate order and CRB restoration", () => {
+  const contract = runtimeIntegrityRepairsSemanticSql("runtime_integrity_repairs_0087_semantics_exact");
+  for (const marker of [
+    "private.cms_resolve_session_core_0087(",
+    "public.cms_resolve_scoped_access(",
+    "insert into public.cms_login_events",
+    "not like '%update public.cms_login_events%'",
+    "permission.critical",
+    "p_event_type is null",
+    "p_aal is null",
+    "cardinality(role_keys) > 0",
+    "scope_capability ->> ''reasonCode'' = ''feature_disabled''",
+    "role_keys := array[]::text[];",
+    "permission_keys := array[]::text[];",
+    "access_granted := false;",
+    "''rbacScoped'', coalesce(",
+    "''rbacScopeReasonCode'', coalesce(",
+    "''scope'', case",
+    "scope_capability ->> ''reasonCode'', ''session_or_scope_invalid''",
+    "perform private.cms_system_lock_actor_scope(p_user_id, p_environment);",
+    "perform private.cms_system_lock_actor_scope(p_actor_id, p_environment);",
+    "perform pg_advisory_xact_lock(hashtextextended(",
+    "with effective_assignment as materialized (",
+    "bool_or(permission.critical)",
+    "cardinality(v_roles) > 0",
+    "or p_action is null",
+    "or p_environment is null",
+    "or p_site_key is distinct from ''main''",
+    "if p_aal is distinct from ''aal2'' then",
+    "CMS_VISUAL_COMMAND_INVALID",
+    "CMS_VISUAL_MFA_REQUIRED",
+    "perform private.cms_visual_assert_available(",
+    "CMS_SITES_COMMAND_INVALID",
+    "CMS_SITES_MFA_REQUIRED",
+    "perform private.cms_sites_assert_available(",
+    "v_previous_actor text := current_setting(''cms.qa_mutation_actor_id'', true);",
+    "exception when others then",
+    "cms_prepare_qa_actor_terminal_crb_cleanup",
+    "trigger_row.tgenabled = 'O'",
+    "trigger_row.tgfoid = to_regprocedure",
+    "procedure_row.prosecdef",
+    "language_row.lanname = 'plpgsql'",
+    "procedure_row.proconfig",
+    CMS_RUNTIME_INTEGRITY_REPAIRS_0087_CRB_PROSRC_SHA256.baseline,
+    CMS_RUNTIME_INTEGRITY_REPAIRS_0087_CRB_PROSRC_SHA256.transformed,
+  ])
+    assert.ok(contract.includes(marker), marker);
+  assert.match(
+    contract,
+    /CMS_VISUAL_COMMAND_INVALID[\s\S]+CMS_VISUAL_MFA_REQUIRED[\s\S]+cms_visual_assert_available/,
+  );
+  assert.match(
+    contract,
+    /CMS_SITES_COMMAND_INVALID[\s\S]+CMS_SITES_MFA_REQUIRED[\s\S]+cms_sites_assert_available/,
+  );
+  assert.match(
+    contract,
+    /cms_system_lock_actor_scope\(p_user_id[\s\S]+pg_advisory_xact_lock[\s\S]+select profile\.status/,
+  );
+  assert.match(
+    contract,
+    /cms_system_lock_actor_scope\(p_actor_id[\s\S]+pg_advisory_xact_lock[\s\S]+effective_assignment as materialized/,
+  );
+  assert.match(contract, /as runtime_integrity_repairs_0087_semantics_exact$/);
+  assert.throws(
+    () => runtimeIntegrityRepairsSemanticSql("unsafe-alias"),
+    /G12_MIGRATION_MANIFEST_INVALID:runtime-integrity-repairs-alias/,
   );
 });
 

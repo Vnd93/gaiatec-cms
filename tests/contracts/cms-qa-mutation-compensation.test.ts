@@ -119,7 +119,7 @@ describe("persistent QA mutation compensation", () => {
     ]) {
       expect(pgTap).toContain(marker);
     }
-    expect(pgTap).toContain("select plan(65)");
+    expect(pgTap).toContain("select plan(66)");
     expect(pgTap).toContain("select * from finish()");
     expect(pgTap).toContain("rollback;");
   });

@@ -2058,6 +2058,10 @@ test("release workflows and reduced canary are immutable, staged and production 
     backendCompatibility,
     /"0086": \[\s*"supabase\/tests\/rls_qa_actor_lease\.test\.sql",\s*"supabase\/tests\/rls_qa_mutation_compensation\.test\.sql",\s*"supabase\/tests\/rls_cms_forms_leads_scope\.test\.sql",\s*"supabase\/tests\/rls_cms_ai_authoritative_scope\.test\.sql",\s*"tests\/contracts\/cms-qa-actor-runtime-repairs\.test\.ts"/,
   );
+  assert.match(
+    backendCompatibility,
+    /"0087": \[\s*"supabase\/tests\/rls_cms_session_security_finalization\.test\.sql",\s*"supabase\/tests\/rls_cms_system_rbac_scope\.test\.sql",\s*"supabase\/tests\/rls_cms_visual_multisite_scope\.test\.sql",\s*"supabase\/tests\/rls_cms_collaboration_release_bulk_scope\.test\.sql",\s*"tests\/contracts\/cms-runtime-integrity-repairs\.test\.ts"/,
+  );
   assert.match(stagingDatabaseVerify, /media_upload_abort_0082_rpcs_privileges_exact/);
   assert.match(stagingDatabaseVerify, /media_upload_abort_0082_helpers_locked/);
   assert.match(stagingDatabaseVerify, /session_refresh_revocation_0083_semantics_exact/);
@@ -2068,6 +2072,9 @@ test("release workflows and reduced canary are immutable, staged and production 
   assert.match(stagingDatabaseVerify, /public_relation_limit_0085_existing_rows_valid/);
   assert.match(stagingDatabaseVerify, /qa_actor_runtime_repairs_0086_functions_locked/);
   assert.match(stagingDatabaseVerify, /qa_actor_runtime_repairs_0086_semantics_exact/);
+  assert.match(stagingDatabaseVerify, /runtime_integrity_repairs_0087_rpcs_privileges_exact/);
+  assert.match(stagingDatabaseVerify, /runtime_integrity_repairs_0087_functions_locked/);
+  assert.match(stagingDatabaseVerify, /runtime_integrity_repairs_0087_semantics_exact/);
   assert.match(backendCompatibility, /compatibilityEvidenceExecutionVerified: true/);
   assert.match(production, /probe-supabase-boundary\.mjs/);
   assert.match(deployStaging, /probe-supabase-boundary\.mjs/);
@@ -2145,6 +2152,9 @@ test("release workflows and reduced canary are immutable, staged and production 
   assert.match(databaseVerify, /public_relation_limit_0085_existing_rows_valid/);
   assert.match(databaseVerify, /qa_actor_runtime_repairs_0086_functions_locked/);
   assert.match(databaseVerify, /qa_actor_runtime_repairs_0086_semantics_exact/);
+  assert.match(databaseVerify, /runtime_integrity_repairs_0087_rpcs_privileges_exact/);
+  assert.match(databaseVerify, /runtime_integrity_repairs_0087_functions_locked/);
+  assert.match(databaseVerify, /runtime_integrity_repairs_0087_semantics_exact/);
   assert.match(authConfig, /disable_signup: true/);
   assert.match(vaultConfig, /cms_outbox_worker_secret/);
   const approvalTemplate = JSON.parse(template);

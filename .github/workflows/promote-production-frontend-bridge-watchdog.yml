@@ -162,7 +162,7 @@ jobs:
           PRODUCTION_BRIDGE_BASELINE_DEPLOYMENT_ID: ${{ steps.watchdog_state.outputs.baseline_deployment_id }}
           PRODUCTION_BRIDGE_BASELINE_RELEASE: ${{ steps.watchdog_state.outputs.baseline_release }}
           PRODUCTION_BRIDGE_BASELINE_CREATED_ON: ${{ steps.watchdog_state.outputs.baseline_created_on }}
-          PRODUCTION_BRIDGE_BASELINE_COMMIT_MESSAGE: ${{ steps.watchdog_state.outputs.baseline_commit_message }}
+          PRODUCTION_BRIDGE_BASELINE_COMMIT_MESSAGE_B64: ${{ steps.watchdog_state.outputs.baseline_commit_message_b64 }}
           PRODUCTION_BRIDGE_CANDIDATE_RELEASE: ${{ steps.watchdog_state.outputs.candidate_sha }}
           PRODUCTION_BRIDGE_RUN_MARKER: ${{ steps.watchdog_state.outputs.run_marker }}
           PRODUCTION_BRIDGE_COMPENSATION_MARKER: ${{ steps.watchdog_state.outputs.compensation_marker }}
@@ -196,7 +196,7 @@ jobs:
           --expected-canonical-id "${{ steps.watchdog_decision.outputs.deployment_id }}"
           --expected-canonical-release "${{ steps.watchdog_decision.outputs.release }}"
           --expected-canonical-created-on "${{ steps.watchdog_decision.outputs.created_on }}"
-          --expected-canonical-marker "${{ steps.watchdog_decision.outputs.commit_message }}"
+          --expected-canonical-marker-b64 "${{ steps.watchdog_decision.outputs.commit_message_b64 }}"
           --wrangler-script node_modules/wrangler/bin/wrangler.js
       - name: Recheck ambiguous watchdog recovery before retry
         id: watchdog_retry_decision
@@ -230,7 +230,7 @@ jobs:
           --expected-canonical-id "${{ steps.watchdog_retry_decision.outputs.deployment_id }}"
           --expected-canonical-release "${{ steps.watchdog_retry_decision.outputs.release }}"
           --expected-canonical-created-on "${{ steps.watchdog_retry_decision.outputs.created_on }}"
-          --expected-canonical-marker "${{ steps.watchdog_retry_decision.outputs.commit_message }}"
+          --expected-canonical-marker-b64 "${{ steps.watchdog_retry_decision.outputs.commit_message_b64 }}"
           --wrangler-script node_modules/wrangler/bin/wrangler.js
       - name: Prove sealed predecessor canonical after watchdog reconciliation
         id: watchdog_canonical

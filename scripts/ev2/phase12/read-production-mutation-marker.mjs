@@ -1,5 +1,6 @@
 import { appendFile, readFile } from "node:fs/promises";
 
+import { encodeDeploymentCommitMessage } from "./deployment-commit-message.mjs";
 import { validateProductionMutationMarker } from "./production-mutation-marker-lib.mjs";
 
 const fileIndex = process.argv.indexOf("--file");
@@ -20,7 +21,7 @@ if (process.env.GITHUB_OUTPUT)
       `baseline_deployment_id=${marker.baseline.deploymentId}`,
       `baseline_release=${marker.baseline.release}`,
       `baseline_created_on=${new Date(marker.baseline.createdOn).toISOString()}`,
-      `baseline_commit_message=${marker.baseline.commitMessage}`,
+      `baseline_commit_message_b64=${encodeDeploymentCommitMessage(marker.baseline.commitMessage)}`,
       `bridge_run_id=${marker.bridge.workflowRunId}`,
       `bridge_run_attempt=${marker.bridge.workflowRunAttempt}`,
       `bridge_control_sha=${marker.bridge.controlSha}`,
@@ -31,7 +32,7 @@ if (process.env.GITHUB_OUTPUT)
       `bridge_deployment_id=${marker.bridge.production.deploymentId}`,
       `bridge_release=${marker.bridge.production.release}`,
       `bridge_created_on=${new Date(marker.bridge.production.createdOn).toISOString()}`,
-      `bridge_commit_message=${marker.bridge.production.commitMessage}`,
+      `bridge_commit_message_b64=${encodeDeploymentCommitMessage(marker.bridge.production.commitMessage)}`,
       `authorized_predecessor_release=${marker.approval.authorizedPredecessorRelease}`,
       `pages_run_marker=${marker.pages.runMarker}`,
       `approval_record=${marker.approval.record}`,

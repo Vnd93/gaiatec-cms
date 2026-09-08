@@ -93,7 +93,9 @@ jobs:
             state.project !== "gaiatec-cms-staging" || state.branch !== "ev2-g17-canary" ||
             !uuid.test(state.original?.deploymentId || "") || !sha.test(state.original?.release || "") ||
             !Number.isFinite(Date.parse(state.original?.createdOn || "")) ||
-            typeof state.original?.commitMessage !== "string" || /[\r\n\0]/.test(state.original.commitMessage) ||
+            typeof state.original?.commitMessage !== "string" || state.original.commitMessage.includes("\0") ||
+            Buffer.byteLength(state.original.commitMessage, "utf8") > 4096 ||
+            Buffer.from(state.original.commitMessage, "utf8").toString("utf8") !== state.original.commitMessage ||
             !sha.test(state.target?.release || "") || !sha.test(state.retainedBackend?.release || "") ||
             !/^[1-9]\d*$/.test(state.target?.artifact?.id || "") || !digest.test(state.target?.artifact?.digest || "") ||
             state.runMarker !== `g12-staging-rollback-${process.env.TRIGGER_RUN_ID}-${process.env.TRIGGER_RUN_ATTEMPT}` ||
@@ -104,7 +106,7 @@ jobs:
             `original_deployment=${state.original.deploymentId}`,
             `original_release=${state.original.release}`,
             `original_created_on=${new Date(state.original.createdOn).toISOString()}`,
-            `original_commit_message=${state.original.commitMessage}`,
+            `original_commit_message_b64=${Buffer.from(state.original.commitMessage, "utf8").toString("base64")}`,
             `target_release=${state.target.release}`,
             `backend_release=${state.retainedBackend.release}`,
             `run_marker=${state.runMarker}`,
@@ -142,7 +144,7 @@ jobs:
           STAGING_ORIGINAL_DEPLOYMENT: ${{ steps.watchdog_state.outputs.original_deployment }}
           STAGING_ORIGINAL_RELEASE: ${{ steps.watchdog_state.outputs.original_release }}
           STAGING_ORIGINAL_CREATED_ON: ${{ steps.watchdog_state.outputs.original_created_on }}
-          STAGING_ORIGINAL_COMMIT_MESSAGE: ${{ steps.watchdog_state.outputs.original_commit_message }}
+          STAGING_ORIGINAL_COMMIT_MESSAGE_B64: ${{ steps.watchdog_state.outputs.original_commit_message_b64 }}
           STAGING_CANDIDATE_RELEASE: ${{ steps.watchdog_state.outputs.target_release }}
           STAGING_RUN_MARKER: ${{ steps.watchdog_state.outputs.run_marker }}
           STAGING_COMPENSATION_MARKER: ${{ steps.watchdog_state.outputs.compensation_marker }}

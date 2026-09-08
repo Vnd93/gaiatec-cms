@@ -1,5 +1,10 @@
 import { appendFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
+import {
+  decodeDeploymentCommitMessage,
+  encodeDeploymentCommitMessage,
+  isDeploymentCommitMessage,
+} from "./deployment-commit-message.mjs";
 import { UUID_PATTERN, isFullSha } from "./release-guard-lib.mjs";
 import {
   bindProductionPagesOwnedDeployment,
@@ -69,7 +74,7 @@ function productionDeploymentIdentity(deployment) {
     deployment?.environment !== "production" ||
     !isFullSha(release) ||
     !Number.isFinite(Date.parse(deployment?.created_on ?? "")) ||
-    /[\r\n\0]/.test(String(deployment?.deployment_trigger?.metadata?.commit_message ?? ""))
+    !isDeploymentCommitMessage(String(deployment?.deployment_trigger?.metadata?.commit_message ?? ""))
   )
     throw new Error("G12_PRODUCTION_PAGES_CANONICAL_REFUSED");
   return {
@@ -91,7 +96,7 @@ function expectedCurrentProductionDeployment() {
     "CLOUDFLARE_EXPECTED_CURRENT_DEPLOYMENT_ID",
     "CLOUDFLARE_EXPECTED_CURRENT_RELEASE",
     "CLOUDFLARE_EXPECTED_CURRENT_CREATED_ON",
-    "CLOUDFLARE_EXPECTED_CURRENT_COMMIT_MESSAGE",
+    "CLOUDFLARE_EXPECTED_CURRENT_COMMIT_MESSAGE_B64",
   ];
   if (names.some((name) => !Object.hasOwn(process.env, name)))
     throw new Error("G12_ROLLBACK_EXPECTED_CURRENT_REQUIRED");
@@ -99,7 +104,9 @@ function expectedCurrentProductionDeployment() {
     deploymentId: process.env.CLOUDFLARE_EXPECTED_CURRENT_DEPLOYMENT_ID ?? "",
     release: process.env.CLOUDFLARE_EXPECTED_CURRENT_RELEASE ?? "",
     createdOn: process.env.CLOUDFLARE_EXPECTED_CURRENT_CREATED_ON ?? "",
-    commitMessage: process.env.CLOUDFLARE_EXPECTED_CURRENT_COMMIT_MESSAGE ?? "",
+    commitMessage: decodeDeploymentCommitMessage(
+      process.env.CLOUDFLARE_EXPECTED_CURRENT_COMMIT_MESSAGE_B64 ?? "",
+    ),
   };
   if (!sameProductionPagesDeployment(expected, expected))
     throw new Error("G12_ROLLBACK_EXPECTED_CURRENT_INVALID");
@@ -107,8 +114,13 @@ function expectedCurrentProductionDeployment() {
 }
 
 async function productionDeployments() {
-  const deployments = await cloudflare("/deployments?env=production&per_page=50");
-  return (Array.isArray(deployments) ? deployments : []).map((deployment) => ({
+  const deployments = (
+    await Promise.all([
+      cloudflare("/deployments?env=production&per_page=25&page=1"),
+      cloudflare("/deployments?env=production&per_page=25&page=2"),
+    ])
+  ).flatMap((page) => (Array.isArray(page) ? page : []));
+  return deployments.map((deployment) => ({
     deploymentId: deployment?.id,
     release: fullRelease(deployment?.deployment_trigger?.metadata?.commit_hash),
     commitMessage: String(deployment?.deployment_trigger?.metadata?.commit_message ?? ""),
@@ -117,12 +129,14 @@ async function productionDeployments() {
 }
 
 function recoveryState() {
+  if (!Object.hasOwn(process.env, "CLOUDFLARE_BASELINE_COMMIT_MESSAGE_B64"))
+    throw new Error("G12_PRODUCTION_PAGES_STATE_REFUSED:baseline_commit_message_missing");
   return {
     baseline: {
       deploymentId: process.env.CLOUDFLARE_BASELINE_DEPLOYMENT_ID ?? "",
       release: process.env.CLOUDFLARE_BASELINE_RELEASE ?? "",
       createdOn: process.env.CLOUDFLARE_BASELINE_CREATED_ON ?? "",
-      commitMessage: process.env.CLOUDFLARE_BASELINE_COMMIT_MESSAGE ?? "",
+      commitMessage: decodeDeploymentCommitMessage(process.env.CLOUDFLARE_BASELINE_COMMIT_MESSAGE_B64 ?? ""),
     },
     owned: {
       deploymentId: process.env.CLOUDFLARE_OWNED_DEPLOYMENT_ID ?? "",
@@ -155,7 +169,7 @@ if (command === "latest-production") {
     deployment_id: deployment.deploymentId,
     release: deployment.release,
     created_on: deployment.createdOn,
-    commit_message: deployment.commitMessage,
+    commit_message_b64: encodeDeploymentCommitMessage(deployment.commitMessage),
     url: deployment.url,
   });
   console.log(

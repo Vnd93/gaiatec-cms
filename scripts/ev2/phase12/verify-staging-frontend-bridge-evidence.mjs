@@ -1,6 +1,7 @@
 import { appendFile, readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
+import { encodeDeploymentCommitMessage } from "./deployment-commit-message.mjs";
 import { validateStagingFrontendBridgeEvidence } from "./staging-frontend-bridge-lib.mjs";
 
 function argument(name) {
@@ -34,7 +35,7 @@ if (process.env.GITHUB_OUTPUT)
       `canonical_deployment_id=${evidence.canonical.deploymentId}`,
       `canonical_release=${evidence.canonical.release}`,
       `canonical_created_on=${new Date(evidence.canonical.createdOn).toISOString()}`,
-      `canonical_commit_message=${evidence.canonical.commitMessage}`,
+      `canonical_commit_message_b64=${encodeDeploymentCommitMessage(evidence.canonical.commitMessage)}`,
       `baseline_release=${evidence.baseline.release}`,
       `archive_sha256=${evidence.dist.archiveSha256}`,
       `tree_sha256=${evidence.dist.treeSha256}`,

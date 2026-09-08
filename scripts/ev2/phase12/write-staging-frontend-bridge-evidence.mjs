@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
+import { decodeDeploymentCommitMessage } from "./deployment-commit-message.mjs";
 import { sha256Bytes } from "./production-frontend-bridge-lib.mjs";
 import {
   publicBridgeCanarySummary,
@@ -79,11 +80,14 @@ for (const [label, origin] of [
   if (!result.valid) throw new Error(`G12_STAGING_FRONTEND_BRIDGE_${label.toUpperCase()}_PROBE_REFUSED`);
 }
 const seal = JSON.parse(bytes.seal);
+for (const prefix of ["BASELINE", "PREVIEW", "CANONICAL"])
+  if (!Object.hasOwn(process.env, `${prefix}_COMMIT_MESSAGE_B64`))
+    throw new Error("G12_STAGING_FRONTEND_BRIDGE_COMMIT_MESSAGE_REQUIRED");
 const identity = (prefix) => ({
   deploymentId: process.env[`${prefix}_DEPLOYMENT_ID`] ?? "",
   release: process.env[`${prefix}_RELEASE`] ?? "",
   createdOn: process.env[`${prefix}_CREATED_ON`] ?? "",
-  commitMessage: process.env[`${prefix}_COMMIT_MESSAGE`] ?? "",
+  commitMessage: decodeDeploymentCommitMessage(process.env[`${prefix}_COMMIT_MESSAGE_B64`] ?? ""),
 });
 const evidence = {
   schemaVersion: 1,

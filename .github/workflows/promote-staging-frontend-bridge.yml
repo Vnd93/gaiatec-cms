@@ -161,6 +161,14 @@ jobs:
           mkdir -p outputs
           node <<'NODE'
           const { writeFileSync } = require("node:fs");
+          const decodeCommitMessage = (encoded) => {
+            if (typeof encoded !== "string" || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded))
+              throw new Error("G12_STAGING_BRIDGE_COMMIT_MESSAGE_ENCODING_REFUSED");
+            const value = Buffer.from(encoded, "base64").toString("utf8");
+            if (Buffer.byteLength(value, "utf8") > 4096 || value.includes("\0") || Buffer.from(value, "utf8").toString("base64") !== encoded)
+              throw new Error("G12_STAGING_BRIDGE_COMMIT_MESSAGE_ENCODING_REFUSED");
+            return value;
+          };
           const state = {
             schemaVersion: 1, event: "g12.staging.deploy.prepared",
             workflow: { runId: process.env.GITHUB_RUN_ID, runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT), controlSha: process.env.GITHUB_SHA },
@@ -169,7 +177,8 @@ jobs:
             compensationMarker: `g12-staging-bridge-compensation-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`,
             candidateRelease: process.env.CANDIDATE_SHA,
             original: { deploymentId: process.env.BASELINE_ID, release: process.env.BASELINE_SHA,
-              createdOn: process.env.BASELINE_CREATED, commitMessage: process.env.BASELINE_MARKER },
+              createdOn: process.env.BASELINE_CREATED,
+              commitMessage: decodeCommitMessage(process.env.BASELINE_COMMIT_MESSAGE_B64) },
           };
           writeFileSync("outputs/staging-frontend-bridge-state.json", JSON.stringify(state, null, 2) + "\n", { mode: 0o600 });
           NODE
@@ -178,7 +187,7 @@ jobs:
           BASELINE_SHA: ${{ inputs.expected_baseline_sha }}
           BASELINE_ID: ${{ steps.baseline_state.outputs.deployment_id }}
           BASELINE_CREATED: ${{ steps.baseline_state.outputs.created_on }}
-          BASELINE_MARKER: ${{ steps.baseline_state.outputs.commit_message }}
+          BASELINE_COMMIT_MESSAGE_B64: ${{ steps.baseline_state.outputs.commit_message_b64 }}
       - name: Persist redundant HMAC recovery state before any remote mutation
         working-directory: control
         run: >-
@@ -301,7 +310,7 @@ jobs:
           STAGING_ORIGINAL_DEPLOYMENT: ${{ steps.baseline_state.outputs.deployment_id }}
           STAGING_ORIGINAL_RELEASE: ${{ inputs.expected_baseline_sha }}
           STAGING_ORIGINAL_CREATED_ON: ${{ steps.baseline_state.outputs.created_on }}
-          STAGING_ORIGINAL_COMMIT_MESSAGE: ${{ steps.baseline_state.outputs.commit_message }}
+          STAGING_ORIGINAL_COMMIT_MESSAGE_B64: ${{ steps.baseline_state.outputs.commit_message_b64 }}
       - name: Probe canonical staging A on old backend
         id: canonical_probe
         if: steps.promote.outcome == 'success'
@@ -397,15 +406,15 @@ jobs:
           BASELINE_DEPLOYMENT_ID: ${{ steps.baseline_state.outputs.deployment_id }}
           BASELINE_RELEASE: ${{ inputs.expected_baseline_sha }}
           BASELINE_CREATED_ON: ${{ steps.baseline_state.outputs.created_on }}
-          BASELINE_COMMIT_MESSAGE: ${{ steps.baseline_state.outputs.commit_message }}
+          BASELINE_COMMIT_MESSAGE_B64: ${{ steps.baseline_state.outputs.commit_message_b64 }}
           PREVIEW_DEPLOYMENT_ID: ${{ steps.preview.outputs.deployment-id }}
           PREVIEW_RELEASE: ${{ inputs.candidate_sha }}
           PREVIEW_CREATED_ON: ${{ steps.preview.outputs.deployment-created-on }}
-          PREVIEW_COMMIT_MESSAGE: g12-staging-bridge-preview-run-${{ github.run_id }}-${{ github.run_attempt }}
+          PREVIEW_COMMIT_MESSAGE_B64: ${{ steps.preview.outputs.deployment-marker-b64 }}
           CANONICAL_DEPLOYMENT_ID: ${{ steps.promote.outputs.deployment-id }}
           CANONICAL_RELEASE: ${{ inputs.candidate_sha }}
           CANONICAL_CREATED_ON: ${{ steps.promote.outputs.deployment-created-on }}
-          CANONICAL_COMMIT_MESSAGE: g12-staging-bridge-run-${{ github.run_id }}-${{ github.run_attempt }}
+          CANONICAL_COMMIT_MESSAGE_B64: ${{ steps.promote.outputs.deployment-marker-b64 }}
       - name: Upload immutable staging bridge evidence
         id: evidence_upload
         if: steps.evidence.outcome == 'success'
@@ -432,7 +441,7 @@ jobs:
           STAGING_ORIGINAL_DEPLOYMENT: ${{ steps.baseline_state.outputs.deployment_id }}
           STAGING_ORIGINAL_RELEASE: ${{ inputs.expected_baseline_sha }}
           STAGING_ORIGINAL_CREATED_ON: ${{ steps.baseline_state.outputs.created_on }}
-          STAGING_ORIGINAL_COMMIT_MESSAGE: ${{ steps.baseline_state.outputs.commit_message }}
+          STAGING_ORIGINAL_COMMIT_MESSAGE_B64: ${{ steps.baseline_state.outputs.commit_message_b64 }}
           STAGING_CANDIDATE_RELEASE: ${{ inputs.candidate_sha }}
           STAGING_RUN_MARKER: g12-staging-bridge-run-${{ github.run_id }}-${{ github.run_attempt }}
           STAGING_COMPENSATION_MARKER: g12-staging-bridge-compensation-${{ github.run_id }}-${{ github.run_attempt }}

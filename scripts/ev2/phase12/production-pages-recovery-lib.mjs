@@ -1,4 +1,5 @@
 import { UUID_PATTERN, isFullSha } from "./release-guard-lib.mjs";
+import { isDeploymentCommitMessage } from "./deployment-commit-message.mjs";
 
 export const PRODUCTION_PAGES_RUN_MARKER = /^g12-production-run-([1-9]\d*)-([1-9]\d*)$/;
 
@@ -7,7 +8,7 @@ function validCreatedOn(value) {
 }
 
 function safeCommitMessage(value) {
-  return typeof value === "string" && !/[\r\n\0]/.test(value);
+  return isDeploymentCommitMessage(value);
 }
 
 function validDeployment(value) {

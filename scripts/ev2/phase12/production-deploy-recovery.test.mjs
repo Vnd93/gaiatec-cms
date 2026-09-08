@@ -89,7 +89,7 @@ test("deploy finalizer keeps compensation and terminal proof alive after interme
     "--expected-canonical-id",
     "--expected-canonical-release",
     "--expected-canonical-created-on",
-    "--expected-canonical-marker",
+    "--expected-canonical-marker-b64",
   ])
     assert.match(workflow, new RegExp(argument));
 
@@ -102,7 +102,7 @@ test("deploy finalizer keeps compensation and terminal proof alive after interme
     assert.match(block, /cloudflare-pages\.mjs reconcile/);
     assert.match(block, /CLOUDFLARE_BASELINE_DEPLOYMENT_ID/);
     assert.match(block, /CLOUDFLARE_BASELINE_CREATED_ON/);
-    assert.match(block, /CLOUDFLARE_BASELINE_COMMIT_MESSAGE/);
+    assert.match(block, /CLOUDFLARE_BASELINE_COMMIT_MESSAGE_B64/);
     assert.match(block, /CLOUDFLARE_OWNED_RELEASE/);
     assert.match(block, /CLOUDFLARE_OWNED_RUN_MARKER/);
   }
@@ -116,7 +116,7 @@ test("deploy finalizer keeps compensation and terminal proof alive after interme
   );
   assert.ok(secondCompare >= 0 && secondCompare < recoveryPost);
   assert.match(pagesRecovery, /G12_PRODUCTION_PAGES_EXTERNAL_DEPLOYMENT_PRESERVED/);
-  assert.match(pagesRecovery, /\/deployments\?env=production&per_page=50/);
+  assert.match(pagesRecovery, /\/deployments\?env=production&per_page=25/);
   assert.match(pagesRecovery, /bindProductionPagesOwnedDeployment/);
 
   assert.match(finalizer, /timeout-minutes: 240/);
@@ -184,6 +184,26 @@ test("deploy finalizer keeps compensation and terminal proof alive after interme
   assert.match(finalizer, /steps\.terminal_evidence_upload\.outcome != 'success'/);
   assert.doesNotMatch(finalizer, /CMS_AI_EXTERNAL_PROVIDER_ENABLED:.*OPENROUTER_API_KEY/);
   assert.equal((workflow.match(/CMS_AI_EXTERNAL_PROVIDER_ENABLED: "true"/g) ?? []).length, 5);
+});
+
+test("Cloudflare Pages deployment listings preserve a 50-item window within the API page-size limit", async () => {
+  const scripts = await Promise.all([
+    read("scripts/ev2/phase12/staging-pages-state.mjs"),
+    read("scripts/ev2/phase12/cloudflare-pages.mjs"),
+    read("scripts/ev2/phase12/deploy-sealed-staging-dist.mjs"),
+    read("scripts/ev2/phase12/deploy-sealed-production-dist.mjs"),
+    read("scripts/ev2/phase12/production-frontend-bridge-pages-state.mjs"),
+  ]);
+
+  for (const script of scripts) {
+    assert.match(script, /\/deployments\?env=(?:preview|production)&per_page=25&page=1/);
+    assert.match(script, /\/deployments\?env=(?:preview|production)&per_page=25&page=2/);
+    assert.equal(
+      (script.match(/\/deployments\?env=(?:preview|production)&per_page=25&page=[12]/g) ?? []).length,
+      2,
+    );
+    assert.doesNotMatch(script, /\/deployments\?env=(?:preview|production)&per_page=(?:[3-9]\d|\d{3,})/);
+  }
 });
 
 test("workflow-run watchdog distinguishes marker absence and always retries terminal Pages recovery", async () => {
@@ -280,7 +300,7 @@ test("workflow-run watchdog distinguishes marker absence and always retries term
     const block = step(workflow, name, undefined);
     assert.match(block, /CLOUDFLARE_BASELINE_DEPLOYMENT_ID/);
     assert.match(block, /CLOUDFLARE_BASELINE_CREATED_ON/);
-    assert.match(block, /CLOUDFLARE_BASELINE_COMMIT_MESSAGE/);
+    assert.match(block, /CLOUDFLARE_BASELINE_COMMIT_MESSAGE_B64/);
     assert.match(block, /CLOUDFLARE_OWNED_RELEASE/);
     assert.match(block, /CLOUDFLARE_OWNED_RUN_MARKER/);
   }

@@ -390,7 +390,7 @@ jobs:
           BASELINE_DEPLOYMENT_ID: ${{ steps.baseline.outputs.deployment_id }}
           BASELINE_RELEASE: ${{ steps.baseline.outputs.release }}
           BASELINE_CREATED_ON: ${{ steps.baseline.outputs.created_on }}
-          BASELINE_COMMIT_MESSAGE: ${{ steps.baseline.outputs.commit_message }}
+          BASELINE_COMMIT_MESSAGE_B64: ${{ steps.baseline.outputs.commit_message_b64 }}
         run: >-
           node scripts/ev2/phase12/write-production-frontend-bridge-state.mjs
           --seal ../candidate/outputs/g12-production-frontend-bridge-dist-seal.json
@@ -497,7 +497,7 @@ jobs:
           EXPECTED_CANONICAL_ID: ${{ steps.baseline.outputs.deployment_id }}
           EXPECTED_CANONICAL_RELEASE: ${{ steps.baseline.outputs.release }}
           EXPECTED_CANONICAL_CREATED_ON: ${{ steps.baseline.outputs.created_on }}
-          EXPECTED_CANONICAL_MARKER: ${{ steps.baseline.outputs.commit_message }}
+          EXPECTED_CANONICAL_MARKER_B64: ${{ steps.baseline.outputs.commit_message_b64 }}
         run: >-
           node scripts/ev2/phase12/deploy-sealed-production-dist.mjs
           --archive ../candidate/outputs/g12-production-frontend-bridge-dist.tar
@@ -508,7 +508,7 @@ jobs:
           --expected-canonical-id "$EXPECTED_CANONICAL_ID"
           --expected-canonical-release "$EXPECTED_CANONICAL_RELEASE"
           --expected-canonical-created-on "$EXPECTED_CANONICAL_CREATED_ON"
-          --expected-canonical-marker "$EXPECTED_CANONICAL_MARKER"
+          --expected-canonical-marker-b64 "$EXPECTED_CANONICAL_MARKER_B64"
           --wrangler-script ../candidate/node_modules/wrangler/bin/wrangler.js
       - name: Probe canonical production bridge A
         id: production_probe
@@ -549,7 +549,7 @@ jobs:
           PRODUCTION_DEPLOYMENT_ID: ${{ steps.promote.outputs.deployment-id }}
           PRODUCTION_RELEASE: ${{ steps.promote.outputs.deployment-release }}
           PRODUCTION_CREATED_ON: ${{ steps.promote.outputs.deployment-created-on }}
-          PRODUCTION_COMMIT_MESSAGE: ${{ steps.promote.outputs.deployment-marker }}
+          PRODUCTION_COMMIT_MESSAGE_B64: ${{ steps.promote.outputs.deployment-marker-b64 }}
           STAGING_RUN_ID: ${{ steps.staging_run.outputs.run_id }}
           BACKUP_RUN_ID: ${{ steps.approval.outputs.backup_run_id }}
           EMAIL_RUN_ID: ${{ steps.email_run.outputs.run_id }}
@@ -608,7 +608,7 @@ jobs:
           PRODUCTION_BRIDGE_BASELINE_DEPLOYMENT_ID: ${{ steps.baseline.outputs.deployment_id }}
           PRODUCTION_BRIDGE_BASELINE_RELEASE: ${{ steps.baseline.outputs.release }}
           PRODUCTION_BRIDGE_BASELINE_CREATED_ON: ${{ steps.baseline.outputs.created_on }}
-          PRODUCTION_BRIDGE_BASELINE_COMMIT_MESSAGE: ${{ steps.baseline.outputs.commit_message }}
+          PRODUCTION_BRIDGE_BASELINE_COMMIT_MESSAGE_B64: ${{ steps.baseline.outputs.commit_message_b64 }}
           PRODUCTION_BRIDGE_CANDIDATE_RELEASE: ${{ inputs.candidate_sha }}
           PRODUCTION_BRIDGE_RUN_MARKER: g12-production-bridge-run-${{ github.run_id }}-${{ github.run_attempt }}
           PRODUCTION_BRIDGE_COMPENSATION_MARKER: g12-production-bridge-compensation-${{ github.run_id }}-${{ github.run_attempt }}
@@ -633,7 +633,7 @@ jobs:
           --expected-canonical-id "${{ steps.recovery_decision.outputs.deployment_id }}"
           --expected-canonical-release "${{ steps.recovery_decision.outputs.release }}"
           --expected-canonical-created-on "${{ steps.recovery_decision.outputs.created_on }}"
-          --expected-canonical-marker "${{ steps.recovery_decision.outputs.commit_message }}"
+          --expected-canonical-marker-b64 "${{ steps.recovery_decision.outputs.commit_message_b64 }}"
           --wrangler-script ../candidate/node_modules/wrangler/bin/wrangler.js
       - name: Recheck ambiguous predecessor recovery before a retry
         id: recovery_retry_decision
@@ -650,7 +650,7 @@ jobs:
           PRODUCTION_BRIDGE_BASELINE_DEPLOYMENT_ID: ${{ steps.baseline.outputs.deployment_id }}
           PRODUCTION_BRIDGE_BASELINE_RELEASE: ${{ steps.baseline.outputs.release }}
           PRODUCTION_BRIDGE_BASELINE_CREATED_ON: ${{ steps.baseline.outputs.created_on }}
-          PRODUCTION_BRIDGE_BASELINE_COMMIT_MESSAGE: ${{ steps.baseline.outputs.commit_message }}
+          PRODUCTION_BRIDGE_BASELINE_COMMIT_MESSAGE_B64: ${{ steps.baseline.outputs.commit_message_b64 }}
           PRODUCTION_BRIDGE_CANDIDATE_RELEASE: ${{ inputs.candidate_sha }}
           PRODUCTION_BRIDGE_RUN_MARKER: g12-production-bridge-run-${{ github.run_id }}-${{ github.run_attempt }}
           PRODUCTION_BRIDGE_COMPENSATION_MARKER: g12-production-bridge-compensation-${{ github.run_id }}-${{ github.run_attempt }}
@@ -675,7 +675,7 @@ jobs:
           --expected-canonical-id "${{ steps.recovery_retry_decision.outputs.deployment_id }}"
           --expected-canonical-release "${{ steps.recovery_retry_decision.outputs.release }}"
           --expected-canonical-created-on "${{ steps.recovery_retry_decision.outputs.created_on }}"
-          --expected-canonical-marker "${{ steps.recovery_retry_decision.outputs.commit_message }}"
+          --expected-canonical-marker-b64 "${{ steps.recovery_retry_decision.outputs.commit_message_b64 }}"
           --wrangler-script ../candidate/node_modules/wrangler/bin/wrangler.js
       - name: Prove the sealed predecessor is canonical after reconciliation
         id: recovery_canonical
@@ -690,7 +690,7 @@ jobs:
           PRODUCTION_BRIDGE_BASELINE_DEPLOYMENT_ID: ${{ steps.baseline.outputs.deployment_id }}
           PRODUCTION_BRIDGE_BASELINE_RELEASE: ${{ steps.baseline.outputs.release }}
           PRODUCTION_BRIDGE_BASELINE_CREATED_ON: ${{ steps.baseline.outputs.created_on }}
-          PRODUCTION_BRIDGE_BASELINE_COMMIT_MESSAGE: ${{ steps.baseline.outputs.commit_message }}
+          PRODUCTION_BRIDGE_BASELINE_COMMIT_MESSAGE_B64: ${{ steps.baseline.outputs.commit_message_b64 }}
           PRODUCTION_BRIDGE_CANDIDATE_RELEASE: ${{ inputs.candidate_sha }}
           PRODUCTION_BRIDGE_RUN_MARKER: g12-production-bridge-run-${{ github.run_id }}-${{ github.run_attempt }}
           PRODUCTION_BRIDGE_COMPENSATION_MARKER: g12-production-bridge-compensation-${{ github.run_id }}-${{ github.run_attempt }}

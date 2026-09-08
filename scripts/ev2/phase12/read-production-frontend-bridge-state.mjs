@@ -1,6 +1,7 @@
 import { appendFile, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
+import { encodeDeploymentCommitMessage } from "./deployment-commit-message.mjs";
 import { validateFrontendBridgeState } from "./production-frontend-bridge-lib.mjs";
 
 function argument(name) {
@@ -28,7 +29,7 @@ if (process.env.GITHUB_OUTPUT) {
       `baseline_deployment_id=${state.baseline.deploymentId}`,
       `baseline_release=${state.baseline.release}`,
       `baseline_created_on=${state.baseline.createdOn}`,
-      `baseline_commit_message=${state.baseline.commitMessage}`,
+      `baseline_commit_message_b64=${encodeDeploymentCommitMessage(state.baseline.commitMessage)}`,
       `candidate_archive_sha256=${state.dist.archiveSha256}`,
       `candidate_tree_sha256=${state.dist.treeSha256}`,
       `candidate_archive_bytes=${state.dist.archiveBytes}`,

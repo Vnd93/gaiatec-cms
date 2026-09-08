@@ -3,6 +3,11 @@ import { appendFile, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  decodeDeploymentCommitMessage,
+  encodeDeploymentCommitMessage,
+  isDeploymentCommitMessage,
+} from "./deployment-commit-message.mjs";
 import { isFullSha } from "./release-guard-lib.mjs";
 import { verifyProductionDistSeal } from "./production-dist-seal-lib.mjs";
 
@@ -63,16 +68,11 @@ async function requestCloudflare(context, path, init = {}) {
   return payload.result;
 }
 
-async function currentBranchDeployment(context) {
-  const project = await requestCloudflare(context, "");
-  if (project?.name !== STAGING_PROJECT || project?.production_branch !== "main")
-    throw new Error("G12_STAGING_PAGES_PROJECT_CONFIG_REFUSED");
-  const deployments = await requestCloudflare(context, "/deployments?env=preview&per_page=50");
-  const candidates = (Array.isArray(deployments) ? deployments : [])
+export function selectCurrentStagingBranchDeployment(deployments, branch = STAGING_BRANCH) {
+  const candidates = deployments
     .filter(
       (deployment) =>
-        deployment?.environment === "preview" &&
-        deployment?.deployment_trigger?.metadata?.branch === context.branch,
+        deployment?.environment === "preview" && deployment?.deployment_trigger?.metadata?.branch === branch,
     )
     .map((deployment) => ({
       deploymentId: deployment.id,
@@ -81,16 +81,36 @@ async function currentBranchDeployment(context) {
       createdOn: deployment?.created_on,
       url: deployment?.url,
     }))
-    .filter(
-      (deployment) =>
-        UUID_PATTERN.test(deployment.deploymentId ?? "") &&
-        isFullSha(deployment.release) &&
-        Number.isFinite(Date.parse(deployment.createdOn ?? "")) &&
-        !/[\r\n\0]/.test(deployment.commitMessage),
-    )
-    .sort((left, right) => Date.parse(right.createdOn) - Date.parse(left.createdOn));
+    .sort((left, right) => {
+      const leftTime = Date.parse(left.createdOn ?? "");
+      const rightTime = Date.parse(right.createdOn ?? "");
+      if (!Number.isFinite(leftTime) || !Number.isFinite(rightTime))
+        throw new Error("G12_STAGING_PAGES_BRANCH_DEPLOYMENT_REFUSED");
+      return rightTime - leftTime;
+    });
   if (!candidates.length) throw new Error("G12_STAGING_PAGES_BRANCH_DEPLOYMENT_MISSING");
-  return candidates[0];
+  const current = candidates[0];
+  if (
+    !UUID_PATTERN.test(current.deploymentId ?? "") ||
+    !isFullSha(current.release) ||
+    !Number.isFinite(Date.parse(current.createdOn ?? "")) ||
+    !isDeploymentCommitMessage(current.commitMessage)
+  )
+    throw new Error("G12_STAGING_PAGES_BRANCH_DEPLOYMENT_REFUSED");
+  return current;
+}
+
+async function currentBranchDeployment(context) {
+  const project = await requestCloudflare(context, "");
+  if (project?.name !== STAGING_PROJECT || project?.production_branch !== "main")
+    throw new Error("G12_STAGING_PAGES_PROJECT_CONFIG_REFUSED");
+  const deployments = (
+    await Promise.all([
+      requestCloudflare(context, "/deployments?env=preview&per_page=25&page=1"),
+      requestCloudflare(context, "/deployments?env=preview&per_page=25&page=2"),
+    ])
+  ).flatMap((page) => (Array.isArray(page) ? page : []));
+  return selectCurrentStagingBranchDeployment(deployments, context.branch);
 }
 
 async function setOutputs(values) {
@@ -110,7 +130,16 @@ function expectedState() {
   const runMarker = process.env.STAGING_RUN_MARKER ?? "";
   const originalDeployment = process.env.STAGING_ORIGINAL_DEPLOYMENT ?? "";
   const originalCreatedOn = process.env.STAGING_ORIGINAL_CREATED_ON ?? "";
-  const originalCommitMessage = process.env.STAGING_ORIGINAL_COMMIT_MESSAGE ?? "";
+  let originalCommitMessage;
+  if (!Object.hasOwn(process.env, "STAGING_ORIGINAL_COMMIT_MESSAGE_B64"))
+    throw new Error("G12_STAGING_PAGES_STATE_REFUSED");
+  try {
+    originalCommitMessage = decodeDeploymentCommitMessage(
+      process.env.STAGING_ORIGINAL_COMMIT_MESSAGE_B64 ?? "",
+    );
+  } catch {
+    throw new Error("G12_STAGING_PAGES_STATE_REFUSED");
+  }
   const compensationMarker = process.env.STAGING_COMPENSATION_MARKER ?? "";
   if (
     !isFullSha(originalRelease) ||
@@ -118,7 +147,7 @@ function expectedState() {
     !RUN_MARKER_PATTERN.test(runMarker) ||
     !UUID_PATTERN.test(originalDeployment) ||
     !Number.isFinite(Date.parse(originalCreatedOn)) ||
-    /[\r\n\0]/.test(originalCommitMessage) ||
+    !isDeploymentCommitMessage(originalCommitMessage) ||
     (compensationMarker && !COMPENSATION_MARKER_PATTERN.test(compensationMarker))
   )
     throw new Error("G12_STAGING_PAGES_STATE_REFUSED");
@@ -141,8 +170,8 @@ export function sameStagingDeployment(left, right) {
     isFullSha(right?.release) &&
     Number.isFinite(Date.parse(left?.createdOn ?? "")) &&
     Number.isFinite(Date.parse(right?.createdOn ?? "")) &&
-    typeof left?.commitMessage === "string" &&
-    typeof right?.commitMessage === "string" &&
+    isDeploymentCommitMessage(left?.commitMessage) &&
+    isDeploymentCommitMessage(right?.commitMessage) &&
     left.deploymentId === right.deploymentId &&
     left.release === right.release &&
     new Date(left.createdOn).toISOString() === new Date(right.createdOn).toISOString() &&
@@ -181,7 +210,7 @@ async function emitCurrent(current, extra = {}) {
     deployment_id: current.deploymentId,
     release: current.release,
     created_on: new Date(current.createdOn).toISOString(),
-    commit_message: current.commitMessage,
+    commit_message_b64: encodeDeploymentCommitMessage(current.commitMessage),
     ...extra,
   });
 }

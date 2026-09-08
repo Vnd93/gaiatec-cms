@@ -4,6 +4,11 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 
 import {
+  decodeDeploymentCommitMessage,
+  encodeDeploymentCommitMessage,
+  isDeploymentCommitMessage,
+} from "./deployment-commit-message.mjs";
+import {
   copyStableProductionDistArchive,
   lockProductionDistTree,
   materializeProductionDistArchive,
@@ -25,11 +30,15 @@ const branch = argument("branch");
 const commitMessage = argument("commit-message");
 const wranglerScript = resolve(argument("wrangler-script"));
 const project = process.env.CLOUDFLARE_PAGES_PROJECT ?? "";
+const expectedCanonicalCommitMessageProvided = Object.hasOwn(
+  process.env,
+  "STAGING_ORIGINAL_COMMIT_MESSAGE_B64",
+);
 const expectedCanonical = {
   deploymentId: process.env.STAGING_ORIGINAL_DEPLOYMENT ?? "",
   release: process.env.STAGING_ORIGINAL_RELEASE ?? "",
   createdOn: process.env.STAGING_ORIGINAL_CREATED_ON ?? "",
-  commitMessage: process.env.STAGING_ORIGINAL_COMMIT_MESSAGE ?? "",
+  commitMessage: decodeDeploymentCommitMessage(process.env.STAGING_ORIGINAL_COMMIT_MESSAGE_B64 ?? ""),
 };
 if (
   !argument("archive") ||
@@ -47,7 +56,8 @@ if (
     (!UUID_PATTERN.test(expectedCanonical.deploymentId) ||
       !isFullSha(expectedCanonical.release) ||
       !Number.isFinite(Date.parse(expectedCanonical.createdOn)) ||
-      /[\r\n\0]/.test(expectedCanonical.commitMessage)))
+      !expectedCanonicalCommitMessageProvided ||
+      !isDeploymentCommitMessage(expectedCanonical.commitMessage)))
 )
   throw new Error("G12_STAGING_SEALED_DEPLOY_INPUT_REFUSED");
 
@@ -106,7 +116,7 @@ function deploymentIdentity(deployment) {
     !UUID_PATTERN.test(identity.deploymentId ?? "") ||
     !isFullSha(identity.release) ||
     !identity.createdOn ||
-    /[\r\n\0]/.test(identity.commitMessage)
+    !isDeploymentCommitMessage(identity.commitMessage)
   )
     throw new Error("G12_STAGING_SEALED_DEPLOY_IDENTITY_REFUSED");
   return identity;
@@ -121,8 +131,13 @@ async function projectDetails() {
 
 async function currentBranchDeployment() {
   await projectDetails();
-  const deployments = await cloudflare("/deployments?env=preview&per_page=50");
-  const matches = (Array.isArray(deployments) ? deployments : [])
+  const deployments = (
+    await Promise.all([
+      cloudflare("/deployments?env=preview&per_page=25&page=1"),
+      cloudflare("/deployments?env=preview&per_page=25&page=2"),
+    ])
+  ).flatMap((page) => (Array.isArray(page) ? page : []));
+  const matches = deployments
     .filter((deployment) => deployment?.deployment_trigger?.metadata?.branch === branch)
     .map(deploymentIdentity)
     .sort((left, right) => Date.parse(right.createdOn) - Date.parse(left.createdOn));
@@ -189,7 +204,7 @@ try {
         `deployment-id=${after.deploymentId}`,
         `deployment-release=${after.release}`,
         `deployment-created-on=${after.createdOn}`,
-        `deployment-marker=${after.commitMessage}`,
+        `deployment-marker-b64=${encodeDeploymentCommitMessage(after.commitMessage)}`,
         "deployment-environment=preview",
         "",
       ].join("\n"),

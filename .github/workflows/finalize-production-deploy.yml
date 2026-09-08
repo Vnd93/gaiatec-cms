@@ -177,7 +177,7 @@ jobs:
           CLOUDFLARE_BASELINE_DEPLOYMENT_ID: ${{ steps.marker.outputs.baseline_deployment_id }}
           CLOUDFLARE_BASELINE_RELEASE: ${{ steps.marker.outputs.baseline_release }}
           CLOUDFLARE_BASELINE_CREATED_ON: ${{ steps.marker.outputs.baseline_created_on }}
-          CLOUDFLARE_BASELINE_COMMIT_MESSAGE: ${{ steps.marker.outputs.baseline_commit_message }}
+          CLOUDFLARE_BASELINE_COMMIT_MESSAGE_B64: ${{ steps.marker.outputs.baseline_commit_message_b64 }}
           CLOUDFLARE_OWNED_RELEASE: ${{ steps.marker.outputs.candidate_sha }}
           CLOUDFLARE_OWNED_RUN_MARKER: ${{ steps.marker.outputs.pages_run_marker }}
         run: node scripts/ev2/phase12/cloudflare-pages.mjs reconcile
@@ -407,7 +407,7 @@ jobs:
           CLOUDFLARE_BASELINE_DEPLOYMENT_ID: ${{ steps.marker.outputs.baseline_deployment_id }}
           CLOUDFLARE_BASELINE_RELEASE: ${{ steps.marker.outputs.baseline_release }}
           CLOUDFLARE_BASELINE_CREATED_ON: ${{ steps.marker.outputs.baseline_created_on }}
-          CLOUDFLARE_BASELINE_COMMIT_MESSAGE: ${{ steps.marker.outputs.baseline_commit_message }}
+          CLOUDFLARE_BASELINE_COMMIT_MESSAGE_B64: ${{ steps.marker.outputs.baseline_commit_message_b64 }}
           CLOUDFLARE_OWNED_RELEASE: ${{ steps.marker.outputs.candidate_sha }}
           CLOUDFLARE_OWNED_RUN_MARKER: ${{ steps.marker.outputs.pages_run_marker }}
         run: node scripts/ev2/phase12/cloudflare-pages.mjs reconcile

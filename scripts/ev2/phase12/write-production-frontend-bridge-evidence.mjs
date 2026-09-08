@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
+import { decodeDeploymentCommitMessage } from "./deployment-commit-message.mjs";
 import {
   sha256Bytes,
   validateFrontendBridgeEvidence,
@@ -51,6 +52,8 @@ const productionProbeBytes = bytes.productionProbe;
 const previewReadOnlyBytes = bytes.previewReadOnly;
 const productionReadOnlyBytes = bytes.productionReadOnly;
 const state = JSON.parse(stateBytes.toString("utf8"));
+if (!Object.hasOwn(process.env, "PRODUCTION_COMMIT_MESSAGE_B64"))
+  throw new Error("G12_FRONTEND_BRIDGE_PRODUCTION_COMMIT_MESSAGE_REQUIRED");
 const stateResult = validateFrontendBridgeState(state, {
   runId: process.env.GITHUB_RUN_ID,
   runAttempt: process.env.GITHUB_RUN_ATTEMPT,
@@ -112,7 +115,7 @@ const evidence = {
     deploymentId: process.env.PRODUCTION_DEPLOYMENT_ID ?? "",
     release: process.env.PRODUCTION_RELEASE ?? "",
     createdOn: process.env.PRODUCTION_CREATED_ON ?? "",
-    commitMessage: process.env.PRODUCTION_COMMIT_MESSAGE ?? "",
+    commitMessage: decodeDeploymentCommitMessage(process.env.PRODUCTION_COMMIT_MESSAGE_B64 ?? ""),
   },
   prerequisites: {
     stagingRunId: process.env.STAGING_RUN_ID ?? "",

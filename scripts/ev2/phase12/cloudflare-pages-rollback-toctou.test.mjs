@@ -7,6 +7,8 @@ import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
+import { encodeDeploymentCommitMessage } from "./deployment-commit-message.mjs";
+
 const execFileAsync = promisify(execFile);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const script = join(root, "scripts/ev2/phase12/cloudflare-pages.mjs");
@@ -20,10 +22,14 @@ const current = {
   deploymentId: "00000000-0000-4000-8000-000000000002",
   release: "b".repeat(40),
   createdOn: "2026-09-07T10:00:00.000Z",
-  commitMessage: "g12-production-run-123456-1",
+  commitMessage: "g12-production-run-123456-1\r\n\r\nExact multiline identity",
 };
 
-async function runRollback({ observed = current, omit = null } = {}) {
+async function runRollback({
+  observed = current,
+  omit = null,
+  expectedCommitMessageB64 = encodeDeploymentCommitMessage(current.commitMessage),
+} = {}) {
   const temporary = await mkdtemp(join(tmpdir(), "g12-pages-rollback-toctou-"));
   const preload = join(temporary, "mock-cloudflare.mjs");
   const trace = join(temporary, "trace.jsonl");
@@ -76,7 +82,7 @@ globalThis.fetch = async (url, init = {}) => {
     CLOUDFLARE_EXPECTED_CURRENT_DEPLOYMENT_ID: current.deploymentId,
     CLOUDFLARE_EXPECTED_CURRENT_RELEASE: current.release,
     CLOUDFLARE_EXPECTED_CURRENT_CREATED_ON: current.createdOn,
-    CLOUDFLARE_EXPECTED_CURRENT_COMMIT_MESSAGE: current.commitMessage,
+    CLOUDFLARE_EXPECTED_CURRENT_COMMIT_MESSAGE_B64: expectedCommitMessageB64,
     MOCK_TARGET: JSON.stringify(target),
     MOCK_CURRENT: JSON.stringify(observed),
     MOCK_TRACE: trace,
@@ -143,10 +149,18 @@ test("rollback requires every expected-current identity field before any request
     "CLOUDFLARE_EXPECTED_CURRENT_DEPLOYMENT_ID",
     "CLOUDFLARE_EXPECTED_CURRENT_RELEASE",
     "CLOUDFLARE_EXPECTED_CURRENT_CREATED_ON",
-    "CLOUDFLARE_EXPECTED_CURRENT_COMMIT_MESSAGE",
+    "CLOUDFLARE_EXPECTED_CURRENT_COMMIT_MESSAGE_B64",
   ]) {
     const result = await runRollback({ omit: name });
     assert.match(result.error?.stderr ?? "", /G12_ROLLBACK_EXPECTED_CURRENT_REQUIRED/);
+    assert.deepEqual(result.requests, []);
+  }
+});
+
+test("rollback rejects malformed or unsafe commit-message encodings before any request", async () => {
+  for (const expectedCommitMessageB64 of ["not-base64!", Buffer.from("unsafe\0message").toString("base64")]) {
+    const result = await runRollback({ expectedCommitMessageB64 });
+    assert.match(result.error?.stderr ?? "", /COMMIT_MESSAGE_ENCODING_REFUSED/);
     assert.deepEqual(result.requests, []);
   }
 });
@@ -163,7 +177,7 @@ test("every production rollback workflow call passes all expected-current fields
       "CLOUDFLARE_EXPECTED_CURRENT_DEPLOYMENT_ID",
       "CLOUDFLARE_EXPECTED_CURRENT_RELEASE",
       "CLOUDFLARE_EXPECTED_CURRENT_CREATED_ON",
-      "CLOUDFLARE_EXPECTED_CURRENT_COMMIT_MESSAGE",
+      "CLOUDFLARE_EXPECTED_CURRENT_COMMIT_MESSAGE_B64",
     ])
       assert.equal(
         workflow.match(new RegExp(name, "g"))?.length ?? 0,

@@ -176,7 +176,7 @@ jobs:
           current_deployment="$(grep '^deployment_id=' "$recheck_file" | cut -d= -f2-)"
           current_release="$(grep '^release=' "$recheck_file" | cut -d= -f2-)"
           current_created_on="$(grep '^created_on=' "$recheck_file" | cut -d= -f2-)"
-          current_commit_message="$(grep '^commit_message=' "$recheck_file" | cut -d= -f2-)"
+          current_commit_message_b64="$(grep '^commit_message_b64=' "$recheck_file" | cut -d= -f2-)"
           echo "observed_deployment=$current_deployment" >> "$GITHUB_OUTPUT"
           echo "observed_release=$current_release" >> "$GITHUB_OUTPUT"
           if [ "$current_deployment" = "$ORIGINAL_DEPLOYMENT" ] && [ "$current_release" = "$ORIGINAL_RELEASE" ]; then
@@ -188,7 +188,7 @@ jobs:
             CLOUDFLARE_EXPECTED_CURRENT_DEPLOYMENT_ID="$current_deployment" \
             CLOUDFLARE_EXPECTED_CURRENT_RELEASE="$current_release" \
             CLOUDFLARE_EXPECTED_CURRENT_CREATED_ON="$current_created_on" \
-            CLOUDFLARE_EXPECTED_CURRENT_COMMIT_MESSAGE="$current_commit_message" \
+            CLOUDFLARE_EXPECTED_CURRENT_COMMIT_MESSAGE_B64="$current_commit_message_b64" \
               timeout 4m node scripts/ev2/phase12/cloudflare-pages.mjs rollback
             exit 0
           fi
@@ -218,7 +218,7 @@ jobs:
           current_deployment="$(grep '^deployment_id=' "$recheck_file" | cut -d= -f2-)"
           current_release="$(grep '^release=' "$recheck_file" | cut -d= -f2-)"
           current_created_on="$(grep '^created_on=' "$recheck_file" | cut -d= -f2-)"
-          current_commit_message="$(grep '^commit_message=' "$recheck_file" | cut -d= -f2-)"
+          current_commit_message_b64="$(grep '^commit_message_b64=' "$recheck_file" | cut -d= -f2-)"
           echo "observed_deployment=$current_deployment" >> "$GITHUB_OUTPUT"
           echo "observed_release=$current_release" >> "$GITHUB_OUTPUT"
           if [ "$current_deployment" = "$ORIGINAL_DEPLOYMENT" ] && [ "$current_release" = "$ORIGINAL_RELEASE" ]; then
@@ -230,7 +230,7 @@ jobs:
             CLOUDFLARE_EXPECTED_CURRENT_DEPLOYMENT_ID="$current_deployment" \
             CLOUDFLARE_EXPECTED_CURRENT_RELEASE="$current_release" \
             CLOUDFLARE_EXPECTED_CURRENT_CREATED_ON="$current_created_on" \
-            CLOUDFLARE_EXPECTED_CURRENT_COMMIT_MESSAGE="$current_commit_message" \
+            CLOUDFLARE_EXPECTED_CURRENT_COMMIT_MESSAGE_B64="$current_commit_message_b64" \
               timeout 4m node scripts/ev2/phase12/cloudflare-pages.mjs rollback
             exit 0
           fi

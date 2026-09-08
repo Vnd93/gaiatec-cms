@@ -4,6 +4,11 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 
 import {
+  decodeDeploymentCommitMessage,
+  encodeDeploymentCommitMessage,
+  isDeploymentCommitMessage,
+} from "./deployment-commit-message.mjs";
+import {
   copyStableProductionDistArchive,
   lockProductionDistTree,
   materializeProductionDistArchive,
@@ -22,6 +27,11 @@ function argument(name) {
   return index >= 0 ? process.argv[index + 1] : "";
 }
 
+function hasArgument(name) {
+  const index = process.argv.indexOf(`--${name}`);
+  return index >= 0 && index + 1 < process.argv.length;
+}
+
 const archive = resolve(argument("archive"));
 const sealFile = resolve(argument("seal"));
 const candidateSha = argument("candidate");
@@ -33,8 +43,9 @@ const expectedCanonical = {
   deploymentId: argument("expected-canonical-id"),
   release: argument("expected-canonical-release"),
   createdOn: argument("expected-canonical-created-on"),
-  commitMessage: argument("expected-canonical-marker"),
+  commitMessage: decodeDeploymentCommitMessage(argument("expected-canonical-marker-b64")),
 };
+const expectedCanonicalCommitMessageProvided = hasArgument("expected-canonical-marker-b64");
 const expectedCanonicalProvided = Object.values(expectedCanonical).some((value) => value !== "");
 if (
   !argument("archive") ||
@@ -54,8 +65,9 @@ if (
       !UUID_PATTERN.test(expectedCanonical.deploymentId) ||
       !/^[a-f0-9]{40}$/.test(expectedCanonical.release) ||
       !Number.isFinite(Date.parse(expectedCanonical.createdOn)) ||
-      /[\r\n\0]/.test(expectedCanonical.commitMessage))) ||
-  (branch !== "main" && expectedCanonicalProvided)
+      !expectedCanonicalCommitMessageProvided ||
+      !isDeploymentCommitMessage(expectedCanonical.commitMessage))) ||
+  (branch !== "main" && (expectedCanonicalProvided || expectedCanonicalCommitMessageProvided))
 )
   throw new Error("G12_PRODUCTION_SEALED_DEPLOY_INPUT_REFUSED");
 
@@ -110,7 +122,7 @@ function deploymentIdentity(deployment, environment) {
     deployment?.environment !== environment ||
     !/^[a-f0-9]{40}$/.test(release ?? "") ||
     !Number.isFinite(Date.parse(deployment?.created_on ?? "")) ||
-    /[\r\n\0]/.test(commit)
+    !isDeploymentCommitMessage(commit)
   )
     throw new Error("G12_PRODUCTION_SEALED_DEPLOY_IDENTITY_REFUSED");
   return {
@@ -159,8 +171,13 @@ async function confirmCanonicalProduction(deploymentUrl) {
 async function confirmPreviewDeployment(deploymentUrl, canonicalBefore) {
   let preview = null;
   for (let attempt = 1; attempt <= 6; attempt += 1) {
-    const deployments = await cloudflare("/deployments?env=preview&per_page=50");
-    const matches = (Array.isArray(deployments) ? deployments : [])
+    const deployments = (
+      await Promise.all([
+        cloudflare("/deployments?env=preview&per_page=25&page=1"),
+        cloudflare("/deployments?env=preview&per_page=25&page=2"),
+      ])
+    ).flatMap((page) => (Array.isArray(page) ? page : []));
+    const matches = deployments
       .filter(
         (deployment) =>
           deployment?.deployment_trigger?.metadata?.branch === branch &&
@@ -230,7 +247,7 @@ try {
       outputs.push(
         `deployment-id=${canonical.deploymentId}`,
         `deployment-release=${canonical.release}`,
-        `deployment-marker=${commitMessage}`,
+        `deployment-marker-b64=${encodeDeploymentCommitMessage(commitMessage)}`,
         `deployment-created-on=${canonical.createdOn}`,
       );
     if (preview)
@@ -241,7 +258,7 @@ try {
         `canonical-deployment-id=${canonicalBefore.deploymentId}`,
         `canonical-release=${canonicalBefore.release}`,
         `canonical-created-on=${canonicalBefore.createdOn}`,
-        `canonical-marker=${canonicalBefore.commitMessage}`,
+        `canonical-marker-b64=${encodeDeploymentCommitMessage(canonicalBefore.commitMessage)}`,
       );
     await appendFile(process.env.GITHUB_OUTPUT, `${outputs.join("\n")}\n`, "utf8");
   }

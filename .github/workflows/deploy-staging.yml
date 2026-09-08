@@ -163,17 +163,17 @@ jobs:
           LIVE_ID: ${{ steps.staging_baseline.outputs.deployment_id }}
           LIVE_RELEASE: ${{ steps.staging_baseline.outputs.release }}
           LIVE_CREATED: ${{ steps.staging_baseline.outputs.created_on }}
-          LIVE_MARKER: ${{ steps.staging_baseline.outputs.commit_message }}
+          LIVE_MARKER_B64: ${{ steps.staging_baseline.outputs.commit_message_b64 }}
           BRIDGE_ID: ${{ steps.frontend_bridge.outputs.canonical_deployment_id }}
           BRIDGE_RELEASE: ${{ steps.frontend_bridge.outputs.canonical_release }}
           BRIDGE_CREATED: ${{ steps.frontend_bridge.outputs.canonical_created_on }}
-          BRIDGE_MARKER: ${{ steps.frontend_bridge.outputs.canonical_commit_message }}
+          BRIDGE_MARKER_B64: ${{ steps.frontend_bridge.outputs.canonical_commit_message_b64 }}
         run: |
           set -euo pipefail
           test "$LIVE_ID" = "$BRIDGE_ID"
           test "$LIVE_RELEASE" = "$BRIDGE_RELEASE"
           test "$LIVE_CREATED" = "$BRIDGE_CREATED"
-          test "$LIVE_MARKER" = "$BRIDGE_MARKER"
+          test "$LIVE_MARKER_B64" = "$BRIDGE_MARKER_B64"
       - name: Persist credential-free staging recovery state before mutation
         id: staging_state
         working-directory: candidate
@@ -182,7 +182,7 @@ jobs:
           ORIGINAL_RELEASE: ${{ inputs.rollback_ref }}
           ORIGINAL_DEPLOYMENT_ID: ${{ steps.staging_baseline.outputs.deployment_id }}
           ORIGINAL_CREATED_ON: ${{ steps.staging_baseline.outputs.created_on }}
-          ORIGINAL_COMMIT_MESSAGE: ${{ steps.staging_baseline.outputs.commit_message }}
+          ORIGINAL_COMMIT_MESSAGE_B64: ${{ steps.staging_baseline.outputs.commit_message_b64 }}
           CONTROL_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
@@ -192,13 +192,20 @@ jobs:
           const { mkdirSync, writeFileSync } = require("node:fs");
           const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
           const sha = /^[a-f0-9]{40}$/;
+          const encodedCommitMessage = process.env.ORIGINAL_COMMIT_MESSAGE_B64;
+          if (!Object.hasOwn(process.env, "ORIGINAL_COMMIT_MESSAGE_B64") ||
+              !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encodedCommitMessage))
+            throw new Error("G12_STAGING_STATE_COMMIT_MESSAGE_ENCODING_REFUSED");
+          const originalCommitMessage = Buffer.from(encodedCommitMessage, "base64").toString("utf8");
+          if (Buffer.byteLength(originalCommitMessage, "utf8") > 4096 || originalCommitMessage.includes("\0") ||
+              Buffer.from(originalCommitMessage, "utf8").toString("base64") !== encodedCommitMessage)
+            throw new Error("G12_STAGING_STATE_COMMIT_MESSAGE_ENCODING_REFUSED");
           if (
             !sha.test(process.env.CANDIDATE_SHA || "") ||
             !sha.test(process.env.ORIGINAL_RELEASE || "") ||
             !sha.test(process.env.CONTROL_SHA || "") ||
             !uuid.test(process.env.ORIGINAL_DEPLOYMENT_ID || "") ||
             !Number.isFinite(Date.parse(process.env.ORIGINAL_CREATED_ON || "")) ||
-            /[\r\n\0]/.test(process.env.ORIGINAL_COMMIT_MESSAGE || "") ||
             !/^g12-staging-run-[1-9]\d*-[1-9]\d*$/.test(process.env.RUN_MARKER || "")
           ) throw new Error("G12_STAGING_STATE_INPUT_REFUSED");
           const state = {
@@ -218,7 +225,7 @@ jobs:
               deploymentId: process.env.ORIGINAL_DEPLOYMENT_ID,
               release: process.env.ORIGINAL_RELEASE,
               createdOn: process.env.ORIGINAL_CREATED_ON,
-              commitMessage: process.env.ORIGINAL_COMMIT_MESSAGE,
+              commitMessage: originalCommitMessage,
             },
           };
           mkdirSync("outputs", { recursive: true });
@@ -512,7 +519,7 @@ jobs:
           STAGING_ORIGINAL_DEPLOYMENT: ${{ steps.staging_baseline.outputs.deployment_id }}
           STAGING_ORIGINAL_RELEASE: ${{ steps.staging_baseline.outputs.release }}
           STAGING_ORIGINAL_CREATED_ON: ${{ steps.staging_baseline.outputs.created_on }}
-          STAGING_ORIGINAL_COMMIT_MESSAGE: ${{ steps.staging_baseline.outputs.commit_message }}
+          STAGING_ORIGINAL_COMMIT_MESSAGE_B64: ${{ steps.staging_baseline.outputs.commit_message_b64 }}
         run: >-
           node scripts/ev2/phase12/deploy-sealed-staging-dist.mjs
           --archive outputs/staging-candidate-dist.tar
@@ -534,7 +541,7 @@ jobs:
           STAGING_ORIGINAL_RELEASE: ${{ inputs.rollback_ref }}
           STAGING_ORIGINAL_DEPLOYMENT: ${{ steps.staging_baseline.outputs.deployment_id }}
           STAGING_ORIGINAL_CREATED_ON: ${{ steps.staging_baseline.outputs.created_on }}
-          STAGING_ORIGINAL_COMMIT_MESSAGE: ${{ steps.staging_baseline.outputs.commit_message }}
+          STAGING_ORIGINAL_COMMIT_MESSAGE_B64: ${{ steps.staging_baseline.outputs.commit_message_b64 }}
           STAGING_CANDIDATE_RELEASE: ${{ steps.candidate.outputs.sha }}
           STAGING_RUN_MARKER: ${{ steps.staging_state.outputs.run_marker }}
       - name: Probe shell and public routes of the exact deployment
@@ -962,7 +969,9 @@ jobs:
             state.project !== "gaiatec-cms-staging" || state.branch !== "ev2-g17-canary" ||
             !sha.test(state.candidateRelease || "") || !sha.test(state.original?.release || "") || !uuid.test(state.original?.deploymentId || "") ||
             !Number.isFinite(Date.parse(state.original?.createdOn || "")) ||
-            typeof state.original?.commitMessage !== "string" || /[\r\n\0]/.test(state.original.commitMessage) ||
+            typeof state.original?.commitMessage !== "string" || state.original.commitMessage.includes("\0") ||
+            Buffer.byteLength(state.original.commitMessage, "utf8") > 4096 ||
+            Buffer.from(state.original.commitMessage, "utf8").toString("utf8") !== state.original.commitMessage ||
             (process.env.STATE_ARTIFACT_OUTCOME === "success" &&
             (!artifactId.test(process.env.EXPECTED_STATE_ARTIFACT_ID || "") ||
             !artifactDigest.test(process.env.EXPECTED_STATE_ARTIFACT_DIGEST || "")))
@@ -974,7 +983,7 @@ jobs:
             `compensation_marker=${state.compensationMarker}`,
             `original_deployment=${state.original.deploymentId}`,
             `original_created_on=${new Date(state.original.createdOn).toISOString()}`,
-            `original_commit_message=${state.original.commitMessage}`,
+            `original_commit_message_b64=${Buffer.from(state.original.commitMessage, "utf8").toString("base64")}`,
             `state_path=${statePath}`,
           ].join("\n") + "\n");
           NODE
@@ -995,7 +1004,7 @@ jobs:
           STAGING_ORIGINAL_RELEASE: ${{ steps.finalizer_state.outputs.original_release }}
           STAGING_ORIGINAL_DEPLOYMENT: ${{ steps.finalizer_state.outputs.original_deployment }}
           STAGING_ORIGINAL_CREATED_ON: ${{ steps.finalizer_state.outputs.original_created_on }}
-          STAGING_ORIGINAL_COMMIT_MESSAGE: ${{ steps.finalizer_state.outputs.original_commit_message }}
+          STAGING_ORIGINAL_COMMIT_MESSAGE_B64: ${{ steps.finalizer_state.outputs.original_commit_message_b64 }}
           STAGING_CANDIDATE_RELEASE: ${{ steps.finalizer_state.outputs.candidate_release }}
           STAGING_RUN_MARKER: ${{ steps.finalizer_state.outputs.run_marker }}
           STAGING_COMPENSATION_MARKER: ${{ steps.finalizer_state.outputs.compensation_marker }}

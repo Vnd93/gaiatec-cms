@@ -1,6 +1,7 @@
 import { appendFile, readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
+import { encodeDeploymentCommitMessage } from "./deployment-commit-message.mjs";
 import { validateFrontendBridgeEvidence } from "./production-frontend-bridge-lib.mjs";
 
 function argument(name) {
@@ -39,11 +40,11 @@ if (process.env.GITHUB_OUTPUT)
       `production_deployment_id=${evidence.production.deploymentId}`,
       `production_release=${evidence.production.release}`,
       `production_created_on=${new Date(evidence.production.createdOn).toISOString()}`,
-      `production_commit_message=${evidence.production.commitMessage}`,
+      `production_commit_message_b64=${encodeDeploymentCommitMessage(evidence.production.commitMessage)}`,
       `predecessor_deployment_id=${evidence.baseline.deploymentId}`,
       `predecessor_release=${evidence.baseline.release}`,
       `predecessor_created_on=${new Date(evidence.baseline.createdOn).toISOString()}`,
-      `predecessor_commit_message=${evidence.baseline.commitMessage}`,
+      `predecessor_commit_message_b64=${encodeDeploymentCommitMessage(evidence.baseline.commitMessage)}`,
       `dist_archive_sha256=${evidence.dist.archiveSha256}`,
       `dist_tree_sha256=${evidence.dist.treeSha256}`,
       "",

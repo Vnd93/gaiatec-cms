@@ -3,6 +3,11 @@ import { appendFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  decodeDeploymentCommitMessage,
+  encodeDeploymentCommitMessage,
+  isDeploymentCommitMessage,
+} from "./deployment-commit-message.mjs";
 import { UUID_PATTERN, isFullSha } from "./release-guard-lib.mjs";
 
 const PROJECT = "gaiatec-website";
@@ -57,7 +62,7 @@ function deploymentIdentity(deployment) {
     deployment?.environment !== "production" ||
     !isFullSha(release) ||
     !Number.isFinite(Date.parse(deployment?.created_on ?? "")) ||
-    /[\r\n\0]/.test(commitMessage)
+    !isDeploymentCommitMessage(commitMessage)
   )
     throw new Error("G12_PRODUCTION_BRIDGE_CANONICAL_REFUSED");
   return {
@@ -76,12 +81,16 @@ async function canonical(context) {
 }
 
 function expectedState() {
+  if (!Object.hasOwn(process.env, "PRODUCTION_BRIDGE_BASELINE_COMMIT_MESSAGE_B64"))
+    throw new Error("G12_PRODUCTION_BRIDGE_PAGES_STATE_REFUSED");
   const state = {
     baseline: {
       deploymentId: process.env.PRODUCTION_BRIDGE_BASELINE_DEPLOYMENT_ID ?? "",
       release: process.env.PRODUCTION_BRIDGE_BASELINE_RELEASE ?? "",
       createdOn: process.env.PRODUCTION_BRIDGE_BASELINE_CREATED_ON ?? "",
-      commitMessage: process.env.PRODUCTION_BRIDGE_BASELINE_COMMIT_MESSAGE ?? "",
+      commitMessage: decodeDeploymentCommitMessage(
+        process.env.PRODUCTION_BRIDGE_BASELINE_COMMIT_MESSAGE_B64 ?? "",
+      ),
     },
     candidateRelease: process.env.PRODUCTION_BRIDGE_CANDIDATE_RELEASE ?? "",
     runMarker: process.env.PRODUCTION_BRIDGE_RUN_MARKER ?? "",
@@ -91,7 +100,7 @@ function expectedState() {
     !UUID_PATTERN.test(state.baseline.deploymentId) ||
     !isFullSha(state.baseline.release) ||
     !Number.isFinite(Date.parse(state.baseline.createdOn)) ||
-    /[\r\n\0]/.test(state.baseline.commitMessage) ||
+    !isDeploymentCommitMessage(state.baseline.commitMessage) ||
     !isFullSha(state.candidateRelease) ||
     state.candidateRelease === state.baseline.release ||
     !RUN_MARKER.test(state.runMarker) ||
@@ -128,8 +137,13 @@ export function uniqueProductionFrontendBridgeOwnedDeployment(current, deploymen
 }
 
 async function assertUniqueOwnedDeployment(context, current, state) {
-  const deployments = await cloudflare(context, "/deployments?env=production&per_page=50");
-  const matches = (Array.isArray(deployments) ? deployments : [])
+  const deployments = (
+    await Promise.all([
+      cloudflare(context, "/deployments?env=production&per_page=25&page=1"),
+      cloudflare(context, "/deployments?env=production&per_page=25&page=2"),
+    ])
+  ).flatMap((page) => (Array.isArray(page) ? page : []));
+  const matches = deployments
     .filter((entry) => entry?.environment === "production")
     .map((entry) => {
       try {
@@ -171,7 +185,7 @@ export async function main(command = process.argv[2]) {
     deployment_id: current.deploymentId,
     release: current.release,
     created_on: current.createdOn,
-    commit_message: current.commitMessage,
+    commit_message_b64: encodeDeploymentCommitMessage(current.commitMessage),
   });
   console.log(
     JSON.stringify({

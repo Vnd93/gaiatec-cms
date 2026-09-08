@@ -42,10 +42,10 @@ jobs:
       baseline_release: ${{ steps.baseline.outputs.release }}
       baseline_deployment_id: ${{ steps.baseline.outputs.deployment_id }}
       baseline_created_on: ${{ steps.baseline.outputs.created_on }}
-      baseline_commit_message: ${{ steps.baseline.outputs.commit_message }}
+      baseline_commit_message_b64: ${{ steps.baseline.outputs.commit_message_b64 }}
       promoted_deployment_id: ${{ steps.promote.outputs.deployment-id }}
       promoted_release: ${{ steps.promote.outputs.deployment-release }}
-      promoted_run_marker: ${{ steps.promote.outputs.deployment-marker }}
+      promoted_run_marker_b64: ${{ steps.promote.outputs.deployment-marker-b64 }}
       promoted_created_on: ${{ steps.promote.outputs.deployment-created-on }}
       approval_record_sha256: ${{ steps.approval.outputs.approval_record_sha256 }}
     steps:
@@ -448,9 +448,9 @@ jobs:
           BRIDGE_DEPLOYMENT: ${{ steps.frontend_bridge.outputs.production_deployment_id }}
           BRIDGE_RELEASE: ${{ steps.frontend_bridge.outputs.production_release }}
           BRIDGE_CREATED_ON: ${{ steps.frontend_bridge.outputs.production_created_on }}
-          BRIDGE_MARKER: ${{ steps.frontend_bridge.outputs.production_commit_message }}
+          BRIDGE_MARKER_B64: ${{ steps.frontend_bridge.outputs.production_commit_message_b64 }}
           LIVE_CREATED_ON: ${{ steps.baseline.outputs.created_on }}
-          LIVE_MARKER: ${{ steps.baseline.outputs.commit_message }}
+          LIVE_MARKER_B64: ${{ steps.baseline.outputs.commit_message_b64 }}
           APPROVED_PREDECESSOR_DEPLOYMENT: ${{ steps.approval.outputs.rollback_deployment_id }}
           APPROVED_PREDECESSOR_RELEASE: ${{ steps.approval.outputs.rollback_release }}
           BRIDGE_PREDECESSOR_DEPLOYMENT: ${{ steps.frontend_bridge.outputs.predecessor_deployment_id }}
@@ -460,7 +460,7 @@ jobs:
           test "$LIVE_DEPLOYMENT" = "$BRIDGE_DEPLOYMENT"
           test "$LIVE_RELEASE" = "$BRIDGE_RELEASE"
           test "$LIVE_CREATED_ON" = "$BRIDGE_CREATED_ON"
-          test "$LIVE_MARKER" = "$BRIDGE_MARKER"
+          test "$LIVE_MARKER_B64" = "$BRIDGE_MARKER_B64"
           test "$LIVE_RELEASE" = "${{ inputs.candidate_sha }}"
           test "$APPROVED_PREDECESSOR_DEPLOYMENT" = "$BRIDGE_PREDECESSOR_DEPLOYMENT"
           test "$APPROVED_PREDECESSOR_RELEASE" = "$BRIDGE_PREDECESSOR_RELEASE"
@@ -478,7 +478,7 @@ jobs:
           BASELINE_DEPLOYMENT_ID: ${{ steps.baseline.outputs.deployment_id }}
           BASELINE_RELEASE: ${{ steps.baseline.outputs.release }}
           BASELINE_CREATED_ON: ${{ steps.baseline.outputs.created_on }}
-          BASELINE_COMMIT_MESSAGE: ${{ steps.baseline.outputs.commit_message }}
+          BASELINE_COMMIT_MESSAGE_B64: ${{ steps.baseline.outputs.commit_message_b64 }}
           BRIDGE_RUN_ID: ${{ inputs.frontend_bridge_run_id }}
           BRIDGE_RUN_ATTEMPT: ${{ steps.frontend_bridge_run.outputs.run_attempt }}
           BRIDGE_CONTROL_SHA: ${{ steps.frontend_bridge_run.outputs.control_sha }}
@@ -489,11 +489,11 @@ jobs:
           BRIDGE_DEPLOYMENT_ID: ${{ steps.frontend_bridge.outputs.production_deployment_id }}
           BRIDGE_RELEASE: ${{ steps.frontend_bridge.outputs.production_release }}
           BRIDGE_CREATED_ON: ${{ steps.frontend_bridge.outputs.production_created_on }}
-          BRIDGE_COMMIT_MESSAGE: ${{ steps.frontend_bridge.outputs.production_commit_message }}
+          BRIDGE_COMMIT_MESSAGE_B64: ${{ steps.frontend_bridge.outputs.production_commit_message_b64 }}
           BRIDGE_PREDECESSOR_DEPLOYMENT_ID: ${{ steps.frontend_bridge.outputs.predecessor_deployment_id }}
           BRIDGE_PREDECESSOR_RELEASE: ${{ steps.frontend_bridge.outputs.predecessor_release }}
           BRIDGE_PREDECESSOR_CREATED_ON: ${{ steps.frontend_bridge.outputs.predecessor_created_on }}
-          BRIDGE_PREDECESSOR_COMMIT_MESSAGE: ${{ steps.frontend_bridge.outputs.predecessor_commit_message }}
+          BRIDGE_PREDECESSOR_COMMIT_MESSAGE_B64: ${{ steps.frontend_bridge.outputs.predecessor_commit_message_b64 }}
           APPROVAL_RECORD: ${{ inputs.approval_record }}
           APPROVAL_RECORD_SHA256: ${{ steps.approval.outputs.approval_record_sha256 }}
           APPROVED_ROLLBACK_RELEASE: ${{ steps.approval.outputs.rollback_release }}
@@ -835,7 +835,7 @@ jobs:
           EXPECTED_CANONICAL_ID: ${{ steps.baseline.outputs.deployment_id }}
           EXPECTED_CANONICAL_RELEASE: ${{ steps.baseline.outputs.release }}
           EXPECTED_CANONICAL_CREATED_ON: ${{ steps.baseline.outputs.created_on }}
-          EXPECTED_CANONICAL_MARKER: ${{ steps.baseline.outputs.commit_message }}
+          EXPECTED_CANONICAL_MARKER_B64: ${{ steps.baseline.outputs.commit_message_b64 }}
         run: >-
           node scripts/ev2/phase12/deploy-sealed-production-dist.mjs
           --archive ../candidate/outputs/g12-production-dist.tar
@@ -846,7 +846,7 @@ jobs:
           --expected-canonical-id "$EXPECTED_CANONICAL_ID"
           --expected-canonical-release "$EXPECTED_CANONICAL_RELEASE"
           --expected-canonical-created-on "$EXPECTED_CANONICAL_CREATED_ON"
-          --expected-canonical-marker "$EXPECTED_CANONICAL_MARKER"
+          --expected-canonical-marker-b64 "$EXPECTED_CANONICAL_MARKER_B64"
           --wrangler-script ../candidate/node_modules/wrangler/bin/wrangler.js
       - name: Prove corporate MFA and canonical SEO after promotion
         id: production_postdeploy_smoke
@@ -967,7 +967,7 @@ jobs:
           CLOUDFLARE_BASELINE_DEPLOYMENT_ID: ${{ steps.baseline.outputs.deployment_id }}
           CLOUDFLARE_BASELINE_RELEASE: ${{ steps.baseline.outputs.release }}
           CLOUDFLARE_BASELINE_CREATED_ON: ${{ steps.baseline.outputs.created_on }}
-          CLOUDFLARE_BASELINE_COMMIT_MESSAGE: ${{ steps.baseline.outputs.commit_message }}
+          CLOUDFLARE_BASELINE_COMMIT_MESSAGE_B64: ${{ steps.baseline.outputs.commit_message_b64 }}
           CLOUDFLARE_OWNED_DEPLOYMENT_ID: ${{ steps.promote.outputs.deployment-id }}
           CLOUDFLARE_OWNED_RELEASE: ${{ inputs.candidate_sha }}
           CLOUDFLARE_OWNED_RUN_MARKER: g12-production-run-${{ github.run_id }}-${{ github.run_attempt }}
@@ -1416,7 +1416,7 @@ jobs:
           CLOUDFLARE_BASELINE_DEPLOYMENT_ID: ${{ steps.marker.outputs.baseline_deployment_id }}
           CLOUDFLARE_BASELINE_RELEASE: ${{ steps.marker.outputs.baseline_release }}
           CLOUDFLARE_BASELINE_CREATED_ON: ${{ steps.marker.outputs.baseline_created_on }}
-          CLOUDFLARE_BASELINE_COMMIT_MESSAGE: ${{ steps.marker.outputs.baseline_commit_message }}
+          CLOUDFLARE_BASELINE_COMMIT_MESSAGE_B64: ${{ steps.marker.outputs.baseline_commit_message_b64 }}
           CLOUDFLARE_OWNED_DEPLOYMENT_ID: ${{ needs.deploy.outputs.promoted_deployment_id }}
           CLOUDFLARE_OWNED_RELEASE: ${{ steps.marker.outputs.candidate_sha }}
           CLOUDFLARE_OWNED_RUN_MARKER: ${{ steps.marker.outputs.pages_run_marker }}
@@ -1667,7 +1667,7 @@ jobs:
           CLOUDFLARE_BASELINE_DEPLOYMENT_ID: ${{ steps.marker.outputs.baseline_deployment_id }}
           CLOUDFLARE_BASELINE_RELEASE: ${{ steps.marker.outputs.baseline_release }}
           CLOUDFLARE_BASELINE_CREATED_ON: ${{ steps.marker.outputs.baseline_created_on }}
-          CLOUDFLARE_BASELINE_COMMIT_MESSAGE: ${{ steps.marker.outputs.baseline_commit_message }}
+          CLOUDFLARE_BASELINE_COMMIT_MESSAGE_B64: ${{ steps.marker.outputs.baseline_commit_message_b64 }}
           CLOUDFLARE_OWNED_DEPLOYMENT_ID: ${{ needs.deploy.outputs.promoted_deployment_id }}
           CLOUDFLARE_OWNED_RELEASE: ${{ steps.marker.outputs.candidate_sha }}
           CLOUDFLARE_OWNED_RUN_MARKER: ${{ steps.marker.outputs.pages_run_marker }}

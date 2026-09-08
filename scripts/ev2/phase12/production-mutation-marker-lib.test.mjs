@@ -65,7 +65,7 @@ test("mutation marker rejects substituted baseline, candidate and workflow ident
     (value) => (value.bridge.predecessor.release = value.candidateSha),
     (value) => (value.approval.authorizedPredecessorRelease = value.candidateSha),
     (value) => (value.baseline.createdOn = "not-a-date"),
-    (value) => (value.baseline.commitMessage = "forged\noutput"),
+    (value) => (value.baseline.commitMessage = "forged\0output"),
     (value) => (value.github.controlSha = "e".repeat(40)),
     (value) => (value.pages.runMarker = "g12-production-run-1234567-3"),
   ]) {

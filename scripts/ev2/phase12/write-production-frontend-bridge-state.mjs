@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
+import { decodeDeploymentCommitMessage } from "./deployment-commit-message.mjs";
 import {
   FRONTEND_BRIDGE_REPOSITORY,
   FRONTEND_BRIDGE_WORKFLOW_NAME,
@@ -16,11 +17,13 @@ function argument(name) {
 }
 
 function identity(prefix) {
+  if (!Object.hasOwn(process.env, `${prefix}_COMMIT_MESSAGE_B64`))
+    throw new Error("G12_FRONTEND_BRIDGE_STATE_COMMIT_MESSAGE_REQUIRED");
   return {
     deploymentId: process.env[`${prefix}_DEPLOYMENT_ID`] ?? "",
     release: process.env[`${prefix}_RELEASE`] ?? "",
     createdOn: process.env[`${prefix}_CREATED_ON`] ?? "",
-    commitMessage: process.env[`${prefix}_COMMIT_MESSAGE`] ?? "",
+    commitMessage: decodeDeploymentCommitMessage(process.env[`${prefix}_COMMIT_MESSAGE_B64`] ?? ""),
   };
 }
 

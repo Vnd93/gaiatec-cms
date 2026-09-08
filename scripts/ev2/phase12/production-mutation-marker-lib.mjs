@@ -1,3 +1,5 @@
+import { isDeploymentCommitMessage } from "./deployment-commit-message.mjs";
+
 const FULL_SHA = /^[a-f0-9]{40}$/;
 const SHA256 = /^(?:sha256:)?[a-f0-9]{64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -22,7 +24,7 @@ function validIdentity(value) {
     UUID.test(value.deploymentId ?? "") &&
     FULL_SHA.test(value.release ?? "") &&
     Number.isFinite(Date.parse(value.createdOn ?? "")) &&
-    validText(value.commitMessage)
+    isDeploymentCommitMessage(value.commitMessage)
   );
 }
 

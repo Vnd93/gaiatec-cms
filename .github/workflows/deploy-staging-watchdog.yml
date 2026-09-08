@@ -94,7 +94,9 @@ jobs:
             !sha.test(state.candidateRelease || "") || !sha.test(state.original?.release || "") ||
             !uuid.test(state.original?.deploymentId || "") ||
             !Number.isFinite(Date.parse(state.original?.createdOn || "")) ||
-            typeof state.original?.commitMessage !== "string" || /[\r\n\0]/.test(state.original.commitMessage) ||
+            typeof state.original?.commitMessage !== "string" || state.original.commitMessage.includes("\0") ||
+            Buffer.byteLength(state.original.commitMessage, "utf8") > 4096 ||
+            Buffer.from(state.original.commitMessage, "utf8").toString("utf8") !== state.original.commitMessage ||
             state.runMarker !== `g12-staging-run-${process.env.TRIGGER_RUN_ID}-${process.env.TRIGGER_RUN_ATTEMPT}` ||
             state.compensationMarker !== `g12-staging-deploy-compensation-${process.env.TRIGGER_RUN_ID}-${process.env.TRIGGER_RUN_ATTEMPT}`
           ) throw new Error("G12_STAGING_WATCHDOG_STATE_REFUSED");
@@ -103,7 +105,7 @@ jobs:
             `original_release=${state.original.release}`,
             `original_deployment=${state.original.deploymentId}`,
             `original_created_on=${new Date(state.original.createdOn).toISOString()}`,
-            `original_commit_message=${state.original.commitMessage}`,
+            `original_commit_message_b64=${Buffer.from(state.original.commitMessage, "utf8").toString("base64")}`,
             `run_marker=${state.runMarker}`,
             `compensation_marker=${state.compensationMarker}`,
             `state_path=${statePath}`,
@@ -134,7 +136,7 @@ jobs:
           STAGING_ORIGINAL_DEPLOYMENT: ${{ steps.watchdog_state.outputs.original_deployment }}
           STAGING_ORIGINAL_RELEASE: ${{ steps.watchdog_state.outputs.original_release }}
           STAGING_ORIGINAL_CREATED_ON: ${{ steps.watchdog_state.outputs.original_created_on }}
-          STAGING_ORIGINAL_COMMIT_MESSAGE: ${{ steps.watchdog_state.outputs.original_commit_message }}
+          STAGING_ORIGINAL_COMMIT_MESSAGE_B64: ${{ steps.watchdog_state.outputs.original_commit_message_b64 }}
           STAGING_CANDIDATE_RELEASE: ${{ steps.watchdog_state.outputs.candidate_release }}
           STAGING_RUN_MARKER: ${{ steps.watchdog_state.outputs.run_marker }}
           STAGING_COMPENSATION_MARKER: ${{ steps.watchdog_state.outputs.compensation_marker }}

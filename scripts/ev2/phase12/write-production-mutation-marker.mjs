@@ -1,7 +1,16 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
+import { decodeDeploymentCommitMessage } from "./deployment-commit-message.mjs";
 import { buildProductionMutationMarker } from "./production-mutation-marker-lib.mjs";
+
+for (const name of [
+  "BASELINE_COMMIT_MESSAGE_B64",
+  "BRIDGE_COMMIT_MESSAGE_B64",
+  "BRIDGE_PREDECESSOR_COMMIT_MESSAGE_B64",
+])
+  if (!Object.hasOwn(process.env, name))
+    throw new Error("G12_PRODUCTION_MUTATION_MARKER_COMMIT_MESSAGE_REQUIRED");
 
 function argument(name) {
   const index = process.argv.indexOf(`--${name}`);
@@ -15,7 +24,7 @@ const marker = buildProductionMutationMarker({
   baselineDeploymentId: process.env.BASELINE_DEPLOYMENT_ID,
   baselineRelease: process.env.BASELINE_RELEASE,
   baselineCreatedOn: process.env.BASELINE_CREATED_ON,
-  baselineCommitMessage: process.env.BASELINE_COMMIT_MESSAGE,
+  baselineCommitMessage: decodeDeploymentCommitMessage(process.env.BASELINE_COMMIT_MESSAGE_B64 ?? ""),
   bridgeRunId: process.env.BRIDGE_RUN_ID,
   bridgeRunAttempt: process.env.BRIDGE_RUN_ATTEMPT,
   bridgeControlSha: process.env.BRIDGE_CONTROL_SHA,
@@ -26,11 +35,13 @@ const marker = buildProductionMutationMarker({
   bridgeDeploymentId: process.env.BRIDGE_DEPLOYMENT_ID,
   bridgeRelease: process.env.BRIDGE_RELEASE,
   bridgeCreatedOn: process.env.BRIDGE_CREATED_ON,
-  bridgeCommitMessage: process.env.BRIDGE_COMMIT_MESSAGE,
+  bridgeCommitMessage: decodeDeploymentCommitMessage(process.env.BRIDGE_COMMIT_MESSAGE_B64 ?? ""),
   bridgePredecessorDeploymentId: process.env.BRIDGE_PREDECESSOR_DEPLOYMENT_ID,
   bridgePredecessorRelease: process.env.BRIDGE_PREDECESSOR_RELEASE,
   bridgePredecessorCreatedOn: process.env.BRIDGE_PREDECESSOR_CREATED_ON,
-  bridgePredecessorCommitMessage: process.env.BRIDGE_PREDECESSOR_COMMIT_MESSAGE,
+  bridgePredecessorCommitMessage: decodeDeploymentCommitMessage(
+    process.env.BRIDGE_PREDECESSOR_COMMIT_MESSAGE_B64 ?? "",
+  ),
   approvalRecord: process.env.APPROVAL_RECORD,
   approvalSha256: process.env.APPROVAL_RECORD_SHA256,
   approvedRollbackRelease: process.env.APPROVED_ROLLBACK_RELEASE,

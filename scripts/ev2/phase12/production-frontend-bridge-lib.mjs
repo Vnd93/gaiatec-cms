@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import { isDeploymentCommitMessage } from "./deployment-commit-message.mjs";
 import { FULL_SHA_PATTERN, UUID_PATTERN } from "./release-guard-lib.mjs";
 
 export const FRONTEND_BRIDGE_WORKFLOW_NAME = "Promote production frontend bridge";
@@ -29,9 +30,7 @@ function validIdentity(value) {
     UUID_PATTERN.test(value.deploymentId ?? "") &&
     FULL_SHA_PATTERN.test(value.release ?? "") &&
     isIsoDate(value.createdOn) &&
-    typeof value.commitMessage === "string" &&
-    value.commitMessage.length <= 300 &&
-    !/[\r\n\0]/.test(value.commitMessage)
+    isDeploymentCommitMessage(value.commitMessage)
   );
 }
 

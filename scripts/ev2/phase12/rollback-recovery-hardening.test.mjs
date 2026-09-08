@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
+import { encodeDeploymentCommitMessage } from "./deployment-commit-message.mjs";
+
 const read = (path) => readFile(new URL(`../../../${path}`, import.meta.url), "utf8");
 
 function nodeHeredocs(workflow) {
@@ -44,7 +46,7 @@ test("staging rollback restores the retained sealed candidate instead of rebuild
     "STAGING_ORIGINAL_DEPLOYMENT",
     "STAGING_ORIGINAL_RELEASE",
     "STAGING_ORIGINAL_CREATED_ON",
-    "STAGING_ORIGINAL_COMMIT_MESSAGE",
+    "STAGING_ORIGINAL_COMMIT_MESSAGE_B64",
   ])
     assert.match(workflow, new RegExp(name));
 });
@@ -215,6 +217,7 @@ test("every deploy-staging inline Node program parses and the finalizer validate
   const candidateSha = "b".repeat(40);
   const rollbackSha = "c".repeat(40);
   const controlSha = "a".repeat(40);
+  const originalCommitMessage = "prior staging\r\n\r\nRelease body com Unicode 🌎";
   try {
     await mkdir(controlDir);
     await mkdir(stateDir);
@@ -229,7 +232,7 @@ test("every deploy-staging inline Node program parses and the finalizer validate
           release: rollbackSha,
           deploymentId: "123e4567-e89b-42d3-a456-426614174000",
           createdOn: "2026-09-07T10:00:00.000Z",
-          commitMessage: "prior staging",
+          commitMessage: originalCommitMessage,
         },
         runMarker: "g12-staging-run-123-1",
         compensationMarker: "g12-staging-deploy-compensation-123-1",
@@ -256,7 +259,12 @@ test("every deploy-staging inline Node program parses and the finalizer validate
       },
     });
     assert.equal(executed.status, 0, executed.stderr);
-    assert.match(await readFile(outputPath, "utf8"), new RegExp(`candidate_release=${candidateSha}`));
+    const output = await readFile(outputPath, "utf8");
+    assert.match(output, new RegExp(`candidate_release=${candidateSha}`));
+    assert.ok(
+      output.includes(`original_commit_message_b64=${encodeDeploymentCommitMessage(originalCommitMessage)}`),
+    );
+    assert.doesNotMatch(output, /Release body com Unicode/);
   } finally {
     await rm(fixtureRoot, { recursive: true, force: true });
   }

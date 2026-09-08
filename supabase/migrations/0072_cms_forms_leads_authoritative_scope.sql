@@ -2276,10 +2276,10 @@ revoke all on function public.cms_export_leads(
   uuid,text,text,text,text,timestamptz,uuid
 ) from public,anon,authenticated;
 revoke all on function public.cms_retry_lead_delivery(
-  uuid,uuid,text,text,text,text,timestamptz,uuid,uuid,text
+  uuid,uuid,text,text,text,text,text,timestamptz,uuid,uuid,text
 ) from public,anon,authenticated;
 revoke all on function public.cms_retry_lead_delivery_limited(
-  uuid,uuid,text,text,text,text,timestamptz,uuid,uuid,text,text
+  uuid,uuid,text,text,text,text,text,timestamptz,uuid,uuid,text,text
 ) from public,anon,authenticated;
 revoke all on function public.cms_apply_lead_retention(integer,uuid)
   from public,anon,authenticated;
@@ -2308,10 +2308,10 @@ grant execute on function public.cms_export_leads(
   uuid,text,text,text,text,timestamptz,uuid
 ) to service_role;
 grant execute on function public.cms_retry_lead_delivery(
-  uuid,uuid,text,text,text,text,timestamptz,uuid,uuid,text
+  uuid,uuid,text,text,text,text,text,timestamptz,uuid,uuid,text
 ) to service_role;
 grant execute on function public.cms_retry_lead_delivery_limited(
-  uuid,uuid,text,text,text,text,timestamptz,uuid,uuid,text,text
+  uuid,uuid,text,text,text,text,text,timestamptz,uuid,uuid,text,text
 ) to service_role;
 grant execute on function public.cms_apply_lead_retention(integer,uuid)
   to service_role;

@@ -19,6 +19,19 @@ describe("authoritative forms and leads QA scope", () => {
     expect(migration).not.toMatch(/select lead,form into v_lead,v_form/);
   });
 
+  it("revokes and grants only the exact delivery retry overloads", () => {
+    expect(
+      migration.match(
+        /cms_retry_lead_delivery\(\s*uuid,uuid,text,text,text,text,text,timestamptz,uuid,uuid,text\s*\)/g,
+      ),
+    ).toHaveLength(3);
+    expect(
+      migration.match(
+        /cms_retry_lead_delivery_limited\(\s*uuid,uuid,text,text,text,text,text,timestamptz,uuid,uuid,text,text\s*\)/g,
+      ),
+    ).toHaveLength(2);
+  });
+
   it("persists complete server-derived provenance and immutable capture binding", () => {
     for (const column of ["qa_actor_id", "qa_run_tag", "qa_candidate_sha", "qa_environment"]) {
       expect(migration).toContain(column);

@@ -286,12 +286,14 @@ test("@public-bridge frontend A percorre page/campaign/form e lead idempotente n
     await expect(page.getByRole("heading", { name: config.state.campaign.title })).toBeVisible({
       timeout: 20_000,
     });
-    const email = page.getByLabel(config.state.emailLabel, { exact: false });
+    const campaignForm = page.getByRole("form", { name: config.state.formTitle, exact: true });
+    await expect(campaignForm).toBeVisible();
+    const email = campaignForm.getByLabel(config.state.emailLabel, { exact: false });
     await expect(email).toBeVisible({ timeout: 20_000 });
     await email.fill(`qa-public-${config.state.nonce}@example.invalid`);
-    await page.locator('input[name="consent"]').check();
-    await expect(page.getByLabel("Verificação de segurança")).toBeVisible();
-    const submit = page.getByRole("button", { name: "Enviar homologação sintética" });
+    await campaignForm.locator('input[name="consent"]').check();
+    await expect(campaignForm.getByLabel("Verificação de segurança")).toBeVisible();
+    const submit = campaignForm.getByRole("button", { name: "Enviar homologação sintética" });
     await expect(submit).toBeEnabled({ timeout: 60_000 });
 
     const firstResponsePromise = page.waitForResponse(
@@ -308,7 +310,7 @@ test("@public-bridge frontend A percorre page/campaign/form e lead idempotente n
     expect(firstPayload.reference).toMatch(/^LD-[A-Z0-9]+$/);
     expect(firstPayload.duplicate).toBe(false);
     expect(firstPayload).not.toHaveProperty("leadId");
-    await expect(page.locator('[data-form-submission-status="success"]')).toContainText(
+    await expect(campaignForm.locator('[data-form-submission-status="success"]')).toContainText(
       String(firstPayload.reference),
     );
 

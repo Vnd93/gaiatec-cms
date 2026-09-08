@@ -969,6 +969,7 @@ select is(
   'the PIM-conflicted lease stays active for operator resolution'
 );
 
+select set_config('cms.qa_compensating', 'on', true);
 insert into public.cms_master_entities (
   id, entity_type, canonical_name, normalized_name, source_type, source_ref,
   created_by, updated_by
@@ -978,6 +979,7 @@ insert into public.cms_master_entities (
   '64000000-0000-4000-8000-000000000007',
   '64000000-0000-4000-8000-000000000001'
 );
+select set_config('cms.qa_compensating', 'off', true);
 select throws_ok(
   $$update private.cms_qa_actor_leases
     set status = 'cleaned', cleaned_at = now()

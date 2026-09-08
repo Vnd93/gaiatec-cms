@@ -186,26 +186,28 @@ select set_config(
 select lives_ok(
   $$insert into public.cms_media_assets(
     id, storage_path, original_filename, declared_mime, sha256, source_kind,
-    source_reference, rights_confirmed, license_name, owner_name, alt_text, created_by
+    source_reference, rights_confirmed, license_name, owner_name, alt_text, created_by,
+    created_at
   ) values (
     '47000000-0000-4000-8000-000000000015',
     'cms/47000000-0000-4000-8000-000000000015/original.png',
     'sha-qa.png', 'image/png', repeat('1',64), 'synthetic_test',
-    'Fixture QA isolada', true, 'Teste', 'Fixture QA', 'SHA no escopo QA',
-    '47000000-0000-4000-8000-000000000002'
+    'QA-CMS-FINAL-20260907-aaaaaaaa', true, 'Teste', 'Fixture QA', 'SHA no escopo QA',
+    '47000000-0000-4000-8000-000000000002', clock_timestamp()
   )$$,
   'a QA lease may use the same SHA as corporate media without learning or colliding with it'
 );
 select throws_ok(
   $$insert into public.cms_media_assets(
     id, storage_path, original_filename, declared_mime, sha256, source_kind,
-    source_reference, rights_confirmed, license_name, owner_name, alt_text, created_by
+    source_reference, rights_confirmed, license_name, owner_name, alt_text, created_by,
+    created_at
   ) values (
     '47000000-0000-4000-8000-000000000016',
     'cms/47000000-0000-4000-8000-000000000016/original.png',
     'sha-qa-repetido.png', 'image/png', repeat('1',64), 'synthetic_test',
-    'Fixture QA repetida', true, 'Teste', 'Fixture QA', 'SHA repetido na mesma lease',
-    '47000000-0000-4000-8000-000000000002'
+    'QA-CMS-FINAL-20260907-aaaaaaaa', true, 'Teste', 'Fixture QA', 'SHA repetido na mesma lease',
+    '47000000-0000-4000-8000-000000000002', clock_timestamp()
   )$$,
   '23505',
   null,
@@ -219,17 +221,18 @@ insert into public.cms_media_assets(
   '47000000-0000-4000-8000-000000000017',
   'cms/47000000-0000-4000-8000-000000000017/original.png',
   'qa-fora-da-lease.png', 'image/png', repeat('5',64), 'synthetic_test',
-  'Fixture QA fora da lease corrente', true, 'Teste', 'Fixture QA',
+  'QA-CMS-FINAL-20260907-aaaaaaaa', true, 'Teste', 'Fixture QA',
   'Ativo sintetico fora da janela da lease',
   '47000000-0000-4000-8000-000000000002', now() - interval '1 day'
 );
 
 insert into public.cms_content_items(
-  id, content_type, slug, created_by, updated_by
+  id, content_type, slug, created_by, updated_by, created_at, updated_at
 ) values(
   '47000000-0000-4000-8000-000000000032', 'post', 'qa-dam-rls',
   '47000000-0000-4000-8000-000000000002',
-  '47000000-0000-4000-8000-000000000002'
+  '47000000-0000-4000-8000-000000000002',
+  clock_timestamp(), clock_timestamp()
 );
 select set_config(
   'cms.qa_mutation_actor_id',
@@ -307,6 +310,11 @@ select is((select count(*)::integer from public.cms_media_variants where id='470
 select is((select count(*)::integer from public.cms_media_usages where asset_id='47000000-0000-4000-8000-000000000010'),1,'direct corporate usage read preserves an in-scope asset and content graph');
 select is((select count(*)::integer from public.cms_media_usages where id='47000000-0000-4000-8000-000000000042'),0,'direct corporate usage read excludes every QA asset and content graph');
 reset role;
+select set_config(
+  'cms.qa_mutation_actor_id',
+  '47000000-0000-4000-8000-000000000001',
+  true
+);
 select ok(has_table_privilege('service_role','public.cms_media_assets','SELECT'),'service-role backend retains explicit DAM media access for trusted RPC and Edge work');
 
 select is(

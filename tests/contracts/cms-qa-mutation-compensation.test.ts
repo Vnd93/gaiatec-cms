@@ -122,6 +122,24 @@ describe("persistent QA mutation compensation", () => {
     expect(pgTap).toContain("select plan(66)");
     expect(pgTap).toContain("select * from finish()");
     expect(pgTap).toContain("rollback;");
+    const masterConflictStart = pgTap.indexOf(
+      "select set_config('cms.qa_compensating', 'on', true);",
+      pgTap.indexOf("the PIM-conflicted lease stays active for operator resolution"),
+    );
+    const masterConflictEnd = pgTap.indexOf(
+      "'the master-data-conflicted lease stays active for operator resolution'",
+      masterConflictStart,
+    );
+    const masterConflictScenario = pgTap.slice(masterConflictStart, masterConflictEnd);
+    expect(masterConflictStart).toBeGreaterThan(-1);
+    expect(masterConflictEnd).toBeGreaterThan(masterConflictStart);
+    expect(masterConflictScenario).toMatch(
+      /select set_config\('cms\.qa_compensating', 'on', true\);\s+insert into public\.cms_master_entities/,
+    );
+    expect(masterConflictScenario).toMatch(
+      /'64000000-0000-4000-8000-000000000007',\s+'64000000-0000-4000-8000-000000000001'\s+\);\s+select set_config\('cms\.qa_compensating', 'off', true\);/,
+    );
+    expect(masterConflictScenario).toContain("CMS_QA_MASTER_EXTERNAL_CONFLICT");
   });
 
   it("keeps private snapshot payloads out of the public immutable audit evidence", () => {

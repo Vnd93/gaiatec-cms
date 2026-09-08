@@ -161,5 +161,15 @@ describe("DAM actor scope and destructive-operation fencing", () => {
     expect(pgTap).toContain("direct corporate media read excludes every synthetic QA asset");
     expect(pgTap).toContain("direct QA usage read requires its own asset and content graph");
     expect(pgTap).toContain("service-role backend retains explicit DAM media access");
+    for (const assetId of [
+      "47000000-0000-4000-8000-000000000015",
+      "47000000-0000-4000-8000-000000000016",
+      "47000000-0000-4000-8000-000000000017",
+    ]) {
+      expect(pgTap).toMatch(new RegExp(`${assetId}'[\\s\\S]{0,500}'QA-CMS-FINAL-20260907-aaaaaaaa'`));
+    }
+    expect(pgTap).toMatch(
+      /direct corporate usage read excludes every QA asset and content graph'\);\s+reset role;\s+select set_config\(\s+'cms\.qa_mutation_actor_id',\s+'47000000-0000-4000-8000-000000000001',\s+true\s+\);/,
+    );
   });
 });

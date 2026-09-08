@@ -79,6 +79,7 @@ describe("canonical product/PIM consolidation", () => {
     for (const evidence of [
       "select definition.*, member.required as member_required into v_definition",
       "v_specification -> 'required' is distinct from to_jsonb(v_definition.member_required)",
+      "case when v_definition.data_type = 'decimal'",
       "cms_pim_validate_attribute_value",
       "cms_pim_attribute_definition_scope_allowed",
       "cms_pim_attribute_set_scope_allowed",
@@ -88,9 +89,7 @@ describe("canonical product/PIM consolidation", () => {
       expect(migration).toContain(evidence);
     }
     expect(migration).toContain("if not (v_specification ? 'definitionId') then return false");
-    expect(migration).not.toContain(
-      "select definition, member.required into v_definition, v_required",
-    );
+    expect(migration).not.toContain("select definition, member.required into v_definition, v_required");
   });
 
   it("materializes model-scoped variants and owner-scoped attributes", () => {

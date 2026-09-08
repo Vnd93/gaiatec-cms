@@ -1680,9 +1680,11 @@ begin
     if not found
        or v_specification ->> 'key' is distinct from v_definition.attribute_key
        or v_specification ->> 'label' is distinct from v_definition.label
-       or v_specification ->> 'type' is distinct from case v_definition.data_type
-         when 'decimal' then 'number' else v_definition.data_type
-       end
+       or v_specification ->> 'type' is distinct from (
+         case when v_definition.data_type = 'decimal'
+           then 'number' else v_definition.data_type
+         end
+       )
        or v_specification -> 'filterable' is distinct from to_jsonb(v_definition.filterable)
        or v_specification -> 'comparable' is distinct from to_jsonb(v_definition.comparable)
        or v_specification -> 'searchable' is distinct from to_jsonb(v_definition.searchable)

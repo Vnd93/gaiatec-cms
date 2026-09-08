@@ -14,6 +14,11 @@ const uiCreatedState = readFileSync("tests/e2e/cms-ui-created-state.ts", "utf8")
 const pgTap = readFileSync("supabase/tests/rls_cms_forms_leads_scope.test.sql", "utf8");
 
 describe("authoritative forms and leads QA scope", () => {
+  it("locks retention rows without mixing composite variables in an INTO list", () => {
+    expect(migration).toMatch(/select lead\.\* into v_lead/);
+    expect(migration).not.toMatch(/select lead,form into v_lead,v_form/);
+  });
+
   it("persists complete server-derived provenance and immutable capture binding", () => {
     for (const column of ["qa_actor_id", "qa_run_tag", "qa_candidate_sha", "qa_environment"]) {
       expect(migration).toContain(column);

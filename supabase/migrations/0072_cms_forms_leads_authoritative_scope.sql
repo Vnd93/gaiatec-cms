@@ -1887,7 +1887,6 @@ as $$
 declare
   v_candidate_id uuid;
   v_lead public.cms_leads%rowtype;
-  v_form public.cms_form_definitions%rowtype;
   v_lease_actor_ids uuid[];
   v_affected integer:=0;
 begin
@@ -1904,11 +1903,11 @@ begin
     order by lead.retention_until,lead.id
     limit p_limit
   loop
-    select form,array_remove(array[
+    select array_remove(array[
       form.qa_actor_id,form.created_by,form.updated_by,
       lead.qa_actor_id,lead.assigned_to
     ],null)
-    into v_form,v_lease_actor_ids
+    into v_lease_actor_ids
     from public.cms_leads lead
     join public.cms_form_definitions form on form.id=lead.form_id
     where lead.id=v_candidate_id;
@@ -1917,7 +1916,7 @@ begin
     where lease.actor_id=any(coalesce(v_lease_actor_ids,'{}'::uuid[]))
     order by lease.actor_id
     for share;
-    select lead,form into v_lead,v_form
+    select lead.* into v_lead
     from public.cms_leads lead
     join public.cms_form_definitions form on form.id=lead.form_id
     where lead.id=v_candidate_id

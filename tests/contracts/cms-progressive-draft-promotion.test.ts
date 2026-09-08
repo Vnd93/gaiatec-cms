@@ -104,7 +104,7 @@ describe("atomic promotion of progressive drafts", () => {
       "promotion creates the canonical item and closes the shadow draft atomically",
       "a failed promotion leaves the progressive draft active",
       "a failed promotion leaves no canonical item behind",
-      "an unauthorized actor cannot promote a progressive draft",
+      "a support actor with flag-read access but no editorial permission cannot promote a progressive draft",
       "an identical retry replays the original promotion receipt",
       "production progressive drafts reject an AAL1 session",
       "a broad production override fails closed",

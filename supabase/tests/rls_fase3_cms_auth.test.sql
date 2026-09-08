@@ -2,7 +2,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 create temp table cms_auth_test_results (seq integer not null, result text not null);
-insert into cms_auth_test_results values (0, plan(16));
+insert into cms_auth_test_results values (0, plan(18));
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 values
@@ -111,17 +111,29 @@ insert into cms_auth_test_results select 14, is(
 );
 
 insert into cms_auth_test_results select 15, is(
-  (public.cms_resolve_session('32000000-0000-0000-0000-000000000002', 'login_success', 'aal1', 'editor-valid-session', now(), gen_random_uuid()) ->> 'accessGranted'),
+  (public.cms_resolve_session('32000000-0000-0000-0000-000000000002', 'login_success', 'aal1', 'editor-valid-session', now(), gen_random_uuid()) ->> 'mfaRequired'),
   'true',
-  'active editor can enter without mandatory MFA'
+  'active editor inherits MFA from an effective critical permission'
 );
 
-insert into cms_auth_test_results select 16, results_eq(
-  $$select value #>> '{}' from jsonb_array_elements(public.cms_resolve_session('32000000-0000-0000-0000-000000000002', 'login_success', 'aal1', 'editor-valid-session', now(), gen_random_uuid()) -> 'roles') value order by 1$$,
+insert into cms_auth_test_results select 16, is(
+  (public.cms_resolve_session('32000000-0000-0000-0000-000000000002', 'login_success', 'aal1', 'editor-valid-session', now(), gen_random_uuid()) ->> 'accessGranted'),
+  'false',
+  'active editor remains outside the administrative shell at AAL1'
+);
+
+insert into cms_auth_test_results select 17, is(
+  (public.cms_resolve_session('32000000-0000-0000-0000-000000000002', 'mfa_challenge', 'aal2', 'editor-valid-session', now(), gen_random_uuid()) ->> 'accessGranted'),
+  'true',
+  'active editor enters the administrative shell after AAL2 elevation'
+);
+
+insert into cms_auth_test_results select 18, results_eq(
+  $$select value #>> '{}' from jsonb_array_elements(public.cms_resolve_session('32000000-0000-0000-0000-000000000002', 'mfa_challenge', 'aal2', 'editor-valid-session', now(), gen_random_uuid()) -> 'roles') value order by 1$$,
   array['editor'::text],
   'session snapshot contains only assigned CMS roles'
 );
 
-insert into cms_auth_test_results select 17, result from finish() as result;
+insert into cms_auth_test_results select 19, result from finish() as result;
 select result from cms_auth_test_results order by seq;
 rollback;

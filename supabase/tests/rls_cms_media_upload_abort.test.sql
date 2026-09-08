@@ -539,14 +539,14 @@ select set_config(
   (select value ->> 'claimId' from media_gc_claim),
   true
 );
+update private.cms_dam_gc_fences
+set claim_expires_at = transaction_timestamp() - interval '5 minutes'
+where asset_id = '82000000-0000-4000-8000-000000000012';
 update public.cms_media_assets
-set gc_claimed_at = statement_timestamp() - interval '20 minutes',
-    gc_claim_expires_at = statement_timestamp() - interval '5 minutes',
+set gc_claimed_at = transaction_timestamp() - interval '20 minutes',
+    gc_claim_expires_at = transaction_timestamp() - interval '5 minutes',
     lock_version = lock_version + 1
 where id = '82000000-0000-4000-8000-000000000012';
-update private.cms_dam_gc_fences
-set claim_expires_at = statement_timestamp() - interval '5 minutes'
-where asset_id = '82000000-0000-4000-8000-000000000012';
 update public.cms_dam_gc_jobs
 set execute_after = statement_timestamp() - interval '1 minute'
 where asset_id = '82000000-0000-4000-8000-000000000012';
@@ -753,14 +753,14 @@ select set_config(
   (select value ->> 'claimId' from retained_gc_claim),
   true
 );
+update private.cms_dam_gc_fences
+set claim_expires_at = transaction_timestamp() - interval '5 minutes'
+where asset_id = '82000000-0000-4000-8000-000000000016';
 update public.cms_media_assets
-set gc_claimed_at = statement_timestamp() - interval '20 minutes',
-    gc_claim_expires_at = statement_timestamp() - interval '5 minutes',
+set gc_claimed_at = transaction_timestamp() - interval '20 minutes',
+    gc_claim_expires_at = transaction_timestamp() - interval '5 minutes',
     lock_version = lock_version + 1
 where id = '82000000-0000-4000-8000-000000000016';
-update private.cms_dam_gc_fences
-set claim_expires_at = statement_timestamp() - interval '5 minutes'
-where asset_id = '82000000-0000-4000-8000-000000000016';
 update public.cms_dam_gc_jobs
 set execute_after = statement_timestamp() - interval '1 minute'
 where asset_id = '82000000-0000-4000-8000-000000000016';

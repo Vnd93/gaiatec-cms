@@ -35,6 +35,11 @@ export const G12_PINNED_MIGRATION_TAIL = Object.freeze([
     file: "0087_cms_runtime_integrity_repairs.sql",
     sha256: "84290c14445a39d310ce8c78df7a1b849d8e73b476ec8d5fb827e92cbe8d0be7",
   }),
+  Object.freeze({
+    version: "0088",
+    file: "0088_cms_runtime_integrity_followup.sql",
+    sha256: "1c110049b08c7a0177ac5380b23a9950bd6834b815f43938b6af4a3fa0cb9fce",
+  }),
 ]);
 
 export const CMS_MEDIA_UPLOAD_ABORT_0082_RPCS = Object.freeze([
@@ -89,6 +94,24 @@ export const CMS_RUNTIME_INTEGRITY_REPAIRS_0087_CRB_PROSRC_SHA256 = Object.freez
   baseline: "42cf04573ac27b48140b96b7dd4706b1ceee61838dc44983ebe7089e6d0afc4d",
   transformed: "fbe2c71fb695023b953a871c5f132e2dcf6b65a78265eb27441bda8cf1ef038f",
 });
+
+export const CMS_RUNTIME_INTEGRITY_FOLLOWUP_0088_SERVICE_ONLY_RPCS = Object.freeze([
+  "public.cms_list_media_usages_scoped(uuid,text,text,text,timestamptz,uuid[])",
+  "public.cms_execute_ai_command(uuid,text,jsonb,text,text,text,text,timestamptz,uuid,uuid,text,text)",
+  "public.cms_prepare_dam_gc(uuid,text,text,text,text,timestamptz,uuid,uuid)",
+  "public.cms_complete_dam_gc(uuid,text,text,text,text,timestamptz,uuid,uuid,boolean)",
+  "public.cms_retry_lead_delivery_scoped(uuid,uuid,text,text,text,text,text,timestamptz,uuid,uuid,text)",
+  "public.cms_execute_dam_command(uuid,text,text,text,text,timestamptz,text,jsonb,uuid,uuid,text,uuid)",
+]);
+
+export const CMS_RUNTIME_INTEGRITY_FOLLOWUP_0088_OWNER_ONLY_FUNCTIONS = Object.freeze([
+  "public.cms_prepare_dam_gc_core_0088(uuid,text,text,text,text,timestamptz,uuid,uuid)",
+  "public.cms_complete_dam_gc_core_0088(uuid,text,text,text,text,timestamptz,uuid,uuid,boolean)",
+  "public.cms_retry_lead_delivery_scoped_core_0088(uuid,uuid,text,text,text,text,text,timestamptz,uuid,uuid,text)",
+  "public.cms_execute_dam_command_core_0088(uuid,text,text,text,text,timestamptz,text,jsonb,uuid,uuid,text,uuid)",
+  "private.cms_guard_dam_asset_gc_fence()",
+  "private.cms_assert_dam_actor_context(uuid,text,text,text,timestamptz)",
+]);
 
 export const CMS_MEDIA_UPLOAD_ABORT_0082_OWNER_ONLY_HELPERS = Object.freeze([
   "public.cms_block_media_delete()",
@@ -682,5 +705,57 @@ export function runtimeIntegrityRepairsSemanticSql(alias) {
           and trigger_row.tgenabled = 'O'
           and trigger_row.tgfoid = to_regprocedure('${crbCleanup}')
       )
+    , false) as ${alias}`;
+}
+
+export function runtimeIntegrityFollowupSemanticSql(alias) {
+  if (!/^[a-z][a-z0-9_]*$/.test(alias)) fail("runtime-integrity-followup-alias");
+  const media = "public.cms_list_media_usages_scoped(uuid,text,text,text,timestamptz,uuid[])";
+  const ai =
+    "public.cms_execute_ai_command(uuid,text,jsonb,text,text,text,text,timestamptz,uuid,uuid,text,text)";
+  const prepare = "public.cms_prepare_dam_gc(uuid,text,text,text,text,timestamptz,uuid,uuid)";
+  const complete = "public.cms_complete_dam_gc(uuid,text,text,text,text,timestamptz,uuid,uuid,boolean)";
+  const fence = "private.cms_guard_dam_asset_gc_fence()";
+  const damAssert = "private.cms_assert_dam_actor_context(uuid,text,text,text,timestamptz)";
+  const retry =
+    "public.cms_retry_lead_delivery_scoped(uuid,uuid,text,text,text,text,text,timestamptz,uuid,uuid,text)";
+  const dam =
+    "public.cms_execute_dam_command(uuid,text,text,text,text,timestamptz,text,jsonb,uuid,uuid,text,uuid)";
+  const normalized = (signature) =>
+    `regexp_replace(pg_get_functiondef(to_regprocedure('${signature}')), '[[:space:]]+', ' ', 'g')`;
+  const mediaDefinition = normalized(media);
+  const aiDefinition = normalized(ai);
+  const prepareDefinition = normalized(prepare);
+  const completeDefinition = normalized(complete);
+  const fenceDefinition = normalized(fence);
+  const damAssertDefinition = normalized(damAssert);
+  const retryDefinition = normalized(retry);
+  const damDefinition = normalized(dam);
+  return `coalesce(
+      ${mediaDefinition} like '%progressive.promoted_item_id = item.id%'
+      and ${mediaDefinition} not like '%progressive.item_id = item.id%'
+      and ${aiDefinition} like '%if p_aal is distinct from ''aal2'' then%'
+      and strpos(${aiDefinition}, 'CMS_AI_MFA_REQUIRED') >
+        strpos(${aiDefinition}, 'if p_aal is distinct from ''aal2'' then')
+      and ${prepareDefinition} like '%v_previous_operation text := current_setting(''cms.dam_gc_operation'',true)%'
+      and ${prepareDefinition} like '%exception when others then%'
+      and ${completeDefinition} like '%v_previous_claim text := current_setting(''cms.dam_gc_claim_id'',true)%'
+      and ${completeDefinition} like '%exception when others then%'
+      and ${fenceDefinition} like '%v_mutation_is_claim_only%'
+      and ${fenceDefinition} like '%new.lock_version=old.lock_version+1%'
+      and ${fenceDefinition} like '%join public.cms_dam_gc_jobs job%'
+      and ${damAssertDefinition} like '%''cms:media.edit''%'
+      and ${retryDefinition} like '%cms:lead-delivery-idempotency:%'
+      and strpos(${retryDefinition}, 'pg_advisory_xact_lock') <
+        strpos(${retryDefinition}, 'from public.cms_lead_outbox_replays replay')
+      and strpos(${retryDefinition}, 'from public.cms_lead_outbox_replays replay') <
+        strpos(${retryDefinition}, 'cms_retry_lead_delivery_scoped_core_0088')
+      and ${damDefinition} like '%private.cms_assert_dam_actor_context(%'
+      and ${damDefinition} like '%v_lease_environment is distinct from p_environment%'
+      and ${damDefinition} like '%set_config(''cms.qa_mutation_actor_id'', p_actor_id::text, true)%'
+      and ${damDefinition} like '%exception when others then%'
+      and not has_schema_privilege('anon','public','CREATE')
+      and not has_schema_privilege('authenticated','public','CREATE')
+      and not has_schema_privilege('service_role','public','CREATE')
     , false) as ${alias}`;
 }

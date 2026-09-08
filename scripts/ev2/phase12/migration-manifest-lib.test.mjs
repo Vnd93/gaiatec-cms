@@ -11,6 +11,8 @@ import {
   CMS_RUNTIME_INTEGRITY_REPAIRS_0087_CRB_PROSRC_SHA256,
   CMS_RUNTIME_INTEGRITY_REPAIRS_0087_OWNER_ONLY_FUNCTIONS,
   CMS_RUNTIME_INTEGRITY_REPAIRS_0087_SERVICE_ONLY_RPCS,
+  CMS_RUNTIME_INTEGRITY_FOLLOWUP_0088_OWNER_ONLY_FUNCTIONS,
+  CMS_RUNTIME_INTEGRITY_FOLLOWUP_0088_SERVICE_ONLY_RPCS,
   CMS_MEDIA_UPLOAD_ABORT_0082_RPCS,
   CMS_MEDIA_UPLOAD_ABORT_0082_OWNER_ONLY_HELPERS,
   CMS_SESSION_REFRESH_REVOCATION_0083_RPCS,
@@ -23,6 +25,7 @@ import {
   publicRelationLimitSemanticSql,
   qaActorRuntimeRepairsSemanticSql,
   runtimeIntegrityRepairsSemanticSql,
+  runtimeIntegrityFollowupSemanticSql,
   sessionRefreshRevocationSemanticSql,
   serviceOnlyRpcContractSql,
   sourceMigrationManifest,
@@ -76,9 +79,9 @@ test("the repository migration history is contiguous", () => {
   assert.equal(manifest[0].version, "0001");
   assert.equal(manifest.at(-1)?.version, String(manifest.length).padStart(4, "0"));
   assert.deepEqual(G12_PINNED_MIGRATION_TAIL.at(-1), {
-    version: "0087",
-    file: "0087_cms_runtime_integrity_repairs.sql",
-    sha256: "84290c14445a39d310ce8c78df7a1b849d8e73b476ec8d5fb827e92cbe8d0be7",
+    version: "0088",
+    file: "0088_cms_runtime_integrity_followup.sql",
+    sha256: "1c110049b08c7a0177ac5380b23a9950bd6834b815f43938b6af4a3fa0cb9fce",
   });
   assert.deepEqual(manifest.slice(-G12_PINNED_MIGRATION_TAIL.length), G12_PINNED_MIGRATION_TAIL);
   for (const migration of manifest.slice(-G12_PINNED_MIGRATION_TAIL.length)) {
@@ -88,9 +91,9 @@ test("the repository migration history is contiguous", () => {
   }
 });
 
-test("the pinned 0082 to 0087 tail fails closed on filename, order or raw-byte digest drift", () => {
+test("the pinned 0082 to 0088 tail fails closed on filename, order or raw-byte digest drift", () => {
   const files = Object.fromEntries(
-    Array.from({ length: 87 }, (_, index) => {
+    Array.from({ length: 88 }, (_, index) => {
       const version = String(index + 1).padStart(4, "0");
       const file =
         G12_PINNED_MIGRATION_TAIL.find((migration) => migration.version === version)?.file ??
@@ -106,9 +109,9 @@ test("the pinned 0082 to 0087 tail fails closed on filename, order or raw-byte d
   }
 });
 
-test("a real pinned 0082 to 0086 baseline remains readable by the 0087 candidate verifier", () => {
+test("a real pinned 0082 to 0087 baseline remains readable by the 0088 candidate verifier", () => {
   const files = Object.fromEntries(
-    Array.from({ length: 86 }, (_, index) => {
+    Array.from({ length: 87 }, (_, index) => {
       const version = String(index + 1).padStart(4, "0");
       const pinned = G12_PINNED_MIGRATION_TAIL.find((migration) => migration.version === version);
       return pinned
@@ -119,10 +122,10 @@ test("a real pinned 0082 to 0086 baseline remains readable by the 0087 candidate
   const root = fixture(files);
   try {
     const manifest = sourceMigrationManifest(root);
-    assert.equal(manifest.at(-1)?.version, "0086");
+    assert.equal(manifest.at(-1)?.version, "0087");
     assert.deepEqual(
-      manifest.slice(-5),
-      G12_PINNED_MIGRATION_TAIL.filter(({ version }) => version <= "0086"),
+      manifest.slice(-6),
+      G12_PINNED_MIGRATION_TAIL.filter(({ version }) => version <= "0087"),
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -421,6 +424,53 @@ test("0087 semantic preflight proves immutable session evidence, command gate or
   assert.throws(
     () => runtimeIntegrityRepairsSemanticSql("unsafe-alias"),
     /G12_MIGRATION_MANIFEST_INVALID:runtime-integrity-repairs-alias/,
+  );
+});
+
+test("0088 repaired RPCs remain service-only and their preserved cores remain owner-only", () => {
+  const scoped = serviceOnlyRpcContractSql(
+    "runtime_integrity_followup_0088_rpcs",
+    CMS_RUNTIME_INTEGRITY_FOLLOWUP_0088_SERVICE_ONLY_RPCS,
+  );
+  const underlying = ownerOnlyFunctionContractSql(
+    "runtime_integrity_followup_0088_functions_locked",
+    CMS_RUNTIME_INTEGRITY_FOLLOWUP_0088_OWNER_ONLY_FUNCTIONS,
+  );
+  for (const signature of CMS_RUNTIME_INTEGRITY_FOLLOWUP_0088_SERVICE_ONLY_RPCS)
+    assert.ok(scoped.includes(signature), signature);
+  for (const signature of CMS_RUNTIME_INTEGRITY_FOLLOWUP_0088_OWNER_ONLY_FUNCTIONS)
+    assert.ok(underlying.includes(signature), signature);
+  assert.match(scoped, /has_function_privilege\('service_role'/);
+  assert.match(underlying, /privilege_row\.grantee <> procedure_row\.proowner/);
+});
+
+test("0088 semantic preflight proves media, MFA, GC, idempotency and actor-context repairs", () => {
+  const contract = runtimeIntegrityFollowupSemanticSql("runtime_integrity_followup_0088_semantics_exact");
+  for (const marker of [
+    "progressive.promoted_item_id = item.id",
+    "not like '%progressive.item_id = item.id%'",
+    "CMS_AI_MFA_REQUIRED",
+    "v_previous_operation",
+    "v_previous_claim",
+    "exception when others then",
+    "v_mutation_is_claim_only",
+    "new.lock_version=old.lock_version+1",
+    "join public.cms_dam_gc_jobs job",
+    "''cms:media.edit''",
+    "cms:lead-delivery-idempotency:",
+    "pg_advisory_xact_lock",
+    "cms_retry_lead_delivery_scoped_core_0088",
+    "private.cms_assert_dam_actor_context(",
+    "v_lease_environment is distinct from p_environment",
+    "not has_schema_privilege('anon','public','CREATE')",
+    "not has_schema_privilege('authenticated','public','CREATE')",
+    "not has_schema_privilege('service_role','public','CREATE')",
+  ])
+    assert.ok(contract.includes(marker), marker);
+  assert.match(contract, /as runtime_integrity_followup_0088_semantics_exact$/);
+  assert.throws(
+    () => runtimeIntegrityFollowupSemanticSql("unsafe-alias"),
+    /G12_MIGRATION_MANIFEST_INVALID:runtime-integrity-followup-alias/,
   );
 });
 

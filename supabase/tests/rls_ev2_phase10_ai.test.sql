@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
-select plan(45);
+select plan(46);
 
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -398,11 +398,16 @@ select is(
     (select count(*) from public.cms_ai_messages) +
     (select count(*) from public.cms_ai_proposals) +
     (select count(*) from public.cms_ai_approvals) +
-    (select count(*) from public.cms_ai_tool_calls) +
-    (select count(*) from public.cms_ai_events)
+    (select count(*) from public.cms_ai_tool_calls)
   )::integer,
   0,
-  'retention purge removes the complete session graph in referential order'
+  'retention purge removes the mutable session graph in referential order'
+);
+select is(
+  (select count(*)::integer from public.cms_ai_events
+   where session_id is null and proposal_id is null),
+  3,
+  'retention purge preserves immutable AI events with business references detached'
 );
 
 select * from finish();

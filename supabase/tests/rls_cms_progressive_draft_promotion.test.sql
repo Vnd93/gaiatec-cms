@@ -21,18 +21,26 @@ insert into auth.users (
 insert into public.cms_profiles (user_id, display_name, display_email, status)
 values
   ('79000000-0000-4000-8000-000000000001', 'Owner da promoção', 'draft.promotion.owner@example.test', 'active'),
-  ('79000000-0000-4000-8000-000000000002', 'Operador sem papel', 'draft.promotion.denied@example.test', 'active');
+  ('79000000-0000-4000-8000-000000000002', 'Operador sem permissão editorial', 'draft.promotion.denied@example.test', 'active');
 
 insert into public.cms_user_roles (user_id, role_key)
-values ('79000000-0000-4000-8000-000000000001', 'super_admin');
+values
+  ('79000000-0000-4000-8000-000000000001', 'super_admin'),
+  ('79000000-0000-4000-8000-000000000002', 'support');
 
 insert into public.cms_feature_flag_overrides (
   flag_key, environment, scope_type, scope_key, enabled, reason, starts_at, expires_at, created_by
-) values (
-  'ev2.draft_v2', 'local', 'user', '79000000-0000-4000-8000-000000000001', true,
-  'Homologação local da promoção atômica', now() - interval '1 minute', now() + interval '29 minutes',
-  '79000000-0000-4000-8000-000000000001'
-);
+) values
+  (
+    'ev2.draft_v2', 'local', 'user', '79000000-0000-4000-8000-000000000001', true,
+    'Homologação local da promoção atômica', now() - interval '1 minute', now() + interval '29 minutes',
+    '79000000-0000-4000-8000-000000000001'
+  ),
+  (
+    'ev2.draft_v2', 'local', 'user', '79000000-0000-4000-8000-000000000002', true,
+    'Homologação negativa sem permissão editorial', now() - interval '1 minute', now() + interval '29 minutes',
+    '79000000-0000-4000-8000-000000000001'
+  );
 
 select isnt(
   has_function_privilege(
@@ -206,7 +214,7 @@ select throws_ok(
   )$$,
   '42501',
   'CMS_DRAFT_V2_FORBIDDEN',
-  'an unauthorized actor cannot promote a progressive draft'
+  'a support actor with flag-read access but no editorial permission cannot promote a progressive draft'
 );
 
 insert into public.cms_feature_flag_overrides (

@@ -269,7 +269,13 @@ insert into public.cms_media_usages(
 
 select set_config(
   'request.jwt.claims',
-  '{"sub":"47000000-0000-4000-8000-000000000002","role":"authenticated","aal":"aal2"}',
+  jsonb_build_object(
+    'sub', '47000000-0000-4000-8000-000000000002',
+    'role', 'authenticated',
+    'aal', 'aal2',
+    'session_id', 'ev2-dam-qa-direct-session',
+    'iat', extract(epoch from clock_timestamp())::bigint
+  )::text,
   true
 );
 set local role authenticated;
@@ -284,7 +290,13 @@ reset role;
 
 select set_config(
   'request.jwt.claims',
-  '{"sub":"47000000-0000-4000-8000-000000000001","role":"authenticated","aal":"aal2"}',
+  jsonb_build_object(
+    'sub', '47000000-0000-4000-8000-000000000001',
+    'role', 'authenticated',
+    'aal', 'aal2',
+    'session_id', 'ev2-dam-corporate-direct-session',
+    'iat', extract(epoch from clock_timestamp())::bigint
+  )::text,
   true
 );
 set local role authenticated;

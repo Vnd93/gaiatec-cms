@@ -2062,6 +2062,10 @@ test("release workflows and reduced canary are immutable, staged and production 
     backendCompatibility,
     /"0087": \[\s*"supabase\/tests\/rls_cms_session_security_finalization\.test\.sql",\s*"supabase\/tests\/rls_cms_system_rbac_scope\.test\.sql",\s*"supabase\/tests\/rls_cms_visual_multisite_scope\.test\.sql",\s*"supabase\/tests\/rls_cms_collaboration_release_bulk_scope\.test\.sql",\s*"tests\/contracts\/cms-runtime-integrity-repairs\.test\.ts"/,
   );
+  assert.match(
+    backendCompatibility,
+    /"0088": \[\s*"supabase\/tests\/rls_cms_media_upload_abort\.test\.sql",\s*"supabase\/tests\/rls_ev2_phase10_ai\.test\.sql",\s*"supabase\/tests\/rls_ev2_phase5_dam\.test\.sql",\s*"supabase\/tests\/rls_ev2_phase11_system\.test\.sql",\s*"supabase\/tests\/rls_cms_deployed_command_actor_context\.test\.sql",\s*"tests\/contracts\/cms-runtime-integrity-followup\.test\.ts"/,
+  );
   assert.match(stagingDatabaseVerify, /media_upload_abort_0082_rpcs_privileges_exact/);
   assert.match(stagingDatabaseVerify, /media_upload_abort_0082_helpers_locked/);
   assert.match(stagingDatabaseVerify, /session_refresh_revocation_0083_semantics_exact/);
@@ -2075,6 +2079,9 @@ test("release workflows and reduced canary are immutable, staged and production 
   assert.match(stagingDatabaseVerify, /runtime_integrity_repairs_0087_rpcs_privileges_exact/);
   assert.match(stagingDatabaseVerify, /runtime_integrity_repairs_0087_functions_locked/);
   assert.match(stagingDatabaseVerify, /runtime_integrity_repairs_0087_semantics_exact/);
+  assert.match(stagingDatabaseVerify, /runtime_integrity_followup_0088_rpcs_privileges_exact/);
+  assert.match(stagingDatabaseVerify, /runtime_integrity_followup_0088_functions_locked/);
+  assert.match(stagingDatabaseVerify, /runtime_integrity_followup_0088_semantics_exact/);
   assert.match(backendCompatibility, /compatibilityEvidenceExecutionVerified: true/);
   assert.match(production, /probe-supabase-boundary\.mjs/);
   assert.match(deployStaging, /probe-supabase-boundary\.mjs/);
@@ -2155,6 +2162,9 @@ test("release workflows and reduced canary are immutable, staged and production 
   assert.match(databaseVerify, /runtime_integrity_repairs_0087_rpcs_privileges_exact/);
   assert.match(databaseVerify, /runtime_integrity_repairs_0087_functions_locked/);
   assert.match(databaseVerify, /runtime_integrity_repairs_0087_semantics_exact/);
+  assert.match(databaseVerify, /runtime_integrity_followup_0088_rpcs_privileges_exact/);
+  assert.match(databaseVerify, /runtime_integrity_followup_0088_functions_locked/);
+  assert.match(databaseVerify, /runtime_integrity_followup_0088_semantics_exact/);
   assert.match(authConfig, /disable_signup: true/);
   assert.match(vaultConfig, /cms_outbox_worker_secret/);
   const approvalTemplate = JSON.parse(template);

@@ -5,6 +5,8 @@ import {
   CMS_QA_ACTOR_RUNTIME_REPAIRS_0086_OWNER_ONLY_FUNCTIONS,
   CMS_RUNTIME_INTEGRITY_REPAIRS_0087_OWNER_ONLY_FUNCTIONS,
   CMS_RUNTIME_INTEGRITY_REPAIRS_0087_SERVICE_ONLY_RPCS,
+  CMS_RUNTIME_INTEGRITY_FOLLOWUP_0088_OWNER_ONLY_FUNCTIONS,
+  CMS_RUNTIME_INTEGRITY_FOLLOWUP_0088_SERVICE_ONLY_RPCS,
   CMS_MEDIA_UPLOAD_ABORT_0082_RPCS,
   CMS_MEDIA_UPLOAD_ABORT_0082_OWNER_ONLY_HELPERS,
   CMS_SESSION_REFRESH_REVOCATION_0083_RPCS,
@@ -15,6 +17,7 @@ import {
   publicRelationLimitSemanticSql,
   qaActorRuntimeRepairsSemanticSql,
   runtimeIntegrityRepairsSemanticSql,
+  runtimeIntegrityFollowupSemanticSql,
   sessionRefreshRevocationSemanticSql,
   serviceOnlyRpcContractSql,
   sourceMigrationManifest,
@@ -136,6 +139,15 @@ const [result] = await managementRequest(`/v1/projects/${PRODUCTION_PROJECT_REF}
         CMS_RUNTIME_INTEGRITY_REPAIRS_0087_OWNER_ONLY_FUNCTIONS,
       )},
       ${runtimeIntegrityRepairsSemanticSql("runtime_integrity_repairs_0087_semantics_exact")},
+      ${serviceOnlyRpcContractSql(
+        "runtime_integrity_followup_0088_rpcs",
+        CMS_RUNTIME_INTEGRITY_FOLLOWUP_0088_SERVICE_ONLY_RPCS,
+      )},
+      ${ownerOnlyFunctionContractSql(
+        "runtime_integrity_followup_0088_functions_locked",
+        CMS_RUNTIME_INTEGRITY_FOLLOWUP_0088_OWNER_ONLY_FUNCTIONS,
+      )},
+      ${runtimeIntegrityFollowupSemanticSql("runtime_integrity_followup_0088_semantics_exact")},
       exists(
         select 1 from pg_catalog.pg_trigger t
         where t.tgrelid = 'private.cms_qa_actor_leases'::regclass
@@ -222,6 +234,10 @@ const checks = [
   "runtime_integrity_repairs_0087_rpcs_privileges_exact",
   "runtime_integrity_repairs_0087_functions_locked",
   "runtime_integrity_repairs_0087_semantics_exact",
+  "runtime_integrity_followup_0088_rpcs_present",
+  "runtime_integrity_followup_0088_rpcs_privileges_exact",
+  "runtime_integrity_followup_0088_functions_locked",
+  "runtime_integrity_followup_0088_semantics_exact",
   "qa_rate_limit_proof_cleanup_present",
   "qa_actor_auth_trigger_present",
   "qa_actor_marker_trigger_present",

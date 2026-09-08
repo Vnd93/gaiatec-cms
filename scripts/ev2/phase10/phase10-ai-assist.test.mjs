@@ -55,7 +55,7 @@ test("EV2.10 migration is additive, private, synthetic and default-off", async (
   assert.match(sql, /revoke all on table[\s\S]+from public, anon, authenticated/);
   assert.match(sql, /grant all on table[\s\S]+to service_role/);
   assert.doesNotMatch(sql, /drop table|truncate|default_enabled\s*=\s*true/i);
-  assert.match(rls, /select plan\(45\)/);
+  assert.match(rls, /select plan\(46\)/);
 });
 
 test("tool catalog cannot execute critical or CMS-mutating actions", async () => {

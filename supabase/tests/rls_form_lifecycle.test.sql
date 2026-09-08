@@ -89,8 +89,8 @@ select is(
 );
 select throws_ok(
   $$select pg_temp.form_lifecycle('archive_form', p_aal => 'aal1')$$,
-  '42501', 'CMS_FORM_COMMAND_FORBIDDEN',
-  'archival requires a recently authenticated AAL2 session'
+  '42501', 'CMS_FORMS_SCOPE_FORBIDDEN',
+  'an AAL1 archival request fails closed at the scoped authorization boundary'
 );
 select lives_ok(
   $$select pg_temp.form_lifecycle(
@@ -125,12 +125,12 @@ select throws_ok(
     '92000000-0000-4000-8000-000000000001',
     '92000000-0000-4000-8000-000000000002', gen_random_uuid(),
     '{"email":"synthetic@example.test"}'::jsonb,
-    '{"path":"/qa-form-lifecycle","source":"synthetic"}'::jsonb,
+    '{"path":"/qa-form-lifecycle","source":"website"}'::jsonb,
     '{"accepted":true,"text":"Aceito o tratamento dos dados sintéticos.","version":"qa-v1"}'::jsonb,
     '{"synthetic":true}'::jsonb, gen_random_uuid()
   )$$,
-  '23514', 'CMS_FORM_VERSION_INACTIVE',
-  'a retired form rejects new public lead captures'
+  '42501', 'CMS_LEAD_ORIGIN_SCOPE_FORBIDDEN',
+  'a retired form fails closed at the authoritative public-origin boundary'
 );
 select is(
   (pg_temp.form_lifecycle(
@@ -166,8 +166,8 @@ select throws_ok(
     'restore_form', '92000000-0000-4000-8000-000000000002', 3,
     p_aal => 'aal1'
   )$$,
-  '42501', 'CMS_FORM_COMMAND_FORBIDDEN',
-  'restoration also requires AAL2'
+  '42501', 'CMS_FORMS_SCOPE_FORBIDDEN',
+  'an AAL1 restoration request fails closed at the scoped authorization boundary'
 );
 select lives_ok(
   $$select pg_temp.form_lifecycle(
@@ -204,7 +204,7 @@ select lives_ok(
     '92000000-0000-4000-8000-000000000002',
     '92000000-0000-4000-8000-000000000030',
     '{"email":"synthetic@example.test"}'::jsonb,
-    '{"path":"/qa-form-lifecycle","source":"synthetic"}'::jsonb,
+    '{"path":"/qa-form-lifecycle","source":"website"}'::jsonb,
     '{"accepted":true,"text":"Aceito o tratamento dos dados sintéticos.","version":"qa-v1"}'::jsonb,
     '{"synthetic":true}'::jsonb, gen_random_uuid()
   )$$,

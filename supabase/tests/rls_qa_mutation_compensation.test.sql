@@ -870,6 +870,11 @@ select is(
 
 -- Domain CAS: ordinary-operator adoption blocks terminal compensation and
 -- leaves both the governed row and the lease untouched.
+select set_config(
+  'cms.qa_mutation_actor_id',
+  '64000000-0000-4000-8000-000000000005',
+  true
+);
 insert into public.cms_media_assets (
   id, storage_path, original_filename, declared_mime, detected_mime, byte_size,
   sha256, width, height, processing_status, scan_status, scan_engine,
@@ -883,6 +888,11 @@ insert into public.cms_media_assets (
   'QA-CMS-FINAL-20260907-aaaaaaaa', true, 'Synthetic QA', 'GAIATEC QA',
   'QA DAM conflict fixture', '64000000-0000-4000-8000-000000000005'
 );
+select set_config(
+  'cms.qa_mutation_actor_id',
+  '64000000-0000-4000-8000-000000000001',
+  true
+);
 insert into public.cms_dam_collections (
   id, name, normalized_name, description, created_by, updated_by
 ) values (
@@ -891,12 +901,14 @@ insert into public.cms_dam_collections (
   '64000000-0000-4000-8000-000000000001',
   '64000000-0000-4000-8000-000000000001'
 );
+select set_config('cms.qa_compensating', 'on', true);
 insert into public.cms_dam_collection_assets (collection_id, asset_id, created_by)
 values (
   '64000000-0000-4000-8000-000000000308',
   '64000000-0000-4000-8000-000000000307',
   '64000000-0000-4000-8000-000000000001'
 );
+select set_config('cms.qa_compensating', 'off', true);
 select throws_ok(
   $$update private.cms_qa_actor_leases
     set status = 'cleaned', cleaned_at = now()

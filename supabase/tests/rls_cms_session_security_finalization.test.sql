@@ -199,10 +199,10 @@ select ok((select active from public.rdo_user_access
   'CMS revocation preserves active RDO access');
 
 insert into auth.sessions(id,user_id,created_at,updated_at,aal) values(
-  '83000000-0000-4000-8000-000000000105','83000000-0000-4000-8000-000000000003',now(),now(),'aal1'
+  '83000000-0000-4000-8000-000000000105','83000000-0000-4000-8000-000000000003',now(),now(),'aal2'
 );
 select is((public.cms_resolve_session_scoped(
-  '83000000-0000-4000-8000-000000000003','login_success','local','aal1',
+  '83000000-0000-4000-8000-000000000003','login_success','local','aal2',
   '83000000-0000-4000-8000-000000000105',clock_timestamp()+interval '1 second',gen_random_uuid()
 )->>'accessGranted')::boolean,true,
   'a genuinely new Auth session may enter the CMS after revocation');
@@ -220,7 +220,7 @@ select is((select count(*)::integer from public.cms_session_revocations
     ),'hex')),0,
   'an idempotent replay does not broaden capture to a later Auth session');
 select is((public.cms_resolve_session_scoped(
-  '83000000-0000-4000-8000-000000000003','login_success','local','aal1',
+  '83000000-0000-4000-8000-000000000003','login_success','local','aal2',
   '83000000-0000-4000-8000-000000000105',clock_timestamp()+interval '2 seconds',gen_random_uuid()
 )->>'accessGranted')::boolean,true,
   'the later Auth session remains eligible after the idempotent replay');
@@ -268,7 +268,7 @@ select ok((select active from public.rdo_user_access
   'suspend and reactivate do not mutate RDO access');
 
 insert into auth.sessions(id,user_id,created_at,updated_at,aal) values(
-  '83000000-0000-4000-8000-000000000107','83000000-0000-4000-8000-000000000004',now(),now(),'aal1'
+  '83000000-0000-4000-8000-000000000107','83000000-0000-4000-8000-000000000004',now(),now(),'aal2'
 );
 select is((public.cms_apply_user_command_scoped(
   '83000000-0000-4000-8000-000000000001','reactivate',
@@ -284,7 +284,7 @@ select is((select count(*)::integer from public.cms_session_revocations
     ),'hex')),0,
   'an idempotent reactivate replay does not revoke a post-reactivation session');
 select is((public.cms_resolve_session_scoped(
-  '83000000-0000-4000-8000-000000000004','login_success','local','aal1',
+  '83000000-0000-4000-8000-000000000004','login_success','local','aal2',
   '83000000-0000-4000-8000-000000000107',clock_timestamp()+interval '2 seconds',gen_random_uuid()
 )->>'accessGranted')::boolean,true,
   'the post-reactivation session can enter the CMS');

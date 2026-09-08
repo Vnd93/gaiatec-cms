@@ -160,6 +160,14 @@ const compatibilityTests = {
     "supabase/tests/rls_cms_collaboration_release_bulk_scope.test.sql",
     "tests/contracts/cms-runtime-integrity-repairs.test.ts",
   ],
+  "0088": [
+    "supabase/tests/rls_cms_media_upload_abort.test.sql",
+    "supabase/tests/rls_ev2_phase10_ai.test.sql",
+    "supabase/tests/rls_ev2_phase5_dam.test.sql",
+    "supabase/tests/rls_ev2_phase11_system.test.sql",
+    "supabase/tests/rls_cms_deployed_command_actor_context.test.sql",
+    "tests/contracts/cms-runtime-integrity-followup.test.ts",
+  ],
 };
 for (const migration of additions) {
   const version = migration.version;

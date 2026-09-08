@@ -94,7 +94,7 @@ test("database deployment preflights require the exact 0081 RPC and service-only
   }
 });
 
-test("database preflights require every 0082-0087 contract, exact ACL and semantic guards", async () => {
+test("database preflights require every 0082-0088 contract, exact ACL and semantic guards", async () => {
   const [contracts, canary, ...verifiers] = await Promise.all([
     read("scripts/ev2/phase12/migration-manifest-lib.mjs"),
     read("scripts/ev2/phase12/staging-migrations-canary.mjs"),
@@ -132,6 +132,12 @@ test("database preflights require every 0082-0087 contract, exact ACL and semant
     "public.cms_execute_visual_command(uuid,text,uuid,uuid,jsonb,bigint,bigint,text,text,text,text,timestamptz,uuid,uuid,text,uuid)",
     "public.cms_execute_site_command(uuid,text,text,jsonb,bigint,text,text,text,text,timestamptz,uuid,uuid,text,uuid)",
     "private.cms_crb_terminalize_qa_graph()",
+    "public.cms_prepare_dam_gc_core_0088(uuid,text,text,text,text,timestamptz,uuid,uuid)",
+    "public.cms_complete_dam_gc_core_0088(uuid,text,text,text,text,timestamptz,uuid,uuid,boolean)",
+    "public.cms_retry_lead_delivery_scoped_core_0088(uuid,uuid,text,text,text,text,text,timestamptz,uuid,uuid,text)",
+    "public.cms_execute_dam_command_core_0088(uuid,text,text,text,text,timestamptz,text,jsonb,uuid,uuid,text,uuid)",
+    "private.cms_guard_dam_asset_gc_fence()",
+    "private.cms_assert_dam_actor_context(uuid,text,text,text,timestamptz)",
   ])
     assert.ok(contracts.includes(signature), `missing exact RPC contract ${signature}`);
   for (const verifier of [canary, ...verifiers]) {
@@ -162,6 +168,11 @@ test("database preflights require every 0082-0087 contract, exact ACL and semant
     assert.match(verifier, /runtime_integrity_repairs_0087_functions_locked/);
     assert.match(verifier, /runtime_integrity_repairs_0087_semantics_exact/);
     assert.match(verifier, /runtimeIntegrityRepairsSemanticSql/);
+    assert.match(verifier, /runtime_integrity_followup_0088_rpcs_present/);
+    assert.match(verifier, /runtime_integrity_followup_0088_rpcs_privileges_exact/);
+    assert.match(verifier, /runtime_integrity_followup_0088_functions_locked/);
+    assert.match(verifier, /runtime_integrity_followup_0088_semantics_exact/);
+    assert.match(verifier, /runtimeIntegrityFollowupSemanticSql/);
   }
   assert.match(contracts, /has_function_privilege\('service_role'/);
   assert.match(contracts, /has_function_privilege\('authenticated'/);
@@ -245,6 +256,7 @@ test("canary proves refresh-resistant session revocation without banning Auth", 
   assert.match(source, /"0085"/);
   assert.match(source, /"0086"/);
   assert.match(source, /"0087"/);
+  assert.match(source, /"0088"/);
   assert.match(source, /migrationManifest: sourceMigrations/);
   assert.doesNotMatch(source, /console\.(?:log|error)\([^)]*(?:password|refreshToken|totpSecret)/);
 });

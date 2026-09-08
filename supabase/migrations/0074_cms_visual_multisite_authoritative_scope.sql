@@ -307,7 +307,7 @@ begin
       union all
       select value #>> '{}'
       from jsonb_path_query(p_document, 'lax $.nodes[*].data.items[*].assetId') value
-    ) references where nullif(raw_id, '') is not null
+    ) linked_references where nullif(raw_id, '') is not null
   loop
     if v_reference ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then
       select asset.created_by into v_reference_id

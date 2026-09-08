@@ -8,6 +8,11 @@ const migration = readFileSync(
 const pgTap = readFileSync("supabase/tests/rls_cms_visual_multisite_scope.test.sql", "utf8");
 
 describe("authoritative Visual Studio and multisite scope", () => {
+  it("uses a non-reserved alias for embedded document references", () => {
+    expect(migration).toContain(") linked_references where nullif(raw_id, '') is not null");
+    expect(migration).not.toMatch(/\) references where nullif\(raw_id, ''\) is not null/);
+  });
+
   it("persists a server-derived immutable candidate marker", () => {
     expect(migration).toContain("add column if not exists qa_actor_id uuid");
     expect(migration).toContain("new.qa_run_tag := v_lease.run_tag");

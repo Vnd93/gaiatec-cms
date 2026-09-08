@@ -294,7 +294,7 @@ declare
 begin
   if jsonb_typeof(p_payload) is distinct from 'object' then return false; end if;
   for v_reference in
-    with references as (
+    with linked_references as (
       select 'product'::text as expected_type,value #>> '{}' as raw_id
       from jsonb_path_query(p_payload,'lax $.**.productIds[*]') value
       union all select 'service',value #>> '{}'
@@ -325,7 +325,7 @@ begin
       from jsonb_path_query(p_payload,'lax $.**.placements[*]') placement
       where placement ? 'contextId' and placement ->> 'contextType'<>'global'
     )
-    select distinct expected_type,raw_id from references where nullif(raw_id,'') is not null
+    select distinct expected_type,raw_id from linked_references where nullif(raw_id,'') is not null
   loop
     if v_reference.raw_id
        !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then

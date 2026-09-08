@@ -2,6 +2,11 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const migration = readFileSync("supabase/migrations/0069_cms_content_authoritative_scope.sql", "utf8");
+
+it("uses a non-reserved CTE name for governed content links", () => {
+  expect(migration).toMatch(/with linked_references as \(/);
+  expect(migration).not.toMatch(/with references as \(/);
+});
 const contentEdge = readFileSync("supabase/functions/cms-content/index.ts", "utf8");
 const draftsEdge = readFileSync("supabase/functions/cms-drafts-v2/index.ts", "utf8");
 const qualityEdge = readFileSync("supabase/functions/cms-quality/index.ts", "utf8");

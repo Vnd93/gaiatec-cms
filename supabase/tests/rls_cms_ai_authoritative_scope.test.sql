@@ -100,19 +100,6 @@ insert into public.cms_user_roles(user_id,role_key) values
 ('75000000-0000-4000-8000-000000000002','super_admin'),
 ('75000000-0000-4000-8000-000000000003','super_admin'),
 ('75000000-0000-4000-8000-000000000004','super_admin');
-insert into private.cms_qa_actor_leases(
-  actor_id,run_tag,candidate_sha,environment,status,created_at,expires_at
-) values
-('75000000-0000-4000-8000-000000000002','QA-CMS-FINAL-20260907-aaaaaaaa',
- 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','staging','active',
- transaction_timestamp()-interval '1 minute',statement_timestamp()+interval '90 minutes'),
-('75000000-0000-4000-8000-000000000003','QA-CMS-FINAL-20260907-aaaaaaaa',
- 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','staging','active',
- transaction_timestamp()-interval '1 minute',statement_timestamp()+interval '90 minutes'),
-('75000000-0000-4000-8000-000000000004','QA-CMS-FINAL-20260907-bbbbbbbb',
- 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb','staging','active',
- transaction_timestamp()-interval '1 minute',statement_timestamp()+interval '90 minutes');
-
 select set_config('cms.qa_mutation_actor_id','75000000-0000-4000-8000-000000000001',true);
 insert into public.cms_ai_synthetic_targets(
   target_ref,title,environment,site_key,payload,created_by,updated_by

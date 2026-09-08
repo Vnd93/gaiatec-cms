@@ -7,6 +7,7 @@ import { QA_ACTOR_LEASE_TTL_MINUTES } from "../../qa/qa-actor-lease.mjs";
 import {
   CMS_LEAD_ORIGIN_BINDING_0084_OWNER_ONLY_HELPERS,
   CMS_PUBLIC_RELATION_LIMIT_0085_OWNER_ONLY_HELPERS,
+  CMS_QA_ACTOR_RUNTIME_REPAIRS_0086_OWNER_ONLY_FUNCTIONS,
   CMS_MEDIA_UPLOAD_ABORT_0082_RPCS,
   CMS_MEDIA_UPLOAD_ABORT_0082_OWNER_ONLY_HELPERS,
   CMS_SESSION_REFRESH_REVOCATION_0083_RPCS,
@@ -15,6 +16,7 @@ import {
   mediaUploadAbortSchemaContractSql,
   ownerOnlyFunctionContractSql,
   publicRelationLimitSemanticSql,
+  qaActorRuntimeRepairsSemanticSql,
   sessionRefreshRevocationSemanticSql,
   serviceOnlyRpcContractSql,
   sourceMigrationManifest,
@@ -76,6 +78,7 @@ const scenarioCoverage = [
   "0083",
   "0084",
   "0085",
+  "0086",
 ];
 const accessToken = process.env.SUPABASE_ACCESS_TOKEN ?? "";
 const expectedSha = process.env.G12_MIGRATION_CANARY_EXPECTED_SHA ?? "";
@@ -537,6 +540,11 @@ async function preflightMigrations() {
       from public.cms_published_projection projection
       where private.cms_public_relation_count_0085(projection.payload) > 500
     ) as public_relation_limit_0085_existing_rows_valid,
+    ${ownerOnlyFunctionContractSql(
+      "qa_actor_runtime_repairs_0086_functions_locked",
+      CMS_QA_ACTOR_RUNTIME_REPAIRS_0086_OWNER_ONLY_FUNCTIONS,
+    )},
+    ${qaActorRuntimeRepairsSemanticSql("qa_actor_runtime_repairs_0086_semantics_exact")},
     has_function_privilege('service_role', 'public.cms_qa_rate_limit_proof(uuid,text,text,text,text,text)', 'EXECUTE')
       and not has_function_privilege('authenticated', 'public.cms_qa_rate_limit_proof(uuid,text,text,text,text,text)', 'EXECUTE')
       and not has_function_privilege('anon', 'public.cms_qa_rate_limit_proof(uuid,text,text,text,text,text)', 'EXECUTE')
@@ -696,6 +704,14 @@ async function preflightMigrations() {
   check(
     "public_relation_limit_0085_existing_rows_valid",
     row?.public_relation_limit_0085_existing_rows_valid === true,
+  );
+  check(
+    "qa_actor_runtime_repairs_0086_functions_locked",
+    row?.qa_actor_runtime_repairs_0086_functions_locked === true,
+  );
+  check(
+    "qa_actor_runtime_repairs_0086_semantics_exact",
+    row?.qa_actor_runtime_repairs_0086_semantics_exact === true,
   );
   check("qa_actor_auth_triggers_0061_present", row?.qa_actor_auth_triggers === true);
   check("qa_actor_watchdog_cron_0061_active", row?.qa_actor_watchdog_cron === true);

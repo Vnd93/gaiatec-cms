@@ -159,7 +159,7 @@ select has_table(
 select isnt(
   has_function_privilege(
     'service_role',
-    'private.cms_pim_legacy_graph_read_only_0078()',
+    'public.cms_pim_legacy_graph_read_only_0078()',
     'EXECUTE'
   ),
   true,

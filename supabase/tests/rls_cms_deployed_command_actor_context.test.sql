@@ -19,30 +19,40 @@ select isnt(
   'DAM command is installed'
 );
 
-select like(
-  pg_get_functiondef('public.cms_execute_master_data_command(uuid,text,jsonb,text,text,text,text,timestamptz,uuid,uuid,text,uuid)'::regprocedure),
-  '%set_config(''cms.qa_mutation_actor_id'', p_actor_id::text, true)%',
+select ok(
+  strpos(
+    pg_get_functiondef('public.cms_execute_master_data_command(uuid,text,jsonb,text,text,text,text,timestamptz,uuid,uuid,text,uuid)'::regprocedure),
+    'set_config(''cms.qa_mutation_actor_id'', p_actor_id::text, true)'
+  ) > 0,
   'master-data command binds the mutation actor transaction-locally'
 );
-select like(
-  pg_get_functiondef('public.cms_execute_pim_command(uuid,text,jsonb,text,text,text,text,timestamptz,uuid,uuid,text,uuid)'::regprocedure),
-  '%set_config(''cms.qa_mutation_actor_id'', p_actor_id::text, true)%',
+select ok(
+  strpos(
+    pg_get_functiondef('public.cms_execute_pim_command(uuid,text,jsonb,text,text,text,text,timestamptz,uuid,uuid,text,uuid)'::regprocedure),
+    'set_config(''cms.qa_mutation_actor_id'', p_actor_id::text, true)'
+  ) > 0,
   'PIM command binds the mutation actor transaction-locally'
 );
-select like(
-  pg_get_functiondef('public.cms_execute_dam_command(uuid,text,text,text,text,timestamptz,text,jsonb,uuid,uuid,text,uuid)'::regprocedure),
-  '%set_config(''cms.qa_mutation_actor_id'', p_actor_id::text, true)%',
+select ok(
+  strpos(
+    pg_get_functiondef('public.cms_execute_dam_command(uuid,text,text,text,text,timestamptz,text,jsonb,uuid,uuid,text,uuid)'::regprocedure),
+    'set_config(''cms.qa_mutation_actor_id'', p_actor_id::text, true)'
+  ) > 0,
   'DAM command binds the mutation actor transaction-locally'
 );
 
-select unlike(
-  pg_get_functiondef('public.cms_execute_master_data_command(uuid,text,jsonb,text,text,text,text,timestamptz,uuid,uuid,text,uuid)'::regprocedure),
-  '%entity.status <> ''merged''%',
+select ok(
+  strpos(
+    pg_get_functiondef('public.cms_execute_master_data_command(uuid,text,jsonb,text,text,text,text,timestamptz,uuid,uuid,text,uuid)'::regprocedure),
+    'entity.status <> ''merged'''
+  ) = 0,
   'retired master-data keys cannot remain eligible for active-key collision checks'
 );
-select like(
-  pg_get_functiondef('public.cms_execute_master_data_command(uuid,text,jsonb,text,text,text,text,timestamptz,uuid,uuid,text,uuid)'::regprocedure),
-  '%entity.status = ''active''%',
+select ok(
+  strpos(
+    pg_get_functiondef('public.cms_execute_master_data_command(uuid,text,jsonb,text,text,text,text,timestamptz,uuid,uuid,text,uuid)'::regprocedure),
+    'entity.status = ''active'''
+  ) > 0,
   'master-data collision checks use active rows only'
 );
 

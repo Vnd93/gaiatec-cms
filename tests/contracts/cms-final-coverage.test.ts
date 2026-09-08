@@ -477,6 +477,7 @@ describe("matriz final de cobertura do CMS", () => {
         "supabase/migrations/0083_cms_session_refresh_revocation.sql",
         "supabase/migrations/0084_cms_lead_origin_form_binding.sql",
         "supabase/migrations/0085_cms_public_relation_limit.sql",
+        "supabase/migrations/0086_cms_qa_actor_runtime_repairs.sql",
       ]),
     );
     expect(report.migrationInventory.relations.length).toBeGreaterThan(150);

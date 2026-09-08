@@ -94,7 +94,7 @@ test("database deployment preflights require the exact 0081 RPC and service-only
   }
 });
 
-test("database preflights require every 0082-0085 contract, exact ACL and semantic guards", async () => {
+test("database preflights require every 0082-0086 contract, exact ACL and semantic guards", async () => {
   const [contracts, canary, ...verifiers] = await Promise.all([
     read("scripts/ev2/phase12/migration-manifest-lib.mjs"),
     read("scripts/ev2/phase12/staging-migrations-canary.mjs"),
@@ -123,6 +123,10 @@ test("database preflights require every 0082-0085 contract, exact ACL and semant
     "private.cms_public_relation_ids_0085(jsonb)",
     "private.cms_public_relation_count_0085(jsonb)",
     "private.cms_enforce_public_relation_limit_0085()",
+    "private.cms_capture_qa_actor_lease()",
+    "private.cms_prepare_qa_actor_terminal_forms_leads_cleanup()",
+    "private.cms_ai_terminalize_qa_actor_graph()",
+    "public.cms_open_draft_after_edit()",
   ])
     assert.ok(contracts.includes(signature), `missing exact RPC contract ${signature}`);
   for (const verifier of [canary, ...verifiers]) {
@@ -145,6 +149,9 @@ test("database preflights require every 0082-0085 contract, exact ACL and semant
     assert.match(verifier, /public_relation_limit_0085_semantics_exact/);
     assert.match(verifier, /public_relation_limit_0085_existing_rows_valid/);
     assert.match(verifier, /publicRelationLimitSemanticSql/);
+    assert.match(verifier, /qa_actor_runtime_repairs_0086_functions_locked/);
+    assert.match(verifier, /qa_actor_runtime_repairs_0086_semantics_exact/);
+    assert.match(verifier, /qaActorRuntimeRepairsSemanticSql/);
   }
   assert.match(contracts, /has_function_privilege\('service_role'/);
   assert.match(contracts, /has_function_privilege\('authenticated'/);
@@ -163,6 +170,19 @@ test("database preflights require every 0082-0085 contract, exact ACL and semant
   assert.match(contracts, /v_source in \(''site'', ''contact'', ''newsletter'', ''website''\)/);
   assert.match(contracts, /count\(distinct relation_id\)/);
   assert.match(contracts, /cms_00_enforce_public_relation_limit_0085/);
+  assert.match(contracts, /transaction_timestamp\(\)/);
+  assert.match(contracts, /\) is not true then/);
+  assert.match(contracts, /CMS_QA_ACTOR_METADATA_INVALID/);
+  assert.match(contracts, /v_correlation_id uuid:=gen_random_uuid\(\)/);
+  assert.match(contracts, /not like '%old\.correlation_id%'/);
+  assert.match(contracts, /cms\.qa_compensating/);
+  assert.match(contracts, /cms\.qa_restore_item/);
+  assert.match(contracts, /cms_capture_qa_actor_lease/);
+  assert.match(contracts, /zzz_cms_forms_leads_terminal_cleanup/);
+  assert.match(contracts, /zzzz_cms_ai_terminal_cleanup/);
+  assert.match(contracts, /cms_draft_edit_opens_workflow/);
+  assert.match(contracts, /trigger_row\.tgenabled = 'O'/);
+  assert.match(contracts, /trigger_row\.tgfoid = to_regprocedure\(required\.signature\)/);
 });
 
 test("canary proves refresh-resistant session revocation without banning Auth", async () => {
@@ -185,6 +205,7 @@ test("canary proves refresh-resistant session revocation without banning Auth", 
   assert.match(source, /"0083"/);
   assert.match(source, /"0084"/);
   assert.match(source, /"0085"/);
+  assert.match(source, /"0086"/);
   assert.match(source, /migrationManifest: sourceMigrations/);
   assert.doesNotMatch(source, /console\.(?:log|error)\([^)]*(?:password|refreshToken|totpSecret)/);
 });

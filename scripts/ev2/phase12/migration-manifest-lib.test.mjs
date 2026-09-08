@@ -7,6 +7,7 @@ import test from "node:test";
 import {
   CMS_LEAD_ORIGIN_BINDING_0084_OWNER_ONLY_HELPERS,
   CMS_PUBLIC_RELATION_LIMIT_0085_OWNER_ONLY_HELPERS,
+  CMS_QA_ACTOR_RUNTIME_REPAIRS_0086_OWNER_ONLY_FUNCTIONS,
   CMS_MEDIA_UPLOAD_ABORT_0082_RPCS,
   CMS_MEDIA_UPLOAD_ABORT_0082_OWNER_ONLY_HELPERS,
   CMS_SESSION_REFRESH_REVOCATION_0083_RPCS,
@@ -17,6 +18,7 @@ import {
   migrationVersionSqlArray,
   ownerOnlyFunctionContractSql,
   publicRelationLimitSemanticSql,
+  qaActorRuntimeRepairsSemanticSql,
   sessionRefreshRevocationSemanticSql,
   serviceOnlyRpcContractSql,
   sourceMigrationManifest,
@@ -69,6 +71,11 @@ test("the repository migration history is contiguous", () => {
   const manifest = sourceMigrationManifest(process.cwd());
   assert.equal(manifest[0].version, "0001");
   assert.equal(manifest.at(-1)?.version, String(manifest.length).padStart(4, "0"));
+  assert.deepEqual(G12_PINNED_MIGRATION_TAIL.at(-1), {
+    version: "0086",
+    file: "0086_cms_qa_actor_runtime_repairs.sql",
+    sha256: "b351e4029074427d7f4f868d14cc3e425d9f7730d247c3318c95efdd3e05283b",
+  });
   assert.deepEqual(manifest.slice(-G12_PINNED_MIGRATION_TAIL.length), G12_PINNED_MIGRATION_TAIL);
   for (const migration of manifest.slice(-G12_PINNED_MIGRATION_TAIL.length)) {
     const bytes = readFileSync(join(process.cwd(), "supabase", "migrations", migration.file));
@@ -77,9 +84,9 @@ test("the repository migration history is contiguous", () => {
   }
 });
 
-test("the pinned 0082 to 0085 tail fails closed on filename, order or raw-byte digest drift", () => {
+test("the pinned 0082 to 0086 tail fails closed on filename, order or raw-byte digest drift", () => {
   const files = Object.fromEntries(
-    Array.from({ length: 85 }, (_, index) => {
+    Array.from({ length: 86 }, (_, index) => {
       const version = String(index + 1).padStart(4, "0");
       const file =
         G12_PINNED_MIGRATION_TAIL.find((migration) => migration.version === version)?.file ??
@@ -90,6 +97,29 @@ test("the pinned 0082 to 0085 tail fails closed on filename, order or raw-byte d
   const root = fixture(files);
   try {
     assert.throws(() => sourceMigrationManifest(root), /G12_MIGRATION_MANIFEST_INVALID:pinned-tail:0082/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a real pinned 0082 to 0085 baseline remains readable by the 0086 candidate verifier", () => {
+  const files = Object.fromEntries(
+    Array.from({ length: 85 }, (_, index) => {
+      const version = String(index + 1).padStart(4, "0");
+      const pinned = G12_PINNED_MIGRATION_TAIL.find((migration) => migration.version === version);
+      return pinned
+        ? [pinned.file, readFileSync(join(process.cwd(), "supabase", "migrations", pinned.file))]
+        : [`${version}_fixture.sql`, `select ${index + 1};\n`];
+    }),
+  );
+  const root = fixture(files);
+  try {
+    const manifest = sourceMigrationManifest(root);
+    assert.equal(manifest.at(-1)?.version, "0085");
+    assert.deepEqual(
+      manifest.slice(-4),
+      G12_PINNED_MIGRATION_TAIL.filter(({ version }) => version <= "0085"),
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -249,6 +279,56 @@ test("0085 semantic preflight proves aggregate counting and the enabled projecti
   assert.throws(
     () => publicRelationLimitSemanticSql("unsafe-alias"),
     /G12_MIGRATION_MANIFEST_INVALID:public-relation-limit-alias/,
+  );
+});
+
+test("0086 repaired trigger functions are present and owner-only", () => {
+  const contract = ownerOnlyFunctionContractSql(
+    "qa_actor_runtime_repairs_0086_functions_locked",
+    CMS_QA_ACTOR_RUNTIME_REPAIRS_0086_OWNER_ONLY_FUNCTIONS,
+  );
+  for (const signature of CMS_QA_ACTOR_RUNTIME_REPAIRS_0086_OWNER_ONLY_FUNCTIONS)
+    assert.ok(contract.includes(signature), signature);
+  assert.match(contract, /to_regprocedure\(required\.signature\) is null/);
+  assert.match(contract, /has_function_privilege\('service_role'/);
+  assert.match(contract, /has_function_privilege\('authenticated'/);
+  assert.match(contract, /has_function_privilege\('anon'/);
+  assert.match(contract, /privilege_row\.grantee <> procedure_row\.proowner/);
+});
+
+test("0086 semantic preflight proves fail-closed capture, generated cleanup correlation and narrow restore", () => {
+  const contract = qaActorRuntimeRepairsSemanticSql("qa_actor_runtime_repairs_0086_semantics_exact");
+
+  for (const marker of [
+    "private.cms_capture_qa_actor_lease()",
+    "v_created_at timestamptz := transaction_timestamp();",
+    "not like '%v_created_at timestamptz := statement_timestamp();%'",
+    ") is not true then",
+    "coalesce(new.raw_user_meta_data -> ''synthetic'' = ''true''::jsonb, false)",
+    "or coalesce(new.raw_user_meta_data ->> ''purpose'' = ''qa-cms-browser'', false)",
+    "CMS_QA_ACTOR_METADATA_INVALID",
+    "private.cms_prepare_qa_actor_terminal_forms_leads_cleanup()",
+    "private.cms_ai_terminalize_qa_actor_graph()",
+    "v_correlation_id uuid:=gen_random_uuid();",
+    "old.actor_id,''ai_qa_scope_terminal'',v_correlation_id",
+    "not like '%old.correlation_id%'",
+    "public.cms_open_draft_after_edit()",
+    "current_setting(''cms.qa_compensating'', true) = ''on'' and current_setting(''cms.qa_restore_item'', true) = new.item_id::text",
+    "not like '%if current_setting(''cms.qa_compensating'', true) = ''on'' then return new; end if;%'",
+    "cms_capture_qa_actor_lease",
+    "zzz_cms_forms_leads_terminal_cleanup",
+    "zzzz_cms_ai_terminal_cleanup",
+    "cms_draft_edit_opens_workflow",
+    "trigger_row.tgenabled = 'O'",
+    "trigger_row.tgfoid = to_regprocedure(required.signature)",
+  ])
+    assert.ok(contract.includes(marker), marker);
+  assert.doesNotMatch(contract, /cms\.qa\.compensating/);
+  assert.match(contract, /strpos\([\s\S]+qa_restore_item[\s\S]+\)\s*< strpos\([\s\S]+if exists/);
+  assert.match(contract, /as qa_actor_runtime_repairs_0086_semantics_exact$/);
+  assert.throws(
+    () => qaActorRuntimeRepairsSemanticSql("unsafe-alias"),
+    /G12_MIGRATION_MANIFEST_INVALID:qa-actor-runtime-repairs-alias/,
   );
 });
 

@@ -146,6 +146,13 @@ const compatibilityTests = {
     "tests/contracts/cms-public-relation-limit.test.ts",
     "tests/unit/cms-public-relations.test.ts",
   ],
+  "0086": [
+    "supabase/tests/rls_qa_actor_lease.test.sql",
+    "supabase/tests/rls_qa_mutation_compensation.test.sql",
+    "supabase/tests/rls_cms_forms_leads_scope.test.sql",
+    "supabase/tests/rls_cms_ai_authoritative_scope.test.sql",
+    "tests/contracts/cms-qa-actor-runtime-repairs.test.ts",
+  ],
 };
 for (const migration of additions) {
   const version = migration.version;

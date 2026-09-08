@@ -2,6 +2,7 @@ import { managementRequest, PRODUCTION_PROJECT_REF } from "./production-backend-
 import {
   CMS_LEAD_ORIGIN_BINDING_0084_OWNER_ONLY_HELPERS,
   CMS_PUBLIC_RELATION_LIMIT_0085_OWNER_ONLY_HELPERS,
+  CMS_QA_ACTOR_RUNTIME_REPAIRS_0086_OWNER_ONLY_FUNCTIONS,
   CMS_MEDIA_UPLOAD_ABORT_0082_RPCS,
   CMS_MEDIA_UPLOAD_ABORT_0082_OWNER_ONLY_HELPERS,
   CMS_SESSION_REFRESH_REVOCATION_0083_RPCS,
@@ -10,6 +11,7 @@ import {
   mediaUploadAbortSchemaContractSql,
   ownerOnlyFunctionContractSql,
   publicRelationLimitSemanticSql,
+  qaActorRuntimeRepairsSemanticSql,
   sessionRefreshRevocationSemanticSql,
   serviceOnlyRpcContractSql,
   sourceMigrationManifest,
@@ -117,6 +119,11 @@ const [result] = await managementRequest(`/v1/projects/${PRODUCTION_PROJECT_REF}
         from public.cms_published_projection projection
         where private.cms_public_relation_count_0085(projection.payload) > 500
       ) as public_relation_limit_0085_existing_rows_valid,
+      ${ownerOnlyFunctionContractSql(
+        "qa_actor_runtime_repairs_0086_functions_locked",
+        CMS_QA_ACTOR_RUNTIME_REPAIRS_0086_OWNER_ONLY_FUNCTIONS,
+      )},
+      ${qaActorRuntimeRepairsSemanticSql("qa_actor_runtime_repairs_0086_semantics_exact")},
       exists(
         select 1 from pg_catalog.pg_trigger t
         where t.tgrelid = 'private.cms_qa_actor_leases'::regclass
@@ -197,6 +204,8 @@ const checks = [
   "public_relation_limit_0085_helpers_locked",
   "public_relation_limit_0085_semantics_exact",
   "public_relation_limit_0085_existing_rows_valid",
+  "qa_actor_runtime_repairs_0086_functions_locked",
+  "qa_actor_runtime_repairs_0086_semantics_exact",
   "qa_rate_limit_proof_cleanup_present",
   "qa_actor_auth_trigger_present",
   "qa_actor_marker_trigger_present",

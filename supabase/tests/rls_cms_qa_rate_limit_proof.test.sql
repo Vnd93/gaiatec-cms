@@ -59,20 +59,6 @@ insert into auth.users (
   now(), now()
 );
 
-insert into private.cms_qa_actor_leases (
-  actor_id, run_tag, candidate_sha, environment, expires_at
-) values
-  (
-    '80000000-0000-4000-8000-000000000001',
-    'QA-CMS-FINAL-20260907-aaaaaaaa', repeat('a', 40), 'staging',
-    statement_timestamp() + interval '30 minutes'
-  ),
-  (
-    '80000000-0000-4000-8000-000000000002',
-    'QA-CMS-FINAL-20260907-aaaaaaaa', repeat('a', 40), 'staging',
-    statement_timestamp() + interval '30 minutes'
-  );
-
 select throws_ok(
   $$select public.cms_qa_rate_limit_proof(
     '80000000-0000-4000-8000-000000000001',

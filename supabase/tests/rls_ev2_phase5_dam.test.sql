@@ -171,16 +171,6 @@ insert into public.cms_profiles(user_id, display_name, display_email, status)
 values('47000000-0000-4000-8000-000000000002', 'Operador QA DAM EV2', 'ev2.dam.qa@example.test', 'active');
 insert into public.cms_user_roles(user_id, role_key)
 values('47000000-0000-4000-8000-000000000002', 'super_admin');
-insert into private.cms_qa_actor_leases(
-  actor_id, run_tag, candidate_sha, environment, status, expires_at
-) values(
-  '47000000-0000-4000-8000-000000000002',
-  'QA-CMS-FINAL-20260907-aaaaaaaa',
-  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-  'staging',
-  'active',
-  statement_timestamp() + interval '1 hour'
-);
 insert into public.cms_feature_flag_overrides(
   flag_key, environment, scope_type, scope_key, enabled, reason, expires_at, created_by
 ) values(

@@ -1245,7 +1245,6 @@ begin
     'staging',
     'upsert_list',
     jsonb_build_object(
-      'id', '78000000-0000-4000-8000-000000000921',
       'listKey', 'qa78.owned',
       'entityType', 'product',
       'dimensionKey', 'qa78_owned',
@@ -1267,8 +1266,9 @@ begin
     'upsert_option',
     null,
     jsonb_build_object(
-      'id', '78000000-0000-4000-8000-000000000922',
-      'listId', '78000000-0000-4000-8000-000000000921',
+      'listId', (
+        select id from public.cms_controlled_lists where list_key = 'qa78.owned'
+      ),
       'slug', 'qa-owned-category',
       'label', 'QA owned category',
       'description', '',
@@ -1388,7 +1388,7 @@ select throws_ok(
 select isnt(
   private.cms_product_shared_controlled_list_allowed_0078(
     '78000000-0000-4000-8000-000000000002',
-    '78000000-0000-4000-8000-000000000921',
+    (select id from public.cms_controlled_lists where list_key = 'qa78.owned'),
     'staging'
   ),
   true,
@@ -1397,7 +1397,13 @@ select isnt(
 select isnt(
   private.cms_content_payload_controlled_scope_allowed(
     '78000000-0000-4000-8000-000000000002',
-    pg_temp.qa_controlled_payload_0078('78000000-0000-4000-8000-000000000922'),
+    pg_temp.qa_controlled_payload_0078((
+      select option.id
+      from public.cms_controlled_options option
+      join public.cms_controlled_lists list on list.id = option.list_id
+      where list.list_key = 'qa78.owned'
+        and option.slug = 'qa-owned-category'
+    )),
     'staging'
   ),
   true,

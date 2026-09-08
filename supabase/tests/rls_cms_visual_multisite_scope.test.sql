@@ -63,22 +63,6 @@ insert into public.cms_user_roles(user_id,role_key) values
 ('74000000-0000-4000-8000-000000000004','super_admin'),
 ('74000000-0000-4000-8000-000000000005','super_admin');
 
-insert into private.cms_qa_actor_leases(
-  actor_id,run_tag,candidate_sha,environment,status,created_at,expires_at
-) values
-('74000000-0000-4000-8000-000000000002','QA-CMS-FINAL-20260907-dddddddd',
- 'dddddddddddddddddddddddddddddddddddddddd','staging','active',
- statement_timestamp(),statement_timestamp()+interval '90 minutes'),
-('74000000-0000-4000-8000-000000000003','QA-CMS-FINAL-20260907-dddddddd',
- 'dddddddddddddddddddddddddddddddddddddddd','staging','active',
- statement_timestamp(),statement_timestamp()+interval '90 minutes'),
-('74000000-0000-4000-8000-000000000004','QA-CMS-FINAL-20260907-eeeeeeee',
- 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee','staging','active',
- statement_timestamp(),statement_timestamp()+interval '90 minutes'),
-('74000000-0000-4000-8000-000000000005','QA-CMS-FINAL-20260907-ffffffff',
- 'ffffffffffffffffffffffffffffffffffffffff','staging','active',
- statement_timestamp(),statement_timestamp()+interval '90 minutes');
-
 insert into public.cms_content_items(
   id,content_type,slug,workflow_status,created_by,updated_by,created_at,updated_at
 ) values
@@ -90,9 +74,9 @@ insert into public.cms_content_items(
  '74000000-0000-4000-8000-000000000004','74000000-0000-4000-8000-000000000004',clock_timestamp(),clock_timestamp());
 insert into public.cms_content_drafts(item_id,payload,seo,provenance,updated_by,updated_at)
 values
-('74000000-0000-4000-8000-000000000101','{"blocks":[]}','{}','{}','74000000-0000-4000-8000-000000000001',clock_timestamp()),
-('74000000-0000-4000-8000-000000000102','{"blocks":[]}','{}','{}','74000000-0000-4000-8000-000000000003',clock_timestamp()),
-('74000000-0000-4000-8000-000000000103','{"blocks":[]}','{}','{}','74000000-0000-4000-8000-000000000004',clock_timestamp());
+('74000000-0000-4000-8000-000000000101','{"blocks":[]}','{}','[{"rightsConfirmed":true}]','74000000-0000-4000-8000-000000000001',clock_timestamp()),
+('74000000-0000-4000-8000-000000000102','{"blocks":[]}','{}','[{"rightsConfirmed":true}]','74000000-0000-4000-8000-000000000003',clock_timestamp()),
+('74000000-0000-4000-8000-000000000103','{"blocks":[]}','{}','[{"rightsConfirmed":true}]','74000000-0000-4000-8000-000000000004',clock_timestamp());
 
 select set_config('cms.qa_mutation_actor_id','74000000-0000-4000-8000-000000000002',true);
 select throws_ok($call$

@@ -25,6 +25,11 @@ export const G12_PINNED_MIGRATION_TAIL = Object.freeze([
     file: "0085_cms_public_relation_limit.sql",
     sha256: "bd33962343f153b1e079f7ca9913a6db78f9366b03d32380cb4552bab2cd7b50",
   }),
+  Object.freeze({
+    version: "0086",
+    file: "0086_cms_qa_actor_runtime_repairs.sql",
+    sha256: "b351e4029074427d7f4f868d14cc3e425d9f7730d247c3318c95efdd3e05283b",
+  }),
 ]);
 
 export const CMS_MEDIA_UPLOAD_ABORT_0082_RPCS = Object.freeze([
@@ -53,6 +58,13 @@ export const CMS_PUBLIC_RELATION_LIMIT_0085_OWNER_ONLY_HELPERS = Object.freeze([
   "private.cms_public_relation_ids_0085(jsonb)",
   "private.cms_public_relation_count_0085(jsonb)",
   "private.cms_enforce_public_relation_limit_0085()",
+]);
+
+export const CMS_QA_ACTOR_RUNTIME_REPAIRS_0086_OWNER_ONLY_FUNCTIONS = Object.freeze([
+  "private.cms_capture_qa_actor_lease()",
+  "private.cms_prepare_qa_actor_terminal_forms_leads_cleanup()",
+  "private.cms_ai_terminalize_qa_actor_graph()",
+  "public.cms_open_draft_after_edit()",
 ]);
 
 export const CMS_MEDIA_UPLOAD_ABORT_0082_OWNER_ONLY_HELPERS = Object.freeze([
@@ -104,11 +116,15 @@ export function sourceMigrationManifest(sourceRoot) {
     const expected = String(index + 1).padStart(4, "0");
     if (versions[index] !== expected) fail(`sequence:expected-${expected}:received-${versions[index]}`);
   }
-  if (Number(versions.at(-1)) >= Number(G12_PINNED_MIGRATION_TAIL[0].version)) {
-    const tail = migrations.slice(-G12_PINNED_MIGRATION_TAIL.length);
-    for (let index = 0; index < G12_PINNED_MIGRATION_TAIL.length; index += 1) {
+  const latestVersion = versions.at(-1);
+  const expectedTail = G12_PINNED_MIGRATION_TAIL.filter(
+    ({ version }) => Number(version) <= Number(latestVersion),
+  );
+  if (expectedTail.length) {
+    const tail = migrations.slice(-expectedTail.length);
+    for (let index = 0; index < expectedTail.length; index += 1) {
       const actual = tail[index];
-      const expected = G12_PINNED_MIGRATION_TAIL[index];
+      const expected = expectedTail[index];
       if (
         actual?.version !== expected.version ||
         actual?.file !== expected.file ||
@@ -412,6 +428,73 @@ export function publicRelationLimitSemanticSql(alias) {
           and trigger_row.tgenabled = 'O'
           and lower(pg_get_triggerdef(trigger_row.oid))
             like '%before insert or update of payload on public.cms_published_projection%'
+      )
+    , false) as ${alias}`;
+}
+
+export function qaActorRuntimeRepairsSemanticSql(alias) {
+  if (!/^[a-z][a-z0-9_]*$/.test(alias)) fail("qa-actor-runtime-repairs-alias");
+  const capture = "private.cms_capture_qa_actor_lease()";
+  const formsCleanup = "private.cms_prepare_qa_actor_terminal_forms_leads_cleanup()";
+  const aiCleanup = "private.cms_ai_terminalize_qa_actor_graph()";
+  const openDraft = "public.cms_open_draft_after_edit()";
+  const normalized = (signature) =>
+    `regexp_replace(pg_get_functiondef(to_regprocedure('${signature}')), '[[:space:]]+', ' ', 'g')`;
+  const captureDefinition = normalized(capture);
+  const formsCleanupDefinition = normalized(formsCleanup);
+  const aiCleanupDefinition = normalized(aiCleanup);
+  const openDraftDefinition = normalized(openDraft);
+  const narrowRestoreGuard =
+    "if current_setting(''cms.qa_compensating'', true) = ''on'' and current_setting(''cms.qa_restore_item'', true) = new.item_id::text then return new; end if;";
+  return `coalesce(
+      ${captureDefinition}
+        like '%v_created_at timestamptz := transaction_timestamp();%'
+      and ${captureDefinition}
+        not like '%v_created_at timestamptz := statement_timestamp();%'
+      and ${captureDefinition}
+        like '%if ( new.raw_user_meta_data -> ''synthetic'' = ''true''::jsonb and new.raw_user_meta_data ->> ''purpose'' = ''qa-cms-browser'' ) is not true then%'
+      and ${captureDefinition}
+        like '%if coalesce(new.raw_user_meta_data -> ''synthetic'' = ''true''::jsonb, false) or coalesce(new.raw_user_meta_data ->> ''purpose'' = ''qa-cms-browser'', false) then raise exception ''CMS_QA_ACTOR_METADATA_INVALID''%'
+      and ${formsCleanupDefinition}
+        like '%v_correlation_id uuid:=gen_random_uuid();%'
+      and ${formsCleanupDefinition}
+        like '%''terminalStatus'',new.status ),v_correlation_id );%'
+      and ${formsCleanupDefinition}
+        not like '%old.correlation_id%'
+      and ${aiCleanupDefinition}
+        like '%v_correlation_id uuid:=gen_random_uuid();%'
+      and ${aiCleanupDefinition}
+        like '%old.actor_id,''ai_qa_scope_terminal'',v_correlation_id,%'
+      and ${aiCleanupDefinition}
+        like '%''targetsRetired'',v_targets,''businessRowsRemoved'',v_business_rows_removed ),v_correlation_id );%'
+      and ${aiCleanupDefinition}
+        not like '%old.correlation_id%'
+      and ${openDraftDefinition}
+        like '%${narrowRestoreGuard}%'
+      and strpos(${openDraftDefinition}, '${narrowRestoreGuard}') > 0
+      and strpos(${openDraftDefinition}, '${narrowRestoreGuard}')
+        < strpos(${openDraftDefinition}, 'if exists (')
+      and ${openDraftDefinition}
+        not like '%if current_setting(''cms.qa_compensating'', true) = ''on'' then return new; end if;%'
+      and ${openDraftDefinition}
+        not like '%if current_setting(''cms.qa_restore_item'', true) = new.item_id::text then return new; end if;%'
+      and not exists (
+        select 1
+        from (values
+          ('auth.users'::regclass, 'cms_capture_qa_actor_lease', '${capture}'),
+          ('private.cms_qa_actor_leases'::regclass, 'zzz_cms_forms_leads_terminal_cleanup', '${formsCleanup}'),
+          ('private.cms_qa_actor_leases'::regclass, 'zzzz_cms_ai_terminal_cleanup', '${aiCleanup}'),
+          ('public.cms_content_drafts'::regclass, 'cms_draft_edit_opens_workflow', '${openDraft}')
+        ) required(relation_id, trigger_name, signature)
+        where (
+          select count(*)
+          from pg_catalog.pg_trigger trigger_row
+          where trigger_row.tgrelid = required.relation_id
+            and trigger_row.tgname = required.trigger_name
+            and not trigger_row.tgisinternal
+            and trigger_row.tgenabled = 'O'
+            and trigger_row.tgfoid = to_regprocedure(required.signature)
+        ) <> 1
       )
     , false) as ${alias}`;
 }

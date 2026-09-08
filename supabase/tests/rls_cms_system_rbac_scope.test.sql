@@ -89,15 +89,15 @@ select is((select count(*)::integer from pg_policies
     and policyname='cms_operational_events_authoritative_read'),1,
   'operational events have authoritative defense-in-depth RLS');
 
-select like(pg_get_functiondef(
+select ok(strpos(pg_get_functiondef(
   'public.cms_execute_scope_command(uuid,text,jsonb,text,text,text,text,timestamptz,uuid,uuid,text,uuid)'::regprocedure
-),'%private.cms_system_assignment_scope_allowed%','last-super guard is filtered through the authoritative assignment scope');
-select like(pg_get_functiondef(
+),'private.cms_system_assignment_scope_allowed') > 0,'last-super guard is filtered through the authoritative assignment scope');
+select ok(strpos(pg_get_functiondef(
   'public.cms_get_system_snapshot(uuid,text,text,text,text,timestamptz,uuid)'::regprocedure
-),'%private.cms_lead_scope_allowed%','system aggregate scopes lead rows');
-select like(pg_get_functiondef(
+),'private.cms_lead_scope_allowed') > 0,'system aggregate scopes lead rows');
+select ok(strpos(pg_get_functiondef(
   'public.cms_get_system_snapshot(uuid,text,text,text,text,timestamptz,uuid)'::regprocedure
-),'%private.cms_crb_task_scope_allowed%','system aggregate scopes collaboration rows');
+),'private.cms_crb_task_scope_allowed') > 0,'system aggregate scopes collaboration rows');
 
 select isnt(has_table_privilege(
   'authenticated','public.cms_policy_decisions','SELECT'

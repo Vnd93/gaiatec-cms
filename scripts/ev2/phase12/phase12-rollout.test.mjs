@@ -2054,6 +2054,10 @@ test("release workflows and reduced canary are immutable, staged and production 
     backendCompatibility,
     /"0085": \[\s*"supabase\/tests\/rls_cms_public_relation_limit\.test\.sql",\s*"tests\/contracts\/cms-public-relation-limit\.test\.ts",\s*"tests\/unit\/cms-public-relations\.test\.ts"/,
   );
+  assert.match(
+    backendCompatibility,
+    /"0086": \[\s*"supabase\/tests\/rls_qa_actor_lease\.test\.sql",\s*"supabase\/tests\/rls_qa_mutation_compensation\.test\.sql",\s*"supabase\/tests\/rls_cms_forms_leads_scope\.test\.sql",\s*"supabase\/tests\/rls_cms_ai_authoritative_scope\.test\.sql",\s*"tests\/contracts\/cms-qa-actor-runtime-repairs\.test\.ts"/,
+  );
   assert.match(stagingDatabaseVerify, /media_upload_abort_0082_rpcs_privileges_exact/);
   assert.match(stagingDatabaseVerify, /media_upload_abort_0082_helpers_locked/);
   assert.match(stagingDatabaseVerify, /session_refresh_revocation_0083_semantics_exact/);
@@ -2062,6 +2066,8 @@ test("release workflows and reduced canary are immutable, staged and production 
   assert.match(stagingDatabaseVerify, /public_relation_limit_0085_helpers_locked/);
   assert.match(stagingDatabaseVerify, /public_relation_limit_0085_semantics_exact/);
   assert.match(stagingDatabaseVerify, /public_relation_limit_0085_existing_rows_valid/);
+  assert.match(stagingDatabaseVerify, /qa_actor_runtime_repairs_0086_functions_locked/);
+  assert.match(stagingDatabaseVerify, /qa_actor_runtime_repairs_0086_semantics_exact/);
   assert.match(backendCompatibility, /compatibilityEvidenceExecutionVerified: true/);
   assert.match(production, /probe-supabase-boundary\.mjs/);
   assert.match(deployStaging, /probe-supabase-boundary\.mjs/);
@@ -2137,6 +2143,8 @@ test("release workflows and reduced canary are immutable, staged and production 
   assert.match(databaseVerify, /public_relation_limit_0085_helpers_locked/);
   assert.match(databaseVerify, /public_relation_limit_0085_semantics_exact/);
   assert.match(databaseVerify, /public_relation_limit_0085_existing_rows_valid/);
+  assert.match(databaseVerify, /qa_actor_runtime_repairs_0086_functions_locked/);
+  assert.match(databaseVerify, /qa_actor_runtime_repairs_0086_semantics_exact/);
   assert.match(authConfig, /disable_signup: true/);
   assert.match(vaultConfig, /cms_outbox_worker_secret/);
   const approvalTemplate = JSON.parse(template);

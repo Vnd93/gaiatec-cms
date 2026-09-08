@@ -695,9 +695,6 @@ set payload = '{"company":{"name":"GAIATEC","email":"cms@example.test","phone":"
     lock_version = 2,
     updated_by = '64000000-0000-4000-8000-000000000003'
 where item_id = '64000000-0000-4000-8000-000000000102';
-update public.cms_content_items
-set updated_by = '64000000-0000-4000-8000-000000000003'
-where id = '64000000-0000-4000-8000-000000000102';
 insert into public.cms_content_revisions (
   id, item_id, revision_number, schema_version, payload, seo, provenance,
   source_draft_version, reason, created_by
@@ -733,6 +730,12 @@ set revision_id = '64000000-0000-4000-8000-000000000212',
     published_by = '64000000-0000-4000-8000-000000000003',
     published_at = now()
 where item_id = '64000000-0000-4000-8000-000000000102';
+update public.cms_content_items
+set workflow_status = 'published',
+    scheduled_for = null,
+    archived_at = null,
+    updated_by = '64000000-0000-4000-8000-000000000003'
+where id = '64000000-0000-4000-8000-000000000102';
 
 update private.cms_qa_actor_leases
 set status = 'cleaned', cleaned_at = now()

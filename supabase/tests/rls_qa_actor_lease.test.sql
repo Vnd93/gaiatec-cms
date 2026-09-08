@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
-select plan(66);
+select plan(68);
 
 select has_table('private', 'cms_qa_actor_leases', 'the private QA actor lease registry exists');
 select has_trigger(
@@ -102,6 +102,36 @@ select throws_ok(
   '22023',
   'CMS_QA_ACTOR_METADATA_INVALID',
   'a marked QA actor cannot be created without an exact SHA-bound lease identity'
+);
+
+select throws_ok(
+  $$insert into auth.users (
+    id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
+    raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+  ) values (
+    '61000000-0000-4000-8000-000000000005',
+    '00000000-0000-0000-0000-000000000000',
+    'authenticated', 'authenticated', 'qa-partial-synthetic@example.test', '', now(), '{}',
+    '{"synthetic":true}', now(), now()
+  )$$,
+  '22023',
+  'CMS_QA_ACTOR_METADATA_INVALID',
+  'a synthetic QA marker without the matching purpose fails closed'
+);
+
+select throws_ok(
+  $$insert into auth.users (
+    id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
+    raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+  ) values (
+    '61000000-0000-4000-8000-000000000006',
+    '00000000-0000-0000-0000-000000000000',
+    'authenticated', 'authenticated', 'qa-partial-purpose@example.test', '', now(), '{}',
+    '{"purpose":"qa-cms-browser"}', now(), now()
+  )$$,
+  '22023',
+  'CMS_QA_ACTOR_METADATA_INVALID',
+  'a QA purpose without the matching synthetic marker fails closed'
 );
 
 insert into auth.users (
@@ -354,7 +384,7 @@ select throws_ok(
     '61000000-0000-4000-8000-000000000206'
   )$$,
   '42501',
-  'CMS_PREVIEW_ACTOR_SCOPE_INVALID',
+  'CMS_CONTENT_SCOPE_FORBIDDEN',
   'a QA actor cannot issue an anonymous preview for corporate content'
 );
 select throws_ok(
@@ -366,7 +396,7 @@ select throws_ok(
     '61000000-0000-4000-8000-000000000207'
   )$$,
   '42501',
-  'CMS_PREVIEW_ACTOR_SCOPE_INVALID',
+  'CMS_CONTENT_SCOPE_FORBIDDEN',
   'an ordinary actor cannot issue an anonymous preview for QA content'
 );
 select throws_ok(
@@ -378,7 +408,7 @@ select throws_ok(
     '61000000-0000-4000-8000-000000000208'
   )$$,
   '42501',
-  'CMS_PREVIEW_ACTOR_SCOPE_INVALID',
+  'CMS_CONTENT_SCOPE_FORBIDDEN',
   'a QA actor cannot preview fixtures belonging to another run and SHA'
 );
 

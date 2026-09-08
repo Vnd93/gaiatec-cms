@@ -14,6 +14,7 @@ import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 import { createClient } from "@supabase/supabase-js";
 
+import { createPublicBridgeContentBlocks } from "./cms-public-bridge-fixture-content.mjs";
 import { revisionProvenanceSql, sqlJson } from "./cms-public-bridge-fixture-sql.mjs";
 
 const TARGETS = Object.freeze({
@@ -444,17 +445,6 @@ function provenance(runTag) {
   ];
 }
 
-function richTextBlock() {
-  return {
-    id: randomUUID(),
-    type: "rich_text",
-    hidden: false,
-    width: "content",
-    tone: "light",
-    data: { text: "Conteúdo sintético temporário para prova da ponte pública." },
-  };
-}
-
 function pagePayload(state) {
   return {
     schemaVersion: 1,
@@ -465,7 +455,7 @@ function pagePayload(state) {
     pageKind: "institutional",
     templateKey: "standard",
     route: { path: state.page.path, navigationLabel: "QA", breadcrumbLabel: "QA" },
-    blocks: [richTextBlock()],
+    blocks: createPublicBridgeContentBlocks(state.page.title),
     seo: {
       title: `Ponte QA ${candidateSha.slice(0, 8)} | GAIATEC`,
       description: "Página temporária não indexável para validar a ponte pública do CMS.",
@@ -495,7 +485,7 @@ function campaignPayload(state) {
       endsAt: new Date(Date.now() + 60 * 60_000).toISOString(),
       timezone: "America/Sao_Paulo",
     },
-    blocks: [richTextBlock()],
+    blocks: createPublicBridgeContentBlocks(state.campaign.title),
     placements: [],
     form: { formId: state.form.id, versionId: state.form.versionId, key: state.form.key },
     tracking: { enabled: false, requiresConsent: true, provider: "internal", eventName: "qa-bridge" },

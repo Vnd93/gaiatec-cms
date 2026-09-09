@@ -1,0 +1,220 @@
+name: Submit real browser attestation
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Protected target that owns the active parent deploy
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      parent_run_id:
+        description: Exact in-progress deploy run waiting for this attestation
+        required: true
+      parent_run_attempt:
+        description: Exact run attempt waiting for this attestation
+        required: true
+      candidate_sha:
+        description: Exact 40-character candidate SHA under test
+        required: true
+      control_sha:
+        description: Exact main control SHA that started the parent run
+        required: true
+      report_base64:
+        description: Base64 of the sanitized IAB attestation JSON (never a Turnstile token)
+        required: true
+      screenshot_base64:
+        description: Base64 of the sanitized PNG evidence (30 KiB maximum decoded)
+        required: true
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: real-browser-attestation-${{ inputs.environment }}-${{ inputs.parent_run_id }}-${{ inputs.parent_run_attempt }}
+  cancel-in-progress: false
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Refuse any actor, ref or binding outside the narrow broker contract
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+          DISPATCH_ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          BROKER_CONTROL_SHA: ${{ github.sha }}
+          INPUT_CONTROL_SHA: ${{ inputs.control_sha }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          PARENT_RUN_ID: ${{ inputs.parent_run_id }}
+          PARENT_RUN_ATTEMPT: ${{ inputs.parent_run_attempt }}
+        run: |
+          set -euo pipefail
+          test "$DISPATCH_REF" = refs/heads/main
+          test "$DISPATCH_ACTOR" = Vnd93
+          test "$TRIGGERING_ACTOR" = Vnd93
+          test "$BROKER_CONTROL_SHA" = "$INPUT_CONTROL_SHA"
+          [[ "$INPUT_CONTROL_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$PARENT_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$PARENT_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+      - name: Checkout the exact main control revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.control_sha }}
+          fetch-depth: 0
+      - name: Use the repository-pinned Node runtime
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .nvmrc
+      - name: Prove candidate ancestry and exact in-progress parent deploy
+        env:
+          GITHUB_API_TOKEN: ${{ github.token }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CONTROL_SHA: ${{ inputs.control_sha }}
+          PARENT_RUN_ID: ${{ inputs.parent_run_id }}
+          PARENT_RUN_ATTEMPT: ${{ inputs.parent_run_attempt }}
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$CONTROL_SHA"
+          git cat-file -e "${CANDIDATE_SHA}^{commit}"
+          git merge-base --is-ancestor "$CANDIDATE_SHA" "$CONTROL_SHA"
+          node <<'NODE'
+          const expectedPath = process.env.TARGET_ENVIRONMENT === "production"
+            ? ".github/workflows/deploy-production.yml"
+            : ".github/workflows/deploy-staging.yml";
+          const response = await fetch(
+            `https://api.github.com/repos/Vnd93/gaiatec-cms/actions/runs/${process.env.PARENT_RUN_ID}`,
+            {
+              headers: {
+                Accept: "application/vnd.github+json",
+                Authorization: `Bearer ${process.env.GITHUB_API_TOKEN}`,
+                "X-GitHub-Api-Version": "2022-11-28",
+              },
+            },
+          );
+          if (!response.ok) throw new Error(`G12_REAL_BROWSER_PARENT_RUN_HTTP_${response.status}`);
+          const run = await response.json();
+          const createdAt = Date.parse(String(run.created_at ?? ""));
+          if (
+            String(run.id) !== process.env.PARENT_RUN_ID ||
+            Number(run.run_attempt) !== Number(process.env.PARENT_RUN_ATTEMPT) ||
+            run.event !== "workflow_dispatch" ||
+            run.status !== "in_progress" ||
+            run.conclusion !== null ||
+            run.path !== expectedPath ||
+            run.head_branch !== "main" ||
+            run.head_sha !== process.env.CONTROL_SHA ||
+            run.actor?.login !== "Vnd93" ||
+            run.triggering_actor?.login !== "Vnd93" ||
+            !Number.isFinite(createdAt) ||
+            createdAt > Date.now() + 60_000 ||
+            createdAt < Date.now() - 4 * 60 * 60_000
+          ) {
+            throw new Error("G12_REAL_BROWSER_PARENT_RUN_BINDING_REFUSED");
+          }
+          NODE
+      - name: Decode sanitized evidence without logging workflow inputs
+        env:
+          REPORT_BASE64: ${{ inputs.report_base64 }}
+          SCREENSHOT_BASE64: ${{ inputs.screenshot_base64 }}
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          PARENT_RUN_ID: ${{ inputs.parent_run_id }}
+          PARENT_RUN_ATTEMPT: ${{ inputs.parent_run_attempt }}
+        run: |
+          set -euo pipefail
+          umask 077
+          node <<'NODE'
+          const { writeFileSync } = require("node:fs");
+          const reportBytes = Buffer.from(process.env.REPORT_BASE64 || "", "base64");
+          const screenshotBytes = Buffer.from(process.env.SCREENSHOT_BASE64 || "", "base64");
+          if (!reportBytes.length || reportBytes.length > 64 * 1024) throw new Error("G12_REAL_BROWSER_REPORT_SIZE_REFUSED");
+          if (!screenshotBytes.length || screenshotBytes.length > 30 * 1024) throw new Error("G12_REAL_BROWSER_SCREENSHOT_SIZE_REFUSED");
+          if (
+            reportBytes.toString("base64") !== process.env.REPORT_BASE64 ||
+            screenshotBytes.toString("base64") !== process.env.SCREENSHOT_BASE64
+          ) throw new Error("G12_REAL_BROWSER_BASE64_CANONICALITY_REFUSED");
+          if (!screenshotBytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))) {
+            throw new Error("G12_REAL_BROWSER_SCREENSHOT_FORMAT_REFUSED");
+          }
+          let report;
+          try { report = JSON.parse(reportBytes.toString("utf8")); }
+          catch { throw new Error("G12_REAL_BROWSER_REPORT_JSON_REFUSED"); }
+          if (
+            report.environment !== process.env.TARGET_ENVIRONMENT ||
+            report.candidateSha !== process.env.CANDIDATE_SHA ||
+            report.runId !== process.env.PARENT_RUN_ID ||
+            report.runAttempt !== Number(process.env.PARENT_RUN_ATTEMPT)
+          ) throw new Error("G12_REAL_BROWSER_REPORT_PARENT_BINDING_REFUSED");
+          writeFileSync("runner-temp-real-browser-report.json", reportBytes, { flag: "wx", mode: 0o600 });
+          writeFileSync("runner-temp-real-browser-proof.png", screenshotBytes, { flag: "wx", mode: 0o600 });
+          NODE
+      - name: Claim the exact single-use browser challenge, then seal the attestation
+        env:
+          GITHUB_REPOSITORY: Vnd93/gaiatec-cms
+          GITHUB_API_TOKEN: ${{ github.token }}
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          EVIDENCE_SALT: ${{ secrets.EVIDENCE_SALT }}
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CONTROL_SHA: ${{ inputs.control_sha }}
+          PARENT_RUN_ID: ${{ inputs.parent_run_id }}
+          PARENT_RUN_ATTEMPT: ${{ inputs.parent_run_attempt }}
+        run: |
+          set -euo pipefail
+          node scripts/ev2/phase12/run-real-browser-attestation-consumer.mjs claim-challenge \
+            --environment "$TARGET_ENVIRONMENT" \
+            --candidate-sha "$CANDIDATE_SHA" \
+            --control-sha "$CONTROL_SHA" \
+            --run-id "$PARENT_RUN_ID" \
+            --run-attempt "$PARENT_RUN_ATTEMPT" \
+            --report runner-temp-real-browser-report.json \
+            --parent-state runner-temp-real-browser-parent-state.json
+          node scripts/ev2/phase12/real-browser-attestation-store.mjs put \
+            --file runner-temp-real-browser-report.json \
+            --screenshot runner-temp-real-browser-proof.png
+          node scripts/ev2/phase12/run-real-browser-attestation-consumer.mjs await-consumption \
+            --environment "$TARGET_ENVIRONMENT" \
+            --candidate-sha "$CANDIDATE_SHA" \
+            --control-sha "$CONTROL_SHA" \
+            --run-id "$PARENT_RUN_ID" \
+            --run-attempt "$PARENT_RUN_ATTEMPT" \
+            --report runner-temp-real-browser-report.json \
+            --parent-state runner-temp-real-browser-parent-state.json \
+            --handshake-wait-seconds 120 \
+            --handshake-poll-ms 2000
+      - name: Clear any exact orphaned attestation and remove decoded broker inputs
+        if: always()
+        env:
+          GITHUB_REPOSITORY: Vnd93/gaiatec-cms
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          EVIDENCE_SALT: ${{ secrets.EVIDENCE_SALT }}
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CONTROL_SHA: ${{ inputs.control_sha }}
+          PARENT_RUN_ID: ${{ inputs.parent_run_id }}
+          PARENT_RUN_ATTEMPT: ${{ inputs.parent_run_attempt }}
+        run: |
+          set -euo pipefail
+          cleanup_status=0
+          if test -f runner-temp-real-browser-report.json; then
+            node scripts/ev2/phase12/run-real-browser-attestation-consumer.mjs clear-attestation \
+              --environment "$TARGET_ENVIRONMENT" \
+              --candidate-sha "$CANDIDATE_SHA" \
+              --control-sha "$CONTROL_SHA" \
+              --run-id "$PARENT_RUN_ID" \
+              --run-attempt "$PARENT_RUN_ATTEMPT" \
+              --report runner-temp-real-browser-report.json || cleanup_status=1
+          fi
+          rm -f \
+            runner-temp-real-browser-report.json \
+            runner-temp-real-browser-proof.png \
+            runner-temp-real-browser-parent-state.json
+          exit "$cleanup_status"

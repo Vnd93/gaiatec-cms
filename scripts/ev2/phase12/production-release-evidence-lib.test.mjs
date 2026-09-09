@@ -37,6 +37,33 @@ const sealedPreviewRouting = () => ({
   cachePolicy: "routing-disabled-http-cache-and-no-store",
   serviceWorkers: "blocked-by-context-contract",
 });
+const browserAttestationSummary = () => ({
+  status: "passed",
+  channel: "iab-workflow-dispatch-hmac",
+  canonicalFrontendReleaseBound: true,
+  backendAccepted: true,
+  persistedReference: true,
+  successLocator: '[data-form-submission-status="success"]',
+  successLocatorObserved: true,
+  officialWidgetObserved: true,
+  cDataBound: true,
+  tokenCaptured: false,
+  variableCleared: true,
+  screenshotSha256: "a".repeat(64),
+  screenshotBytes: 1024,
+  observedAt: "2026-09-08T15:00:00.000Z",
+});
+const authoritativeLeadPersistence = () => ({
+  scopedLeadCount: 1,
+  referenceMatched: true,
+  campaignPathMatched: true,
+  consentCount: 1,
+  consentVersionMatched: true,
+  initialHistoryPresent: true,
+  leadReceivedOutboxCount: 1,
+  attestationAuditCount: 1,
+  auditCorrelationPresent: true,
+});
 
 test("mandatory release evidence indexes every exact non-empty JSON file", async (context) => {
   const root = await mkdtemp(join(tmpdir(), "g12-release-evidence-"));
@@ -61,6 +88,8 @@ test("mandatory production inventory includes security, terminal matrix and cano
     "candidate/outputs/cms-security-boundaries-production.json",
     "candidate/outputs/cms-terminal-coverage-matrix-production.json",
     "candidate/outputs/cms-production-postdeploy-smoke.json",
+    "candidate/outputs/cms-real-browser-attestation-production.json",
+    "candidate/outputs/cms-real-browser-attestation-production.png",
   ]) {
     assert.ok(PRODUCTION_RELEASE_EVIDENCE_PATHS.includes(path));
   }
@@ -142,8 +171,9 @@ test("production browser evidence is semantically bound to the exact candidate a
       rawBrowserArtifacts: "disabled",
       positivePublicLead: {
         status: "passed",
-        turnstile: "official-production-widget-token",
-        backendStatus: 201,
+        interface: "iab-public-campaign-form-and-admin-ui",
+        attestation: browserAttestationSummary(),
+        authoritativePersistence: authoritativeLeadPersistence(),
         persistedReference: true,
         externalDelivery: "suppressed-only-for-exact-controlled-origin",
       },
@@ -276,7 +306,7 @@ test("production browser evidence is semantically bound to the exact candidate a
     runId: "123",
     runAttempt: "1",
     controlSha: "d".repeat(40),
-    baselineRelease: "e".repeat(40),
+    baselineRelease: SHA,
   };
 
   const paths = [authPath, adminPath, secondaryPath];
@@ -337,8 +367,9 @@ test("production browser evidence is semantically bound to the exact candidate a
     rawBrowserArtifacts: "disabled",
     positivePublicLead: {
       status: "passed",
-      turnstile: "official-staging-widget-token",
-      backendStatus: 201,
+      interface: "iab-public-campaign-form-and-admin-ui",
+      attestation: { ...browserAttestationSummary(), cDataBound: false },
+      authoritativePersistence: authoritativeLeadPersistence(),
       persistedReference: true,
       externalDelivery: "suppressed-only-for-exact-controlled-origin",
     },
@@ -352,7 +383,7 @@ test("production browser evidence is semantically bound to the exact candidate a
     /production_turnstile_not_exercised/,
   );
 
-  adminWithoutProductionTurnstile.positivePublicLead.turnstile = "official-production-widget-token";
+  adminWithoutProductionTurnstile.positivePublicLead.attestation.cDataBound = true;
   await writeFile(join(root, adminPath), `${JSON.stringify(adminWithoutProductionTurnstile)}\n`);
 
   await writeFile(join(root, secondaryPath), `${JSON.stringify({ ...secondary, status: "failed" })}\n`);
@@ -511,7 +542,7 @@ test("corporate authenticated preflight is always fail-closed", async (context) 
     runId: "123",
     runAttempt: "1",
     controlSha: "d".repeat(40),
-    baselineRelease: "e".repeat(40),
+    baselineRelease: SHA,
   };
   const base = {
     schemaVersion: 1,
@@ -519,7 +550,7 @@ test("corporate authenticated preflight is always fail-closed", async (context) 
     candidateSha: SHA,
     sealedFrontendCandidateSha: SHA,
     preparedBackendCandidateSha: SHA,
-    canonicalFrontendDuringPreflightSha: binding.baselineRelease,
+    canonicalFrontendDuringPreflightSha: SHA,
     shell: "exact-sealed-cloudflare-preview-mapped-under-production-origin",
     backend: "supabase-production-real",
     cmsMutations: 0,
@@ -558,6 +589,15 @@ test("corporate authenticated preflight is always fail-closed", async (context) 
   };
   await writeFile(join(root, preflightPath), `${JSON.stringify(passed)}\n`);
   assert.equal((await buildProductionReleaseEvidenceIndex(root, SHA, [preflightPath], binding)).fileCount, 1);
+
+  await writeFile(
+    join(root, preflightPath),
+    `${JSON.stringify({ ...passed, canonicalFrontendDuringPreflightSha: "e".repeat(40) })}\n`,
+  );
+  await assert.rejects(
+    () => buildProductionReleaseEvidenceIndex(root, SHA, [preflightPath], binding),
+    /authenticated_preflight_release_roles_invalid/,
+  );
 
   await writeFile(
     join(root, preflightPath),

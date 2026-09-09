@@ -31,6 +31,11 @@ import {
   type CmsPreparedSemanticField,
 } from "./cms-semantic-scenario-ledger";
 import { loadCmsUiCreatedState } from "./cms-ui-created-state";
+import {
+  cmsRealBrowserEvidenceSummary,
+  loadCmsRealBrowserAttestation,
+  selectSingleAttestedLead,
+} from "./cms-real-browser-attestation";
 
 test.use({ trace: "off", screenshot: "off", video: "off", serviceWorkers: "block" });
 test.beforeEach(async ({ context }) => {
@@ -2013,48 +2018,28 @@ test.describe("CMS administrative operational cycles", () => {
         cleanup: "estado sintético compensado; remoção terminal permanece sob a lease da fixture",
       });
 
-      const publicContext = await newIsolatedContext(browser, baseURL, observer);
-      contexts.push(publicContext);
-      const publicPage = await publicContext.newPage();
-      const navigation = await publicPage.goto(configuration.leadCampaignPath, {
-        waitUntil: "domcontentloaded",
+      const browserHandoff = await loadCmsRealBrowserAttestation({
+        repositoryRoot,
+        environment: configuration.environment,
+        candidateSha: configuration.expectedSha,
+        runTag: configuration.runTag,
+        origin: new URL(baseURL).origin,
       });
-      expect(navigation?.headers()["x-release"]).toBe(configuration.expectedSha);
-      const emailField = publicPage.getByLabel(new RegExp(`${configuration.runTag} E-mail sintético`));
-      await expect(emailField).toBeVisible({ timeout: 20_000 });
-      await emailField.fill(`qa-public-${configuration.runTag.toLowerCase()}@example.invalid`);
-      await publicPage.locator('input[name="consent"]').check();
-      const security = publicPage.getByLabel("Verificação de segurança");
-      await expect(security).toBeVisible();
-      const submit = publicPage.getByRole("button", { name: "Enviar homologação sintética" });
-      await expect(submit).toBeEnabled({ timeout: 45_000 });
-      const capturePromise = publicPage.waitForResponse(
-        (response) =>
-          response.request().method() === "POST" &&
-          new URL(response.url()).pathname.endsWith("/functions/v1/lead-capture"),
-        { timeout: 45_000 },
-      );
-      await submit.click();
-      const capture = await capturePromise;
-      const captureBody = (await capture.json().catch(() => null)) as Record<string, unknown> | null;
-      expect(capture.status()).toBe(201);
-      expect(String(captureBody?.reference)).toMatch(/^LD-[A-Z0-9]+$/);
-      const publicLeadReference = String(captureBody!.reference);
-      await expect(publicPage.getByRole("status")).toContainText(publicLeadReference);
+      expect(browserHandoff.challenge.campaignPath).toBe(configuration.leadCampaignPath);
+      expect(browserHandoff.attestation.reference).toBe(configuration.leadReference);
       positivePublicLead = {
         status: "passed",
-        interface: "public-campaign-form",
-        turnstile: `official-${configuration.environment}-widget-token`,
-        backendStatus: 201,
+        interface: "iab-public-campaign-form-and-admin-ui",
+        attestation: cmsRealBrowserEvidenceSummary(browserHandoff.attestation, browserHandoff.screenshotPath),
         persistedReference: true,
         externalDelivery: "suppressed-only-for-exact-controlled-origin",
       };
       scenarios.push({
-        id: "positive_public_lead_real_turnstile",
+        id: "positive_public_lead_iab_attestation_reused",
         status: "passed",
-        backend: `lead-capture 201 e protocolo persistido no projeto ${configuration.environment}`,
-        audit: "consentimento conferido na ficha administrativa",
-        negative: "token obtido pelo callback do widget, sem injeção ou bypass",
+        backend: `atestado HMAC confirma 201 e o mesmo protocolo persistido no projeto ${configuration.environment}`,
+        audit: "consentimento, outbox e protocolo conferidos na ficha administrativa",
+        negative: "nenhuma segunda submissão Turnstile; token não capturado nem injetado",
       });
 
       await page.goto("/admin/leads", { waitUntil: "domcontentloaded" });
@@ -2063,10 +2048,7 @@ test.describe("CMS administrative operational cycles", () => {
       await statusFilter.selectOption(configuration.leadStatus);
       const filteredLeadHttpResponse = await filteredLeadResponse;
       expect(filteredLeadHttpResponse.status()).toBe(200);
-      await expect(page.getByText("1 lead(s) nesta página · 1 no filtro atual.")).toBeVisible({
-        timeout: 20_000,
-      });
-      await expect(page.getByRole("row").filter({ hasText: configuration.leadReference })).toBeVisible();
+      await expect(page.getByRole("row").filter({ hasText: configuration.leadReference })).toHaveCount(1);
       const leadStatusFilterSemanticField = await prepareCmsSemanticField({
         page,
         locator: statusFilter,
@@ -2183,12 +2165,59 @@ test.describe("CMS administrative operational cycles", () => {
       });
       expect(leadSnapshot.status).toBe(200);
       const leadItems = (leadSnapshot.body as { items?: Array<Record<string, unknown>> } | null)?.items ?? [];
-      const selectedLead = leadItems.find((item) => item.reference_code === configuration.leadReference) as
+      const selectedLead = selectSingleAttestedLead(leadItems, configuration.leadReference) as
         | (Record<string, unknown> & {
-            cms_lead_outbox?: Array<{ id?: unknown; status?: unknown }>;
+            cms_lead_consents?: Array<{ consent_version?: unknown }>;
+            cms_lead_status_history?: Array<{
+              from_status?: unknown;
+              to_status?: unknown;
+            }>;
+            cms_lead_outbox?: Array<{
+              id?: unknown;
+              event_type?: unknown;
+              status?: unknown;
+            }>;
           })
         | undefined;
       expect(selectedLead).toBeDefined();
+      expect(selectedLead?.origin_path).toBe(configuration.leadCampaignPath);
+      expect(selectedLead?.cms_lead_consents).toHaveLength(1);
+      expect(selectedLead?.cms_lead_consents?.[0]?.consent_version).toBe("qa-v1");
+      expect(selectedLead?.cms_lead_status_history).toHaveLength(2);
+      expect(
+        selectedLead?.cms_lead_status_history?.filter(
+          (history) => history.from_status === null && history.to_status === "new",
+        ),
+      ).toHaveLength(1);
+      expect(
+        selectedLead?.cms_lead_outbox?.filter((event) => event.event_type === "lead_received"),
+      ).toHaveLength(1);
+      const attestationAudit = await browserApi(
+        page,
+        configuration,
+        `/rest/v1/cms_audit_log?select=action,target_id,correlation_id&action=eq.cms%3Aleads.update&target_id=eq.${encodeURIComponent(String(selectedLead?.id ?? ""))}`,
+      );
+      expect(attestationAudit.status).toBe(200);
+      expect(Array.isArray(attestationAudit.body) ? attestationAudit.body : []).toHaveLength(1);
+      const attestationAuditRow = (Array.isArray(attestationAudit.body) ? attestationAudit.body : [])[0] as
+        Record<string, unknown> | undefined;
+      expect(attestationAuditRow?.action).toBe("cms:leads.update");
+      expect(attestationAuditRow?.target_id).toBe(selectedLead?.id);
+      expect(uuidPattern.test(String(attestationAuditRow?.correlation_id ?? ""))).toBe(true);
+      positivePublicLead = {
+        ...positivePublicLead,
+        authoritativePersistence: {
+          scopedLeadCount: 1,
+          referenceMatched: true,
+          campaignPathMatched: true,
+          consentCount: 1,
+          consentVersionMatched: true,
+          initialHistoryPresent: true,
+          leadReceivedOutboxCount: 1,
+          attestationAuditCount: 1,
+          auditCorrelationPresent: true,
+        },
+      };
       const realDelivery = selectedLead?.cms_lead_outbox?.[0];
       expect(uuidPattern.test(String(realDelivery?.id))).toBe(true);
       expect(["pending", "processing", "completed"]).toContain(realDelivery?.status);
@@ -2322,19 +2351,19 @@ test.describe("CMS administrative operational cycles", () => {
       });
 
       await statusFilter.selectOption("all");
-      leadDialog = await openLead(page, publicLeadReference);
+      leadDialog = await openLead(page, configuration.leadReference);
       await expect(leadDialog).toContainText(configuration.leadCampaignPath);
       await expect(leadDialog).toContainText(/Consentimento: versão qa-/);
       await anonymizeOpenLead(
         page,
-        publicLeadReference,
+        configuration.leadReference,
         `${configuration.runTag} encerramento LGPD do lead público sintético.`,
         semanticActions,
         "leads_export_assignment_outbox_guard_anonymization",
       );
-      await expect(page.getByRole("row").filter({ hasText: publicLeadReference })).toHaveCount(0);
+      await expect(page.getByRole("row").filter({ hasText: configuration.leadReference })).toHaveCount(0);
       leadsFinalState =
-        "lead público sintético anonimizado; lead de handoff preservado para o scan semântico e destinado ao teardown fail-closed";
+        "o único lead público atestado foi reutilizado no scan semântico e anonimizado; auditoria preservada";
       scenarios.push({
         id: "leads_export_assignment_outbox_guard_anonymization",
         status: "passed",

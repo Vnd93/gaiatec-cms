@@ -15,7 +15,7 @@ const shared = {
 const publicEnvelope = {
   formKey: "contato-principal",
   formVersion: 2,
-  submissionToken: "0123456789abcdef0123456789abcdef",
+  submissionToken: "65ce5231ee7141baaaf8b8c77f4cd42d",
   origin: { path: "/contato", source: "contact", utm: {} },
   ...shared,
 };
@@ -63,5 +63,29 @@ describe("temporary lead-capture expand/contract envelope", () => {
     ).toMatchObject({ success: false });
     const { formVersionId: _omitted, ...partialLegacy } = legacyEnvelope;
     expect(LeadCaptureEnvelopeSchema.safeParse(partialLegacy)).toMatchObject({ success: false });
+  });
+
+  it("accepts the documented Turnstile limit and rejects oversized tokens", () => {
+    expect(
+      LeadCaptureEnvelopeSchema.safeParse({ ...publicEnvelope, captchaToken: "t".repeat(2048) }).success,
+    ).toBe(true);
+    expect(
+      LeadCaptureEnvelopeSchema.safeParse({ ...publicEnvelope, captchaToken: "t".repeat(2049) }),
+    ).toMatchObject({ success: false });
+  });
+
+  it("requires the public submission token to encode a canonical commercial UUID", () => {
+    expect(
+      LeadCaptureEnvelopeSchema.safeParse({
+        ...publicEnvelope,
+        submissionToken: "65ce5231ee7101baaaf8b8c77f4cd42d",
+      }),
+    ).toMatchObject({ success: false });
+    expect(
+      LeadCaptureEnvelopeSchema.safeParse({
+        ...publicEnvelope,
+        submissionToken: "65ce5231ee7141ba0af8b8c77f4cd42d",
+      }),
+    ).toMatchObject({ success: false });
   });
 });

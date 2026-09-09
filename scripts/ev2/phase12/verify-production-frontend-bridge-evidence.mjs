@@ -24,6 +24,7 @@ if (directory) {
 const evidence = JSON.parse(await readFile(evidenceFile, "utf8"));
 const result = validateFrontendBridgeEvidence(evidence, {
   runId: process.env.EXPECTED_RUN_ID,
+  runAttempt: process.env.EXPECTED_RUN_ATTEMPT,
   controlSha: process.env.EXPECTED_CONTROL_SHA,
   candidateSha: process.env.EXPECTED_RELEASE,
   deploymentId: process.env.EXPECTED_DEPLOYMENT_ID,

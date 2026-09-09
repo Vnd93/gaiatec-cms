@@ -34,7 +34,7 @@ const state: CmsUiCreatedState = {
   form: {
     id: "80000000-0000-4000-8000-000000000010",
     versionId: "80000000-0000-4000-8000-000000000011",
-    key: "qa-ops-qa-cms-final-20260907-aaaaaaaa-form",
+    key: "qa-ops-qa-cms-final-20260907-aaaaaaaa-deadbeef",
     status: "published",
   },
   lead: {
@@ -111,7 +111,7 @@ describe("CMS UI-created handoff state", () => {
         repositoryRoot: mismatchedRoot,
         state: {
           ...state,
-          form: { ...state.form, key: "qa-ops-qa-cms-final-20260907-bbbbbbbb-form" },
+          form: { ...state.form, key: "qa-ops-qa-cms-final-20260907-bbbbbbbb-deadbeef" },
         },
       }),
     ).toThrow(/QA_CMS_UI_STATE_BINDING_INVALID/);

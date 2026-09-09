@@ -25,14 +25,14 @@ const SharedCapture = {
     })
     .strict(),
   honeypot: z.string().max(0).default(""),
-  captchaToken: z.string().max(4096).optional(),
+  captchaToken: z.string().max(2048).optional(),
 };
 
 export const PublicLeadCaptureEnvelopeSchema = z
   .object({
     formKey: Slug,
     formVersion: z.number().int().min(1),
-    submissionToken: z.string().regex(/^[0-9a-f]{32}$/),
+    submissionToken: z.string().regex(/^[0-9a-f]{12}[1-8][0-9a-f]{3}[89ab][0-9a-f]{15}$/),
     origin: z
       .object({
         path: Path,

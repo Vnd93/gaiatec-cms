@@ -1,9 +1,22 @@
 import { createHash } from "node:crypto";
 
-import { evaluateProbeWindow, G12_BUDGETS } from "./release-guard-lib.mjs";
+import { evaluateProbeWindow, G12_BUDGETS, UUID_PATTERN } from "./release-guard-lib.mjs";
 
 const FULL_SHA = /^[a-f0-9]{40}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
+const FORWARD_OBSERVED_HERE = Object.freeze([
+  "candidate-health-release-and-environment",
+  "legacy-envelope-without-captcha-token-403",
+  "hybrid-envelope-400",
+]);
+const FORWARD_NOT_OBSERVED_HERE = Object.freeze([
+  "baseline-f48-browser-execution",
+  "browser-reload",
+  "positive-form-submission",
+  "turnstile-action-evaluation",
+  "turnstile-hostname-evaluation",
+  "turnstile-cdata-evaluation",
+]);
 const ORIGINS = Object.freeze({
   staging: /^https:\/\/[a-z0-9-]+\.gaiatec-cms-staging\.pages\.dev$/,
   production: /^https:\/\/(?:www\.)?gaiatecsistemas\.com\.br$/,
@@ -126,7 +139,7 @@ export function validatePublicBridgeRolloutProbe(report, expected = {}) {
   return { valid: violations.length === 0, violations: [...new Set(violations)] };
 }
 
-export function validatePublicBridgeFunctionalCanary(report, expected = {}) {
+export function validatePublicBridgeHeadlessCanary(report, expected = {}) {
   const violations = [];
   if (
     !exactKeys(report, [
@@ -143,28 +156,28 @@ export function validatePublicBridgeFunctionalCanary(report, expected = {}) {
       "contracts",
       "observations",
       "boundary",
-      "turnstile",
     ]) ||
     report?.schemaVersion !== 1 ||
-    report?.event !== "g12.public_bridge.functional_canary" ||
+    report?.event !== "g12.public_bridge.headless_canary" ||
     report?.status !== "passed"
   ) {
-    violations.push("functional_schema_invalid");
+    violations.push("headless_schema_invalid");
   }
   if (
     !FULL_SHA.test(report?.frontendSha ?? "") ||
     (expected.candidateSha && report?.frontendSha !== expected.candidateSha) ||
     report?.backendContract !== (expected.backendContract ?? "legacy-f48")
   ) {
-    violations.push("functional_contract_invalid");
+    violations.push("headless_contract_invalid");
   }
   if (
     !Object.hasOwn(ORIGINS, report?.environment ?? "") ||
     (expected.environment && report?.environment !== expected.environment) ||
     !exactOrigin(report?.origin, ORIGINS[report?.environment]) ||
-    (expected.origin && report?.origin !== expected.origin)
+    !exactOrigin(expected.origin, ORIGINS[report?.environment]) ||
+    report?.origin !== expected.origin
   ) {
-    violations.push("functional_origin_invalid");
+    violations.push("headless_origin_invalid");
   }
   const deploymentPattern =
     report?.environment === "production"
@@ -172,62 +185,75 @@ export function validatePublicBridgeFunctionalCanary(report, expected = {}) {
       : ORIGINS.staging;
   if (
     !exactOrigin(report?.deploymentOrigin, deploymentPattern) ||
-    (expected.deploymentOrigin && report?.deploymentOrigin !== expected.deploymentOrigin) ||
+    !exactOrigin(expected.deploymentOrigin, deploymentPattern) ||
+    report?.deploymentOrigin !== expected.deploymentOrigin ||
+    !UUID_PATTERN.test(expected.deploymentId ?? "") ||
     !SHA256.test(report?.deploymentIdentitySha256 ?? "") ||
+    report?.deploymentIdentitySha256 !==
+      createHash("sha256")
+        .update(expected.deploymentId ?? "")
+        .digest("hex") ||
     !SHA256.test(report?.fixtureBindingSha256 ?? "")
   ) {
-    violations.push("functional_deployment_invalid");
+    violations.push("headless_deployment_invalid");
   }
   const legacy = report?.backendContract === "legacy-f48";
   if (
-    !exactKeys(report?.contracts, ["page", "campaign", "form", "lead", "duplicate"]) ||
+    !exactKeys(report?.contracts, ["page", "campaign", "form", "turnstile", "submission"]) ||
     report?.contracts?.page !== "legacy-row-normalized-and-rendered" ||
     report?.contracts?.campaign !== "legacy-row-normalized-and-rendered" ||
     report?.contracts?.form !== "legacy-f48-normalized-and-rendered" ||
-    report?.contracts?.lead !== "legacy-f48-exact-201" ||
-    report?.contracts?.duplicate !== "same-idempotency-key-201-duplicate" ||
+    report?.contracts?.turnstile !== "configured-real-widget-load-requested" ||
+    report?.contracts?.submission !== "disabled-without-token" ||
     !legacy
   ) {
-    violations.push("functional_cases_invalid");
+    violations.push("headless_cases_invalid");
   }
   if (
     !exactKeys(report?.observations, [
       "renderedPages",
       "renderedCampaigns",
       "renderedForms",
-      "browserLeadRequests",
-      "acceptedLeads",
-      "duplicateReplays",
+      "turnstileScriptRequests",
+      "turnstileRequestFailures",
+      "turnstileConsoleFailures",
+      "backendMutationRequests",
       "unexpectedConsole",
       "requestFailures",
     ]) ||
     report?.observations?.renderedPages !== 1 ||
     report?.observations?.renderedCampaigns !== 1 ||
     report?.observations?.renderedForms !== 1 ||
-    report?.observations?.browserLeadRequests !== 1 ||
-    report?.observations?.acceptedLeads !== 1 ||
-    report?.observations?.duplicateReplays !== 1 ||
+    !Number.isSafeInteger(report?.observations?.turnstileScriptRequests) ||
+    report.observations.turnstileScriptRequests < 1 ||
+    report.observations.turnstileScriptRequests > 4 ||
+    report?.observations?.turnstileRequestFailures !== report.observations.turnstileScriptRequests ||
+    !Number.isSafeInteger(report?.observations?.turnstileConsoleFailures) ||
+    report.observations.turnstileConsoleFailures < 0 ||
+    report.observations.turnstileConsoleFailures > report.observations.turnstileScriptRequests ||
+    report?.observations?.backendMutationRequests !== 0 ||
     report?.observations?.unexpectedConsole !== 0 ||
     report?.observations?.requestFailures !== 0
   ) {
-    violations.push("functional_observations_invalid");
+    violations.push("headless_observations_invalid");
   }
   if (
     !exactKeys(report?.boundary, [
       "uuidInDomOrStorage",
-      "legacyIdsPersisted",
-      "hybridPayloads",
-      "retryPayloads",
+      "tokenObserved",
+      "submitDisabledWithoutToken",
+      "unavailableFeedbackVisible",
+      "intentionalFailureMode",
       "secretsPersisted",
     ]) ||
     report?.boundary?.uuidInDomOrStorage !== 0 ||
-    report?.boundary?.legacyIdsPersisted !== false ||
-    report?.boundary?.hybridPayloads !== 0 ||
-    report?.boundary?.retryPayloads !== 0 ||
-    report?.boundary?.secretsPersisted !== false ||
-    report?.turnstile !== `official-${report?.environment}-widget-token`
+    report?.boundary?.tokenObserved !== false ||
+    report?.boundary?.submitDisabledWithoutToken !== true ||
+    report?.boundary?.unavailableFeedbackVisible !== true ||
+    report?.boundary?.intentionalFailureMode !== "turnstile-network-unavailable" ||
+    report?.boundary?.secretsPersisted !== false
   ) {
-    violations.push("functional_boundary_invalid");
+    violations.push("headless_boundary_invalid");
   }
   return { valid: violations.length === 0, violations: [...new Set(violations)] };
 }
@@ -299,25 +325,35 @@ export function validatePublicBridgeForwardCanary(report, expected = {}) {
       "event",
       "status",
       "environment",
-      "frontendSha",
+      "candidateSha",
+      "deploymentIdentitySha256",
+      "proofMode",
       "backendContract",
       "origin",
       "fixtureBindingSha256",
-      "contracts",
-      "observations",
+      "requestShapes",
+      "remoteObservations",
+      "evidenceScope",
       "boundary",
     ]) ||
-    report?.schemaVersion !== 1 ||
+    report?.schemaVersion !== 3 ||
     report?.event !== "g12.public_bridge.forward_compatibility" ||
     report?.status !== "passed" ||
     report?.environment !== "staging" ||
-    report?.backendContract !== "forward-expand-contract"
+    report?.proofMode !== "direct-remote-negative-contract" ||
+    report?.backendContract !== "candidate-a-strict-turnstile"
   ) {
     violations.push("forward_schema_invalid");
   }
   if (
-    !FULL_SHA.test(report?.frontendSha ?? "") ||
-    (expected.candidateSha && report?.frontendSha !== expected.candidateSha) ||
+    !FULL_SHA.test(report?.candidateSha ?? "") ||
+    (expected.candidateSha && report?.candidateSha !== expected.candidateSha) ||
+    !UUID_PATTERN.test(expected.deploymentId ?? "") ||
+    !SHA256.test(report?.deploymentIdentitySha256 ?? "") ||
+    report?.deploymentIdentitySha256 !==
+      createHash("sha256")
+        .update(expected.deploymentId ?? "")
+        .digest("hex") ||
     !exactOrigin(report?.origin, ORIGINS.staging) ||
     report?.origin !== "https://ev2-g17-canary.gaiatec-cms-staging.pages.dev" ||
     !SHA256.test(report?.fixtureBindingSha256 ?? "")
@@ -325,41 +361,55 @@ export function validatePublicBridgeForwardCanary(report, expected = {}) {
     violations.push("forward_binding_invalid");
   }
   if (
-    !exactKeys(report?.contracts, [
-      "frontendAToCandidate",
-      "loadedF48TabToCandidate",
-      "duplicateReplay",
-      "productIdor",
-      "hybridEnvelope",
-    ]) ||
-    report?.contracts?.frontendAToCandidate !== "public-v2-exact-201" ||
-    report?.contracts?.loadedF48TabToCandidate !== "legacy-f48-exact-201" ||
-    report?.contracts?.duplicateReplay !== "legacy-f48-same-idempotency-201-duplicate" ||
-    report?.contracts?.productIdor !== "legacy-product-id-unbound-422" ||
-    report?.contracts?.hybridEnvelope !== "mixed-generation-400"
+    !exactKeys(report?.requestShapes, ["legacyEnvelope", "hybridEnvelope"]) ||
+    report?.requestShapes?.legacyEnvelope !== "form-id-version-without-captcha-token" ||
+    report?.requestShapes?.hybridEnvelope !== "legacy-plus-form-key-version-without-captcha-token"
   ) {
     violations.push("forward_contracts_invalid");
   }
   if (
-    !exactKeys(report?.observations, [
-      "modernAccepted",
-      "legacyAccepted",
-      "duplicateAccepted",
-      "productIdorRejected",
-      "hybridRejected",
-      "automaticRetries",
+    !exactKeys(report?.remoteObservations, ["health", "legacyEnvelope", "hybridEnvelope"]) ||
+    !exactKeys(report?.remoteObservations?.health, [
+      "status",
+      "environment",
+      "releaseSha",
+      "releaseHeaderSha",
     ]) ||
-    report?.observations?.modernAccepted !== 1 ||
-    report?.observations?.legacyAccepted !== 1 ||
-    report?.observations?.duplicateAccepted !== 1 ||
-    report?.observations?.productIdorRejected !== 1 ||
-    report?.observations?.hybridRejected !== 1 ||
-    report?.observations?.automaticRetries !== 0 ||
-    !exactKeys(report?.boundary, ["responseIds", "secretsPersisted"]) ||
-    report?.boundary?.responseIds !== 0 ||
-    report?.boundary?.secretsPersisted !== false
+    report?.remoteObservations?.health?.status !== 200 ||
+    report?.remoteObservations?.health?.environment !== "staging" ||
+    report?.remoteObservations?.health?.releaseSha !== report?.candidateSha ||
+    report?.remoteObservations?.health?.releaseHeaderSha !== report?.candidateSha ||
+    !exactKeys(report?.remoteObservations?.legacyEnvelope, ["status", "error", "challengeRequired"]) ||
+    report?.remoteObservations?.legacyEnvelope?.status !== 403 ||
+    report?.remoteObservations?.legacyEnvelope?.error !== "Confirme a verificação de segurança." ||
+    report?.remoteObservations?.legacyEnvelope?.challengeRequired !== true ||
+    !exactKeys(report?.remoteObservations?.hybridEnvelope, ["status", "error"]) ||
+    report?.remoteObservations?.hybridEnvelope?.status !== 400 ||
+    report?.remoteObservations?.hybridEnvelope?.error !== "Revise os campos do formulário."
   ) {
     violations.push("forward_observations_invalid");
+  }
+  if (
+    !exactKeys(report?.evidenceScope, ["observedHere", "notObservedHere", "complementaryEvidence"]) ||
+    JSON.stringify(report?.evidenceScope?.observedHere) !== JSON.stringify(FORWARD_OBSERVED_HERE) ||
+    JSON.stringify(report?.evidenceScope?.notObservedHere) !== JSON.stringify(FORWARD_NOT_OBSERVED_HERE) ||
+    !exactKeys(report?.evidenceScope?.complementaryEvidence, [
+      "adversarialTurnstilePolicy",
+      "successfulCandidateBrowser",
+    ]) ||
+    report?.evidenceScope?.complementaryEvidence?.adversarialTurnstilePolicy !==
+      "tests/unit/security-origin.test.ts" ||
+    report?.evidenceScope?.complementaryEvidence?.successfulCandidateBrowser !==
+      "cms-real-browser-attestation.json"
+  ) {
+    violations.push("forward_scope_invalid");
+  }
+  if (
+    !exactKeys(report?.boundary, ["responseIdentifiersPersisted", "secretsPersisted"]) ||
+    report?.boundary?.responseIdentifiersPersisted !== 0 ||
+    report?.boundary?.secretsPersisted !== false
+  ) {
+    violations.push("forward_boundary_invalid");
   }
   return { valid: violations.length === 0, violations: [...new Set(violations)] };
 }
@@ -440,18 +490,23 @@ export function validatePublicBridgeFixtureReport(report, expected = {}) {
   return { valid: violations.length === 0, violations: [...new Set(violations)] };
 }
 
-export function publicBridgeCanarySummary(functional, cleanup, residue) {
+export function publicBridgeHeadlessSummary(headless, cleanup, residue) {
   return {
-    contract: functional.backendContract,
-    origin: functional.origin,
-    deploymentOrigin: functional.deploymentOrigin,
-    deploymentIdentitySha256: functional.deploymentIdentitySha256,
-    fixtureBindingSha256: functional.fixtureBindingSha256,
-    pageRendered: functional.observations.renderedPages === 1,
-    campaignRendered: functional.observations.renderedCampaigns === 1,
-    formRendered: functional.observations.renderedForms === 1,
-    leadAccepted201: functional.observations.acceptedLeads === 1,
-    duplicateAccepted201: functional.observations.duplicateReplays === 1,
+    mode: "headless-fail-closed",
+    contract: headless.backendContract,
+    origin: headless.origin,
+    deploymentOrigin: headless.deploymentOrigin,
+    deploymentIdentitySha256: headless.deploymentIdentitySha256,
+    fixtureBindingSha256: headless.fixtureBindingSha256,
+    pageRendered: headless.observations.renderedPages === 1,
+    campaignRendered: headless.observations.renderedCampaigns === 1,
+    formRendered: headless.observations.renderedForms === 1,
+    turnstileWidgetRequested: headless.observations.turnstileScriptRequests > 0,
+    turnstileNetworkFailureObserved:
+      headless.observations.turnstileRequestFailures === headless.observations.turnstileScriptRequests,
+    submitDisabledWithoutToken: headless.boundary.submitDisabledWithoutToken === true,
+    unavailableFeedbackVisible: headless.boundary.unavailableFeedbackVisible === true,
+    backendMutationRequests: headless.observations.backendMutationRequests,
     cleanupStatus: cleanup.status,
     residueStatus: residue.status,
     auditRetained: cleanup.auditRetained === true && residue.auditRetained === true,

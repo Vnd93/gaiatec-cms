@@ -134,7 +134,7 @@ export function loadCmsUiCreatedState(input: {
     idValues.some((value) => typeof value !== "string" || !uuidPattern.test(value)) ||
     typeof form.key !== "string" ||
     form.key.length > 150 ||
-    !/^qa-ops-qa-cms-final-[0-9]{8}-[0-9a-f]{8}-[a-z0-9]+$/.test(form.key) ||
+    !/^qa-ops-qa-cms-final-[0-9]{8}-[0-9a-f]{8}-[0-9a-f]{8}$/.test(form.key) ||
     !form.key.startsWith(`qa-ops-${String(parsed.runTag).toLowerCase()}-`) ||
     form.status !== "published" ||
     typeof lead.reference !== "string" ||

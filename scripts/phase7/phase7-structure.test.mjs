@@ -140,9 +140,15 @@ test("lead CAPTCHA separates frontend build flags from Edge Function secrets", a
     ]);
   assert.match(capture, /CONTACT_CAPTCHA_ALWAYS/);
   assert.match(capture, /TURNSTILE_EXPECTED_ACTION/);
-  assert.match(capture, /isAllowedTurnstileVerification\(result, secret, expectedAction\)/);
+  assert.match(
+    capture,
+    /isAllowedTurnstileVerification\(\s*result,\s*secret,\s*expectedAction,\s*commercialIdempotencyKey/,
+  );
   assert.match(contact, /TURNSTILE_EXPECTED_ACTION/);
-  assert.match(contact, /isAllowedTurnstileVerification\(result, secret, expectedAction\)/);
+  assert.match(
+    contact,
+    /isAllowedTurnstileVerification\(\s*result,\s*secret,\s*expectedAction,\s*commercialIdempotencyKey/,
+  );
   assert.match(
     security,
     /return isExactOriginAllowed\(req\.headers\.get\("Origin"\), Deno\.env\.get\("ALLOWED_ORIGINS"\)\)/,
@@ -150,6 +156,7 @@ test("lead CAPTCHA separates frontend build flags from Edge Function secrets", a
   assert.match(security, /TURNSTILE_ALLOWED_HOSTNAMES/);
   assert.doesNotMatch(security, /gaiatec-cms-staging\\\.pages\\\.dev\$\/i/);
   assert.match(challenge, /action: "lead_capture"/);
+  assert.match(challenge, /cData,/);
   assert.match(production, /CONTACT_CAPTCHA_ALWAYS: "true"/);
   assert.match(production, /TURNSTILE_SECRET_KEY:/);
   assert.doesNotMatch(production, /VITE_(?:CONTACT_CAPTCHA_ALWAYS|TURNSTILE_SITE_KEY):/);

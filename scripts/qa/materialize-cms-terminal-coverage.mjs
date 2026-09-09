@@ -2,6 +2,8 @@ import { lstatSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync }
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { assertConsumedRealBrowserEvidence } from "../ev2/phase12/real-browser-release-evidence-lib.mjs";
+
 export const CMS_TERMINAL_COVERAGE_SCHEMA_VERSION = 1;
 export const CMS_TERMINAL_VIEWPORTS = ["390x844", "768x1024", "1440x900", "1920x1080"];
 
@@ -247,6 +249,32 @@ function assertResidueReport(value, candidateSha, environment, runTag) {
   }
   assertTerminalTombstone(residue.terminalArchivedTombstone, "RESIDUE");
   return residue;
+}
+
+function assertRealBrowserSummary(value, candidateSha, environment, runTag) {
+  const summary = record(value, "CMS_TERMINAL_REAL_BROWSER_SUMMARY_INVALID");
+  if (
+    summary.status !== "passed" ||
+    summary.environment !== environment ||
+    summary.candidateSha !== candidateSha ||
+    summary.runTag !== runTag ||
+    summary.channel !== "iab-workflow-dispatch-hmac" ||
+    summary.canonicalFrontendReleaseBound !== true ||
+    summary.backendAccepted !== true ||
+    summary.successLocator !== '[data-form-submission-status="success"]' ||
+    summary.successLocatorObserved !== true ||
+    summary.officialWidgetObserved !== true ||
+    summary.cDataBound !== true ||
+    summary.tokenCaptured !== false ||
+    summary.variableCleared !== true ||
+    !/^[a-f0-9]{64}$/.test(String(summary.screenshotSha256 ?? "")) ||
+    !Number.isSafeInteger(summary.screenshotBytes) ||
+    summary.screenshotBytes < 45 ||
+    summary.screenshotBytes > 30 * 1024
+  ) {
+    throw new Error("CMS_TERMINAL_REAL_BROWSER_SUMMARY_INVALID");
+  }
+  return summary;
 }
 
 function assertSiteBaseline(value) {
@@ -1036,7 +1064,7 @@ function assertCoreRuntime(runtime, candidateSha, environment) {
   }
   const entityLifecycle = runtime.mutatingEntityLifecycles;
   if (
-    entityLifecycle.positivePublicLeadEvidence !== "lead-capture-201-and-admin-responded" ||
+    entityLifecycle.positivePublicLeadEvidence !== "iab-attested-lead-capture-and-admin-responded" ||
     entityLifecycle.editorialRelease?.status !== "rolled_back" ||
     entityLifecycle.auditPreserved !== true
   ) {
@@ -1519,6 +1547,28 @@ export function assertCmsTerminalCoverage(value) {
   ) {
     throw new Error("CMS_TERMINAL_REPORT_CLAIMS_INVALID");
   }
+  const realBrowserManifest = record(report.evidenceManifest, "CMS_TERMINAL_REAL_BROWSER_MANIFEST_INVALID");
+  const suffix = report.environment === "production" ? "-production" : "";
+  if (
+    realBrowserManifest.realBrowser !== `cms-real-browser-attestation${suffix}.json` ||
+    realBrowserManifest.realBrowserScreenshot !== `cms-real-browser-attestation${suffix}.png` ||
+    realBrowserManifest.realBrowserStatus !== "passed" ||
+    realBrowserManifest.realBrowserChannel !== "iab-workflow-dispatch-hmac" ||
+    realBrowserManifest.realBrowserCanonicalFrontendReleaseBound !== true ||
+    realBrowserManifest.realBrowserBackendAccepted !== true ||
+    realBrowserManifest.realBrowserSuccessLocator !== '[data-form-submission-status="success"]' ||
+    realBrowserManifest.realBrowserSuccessLocatorObserved !== true ||
+    realBrowserManifest.realBrowserOfficialWidgetObserved !== true ||
+    realBrowserManifest.realBrowserCDataBound !== true ||
+    realBrowserManifest.realBrowserTokenCaptured !== false ||
+    realBrowserManifest.realBrowserVariableCleared !== true ||
+    !/^[a-f0-9]{64}$/.test(String(realBrowserManifest.realBrowserScreenshotSha256 ?? "")) ||
+    !Number.isSafeInteger(realBrowserManifest.realBrowserScreenshotBytes) ||
+    realBrowserManifest.realBrowserScreenshotBytes < 45 ||
+    realBrowserManifest.realBrowserScreenshotBytes > 30 * 1024
+  ) {
+    throw new Error("CMS_TERMINAL_REAL_BROWSER_MANIFEST_INVALID");
+  }
   assertSiteBaseline(report.siteBaseline);
   assertTerminalTombstone(report.terminalArchivedTombstone, "REPORT");
   const matrix = array(report.matrix, "CMS_TERMINAL_MATRIX_MISSING");
@@ -1910,6 +1960,7 @@ export function materializeCmsTerminalCoverage(input) {
   const setupReport = assertSetupReport(reports.setup, candidateSha, environment, runTag);
   const cleanupReport = assertCleanupReport(reports.cleanup, candidateSha, environment, runTag);
   const residueReport = assertResidueReport(reports.residue, candidateSha, environment, runTag);
+  const realBrowserSummary = assertRealBrowserSummary(input.realBrowser, candidateSha, environment, runTag);
   const boundReports = Object.fromEntries(
     evidenceLabels.map((label) => [
       label,
@@ -2103,6 +2154,20 @@ export function materializeCmsTerminalCoverage(input) {
       admin: "cms-admin-ops-cycles.json",
       secondary: "cms-secondary-ui-cycles.json",
       security: "cms-security-boundaries.json",
+      realBrowser: `cms-real-browser-attestation${environment === "production" ? "-production" : ""}.json`,
+      realBrowserScreenshot: `cms-real-browser-attestation${environment === "production" ? "-production" : ""}.png`,
+      realBrowserStatus: realBrowserSummary.status,
+      realBrowserChannel: realBrowserSummary.channel,
+      realBrowserCanonicalFrontendReleaseBound: realBrowserSummary.canonicalFrontendReleaseBound,
+      realBrowserBackendAccepted: realBrowserSummary.backendAccepted,
+      realBrowserSuccessLocator: realBrowserSummary.successLocator,
+      realBrowserSuccessLocatorObserved: realBrowserSummary.successLocatorObserved,
+      realBrowserOfficialWidgetObserved: realBrowserSummary.officialWidgetObserved,
+      realBrowserCDataBound: realBrowserSummary.cDataBound,
+      realBrowserTokenCaptured: realBrowserSummary.tokenCaptured,
+      realBrowserVariableCleared: realBrowserSummary.variableCleared,
+      realBrowserScreenshotSha256: realBrowserSummary.screenshotSha256,
+      realBrowserScreenshotBytes: realBrowserSummary.screenshotBytes,
       shaBinding: candidateSha,
       allReportsPassed: true,
       setupStatus: setupReport.status,
@@ -2162,6 +2227,23 @@ function runCli(args) {
       resolve(repositoryRoot, option(args, `--${name}`)),
     ]),
   );
+  const realBrowserPath = resolve(repositoryRoot, option(args, "--real-browser"));
+  const realBrowserScreenshotPath = resolve(repositoryRoot, option(args, "--real-browser-screenshot"));
+  const realBrowserReport = readJsonFile(realBrowserPath, "CMS_TERMINAL_REAL_BROWSER");
+  const realBrowserScreenshot = readFileSync(realBrowserScreenshotPath);
+  const candidateSha = option(args, "--sha");
+  const environment = option(args, "--environment");
+  assertConsumedRealBrowserEvidence({
+    report: realBrowserReport,
+    screenshot: realBrowserScreenshot,
+    expected: {
+      environment,
+      candidateSha,
+      runId: option(args, "--run-id"),
+      runAttempt: Number(option(args, "--run-attempt")),
+      controlSha: option(args, "--control-sha"),
+    },
+  });
   const report = materializeCmsTerminalCoverage({
     inventory: readJsonFile(paths.inventory, "CMS_TERMINAL_INVENTORY"),
     runtime: readJsonFile(paths.runtime, "CMS_TERMINAL_RUNTIME"),
@@ -2171,8 +2253,28 @@ function runCli(args) {
         readJsonFile(paths[label], `CMS_TERMINAL_${label.toUpperCase()}`),
       ]),
     ),
-    candidateSha: option(args, "--sha"),
-    environment: option(args, "--environment"),
+    realBrowser: {
+      status: "passed",
+      environment,
+      candidateSha,
+      runTag: realBrowserReport.runTag,
+      channel: "iab-workflow-dispatch-hmac",
+      canonicalFrontendReleaseBound:
+        realBrowserReport.documentReleaseSha === candidateSha &&
+        realBrowserReport.healthReleaseSha === candidateSha &&
+        realBrowserReport.deploymentIdentityObserved === true,
+      backendAccepted: realBrowserReport.responseStatus === 201,
+      successLocator: '[data-form-submission-status="success"]',
+      successLocatorObserved: realBrowserReport.uiSuccessObserved,
+      officialWidgetObserved: realBrowserReport.turnstile?.officialWidgetObserved,
+      cDataBound: realBrowserReport.turnstile?.cDataBound,
+      tokenCaptured: realBrowserReport.turnstile?.tokenCaptured,
+      variableCleared: realBrowserReport.variableCleared,
+      screenshotSha256: realBrowserReport.screenshot?.sha256,
+      screenshotBytes: realBrowserReport.screenshot?.bytes,
+    },
+    candidateSha,
+    environment,
   });
   writeTerminalReport(option(args, "--output"), report);
   process.stdout.write(

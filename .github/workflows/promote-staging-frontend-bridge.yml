@@ -232,7 +232,7 @@ jobs:
           EV2_G12_ENVIRONMENT: staging
           EV2_G12_SAMPLE_COUNT: "5"
           EV2_G12_REPORT_PATH: ../staging-bridge-preview-probe.json
-      - name: Run isolated full public bridge cycle on old backend
+      - name: Setup isolated public bridge render fixture on old backend
         id: preview_fixture
         continue-on-error: true
         working-directory: candidate
@@ -244,8 +244,8 @@ jobs:
           QA_CMS_BRIDGE_STATE_PATH: outputs/staging-bridge-preview-state.json
           QA_CMS_BRIDGE_REPORT_PATH: outputs/staging-bridge-preview-setup.json
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      - name: Browser-prove A to f48 page campaign form and exact lead
-        id: preview_functional
+      - name: Headless-prove preview render and fail-closed Turnstile boundary
+        id: preview_headless
         if: steps.preview_fixture.outcome == 'success'
         continue-on-error: true
         working-directory: candidate
@@ -255,16 +255,13 @@ jobs:
           QA_CMS_BRIDGE_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
           QA_CMS_BRIDGE_INSTANCE: preview
           QA_CMS_BRIDGE_STATE_PATH: outputs/staging-bridge-preview-state.json
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           PLAYWRIGHT_BASE_URL: https://ev2-g12-canary.gaiatec-cms-staging.pages.dev
           QA_CMS_BRIDGE_ORIGIN: https://ev2-g12-canary.gaiatec-cms-staging.pages.dev
           QA_CMS_PUBLIC_BRIDGE_REQUIRED: "true"
           QA_CMS_EXPECTED_SHA: ${{ inputs.candidate_sha }}
           QA_CMS_BRIDGE_DEPLOYMENT_ORIGIN: ${{ steps.preview.outputs.deployment-url }}
           QA_CMS_BRIDGE_DEPLOYMENT_ID: ${{ steps.preview.outputs.deployment-id }}
-          QA_CMS_BRIDGE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
-          QA_CMS_BRIDGE_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
-          QA_CMS_BRIDGE_REPORT_PATH: outputs/staging-bridge-preview-functional.json
+          QA_CMS_BRIDGE_REPORT_PATH: outputs/staging-bridge-preview-headless.json
       - name: Cleanup isolated preview fixture
         id: preview_cleanup
         if: always() && steps.preview_fixture.outcome != 'skipped'
@@ -293,7 +290,10 @@ jobs:
           QA_CMS_BRIDGE_REPORT_PATH: outputs/staging-bridge-preview-residue.json
       - name: Promote exact A to canonical staging alias with CAS
         id: promote
-        if: steps.preview_functional.outcome == 'success' && steps.preview_cleanup.outcome == 'success' && steps.preview_residue.outcome == 'success'
+        if: >-
+          steps.preview_headless.outcome == 'success' &&
+          steps.preview_cleanup.outcome == 'success' &&
+          steps.preview_residue.outcome == 'success'
         continue-on-error: true
         working-directory: control
         run: >-
@@ -336,8 +336,8 @@ jobs:
           QA_CMS_BRIDGE_STATE_PATH: outputs/staging-bridge-canonical-state.json
           QA_CMS_BRIDGE_REPORT_PATH: outputs/staging-bridge-canonical-setup.json
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      - name: Browser-prove canonical A to f48 exact public cycle
-        id: canonical_functional
+      - name: Headless-prove canonical render and fail-closed Turnstile boundary
+        id: canonical_headless
         if: steps.canonical_fixture.outcome == 'success'
         continue-on-error: true
         working-directory: candidate
@@ -347,15 +347,12 @@ jobs:
           QA_CMS_BRIDGE_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
           QA_CMS_BRIDGE_INSTANCE: canonical
           QA_CMS_BRIDGE_STATE_PATH: outputs/staging-bridge-canonical-state.json
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           PLAYWRIGHT_BASE_URL: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
           QA_CMS_PUBLIC_BRIDGE_REQUIRED: "true"
           QA_CMS_EXPECTED_SHA: ${{ inputs.candidate_sha }}
           QA_CMS_BRIDGE_DEPLOYMENT_ORIGIN: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
           QA_CMS_BRIDGE_DEPLOYMENT_ID: ${{ steps.promote.outputs.deployment-id }}
-          QA_CMS_BRIDGE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
-          QA_CMS_BRIDGE_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
-          QA_CMS_BRIDGE_REPORT_PATH: outputs/staging-bridge-canonical-functional.json
+          QA_CMS_BRIDGE_REPORT_PATH: outputs/staging-bridge-canonical-headless.json
       - name: Cleanup canonical fixture
         id: canonical_cleanup
         if: always() && steps.canonical_fixture.outcome != 'skipped'
@@ -384,17 +381,20 @@ jobs:
           QA_CMS_BRIDGE_REPORT_PATH: outputs/staging-bridge-canonical-residue.json
       - name: Write immutable staging bridge evidence
         id: evidence
-        if: steps.canonical_functional.outcome == 'success' && steps.canonical_cleanup.outcome == 'success' && steps.canonical_residue.outcome == 'success'
+        if: >-
+          steps.canonical_headless.outcome == 'success' &&
+          steps.canonical_cleanup.outcome == 'success' &&
+          steps.canonical_residue.outcome == 'success'
         continue-on-error: true
         working-directory: control
         run: >-
           node scripts/ev2/phase12/write-staging-frontend-bridge-evidence.mjs
           --seal ../candidate/outputs/staging-frontend-bridge-dist-seal.json
           --preview-probe ../staging-bridge-preview-probe.json --canonical-probe ../staging-bridge-canonical-probe.json
-          --preview-functional ../candidate/outputs/staging-bridge-preview-functional.json
+          --preview-headless ../candidate/outputs/staging-bridge-preview-headless.json
           --preview-cleanup ../candidate/outputs/staging-bridge-preview-cleanup.json
           --preview-residue ../candidate/outputs/staging-bridge-preview-residue.json
-          --canonical-functional ../candidate/outputs/staging-bridge-canonical-functional.json
+          --canonical-headless ../candidate/outputs/staging-bridge-canonical-headless.json
           --canonical-cleanup ../candidate/outputs/staging-bridge-canonical-cleanup.json
           --canonical-residue ../candidate/outputs/staging-bridge-canonical-residue.json
           --output ../staging-frontend-bridge-evidence.json
@@ -403,6 +403,8 @@ jobs:
           CONTROL_SHA: ${{ github.sha }}
           PREVIEW_ORIGIN: https://ev2-g12-canary.gaiatec-cms-staging.pages.dev
           CANONICAL_ORIGIN: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
+          PREVIEW_DEPLOYMENT_ORIGIN: ${{ steps.preview.outputs.deployment-url }}
+          CANONICAL_DEPLOYMENT_ORIGIN: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
           BASELINE_DEPLOYMENT_ID: ${{ steps.baseline_state.outputs.deployment_id }}
           BASELINE_RELEASE: ${{ inputs.expected_baseline_sha }}
           BASELINE_CREATED_ON: ${{ steps.baseline_state.outputs.created_on }}

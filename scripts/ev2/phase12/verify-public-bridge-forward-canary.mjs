@@ -10,9 +10,10 @@ function argument(name) {
 
 const file = argument("file");
 const candidateSha = argument("candidate");
-if (!file || !candidateSha) throw new Error("G12_PUBLIC_FORWARD_CANARY_INPUT_REQUIRED");
+const deploymentId = argument("deployment-id");
+if (!file || !candidateSha || !deploymentId) throw new Error("G12_PUBLIC_FORWARD_CANARY_INPUT_REQUIRED");
 const report = JSON.parse(await readFile(resolve(file), "utf8"));
-const result = validatePublicBridgeForwardCanary(report, { candidateSha });
+const result = validatePublicBridgeForwardCanary(report, { candidateSha, deploymentId });
 if (!result.valid) {
   throw new Error(`G12_PUBLIC_FORWARD_CANARY_REFUSED:${result.violations.join(",")}`);
 }

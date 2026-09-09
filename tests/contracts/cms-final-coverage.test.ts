@@ -614,8 +614,12 @@ describe("matriz final de cobertura do CMS", () => {
       "form_restore_version_1_and_public_contract",
       "Abrir nova versão e salvar",
       "createMandatoryEditorialSurfacesViaUi",
-      "createLeadViaPublicUiAndMarkResponded",
-      "lead-capture",
+      "acceptIabLeadAndMarkResponded",
+      "createCmsRealBrowserChallenge",
+      "waitForCmsRealBrowserAttestation",
+      "cmsRealBrowserEvidenceSummary",
+      "iab-attested-lead-capture-and-admin-responded",
+      "authoritativePersistence",
       'selectOption("responded")',
       "runSyntheticEditorialReleaseViaUi",
       "editorial_release_create_validate_approve_publish_rollback_via_ui",
@@ -629,6 +633,8 @@ describe("matriz final de cobertura do CMS", () => {
     }
     expect(source).toContain("test.setTimeout(25 * 60_000)");
     expect(source).not.toMatch(/QA_CMS_(?:BYPASS|DISABLE)_TURNSTILE/);
+    expect(source).not.toContain("createLeadViaPublicUiAndMarkResponded");
+    expect(source).not.toMatch(/turnstile(?:Token|Response)|captchaToken/i);
     expect(source).not.toContain("positiveLeadSubmitted: true");
     expect(source).not.toContain("approved-by-staging-release-gate");
   });

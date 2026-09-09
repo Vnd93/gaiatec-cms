@@ -574,6 +574,25 @@ test("staging workflow exercises the exact-SHA governed lifecycle with disposabl
   assert.match(workflow, /Retry cleanup for the same isolated browser lease/);
   assert.doesNotMatch(workflow, /cms-browser-(?:mutating|routes)-cleanup-retry\.json/);
   assert.match(workflow, /materialize-cms-terminal-coverage\.mjs/);
+  const forwardStart = workflow.indexOf(
+    "Prove legacy-shaped and hybrid envelopes fail closed against the exact candidate",
+  );
+  const forwardEnd = workflow.indexOf("\n      - name:", forwardStart + 1);
+  const forwardBlock = workflow.slice(forwardStart, forwardEnd);
+  assert.ok(workflow.indexOf('wait "$real_browser_consumer_pid"') < forwardStart);
+  assert.match(
+    forwardBlock,
+    /--deployment-id "\$\{\{ steps\.staging_owned_deployment\.outputs\.deployment_id \}\}"/,
+  );
+  assert.match(
+    forwardBlock,
+    /QA_CMS_FORWARD_DEPLOYMENT_ID: \$\{\{ steps\.staging_owned_deployment\.outputs\.deployment_id \}\}/,
+  );
+  assert.match(forwardBlock, /QA_CMS_EXPECTED_SHA: \$\{\{ steps\.candidate\.outputs\.sha \}\}/);
+  assert.match(
+    forwardBlock,
+    /PLAYWRIGHT_BASE_URL: https:\/\/ev2-g17-canary\.gaiatec-cms-staging\.pages\.dev/,
+  );
 });
 
 test("staging watchdog compensates cancelled, timed-out and ambiguous deploys without external overwrite", async () => {

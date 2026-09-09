@@ -73,6 +73,7 @@ function state() {
 
 function evidence() {
   const summary = (deploymentOrigin, identity, binding) => ({
+    mode: "headless-fail-closed",
     contract: "legacy-f48",
     origin: "https://ev2-g17-canary.gaiatec-cms-staging.pages.dev",
     deploymentOrigin,
@@ -84,15 +85,18 @@ function evidence() {
     pageRendered: true,
     campaignRendered: true,
     formRendered: true,
-    leadAccepted201: true,
-    duplicateAccepted201: true,
+    turnstileWidgetRequested: true,
+    turnstileNetworkFailureObserved: true,
+    submitDisabledWithoutToken: true,
+    unavailableFeedbackVisible: true,
+    backendMutationRequests: 0,
     cleanupStatus: "cleaned",
     residueStatus: "passed",
     auditRetained: true,
   });
   return {
     ...state(),
-    schemaVersion: 2,
+    schemaVersion: 5,
     event: "g12.production.frontend_bridge.promoted",
     preview: {
       deploymentId: previewDeploymentId,
@@ -115,7 +119,25 @@ function evidence() {
       artifactDigest: `sha256:${"8".repeat(64)}`,
       evidenceSha256: "9".repeat(64),
       canonicalDeploymentId: previewDeploymentId,
-      functional: summary("https://ev2-g17-canary.gaiatec-cms-staging.pages.dev", previewDeploymentId, "6"),
+      canonicalHeadless: summary(
+        "https://ev2-g17-canary.gaiatec-cms-staging.pages.dev",
+        previewDeploymentId,
+        "6",
+      ),
+      compatibilityScope: {
+        mode: "compatibility-only",
+        backendContract: "legacy-f48",
+        tested: [
+          "legacy-content-read",
+          "page-campaign-form-render",
+          "turnstile-widget-request",
+          "fail-closed-without-token",
+          "zero-lead-post",
+        ],
+        notTested: ["positive-form-submission", "lead-persistence", "full-candidate-backend"],
+      },
+      positiveBrowserRequiredAfterFullCandidateDeploy: true,
+      backendMutation: "fixture-only-cleaned",
     },
     productionSafety: {
       mode: "read-only-old-backend",
@@ -126,6 +148,10 @@ function evidence() {
       productionProbeSha256: "2".repeat(64),
       previewReadOnlySha256: "a".repeat(64),
       productionReadOnlySha256: "b".repeat(64),
+      positiveBrowserGate: "deferred-to-full-candidate-deploy",
+      positiveBrowserGateOwner: ".github/workflows/deploy-production.yml",
+      positiveBrowserSubmissionAttempted: false,
+      positiveBrowserHomologationClaimed: false,
     },
     rollbackReady: true,
   };
@@ -151,6 +177,16 @@ test("bridge state and evidence bind exact frontend-only identities", () => {
 });
 
 test("bridge evidence fails closed on backend mutation, deployment drift or extra fields", () => {
+  assert.ok(
+    validateFrontendBridgeEvidence(evidence(), {
+      runId: "731",
+      runAttempt: 3,
+      controlSha,
+      candidateSha,
+      deploymentId,
+    }).violations.includes("evidence_workflow_invalid"),
+  );
+
   const backendMutation = { ...evidence(), backendMutation: "edge-functions" };
   assert.ok(
     validateFrontendBridgeEvidence(backendMutation).violations.includes("evidence_backend_mutation_invalid"),
@@ -164,6 +200,45 @@ test("bridge evidence fails closed on backend mutation, deployment drift or extr
   );
   const extra = { ...evidence(), secret: "must-not-be-accepted" };
   assert.ok(validateFrontendBridgeEvidence(extra).violations.includes("evidence_schema_invalid"));
+  const supersededSchema = { ...evidence(), schemaVersion: 4 };
+  assert.ok(validateFrontendBridgeEvidence(supersededSchema).violations.includes("evidence_schema_invalid"));
+
+  const falseStagingApproval = evidence();
+  falseStagingApproval.stagingBridge.positiveBrowserRequiredAfterFullCandidateDeploy = false;
+  assert.ok(
+    validateFrontendBridgeEvidence(falseStagingApproval).violations.includes(
+      "evidence_staging_bridge_invalid",
+    ),
+  );
+  const overstatedStagingScope = evidence();
+  overstatedStagingScope.stagingBridge.compatibilityScope.notTested = [];
+  assert.ok(
+    validateFrontendBridgeEvidence(overstatedStagingScope).violations.includes(
+      "evidence_staging_bridge_invalid",
+    ),
+  );
+  const hiddenFixtureMutation = evidence();
+  hiddenFixtureMutation.stagingBridge.backendMutation = "none";
+  assert.ok(
+    validateFrontendBridgeEvidence(hiddenFixtureMutation).violations.includes(
+      "evidence_staging_bridge_invalid",
+    ),
+  );
+  const substitutedStagingDeployment = evidence();
+  substitutedStagingDeployment.stagingBridge.canonicalHeadless.deploymentIdentitySha256 =
+    sha256Bytes(baselineDeploymentId);
+  assert.ok(
+    validateFrontendBridgeEvidence(substitutedStagingDeployment).violations.includes(
+      "evidence_staging_bridge_invalid",
+    ),
+  );
+  const overstatedPositiveBrowser = evidence();
+  overstatedPositiveBrowser.productionSafety.positiveBrowserHomologationClaimed = true;
+  assert.ok(
+    validateFrontendBridgeEvidence(overstatedPositiveBrowser).violations.includes(
+      "evidence_production_safety_invalid",
+    ),
+  );
 
   const candidateBytes = state();
   candidateBytes.dist.archiveBytes += 1;

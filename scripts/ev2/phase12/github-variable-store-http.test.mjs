@@ -141,6 +141,238 @@ function productionMarker() {
   });
 }
 
+function recoveryGetFixture() {
+  const key = "4".repeat(64);
+  const runId = "34260253043";
+  const controlSha = "f".repeat(40);
+  const kind = "staging-deploy";
+  const state = {
+    schemaVersion: 1,
+    event: "g12.staging.deploy.prepared",
+    workflow: { runId, runAttempt: 1, controlSha },
+    project: "gaiatec-cms-staging",
+  };
+  const variable = recoveryStateVariableName(kind);
+  const stored = serializeRecoveryStateVariable(sealRecoveryStateVariable(kind, state, key));
+  return { key, runId, controlSha, kind, state, variable, stored };
+}
+
+test("recovery state get only treats a confirmed 404 as absent when explicitly allowed", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "g12-recovery-absent-"));
+  try {
+    const fixture = recoveryGetFixture();
+    const outputPath = join(directory, "github-output.txt");
+    const statePath = join(directory, "state.json");
+    const calls = [];
+
+    await runCli(
+      "./recovery-state-store.mjs",
+      [
+        "get",
+        "--allow-missing",
+        "--kind",
+        fixture.kind,
+        "--file",
+        statePath,
+        "--run-id",
+        fixture.runId,
+        "--run-attempt",
+        "1",
+        "--control-sha",
+        fixture.controlSha,
+      ],
+      {
+        GITHUB_REPOSITORY: "Vnd93/gaiatec-cms",
+        RELEASE_GUARD_TOKEN: "t".repeat(40),
+        RECOVERY_STATE_HMAC_KEY: fixture.key,
+        GITHUB_OUTPUT: outputPath,
+      },
+      async (url, options = {}) => {
+        calls.push({ url: String(url), method: options.method ?? "GET" });
+        return new Response(JSON.stringify({ message: "Not Found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      },
+    );
+
+    assert.deepEqual(
+      calls.map(({ method }) => method),
+      ["GET"],
+    );
+    assert.equal(
+      await readFile(outputPath, "utf8"),
+      `variable=${fixture.variable}\nsource=absent\nstate_present=false\n`,
+    );
+    await assert.rejects(readFile(statePath, "utf8"), { code: "ENOENT" });
+
+    await assert.rejects(
+      runCli(
+        "./recovery-state-store.mjs",
+        [
+          "get",
+          "--kind",
+          fixture.kind,
+          "--file",
+          statePath,
+          "--run-id",
+          fixture.runId,
+          "--run-attempt",
+          "1",
+          "--control-sha",
+          fixture.controlSha,
+        ],
+        {
+          GITHUB_REPOSITORY: "Vnd93/gaiatec-cms",
+          RELEASE_GUARD_TOKEN: "t".repeat(40),
+          RECOVERY_STATE_HMAC_KEY: fixture.key,
+        },
+        async () =>
+          new Response(JSON.stringify({ message: "Not Found" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          }),
+      ),
+      /G12_RECOVERY_STATE_STORE_MISSING/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("recovery state get with allow-missing still materializes an exact present state", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "g12-recovery-present-"));
+  try {
+    const fixture = recoveryGetFixture();
+    const outputPath = join(directory, "github-output.txt");
+    const statePath = join(directory, "state.json");
+    const calls = [];
+
+    await runCli(
+      "./recovery-state-store.mjs",
+      [
+        "get",
+        "--allow-missing",
+        "--kind",
+        fixture.kind,
+        "--file",
+        statePath,
+        "--run-id",
+        fixture.runId,
+        "--run-attempt",
+        "1",
+        "--control-sha",
+        fixture.controlSha,
+      ],
+      {
+        GITHUB_REPOSITORY: "Vnd93/gaiatec-cms",
+        RELEASE_GUARD_TOKEN: "t".repeat(40),
+        RECOVERY_STATE_HMAC_KEY: fixture.key,
+        GITHUB_OUTPUT: outputPath,
+      },
+      variableFetch(fixture.variable, fixture.stored, calls),
+    );
+
+    assert.deepEqual(JSON.parse(await readFile(statePath, "utf8")), fixture.state);
+    assert.equal(
+      await readFile(outputPath, "utf8"),
+      `variable=${fixture.variable}\nsource=variable\nstate_present=true\n`,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("recovery state get with allow-missing still refuses auth, transport, parse, and binding failures", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "g12-recovery-refusal-"));
+  try {
+    const fixture = recoveryGetFixture();
+    let caseIndex = 0;
+    const invoke = (fetchImplementation) => {
+      caseIndex += 1;
+      return runCli(
+        "./recovery-state-store.mjs",
+        [
+          "get",
+          "--allow-missing",
+          "--kind",
+          fixture.kind,
+          "--file",
+          join(directory, `state-${caseIndex}.json`),
+          "--run-id",
+          fixture.runId,
+          "--run-attempt",
+          "1",
+          "--control-sha",
+          fixture.controlSha,
+        ],
+        {
+          GITHUB_REPOSITORY: "Vnd93/gaiatec-cms",
+          RELEASE_GUARD_TOKEN: "t".repeat(40),
+          RECOVERY_STATE_HMAC_KEY: fixture.key,
+        },
+        fetchImplementation,
+      );
+    };
+
+    await assert.rejects(
+      invoke(
+        async () =>
+          new Response(JSON.stringify({ message: "Unauthorized" }), {
+            status: 401,
+            headers: { "Content-Type": "application/json" },
+          }),
+      ),
+      /G12_RECOVERY_STATE_STORE_API_REFUSED:401/,
+    );
+
+    let transportCalls = 0;
+    await assert.rejects(
+      invoke(async () => {
+        transportCalls += 1;
+        if (transportCalls === 1) throw new TypeError("simulated transport failure");
+        return new Response(JSON.stringify({ message: "Forbidden" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+      /G12_RECOVERY_STATE_STORE_API_REFUSED:403/,
+    );
+    assert.equal(transportCalls, 2);
+
+    await assert.rejects(
+      invoke(
+        async () =>
+          new Response(JSON.stringify({ name: fixture.variable, value: "not-json" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+      ),
+      /G12_RECOVERY_STATE_STORE_RESPONSE_REFUSED/,
+    );
+
+    const mismatchedState = {
+      ...fixture.state,
+      workflow: { ...fixture.state.workflow, runId: "999999" },
+    };
+    const mismatched = serializeRecoveryStateVariable(
+      sealRecoveryStateVariable(fixture.kind, mismatchedState, fixture.key),
+    );
+    await assert.rejects(
+      invoke(
+        async () =>
+          new Response(JSON.stringify({ name: fixture.variable, value: mismatched }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+      ),
+      /G12_RECOVERY_STATE_STORE_READ_REFUSED/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("recovery state clear uses the documented unconditional repository-variable DELETE", async () => {
   const directory = await mkdtemp(join(tmpdir(), "g12-recovery-http-"));
   try {

@@ -11,11 +11,19 @@ import {
 } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { createClient } from "@supabase/supabase-js";
 
 import { createPublicBridgeContentBlocks } from "./cms-public-bridge-fixture-content.mjs";
 import { revisionProvenanceSql, sqlJson } from "./cms-public-bridge-fixture-sql.mjs";
+import {
+  isPublicBridgeRunTagForCandidate,
+  publicBridgeCampaignLocation,
+  publicBridgeFixtureBinding,
+  publicBridgeRunTag,
+  publicBridgeWorkflowNonce,
+} from "./cms-public-bridge-fixture-binding.mjs";
 
 const TARGETS = Object.freeze({
   staging: Object.freeze({
@@ -33,6 +41,8 @@ const TARGETS = Object.freeze({
 const FULL_SHA = /^[a-f0-9]{40}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const UUID_ANYWHERE = /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i;
+const AUTH_USERS_PAGE_SIZE = 100;
+const AUTH_USERS_MAX_PAGES = 1_000;
 const MODES = new Set(["setup", "cleanup", "residue", "recover"]);
 const mode = process.argv[2] ?? "";
 const environment = process.env.QA_CMS_BRIDGE_ENVIRONMENT ?? "";
@@ -155,13 +165,16 @@ function exactKeys(value, keys) {
   );
 }
 
-function emptyState() {
-  const now = new Date();
-  const nonce = createHash("sha256")
-    .update(`${environment}:${candidateSha}:${workflowRunId}:${workflowRunAttempt}:${instance}`)
-    .digest("hex")
-    .slice(0, 8);
-  const runTag = `QA-CMS-FINAL-${now.toISOString().slice(0, 10).replaceAll("-", "")}-${candidateSha.slice(0, 8)}`;
+function emptyState(recoveredRunTag) {
+  const nonce = publicBridgeWorkflowNonce({
+    environment,
+    candidateSha,
+    runId: workflowRunId,
+    runAttempt: workflowRunAttempt,
+    instance,
+  });
+  const runTag = recoveredRunTag ?? publicBridgeRunTag({ candidateSha });
+  const campaignLocation = publicBridgeCampaignLocation({ candidateSha, runTag, nonce });
   return {
     schemaVersion: 1,
     status: "preparing",
@@ -187,8 +200,7 @@ function emptyState() {
     campaign: {
       id: randomUUID(),
       revisionId: randomUUID(),
-      slug: `qa-bridge-${candidateSha.slice(0, 8)}-${nonce}`,
-      path: `/campanhas/qa-bridge-${candidateSha.slice(0, 8)}-${nonce}`,
+      ...campaignLocation,
       title: `Campanha ponte QA ${candidateSha.slice(0, 8)}`,
     },
     formTitle: `Formulário ponte QA ${candidateSha.slice(0, 8)}`,
@@ -218,15 +230,22 @@ function validateState(value, complete = false) {
     value.environment !== environment ||
     value.candidateSha !== candidateSha ||
     value.instance !== instance ||
-    !/^QA-CMS-FINAL-[0-9]{8}-[a-f0-9]{8}$/.test(value.runTag ?? "") ||
-    !/^[a-f0-9]{8}$/.test(value.nonce ?? "") ||
+    !isPublicBridgeRunTagForCandidate(value.runTag, candidateSha) ||
+    value.nonce !==
+      publicBridgeWorkflowNonce({
+        environment,
+        candidateSha,
+        runId: workflowRunId,
+        runAttempt: workflowRunAttempt,
+        instance,
+      }) ||
     !exactKeys(value.form, ["id", "versionId", "fieldId", "key"]) ||
     !exactKeys(value.page, ["id", "revisionId", "slug", "path", "title"]) ||
     !exactKeys(value.campaign, ["id", "revisionId", "slug", "path", "title"]) ||
     !/^qa-bridge-[a-f0-9]{8}-[a-f0-9]{8}$/.test(value.form?.key ?? "") ||
     !/^qa-bridge-page-[a-f0-9]{8}-[a-f0-9]{8}$/.test(value.page?.slug ?? "") ||
     value.page?.path !== `/${value.page?.slug}` ||
-    !/^qa-bridge-[a-f0-9]{8}-[a-f0-9]{8}$/.test(value.campaign?.slug ?? "") ||
+    value.campaign?.slug !== `qa-lead-${value.runTag?.toLowerCase()}-${value.nonce}` ||
     value.campaign?.path !== `/campanhas/${value.campaign?.slug}` ||
     typeof value.formTitle !== "string" ||
     typeof value.emailLabel !== "string"
@@ -296,7 +315,11 @@ function writeReport(value) {
 }
 
 function fixtureBindingSha256(state) {
-  return createHash("sha256").update(`${state.runTag}:${state.nonce}`).digest("hex");
+  return publicBridgeFixtureBinding({
+    candidateSha: state.candidateSha,
+    runTag: state.runTag,
+    nonce: state.nonce,
+  });
 }
 
 function deterministicUuid(label) {
@@ -311,41 +334,182 @@ function deterministicUuid(label) {
   return `${value.slice(0, 8)}-${value.slice(8, 12)}-${value.slice(12, 16)}-${value.slice(16, 20)}-${value.slice(20)}`;
 }
 
-async function findSyntheticActor(admin) {
-  const matches = [];
-  for (let page = 1; page <= 50; page += 1) {
-    const result = await admin.auth.admin.listUsers({ page, perPage: 100 });
-    if (result.error || !Array.isArray(result.data?.users)) refuse("ACTOR_RECOVERY_READ_FAILED");
-    for (const actor of result.data.users) {
-      if (
-        actor.user_metadata?.synthetic === true &&
-        actor.user_metadata?.purpose === "qa-cms-browser" &&
-        actor.user_metadata?.candidateSha === candidateSha &&
-        actor.user_metadata?.environment === environment &&
-        actor.user_metadata?.actorKind === `public_bridge_${instance}` &&
-        String(actor.user_metadata?.workflowRunId ?? "") === workflowRunId &&
-        String(actor.user_metadata?.workflowRunAttempt ?? "") === workflowRunAttempt
-      )
-        matches.push(actor);
-    }
-    if (result.data.users.length < 100) break;
+function syntheticActorMatches(actor, expected) {
+  return (
+    actor.user_metadata?.synthetic === true &&
+    actor.user_metadata?.purpose === "qa-cms-browser" &&
+    actor.user_metadata?.candidateSha === expected.candidateSha &&
+    actor.user_metadata?.environment === expected.environment &&
+    actor.user_metadata?.actorKind === `public_bridge_${expected.instance}` &&
+    String(actor.user_metadata?.workflowRunId ?? "") === expected.workflowRunId &&
+    String(actor.user_metadata?.workflowRunAttempt ?? "") === expected.workflowRunAttempt
+  );
+}
+
+export async function findSyntheticActor(
+  admin,
+  expected = { candidateSha, environment, instance, workflowRunId, workflowRunAttempt },
+  { pageSize = AUTH_USERS_PAGE_SIZE, maxPages = AUTH_USERS_MAX_PAGES } = {},
+) {
+  if (
+    !FULL_SHA.test(expected.candidateSha ?? "") ||
+    !["staging", "production"].includes(expected.environment) ||
+    !/^(?:preview|canonical|forward)$/.test(expected.instance ?? "") ||
+    !/^[1-9]\d*$/.test(expected.workflowRunId ?? "") ||
+    !/^[1-9]\d*$/.test(expected.workflowRunAttempt ?? "") ||
+    !Number.isSafeInteger(pageSize) ||
+    pageSize < 1 ||
+    pageSize > 1_000 ||
+    !Number.isSafeInteger(maxPages) ||
+    maxPages < 1 ||
+    maxPages > AUTH_USERS_MAX_PAGES
+  ) {
+    refuse("ACTOR_RECOVERY_PAGINATION_INVALID");
   }
+  const matches = [];
+  const seenUserIds = new Set();
+  let authoritativeTotal = null;
+  let observedUsers = 0;
+  let exhausted = false;
+  for (let page = 1; page <= maxPages; page += 1) {
+    const result = await admin.auth.admin.listUsers({ page, perPage: pageSize });
+    if (result.error || !Array.isArray(result.data?.users)) refuse("ACTOR_RECOVERY_READ_FAILED");
+    const users = result.data.users;
+    if (users.length > pageSize) refuse("ACTOR_RECOVERY_PAGE_INVALID");
+    for (const actor of users) {
+      if (!UUID.test(actor?.id ?? "") || seenUserIds.has(actor.id))
+        refuse("ACTOR_RECOVERY_PAGINATION_CHANGED");
+      seenUserIds.add(actor.id);
+    }
+    const reportedTotal =
+      Number.isSafeInteger(result.data.total) && result.data.total >= 0 ? result.data.total : null;
+    // auth-js <=2.101 truncates Link page numbers to one digit and reports
+    // total=0 when the server omits Link on a one-page result. A stable,
+    // positive x-total-count is authoritative; otherwise an empty page is the
+    // only safe terminal signal.
+    if (reportedTotal !== null && reportedTotal > 0) {
+      if (authoritativeTotal !== null && reportedTotal !== authoritativeTotal)
+        refuse("ACTOR_RECOVERY_PAGINATION_CHANGED");
+      authoritativeTotal = reportedTotal;
+    } else if (reportedTotal === 0 && users.length === 0 && observedUsers === 0) {
+      authoritativeTotal = 0;
+    }
+    if (authoritativeTotal === 0 && users.length !== 0) {
+      refuse("ACTOR_RECOVERY_PAGINATION_CHANGED");
+    }
+    observedUsers += users.length;
+    if (authoritativeTotal !== null && observedUsers > authoritativeTotal)
+      refuse("ACTOR_RECOVERY_PAGINATION_CHANGED");
+    for (const actor of users) if (syntheticActorMatches(actor, expected)) matches.push(actor);
+
+    const exhaustedByTotal = authoritativeTotal !== null && observedUsers === authoritativeTotal;
+    const exhaustedByEmptyPage = authoritativeTotal === null && users.length === 0;
+    if (users.length === 0 && authoritativeTotal !== null && observedUsers < authoritativeTotal) {
+      refuse("ACTOR_RECOVERY_PAGINATION_CHANGED");
+    }
+    if (exhaustedByTotal || exhaustedByEmptyPage) {
+      exhausted = true;
+      break;
+    }
+  }
+  if (!exhausted) refuse("ACTOR_RECOVERY_PAGINATION_INCOMPLETE");
   if (matches.length > 1) refuse("ACTOR_RECOVERY_AMBIGUOUS");
   return matches[0] ?? null;
 }
 
-async function reconstructState(context) {
-  const template = emptyState();
-  const actor = await findSyntheticActor(context.admin);
-  if (!actor) return null;
+export async function reconcileRecoveryActor(
+  admin,
+  localState = null,
+  expected = { candidateSha, environment, instance, workflowRunId, workflowRunAttempt },
+  pagination = {},
+) {
+  // Search to authoritative exhaustion before deciding that an interrupted
+  // createUser call did not persist an actor. The broad workflow identity is
+  // intentional: a same-run actor with a divergent nonce/runTag must fail
+  // closed below instead of being ignored as "not-created".
+  const actor = await findSyntheticActor(admin, expected, pagination);
+  const expectedNonce = publicBridgeWorkflowNonce({
+    environment: expected.environment,
+    candidateSha: expected.candidateSha,
+    runId: expected.workflowRunId,
+    runAttempt: expected.workflowRunAttempt,
+    instance: expected.instance,
+  });
+
+  if (localState !== null) {
+    if (
+      localState.candidateSha !== expected.candidateSha ||
+      localState.environment !== expected.environment ||
+      localState.instance !== expected.instance ||
+      !isPublicBridgeRunTagForCandidate(localState.runTag, expected.candidateSha) ||
+      localState.nonce !== expectedNonce ||
+      (localState.actorId !== null && !UUID.test(localState.actorId ?? ""))
+    ) {
+      refuse("ACTOR_RECOVERY_LOCAL_BINDING_INVALID");
+    }
+  }
+
+  if (!actor) {
+    // A persisted actor id proves that setup advanced beyond createUser. Do
+    // not misclassify that state as never created if Auth no longer returns
+    // the exact metadata-bound identity.
+    if (UUID.test(localState?.actorId ?? "")) refuse("ACTOR_RECOVERY_MISSING");
+    return null;
+  }
+
+  const metadata = actor.user_metadata;
   if (
     !UUID.test(actor.id) ||
-    !/^QA-CMS-FINAL-[0-9]{8}-[a-f0-9]{8}$/.test(actor.user_metadata?.runTag ?? "")
+    metadata?.synthetic !== true ||
+    metadata?.purpose !== "qa-cms-browser" ||
+    metadata?.candidateSha !== expected.candidateSha ||
+    metadata?.environment !== expected.environment ||
+    metadata?.actorKind !== `public_bridge_${expected.instance}` ||
+    String(metadata?.workflowRunId ?? "") !== expected.workflowRunId ||
+    String(metadata?.workflowRunAttempt ?? "") !== expected.workflowRunAttempt ||
+    !isPublicBridgeRunTagForCandidate(metadata?.runTag, expected.candidateSha) ||
+    metadata?.nonce !== expectedNonce
   ) {
     refuse("ACTOR_RECOVERY_INVALID");
   }
+  if (
+    localState !== null &&
+    (metadata.runTag !== localState.runTag ||
+      metadata.nonce !== localState.nonce ||
+      (UUID.test(localState.actorId ?? "") && actor.id !== localState.actorId))
+  ) {
+    refuse("ACTOR_RECOVERY_BINDING_MISMATCH");
+  }
+  return actor;
+}
+
+async function reconstructState(context, localState = null) {
+  const actor = await reconcileRecoveryActor(context.admin, localState);
+  if (!actor) return null;
+  const metadata = actor.user_metadata;
+  const expectedNonce = publicBridgeWorkflowNonce({
+    environment,
+    candidateSha,
+    runId: workflowRunId,
+    runAttempt: workflowRunAttempt,
+    instance,
+  });
+  if (
+    !UUID.test(actor.id) ||
+    metadata?.synthetic !== true ||
+    metadata?.purpose !== "qa-cms-browser" ||
+    metadata?.candidateSha !== candidateSha ||
+    metadata?.environment !== environment ||
+    metadata?.actorKind !== `public_bridge_${instance}` ||
+    String(metadata?.workflowRunId ?? "") !== workflowRunId ||
+    String(metadata?.workflowRunAttempt ?? "") !== workflowRunAttempt ||
+    !isPublicBridgeRunTagForCandidate(metadata?.runTag, candidateSha) ||
+    metadata?.nonce !== expectedNonce
+  ) {
+    refuse("ACTOR_RECOVERY_INVALID");
+  }
+  const template = emptyState(metadata.runTag);
   template.actorId = actor.id;
-  template.runTag = actor.user_metadata.runTag;
   const [form, page, campaign] = await Promise.all([
     checked(
       context.admin
@@ -751,64 +915,428 @@ async function inspectResidue(admin, state) {
   };
 }
 
-async function cleanupState(context, state) {
-  if (!UUID.test(state.actorId ?? "")) refuse("CLEANUP_ACTOR_REQUIRED");
-  const actor = `'${state.actorId}'::uuid`;
-  const binding = fixtureBindingSha256(state);
-  const result = await managementQuery(`begin;
-select set_config('cms.qa_mutation_actor_id', ${sqlText(state.actorId)}, true);
-insert into public.cms_lead_status_history(
-  lead_id,from_status,to_status,from_assignee,to_assignee,reason,actor_id
-)
-select lead.id,lead.status,'anonymized',lead.assigned_to,null,
-  'QA synthetic public bridge cleanup',${actor}
-from public.cms_leads lead
-where lead.form_id='${state.form.id}'::uuid and lead.anonymized_at is null;
-update public.cms_leads
-set payload='{}'::jsonb,utm='{}'::jsonb,assigned_to=null,status='anonymized',
-  anonymized_at=statement_timestamp(),last_activity_at=statement_timestamp()
-where form_id='${state.form.id}'::uuid and anonymized_at is null;
-update public.cms_lead_outbox outbox
-set status='completed',locked_at=null,completed_at=coalesce(completed_at,statement_timestamp()),last_error_code=null
-where outbox.lead_id in (select id from public.cms_leads where form_id='${state.form.id}'::uuid)
-  and outbox.status<>'completed';
-delete from public.cms_published_projection
-where item_id in ('${state.page.id}'::uuid,'${state.campaign.id}'::uuid);
-delete from public.cms_publications
-where item_id in ('${state.page.id}'::uuid,'${state.campaign.id}'::uuid);
-update public.cms_content_items
-set workflow_status='archived',archived_at=coalesce(archived_at,statement_timestamp()),updated_by=${actor}
-where id in ('${state.page.id}'::uuid,'${state.campaign.id}'::uuid)
-  and workflow_status<>'archived';
-update public.cms_form_versions set status='retired'
-where form_id='${state.form.id}'::uuid and status<>'retired';
-update public.cms_form_definitions
-set status='retired',active_version_id=null,updated_by=${actor}
-where id='${state.form.id}'::uuid and (status<>'retired' or active_version_id is not null);
-insert into public.cms_audit_log(actor_id,action,target_type,target_id,event_data,correlation_id)
-select ${actor},'cms:qa.public_bridge_cleanup','qa_public_bridge',${sqlText(state.runTag)},
-  ${sqlJson({
+export function buildPublicBridgeCleanupSql(
+  state,
+  runtime = { candidateSha, environment, instance, workflowRunId, workflowRunAttempt },
+) {
+  if (
+    !UUID.test(state?.actorId ?? "") ||
+    !FULL_SHA.test(runtime.candidateSha ?? "") ||
+    !["staging", "production"].includes(runtime.environment) ||
+    !/^(?:preview|canonical|forward)$/.test(runtime.instance ?? "") ||
+    !/^[1-9]\d*$/.test(runtime.workflowRunId ?? "") ||
+    !/^[1-9]\d*$/.test(runtime.workflowRunAttempt ?? "") ||
+    state?.candidateSha !== runtime.candidateSha ||
+    state?.environment !== runtime.environment ||
+    state?.instance !== runtime.instance ||
+    !isPublicBridgeRunTagForCandidate(state?.runTag, runtime.candidateSha) ||
+    state?.nonce !==
+      publicBridgeWorkflowNonce({
+        environment: runtime.environment,
+        candidateSha: runtime.candidateSha,
+        runId: runtime.workflowRunId,
+        runAttempt: runtime.workflowRunAttempt,
+        instance: runtime.instance,
+      }) ||
+    !UUID.test(state?.form?.id ?? "") ||
+    !UUID.test(state?.form?.versionId ?? "") ||
+    !UUID.test(state?.form?.fieldId ?? "") ||
+    state?.form?.key !== `qa-bridge-${runtime.candidateSha.slice(0, 8)}-${state?.nonce}` ||
+    !UUID.test(state?.page?.id ?? "") ||
+    !UUID.test(state?.page?.revisionId ?? "") ||
+    state?.page?.path !== `/${state?.page?.slug}` ||
+    !UUID.test(state?.campaign?.id ?? "") ||
+    !UUID.test(state?.campaign?.revisionId ?? "") ||
+    state?.campaign?.path !== `/campanhas/${state?.campaign?.slug}` ||
+    state?.campaign?.slug !== `qa-lead-${state?.runTag?.toLowerCase()}-${state?.nonce}`
+  ) {
+    refuse("CLEANUP_BINDING_INVALID");
+  }
+  const actor = `${sqlText(state.actorId)}::uuid`;
+  const formId = `${sqlText(state.form.id)}::uuid`;
+  const formVersionId = `${sqlText(state.form.versionId)}::uuid`;
+  const pageId = `${sqlText(state.page.id)}::uuid`;
+  const pageRevisionId = `${sqlText(state.page.revisionId)}::uuid`;
+  const campaignId = `${sqlText(state.campaign.id)}::uuid`;
+  const campaignRevisionId = `${sqlText(state.campaign.revisionId)}::uuid`;
+  const binding = publicBridgeFixtureBinding({
+    candidateSha: runtime.candidateSha,
+    runTag: state.runTag,
+    nonce: state.nonce,
+  });
+  const syntheticEmail = `qa-public-${state.nonce}@example.invalid`;
+  const actorEmail = `cms-public-bridge-${runtime.environment}-${runtime.instance}-${runtime.candidateSha.slice(0, 8)}-${state.nonce}@example.invalid`;
+  const cleanupEvent = {
     syntheticOnly: true,
-    candidateSha,
-    environment,
+    candidateSha: runtime.candidateSha,
+    environment: runtime.environment,
     fixtureBindingSha256: binding,
     resources: ["page", "campaign", "form", "lead"],
-  })},gen_random_uuid()
-where not exists (
-  select 1 from public.cms_audit_log audit
-  where audit.action='cms:qa.public_bridge_cleanup'
-    and audit.target_type='qa_public_bridge'
-    and audit.target_id=${sqlText(state.runTag)}
-    and audit.event_data->>'fixtureBindingSha256'=${sqlText(binding)}
-);
-delete from public.cms_user_roles where user_id=${actor};
-update public.cms_profiles
-set status='suspended',suspended_at=coalesce(suspended_at,statement_timestamp()),
-  suspended_by=${actor},updated_at=statement_timestamp()
-where user_id=${actor} and status<>'suspended';
-delete from auth.sessions where user_id=${actor};
+  };
+
+  return `begin;
+select set_config('cms.qa_mutation_actor_id', ${sqlText(state.actorId)}, true);
+do $qa_public_bridge_cleanup$
+declare
+  v_actor_metadata jsonb;
+  v_form_ids uuid[];
+  v_version_ids uuid[];
+  v_content_ids uuid[];
+  v_revision_ids uuid[];
+  v_publication_ids uuid[];
+  v_projection_ids uuid[];
+  v_lead_ids uuid[];
+  v_outbox_ids uuid[];
+  v_mutable_outbox_ids uuid[];
+  v_changed_ids uuid[];
+  v_expected_content_ids uuid[] := array[${pageId},${campaignId}]::uuid[];
+  v_expected_revision_ids uuid[] := array[${pageRevisionId},${campaignRevisionId}]::uuid[];
+  v_graph_absent boolean;
+  v_graph_active boolean;
+  v_graph_terminal boolean;
+  v_lead public.cms_leads%rowtype;
+  v_initial_history_count integer := 0;
+  v_cleanup_history_count integer := 0;
+  v_total_history_count integer := 0;
+  v_consent_count integer := 0;
+  v_setup_audit_count integer := 0;
+  v_cleanup_audit_count integer := 0;
+begin
+  select actor.raw_user_meta_data into v_actor_metadata
+  from auth.users actor where actor.id=${actor} for update;
+  if not found or
+    v_actor_metadata->>'synthetic' is distinct from 'true' or
+    v_actor_metadata->>'purpose' is distinct from 'qa-cms-browser' or
+    v_actor_metadata->>'candidateSha' is distinct from ${sqlText(runtime.candidateSha)} or
+    v_actor_metadata->>'environment' is distinct from ${sqlText(runtime.environment)} or
+    v_actor_metadata->>'actorKind' is distinct from ${sqlText(`public_bridge_${runtime.instance}`)} or
+    v_actor_metadata->>'workflowRunId' is distinct from ${sqlText(runtime.workflowRunId)} or
+    v_actor_metadata->>'workflowRunAttempt' is distinct from ${sqlText(runtime.workflowRunAttempt)} or
+    v_actor_metadata->>'runTag' is distinct from ${sqlText(state.runTag)} or
+    v_actor_metadata->>'nonce' is distinct from ${sqlText(state.nonce)}
+  then raise exception 'QA_CMS_PUBLIC_BRIDGE_CLEANUP_ACTOR_PROVENANCE_MISMATCH'; end if;
+
+  perform 1 from public.cms_profiles profile where profile.user_id=${actor} for update;
+  perform 1 from public.cms_form_definitions form where form.created_by=${actor} for update;
+  perform 1 from public.cms_form_versions version
+    where version.created_by=${actor} or version.form_id=${formId} for update;
+  perform 1 from public.cms_content_items item where item.created_by=${actor} for update;
+  perform 1 from public.cms_content_revisions revision
+    where revision.created_by=${actor} or revision.item_id=any(v_expected_content_ids) for update;
+  perform 1 from public.cms_leads lead where lead.form_id=${formId} for update;
+  perform 1 from public.cms_publications publication
+    where publication.item_id=any(v_expected_content_ids) for update;
+  perform 1 from public.cms_published_projection projection
+    where projection.item_id=any(v_expected_content_ids) for update;
+
+  select coalesce(array_agg(form.id order by form.id),'{}'::uuid[]) into v_form_ids
+  from public.cms_form_definitions form where form.created_by=${actor};
+  select coalesce(array_agg(version.id order by version.id),'{}'::uuid[]) into v_version_ids
+  from public.cms_form_versions version
+  where version.created_by=${actor} or version.form_id=${formId};
+  select coalesce(array_agg(item.id order by item.id),'{}'::uuid[]) into v_content_ids
+  from public.cms_content_items item where item.created_by=${actor};
+  select coalesce(array_agg(revision.id order by revision.id),'{}'::uuid[]) into v_revision_ids
+  from public.cms_content_revisions revision
+  where revision.created_by=${actor} or revision.item_id=any(v_expected_content_ids);
+  select coalesce(array_agg(publication.item_id order by publication.item_id),'{}'::uuid[])
+    into v_publication_ids from public.cms_publications publication
+    where publication.item_id=any(v_expected_content_ids);
+  select coalesce(array_agg(projection.item_id order by projection.item_id),'{}'::uuid[])
+    into v_projection_ids from public.cms_published_projection projection
+    where projection.item_id=any(v_expected_content_ids);
+  select coalesce(array_agg(lead.id order by lead.id),'{}'::uuid[]) into v_lead_ids
+  from public.cms_leads lead where lead.form_id=${formId};
+
+  v_graph_absent := cardinality(v_form_ids)=0 and cardinality(v_version_ids)=0 and
+    cardinality(v_content_ids)=0 and cardinality(v_revision_ids)=0 and
+    cardinality(v_publication_ids)=0 and cardinality(v_projection_ids)=0 and
+    cardinality(v_lead_ids)=0;
+  if not v_graph_absent and (
+    cardinality(v_form_ids)<>1 or v_form_ids[1] is distinct from ${formId} or
+    cardinality(v_version_ids)<>1 or v_version_ids[1] is distinct from ${formVersionId} or
+    cardinality(v_content_ids)<>2 or not (v_content_ids @> v_expected_content_ids and v_expected_content_ids @> v_content_ids) or
+    cardinality(v_revision_ids)<>2 or not (v_revision_ids @> v_expected_revision_ids and v_expected_revision_ids @> v_revision_ids) or
+    not (cardinality(v_publication_ids)=0 or (
+      cardinality(v_publication_ids)=2 and v_publication_ids @> v_expected_content_ids and v_expected_content_ids @> v_publication_ids
+    )) or
+    not (cardinality(v_projection_ids)=0 or (
+      cardinality(v_projection_ids)=2 and v_projection_ids @> v_expected_content_ids and v_expected_content_ids @> v_projection_ids
+    )) or
+    cardinality(v_lead_ids)>1
+  ) then raise exception 'QA_CMS_PUBLIC_BRIDGE_CLEANUP_GRAPH_CARDINALITY_MISMATCH'; end if;
+
+  if not v_graph_absent then
+    if exists (
+      select 1 from public.cms_form_definitions form where form.id=${formId} and (
+        form.form_key is distinct from ${sqlText(state.form.key)} or
+        form.title is distinct from ${sqlText(state.formTitle)} or
+        form.purpose is distinct from 'Captação sintética controlada para validar a ponte pública.' or
+        form.created_by is distinct from ${actor} or form.updated_by is distinct from ${actor} or
+        form.status not in ('published','retired') or
+        (form.status='published' and form.active_version_id is distinct from ${formVersionId}) or
+        (form.status='retired' and form.active_version_id is not null)
+      )
+    ) then raise exception 'QA_CMS_PUBLIC_BRIDGE_CLEANUP_FORM_PROVENANCE_MISMATCH'; end if;
+    if exists (
+      select 1 from public.cms_form_versions version where version.id=${formVersionId} and (
+        version.form_id is distinct from ${formId} or version.version<>1 or
+        version.created_by is distinct from ${actor} or version.consent_version is distinct from ${sqlText(state.runTag)} or
+        version.reason is distinct from 'QA synthetic public bridge fixture' or
+        version.status not in ('published','retired') or
+        jsonb_array_length(version.definition->'fields') is distinct from 1 or
+        version.definition#>>'{fields,0,id}' is distinct from ${sqlText(state.form.fieldId)} or
+        version.definition#>>'{fields,0,key}' is distinct from 'email' or
+        version.definition#>>'{fields,0,label}' is distinct from ${sqlText(state.emailLabel)}
+      )
+    ) then raise exception 'QA_CMS_PUBLIC_BRIDGE_CLEANUP_FORM_VERSION_PROVENANCE_MISMATCH'; end if;
+    if exists (
+      select 1 from public.cms_content_items item where item.id=any(v_expected_content_ids) and (
+        item.created_by is distinct from ${actor} or item.updated_by is distinct from ${actor} or
+        item.workflow_status not in ('published','archived') or
+        (item.id=${pageId} and (item.content_type is distinct from 'page' or item.slug is distinct from ${sqlText(state.page.slug)})) or
+        (item.id=${campaignId} and (item.content_type is distinct from 'campaign' or item.slug is distinct from ${sqlText(state.campaign.slug)}))
+      )
+    ) then raise exception 'QA_CMS_PUBLIC_BRIDGE_CLEANUP_CONTENT_PROVENANCE_MISMATCH'; end if;
+    if exists (
+      select 1 from public.cms_content_revisions revision where revision.id=any(v_expected_revision_ids) and (
+        revision.created_by is distinct from ${actor} or revision.revision_number<>1 or
+        revision.reason is distinct from 'QA synthetic public bridge fixture' or
+        not exists (
+          select 1 from jsonb_array_elements(revision.provenance) entry
+          where entry->>'authorizationReference'=${sqlText(state.runTag)}
+        ) or
+        (revision.id=${pageRevisionId} and (
+          revision.item_id is distinct from ${pageId} or revision.payload->>'contentType' is distinct from 'page' or
+          revision.payload#>>'{route,path}' is distinct from ${sqlText(state.page.path)}
+        )) or
+        (revision.id=${campaignRevisionId} and (
+          revision.item_id is distinct from ${campaignId} or revision.payload->>'contentType' is distinct from 'campaign' or
+          revision.payload#>>'{route,path}' is distinct from ${sqlText(state.campaign.path)} or
+          revision.payload#>>'{form,formId}' is distinct from ${sqlText(state.form.id)} or
+          revision.payload#>>'{form,versionId}' is distinct from ${sqlText(state.form.versionId)} or
+          revision.payload#>>'{form,key}' is distinct from ${sqlText(state.form.key)}
+        ))
+      )
+    ) then raise exception 'QA_CMS_PUBLIC_BRIDGE_CLEANUP_REVISION_PROVENANCE_MISMATCH'; end if;
+    if exists (
+      select 1 from public.cms_publications publication where publication.item_id=any(v_expected_content_ids) and (
+        publication.published_by is distinct from ${actor} or
+        (publication.item_id=${pageId} and publication.revision_id is distinct from ${pageRevisionId}) or
+        (publication.item_id=${campaignId} and publication.revision_id is distinct from ${campaignRevisionId})
+      )
+    ) then raise exception 'QA_CMS_PUBLIC_BRIDGE_CLEANUP_PUBLICATION_PROVENANCE_MISMATCH'; end if;
+    if exists (
+      select 1 from public.cms_published_projection projection where projection.item_id=any(v_expected_content_ids) and (
+        (projection.item_id=${pageId} and (
+          projection.revision_id is distinct from ${pageRevisionId} or
+          projection.content_type is distinct from 'page' or projection.slug is distinct from ${sqlText(state.page.slug)}
+        )) or
+        (projection.item_id=${campaignId} and (
+          projection.revision_id is distinct from ${campaignRevisionId} or
+          projection.content_type is distinct from 'campaign' or projection.slug is distinct from ${sqlText(state.campaign.slug)}
+        ))
+      )
+    ) then raise exception 'QA_CMS_PUBLIC_BRIDGE_CLEANUP_PROJECTION_PROVENANCE_MISMATCH'; end if;
+
+    v_graph_active :=
+      (select form.status='published' and form.active_version_id=${formVersionId}
+       from public.cms_form_definitions form where form.id=${formId}) and
+      (select version.status='published' from public.cms_form_versions version where version.id=${formVersionId}) and
+      not exists (select 1 from public.cms_content_items item where item.id=any(v_expected_content_ids) and item.workflow_status<>'published') and
+      cardinality(v_publication_ids)=2 and cardinality(v_projection_ids)=2;
+    v_graph_terminal :=
+      (select form.status='retired' and form.active_version_id is null
+       from public.cms_form_definitions form where form.id=${formId}) and
+      (select version.status='retired' from public.cms_form_versions version where version.id=${formVersionId}) and
+      not exists (select 1 from public.cms_content_items item where item.id=any(v_expected_content_ids) and item.workflow_status<>'archived') and
+      cardinality(v_publication_ids)=0 and cardinality(v_projection_ids)=0;
+    if not coalesce(v_graph_active,false) and not coalesce(v_graph_terminal,false)
+    then raise exception 'QA_CMS_PUBLIC_BRIDGE_CLEANUP_GRAPH_STATE_MISMATCH'; end if;
+
+    if cardinality(v_lead_ids)=1 then
+      select lead.* into strict v_lead from public.cms_leads lead where lead.id=v_lead_ids[1];
+      perform 1 from public.cms_lead_consents consent where consent.lead_id=v_lead.id for update;
+      perform 1 from public.cms_lead_status_history history where history.lead_id=v_lead.id for update;
+      perform 1 from public.cms_lead_outbox outbox where outbox.lead_id=v_lead.id for update;
+      select count(*)::int into v_consent_count from public.cms_lead_consents consent
+      where consent.lead_id=v_lead.id and consent.accepted=true and
+        consent.consent_version=${sqlText(state.runTag)} and
+        consent.consent_text='Autorizo exclusivamente o processamento desta submissão sintética.' and
+        consent.policy_path='/politica-de-privacidade';
+      select count(*)::int into v_initial_history_count from public.cms_lead_status_history history
+      where history.lead_id=v_lead.id and history.from_status is null and history.to_status='new' and
+        history.reason='Lead persistido antes da notificacao' and history.actor_id is null;
+      select count(*)::int into v_cleanup_history_count from public.cms_lead_status_history history
+      where history.lead_id=v_lead.id and history.to_status='anonymized' and
+        history.reason='QA synthetic public bridge cleanup' and history.actor_id=${actor};
+      select count(*)::int into v_total_history_count from public.cms_lead_status_history history
+      where history.lead_id=v_lead.id;
+      select coalesce(array_agg(outbox.id order by outbox.id),'{}'::uuid[]) into v_outbox_ids
+      from public.cms_lead_outbox outbox where outbox.lead_id=v_lead.id;
+      if v_lead.form_id is distinct from ${formId} or
+        v_lead.form_version_id is distinct from ${formVersionId} or
+        v_lead.origin_path is distinct from ${sqlText(state.campaign.path)} or
+        v_lead.origin_source is distinct from 'campaign' or
+        v_lead.campaign_id is distinct from ${campaignId} or v_lead.product_id is not null or
+        v_consent_count<>1 or v_initial_history_count<>1 or cardinality(v_outbox_ids)<>1 or
+        exists (select 1 from public.cms_lead_consents consent where consent.lead_id=v_lead.id having count(*)<>1) or
+        exists (select 1 from public.cms_lead_outbox outbox where outbox.lead_id=v_lead.id and outbox.event_type<>'lead_received')
+      then raise exception 'QA_CMS_PUBLIC_BRIDGE_CLEANUP_LEAD_PROVENANCE_MISMATCH'; end if;
+      if v_graph_active and (
+        v_lead.status<>'new' or v_lead.anonymized_at is not null or v_lead.assigned_to is not null or
+        v_lead.payload->>'email' is distinct from ${sqlText(syntheticEmail)} or
+        v_cleanup_history_count<>0 or v_total_history_count<>1
+      ) then raise exception 'QA_CMS_PUBLIC_BRIDGE_CLEANUP_ACTIVE_LEAD_MISMATCH'; end if;
+      if v_graph_terminal and (
+        v_lead.status<>'anonymized' or v_lead.anonymized_at is null or v_lead.assigned_to is not null or
+        v_lead.payload<>'{}'::jsonb or v_lead.utm<>'{}'::jsonb or
+        v_cleanup_history_count<>1 or v_total_history_count<>2 or
+        exists (select 1 from public.cms_lead_outbox outbox where outbox.lead_id=v_lead.id and outbox.status<>'completed')
+      ) then raise exception 'QA_CMS_PUBLIC_BRIDGE_CLEANUP_TERMINAL_LEAD_MISMATCH'; end if;
+    end if;
+
+    select count(*)::int into v_setup_audit_count from public.cms_audit_log audit
+    where audit.action='cms:qa.public_bridge_setup' and audit.target_type='qa_public_bridge' and
+      audit.target_id=${sqlText(state.runTag)} and audit.actor_id=${actor} and
+      audit.event_data->>'candidateSha'=${sqlText(runtime.candidateSha)} and
+      audit.event_data->>'environment'=${sqlText(runtime.environment)} and
+      audit.event_data->>'fixtureBindingSha256'=${sqlText(binding)};
+    select count(*)::int into v_cleanup_audit_count from public.cms_audit_log audit
+    where audit.action='cms:qa.public_bridge_cleanup' and audit.target_type='qa_public_bridge' and
+      audit.target_id=${sqlText(state.runTag)} and audit.actor_id=${actor} and
+      audit.event_data->>'fixtureBindingSha256'=${sqlText(binding)};
+    if v_setup_audit_count<>1 or v_cleanup_audit_count>1 or
+      (v_graph_active and v_cleanup_audit_count<>0) or
+      (v_graph_terminal and v_cleanup_audit_count<>1)
+    then raise exception 'QA_CMS_PUBLIC_BRIDGE_CLEANUP_AUDIT_PROVENANCE_MISMATCH'; end if;
+
+    if v_graph_active then
+      if cardinality(v_lead_ids)=1 then
+        insert into public.cms_lead_status_history(
+          lead_id,from_status,to_status,from_assignee,to_assignee,reason,actor_id
+        ) values (
+          v_lead.id,v_lead.status,'anonymized',v_lead.assigned_to,null,
+          'QA synthetic public bridge cleanup',${actor}
+        );
+        with changed as (
+          update public.cms_leads lead
+          set payload='{}'::jsonb,utm='{}'::jsonb,assigned_to=null,status='anonymized',
+            anonymized_at=statement_timestamp(),last_activity_at=statement_timestamp()
+          where lead.id=v_lead.id and lead.form_id=${formId} and
+            lead.form_version_id=${formVersionId} and lead.campaign_id=${campaignId} and
+            lead.origin_path=${sqlText(state.campaign.path)} and lead.origin_source='campaign' and
+            lead.anonymized_at is null and lead.payload->>'email'=${sqlText(syntheticEmail)}
+          returning lead.id
+        ) select coalesce(array_agg(changed.id order by changed.id),'{}'::uuid[])
+          into v_changed_ids from changed;
+        if v_changed_ids is distinct from array[v_lead.id]::uuid[]
+        then raise exception 'QA_CMS_PUBLIC_BRIDGE_CLEANUP_LEAD_AFFECTED_IDS_MISMATCH'; end if;
+        select coalesce(array_agg(outbox.id order by outbox.id),'{}'::uuid[]) into v_mutable_outbox_ids
+        from public.cms_lead_outbox outbox where outbox.lead_id=v_lead.id and outbox.status<>'completed';
+        with changed as (
+          update public.cms_lead_outbox outbox
+          set status='completed',locked_at=null,
+            completed_at=coalesce(outbox.completed_at,statement_timestamp()),last_error_code=null
+          where outbox.id=any(v_mutable_outbox_ids) and outbox.lead_id=v_lead.id
+          returning outbox.id
+        ) select coalesce(array_agg(changed.id order by changed.id),'{}'::uuid[])
+          into v_changed_ids from changed;
+        if v_changed_ids is distinct from v_mutable_outbox_ids
+        then raise exception 'QA_CMS_PUBLIC_BRIDGE_CLEANUP_OUTBOX_AFFECTED_IDS_MISMATCH'; end if;
+      end if;
+
+      with changed as (
+        delete from public.cms_published_projection projection
+        where projection.item_id=any(v_expected_content_ids) returning projection.item_id
+      ) select coalesce(array_agg(changed.item_id order by changed.item_id),'{}'::uuid[])
+        into v_changed_ids from changed;
+      if v_changed_ids is distinct from v_projection_ids
+      then raise exception 'QA_CMS_PUBLIC_BRIDGE_CLEANUP_PROJECTION_AFFECTED_IDS_MISMATCH'; end if;
+      with changed as (
+        delete from public.cms_publications publication
+        where publication.item_id=any(v_expected_content_ids) returning publication.item_id
+      ) select coalesce(array_agg(changed.item_id order by changed.item_id),'{}'::uuid[])
+        into v_changed_ids from changed;
+      if v_changed_ids is distinct from v_publication_ids
+      then raise exception 'QA_CMS_PUBLIC_BRIDGE_CLEANUP_PUBLICATION_AFFECTED_IDS_MISMATCH'; end if;
+      with changed as (
+        update public.cms_content_items item set workflow_status='archived',
+          archived_at=coalesce(item.archived_at,statement_timestamp()),updated_by=${actor}
+        where item.id=any(v_expected_content_ids) and item.created_by=${actor} and item.workflow_status='published'
+        returning item.id
+      ) select coalesce(array_agg(changed.id order by changed.id),'{}'::uuid[])
+        into v_changed_ids from changed;
+      if cardinality(v_changed_ids)<>2 or
+        not (v_changed_ids @> v_expected_content_ids and v_expected_content_ids @> v_changed_ids)
+      then raise exception 'QA_CMS_PUBLIC_BRIDGE_CLEANUP_CONTENT_AFFECTED_IDS_MISMATCH'; end if;
+      with changed as (
+        update public.cms_form_versions version set status='retired'
+        where version.id=${formVersionId} and version.form_id=${formId} and
+          version.created_by=${actor} and version.status='published' returning version.id
+      ) select coalesce(array_agg(changed.id order by changed.id),'{}'::uuid[])
+        into v_changed_ids from changed;
+      if v_changed_ids is distinct from array[${formVersionId}]::uuid[]
+      then raise exception 'QA_CMS_PUBLIC_BRIDGE_CLEANUP_VERSION_AFFECTED_IDS_MISMATCH'; end if;
+      with changed as (
+        update public.cms_form_definitions form
+        set status='retired',active_version_id=null,updated_by=${actor}
+        where form.id=${formId} and form.created_by=${actor} and form.updated_by=${actor} and
+          form.form_key=${sqlText(state.form.key)} and form.status='published' and
+          form.active_version_id=${formVersionId} returning form.id
+      ) select coalesce(array_agg(changed.id order by changed.id),'{}'::uuid[])
+        into v_changed_ids from changed;
+      if v_changed_ids is distinct from array[${formId}]::uuid[]
+      then raise exception 'QA_CMS_PUBLIC_BRIDGE_CLEANUP_FORM_AFFECTED_IDS_MISMATCH'; end if;
+    end if;
+
+    if exists (
+      select 1 from public.cms_form_definitions form where form.id=${formId} and
+        (form.status<>'retired' or form.active_version_id is not null)
+    ) or exists (
+      select 1 from public.cms_form_versions version where version.form_id=${formId} and version.status<>'retired'
+    ) or exists (
+      select 1 from public.cms_content_items item where item.id=any(v_expected_content_ids) and item.workflow_status<>'archived'
+    ) or exists (
+      select 1 from public.cms_publications publication where publication.item_id=any(v_expected_content_ids)
+    ) or exists (
+      select 1 from public.cms_published_projection projection where projection.item_id=any(v_expected_content_ids)
+    ) or exists (
+      select 1 from public.cms_leads lead where lead.form_id=${formId} and
+        (lead.status<>'anonymized' or lead.anonymized_at is null)
+    ) or exists (
+      select 1 from public.cms_lead_outbox outbox join public.cms_leads lead on lead.id=outbox.lead_id
+      where lead.form_id=${formId} and outbox.status<>'completed'
+    ) then raise exception 'QA_CMS_PUBLIC_BRIDGE_CLEANUP_TERMINAL_STATE_INVALID'; end if;
+  end if;
+
+  insert into public.cms_audit_log(actor_id,action,target_type,target_id,event_data,correlation_id)
+  select ${actor},'cms:qa.public_bridge_cleanup','qa_public_bridge',${sqlText(state.runTag)},
+    ${sqlJson(cleanupEvent)},gen_random_uuid()
+  where not exists (
+    select 1 from public.cms_audit_log audit where
+      audit.action='cms:qa.public_bridge_cleanup' and audit.target_type='qa_public_bridge' and
+      audit.target_id=${sqlText(state.runTag)} and audit.actor_id=${actor} and
+      audit.event_data->>'fixtureBindingSha256'=${sqlText(binding)}
+  );
+  delete from public.cms_user_roles role where role.user_id=${actor};
+  update public.cms_profiles profile set status='suspended',
+    suspended_at=coalesce(profile.suspended_at,statement_timestamp()),suspended_by=${actor},
+    updated_at=statement_timestamp()
+  where profile.user_id=${actor} and profile.display_email=${sqlText(actorEmail)} and profile.status<>'suspended';
+  if exists (select 1 from public.cms_profiles profile where profile.user_id=${actor} and
+      (profile.display_email is distinct from ${sqlText(actorEmail)} or profile.status<>'suspended'))
+  then raise exception 'QA_CMS_PUBLIC_BRIDGE_CLEANUP_PROFILE_TERMINAL_MISMATCH'; end if;
+  delete from auth.sessions session where session.user_id=${actor};
+end
+$qa_public_bridge_cleanup$;
 commit;
-select true as cleaned;`);
+select true as cleaned;`;
+}
+
+async function cleanupState(context, state) {
+  if (!UUID.test(state.actorId ?? "")) refuse("CLEANUP_ACTOR_REQUIRED");
+  const result = await managementQuery(buildPublicBridgeCleanupSql(state));
   if (result.length !== 1 || result[0]?.cleaned !== true) refuse("CLEANUP_TRANSACTION_FAILED");
   const banned = await context.admin.auth.admin.updateUserById(state.actorId, {
     password: `Revoked!${randomBytes(32).toString("base64url")}9B`,
@@ -911,7 +1439,11 @@ async function residue(context) {
 }
 
 async function recover(context) {
-  const state = existsSync(statePath) ? loadState() : await reconstructState(context);
+  const localState = existsSync(statePath) ? loadState() : null;
+  const state =
+    localState === null || localState.status === "preparing"
+      ? await reconstructState(context, localState)
+      : localState;
   if (!state) {
     writeReport({
       schemaVersion: 1,
@@ -955,18 +1487,22 @@ async function recover(context) {
   if (activeResidue !== 0 || !residue.cleanupAudit) refuse("RECOVERY_INCOMPLETE");
 }
 
-validateRuntime();
-const context = await loadContext();
-if (mode === "setup") await setup(context);
-else if (mode === "cleanup") await cleanup(context);
-else if (mode === "residue") await residue(context);
-else await recover(context);
-console.log(
-  JSON.stringify({
-    event: "g12.public_bridge.fixture.completed",
-    mode,
-    environment,
-    candidateSha,
-    secretsExposed: false,
-  }),
-);
+export async function main() {
+  validateRuntime();
+  const context = await loadContext();
+  if (mode === "setup") await setup(context);
+  else if (mode === "cleanup") await cleanup(context);
+  else if (mode === "residue") await residue(context);
+  else await recover(context);
+  console.log(
+    JSON.stringify({
+      event: "g12.public_bridge.fixture.completed",
+      mode,
+      environment,
+      candidateSha,
+      secretsExposed: false,
+    }),
+  );
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();

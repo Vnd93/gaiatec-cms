@@ -22,6 +22,7 @@ const evidence = JSON.parse(await readFile(resolve(file), "utf8"));
 const result = validateStagingFrontendBridgeEvidence(evidence, {
   candidateSha: process.env.EXPECTED_RELEASE,
   runId: process.env.EXPECTED_RUN_ID,
+  runAttempt: process.env.EXPECTED_RUN_ATTEMPT,
   controlSha: process.env.EXPECTED_CONTROL_SHA,
   deploymentId: process.env.EXPECTED_DEPLOYMENT_ID,
 });
@@ -39,6 +40,8 @@ if (process.env.GITHUB_OUTPUT)
       `baseline_release=${evidence.baseline.release}`,
       `archive_sha256=${evidence.dist.archiveSha256}`,
       `tree_sha256=${evidence.dist.treeSha256}`,
+      "compatibility_only=true",
+      "positive_browser_required_after_full_candidate_deploy=true",
       "",
     ].join("\n"),
     "utf8",
@@ -47,5 +50,7 @@ console.log(
   JSON.stringify({
     event: "g12.staging.frontend_bridge.evidence.verified",
     candidateSha: evidence.candidateSha,
+    compatibilityOnly: true,
+    positiveBrowserRequiredAfterFullCandidateDeploy: true,
   }),
 );

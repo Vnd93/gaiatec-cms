@@ -13,12 +13,14 @@ type TurnstileVerification = {
   success?: boolean;
   hostname?: string;
   action?: string;
+  cdata?: string;
 };
 
 type TurnstileVerificationPolicy = {
   secret: string;
   environment: string | undefined;
   expectedAction: string;
+  expectedCdata: string;
   configuredHostnames: string | undefined;
   configuredOrigins: string | undefined;
 };
@@ -65,6 +67,7 @@ export function isTurnstileVerificationAccepted(
   policy: TurnstileVerificationPolicy,
 ): boolean {
   if (result.success !== true) return false;
+  if (result.cdata !== policy.expectedCdata) return false;
   if (policy.secret === TURNSTILE_STAGING_ALWAYS_PASS_SECRET)
     return policy.environment === "staging";
   return (

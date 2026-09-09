@@ -1823,7 +1823,7 @@ export const CmsLeadCaptureSchema = z
       .object({ accepted: z.literal(true), text: RequiredText.max(2000), version: RequiredText.max(80) })
       .strict(),
     honeypot: z.string().max(0).default(""),
-    captchaToken: z.string().max(4096).optional(),
+    captchaToken: z.string().max(2048).optional(),
   })
   .strict();
 

@@ -1,5 +1,5 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { createHmac, randomBytes, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -205,6 +205,11 @@ async function managementQuery(query) {
   const payload = await response.json().catch(() => null);
   if (!Array.isArray(payload)) throw new Error("QA_CMS_FIXTURE_MANAGEMENT_RESPONSE_INVALID");
   return payload;
+}
+
+function sqlText(value) {
+  if (typeof value !== "string" || /\0/.test(value)) throw new Error("QA_CMS_FIXTURE_SQL_TEXT_INVALID");
+  return `'${value.replaceAll("'", "''")}'`;
 }
 
 function base32Bytes(value) {
@@ -973,7 +978,7 @@ function finalizeAdminOpsEvidence(state, residue) {
     rdoAccessInactive: residue.activeRdoAccess === 0,
     leadsInactive: residue.activeLeads === 0,
     outboxInactive: residue.actionableLeadOutbox === 0,
-    formsRetired: residue.activeLeadForms === 0,
+    formsRetired: residue.activeLeadForms === 0 && residue.activeLeadFormVersions === 0,
     aiInactive:
       residue.activeAiSessions === 0 &&
       residue.activeAiTargets === 0 &&
@@ -1032,6 +1037,39 @@ function fixtureActorIds(state) {
     state.recoveryActorId,
     state.invitedActorId,
   ].filter(Boolean);
+}
+
+export function validateScopedRoleCleanupAssignments(assignments, actorIds, state) {
+  if (
+    !Array.isArray(assignments) ||
+    !Array.isArray(actorIds) ||
+    actorIds.length === 0 ||
+    new Set(actorIds).size !== actorIds.length ||
+    actorIds.some((actorId) => !uuidPattern.test(actorId)) ||
+    !runTagPattern.test(state?.runTag ?? "") ||
+    !["staging", "production"].includes(state?.environment)
+  ) {
+    throw new Error("QA_CMS_FIXTURE_SCOPED_ROLE_CLEANUP_BINDING_INVALID");
+  }
+  for (const assignment of assignments) {
+    if (
+      !uuidPattern.test(assignment?.id ?? "") ||
+      !actorIds.includes(assignment.user_id) ||
+      !actorIds.includes(assignment.granted_by) ||
+      assignment.site_key !== "main" ||
+      assignment.environment !== state.environment ||
+      !/^[a-z][a-z0-9_]{1,63}$/.test(assignment.role_key ?? "") ||
+      !["direct", "delegated"].includes(assignment.grant_type) ||
+      typeof assignment.reason !== "string" ||
+      !assignment.reason.includes(state.runTag) ||
+      !Number.isInteger(assignment.lock_version) ||
+      assignment.lock_version < 1 ||
+      assignment.revoked_at !== null
+    ) {
+      throw new Error("QA_CMS_FIXTURE_SCOPED_ROLE_CLEANUP_PROVENANCE_MISMATCH");
+    }
+  }
+  return assignments;
 }
 
 export function validateFixtureState(value, environment, projectRef, candidateSha) {
@@ -1098,13 +1136,9 @@ export function validateFixtureState(value, environment, projectRef, candidateSh
       (typeof value.leadCampaignPath === "string" &&
         /^\/campanhas\/qa-[a-z0-9-]+$/.test(value.leadCampaignPath))
     ) ||
-    ([
-      value.leadFormId,
-      value.leadCampaignId,
-      value.leadReference,
-      value.leadStatus,
-      value.leadCampaignPath,
-    ].some((entry) => entry !== null) &&
+    ([value.leadCampaignId, value.leadReference, value.leadStatus, value.leadCampaignPath].some(
+      (entry) => entry !== null,
+    ) &&
       [
         value.leadFormId,
         value.leadCampaignId,
@@ -1112,6 +1146,15 @@ export function validateFixtureState(value, environment, projectRef, candidateSh
         value.leadStatus,
         value.leadCampaignPath,
       ].some((entry) => entry === null)) ||
+    (value.leadId !== null &&
+      [
+        value.leadFormId,
+        value.leadCampaignId,
+        value.leadReference,
+        value.leadStatus,
+        value.leadCampaignPath,
+      ].some((entry) => entry === null)) ||
+    (value.leadOutboxId !== null && value.leadId === null) ||
     !validItems ||
     !validTombstone ||
     !validDocuments
@@ -1209,6 +1252,235 @@ function hydrateFixtureStateFromUiHandoff(state, { required = true } = {}) {
   return state;
 }
 
+function hasLeadBinding(state) {
+  return [
+    state.leadId,
+    state.leadOutboxId,
+    state.leadCampaignId,
+    state.leadReference,
+    state.leadStatus,
+    state.leadCampaignPath,
+  ].some((entry) => entry !== null);
+}
+
+function exactOperationalFormKeyPattern(runTag) {
+  return new RegExp(`^qa-ops-${runTag.toLowerCase()}-[a-f0-9]{8}$`);
+}
+
+function exactOperationalCampaignPathPattern(runTag) {
+  return new RegExp(`^/campanhas/qa-lead-${runTag.toLowerCase()}-[a-f0-9]{8}$`);
+}
+
+function hasExactQaProvenance(row, state, environment, candidateSha) {
+  return (
+    row?.qa_actor_id === state.actorId &&
+    row?.qa_run_tag === state.runTag &&
+    row?.qa_candidate_sha === candidateSha &&
+    row?.qa_environment === environment
+  );
+}
+
+function assertQueryRows(result, errorCode) {
+  if (result?.error || !Array.isArray(result?.data)) throw new Error(errorCode);
+  return result.data;
+}
+
+/**
+ * Reconstructs the operational UI binding after an interrupted browser bootstrap.
+ * Discovery is deliberately actor-first: malformed, foreign or ambiguous rows
+ * stop cleanup before any mutation instead of being treated as zero residue.
+ */
+export async function recoverInterruptedUiResourceBinding(
+  state,
+  admin,
+  { environment, candidateSha, persist = () => {} },
+) {
+  validateFixtureState(state, environment, state.projectRef, candidateSha);
+  if (!state.actorId) return state;
+
+  const formKeyPrefix = `qa-ops-${state.runTag.toLowerCase()}-`;
+  const formRows = assertQueryRows(
+    await admin
+      .from("cms_form_definitions")
+      .select(
+        "id,form_key,status,active_version_id,created_by,updated_by,qa_actor_id,qa_run_tag,qa_candidate_sha,qa_environment",
+      )
+      .eq("created_by", state.actorId)
+      .like("form_key", `${formKeyPrefix}%`),
+    "QA_CMS_FIXTURE_OPERATIONAL_FORM_DISCOVERY_UNAVAILABLE",
+  );
+  if (formRows.length > 1) throw new Error("QA_CMS_FIXTURE_OPERATIONAL_FORM_AMBIGUOUS");
+  if (formRows.length === 0) {
+    if (state.leadFormId !== null || hasLeadBinding(state))
+      throw new Error("QA_CMS_FIXTURE_OPERATIONAL_BINDING_MISMATCH");
+    return state;
+  }
+
+  const form = formRows[0];
+  if (
+    !uuidPattern.test(form?.id ?? "") ||
+    !exactOperationalFormKeyPattern(state.runTag).test(form?.form_key ?? "") ||
+    form.created_by !== state.actorId ||
+    !hasExactQaProvenance(form, state, environment, candidateSha) ||
+    !["draft", "published", "retired"].includes(form.status) ||
+    !(form.active_version_id === null || uuidPattern.test(form.active_version_id ?? "")) ||
+    (form.status === "published") !== (form.active_version_id !== null) ||
+    (state.leadFormId !== null && state.leadFormId !== form.id)
+  ) {
+    throw new Error("QA_CMS_FIXTURE_OPERATIONAL_FORM_PROVENANCE_MISMATCH");
+  }
+
+  const versionRows = assertQueryRows(
+    await admin.from("cms_form_versions").select("id,form_id,status,created_by").eq("form_id", form.id),
+    "QA_CMS_FIXTURE_OPERATIONAL_FORM_VERSION_DISCOVERY_UNAVAILABLE",
+  );
+  if (
+    versionRows.length > 32 ||
+    versionRows.some(
+      (version) =>
+        !uuidPattern.test(version?.id ?? "") ||
+        version.form_id !== form.id ||
+        version.created_by !== state.actorId ||
+        !["draft", "published", "retired"].includes(version.status),
+    ) ||
+    (form.active_version_id !== null &&
+      !versionRows.some((version) => version.id === form.active_version_id && version.status === "published"))
+  ) {
+    throw new Error("QA_CMS_FIXTURE_OPERATIONAL_FORM_VERSION_PROVENANCE_MISMATCH");
+  }
+
+  const leadRows = assertQueryRows(
+    await admin
+      .from("cms_leads")
+      .select(
+        "id,reference_code,form_id,form_version_id,status,anonymized_at,origin_path,origin_source,campaign_id,product_id,qa_actor_id,qa_run_tag,qa_candidate_sha,qa_environment",
+      )
+      .eq("form_id", form.id),
+    "QA_CMS_FIXTURE_OPERATIONAL_LEAD_DISCOVERY_UNAVAILABLE",
+  );
+  if (leadRows.length > 1) throw new Error("QA_CMS_FIXTURE_OPERATIONAL_LEAD_AMBIGUOUS");
+  if (leadRows.length === 0) {
+    if (hasLeadBinding(state)) throw new Error("QA_CMS_FIXTURE_OPERATIONAL_BINDING_MISMATCH");
+    if (state.leadFormId !== form.id) {
+      state.leadFormId = form.id;
+      validateFixtureState(state, environment, state.projectRef, candidateSha);
+      persist(state);
+    }
+    return state;
+  }
+
+  const lead = leadRows[0];
+  const campaignPathMatch = exactOperationalCampaignPathPattern(state.runTag).exec(lead?.origin_path ?? "");
+  if (
+    !uuidPattern.test(lead?.id ?? "") ||
+    lead.form_id !== form.id ||
+    !versionRows.some((version) => version.id === lead.form_version_id) ||
+    !/^LD-[A-Z0-9]+$/.test(lead.reference_code ?? "") ||
+    !/^[a-z_]+$/.test(lead.status ?? "") ||
+    (lead.status === "anonymized") !== Boolean(lead.anonymized_at) ||
+    lead.origin_source !== "campaign" ||
+    !campaignPathMatch ||
+    !uuidPattern.test(lead.campaign_id ?? "") ||
+    lead.product_id !== null ||
+    !hasExactQaProvenance(lead, state, environment, candidateSha)
+  ) {
+    throw new Error("QA_CMS_FIXTURE_OPERATIONAL_LEAD_PROVENANCE_MISMATCH");
+  }
+
+  const campaignRows = assertQueryRows(
+    await admin
+      .from("cms_content_items")
+      .select("id,content_type,slug,workflow_status,created_by,updated_by")
+      .eq("id", lead.campaign_id),
+    "QA_CMS_FIXTURE_OPERATIONAL_CAMPAIGN_DISCOVERY_UNAVAILABLE",
+  );
+  const campaign = campaignRows[0];
+  const expectedCampaignSlug = lead.origin_path.slice("/campanhas/".length);
+  if (
+    campaignRows.length !== 1 ||
+    campaign?.id !== lead.campaign_id ||
+    campaign.content_type !== "campaign" ||
+    campaign.slug !== expectedCampaignSlug ||
+    campaign.created_by !== state.actorId ||
+    !["draft", "in_review", "approved", "published", "archived"].includes(campaign.workflow_status)
+  ) {
+    throw new Error("QA_CMS_FIXTURE_OPERATIONAL_CAMPAIGN_PROVENANCE_MISMATCH");
+  }
+
+  const campaignDraftRows = assertQueryRows(
+    await admin
+      .from("cms_content_drafts")
+      .select("item_id,payload,updated_by")
+      .eq("item_id", lead.campaign_id),
+    "QA_CMS_FIXTURE_OPERATIONAL_CAMPAIGN_DRAFT_UNAVAILABLE",
+  );
+  const campaignDraft = campaignDraftRows[0];
+  if (
+    campaignDraftRows.length !== 1 ||
+    campaignDraft?.item_id !== lead.campaign_id ||
+    campaignDraft.updated_by !== state.actorId ||
+    campaignDraft.payload?.contentType !== "campaign" ||
+    campaignDraft.payload?.route?.path !== lead.origin_path ||
+    !String(campaignDraft.payload?.title ?? "").startsWith(state.runTag)
+  ) {
+    throw new Error("QA_CMS_FIXTURE_OPERATIONAL_CAMPAIGN_DRAFT_MISMATCH");
+  }
+
+  const outboxRows = assertQueryRows(
+    await admin.from("cms_lead_outbox").select("id,lead_id,status").eq("lead_id", lead.id),
+    "QA_CMS_FIXTURE_OPERATIONAL_LEAD_OUTBOX_DISCOVERY_UNAVAILABLE",
+  );
+  if (
+    outboxRows.length === 0 ||
+    outboxRows.length > 32 ||
+    outboxRows.some(
+      (entry) =>
+        !uuidPattern.test(entry?.id ?? "") ||
+        entry.lead_id !== lead.id ||
+        !["pending", "processing", "completed", "failed", "dead_letter"].includes(entry.status),
+    ) ||
+    (state.leadOutboxId !== null && !outboxRows.some((entry) => entry.id === state.leadOutboxId))
+  ) {
+    throw new Error("QA_CMS_FIXTURE_OPERATIONAL_LEAD_OUTBOX_PROVENANCE_MISMATCH");
+  }
+
+  for (const [known, discovered] of [
+    [state.leadId, lead.id],
+    [state.leadFormId, form.id],
+    [state.leadCampaignId, lead.campaign_id],
+    [state.leadReference, lead.reference_code],
+    [state.leadCampaignPath, lead.origin_path],
+  ]) {
+    if (known !== null && known !== discovered)
+      throw new Error("QA_CMS_FIXTURE_OPERATIONAL_BINDING_MISMATCH");
+  }
+
+  const before = JSON.stringify(state);
+  Object.assign(state, {
+    leadId: lead.id,
+    leadOutboxId: state.leadOutboxId ?? (outboxRows.length === 1 ? outboxRows[0].id : null),
+    leadFormId: form.id,
+    leadCampaignId: lead.campaign_id,
+    leadReference: lead.reference_code,
+    leadStatus:
+      lead.status === "anonymized" && state.leadStatus && state.leadStatus !== "anonymized"
+        ? state.leadStatus
+        : lead.status,
+    leadCampaignPath: lead.origin_path,
+  });
+  validateFixtureState(state, environment, state.projectRef, candidateSha);
+  if (JSON.stringify(state) !== before) persist(state);
+  return state;
+}
+
+async function recoverInterruptedUiResources(state) {
+  return recoverInterruptedUiResourceBinding(state, context.admin, {
+    environment: target.environment,
+    candidateSha: expectedSha,
+    persist: writeState,
+  });
+}
+
 function readState() {
   try {
     return validateFixtureState(
@@ -1243,22 +1515,80 @@ async function assertSyntheticActor(state, actorId = state.actorId, actorKind = 
   return user;
 }
 
-async function recordFixtureAudit(actorId, stage, runTag) {
+function deterministicUuid(scope) {
+  const hex = createHash("sha256").update(scope).digest("hex").slice(0, 32).split("");
+  hex[12] = "4";
+  hex[16] = "8";
+  const value = hex.join("");
+  return `${value.slice(0, 8)}-${value.slice(8, 12)}-${value.slice(12, 16)}-${value.slice(16, 20)}-${value.slice(20)}`;
+}
+
+export function buildFixtureAuditSql(
+  actorId,
+  stage,
+  runTag,
+  runtime = { environment: target?.environment, candidateSha: expectedSha },
+) {
+  if (
+    !uuidPattern.test(actorId ?? "") ||
+    !["setup", "cleanup"].includes(stage) ||
+    !runTagPattern.test(runTag ?? "") ||
+    !["staging", "production"].includes(runtime?.environment) ||
+    !/^[a-f0-9]{40}$/.test(runtime?.candidateSha ?? "") ||
+    !runTag.endsWith(`-${runtime.candidateSha.slice(0, 8)}`)
+  ) {
+    throw new Error("QA_CMS_FIXTURE_AUDIT_BINDING_INVALID");
+  }
   const action = stage === "setup" ? "cms:qa.fixture_setup" : "cms:qa.fixture_cleanup";
-  const recorded = await context.admin.from("cms_audit_log").insert({
-    actor_id: actorId,
-    action,
-    target_type: "qa_fixture",
-    target_id: runTag,
-    event_data: {
-      schemaVersion: 1,
-      syntheticOnly: true,
-      environment: target.environment,
-      candidateSha: expectedSha,
-    },
-    correlation_id: randomUUID(),
-  });
-  if (recorded.error) throw new Error("QA_CMS_FIXTURE_AUDIT_FAILED");
+  const correlationId = deterministicUuid(
+    `cms-browser-fixture:${runtime.environment}:${runtime.candidateSha}:${runTag}:${actorId}:${stage}`,
+  );
+  const actor = `${sqlText(actorId)}::uuid`;
+  return `begin;
+do $qa_fixture_audit$
+declare
+  v_total integer;
+  v_exact integer;
+begin
+  perform 1 from auth.users actor where actor.id=${actor} for update;
+  if not found or not private.cms_qa_actor_marker_is_exact(
+    ${actor},${sqlText(runTag)},${sqlText(runtime.candidateSha)},${sqlText(runtime.environment)}
+  ) then raise exception 'QA_CMS_FIXTURE_AUDIT_ACTOR_PROVENANCE_MISMATCH'; end if;
+  perform 1 from private.cms_qa_actor_leases lease where lease.actor_id=${actor} for update;
+  if not found or exists (
+    select 1 from private.cms_qa_actor_leases lease where lease.actor_id=${actor} and (
+      lease.run_tag is distinct from ${sqlText(runTag)} or
+      lease.candidate_sha is distinct from ${sqlText(runtime.candidateSha)} or
+      lease.environment is distinct from ${sqlText(runtime.environment)}
+    )
+  ) then raise exception 'QA_CMS_FIXTURE_AUDIT_LEASE_PROVENANCE_MISMATCH'; end if;
+  select count(*)::int,count(*) filter (where
+    audit.event_data->>'schemaVersion'='1' and
+    audit.event_data->>'syntheticOnly'='true' and
+    audit.event_data->>'environment'=${sqlText(runtime.environment)} and
+    audit.event_data->>'candidateSha'=${sqlText(runtime.candidateSha)} and
+    audit.correlation_id=${sqlText(correlationId)}::uuid
+  )::int into v_total,v_exact
+  from public.cms_audit_log audit where audit.actor_id=${actor} and
+    audit.action=${sqlText(action)} and audit.target_type='qa_fixture' and audit.target_id=${sqlText(runTag)};
+  if v_total>1 or (v_total=1 and v_exact<>1)
+  then raise exception 'QA_CMS_FIXTURE_AUDIT_CARDINALITY_MISMATCH'; end if;
+  if v_total=0 then
+    insert into public.cms_audit_log(actor_id,action,target_type,target_id,event_data,correlation_id)
+    values (${actor},${sqlText(action)},'qa_fixture',${sqlText(runTag)},jsonb_build_object(
+      'schemaVersion',1,'syntheticOnly',true,'environment',${sqlText(runtime.environment)},
+      'candidateSha',${sqlText(runtime.candidateSha)}
+    ),${sqlText(correlationId)}::uuid);
+  end if;
+end
+$qa_fixture_audit$;
+commit;
+select true as recorded;`;
+}
+
+async function recordFixtureAudit(actorId, stage, runTag) {
+  const result = await managementQuery(buildFixtureAuditSql(actorId, stage, runTag));
+  if (result.length !== 1 || result[0]?.recorded !== true) throw new Error("QA_CMS_FIXTURE_AUDIT_FAILED");
 }
 
 async function exactCount(query, code) {
@@ -1439,6 +1769,7 @@ async function terminalArchivedTombstoneEvidence(state) {
 }
 
 async function inspectResidue(state, itemIds) {
+  await recoverInterruptedUiResources(state);
   const actorIds = fixtureActorIds(state);
   const aiTargetProvenance = await context.admin
     .from("cms_ai_synthetic_targets")
@@ -1480,6 +1811,7 @@ async function inspectResidue(state, itemIds) {
     activeLeads,
     actionableLeadOutbox,
     activeLeadForms,
+    activeLeadFormVersions,
     activeAiSessions,
     activeAiTargets,
     activeAiPlans,
@@ -1582,6 +1914,16 @@ async function inspectResidue(state, itemIds) {
             .neq("status", "retired")
         : zeroCount,
       "QA_CMS_FIXTURE_FORM_RESIDUE_UNAVAILABLE",
+    ),
+    exactCount(
+      state.leadFormId
+        ? context.admin
+            .from("cms_form_versions")
+            .select("id", { count: "exact", head: true })
+            .eq("form_id", state.leadFormId)
+            .neq("status", "retired")
+        : zeroCount,
+      "QA_CMS_FIXTURE_FORM_VERSION_RESIDUE_UNAVAILABLE",
     ),
     exactCount(
       context.admin
@@ -1714,6 +2056,7 @@ async function inspectResidue(state, itemIds) {
     activeLeads +
     actionableLeadOutbox +
     activeLeadForms +
+    activeLeadFormVersions +
     activeAiSessions +
     activeAiTargets +
     activeAiPlans +
@@ -1736,6 +2079,7 @@ async function inspectResidue(state, itemIds) {
     activeLeads,
     actionableLeadOutbox,
     activeLeadForms,
+    activeLeadFormVersions,
     activeAiSessions,
     activeAiTargets,
     activeAiPlans,
@@ -1823,6 +2167,526 @@ async function neutralizeSyntheticDocuments(state, actorIds) {
   return state.documentIds.length;
 }
 
+export function buildRecoveredFormRetirementSql(state) {
+  if (!state.leadFormId) return;
+  const leadFields = [
+    state.leadId,
+    state.leadOutboxId,
+    state.leadCampaignId,
+    state.leadReference,
+    state.leadStatus,
+    state.leadCampaignPath,
+  ];
+  const hasLead = leadFields.some((value) => value !== null && value !== undefined);
+  if (
+    !uuidPattern.test(state.actorId ?? "") ||
+    !uuidPattern.test(state.leadFormId) ||
+    !runTagPattern.test(state.runTag ?? "") ||
+    !/^[a-f0-9]{40}$/.test(state.expectedSha ?? "") ||
+    !["staging", "production"].includes(state.environment) ||
+    !state.runTag.endsWith(`-${state.expectedSha.slice(0, 8)}`) ||
+    (hasLead &&
+      (!uuidPattern.test(state.leadId ?? "") ||
+        !uuidPattern.test(state.leadCampaignId ?? "") ||
+        !/^LD-[A-Z0-9]+$/.test(state.leadReference ?? "") ||
+        !/^[a-z_]+$/.test(state.leadStatus ?? "") ||
+        !exactOperationalCampaignPathPattern(state.runTag).test(state.leadCampaignPath ?? "") ||
+        !(
+          state.leadOutboxId === null ||
+          state.leadOutboxId === undefined ||
+          uuidPattern.test(state.leadOutboxId)
+        ))) ||
+    (!hasLead &&
+      [
+        state.leadId,
+        state.leadCampaignId,
+        state.leadReference,
+        state.leadStatus,
+        state.leadCampaignPath,
+      ].some((value) => value !== null && value !== undefined))
+  ) {
+    throw new Error("QA_CMS_FIXTURE_FORM_RETIREMENT_BINDING_INVALID");
+  }
+  const actorId = `${sqlText(state.actorId)}::uuid`;
+  const formId = `${sqlText(state.leadFormId)}::uuid`;
+  const formKeyPattern = `^qa-ops-${state.runTag.toLowerCase()}-[a-f0-9]{8}$`;
+  const leadId = hasLead ? `${sqlText(state.leadId)}::uuid` : "null::uuid";
+  const campaignId = hasLead ? `${sqlText(state.leadCampaignId)}::uuid` : "null::uuid";
+  const knownOutboxId = state.leadOutboxId ? `${sqlText(state.leadOutboxId)}::uuid` : "null::uuid";
+  const historyFromStatusMismatch = !hasLead
+    ? "false"
+    : state.leadStatus === "anonymized"
+      ? "history.from_status is null or history.from_status not in ('new','assigned','in_service','responded','converted','disqualified','archived')"
+      : `history.from_status is distinct from ${sqlText(state.leadStatus)}`;
+  const historyFromStatusMatch = !hasLead
+    ? "false"
+    : state.leadStatus === "anonymized"
+      ? "history.from_status in ('new','assigned','in_service','responded','converted','disqualified','archived')"
+      : `history.from_status=${sqlText(state.leadStatus)}`;
+  const leadPreflight = hasLead
+    ? `
+  perform 1 from public.cms_leads lead where lead.form_id=${formId} order by lead.id for update;
+  select coalesce(array_agg(lead.id order by lead.id),'{}'::uuid[]) into v_lead_ids
+  from public.cms_leads lead where lead.form_id=${formId};
+  if cardinality(v_lead_ids)<>1 or v_lead_ids[1] is distinct from ${leadId}
+  then raise exception 'QA_CMS_FIXTURE_LEAD_CARDINALITY_MISMATCH'; end if;
+  select lead.* into strict v_lead from public.cms_leads lead where lead.id=${leadId};
+  if v_lead.reference_code is distinct from ${sqlText(state.leadReference)} or
+    v_lead.form_id is distinct from ${formId} or not v_lead.form_version_id=any(v_version_ids) or
+    v_lead.origin_path is distinct from ${sqlText(state.leadCampaignPath)} or
+    v_lead.origin_source is distinct from 'campaign' or
+    v_lead.campaign_id is distinct from ${campaignId} or v_lead.product_id is not null or
+    row(v_lead.qa_actor_id,v_lead.qa_run_tag,v_lead.qa_candidate_sha,v_lead.qa_environment) is distinct from
+    row(${actorId},${sqlText(state.runTag)},${sqlText(state.expectedSha)},${sqlText(state.environment)})
+  then raise exception 'QA_CMS_FIXTURE_LEAD_PROVENANCE_MISMATCH'; end if;
+
+  perform 1 from public.cms_lead_status_history history
+  where history.lead_id=${leadId} order by history.id for update;
+  perform 1 from public.cms_lead_outbox outbox
+  where outbox.lead_id=${leadId} order by outbox.id for update;
+  select coalesce(array_agg(history.id order by history.id),'{}'::uuid[]) into v_cleanup_history_ids
+  from public.cms_lead_status_history history where history.lead_id=${leadId} and
+    history.to_status='anonymized' and
+    history.reason in ('QA synthetic fixture cleanup','QA synthetic lease expired');
+  if cardinality(v_cleanup_history_ids)>1 or exists (
+    select 1 from public.cms_lead_status_history history
+    where history.id=any(v_cleanup_history_ids) and (
+      history.lead_id is distinct from ${leadId} or history.actor_id is distinct from ${actorId} or
+      ${historyFromStatusMismatch}
+    )
+  ) then raise exception 'QA_CMS_FIXTURE_LEAD_HISTORY_PROVENANCE_MISMATCH'; end if;
+  select coalesce(array_agg(outbox.id order by outbox.id),'{}'::uuid[]) into v_outbox_ids
+  from public.cms_lead_outbox outbox where outbox.lead_id=${leadId};
+  if cardinality(v_outbox_ids)<1 or cardinality(v_outbox_ids)>32 or
+    (${knownOutboxId} is not null and not ${knownOutboxId}=any(v_outbox_ids)) or exists (
+      select 1 from public.cms_lead_outbox outbox where outbox.id=any(v_outbox_ids) and (
+        outbox.lead_id is distinct from ${leadId} or
+        outbox.event_type not in ('lead_received','lead_assigned','lead_status_changed','sla_breached','retention_due') or
+        outbox.status not in ('pending','processing','completed','failed','dead_letter')
+      )
+    )
+  then raise exception 'QA_CMS_FIXTURE_LEAD_OUTBOX_PROVENANCE_MISMATCH'; end if;
+  if v_lead.anonymized_at is null then
+    if ${sqlText(state.leadStatus)}='anonymized' or
+      v_lead.status is distinct from ${sqlText(state.leadStatus)} or cardinality(v_cleanup_history_ids)<>0
+    then raise exception 'QA_CMS_FIXTURE_LEAD_ACTIVE_STATE_MISMATCH'; end if;
+    v_mutable_lead_ids:=array[${leadId}]::uuid[];
+  else
+    if v_lead.status<>'anonymized' or v_lead.payload<>'{}'::jsonb or v_lead.utm<>'{}'::jsonb or
+      v_lead.assigned_to is not null or cardinality(v_cleanup_history_ids)<>1
+    then raise exception 'QA_CMS_FIXTURE_LEAD_TERMINAL_STATE_MISMATCH'; end if;
+    v_mutable_lead_ids:='{}'::uuid[];
+  end if;
+  select coalesce(array_agg(outbox.id order by outbox.id),'{}'::uuid[]) into v_mutable_outbox_ids
+  from public.cms_lead_outbox outbox where outbox.id=any(v_outbox_ids) and outbox.status<>'completed';`
+    : `
+  perform 1 from public.cms_leads lead where lead.form_id=${formId} order by lead.id for update;
+  if found then raise exception 'QA_CMS_FIXTURE_UNBOUND_LEAD_PRESENT'; end if;
+  v_lead_ids:='{}'::uuid[];
+  v_cleanup_history_ids:='{}'::uuid[];
+  v_outbox_ids:='{}'::uuid[];
+  v_mutable_outbox_ids:='{}'::uuid[];
+  v_mutable_lead_ids:='{}'::uuid[];`;
+  const leadMutation = hasLead
+    ? `
+  with inserted as (
+    insert into public.cms_lead_status_history(
+      lead_id,from_status,to_status,from_assignee,to_assignee,reason,actor_id
+    ) select ${leadId},${sqlText(state.leadStatus)},'anonymized',v_lead.assigned_to,null,
+      'QA synthetic fixture cleanup',${actorId}
+    where cardinality(v_mutable_lead_ids)=1 returning id
+  ) select coalesce(array_agg(inserted.id order by inserted.id),'{}'::uuid[])
+    into v_changed_ids from inserted;
+  if cardinality(v_changed_ids)<>cardinality(v_mutable_lead_ids)
+  then raise exception 'QA_CMS_FIXTURE_LEAD_HISTORY_AFFECTED_IDS_MISMATCH'; end if;
+
+  with changed as (
+    update public.cms_leads lead set payload='{}'::jsonb,utm='{}'::jsonb,assigned_to=null,
+      status='anonymized',anonymized_at=statement_timestamp(),last_activity_at=statement_timestamp()
+    where lead.id=any(v_mutable_lead_ids) and lead.id=${leadId} and lead.form_id=${formId} and
+      lead.campaign_id=${campaignId} and lead.origin_path=${sqlText(state.leadCampaignPath)} and
+      lead.qa_actor_id=${actorId} and lead.qa_run_tag=${sqlText(state.runTag)} and
+      lead.qa_candidate_sha=${sqlText(state.expectedSha)} and lead.qa_environment=${sqlText(state.environment)} and
+      lead.status=${sqlText(state.leadStatus)} and lead.anonymized_at is null
+    returning lead.id
+  ) select coalesce(array_agg(changed.id order by changed.id),'{}'::uuid[])
+    into v_changed_ids from changed;
+  if v_changed_ids is distinct from v_mutable_lead_ids
+  then raise exception 'QA_CMS_FIXTURE_LEAD_AFFECTED_IDS_MISMATCH'; end if;
+
+  with changed as (
+    update public.cms_lead_outbox outbox set status='completed',locked_at=null,
+      completed_at=coalesce(outbox.completed_at,statement_timestamp()),last_error_code=null
+    where outbox.id=any(v_mutable_outbox_ids) and outbox.lead_id=${leadId} and outbox.status<>'completed'
+    returning outbox.id
+  ) select coalesce(array_agg(changed.id order by changed.id),'{}'::uuid[])
+    into v_changed_ids from changed;
+  if v_changed_ids is distinct from v_mutable_outbox_ids
+  then raise exception 'QA_CMS_FIXTURE_LEAD_OUTBOX_AFFECTED_IDS_MISMATCH'; end if;
+
+  select coalesce(array_agg(history.id order by history.id),'{}'::uuid[]) into v_cleanup_history_ids
+  from public.cms_lead_status_history history where history.lead_id=${leadId} and
+    history.to_status='anonymized' and
+    history.reason in ('QA synthetic fixture cleanup','QA synthetic lease expired') and
+    history.actor_id=${actorId} and ${historyFromStatusMatch};
+  if cardinality(v_cleanup_history_ids)<>1 or exists (
+    select 1 from public.cms_leads lead where lead.id=${leadId} and (
+      lead.status<>'anonymized' or lead.anonymized_at is null or lead.payload<>'{}'::jsonb or
+      lead.utm<>'{}'::jsonb or lead.assigned_to is not null
+    )
+  ) or exists (
+    select 1 from public.cms_lead_outbox outbox where outbox.id=any(v_outbox_ids) and outbox.status<>'completed'
+  ) then raise exception 'QA_CMS_FIXTURE_LEAD_TERMINAL_STATE_INVALID'; end if;`
+    : "";
+  return `begin;
+select set_config('cms.qa_mutation_actor_id', ${sqlText(state.actorId)}, true);
+select set_config('cms.qa_compensating', 'on', true);
+do $qa_fixture_form_retirement$
+declare
+  v_form public.cms_form_definitions%rowtype;
+  v_form_ids uuid[];
+  v_version_ids uuid[];
+  v_mutable_version_ids uuid[];
+  v_mutable_form_ids uuid[];
+  v_lead_ids uuid[];
+  v_mutable_lead_ids uuid[];
+  v_cleanup_history_ids uuid[];
+  v_outbox_ids uuid[];
+  v_mutable_outbox_ids uuid[];
+  v_lead public.cms_leads%rowtype;
+  v_changed_ids uuid[];
+begin
+  perform 1 from auth.users actor where actor.id=${actorId} for update;
+  if not found or not private.cms_qa_actor_marker_is_exact(
+    ${actorId},${sqlText(state.runTag)},${sqlText(state.expectedSha)},${sqlText(state.environment)}
+  ) then raise exception 'QA_CMS_FIXTURE_FORM_ACTOR_PROVENANCE_MISMATCH'; end if;
+
+  perform 1 from private.cms_qa_actor_leases lease where lease.actor_id=${actorId} for update;
+  if not found or exists (
+    select 1 from private.cms_qa_actor_leases lease where lease.actor_id=${actorId} and (
+      lease.run_tag is distinct from ${sqlText(state.runTag)} or
+      lease.candidate_sha is distinct from ${sqlText(state.expectedSha)} or
+      lease.environment is distinct from ${sqlText(state.environment)} or
+      lease.status not in ('active','cleaned','expired')
+    )
+  ) then raise exception 'QA_CMS_FIXTURE_FORM_LEASE_PROVENANCE_MISMATCH'; end if;
+
+  perform 1 from public.cms_profiles profile where profile.user_id=${actorId} for update;
+  if not found then raise exception 'QA_CMS_FIXTURE_FORM_PROFILE_MISSING'; end if;
+
+  perform 1 from public.cms_form_definitions form
+  where form.id=${formId} or (
+    form.created_by=${actorId} and (
+      form.form_key~${sqlText(formKeyPattern)} or
+      row(form.qa_actor_id,form.qa_run_tag,form.qa_candidate_sha,form.qa_environment)=
+      row(${actorId},${sqlText(state.runTag)},${sqlText(state.expectedSha)},${sqlText(state.environment)})
+    )
+  )
+  order by form.id for update;
+  select coalesce(array_agg(form.id order by form.id),'{}'::uuid[]) into v_form_ids
+  from public.cms_form_definitions form
+  where form.id=${formId} or (
+    form.created_by=${actorId} and (
+      form.form_key~${sqlText(formKeyPattern)} or
+      row(form.qa_actor_id,form.qa_run_tag,form.qa_candidate_sha,form.qa_environment)=
+      row(${actorId},${sqlText(state.runTag)},${sqlText(state.expectedSha)},${sqlText(state.environment)})
+    )
+  );
+  if cardinality(v_form_ids)<>1 or v_form_ids[1] is distinct from ${formId}
+  then raise exception 'QA_CMS_FIXTURE_FORM_CARDINALITY_MISMATCH'; end if;
+
+  select form.* into strict v_form from public.cms_form_definitions form where form.id=${formId};
+  if v_form.form_key !~ ${sqlText(formKeyPattern)} or
+    v_form.created_by is distinct from ${actorId} or
+    row(v_form.qa_actor_id,v_form.qa_run_tag,v_form.qa_candidate_sha,v_form.qa_environment) is distinct from
+    row(${actorId},${sqlText(state.runTag)},${sqlText(state.expectedSha)},${sqlText(state.environment)}) or
+    v_form.status not in ('draft','published','retired') or
+    not exists (
+      select 1 from private.cms_qa_actor_leases updater
+      where updater.actor_id=v_form.updated_by and updater.run_tag=${sqlText(state.runTag)} and
+        updater.candidate_sha=${sqlText(state.expectedSha)} and updater.environment=${sqlText(state.environment)} and
+        private.cms_qa_actor_marker_is_exact(updater.actor_id,updater.run_tag,updater.candidate_sha,updater.environment)
+    )
+  then raise exception 'QA_CMS_FIXTURE_FORM_PROVENANCE_MISMATCH'; end if;
+
+  perform 1 from public.cms_form_versions version
+  where version.form_id=${formId} order by version.id for update;
+  select coalesce(array_agg(version.id order by version.id),'{}'::uuid[]) into v_version_ids
+  from public.cms_form_versions version where version.form_id=${formId};
+  if cardinality(v_version_ids)>32 or exists (
+    select 1 from public.cms_form_versions version where version.form_id=${formId} and (
+      version.created_by is distinct from ${actorId} or
+      version.status not in ('draft','published','retired')
+    )
+  ) or (v_form.active_version_id is not null and not v_form.active_version_id=any(v_version_ids))
+  then raise exception 'QA_CMS_FIXTURE_FORM_VERSION_PROVENANCE_MISMATCH'; end if;
+${leadPreflight}
+
+  select coalesce(array_agg(version.id order by version.id),'{}'::uuid[]) into v_mutable_version_ids
+  from public.cms_form_versions version
+  where version.id=any(v_version_ids) and version.status<>'retired';
+  select case when v_form.status<>'retired' or v_form.active_version_id is not null
+    then array[${formId}]::uuid[] else '{}'::uuid[] end into v_mutable_form_ids;
+
+  with changed as (
+    update public.cms_form_versions version
+    set status='retired',published_at=coalesce(version.published_at,statement_timestamp())
+    where version.id=any(v_mutable_version_ids) and version.form_id=${formId} and
+      version.created_by=${actorId} and version.status<>'retired'
+    returning version.id
+  ) select coalesce(array_agg(changed.id order by changed.id),'{}'::uuid[])
+    into v_changed_ids from changed;
+  if v_changed_ids is distinct from v_mutable_version_ids
+  then raise exception 'QA_CMS_FIXTURE_FORM_VERSION_AFFECTED_IDS_MISMATCH'; end if;
+
+  with changed as (
+    update public.cms_form_definitions form
+    set status='retired',active_version_id=null,updated_by=${actorId}
+    where form.id=any(v_mutable_form_ids) and form.id=${formId} and
+      form.created_by=${actorId} and form.qa_actor_id=${actorId} and
+      form.qa_run_tag=${sqlText(state.runTag)} and form.qa_candidate_sha=${sqlText(state.expectedSha)} and
+      form.qa_environment=${sqlText(state.environment)} and
+      (form.status<>'retired' or form.active_version_id is not null)
+    returning form.id
+  ) select coalesce(array_agg(changed.id order by changed.id),'{}'::uuid[])
+    into v_changed_ids from changed;
+  if v_changed_ids is distinct from v_mutable_form_ids
+  then raise exception 'QA_CMS_FIXTURE_FORM_AFFECTED_IDS_MISMATCH'; end if;
+${leadMutation}
+
+  if exists (
+    select 1 from public.cms_form_definitions form where form.id=${formId} and
+      (form.status<>'retired' or form.active_version_id is not null)
+  ) or exists (
+    select 1 from public.cms_form_versions version where version.form_id=${formId} and version.status<>'retired'
+  ) then raise exception 'QA_CMS_FIXTURE_FORM_TERMINAL_STATE_INVALID'; end if;
+end
+$qa_fixture_form_retirement$;
+commit;
+select true as retired;`;
+}
+
+export async function retireRecoveredFormResources(state, executeQuery = managementQuery) {
+  const sql = buildRecoveredFormRetirementSql(state);
+  if (sql === undefined) return;
+  const result = await executeQuery(sql);
+  if (result.length !== 1 || result[0]?.retired !== true)
+    throw new Error("QA_CMS_FIXTURE_FORM_RETIREMENT_FAILED");
+}
+
+export function buildOwnedContentCleanupSql(state, actorIds, itemIds) {
+  if (
+    !Array.isArray(itemIds) ||
+    !Array.isArray(actorIds) ||
+    !uuidPattern.test(state?.actorId ?? "") ||
+    !runTagPattern.test(state?.runTag ?? "") ||
+    !/^[a-f0-9]{40}$/.test(state?.expectedSha ?? "") ||
+    !["staging", "production"].includes(state?.environment) ||
+    !state.runTag.endsWith(`-${state.expectedSha.slice(0, 8)}`) ||
+    actorIds.length === 0 ||
+    new Set(actorIds).size !== actorIds.length ||
+    actorIds.some((actorId) => !uuidPattern.test(actorId)) ||
+    !actorIds.includes(state.actorId) ||
+    itemIds.length > 64 ||
+    new Set(itemIds).size !== itemIds.length ||
+    itemIds.some((itemId) => !uuidPattern.test(itemId))
+  ) {
+    throw new Error("QA_CMS_FIXTURE_CONTENT_CLEANUP_BINDING_INVALID");
+  }
+  if (!itemIds.length) return;
+  const actors = `array[${actorIds.map((actorId) => `${sqlText(actorId)}::uuid`).join(",")}]::uuid[]`;
+  const items = `array[${itemIds.map((itemId) => `${sqlText(itemId)}::uuid`).join(",")}]::uuid[]`;
+  return `begin;
+select set_config('cms.qa_mutation_actor_id', ${sqlText(state.actorId)}, true);
+select set_config('cms.qa_compensating', 'on', true);
+do $qa_fixture_content_cleanup$
+declare
+  v_actor_ids uuid[]:=${actors};
+  v_expected_item_ids uuid[]:=${items};
+  v_owned_item_ids uuid[];
+  v_mutable_item_ids uuid[];
+  v_publication_ids uuid[];
+  v_projection_ids uuid[];
+  v_route_ids uuid[];
+  v_outbox_ids uuid[];
+  v_changed_ids uuid[];
+begin
+  perform 1 from auth.users actor where actor.id=any(v_actor_ids) order by actor.id for update;
+  if (select count(*) from auth.users actor where actor.id=any(v_actor_ids))<>cardinality(v_actor_ids) or exists (
+    select 1 from unnest(v_actor_ids) actor_id where not private.cms_qa_actor_marker_is_exact(
+      actor_id,${sqlText(state.runTag)},${sqlText(state.expectedSha)},${sqlText(state.environment)}
+    )
+  ) then raise exception 'QA_CMS_FIXTURE_CONTENT_ACTOR_PROVENANCE_MISMATCH'; end if;
+  perform 1 from private.cms_qa_actor_leases lease
+  where lease.actor_id=any(v_actor_ids) order by lease.actor_id for update;
+  if (select count(*) from private.cms_qa_actor_leases lease where lease.actor_id=any(v_actor_ids))<>
+      cardinality(v_actor_ids) or exists (
+    select 1 from private.cms_qa_actor_leases lease where lease.actor_id=any(v_actor_ids) and (
+      lease.run_tag is distinct from ${sqlText(state.runTag)} or
+      lease.candidate_sha is distinct from ${sqlText(state.expectedSha)} or
+      lease.environment is distinct from ${sqlText(state.environment)} or
+      lease.status not in ('active','cleaned','expired')
+    )
+  ) then raise exception 'QA_CMS_FIXTURE_CONTENT_LEASE_PROVENANCE_MISMATCH'; end if;
+
+  perform 1 from public.cms_content_items item
+  where item.created_by=any(v_actor_ids) or item.id=any(v_expected_item_ids)
+  order by item.id for update;
+  select coalesce(array_agg(item.id order by item.id),'{}'::uuid[]) into v_owned_item_ids
+  from public.cms_content_items item where item.created_by=any(v_actor_ids);
+  if cardinality(v_owned_item_ids)<>cardinality(v_expected_item_ids) or
+    not (v_owned_item_ids @> v_expected_item_ids and v_expected_item_ids @> v_owned_item_ids) or exists (
+      select 1 from public.cms_content_items item where item.id=any(v_expected_item_ids) and (
+        not item.created_by=any(v_actor_ids) or not item.updated_by=any(v_actor_ids) or
+        item.workflow_status not in ('draft','in_review','approved','published','archived')
+      )
+    )
+  then raise exception 'QA_CMS_FIXTURE_CONTENT_CARDINALITY_MISMATCH'; end if;
+
+  perform 1 from public.cms_content_drafts draft
+  where draft.item_id=any(v_expected_item_ids) order by draft.item_id for update;
+  if (select count(*) from public.cms_content_drafts draft where draft.item_id=any(v_expected_item_ids))<>
+      cardinality(v_expected_item_ids) or exists (
+    select 1 from public.cms_content_drafts draft
+    join public.cms_content_items item on item.id=draft.item_id
+    where draft.item_id=any(v_expected_item_ids) and (
+      not draft.updated_by=any(v_actor_ids) or
+      draft.payload->>'contentType' is distinct from item.content_type or
+      position(${sqlText(state.runTag)} in coalesce(draft.payload->>'title',''))<>1 or
+      not exists (
+        select 1 from jsonb_array_elements(draft.provenance) provenance
+        where provenance->>'authorizationReference'=${sqlText(state.runTag)}
+      )
+    )
+  ) then raise exception 'QA_CMS_FIXTURE_CONTENT_PROVENANCE_MISMATCH'; end if;
+
+  perform 1 from public.cms_publications publication
+  where publication.item_id=any(v_expected_item_ids) order by publication.item_id for update;
+  perform 1 from public.cms_published_projection projection
+  where projection.item_id=any(v_expected_item_ids) order by projection.item_id for update;
+  perform 1 from public.cms_route_rules route
+  where route.item_id=any(v_expected_item_ids) order by route.id for update;
+  perform 1 from public.cms_publication_outbox outbox
+  where outbox.item_id=any(v_expected_item_ids) order by outbox.id for update;
+  select coalesce(array_agg(publication.item_id order by publication.item_id),'{}'::uuid[])
+    into v_publication_ids from public.cms_publications publication
+    where publication.item_id=any(v_expected_item_ids);
+  select coalesce(array_agg(projection.item_id order by projection.item_id),'{}'::uuid[])
+    into v_projection_ids from public.cms_published_projection projection
+    where projection.item_id=any(v_expected_item_ids);
+  select coalesce(array_agg(route.id order by route.id),'{}'::uuid[]) into v_route_ids
+    from public.cms_route_rules route where route.item_id=any(v_expected_item_ids) and route.active;
+  select coalesce(array_agg(outbox.id order by outbox.id),'{}'::uuid[]) into v_outbox_ids
+    from public.cms_publication_outbox outbox where outbox.item_id=any(v_expected_item_ids) and
+    outbox.status in ('pending','processing','failed');
+  if cardinality(v_publication_ids)>cardinality(v_expected_item_ids) or
+    cardinality(v_projection_ids)>cardinality(v_expected_item_ids) or exists (
+      select 1 from public.cms_publications publication where publication.item_id=any(v_expected_item_ids) and
+        not publication.published_by=any(v_actor_ids)
+    ) or exists (
+      select 1 from public.cms_publication_outbox outbox where outbox.item_id=any(v_expected_item_ids) and
+        outbox.status not in ('pending','processing','completed','failed','dead_letter')
+    )
+  then raise exception 'QA_CMS_FIXTURE_CONTENT_GRAPH_PROVENANCE_MISMATCH'; end if;
+
+  select coalesce(array_agg(item.id order by item.id),'{}'::uuid[]) into v_mutable_item_ids
+  from public.cms_content_items item where item.id=any(v_expected_item_ids) and item.workflow_status<>'archived';
+  with changed as (
+    update public.cms_content_items item set workflow_status='archived',
+      archived_at=coalesce(item.archived_at,statement_timestamp()),scheduled_for=null,
+      deleted_at=null,deleted_by=null,updated_by=${sqlText(state.actorId)}::uuid
+    where item.id=any(v_mutable_item_ids) and item.created_by=any(v_actor_ids) and
+      item.updated_by=any(v_actor_ids) and item.workflow_status<>'archived' returning item.id
+  ) select coalesce(array_agg(changed.id order by changed.id),'{}'::uuid[])
+    into v_changed_ids from changed;
+  if v_changed_ids is distinct from v_mutable_item_ids
+  then raise exception 'QA_CMS_FIXTURE_CONTENT_AFFECTED_IDS_MISMATCH'; end if;
+
+  insert into public.cms_publication_outbox(item_id,revision_id,event_type,correlation_id)
+  select projection.item_id,projection.revision_id,'unpublish',gen_random_uuid()
+  from public.cms_published_projection projection where projection.item_id=any(v_expected_item_ids)
+  on conflict do nothing;
+  with changed as (
+    delete from public.cms_publications publication
+    where publication.item_id=any(v_publication_ids) returning publication.item_id
+  ) select coalesce(array_agg(changed.item_id order by changed.item_id),'{}'::uuid[])
+    into v_changed_ids from changed;
+  if v_changed_ids is distinct from v_publication_ids
+  then raise exception 'QA_CMS_FIXTURE_PUBLICATION_AFFECTED_IDS_MISMATCH'; end if;
+  with changed as (
+    delete from public.cms_published_projection projection
+    where projection.item_id=any(v_projection_ids) returning projection.item_id
+  ) select coalesce(array_agg(changed.item_id order by changed.item_id),'{}'::uuid[])
+    into v_changed_ids from changed;
+  if v_changed_ids is distinct from v_projection_ids
+  then raise exception 'QA_CMS_FIXTURE_PROJECTION_AFFECTED_IDS_MISMATCH'; end if;
+  with changed as (
+    update public.cms_route_rules route set active=false
+    where route.id=any(v_route_ids) and route.item_id=any(v_expected_item_ids) and route.active
+    returning route.id
+  ) select coalesce(array_agg(changed.id order by changed.id),'{}'::uuid[])
+    into v_changed_ids from changed;
+  if v_changed_ids is distinct from v_route_ids
+  then raise exception 'QA_CMS_FIXTURE_ROUTE_AFFECTED_IDS_MISMATCH'; end if;
+
+  select coalesce(array_agg(outbox.id order by outbox.id),'{}'::uuid[]) into v_outbox_ids
+  from public.cms_publication_outbox outbox where outbox.item_id=any(v_expected_item_ids) and
+    outbox.status in ('pending','processing','failed');
+  with changed as (
+    update public.cms_publication_outbox outbox set status='completed',locked_at=null,
+      completed_at=coalesce(outbox.completed_at,statement_timestamp()),last_error_code=null
+    where outbox.id=any(v_outbox_ids) and outbox.item_id=any(v_expected_item_ids) and
+      outbox.status in ('pending','processing','failed') returning outbox.id
+  ) select coalesce(array_agg(changed.id order by changed.id),'{}'::uuid[])
+    into v_changed_ids from changed;
+  if v_changed_ids is distinct from v_outbox_ids
+  then raise exception 'QA_CMS_FIXTURE_PUBLICATION_OUTBOX_AFFECTED_IDS_MISMATCH'; end if;
+
+  if exists (
+    select 1 from public.cms_content_items item where item.id=any(v_expected_item_ids) and
+      item.workflow_status<>'archived'
+  ) or exists (
+    select 1 from public.cms_publications publication where publication.item_id=any(v_expected_item_ids)
+  ) or exists (
+    select 1 from public.cms_published_projection projection where projection.item_id=any(v_expected_item_ids)
+  ) or exists (
+    select 1 from public.cms_route_rules route where route.item_id=any(v_expected_item_ids) and route.active
+  ) or exists (
+    select 1 from public.cms_publication_outbox outbox where outbox.item_id=any(v_expected_item_ids) and
+      outbox.status in ('pending','processing','failed')
+  ) then raise exception 'QA_CMS_FIXTURE_CONTENT_TERMINAL_STATE_INVALID'; end if;
+end
+$qa_fixture_content_cleanup$;
+commit;
+select true as cleaned;`;
+}
+
+function transactionalSqlBody(sql, resultColumn) {
+  const prefix = "begin;\n";
+  const suffix = `\ncommit;\nselect true as ${resultColumn};`;
+  if (!sql.startsWith(prefix) || !sql.endsWith(suffix))
+    throw new Error("QA_CMS_FIXTURE_TRANSACTION_COMPOSITION_INVALID");
+  return sql.slice(prefix.length, -suffix.length);
+}
+
+export function buildEditorialCleanupSql(state, actorIds, itemIds) {
+  const formSql = buildRecoveredFormRetirementSql(state);
+  const contentSql = buildOwnedContentCleanupSql(state, actorIds, itemIds);
+  const statements = [];
+  if (formSql) statements.push(transactionalSqlBody(formSql, "retired"));
+  if (contentSql) statements.push(transactionalSqlBody(contentSql, "cleaned"));
+  if (statements.length === 0) return;
+  return `begin;\n${statements.join("\n")}\ncommit;\nselect true as cleaned;`;
+}
+
+async function cleanupEditorialGraph(state, actorIds, itemIds, executeQuery = managementQuery) {
+  const sql = buildEditorialCleanupSql(state, actorIds, itemIds);
+  if (sql === undefined) return;
+  const result = await executeQuery(sql);
+  if (result.length !== 1 || result[0]?.cleaned !== true)
+    throw new Error("QA_CMS_FIXTURE_EDITORIAL_CLEANUP_FAILED");
+}
+
 async function cleanupState(state) {
   validateFixtureState(state, target.environment, target.ref, expectedSha);
   if (!state.actorId)
@@ -1843,6 +2707,7 @@ async function cleanupState(state) {
       activeLeads: 0,
       actionableLeadOutbox: 0,
       activeLeadForms: 0,
+      activeLeadFormVersions: 0,
       activeAiSessions: 0,
       activeAiTargets: 0,
       activeAiPlans: 0,
@@ -1867,6 +2732,7 @@ async function cleanupState(state) {
   if (state.recoveryActorId) await assertSyntheticActor(state, state.recoveryActorId, "recovery");
   if (state.invitedActorId) await assertSyntheticActor(state, state.invitedActorId, "invitee");
   hydrateFixtureStateFromUiHandoff(state, { required: false });
+  await recoverInterruptedUiResources(state);
   const now = new Date().toISOString();
   const failures = [];
   const runStep = async (code, operation) => {
@@ -1877,6 +2743,7 @@ async function cleanupState(state) {
     }
   };
   let itemIds = [...state.itemIds];
+  let ownedItemsReady = false;
   await runStep("QA_CMS_FIXTURE_OWNED_ITEMS_DISCOVERY_FAILED", async () => {
     const owned = await context.admin.from("cms_content_items").select("id").in("created_by", actorIds);
     if (owned.error) throw new Error("owned-items");
@@ -1888,73 +2755,17 @@ async function cleanupState(state) {
     state.itemIds = ownedItemIds;
     validateFixtureState(state, target.environment, target.ref, expectedSha);
     writeState(state);
+    ownedItemsReady = true;
   });
-  await runStep("QA_CMS_FIXTURE_ARCHIVE_FAILED", async () => {
-    const archived = await context.admin
-      .from("cms_content_items")
-      .update({
-        workflow_status: "archived",
-        archived_at: now,
-        scheduled_for: null,
-        deleted_at: null,
-        deleted_by: null,
-        updated_by: state.actorId,
-      })
-      .in("created_by", actorIds)
-      .neq("workflow_status", "archived");
-    if (archived.error) throw new Error("archive");
-  });
-  if (itemIds.length) {
-    await runStep("QA_CMS_FIXTURE_PUBLICATION_WITHDRAWAL_FAILED", async () => {
-      const live = await context.admin
-        .from("cms_published_projection")
-        .select("item_id,revision_id")
-        .in("item_id", itemIds);
-      if (live.error) throw new Error("projection-read");
-      if (live.data?.length) {
-        const outbox = await context.admin.from("cms_publication_outbox").upsert(
-          live.data.map(({ item_id: itemId, revision_id: revisionId }) => ({
-            item_id: itemId,
-            revision_id: revisionId,
-            event_type: "unpublish",
-            correlation_id: randomUUID(),
-          })),
-          { onConflict: "item_id,revision_id,event_type", ignoreDuplicates: true },
-        );
-        if (outbox.error) throw new Error("outbox");
-      }
-      const publications = await context.admin.from("cms_publications").delete().in("item_id", itemIds);
-      if (publications.error) throw new Error("publications");
-      const projections = await context.admin
-        .from("cms_published_projection")
-        .delete()
-        .in("item_id", itemIds);
-      if (projections.error) throw new Error("projections");
-    });
-    await runStep("QA_CMS_FIXTURE_ROUTE_DEACTIVATION_FAILED", async () => {
-      const routes = await context.admin
-        .from("cms_route_rules")
-        .update({ active: false })
-        .in("item_id", itemIds)
-        .eq("active", true);
-      if (routes.error) throw new Error("routes");
-    });
-    await runStep("QA_CMS_FIXTURE_PUBLICATION_OUTBOX_TERMINALIZATION_FAILED", async () => {
-      const outbox = await context.admin
-        .from("cms_publication_outbox")
-        .update({
-          status: "completed",
-          locked_at: null,
-          completed_at: now,
-          last_error_code: null,
-        })
-        .in("item_id", itemIds)
-        .in("status", ["pending", "processing", "failed"]);
-      if (outbox.error) throw new Error("publication-outbox");
-    });
-    await runStep("QA_CMS_FIXTURE_TOMBSTONE_ACTIVATION_FAILED", () =>
-      activateTerminalArchivedTombstone(state, itemIds),
+  if (ownedItemsReady && (itemIds.length || state.leadFormId)) {
+    await runStep("QA_CMS_FIXTURE_EDITORIAL_GRAPH_CLEANUP_FAILED", () =>
+      cleanupEditorialGraph(state, actorIds, itemIds),
     );
+    if (itemIds.length) {
+      await runStep("QA_CMS_FIXTURE_TOMBSTONE_ACTIVATION_FAILED", () =>
+        activateTerminalArchivedTombstone(state, itemIds),
+      );
+    }
   }
   await runStep("QA_CMS_FIXTURE_DOCUMENT_CLEANUP_FAILED", () =>
     neutralizeSyntheticDocuments(state, actorIds),
@@ -1970,23 +2781,17 @@ async function cleanupState(state) {
   await runStep("QA_CMS_FIXTURE_SCOPED_ROLE_CLEANUP_FAILED", async () => {
     const scopedRoles = await context.admin
       .from("cms_scoped_role_assignments")
-      .select("id,user_id,granted_by,lock_version,site_key,environment")
+      .select(
+        "id,user_id,role_key,site_key,environment,grant_type,reason,expires_at,granted_by,revoked_at,lock_version",
+      )
       .or(`user_id.in.(${actorIds.join(",")}),granted_by.in.(${actorIds.join(",")})`)
       .eq("site_key", "main")
       .eq("environment", state.environment)
       .is("revoked_at", null);
     if (scopedRoles.error) throw new Error("scoped-roles");
-    for (const assignment of scopedRoles.data ?? []) {
-      if (!actorIds.includes(assignment.user_id) && !actorIds.includes(assignment.granted_by))
-        throw new Error("scoped-role-owner");
-      if (
-        assignment.site_key !== "main" ||
-        assignment.environment !== state.environment ||
-        !Number.isInteger(assignment.lock_version) ||
-        assignment.lock_version < 1
-      )
-        throw new Error("scoped-role-scope");
-      const revoked = await context.admin
+    const assignments = validateScopedRoleCleanupAssignments(scopedRoles.data ?? [], actorIds, state);
+    for (const assignment of assignments) {
+      let revokeQuery = context.admin
         .from("cms_scoped_role_assignments")
         .update({
           revoked_at: now,
@@ -1996,12 +2801,19 @@ async function cleanupState(state) {
         })
         .eq("id", assignment.id)
         .eq("user_id", assignment.user_id)
+        .eq("role_key", assignment.role_key)
         .eq("site_key", "main")
         .eq("environment", state.environment)
+        .eq("grant_type", assignment.grant_type)
+        .eq("reason", assignment.reason)
+        .eq("granted_by", assignment.granted_by)
         .eq("lock_version", assignment.lock_version)
-        .is("revoked_at", null)
-        .select("id")
-        .maybeSingle();
+        .is("revoked_at", null);
+      revokeQuery =
+        assignment.expires_at === null
+          ? revokeQuery.is("expires_at", null)
+          : revokeQuery.eq("expires_at", assignment.expires_at);
+      const revoked = await revokeQuery.select("id").maybeSingle();
       if (revoked.error || revoked.data?.id !== assignment.id) throw new Error("scoped-role-race");
     }
   });
@@ -2068,79 +2880,6 @@ async function cleanupState(state) {
       .eq("qa_environment", target.environment);
     if (targets.error) throw new Error("ai-targets");
   });
-  if (state.leadId || state.leadFormId) {
-    await runStep("QA_CMS_FIXTURE_LEAD_CLEANUP_FAILED", async () => {
-      let leadQuery = context.admin.from("cms_leads").select("id,status,anonymized_at");
-      leadQuery = state.leadFormId
-        ? leadQuery.eq("form_id", state.leadFormId)
-        : leadQuery.eq("id", state.leadId);
-      const current = await leadQuery;
-      if (current.error) throw new Error("lead-read");
-      const leadIds = (current.data ?? []).map(({ id }) => id);
-      for (const lead of current.data ?? []) {
-        if (lead.anonymized_at) continue;
-        const anonymized = await context.admin
-          .from("cms_leads")
-          .update({
-            payload: {},
-            utm: {},
-            assigned_to: null,
-            status: "anonymized",
-            anonymized_at: now,
-            last_activity_at: now,
-          })
-          .eq("id", lead.id);
-        const history = await context.admin.from("cms_lead_status_history").insert({
-          lead_id: lead.id,
-          from_status: lead.status,
-          to_status: "anonymized",
-          reason: "QA synthetic fixture cleanup",
-          actor_id: state.actorId,
-        });
-        if (anonymized.error || history.error) throw new Error("lead-anonymize");
-      }
-      if (leadIds.length) {
-        const outbox = await context.admin
-          .from("cms_lead_outbox")
-          .update({
-            status: "completed",
-            locked_at: null,
-            completed_at: now,
-            last_error_code: null,
-          })
-          .in("lead_id", leadIds)
-          .neq("status", "completed");
-        if (outbox.error) throw new Error("lead-outbox");
-      }
-    });
-  }
-  if (state.leadFormId) {
-    await runStep("QA_CMS_FIXTURE_FORM_CLEANUP_FAILED", async () => {
-      const ownership = await context.admin
-        .from("cms_form_definitions")
-        .select("id,form_key,created_by")
-        .eq("id", state.leadFormId)
-        .maybeSingle();
-      if (
-        ownership.error ||
-        ownership.data?.created_by !== state.actorId ||
-        ownership.data?.form_key !==
-          `qa-ops-${state.runTag.toLowerCase()}-${ownership.data?.form_key?.slice(-8)}`
-      ) {
-        throw new Error("lead-form-owner");
-      }
-      const versions = await context.admin
-        .from("cms_form_versions")
-        .update({ status: "retired" })
-        .eq("form_id", state.leadFormId)
-        .eq("status", "published");
-      const form = await context.admin
-        .from("cms_form_definitions")
-        .update({ status: "retired", active_version_id: null, updated_by: state.actorId })
-        .eq("id", state.leadFormId);
-      if (versions.error || form.error) throw new Error("lead-form");
-    });
-  }
   await runStep("QA_CMS_FIXTURE_CLEANUP_AUDIT_FAILED", () =>
     recordFixtureAudit(state.actorId, "cleanup", state.runTag),
   );

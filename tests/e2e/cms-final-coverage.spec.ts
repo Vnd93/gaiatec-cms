@@ -47,6 +47,12 @@ import {
   sealedPreviewDeploymentEnvironment,
   sealedPreviewRoutingEvidence,
 } from "./cms-sealed-preview-routing";
+import {
+  cmsRealBrowserEvidenceSummary,
+  createCmsRealBrowserChallenge,
+  selectSingleAttestedLead,
+  waitForCmsRealBrowserAttestation,
+} from "./cms-real-browser-attestation";
 
 type CoverageSurface = {
   id: string;
@@ -1054,7 +1060,7 @@ async function createAndRollbackSyntheticForm(
   onCreated?: (form: SyntheticFormFixture) => void,
 ): Promise<SyntheticFormFixture> {
   const instance = randomUUID().replaceAll("-", "").slice(0, 8);
-  const formKey = `${runTag.toLowerCase()}-formulario-operacional-${instance}`;
+  const formKey = `qa-ops-${runTag.toLowerCase()}-${instance}`;
   const title = `${runTag} Formulário operacional ${instance}`;
   const fieldLabel = `${runTag} E-mail sintético`;
   const campaignHeading = `${runTag} Formulário controlado`;
@@ -1724,48 +1730,199 @@ async function createMandatoryEditorialSurfacesViaUi(
   return ids;
 }
 
-async function createLeadViaPublicUiAndMarkResponded(input: {
+async function acceptIabLeadAndMarkResponded(input: {
   page: Page;
-  context: BrowserContext;
+  environment: MutationTargetEnvironment;
+  candidateSha: string;
+  origin: string;
   campaignPath: string;
   form: SyntheticFormFixture;
   runTag: string;
   expectedApiOrigin: string;
 }) {
-  const publicPage = await input.context.newPage();
-  let reference: string;
-  try {
-    await publicPage.goto(input.campaignPath, { waitUntil: "domcontentloaded" });
-    const form = publicPage.getByRole("form", { name: input.form.campaignHeading });
-    await expect(form).toBeVisible({ timeout: 20_000 });
-    await form
-      .getByLabel(new RegExp(input.form.fieldLabel))
-      .fill(`qa-public-${input.runTag.toLowerCase()}@example.invalid`);
-    await form.locator('input[name="consent"]').check();
-    await expect(publicPage.getByLabel("Verificação de segurança")).toBeVisible();
-    const submit = form.getByRole("button", { name: "Enviar teste sintético" });
-    await expect(submit).toBeEnabled({ timeout: 45_000 });
-    const capturePromise = publicPage.waitForResponse(
-      (response) =>
-        response.request().method() === "POST" &&
-        new URL(response.url()).origin === input.expectedApiOrigin &&
-        new URL(response.url()).pathname.endsWith("/functions/v1/lead-capture"),
-      { timeout: 45_000 },
-    );
-    await submit.click();
-    const capture = await capturePromise;
-    const body = (await capture.json().catch(() => null)) as Record<string, unknown> | null;
-    reference = String(body?.reference ?? "");
-    if (capture.status() !== 201 || !/^LD-[A-Z0-9]+$/.test(reference)) {
-      throw new Error("lead-capture não confirmou o lead sintético criado pela UI pública.");
-    }
-    await expect(publicPage.getByRole("status")).toContainText(reference);
-  } finally {
-    await publicPage.close();
-  }
+  const { challenge, screenshotPath } = createCmsRealBrowserChallenge({
+    repositoryRoot,
+    environment: input.environment,
+    candidateSha: input.candidateSha,
+    runTag: input.runTag,
+    origin: input.origin,
+    campaignPath: input.campaignPath,
+    formKey: input.form.formKey,
+  });
+  const attestation = await waitForCmsRealBrowserAttestation({
+    repositoryRoot,
+    challenge,
+  });
+  const reference = attestation.reference;
 
   await input.page.goto("/admin/leads", { waitUntil: "domcontentloaded" });
+  const initialSnapshotPromise = input.page.waitForResponse(
+    (response) => {
+      const url = new URL(response.url());
+      if (
+        response.request().method() !== "POST" ||
+        url.origin !== input.expectedApiOrigin ||
+        !url.pathname.endsWith("/functions/v1/cms-leads")
+      ) {
+        return false;
+      }
+      try {
+        const body = response.request().postDataJSON() as Record<string, unknown>;
+        return body.action === "list_leads" && body.status === "new";
+      } catch {
+        return false;
+      }
+    },
+    { timeout: 30_000 },
+  );
   await input.page.getByLabel("Situação").first().selectOption("new");
+  const initialSnapshotResponse = await initialSnapshotPromise;
+  const initialSnapshot = (await initialSnapshotResponse.json().catch(() => null)) as Record<
+    string,
+    unknown
+  > | null;
+  const initialItems = Array.isArray(initialSnapshot?.items)
+    ? (initialSnapshot.items as Array<Record<string, unknown>>)
+    : [];
+  const initialLead = selectSingleAttestedLead(initialItems, reference);
+  const initialConsents = Array.isArray(initialLead?.cms_lead_consents) ? initialLead.cms_lead_consents : [];
+  const initialHistory = Array.isArray(initialLead?.cms_lead_status_history)
+    ? initialLead.cms_lead_status_history
+    : [];
+  const initialOutbox = Array.isArray(initialLead?.cms_lead_outbox) ? initialLead.cms_lead_outbox : [];
+  if (
+    initialSnapshotResponse.status() !== 200 ||
+    initialLead?.reference_code !== reference ||
+    initialLead?.origin_path !== input.campaignPath ||
+    initialConsents.length !== 1 ||
+    (initialConsents[0] as Record<string, unknown>)?.consent_version !== "qa-v1" ||
+    initialHistory.length !== 1 ||
+    (initialHistory[0] as Record<string, unknown>)?.from_status !== null ||
+    (initialHistory[0] as Record<string, unknown>)?.to_status !== "new" ||
+    initialOutbox.length !== 1 ||
+    (initialOutbox[0] as Record<string, unknown>)?.event_type !== "lead_received"
+  ) {
+    throw new Error("O backend não comprovou a persistência inicial unitária do lead atestado.");
+  }
+  const anonKey = process.env.QA_CMS_SUPABASE_ANON_KEY ?? "";
+  if (!anonKey) throw new Error("A prova autoritativa do lead exige a chave anônima do alvo.");
+  const authoritativePersistence = await input.page.evaluate(
+    async ({ anonKey, endpoint, reference, expected }) => {
+      const authEntry = Object.entries(localStorage).find(([key]) => key.endsWith("-auth-token"));
+      const stored = authEntry ? (JSON.parse(authEntry[1]) as Record<string, unknown>) : null;
+      const accessToken = typeof stored?.access_token === "string" ? stored.access_token : "";
+      if (!accessToken) throw new Error("authenticated-browser-session-unavailable");
+      const query = new URLSearchParams({
+        select:
+          "id,reference_code,status,origin_path,form_id,form_version_id,qa_actor_id,qa_run_tag,qa_candidate_sha,qa_environment,payload,cms_lead_consents(accepted,consent_version,technical_evidence,evidence_hash),cms_lead_status_history(from_status,to_status),cms_lead_outbox(event_type,correlation_id)",
+        reference_code: `eq.${reference}`,
+      });
+      const response = await fetch(`${endpoint}/rest/v1/cms_leads?${query}`, {
+        headers: { apikey: anonKey, Authorization: `Bearer ${accessToken}` },
+      });
+      const rows = (await response.json().catch(() => null)) as Array<Record<string, unknown>> | null;
+      if (!response.ok || !Array.isArray(rows) || rows.length !== 1) {
+        return { httpStatus: response.status, scopedLeadCount: Array.isArray(rows) ? rows.length : -1 };
+      }
+      const row = rows[0]!;
+      const payload =
+        row.payload && typeof row.payload === "object" && !Array.isArray(row.payload)
+          ? (row.payload as Record<string, unknown>)
+          : {};
+      const valueDigests = await Promise.all(
+        Object.values(payload)
+          .filter((value): value is string => typeof value === "string")
+          .map(async (value) => {
+            const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+            return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+          }),
+      );
+      const consents = Array.isArray(row.cms_lead_consents) ? row.cms_lead_consents : [];
+      const history = Array.isArray(row.cms_lead_status_history) ? row.cms_lead_status_history : [];
+      const outbox = Array.isArray(row.cms_lead_outbox) ? row.cms_lead_outbox : [];
+      const consent = consents[0] as Record<string, unknown> | undefined;
+      const technical =
+        consent?.technical_evidence &&
+        typeof consent.technical_evidence === "object" &&
+        !Array.isArray(consent.technical_evidence)
+          ? (consent.technical_evidence as Record<string, unknown>)
+          : null;
+      return {
+        httpStatus: response.status,
+        scopedLeadCount: rows.length,
+        leadId: row.id,
+        referenceMatched: row.reference_code === reference,
+        campaignPathMatched: row.origin_path === expected.campaignPath,
+        formIdMatched: row.form_id === expected.formId,
+        formVersionIdMatched: row.form_version_id === expected.formVersionId,
+        actorMatched: row.qa_actor_id === expected.actorId,
+        runTagMatched: row.qa_run_tag === expected.runTag,
+        candidateMatched: row.qa_candidate_sha === expected.candidateSha,
+        environmentMatched: row.qa_environment === expected.environment,
+        emailHashMatched: valueDigests.filter((digest) => digest === expected.emailSha256).length === 1,
+        consentCount: consents.length,
+        consentAccepted: consent?.accepted === true,
+        consentVersionMatched: consent?.consent_version === "qa-v1",
+        consentEvidenceHashPresent: /^[a-f0-9]{64}$/.test(String(consent?.evidence_hash ?? "")),
+        consentTechnicalEvidenceMatched:
+          technical?.synthetic === true &&
+          technical?.runTag === expected.runTag &&
+          technical?.candidateSha === expected.candidateSha &&
+          technical?.environment === expected.environment,
+        initialHistoryCount: history.length,
+        initialStatusNew:
+          history.length === 1 &&
+          (history[0] as Record<string, unknown>)?.from_status === null &&
+          (history[0] as Record<string, unknown>)?.to_status === "new",
+        leadReceivedOutboxCount: outbox.filter(
+          (event) => (event as Record<string, unknown>)?.event_type === "lead_received",
+        ).length,
+        outboxCorrelationPresent: outbox.every((event) =>
+          /^[0-9a-f-]{36}$/i.test(String((event as Record<string, unknown>)?.correlation_id ?? "")),
+        ),
+      };
+    },
+    {
+      anonKey,
+      endpoint: input.expectedApiOrigin,
+      reference,
+      expected: {
+        campaignPath: input.campaignPath,
+        formId: input.form.formId,
+        formVersionId: input.form.versionOneId,
+        actorId: fixtureActorId(input.environment, input.candidateSha, input.runTag),
+        runTag: input.runTag,
+        candidateSha: input.candidateSha,
+        environment: input.environment,
+        emailSha256: challenge.emailSha256,
+      },
+    },
+  );
+  if (
+    authoritativePersistence.httpStatus !== 200 ||
+    authoritativePersistence.scopedLeadCount !== 1 ||
+    authoritativePersistence.referenceMatched !== true ||
+    authoritativePersistence.campaignPathMatched !== true ||
+    authoritativePersistence.formIdMatched !== true ||
+    authoritativePersistence.formVersionIdMatched !== true ||
+    authoritativePersistence.actorMatched !== true ||
+    authoritativePersistence.runTagMatched !== true ||
+    authoritativePersistence.candidateMatched !== true ||
+    authoritativePersistence.environmentMatched !== true ||
+    authoritativePersistence.emailHashMatched !== true ||
+    authoritativePersistence.consentCount !== 1 ||
+    authoritativePersistence.consentAccepted !== true ||
+    authoritativePersistence.consentVersionMatched !== true ||
+    authoritativePersistence.consentEvidenceHashPresent !== true ||
+    authoritativePersistence.consentTechnicalEvidenceMatched !== true ||
+    authoritativePersistence.initialHistoryCount !== 1 ||
+    authoritativePersistence.initialStatusNew !== true ||
+    authoritativePersistence.leadReceivedOutboxCount !== 1 ||
+    authoritativePersistence.outboxCorrelationPresent !== true ||
+    !/^[0-9a-f-]{36}$/i.test(String(authoritativePersistence.leadId ?? ""))
+  ) {
+    throw new Error("A leitura RLS não comprovou o lead atestado no escopo QA exato.");
+  }
   const row = input.page.getByRole("row").filter({ hasText: reference }).first();
   await expect(row).toBeVisible({ timeout: 20_000 });
   await row.getByRole("button", { name: "Atender" }).click();
@@ -1788,8 +1945,76 @@ async function createLeadViaPublicUiAndMarkResponded(input: {
   if (updated.result.status !== "responded") {
     throw new Error("A UI administrativa não confirmou o lead sintético como responded.");
   }
+  const auditCorrelation = String(updated.result.correlationId ?? "");
+  const auditProof = await input.page.evaluate(
+    async ({ anonKey, endpoint, leadId, correlationId }) => {
+      const authEntry = Object.entries(localStorage).find(([key]) => key.endsWith("-auth-token"));
+      const stored = authEntry ? (JSON.parse(authEntry[1]) as Record<string, unknown>) : null;
+      const accessToken = typeof stored?.access_token === "string" ? stored.access_token : "";
+      if (!accessToken) throw new Error("authenticated-browser-session-unavailable");
+      const query = new URLSearchParams({
+        select: "action,target_type,target_id,correlation_id",
+        action: "eq.cms:leads.update",
+        target_type: "eq.lead",
+        target_id: `eq.${leadId}`,
+        correlation_id: `eq.${correlationId}`,
+      });
+      const response = await fetch(`${endpoint}/rest/v1/cms_audit_log?${query}`, {
+        headers: { apikey: anonKey, Authorization: `Bearer ${accessToken}` },
+      });
+      const rows = (await response.json().catch(() => null)) as Array<Record<string, unknown>> | null;
+      return {
+        httpStatus: response.status,
+        count: Array.isArray(rows) ? rows.length : -1,
+        bindingMatched:
+          Array.isArray(rows) &&
+          rows.length === 1 &&
+          rows[0]?.target_id === leadId &&
+          rows[0]?.correlation_id === correlationId,
+      };
+    },
+    {
+      anonKey,
+      endpoint: input.expectedApiOrigin,
+      leadId: String(authoritativePersistence.leadId),
+      correlationId: auditCorrelation,
+    },
+  );
+  if (
+    !/^[0-9a-f-]{36}$/i.test(auditCorrelation) ||
+    auditProof.httpStatus !== 200 ||
+    auditProof.count !== 1 ||
+    auditProof.bindingMatched !== true
+  ) {
+    throw new Error("A auditoria não comprovou a atestação administrativa com a mesma correlação.");
+  }
   await expect(dialog).toHaveCount(0);
-  return { reference, status: "responded" as const, campaignPath: input.campaignPath };
+  return {
+    reference,
+    status: "responded" as const,
+    campaignPath: input.campaignPath,
+    browserAttestation: {
+      ...cmsRealBrowserEvidenceSummary(attestation, screenshotPath),
+      authoritativePersistence: {
+        scopedLeadCount: 1,
+        referenceMatched: true,
+        campaignPathMatched: true,
+        formBindingMatched: true,
+        actorRunShaEnvironmentMatched: true,
+        emailHashMatched: true,
+        consentCount: 1,
+        consentAccepted: true,
+        consentVersionMatched: true,
+        consentEvidenceMatched: true,
+        initialHistoryCount: 1,
+        initialStatusNew: true,
+        leadReceivedOutboxCount: 1,
+        outboxCorrelationPresent: true,
+        attestationAuditCount: 1,
+        auditCorrelationMatched: true,
+      },
+    },
+  };
 }
 
 async function runSyntheticEditorialReleaseViaUi(input: {
@@ -4229,6 +4454,7 @@ let pendingUiHandoff: {
   ids: Omit<SyntheticIds, "pageId">;
   form: SyntheticFormFixture;
   lead: CmsUiCreatedState["lead"];
+  browserAttestation: ReturnType<typeof cmsRealBrowserEvidenceSummary>;
 } | null = null;
 
 test.describe.serial("homologação final CMS source-backed", () => {
@@ -4828,7 +5054,11 @@ test.describe.serial("homologação final CMS source-backed", () => {
     const observedPages = new WeakSet<Page>();
     let scenarioFailure: unknown = null;
     let syntheticForm: SyntheticFormFixture | null = null;
-    let lead: CmsUiCreatedState["lead"] | null = null;
+    let lead:
+      | (CmsUiCreatedState["lead"] & {
+          browserAttestation: ReturnType<typeof cmsRealBrowserEvidenceSummary>;
+        })
+      | null = null;
     let releaseEvidence: { releaseId: string; httpStatus: number; status: "rolled_back" } | null = null;
     let comparisonProduct: {
       plan: EditorialSurfacePlan;
@@ -4994,16 +5224,18 @@ test.describe.serial("homologação final CMS source-backed", () => {
         result: "passed",
         httpStatus: 200,
       });
-      lead = await createLeadViaPublicUiAndMarkResponded({
+      lead = await acceptIabLeadAndMarkResponded({
         page,
-        context,
+        environment,
+        candidateSha: auth.expectedSha,
+        origin: new URL(baseURL!).origin,
         campaignPath,
         form: syntheticForm,
         runTag,
         expectedApiOrigin: supabaseOrigin,
       });
       steps.push({
-        step: "public_lead_created_and_marked_responded_via_ui",
+        step: "iab_public_lead_attested_and_marked_responded_via_admin_ui",
         result: "passed",
         httpStatus: 201,
       });
@@ -5035,7 +5267,12 @@ test.describe.serial("homologação final CMS source-backed", () => {
         actorId: fixtureActorId(environment, auth.expectedSha, runTag),
         ids: createdIds,
         form: syntheticForm,
-        lead,
+        lead: {
+          reference: lead.reference,
+          status: lead.status,
+          campaignPath: lead.campaignPath,
+        },
+        browserAttestation: lead.browserAttestation,
       };
       if (completed.size === plans.length) {
         steps.push(await expectEditorialAudit(page, plans, runTag, syntheticForm));
@@ -5111,7 +5348,8 @@ test.describe.serial("homologação final CMS source-backed", () => {
         operationalGaps,
         positiveLeadSubmitted: Boolean(lead),
         comparisonConsumerValidated: Boolean(comparisonProduct),
-        positivePublicLeadEvidence: lead ? "lead-capture-201-and-admin-responded" : "missing",
+        positivePublicLeadEvidence: lead ? "iab-attested-lead-capture-and-admin-responded" : "missing",
+        browserHandoff: lead?.browserAttestation ?? { status: "missing" },
         externalDeliveryAttempted: "suppressed for exact synthetic origin by backend policy",
         editorialRelease: releaseEvidence
           ? {

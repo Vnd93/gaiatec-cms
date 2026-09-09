@@ -77,21 +77,35 @@ describe("exact Edge Function origin allowlist", () => {
   });
 
   it("permits the official always-pass response only in staging and keeps production strict", () => {
-    const dummyResult = { success: true, hostname: "example.com", action: undefined };
+    const expectedCdata = "65ce5231-ee71-41ba-aaf8-b8c77f4cd42d";
+    const dummyResult = {
+      success: true,
+      hostname: "example.com",
+      action: undefined,
+      cdata: expectedCdata,
+    };
     const stagingPolicy = {
       secret: TURNSTILE_STAGING_ALWAYS_PASS_SECRET,
       environment: "staging",
       expectedAction: "lead_capture",
+      expectedCdata,
       configuredHostnames,
       configuredOrigins,
     };
     expect(isTurnstileVerificationAccepted(dummyResult, stagingPolicy)).toBe(true);
+    expect(isTurnstileVerificationAccepted({ ...dummyResult, cdata: undefined }, stagingPolicy)).toBe(false);
+    expect(
+      isTurnstileVerificationAccepted(
+        { ...dummyResult, cdata: "9cc939db-d4a1-4e56-b69b-b897d30f1e9c" },
+        stagingPolicy,
+      ),
+    ).toBe(false);
     expect(
       isTurnstileVerificationAccepted(dummyResult, { ...stagingPolicy, environment: "production" }),
     ).toBe(false);
     expect(
       isTurnstileVerificationAccepted(
-        { success: false, hostname: allowedHostnames[0], action: "lead_capture" },
+        { success: false, hostname: allowedHostnames[0], action: "lead_capture", cdata: expectedCdata },
         stagingPolicy,
       ),
     ).toBe(false);
@@ -105,19 +119,41 @@ describe("exact Edge Function origin allowlist", () => {
     };
     expect(
       isTurnstileVerificationAccepted(
-        { success: true, hostname: productionHostnames[0], action: "lead_capture" },
+        {
+          success: true,
+          hostname: productionHostnames[0],
+          action: "lead_capture",
+          cdata: expectedCdata,
+        },
         productionPolicy,
       ),
     ).toBe(true);
     expect(
       isTurnstileVerificationAccepted(
-        { success: true, hostname: "attacker.example", action: "lead_capture" },
+        { success: true, hostname: "attacker.example", action: "lead_capture", cdata: expectedCdata },
         productionPolicy,
       ),
     ).toBe(false);
     expect(
       isTurnstileVerificationAccepted(
-        { success: true, hostname: productionHostnames[0], action: "other" },
+        { success: true, hostname: productionHostnames[0], action: "other", cdata: expectedCdata },
+        productionPolicy,
+      ),
+    ).toBe(false);
+    expect(
+      isTurnstileVerificationAccepted(
+        {
+          success: true,
+          hostname: productionHostnames[0],
+          action: "lead_capture",
+          cdata: "9cc939db-d4a1-4e56-b69b-b897d30f1e9c",
+        },
+        productionPolicy,
+      ),
+    ).toBe(false);
+    expect(
+      isTurnstileVerificationAccepted(
+        { success: true, hostname: productionHostnames[0], action: "lead_capture" },
         productionPolicy,
       ),
     ).toBe(false);

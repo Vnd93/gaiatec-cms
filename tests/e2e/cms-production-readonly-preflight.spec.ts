@@ -3,6 +3,7 @@ import { createHmac } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { requireCanonicalFrontendCandidate } from "./cms-production-readonly-preflight-binding";
 
 test.use({ trace: "off", screenshot: "off", video: "off" });
 
@@ -16,7 +17,7 @@ const evidencePath = resolve(
 
 type Configuration = {
   expectedSha: string;
-  baselineSha: string;
+  canonicalFrontendSha: string;
   previewOrigin: string;
   anonKey: string;
   email: string;
@@ -27,7 +28,10 @@ type Configuration = {
 function configuration(baseURL: string | undefined): Configuration | null {
   if (process.env.QA_CMS_PRODUCTION_READONLY_PREFLIGHT_REQUIRED !== "true") return null;
   const expectedSha = process.env.QA_CMS_EXPECTED_SHA ?? "";
-  const baselineSha = process.env.QA_CMS_CANONICAL_BASELINE_SHA ?? "";
+  const canonicalFrontendSha = requireCanonicalFrontendCandidate(
+    expectedSha,
+    process.env.QA_CMS_CANONICAL_FRONTEND_SHA ?? "",
+  );
   const preview = new URL(process.env.QA_CMS_SEALED_PREVIEW_URL ?? "https://invalid.invalid");
   const backend = new URL(process.env.QA_CMS_SUPABASE_URL ?? "https://invalid.invalid");
   const production = new URL(baseURL ?? "https://invalid.invalid");
@@ -39,9 +43,6 @@ function configuration(baseURL: string | undefined): Configuration | null {
     totpSecret: process.env.QA_CMS_CORPORATE_TOTP_SECRET ?? "",
   };
   if (
-    !/^[a-f0-9]{40}$/.test(expectedSha) ||
-    !/^[a-f0-9]{40}$/.test(baselineSha) ||
-    baselineSha === expectedSha ||
     preview.pathname !== "/" ||
     preview.search ||
     preview.hash ||
@@ -57,7 +58,7 @@ function configuration(baseURL: string | undefined): Configuration | null {
   ) {
     throw new Error("QA_CMS_PRODUCTION_READONLY_PREFLIGHT_CONFIGURATION_REFUSED");
   }
-  return { expectedSha, baselineSha, previewOrigin: preview.origin, email, ...values };
+  return { expectedSha, canonicalFrontendSha, previewOrigin: preview.origin, email, ...values };
 }
 
 function base32Bytes(value: string): Buffer {
@@ -361,7 +362,7 @@ test("@preflight autentica conta corporativa com MFA no tar selado sem mutação
       candidateSha: config.expectedSha,
       sealedFrontendCandidateSha: config.expectedSha,
       preparedBackendCandidateSha: config.expectedSha,
-      canonicalFrontendDuringPreflightSha: config.baselineSha,
+      canonicalFrontendDuringPreflightSha: config.canonicalFrontendSha,
       shell: "exact-sealed-cloudflare-preview-mapped-under-production-origin",
       backend: "supabase-production-real",
       browser: "desktop-chromium-real-ui",

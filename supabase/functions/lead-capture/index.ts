@@ -8,20 +8,22 @@ import {
   type LeadCaptureEnvelope,
 } from "../_shared/cms-lead-capture-envelope.ts";
 import { isControlledQaLeadOrigin } from "../_shared/cms-synthetic-lead.ts";
+import { expandCompactCanonicalUuid, verifyTurnstileSiteverify } from "../_shared/turnstile-siteverify-idempotency.ts";
 import { clientAddress, consumeRateLimit, corsHeaders, isAllowedOrigin, isAllowedTurnstileVerification, json, readJsonLimited, sha256 } from "../_shared/security.ts";
 
 const TURNSTILE_ACTION = "lead_capture";
 const GENERIC_ORIGIN_SOURCES = new Set(["site", "contact", "newsletter", "website"]);
 
-async function verifyTurnstile(token: string, ip: string, idempotencyKey: string) {
+async function verifyTurnstile(token: string, ip: string, commercialIdempotencyKey: string) {
   const secret = Deno.env.get("TURNSTILE_SECRET_KEY");
-  if (!secret) return false;
-  const body = new FormData(); body.set("secret",secret); body.set("response",token); body.set("idempotency_key",idempotencyKey); if (ip!=="unknown") body.set("remoteip",ip);
-  const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify",{method:"POST",body});
-  if(!response.ok) return false;
-  const result = await response.json().catch(()=>({success:false})) as {success?:boolean;hostname?:string;action?:string};
+  if (!secret) return "unavailable" as const;
   const expectedAction=Deno.env.get("TURNSTILE_EXPECTED_ACTION")||TURNSTILE_ACTION;
-  return isAllowedTurnstileVerification(result, secret, expectedAction);
+  return verifyTurnstileSiteverify({
+    operation:"cms-lead-capture",commercialKey:commercialIdempotencyKey,token,secret,remoteIp:ip,
+    isAccepted:(result)=>isAllowedTurnstileVerification(
+      result, secret, expectedAction, commercialIdempotencyKey,
+    ),
+  });
 }
 
 const handleRequest = async(req: Request) => {
@@ -44,6 +46,7 @@ const handleRequest = async(req: Request) => {
   let requestedFormVersionId:string|null;
   let requestedFormVersion:number|null;
   let idempotencyKey:string;
+  let commercialIdempotencyKey:string;
   if("formId" in input){
     legacyInput=true;
     campaignContext=input.origin.campaignId;
@@ -53,6 +56,7 @@ const handleRequest = async(req: Request) => {
     requestedFormVersionId=input.formVersionId;
     requestedFormVersion=null;
     idempotencyKey=input.idempotencyKey;
+    commercialIdempotencyKey=input.idempotencyKey;
   }else{
     legacyInput=false;
     campaignContext=input.origin.campaignPath;
@@ -61,6 +65,9 @@ const handleRequest = async(req: Request) => {
     requestedFormId=null;
     requestedFormVersionId=null;
     requestedFormVersion=input.formVersion;
+    const expandedCommercialKey=expandCompactCanonicalUuid(input.submissionToken);
+    if(!expandedCommercialKey) return json(req,{error:"Revise os campos do formulário."},400);
+    commercialIdempotencyKey=expandedCommercialKey;
     const digest=await sha256(`${evidenceSalt}:submission:${input.submissionToken}`);
     idempotencyKey=`${digest.slice(0,8)}-${digest.slice(8,12)}-4${digest.slice(13,16)}-a${digest.slice(17,20)}-${digest.slice(20,32)}`;
   }
@@ -115,7 +122,10 @@ const handleRequest = async(req: Request) => {
       const protectedWindow=await consumeRateLimit(admin,req,"lead_capture_protected",`${ip}:${version.id}`,20,3600);
       if(!protectedWindow) return json(req,{error:"Muitas tentativas. Aguarde antes de tentar novamente."},429);
       }
-      if(!input.captchaToken||!(await verifyTurnstile(input.captchaToken,ip,idempotencyKey))) return json(req,{error:"Confirme a verificação de segurança.",challengeRequired:true},403);
+      if(!input.captchaToken) return json(req,{error:"Confirme a verificação de segurança.",challengeRequired:true},403);
+      const verification=await verifyTurnstile(input.captchaToken,ip,commercialIdempotencyKey);
+      if(verification==="unavailable") return json(req,{error:"Proteção temporariamente indisponível."},503);
+      if(verification!=="accepted") return json(req,{error:"Confirme a verificação de segurança.",challengeRequired:true},403);
     }
   }catch{return json(req,{error:"Proteção temporariamente indisponível."},503);}
   const evidence={ipHash:await sha256(`${evidenceSalt}:${ip}`),userAgentHash:await sha256(req.headers.get("User-Agent")??"unknown"),receivedAt:new Date().toISOString()};

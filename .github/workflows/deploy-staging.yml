@@ -101,11 +101,12 @@ jobs:
           repository: Vnd93/gaiatec-cms
           run-id: ${{ inputs.frontend_bridge_run_id }}
           path: ${{ runner.temp }}/g12-staging-frontend-bridge
-      - name: Verify staging bridge evidence for this exact SHA
+      - name: Verify compatibility-only staging bridge evidence for this exact SHA
         id: frontend_bridge
         working-directory: candidate
         env:
           EXPECTED_RUN_ID: ${{ inputs.frontend_bridge_run_id }}
+          EXPECTED_RUN_ATTEMPT: ${{ steps.frontend_bridge_run.outputs.run_attempt }}
           EXPECTED_CONTROL_SHA: ${{ steps.frontend_bridge_run.outputs.control_sha }}
           EXPECTED_RELEASE: ${{ steps.candidate.outputs.sha }}
         run: >-
@@ -632,11 +633,32 @@ jobs:
         timeout-minutes: 55
         working-directory: candidate
         run: |
-          npx playwright test tests/e2e/cms-auth-lifecycle.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @mutating
-          npx playwright test tests/e2e/cms-final-coverage.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @ui-bootstrap
-          npx playwright test tests/e2e/cms-admin-ops-cycles.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @mutating
-          npx playwright test tests/e2e/cms-secondary-ui-cycles.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @mutating
-          npx playwright test tests/e2e/cms-security-boundaries.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @security-staging
+          set -euo pipefail
+          run_browser() {
+            env -u RELEASE_GUARD_TOKEN -u EVIDENCE_SALT npx playwright "$@"
+          }
+          run_browser test tests/e2e/cms-auth-lifecycle.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @mutating
+          node scripts/ev2/phase12/run-real-browser-attestation-consumer.mjs \
+            --environment staging \
+            --candidate-sha "${{ steps.candidate.outputs.sha }}" \
+            --control-sha "${{ github.sha }}" \
+            --run-id "${{ github.run_id }}" \
+            --run-attempt "${{ github.run_attempt }}" \
+            --run-tag "$QA_CMS_RUN_TAG" \
+            --challenge-file outputs/cms-real-browser-challenge.json \
+            --output-json outputs/cms-real-browser-attestation.json \
+            --output-png outputs/cms-real-browser-attestation.png \
+            --challenge-wait-seconds 2100 &
+          real_browser_consumer_pid=$!
+          trap 'kill "$real_browser_consumer_pid" 2>/dev/null || true; wait "$real_browser_consumer_pid" 2>/dev/null || true' EXIT
+          trap 'kill "$real_browser_consumer_pid" 2>/dev/null || true; wait "$real_browser_consumer_pid" 2>/dev/null || true; exit 130' INT
+          trap 'kill "$real_browser_consumer_pid" 2>/dev/null || true; wait "$real_browser_consumer_pid" 2>/dev/null || true; exit 143' TERM
+          run_browser test tests/e2e/cms-final-coverage.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @ui-bootstrap
+          wait "$real_browser_consumer_pid"
+          trap - EXIT INT TERM
+          run_browser test tests/e2e/cms-admin-ops-cycles.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @mutating
+          run_browser test tests/e2e/cms-secondary-ui-cycles.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @mutating
+          run_browser test tests/e2e/cms-security-boundaries.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @security-staging
         env:
           PLAYWRIGHT_BASE_URL: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
           QA_CMS_AUTH_REPORT_PATH: outputs/cms-auth-lifecycle.json
@@ -648,7 +670,41 @@ jobs:
           QA_CMS_SECURITY_REQUIRED: "true"
           QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
           QA_CMS_TARGET_ENVIRONMENT: staging
-      - name: Browser-prove A and an already-loaded f48 tab against the forward backend
+          QA_CMS_REAL_BROWSER_REQUIRED: "true"
+          QA_CMS_REAL_BROWSER_CHALLENGE_PATH: outputs/cms-real-browser-challenge.json
+          QA_CMS_REAL_BROWSER_ATTESTATION_PATH: outputs/cms-real-browser-attestation.json
+          QA_CMS_REAL_BROWSER_SCREENSHOT_PATH: outputs/cms-real-browser-attestation.png
+          QA_CMS_PARENT_RUN_ID: ${{ github.run_id }}
+          QA_CMS_PARENT_RUN_ATTEMPT: ${{ github.run_attempt }}
+          QA_CMS_CONTROL_SHA: ${{ github.sha }}
+          GITHUB_REPOSITORY: Vnd93/gaiatec-cms
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          EVIDENCE_SALT: ${{ secrets.EVIDENCE_SALT }}
+      - name: Clear the single-use staging browser rendezvous variables
+        if: always()
+        timeout-minutes: 5
+        working-directory: candidate
+        run: |
+          set -euo pipefail
+          cleanup_status=0
+          node scripts/ev2/phase12/run-real-browser-attestation-consumer.mjs clear-challenge \
+            --environment staging \
+            --run-id "${{ github.run_id }}" \
+            --run-attempt "${{ github.run_attempt }}" \
+            --allow-missing || cleanup_status=1
+          node scripts/ev2/phase12/real-browser-attestation-store.mjs clear \
+            --environment staging \
+            --candidate-sha "${{ steps.candidate.outputs.sha }}" \
+            --run-id "${{ github.run_id }}" \
+            --run-attempt "${{ github.run_attempt }}" \
+            --control-sha "${{ github.sha }}" \
+            --allow-missing || cleanup_status=1
+          exit "$cleanup_status"
+        env:
+          GITHUB_REPOSITORY: Vnd93/gaiatec-cms
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          EVIDENCE_SALT: ${{ secrets.EVIDENCE_SALT }}
+      - name: Prove legacy-shaped and hybrid envelopes fail closed against the exact candidate
         timeout-minutes: 15
         working-directory: candidate
         run: |
@@ -656,11 +712,13 @@ jobs:
             --project=desktop-chromium --workers=1 --retries=0
           node scripts/ev2/phase12/verify-public-bridge-forward-canary.mjs \
             --file outputs/cms-public-forward-compatibility.json \
-            --candidate "${{ steps.candidate.outputs.sha }}"
+            --candidate "${{ steps.candidate.outputs.sha }}" \
+            --deployment-id "${{ steps.staging_owned_deployment.outputs.deployment_id }}"
         env:
           PLAYWRIGHT_BASE_URL: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
           QA_CMS_PUBLIC_FORWARD_REQUIRED: "true"
           QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          QA_CMS_FORWARD_DEPLOYMENT_ID: ${{ steps.staging_owned_deployment.outputs.deployment_id }}
           QA_CMS_UI_CREATED_STATE_PATH: outputs/cms-ui-created-state.json
           QA_CMS_BRIDGE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
           QA_CMS_BRIDGE_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
@@ -726,6 +784,11 @@ jobs:
           --admin outputs/cms-admin-ops-cycles.json
           --secondary outputs/cms-secondary-ui-cycles.json
           --security outputs/cms-security-boundaries.json
+          --real-browser outputs/cms-real-browser-attestation.json
+          --real-browser-screenshot outputs/cms-real-browser-attestation.png
+          --run-id "${{ github.run_id }}"
+          --run-attempt "${{ github.run_attempt }}"
+          --control-sha "${{ github.sha }}"
           --sha "${{ steps.candidate.outputs.sha }}"
           --environment staging
           --output outputs/cms-terminal-coverage-matrix.json
@@ -824,6 +887,8 @@ jobs:
             candidate/outputs/cms-secondary-ui-cycles.json \
             candidate/outputs/cms-security-boundaries.json \
             candidate/outputs/cms-ui-created-state.json \
+            candidate/outputs/cms-real-browser-attestation.json \
+            candidate/outputs/cms-real-browser-attestation.png \
             candidate/outputs/cms-public-forward-compatibility.json \
             candidate/outputs/cms-browser-mutating-setup.json \
             candidate/outputs/cms-browser-mutating-cleanup.json \
@@ -863,6 +928,8 @@ jobs:
             candidate/outputs/cms-secondary-ui-cycles.json
             candidate/outputs/cms-security-boundaries.json
             candidate/outputs/cms-ui-created-state.json
+            candidate/outputs/cms-real-browser-attestation.json
+            candidate/outputs/cms-real-browser-attestation.png
             candidate/outputs/cms-public-forward-compatibility.json
             candidate/outputs/cms-browser-mutating-setup.json
             candidate/outputs/cms-browser-mutating-cleanup.json
@@ -905,6 +972,36 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           path: control
+      - name: Use the repository-pinned Node runtime for staging finalization
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: control/.nvmrc
+      - name: Finalize both single-use staging browser rendezvous variables
+        id: real_browser_rendezvous_cleanup
+        if: always() && needs.deploy.outputs.candidate_sha != ''
+        continue-on-error: true
+        timeout-minutes: 5
+        working-directory: control
+        env:
+          GITHUB_REPOSITORY: Vnd93/gaiatec-cms
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          EVIDENCE_SALT: ${{ secrets.EVIDENCE_SALT }}
+        run: |
+          set -euo pipefail
+          cleanup_status=0
+          node scripts/ev2/phase12/run-real-browser-attestation-consumer.mjs clear-challenge \
+            --environment staging \
+            --run-id "${{ github.run_id }}" \
+            --run-attempt "${{ github.run_attempt }}" \
+            --allow-missing || cleanup_status=1
+          node scripts/ev2/phase12/real-browser-attestation-store.mjs clear \
+            --environment staging \
+            --candidate-sha "${{ needs.deploy.outputs.candidate_sha }}" \
+            --run-id "${{ github.run_id }}" \
+            --run-attempt "${{ github.run_attempt }}" \
+            --control-sha "${{ github.sha }}" \
+            --allow-missing || cleanup_status=1
+          exit "$cleanup_status"
       - name: Download mandatory pre-mutation state by immutable artifact ID
         id: state_artifact_download
         if: needs.deploy.outputs.state_artifact_id != ''
@@ -1125,6 +1222,7 @@ jobs:
         if: >-
           always() &&
           (steps.finalizer_state.outcome != 'success' ||
+          steps.real_browser_rendezvous_cleanup.outcome == 'failure' ||
           steps.finalizer_decision.outcome != 'success' ||
           steps.finalizer_probe.outcome != 'success' ||
           steps.terminal_evidence_upload.outcome != 'success' ||

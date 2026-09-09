@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { cleanText, clientAddress, consumeRateLimit, corsHeaders, escapeHtml, isAllowedOrigin, isAllowedTurnstileVerification, json, readJsonLimited, sha256 } from "../_shared/security.ts";
+import { verifyTurnstileSiteverify } from "../_shared/turnstile-siteverify-idempotency.ts";
 
 const TURNSTILE_ACTION = "lead_capture";
 
@@ -9,20 +10,21 @@ const CONSENT_TEXT = "Autorizo o tratamento dos dados enviados para responder a 
 const PRIVACY_URL = "https://gaiatecsistemas.com.br/politica-de-privacidade";
 const ENQUIRY_TYPES = new Set(["Orçamento", "Suporte Técnico", "Calibração", "Instrumentação", "Automação", "Proteção Catódica", "Outros", "Newsletter"]);
 const isEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-const isUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+const isUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 
-async function verifyTurnstile(token: string, ip: string, idempotencyKey: string): Promise<boolean> {
+async function verifyTurnstile(token: string, ip: string, commercialIdempotencyKey: string) {
   const secret = Deno.env.get("TURNSTILE_SECRET_KEY");
-  if (!secret) return false;
-  const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ secret, response: token, remoteip: ip, idempotency_key: idempotencyKey }),
-  });
-  if (!response.ok) return false;
-  const result = await response.json() as { success?: boolean; hostname?: string; action?: string };
+  if (!secret) return "unavailable" as const;
   const expectedAction = Deno.env.get("TURNSTILE_EXPECTED_ACTION") || TURNSTILE_ACTION;
-  return isAllowedTurnstileVerification(result, secret, expectedAction);
+  return verifyTurnstileSiteverify({
+    operation: "submit-contact",
+    commercialKey: commercialIdempotencyKey,
+    token,
+    secret,
+    remoteIp: ip,
+    isAccepted: (result) =>
+      isAllowedTurnstileVerification(result, secret, expectedAction, commercialIdempotencyKey),
+  });
 }
 
 Deno.serve(async (req) => {
@@ -72,9 +74,13 @@ Deno.serve(async (req) => {
   const abuseScore = (linkCount > 2 ? 2 : 0) + (!req.headers.get("User-Agent") ? 1 : 0) + (message.length < 8 ? 1 : 0);
   const requiresCaptcha = Deno.env.get("CONTACT_CAPTCHA_ALWAYS") === "true" || abuseScore >= 2;
   if (requiresCaptcha) {
-    const captchaToken = cleanText(body.captchaToken, 4_096);
+    const rawCaptchaToken = typeof body.captchaToken === "string" ? body.captchaToken : "";
+    if (rawCaptchaToken.length > 2_048) return json(req, { error: "A verificação de segurança falhou. Tente novamente.", captchaRequired: true }, 403);
+    const captchaToken = cleanText(rawCaptchaToken, 2_048);
     if (!captchaToken) return json(req, { error: "Confirme que você é uma pessoa para continuar.", captchaRequired: true }, 403);
-    if (!(await verifyTurnstile(captchaToken, ip, idempotencyKey))) return json(req, { error: "A verificação de segurança falhou. Tente novamente.", captchaRequired: true }, 403);
+    const verification = await verifyTurnstile(captchaToken, ip, idempotencyKey);
+    if (verification === "unavailable") return json(req, { error: "Serviço de proteção temporariamente indisponível." }, 503);
+    if (verification !== "accepted") return json(req, { error: "A verificação de segurança falhou. Tente novamente.", captchaRequired: true }, 403);
   }
 
   const evidenceSalt = Deno.env.get("EVIDENCE_SALT");

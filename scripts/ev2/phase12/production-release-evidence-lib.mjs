@@ -4,6 +4,7 @@ import { lstat, open, realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
 import { assertCmsTerminalCoverage } from "../../qa/materialize-cms-terminal-coverage.mjs";
+import { assertConsumedRealBrowserEvidence } from "./real-browser-release-evidence-lib.mjs";
 
 const FULL_SHA = /^[a-f0-9]{40}$/;
 const REQUIRED_AUTH_LIFECYCLE_SCENARIOS = [
@@ -46,6 +47,8 @@ export const PRODUCTION_RELEASE_EVIDENCE_PATHS = [
   "candidate/outputs/cms-production-readonly-preflight.json",
   "candidate/outputs/cms-final-coverage-production.json",
   "candidate/outputs/cms-admin-ops-cycles-production.json",
+  "candidate/outputs/cms-real-browser-attestation-production.json",
+  "candidate/outputs/cms-real-browser-attestation-production.png",
   "candidate/outputs/cms-secondary-ui-cycles-production.json",
   "candidate/outputs/cms-security-boundaries-production.json",
   "candidate/outputs/cms-terminal-coverage-matrix-production.json",
@@ -374,7 +377,7 @@ function semanticViolations(path, payload, binding) {
       payload?.sealedFrontendCandidateSha === candidateSha &&
         payload?.preparedBackendCandidateSha === candidateSha &&
         payload?.canonicalFrontendDuringPreflightSha === binding.baselineRelease &&
-        payload?.canonicalFrontendDuringPreflightSha !== candidateSha,
+        payload?.canonicalFrontendDuringPreflightSha === candidateSha,
       "authenticated_preflight_release_roles_invalid",
     );
     expect(
@@ -463,6 +466,44 @@ function semanticViolations(path, payload, binding) {
       payload?.mutatingEditorialLifecycle?.finalSyntheticState === "published-for-downstream",
       "editorial_cycle_handoff_incomplete",
     );
+    expect(
+      payload?.mutatingEntityLifecycles?.browserHandoff?.status === "passed" &&
+        payload.mutatingEntityLifecycles.browserHandoff.canonicalFrontendReleaseBound === true &&
+        payload.mutatingEntityLifecycles.browserHandoff.backendAccepted === true &&
+        payload.mutatingEntityLifecycles.browserHandoff.successLocator ===
+          '[data-form-submission-status="success"]' &&
+        payload.mutatingEntityLifecycles.browserHandoff.successLocatorObserved === true &&
+        payload.mutatingEntityLifecycles.browserHandoff.officialWidgetObserved === true &&
+        payload.mutatingEntityLifecycles.browserHandoff.cDataBound === true &&
+        payload.mutatingEntityLifecycles.browserHandoff.tokenCaptured === false &&
+        payload.mutatingEntityLifecycles.browserHandoff.variableCleared === true &&
+        payload.mutatingEntityLifecycles.browserHandoff.authoritativePersistence?.scopedLeadCount === 1 &&
+        payload.mutatingEntityLifecycles.browserHandoff.authoritativePersistence?.referenceMatched === true &&
+        payload.mutatingEntityLifecycles.browserHandoff.authoritativePersistence?.campaignPathMatched ===
+          true &&
+        payload.mutatingEntityLifecycles.browserHandoff.authoritativePersistence?.formBindingMatched ===
+          true &&
+        payload.mutatingEntityLifecycles.browserHandoff.authoritativePersistence
+          ?.actorRunShaEnvironmentMatched === true &&
+        payload.mutatingEntityLifecycles.browserHandoff.authoritativePersistence?.emailHashMatched === true &&
+        payload.mutatingEntityLifecycles.browserHandoff.authoritativePersistence?.consentCount === 1 &&
+        payload.mutatingEntityLifecycles.browserHandoff.authoritativePersistence?.consentAccepted === true &&
+        payload.mutatingEntityLifecycles.browserHandoff.authoritativePersistence?.consentVersionMatched ===
+          true &&
+        payload.mutatingEntityLifecycles.browserHandoff.authoritativePersistence?.consentEvidenceMatched ===
+          true &&
+        payload.mutatingEntityLifecycles.browserHandoff.authoritativePersistence?.initialHistoryCount === 1 &&
+        payload.mutatingEntityLifecycles.browserHandoff.authoritativePersistence?.initialStatusNew === true &&
+        payload.mutatingEntityLifecycles.browserHandoff.authoritativePersistence?.leadReceivedOutboxCount ===
+          1 &&
+        payload.mutatingEntityLifecycles.browserHandoff.authoritativePersistence?.outboxCorrelationPresent ===
+          true &&
+        payload.mutatingEntityLifecycles.browserHandoff.authoritativePersistence?.attestationAuditCount ===
+          1 &&
+        payload.mutatingEntityLifecycles.browserHandoff.authoritativePersistence?.auditCorrelationMatched ===
+          true,
+      "real_browser_handoff_missing",
+    );
     expectSealedPreviewRouting("final_coverage");
   } else if (path.endsWith("cms-admin-ops-cycles-production.json")) {
     expect(payload?.schemaVersion === 1 && payload?.status === "passed", "admin_ops_not_passed");
@@ -472,10 +513,29 @@ function semanticViolations(path, payload, binding) {
     expect(payload?.rawBrowserArtifacts === "disabled", "admin_ops_raw_artifacts_enabled");
     expect(payload?.positivePublicLead?.status === "passed", "production_public_lead_not_passed");
     expect(
-      payload?.positivePublicLead?.turnstile === "official-production-widget-token",
+      payload?.positivePublicLead?.attestation?.channel === "iab-workflow-dispatch-hmac" &&
+        payload.positivePublicLead.attestation.canonicalFrontendReleaseBound === true &&
+        payload.positivePublicLead.attestation.backendAccepted === true &&
+        payload.positivePublicLead.attestation.successLocator === '[data-form-submission-status="success"]' &&
+        payload.positivePublicLead.attestation.successLocatorObserved === true &&
+        payload.positivePublicLead.attestation.officialWidgetObserved === true &&
+        payload.positivePublicLead.attestation.cDataBound === true &&
+        payload.positivePublicLead.attestation.tokenCaptured === false &&
+        payload.positivePublicLead.attestation.variableCleared === true,
       "production_turnstile_not_exercised",
     );
-    expect(payload?.positivePublicLead?.backendStatus === 201, "production_public_lead_status_invalid");
+    expect(
+      payload?.positivePublicLead?.authoritativePersistence?.scopedLeadCount === 1 &&
+        payload.positivePublicLead.authoritativePersistence.referenceMatched === true &&
+        payload.positivePublicLead.authoritativePersistence.campaignPathMatched === true &&
+        payload.positivePublicLead.authoritativePersistence.consentCount === 1 &&
+        payload.positivePublicLead.authoritativePersistence.consentVersionMatched === true &&
+        payload.positivePublicLead.authoritativePersistence.initialHistoryPresent === true &&
+        payload.positivePublicLead.authoritativePersistence.leadReceivedOutboxCount === 1 &&
+        payload.positivePublicLead.authoritativePersistence.attestationAuditCount === 1 &&
+        payload.positivePublicLead.authoritativePersistence.auditCorrelationPresent === true,
+      "production_public_lead_persistence_not_proved",
+    );
     expect(payload?.positivePublicLead?.persistedReference === true, "production_public_lead_not_persisted");
     expect(
       payload?.positivePublicLead?.externalDelivery === "suppressed-only-for-exact-controlled-origin",
@@ -691,7 +751,7 @@ export async function buildProductionReleaseEvidenceIndex(rootDirectory, candida
   )
     throw new Error("G12_PRODUCTION_RELEASE_EVIDENCE_REFUSED:binding_invalid");
 
-  const files = [];
+  const evidenceEntries = [];
   for (const configuredPath of selectedPaths) {
     if (
       typeof configuredPath !== "string" ||
@@ -709,6 +769,50 @@ export async function buildProductionReleaseEvidenceIndex(rootDirectory, candida
       throw new Error(`G12_PRODUCTION_RELEASE_EVIDENCE_REFUSED:missing:${relativePath}`, { cause: error });
     }
     if (bytes.length === 0) throw new Error(`G12_PRODUCTION_RELEASE_EVIDENCE_REFUSED:empty:${relativePath}`);
+    evidenceEntries.push({ relativePath, bytes });
+  }
+
+  const realBrowserJsonPath = "candidate/outputs/cms-real-browser-attestation-production.json";
+  const realBrowserPngPath = "candidate/outputs/cms-real-browser-attestation-production.png";
+  const realBrowserJson = evidenceEntries.find((entry) => entry.relativePath === realBrowserJsonPath);
+  const realBrowserPng = evidenceEntries.find((entry) => entry.relativePath === realBrowserPngPath);
+  if (Boolean(realBrowserJson) !== Boolean(realBrowserPng)) {
+    throw new Error("G12_PRODUCTION_RELEASE_EVIDENCE_REFUSED:real_browser_pair_incomplete");
+  }
+  if (realBrowserJson && realBrowserPng) {
+    if (!binding) throw new Error("G12_PRODUCTION_RELEASE_EVIDENCE_REFUSED:real_browser_binding_missing");
+    let report;
+    try {
+      report = JSON.parse(realBrowserJson.bytes.toString("utf8"));
+    } catch {
+      throw new Error(`G12_PRODUCTION_RELEASE_EVIDENCE_REFUSED:json_invalid:${realBrowserJsonPath}`);
+    }
+    try {
+      assertConsumedRealBrowserEvidence({
+        report,
+        screenshot: realBrowserPng.bytes,
+        expected: {
+          environment: "production",
+          candidateSha,
+          runId: String(binding.runId),
+          runAttempt: Number(binding.runAttempt),
+          controlSha: binding.controlSha,
+        },
+      });
+    } catch (error) {
+      throw new Error(
+        `G12_PRODUCTION_RELEASE_EVIDENCE_REFUSED:real_browser:${error instanceof Error ? error.message : "invalid"}`,
+        { cause: error },
+      );
+    }
+  }
+
+  const files = [];
+  for (const { relativePath, bytes } of evidenceEntries) {
+    if (relativePath.endsWith(".png")) {
+      files.push({ path: relativePath, bytes: bytes.length, sha256: sha256(bytes) });
+      continue;
+    }
     let payload;
     try {
       payload = JSON.parse(bytes.toString("utf8"));

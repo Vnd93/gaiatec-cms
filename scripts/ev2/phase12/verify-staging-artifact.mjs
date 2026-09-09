@@ -8,6 +8,7 @@ import {
 } from "./release-guard-lib.mjs";
 import { STAGING_AUTH_REDIRECT_ALLOW_LIST, STAGING_AUTH_SITE_ORIGIN } from "./staging-auth-config-lib.mjs";
 import { assertCmsTerminalCoverage } from "../../qa/materialize-cms-terminal-coverage.mjs";
+import { assertConsumedRealBrowserEvidence } from "./real-browser-release-evidence-lib.mjs";
 
 function argument(name) {
   const index = process.argv.indexOf(`--${name}`);
@@ -53,6 +54,8 @@ const [
   secondaryPath,
   securityPath,
   uiCreatedStatePath,
+  realBrowserAttestationPath,
+  realBrowserScreenshotPath,
   mutatingSetupPath,
   mutatingCleanupPath,
   mutatingResiduePath,
@@ -73,6 +76,8 @@ const [
   uniqueFile(root, "cms-secondary-ui-cycles.json"),
   uniqueFile(root, "cms-security-boundaries.json"),
   uniqueFile(root, "cms-ui-created-state.json"),
+  uniqueFile(root, "cms-real-browser-attestation.json"),
+  uniqueFile(root, "cms-real-browser-attestation.png"),
   uniqueFile(root, "cms-browser-mutating-setup.json"),
   uniqueFile(root, "cms-browser-mutating-cleanup.json"),
   uniqueFile(root, "cms-browser-mutating-residue.json"),
@@ -94,6 +99,8 @@ const [
   secondaryBytes,
   securityBytes,
   uiCreatedStateBytes,
+  realBrowserAttestationBytes,
+  realBrowserScreenshotBytes,
   mutatingSetupBytes,
   mutatingCleanupBytes,
   mutatingResidueBytes,
@@ -113,6 +120,8 @@ const [
   readFile(secondaryPath),
   readFile(securityPath),
   readFile(uiCreatedStatePath),
+  readFile(realBrowserAttestationPath),
+  readFile(realBrowserScreenshotPath),
   readFile(mutatingSetupPath),
   readFile(mutatingCleanupPath),
   readFile(mutatingResiduePath),
@@ -153,6 +162,7 @@ const adminOps = JSON.parse(adminOpsBytes.toString("utf8"));
 const secondary = JSON.parse(secondaryBytes.toString("utf8"));
 const security = JSON.parse(securityBytes.toString("utf8"));
 const uiCreatedState = JSON.parse(uiCreatedStateBytes.toString("utf8"));
+const realBrowserAttestation = JSON.parse(realBrowserAttestationBytes.toString("utf8"));
 const mutatingSetup = JSON.parse(mutatingSetupBytes.toString("utf8"));
 const mutatingCleanup = JSON.parse(mutatingCleanupBytes.toString("utf8"));
 const mutatingResidue = JSON.parse(mutatingResidueBytes.toString("utf8"));
@@ -164,6 +174,18 @@ const rollbackSetup = JSON.parse(rollbackSetupBytes.toString("utf8"));
 const rollbackCleanup = JSON.parse(rollbackCleanupBytes.toString("utf8"));
 const rollbackInventory = JSON.parse(rollbackInventoryBytes.toString("utf8"));
 const runTag = adminOps?.runTag;
+assertConsumedRealBrowserEvidence({
+  report: realBrowserAttestation,
+  screenshot: realBrowserScreenshotBytes,
+  expected: {
+    environment: "staging",
+    candidateSha: record.candidateSha,
+    runId: String(record.g12Evidence.runId),
+    runAttempt: Number(record.g12Evidence.runAttempt),
+    runTag,
+    controlSha: record.g12Evidence.headSha,
+  },
+});
 const rollbackSha = record?.rollback?.release;
 const rollbackSurfaceIds = (rollbackInventory?.matrix ?? [])
   .filter((item) => item?.testMode === "authenticated")
@@ -629,6 +651,21 @@ if (
   terminalCoverage?.evidenceManifest?.cleanupStatus !== "cleaned" ||
   terminalCoverage?.evidenceManifest?.residueStatus !== "passed" ||
   terminalCoverage?.evidenceManifest?.allReportsPassed !== true ||
+  terminalCoverage?.evidenceManifest?.realBrowser !== "cms-real-browser-attestation.json" ||
+  terminalCoverage?.evidenceManifest?.realBrowserScreenshot !== "cms-real-browser-attestation.png" ||
+  terminalCoverage?.evidenceManifest?.realBrowserStatus !== "passed" ||
+  terminalCoverage?.evidenceManifest?.realBrowserChannel !== "iab-workflow-dispatch-hmac" ||
+  terminalCoverage?.evidenceManifest?.realBrowserCanonicalFrontendReleaseBound !== true ||
+  terminalCoverage?.evidenceManifest?.realBrowserBackendAccepted !== true ||
+  terminalCoverage?.evidenceManifest?.realBrowserSuccessLocator !==
+    '[data-form-submission-status="success"]' ||
+  terminalCoverage?.evidenceManifest?.realBrowserSuccessLocatorObserved !== true ||
+  terminalCoverage?.evidenceManifest?.realBrowserOfficialWidgetObserved !== true ||
+  terminalCoverage?.evidenceManifest?.realBrowserCDataBound !== true ||
+  terminalCoverage?.evidenceManifest?.realBrowserTokenCaptured !== false ||
+  terminalCoverage?.evidenceManifest?.realBrowserVariableCleared !== true ||
+  terminalCoverage?.evidenceManifest?.realBrowserScreenshotSha256 !==
+    realBrowserAttestation?.screenshot?.sha256 ||
   terminalCoverage?.counts?.terminalSurfaces !== inventory.matrix.length ||
   !terminalTombstonePassed(terminalCoverage?.terminalArchivedTombstone) ||
   coverage?.schemaVersion !== 1 ||
@@ -712,8 +749,57 @@ if (
   adminOps?.noIdentifiersPersisted !== true ||
   adminOps?.noSecretsPersisted !== true ||
   adminOps?.positivePublicLead?.status !== "passed" ||
-  adminOps?.positivePublicLead?.turnstile !== "official-staging-widget-token" ||
-  adminOps?.positivePublicLead?.backendStatus !== 201 ||
+  adminOps?.positivePublicLead?.attestation?.channel !== "iab-workflow-dispatch-hmac" ||
+  adminOps?.positivePublicLead?.attestation?.canonicalFrontendReleaseBound !== true ||
+  adminOps?.positivePublicLead?.attestation?.backendAccepted !== true ||
+  adminOps?.positivePublicLead?.attestation?.successLocator !== '[data-form-submission-status="success"]' ||
+  adminOps?.positivePublicLead?.attestation?.successLocatorObserved !== true ||
+  adminOps?.positivePublicLead?.attestation?.officialWidgetObserved !== true ||
+  adminOps?.positivePublicLead?.attestation?.cDataBound !== true ||
+  adminOps?.positivePublicLead?.attestation?.tokenCaptured !== false ||
+  adminOps?.positivePublicLead?.attestation?.variableCleared !== true ||
+  adminOps?.positivePublicLead?.attestation?.screenshotSha256 !==
+    realBrowserAttestation?.screenshot?.sha256 ||
+  adminOps?.positivePublicLead?.authoritativePersistence?.scopedLeadCount !== 1 ||
+  adminOps?.positivePublicLead?.authoritativePersistence?.referenceMatched !== true ||
+  adminOps?.positivePublicLead?.authoritativePersistence?.campaignPathMatched !== true ||
+  adminOps?.positivePublicLead?.authoritativePersistence?.consentCount !== 1 ||
+  adminOps?.positivePublicLead?.authoritativePersistence?.consentVersionMatched !== true ||
+  adminOps?.positivePublicLead?.authoritativePersistence?.initialHistoryPresent !== true ||
+  adminOps?.positivePublicLead?.authoritativePersistence?.leadReceivedOutboxCount !== 1 ||
+  adminOps?.positivePublicLead?.authoritativePersistence?.attestationAuditCount !== 1 ||
+  adminOps?.positivePublicLead?.authoritativePersistence?.auditCorrelationPresent !== true ||
+  coverage?.mutatingEntityLifecycles?.browserHandoff?.status !== "passed" ||
+  coverage?.mutatingEntityLifecycles?.browserHandoff?.canonicalFrontendReleaseBound !== true ||
+  coverage?.mutatingEntityLifecycles?.browserHandoff?.backendAccepted !== true ||
+  coverage?.mutatingEntityLifecycles?.browserHandoff?.successLocator !==
+    '[data-form-submission-status="success"]' ||
+  coverage?.mutatingEntityLifecycles?.browserHandoff?.successLocatorObserved !== true ||
+  coverage?.mutatingEntityLifecycles?.browserHandoff?.screenshotSha256 !==
+    realBrowserAttestation?.screenshot?.sha256 ||
+  coverage?.mutatingEntityLifecycles?.browserHandoff?.authoritativePersistence?.scopedLeadCount !== 1 ||
+  coverage?.mutatingEntityLifecycles?.browserHandoff?.authoritativePersistence?.referenceMatched !== true ||
+  coverage?.mutatingEntityLifecycles?.browserHandoff?.authoritativePersistence?.campaignPathMatched !==
+    true ||
+  coverage?.mutatingEntityLifecycles?.browserHandoff?.authoritativePersistence?.formBindingMatched !== true ||
+  coverage?.mutatingEntityLifecycles?.browserHandoff?.authoritativePersistence
+    ?.actorRunShaEnvironmentMatched !== true ||
+  coverage?.mutatingEntityLifecycles?.browserHandoff?.authoritativePersistence?.emailHashMatched !== true ||
+  coverage?.mutatingEntityLifecycles?.browserHandoff?.authoritativePersistence?.consentCount !== 1 ||
+  coverage?.mutatingEntityLifecycles?.browserHandoff?.authoritativePersistence?.consentAccepted !== true ||
+  coverage?.mutatingEntityLifecycles?.browserHandoff?.authoritativePersistence?.consentVersionMatched !==
+    true ||
+  coverage?.mutatingEntityLifecycles?.browserHandoff?.authoritativePersistence?.consentEvidenceMatched !==
+    true ||
+  coverage?.mutatingEntityLifecycles?.browserHandoff?.authoritativePersistence?.initialHistoryCount !== 1 ||
+  coverage?.mutatingEntityLifecycles?.browserHandoff?.authoritativePersistence?.initialStatusNew !== true ||
+  coverage?.mutatingEntityLifecycles?.browserHandoff?.authoritativePersistence?.leadReceivedOutboxCount !==
+    1 ||
+  coverage?.mutatingEntityLifecycles?.browserHandoff?.authoritativePersistence?.outboxCorrelationPresent !==
+    true ||
+  coverage?.mutatingEntityLifecycles?.browserHandoff?.authoritativePersistence?.attestationAuditCount !== 1 ||
+  coverage?.mutatingEntityLifecycles?.browserHandoff?.authoritativePersistence?.auditCorrelationMatched !==
+    true ||
   !browserObserverPassed(adminOps) ||
   secondary?.schemaVersion !== 1 ||
   secondary?.status !== "passed" ||
@@ -736,6 +822,8 @@ if (
   String(uiCreatedState?.form?.key ?? "").length > 150 ||
   !/^qa-ops-qa-cms-final-[0-9]{8}-[0-9a-f]{8}-[a-z0-9]+$/.test(uiCreatedState?.form?.key ?? "") ||
   !/^LD-[A-Z0-9]+$/.test(uiCreatedState?.lead?.reference ?? "") ||
+  uiCreatedState?.lead?.reference !== realBrowserAttestation?.reference ||
+  uiCreatedState?.lead?.campaignPath !== realBrowserAttestation?.campaignPath ||
   !["assigned", "in_service", "responded", "converted", "disqualified", "archived"].includes(
     uiCreatedState?.lead?.status,
   ) ||

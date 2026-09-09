@@ -10,6 +10,18 @@ export const FRONTEND_BRIDGE_REPOSITORY = "Vnd93/gaiatec-cms";
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const POSITIVE_INTEGER_PATTERN = /^[1-9][0-9]*$/;
 const APPROVAL_PATTERN = /^\.github\/release-controls\/approvals\/G12_[a-f0-9]{40}\.json$/;
+const STAGING_COMPATIBILITY_TESTED = Object.freeze([
+  "legacy-content-read",
+  "page-campaign-form-render",
+  "turnstile-widget-request",
+  "fail-closed-without-token",
+  "zero-lead-post",
+]);
+const STAGING_COMPATIBILITY_NOT_TESTED = Object.freeze([
+  "positive-form-submission",
+  "lead-persistence",
+  "full-candidate-backend",
+]);
 
 function exactKeys(value, expected) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -116,9 +128,10 @@ function validPredecessorDist(value, release) {
   );
 }
 
-function validFunctionalSummary(value) {
+function validHeadlessSummary(value, expected) {
   return (
     exactKeys(value, [
+      "mode",
       "contract",
       "origin",
       "deploymentOrigin",
@@ -130,15 +143,23 @@ function validFunctionalSummary(value) {
       "pageRendered",
       "campaignRendered",
       "formRendered",
-      "leadAccepted201",
-      "duplicateAccepted201",
+      "turnstileWidgetRequested",
+      "turnstileNetworkFailureObserved",
+      "submitDisabledWithoutToken",
+      "unavailableFeedbackVisible",
+      "backendMutationRequests",
       "cleanupStatus",
       "residueStatus",
       "auditRetained",
     ]) &&
+    value.mode === "headless-fail-closed" &&
     value.contract === "legacy-f48" &&
     /^https:\/\/[a-z0-9-]+\.gaiatec-cms-staging\.pages\.dev$/.test(value.origin ?? "") &&
+    value.origin === expected.origin &&
     /^https:\/\/[a-z0-9-]+\.gaiatec-cms-staging\.pages\.dev$/.test(value.deploymentOrigin ?? "") &&
+    value.deploymentOrigin === expected.deploymentOrigin &&
+    UUID_PATTERN.test(expected.deploymentId ?? "") &&
+    value.deploymentIdentitySha256 === sha256Bytes(expected.deploymentId ?? "") &&
     [
       "deploymentIdentitySha256",
       "fixtureBindingSha256",
@@ -149,11 +170,24 @@ function validFunctionalSummary(value) {
     value.pageRendered === true &&
     value.campaignRendered === true &&
     value.formRendered === true &&
-    value.leadAccepted201 === true &&
-    value.duplicateAccepted201 === true &&
+    value.turnstileWidgetRequested === true &&
+    value.turnstileNetworkFailureObserved === true &&
+    value.submitDisabledWithoutToken === true &&
+    value.unavailableFeedbackVisible === true &&
+    value.backendMutationRequests === 0 &&
     value.cleanupStatus === "cleaned" &&
     value.residueStatus === "passed" &&
     value.auditRetained === true
+  );
+}
+
+function validStagingCompatibilityScope(value) {
+  return (
+    exactKeys(value, ["mode", "backendContract", "tested", "notTested"]) &&
+    value.mode === "compatibility-only" &&
+    value.backendContract === "legacy-f48" &&
+    JSON.stringify(value.tested) === JSON.stringify(STAGING_COMPATIBILITY_TESTED) &&
+    JSON.stringify(value.notTested) === JSON.stringify(STAGING_COMPATIBILITY_NOT_TESTED)
   );
 }
 
@@ -167,7 +201,10 @@ function validStagingBridge(value) {
       "artifactDigest",
       "evidenceSha256",
       "canonicalDeploymentId",
-      "functional",
+      "canonicalHeadless",
+      "compatibilityScope",
+      "positiveBrowserRequiredAfterFullCandidateDeploy",
+      "backendMutation",
     ]) &&
     POSITIVE_INTEGER_PATTERN.test(String(value.runId ?? "")) &&
     Number.isSafeInteger(value.runAttempt) &&
@@ -177,7 +214,14 @@ function validStagingBridge(value) {
     /^sha256:[a-f0-9]{64}$/.test(value.artifactDigest ?? "") &&
     SHA256_PATTERN.test(value.evidenceSha256 ?? "") &&
     UUID_PATTERN.test(value.canonicalDeploymentId ?? "") &&
-    validFunctionalSummary(value.functional)
+    validHeadlessSummary(value.canonicalHeadless, {
+      origin: "https://ev2-g17-canary.gaiatec-cms-staging.pages.dev",
+      deploymentOrigin: "https://ev2-g17-canary.gaiatec-cms-staging.pages.dev",
+      deploymentId: value.canonicalDeploymentId,
+    }) &&
+    validStagingCompatibilityScope(value.compatibilityScope) &&
+    value.positiveBrowserRequiredAfterFullCandidateDeploy === true &&
+    value.backendMutation === "fixture-only-cleaned"
   );
 }
 
@@ -192,6 +236,10 @@ function validProductionSafety(value, probes) {
       "productionProbeSha256",
       "previewReadOnlySha256",
       "productionReadOnlySha256",
+      "positiveBrowserGate",
+      "positiveBrowserGateOwner",
+      "positiveBrowserSubmissionAttempted",
+      "positiveBrowserHomologationClaimed",
     ]) &&
     value.mode === "read-only-old-backend" &&
     value.renderedRoutesPerDeployment === 4 &&
@@ -201,7 +249,11 @@ function validProductionSafety(value, probes) {
     value.productionProbeSha256 === probes?.productionSha256 &&
     SHA256_PATTERN.test(value.previewReadOnlySha256 ?? "") &&
     SHA256_PATTERN.test(value.productionReadOnlySha256 ?? "") &&
-    value.previewReadOnlySha256 !== value.productionReadOnlySha256
+    value.previewReadOnlySha256 !== value.productionReadOnlySha256 &&
+    value.positiveBrowserGate === "deferred-to-full-candidate-deploy" &&
+    value.positiveBrowserGateOwner === ".github/workflows/deploy-production.yml" &&
+    value.positiveBrowserSubmissionAttempted === false &&
+    value.positiveBrowserHomologationClaimed === false
   );
 }
 
@@ -313,7 +365,7 @@ export function validateFrontendBridgeEvidence(value, expected = {}) {
       "backendMutation",
       "rollbackReady",
     ]) ||
-    value?.schemaVersion !== 2 ||
+    value?.schemaVersion !== 5 ||
     value?.event !== "g12.production.frontend_bridge.promoted" ||
     value?.repository !== FRONTEND_BRIDGE_REPOSITORY
   ) {

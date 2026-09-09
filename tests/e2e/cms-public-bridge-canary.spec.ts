@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Request } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { createHash } from "node:crypto";
 import { lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
@@ -9,6 +9,7 @@ import { assertSealedPreviewRoutingUsed, installSealedPreviewRouting } from "./c
 test.use({ trace: "off", screenshot: "off", video: "off" });
 
 const FULL_SHA = /^[a-f0-9]{40}$/;
+const POSITIVE_INTEGER = /^[1-9]\d*$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const UUID_ANYWHERE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i;
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -35,8 +36,6 @@ type Configuration = {
   origin: string;
   deploymentOrigin: string;
   deploymentId: string;
-  supabaseOrigin: string;
-  anonKey: string;
   reportPath: string;
   state: BridgeState;
 };
@@ -72,10 +71,11 @@ function loadConfiguration(baseURL: string | undefined): Configuration | null {
   if (process.env.QA_CMS_PUBLIC_BRIDGE_REQUIRED !== "true") return null;
   const environment = process.env.QA_CMS_BRIDGE_ENVIRONMENT;
   const expectedSha = process.env.QA_CMS_BRIDGE_CANDIDATE_SHA ?? "";
+  const expectedInstance = process.env.QA_CMS_BRIDGE_INSTANCE ?? "";
+  const runId = process.env.QA_CMS_BRIDGE_WORKFLOW_RUN_ID ?? process.env.GITHUB_RUN_ID ?? "";
+  const runAttempt = process.env.QA_CMS_BRIDGE_WORKFLOW_RUN_ATTEMPT ?? process.env.GITHUB_RUN_ATTEMPT ?? "";
   const origin = new URL(baseURL ?? "https://invalid.invalid");
   const deploymentOrigin = new URL(process.env.QA_CMS_BRIDGE_DEPLOYMENT_ORIGIN ?? "https://invalid.invalid");
-  const supabaseOrigin = new URL(process.env.QA_CMS_BRIDGE_SUPABASE_URL ?? "https://invalid.invalid");
-  const anonKey = process.env.QA_CMS_BRIDGE_SUPABASE_ANON_KEY ?? "";
   const deploymentId = process.env.QA_CMS_BRIDGE_DEPLOYMENT_ID ?? "";
   const stateFile = containedFile(
     process.env.QA_CMS_BRIDGE_STATE_PATH ?? "outputs/cms-public-bridge-fixture-state.json",
@@ -96,15 +96,15 @@ function loadConfiguration(baseURL: string | undefined): Configuration | null {
     throw new Error("QA_CMS_PUBLIC_BRIDGE_REPORT_PATH_REFUSED");
   }
   const state = JSON.parse(readFileSync(stateFile, "utf8")) as BridgeState;
+  const expectedNonce = createHash("sha256")
+    .update(`${environment}:${expectedSha}:${runId}:${runAttempt}:${expectedInstance}`)
+    .digest("hex")
+    .slice(0, 8);
   const expectedOrigin =
     process.env.QA_CMS_BRIDGE_ORIGIN ??
     (environment === "production"
       ? "https://gaiatecsistemas.com.br"
       : "https://ev2-g17-canary.gaiatec-cms-staging.pages.dev");
-  const expectedSupabase =
-    environment === "production"
-      ? "https://chfuhctnhqgyjowkvllv.supabase.co"
-      : "https://glcqsosxwgmlhzgcsnzv.supabase.co";
   const identifiers = [
     state.actorId,
     state.form?.id,
@@ -129,9 +129,6 @@ function loadConfiguration(baseURL: string | undefined): Configuration | null {
       ? !/^https:\/\/[a-z0-9-]+\.gaiatec-website\.pages\.dev$/.test(deploymentOrigin.origin) &&
         deploymentOrigin.origin !== expectedOrigin
       : !/^https:\/\/[a-z0-9-]+\.gaiatec-cms-staging\.pages\.dev$/.test(deploymentOrigin.origin)) ||
-    supabaseOrigin.origin !== expectedSupabase ||
-    supabaseOrigin.pathname !== "/" ||
-    !anonKey ||
     !UUID.test(deploymentId) ||
     !exactKeys(state as unknown as Record<string, unknown>, [
       "schemaVersion",
@@ -152,9 +149,15 @@ function loadConfiguration(baseURL: string | undefined): Configuration | null {
     state.status !== "active" ||
     state.environment !== environment ||
     state.candidateSha !== expectedSha ||
+    state.instance !== expectedInstance ||
+    !POSITIVE_INTEGER.test(runId) ||
+    !POSITIVE_INTEGER.test(runAttempt) ||
+    state.nonce !== expectedNonce ||
     !/^QA-CMS-FINAL-[0-9]{8}-[a-f0-9]{8}$/.test(state.runTag) ||
+    !state.runTag.endsWith(`-${expectedSha.slice(0, 8)}`) ||
     identifiers.some((value) => !UUID.test(value)) ||
     state.page.path !== `/${state.page.slug}` ||
+    state.campaign.slug !== `qa-lead-${state.runTag.toLowerCase()}-${state.nonce}` ||
     state.campaign.path !== `/campanhas/${state.campaign.slug}`
   ) {
     throw new Error("QA_CMS_PUBLIC_BRIDGE_CONFIGURATION_REFUSED");
@@ -165,8 +168,6 @@ function loadConfiguration(baseURL: string | undefined): Configuration | null {
     origin: origin.origin,
     deploymentOrigin: deploymentOrigin.origin,
     deploymentId,
-    supabaseOrigin: supabaseOrigin.origin,
-    anonKey,
     reportPath,
     state,
   };
@@ -175,7 +176,6 @@ function loadConfiguration(baseURL: string | undefined): Configuration | null {
 function writeEvidence(config: Configuration, value: Record<string, unknown>) {
   const serialized = `${JSON.stringify(value, null, 2)}\n`;
   const sensitive = [
-    config.anonKey,
     config.state.actorId,
     config.state.form.id,
     config.state.form.versionId,
@@ -190,41 +190,6 @@ function writeEvidence(config: Configuration, value: Record<string, unknown>) {
   }
   mkdirSync(dirname(config.reportPath), { recursive: true });
   writeFileSync(config.reportPath, serialized, { encoding: "utf8", mode: 0o600 });
-}
-
-function legacyRequestBody(request: Request, config: Configuration) {
-  const value = request.postDataJSON() as Record<string, unknown>;
-  const origin = value.origin as Record<string, unknown>;
-  const consent = value.consent as Record<string, unknown>;
-  if (
-    !exactKeys(value, [
-      "formId",
-      "formVersionId",
-      "idempotencyKey",
-      "fields",
-      "origin",
-      "consent",
-      "honeypot",
-      "captchaToken",
-    ]) ||
-    value.formId !== config.state.form.id ||
-    value.formVersionId !== config.state.form.versionId ||
-    !UUID.test(String(value.idempotencyKey ?? "")) ||
-    !exactKeys(origin, ["path", "source", "campaignId", "utm"]) ||
-    origin.path !== config.state.campaign.path ||
-    origin.source !== "campaign" ||
-    origin.campaignId !== config.state.campaign.id ||
-    !exactKeys(consent, ["accepted", "text", "version"]) ||
-    consent.accepted !== true ||
-    consent.version !== config.state.runTag ||
-    value.honeypot !== "" ||
-    typeof value.captchaToken !== "string" ||
-    value.captchaToken.length < 10 ||
-    !exactKeys(value.fields as Record<string, unknown>, ["email"])
-  ) {
-    throw new Error("QA_CMS_PUBLIC_BRIDGE_LEGACY_REQUEST_INVALID");
-  }
-  return value;
 }
 
 async function browserStateContainsUuid(page: Page) {
@@ -242,7 +207,7 @@ async function browserStateContainsUuid(page: Page) {
   });
 }
 
-test("@public-bridge frontend A percorre page/campaign/form e lead idempotente no backend f48", async ({
+test("@public-bridge frontend A renderiza com Turnstile real e falha fechado sem token", async ({
   browser,
   baseURL,
 }) => {
@@ -253,15 +218,35 @@ test("@public-bridge frontend A percorre page/campaign/form e lead idempotente n
 
   const context = await browser.newContext({ baseURL: config.origin, serviceWorkers: "block" });
   await installSealedPreviewRouting(context, process.env);
+  let turnstileScriptRequests = 0;
+  let turnstileRequestFailures = 0;
+  await context.route("https://challenges.cloudflare.com/**", async (route) => {
+    turnstileScriptRequests += 1;
+    await route.abort("internetdisconnected");
+  });
   const page = await context.newPage();
   const consoleFailures: string[] = [];
   const requestFailures: string[] = [];
+  let turnstileConsoleFailures = 0;
   let leadRequestCount = 0;
   page.on("console", (message) => {
-    if (message.type() === "error") consoleFailures.push(message.text().slice(0, 160));
+    if (message.type() !== "error") return;
+    const location = message.location().url;
+    if (
+      location.startsWith("https://challenges.cloudflare.com/") ||
+      message.text().includes("ERR_INTERNET_DISCONNECTED")
+    ) {
+      turnstileConsoleFailures += 1;
+    } else {
+      consoleFailures.push(message.text().slice(0, 160));
+    }
   });
   page.on("pageerror", (error) => consoleFailures.push(error.name));
-  page.on("requestfailed", (request) => requestFailures.push(new URL(request.url()).pathname));
+  page.on("requestfailed", (request) => {
+    const url = new URL(request.url());
+    if (url.hostname === "challenges.cloudflare.com") turnstileRequestFailures += 1;
+    else requestFailures.push(url.pathname);
+  });
   page.on("request", (request) => {
     if (
       request.method() === "POST" &&
@@ -293,42 +278,20 @@ test("@public-bridge frontend A percorre page/campaign/form e lead idempotente n
     await email.fill(`qa-public-${config.state.nonce}@example.invalid`);
     await campaignForm.locator('input[name="consent"]').check();
     await expect(campaignForm.getByLabel("Verificação de segurança")).toBeVisible();
+    await expect(campaignForm.getByRole("alert")).toHaveText(
+      "Não foi possível carregar a verificação de segurança. Tente novamente.",
+    );
+    await expect
+      .poll(() => turnstileScriptRequests > 0 && turnstileRequestFailures === turnstileScriptRequests, {
+        timeout: 20_000,
+      })
+      .toBe(true);
     const submit = campaignForm.getByRole("button", { name: "Enviar homologação sintética" });
-    await expect(submit).toBeEnabled({ timeout: 60_000 });
-
-    const firstResponsePromise = page.waitForResponse(
-      (response) =>
-        response.request().method() === "POST" &&
-        new URL(response.url()).pathname.endsWith("/functions/v1/lead-capture"),
-      { timeout: 45_000 },
-    );
-    await submit.click();
-    const firstResponse = await firstResponsePromise;
-    const requestBody = legacyRequestBody(firstResponse.request(), config);
-    const firstPayload = (await firstResponse.json()) as Record<string, unknown>;
-    expect(firstResponse.status()).toBe(201);
-    expect(firstPayload.reference).toMatch(/^LD-[A-Z0-9]+$/);
-    expect(firstPayload.duplicate).toBe(false);
-    expect(firstPayload).not.toHaveProperty("leadId");
-    await expect(campaignForm.locator('[data-form-submission-status="success"]')).toContainText(
-      String(firstPayload.reference),
-    );
-
-    const replay = await context.request.post(firstResponse.url(), {
-      headers: {
-        apikey: config.anonKey,
-        Origin: config.origin,
-        "Content-Type": "application/json",
-      },
-      data: requestBody,
-      timeout: 30_000,
-    });
-    const replayPayload = (await replay.json()) as Record<string, unknown>;
-    expect(replay.status()).toBe(201);
-    expect(replayPayload.reference).toBe(firstPayload.reference);
-    expect(replayPayload.duplicate).toBe(true);
-    expect(replayPayload).not.toHaveProperty("leadId");
-    expect(leadRequestCount).toBe(1);
+    await expect(submit).toBeDisabled();
+    await submit.click({ force: true });
+    await page.waitForTimeout(500);
+    expect(leadRequestCount).toBe(0);
+    await expect(campaignForm.locator('[data-form-submission-status="success"]')).toHaveCount(0);
     expect(await browserStateContainsUuid(page)).toBe(false);
     expect(consoleFailures).toEqual([]);
     expect(requestFailures).toEqual([]);
@@ -336,7 +299,7 @@ test("@public-bridge frontend A percorre page/campaign/form e lead idempotente n
 
     writeEvidence(config, {
       schemaVersion: 1,
-      event: "g12.public_bridge.functional_canary",
+      event: "g12.public_bridge.headless_canary",
       status: "passed",
       environment: config.environment,
       frontendSha: config.expectedSha,
@@ -351,27 +314,28 @@ test("@public-bridge frontend A percorre page/campaign/form e lead idempotente n
         page: "legacy-row-normalized-and-rendered",
         campaign: "legacy-row-normalized-and-rendered",
         form: "legacy-f48-normalized-and-rendered",
-        lead: "legacy-f48-exact-201",
-        duplicate: "same-idempotency-key-201-duplicate",
+        turnstile: "configured-real-widget-load-requested",
+        submission: "disabled-without-token",
       },
       observations: {
         renderedPages: 1,
         renderedCampaigns: 1,
         renderedForms: 1,
-        browserLeadRequests: 1,
-        acceptedLeads: 1,
-        duplicateReplays: 1,
+        turnstileScriptRequests,
+        turnstileRequestFailures,
+        turnstileConsoleFailures,
+        backendMutationRequests: leadRequestCount,
         unexpectedConsole: 0,
         requestFailures: 0,
       },
       boundary: {
         uuidInDomOrStorage: 0,
-        legacyIdsPersisted: false,
-        hybridPayloads: 0,
-        retryPayloads: 0,
+        tokenObserved: false,
+        submitDisabledWithoutToken: true,
+        unavailableFeedbackVisible: true,
+        intentionalFailureMode: "turnstile-network-unavailable",
         secretsPersisted: false,
       },
-      turnstile: `official-${config.environment}-widget-token`,
     });
   } finally {
     await context.close();

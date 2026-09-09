@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { TurnstileChallenge } from "@/app/components/TurnstileChallenge";
 import type { PublicFormVersion } from "../catalog-api";
 import { submitGovernedLead, type LeadFieldValue } from "../lead-api";
@@ -45,8 +45,14 @@ export function CmsLeadForm({
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [captchaRequired, setCaptchaRequired] = useState(captchaAlways);
   const [captchaToken, setCaptchaToken] = useState("");
+  const captchaTokenRef = useRef("");
+  const [captchaRefreshKey, setCaptchaRefreshKey] = useState(0);
+  const submittingRef = useRef(false);
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const captchaTokenForAttempt = captchaTokenRef.current || undefined;
+    if (submittingRef.current || busy || (captchaRequired && !captchaTokenForAttempt)) return;
+    submittingRef.current = true;
     setBusy(true);
     setError("");
     setMessage("");
@@ -65,22 +71,36 @@ export function CmsLeadForm({
         productSlug,
         consentAccepted: consent,
         honeypot,
-        captchaToken: captchaToken || undefined,
+        captchaToken: captchaTokenForAttempt,
       });
       setValues({ ...initialValues });
       setHoneypot("");
       setConsent(false);
       setCaptchaRequired(captchaAlways);
       setCaptchaToken("");
+      captchaTokenRef.current = "";
+      setCaptchaRefreshKey((current) => current + 1);
       setIdempotencyKey(crypto.randomUUID());
       setMessage(`${form.successMessage}${result.reference ? ` Protocolo ${result.reference}.` : ""}`);
     } catch (caught) {
-      if ((caught as Error & { challengeRequired?: boolean }).challengeRequired) setCaptchaRequired(true);
+      if ((caught as Error & { challengeRequired?: boolean }).challengeRequired) {
+        setCaptchaRequired(true);
+        setCaptchaToken("");
+        captchaTokenRef.current = "";
+        setCaptchaRefreshKey((current) => current + 1);
+        setIdempotencyKey(crypto.randomUUID());
+      }
       setError(caught instanceof Error ? caught.message : "Não foi possível enviar. Tente novamente.");
     } finally {
+      submittingRef.current = false;
       setBusy(false);
     }
   }
+
+  const handleCaptchaToken = (token: string) => {
+    captchaTokenRef.current = token;
+    setCaptchaToken(token);
+  };
 
   return (
     <form
@@ -197,7 +217,15 @@ export function CmsLeadForm({
           {form.consent.text} <a href={form.consent.privacyPath}>Política de privacidade</a>.
         </span>
       </label>
-      {captchaRequired && <TurnstileChallenge onToken={setCaptchaToken} />}
+      {captchaRequired && (
+        <TurnstileChallenge
+          key={idempotencyKey}
+          onToken={handleCaptchaToken}
+          cData={idempotencyKey}
+          refreshKey={captchaRefreshKey}
+          tone={tone === "brand" ? "dark" : "light"}
+        />
+      )}
       <button className="cms-page-button" type="submit" disabled={busy || (captchaRequired && !captchaToken)}>
         {busy ? "Enviando…" : form.submitLabel}
       </button>

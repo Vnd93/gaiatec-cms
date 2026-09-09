@@ -353,7 +353,7 @@ function fixture() {
     mutatingEntityLifecycles: {
       status: "passed",
       environment: "staging confirmed by /healthz",
-      positivePublicLeadEvidence: "lead-capture-201-and-admin-responded",
+      positivePublicLeadEvidence: "iab-attested-lead-capture-and-admin-responded",
       editorialRelease: { status: "rolled_back" },
       auditPreserved: true,
     },
@@ -435,6 +435,23 @@ function fixture() {
         },
       },
       security: boundReport(),
+    },
+    realBrowser: {
+      status: "passed",
+      environment: "staging",
+      candidateSha: sha,
+      runTag,
+      channel: "iab-workflow-dispatch-hmac",
+      canonicalFrontendReleaseBound: true,
+      backendAccepted: true,
+      successLocator: '[data-form-submission-status="success"]',
+      successLocatorObserved: true,
+      officialWidgetObserved: true,
+      cDataBound: true,
+      tokenCaptured: false,
+      variableCleared: true,
+      screenshotSha256: "a".repeat(64),
+      screenshotBytes: 1024,
     },
     candidateSha: sha,
     environment: "staging",
@@ -924,6 +941,12 @@ test("recusa runTag divergente, baseline genérico ou tombstone identificável",
     () => materializeCmsTerminalCoverage(tombstoneLeak),
     /CMS_TERMINAL_CLEANUP_TOMBSTONE_INVALID/,
   );
+});
+
+test("recusa claim legado de lead sem atestação IAB", () => {
+  const legacy = fixture();
+  legacy.runtime.mutatingEntityLifecycles.positivePublicLeadEvidence = "lead-capture-201-and-admin-responded";
+  assert.throws(() => materializeCmsTerminalCoverage(legacy), /CMS_TERMINAL_ENTITY_LIFECYCLE_INCOMPLETE/);
 });
 
 test("recusa requisito funcional ou regra de negócio sem superfície terminal aprovada", () => {

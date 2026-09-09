@@ -39,7 +39,22 @@ function position(fragment) {
   return index;
 }
 
-test("the exact sealed preview completes every real-browser gate before canonical promotion", () => {
+function literalRunBody(stepName) {
+  const stepStart = position(`- name: ${stepName}`);
+  const nextStep = workflow.indexOf("\n      - ", stepStart + 1);
+  const block = workflow.slice(stepStart, nextStep === -1 ? workflow.length : nextStep);
+  const lines = block.split(/\r?\n/);
+  const runIndex = lines.findIndex((line) => /^ {8}run:\s*[|>]-?\s*$/.test(line));
+  assert.notEqual(runIndex, -1, `missing literal run body: ${stepName}`);
+  const body = [];
+  for (const line of lines.slice(runIndex + 1)) {
+    if (line.trim() && line.search(/\S/) <= 8) break;
+    body.push(line);
+  }
+  return body.join("\n");
+}
+
+test("sealed admin coverage and the canonical A/A IAB gate both complete before final promotion", () => {
   const preview = position("Deploy the single sealed artifact to an isolated production-project preview");
   const technicalProbe = position("Probe immutable shell in the isolated production-project preview");
   const corporateConfiguration = position("Require the complete corporate MFA preflight configuration");
@@ -49,6 +64,7 @@ test("the exact sealed preview completes every real-browser gate before canonica
   const functions = position("Deploy the complete exact-candidate Edge Function inventory");
   const fixture = position("Provision an isolated production MFA actor for the sealed preview cycle");
   const uiBootstrap = position("Create the complete UI-owned production fixture on the exact sealed preview");
+  const rendezvousCleanup = position("Clear the single-use production browser rendezvous variables");
   const semantic = position("Execute every semantic route control on the exact sealed preview");
   const terminal = position("Materialize the exact terminal production coverage matrix before promotion");
   const cleanup = position("Revoke the production browser actor after sealed-preview homologation");
@@ -62,7 +78,7 @@ test("the exact sealed preview completes every real-browser gate before canonica
   assert.ok(corporateConfiguration < functions);
   assert.ok(backend < fixture);
   assert.ok(fixture < uiBootstrap);
-  assert.ok(uiBootstrap < semantic);
+  assert.ok(uiBootstrap < rendezvousCleanup && rendezvousCleanup < semantic);
   assert.ok(semantic < cleanup);
   assert.ok(cleanup < outbox);
   assert.ok(outbox < residue);
@@ -80,12 +96,97 @@ test("the exact sealed preview completes every real-browser gate before canonica
     "--grep @security-production",
     "--grep @semantic",
     "materialize-cms-terminal-coverage.mjs",
+    "--setup outputs/cms-browser-production-setup.json",
     "--cleanup outputs/cms-browser-production-cleanup.json",
     "--residue ../g12-production-residue.json",
     "--state ../candidate/outputs/cms-browser-production-state.json",
     "QA_CMS_SEALED_PREVIEW_URL: ${{ steps.preflight.outputs.deployment-url }}",
+    "PLAYWRIGHT_BASE_URL: https://gaiatecsistemas.com.br",
+    "run-real-browser-attestation-consumer.mjs",
+    "outputs/cms-real-browser-attestation-production.json",
+    "outputs/cms-real-browser-attestation-production.png",
+    "env -u RELEASE_GUARD_TOKEN -u EVIDENCE_SALT npx playwright",
   ]) {
     assert.match(prePromotion, new RegExp(command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+  const iabBlock = workflow.slice(uiBootstrap, rendezvousCleanup);
+  const uiBootstrapPosition = iabBlock.indexOf("--grep @ui-bootstrap");
+  const consumerWaitPosition = iabBlock.lastIndexOf('wait "$real_browser_consumer_pid"');
+  const adminOpsPosition = iabBlock.indexOf("cms-admin-ops-cycles.spec.ts");
+  assert.ok(uiBootstrapPosition >= 0 && uiBootstrapPosition < consumerWaitPosition);
+  assert.ok(consumerWaitPosition < adminOpsPosition);
+  assert.doesNotMatch(iabBlock, /turnstile(?:Token|Response)|captchaToken|dummy/i);
+});
+
+test("production terminal materialization receives the exact complete CLI evidence set", () => {
+  const terminal = position("Materialize the exact terminal production coverage matrix before promotion");
+  const nextStep = workflow.indexOf("\n      - name:", terminal + 1);
+  const block = workflow.slice(terminal, nextStep);
+  const actualArguments = block
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("--"));
+  assert.deepEqual(actualArguments, [
+    "--inventory outputs/cms-coverage-production.json",
+    "--runtime outputs/cms-final-coverage-production.json",
+    "--setup outputs/cms-browser-production-setup.json",
+    "--auth outputs/cms-auth-lifecycle-production.json",
+    "--admin outputs/cms-admin-ops-cycles-production.json",
+    "--secondary outputs/cms-secondary-ui-cycles-production.json",
+    "--security outputs/cms-security-boundaries-production.json",
+    "--real-browser outputs/cms-real-browser-attestation-production.json",
+    "--real-browser-screenshot outputs/cms-real-browser-attestation-production.png",
+    '--run-id "${{ github.run_id }}"',
+    '--run-attempt "${{ github.run_attempt }}"',
+    '--control-sha "${{ github.sha }}"',
+    "--cleanup outputs/cms-browser-production-cleanup.json",
+    "--residue ../g12-production-residue.json",
+    '--sha "${{ inputs.candidate_sha }}"',
+    "--environment production",
+    "--output outputs/cms-terminal-coverage-matrix-production.json",
+  ]);
+});
+
+test("production consumes bridge evidence from the exact resolved workflow attempt", () => {
+  const verification = position("Verify bridge evidence and exact sealed rollback bytes");
+  const nextStep = workflow.indexOf("\n      - name:", verification + 1);
+  const block = workflow.slice(verification, nextStep);
+  assert.match(block, /EXPECTED_RUN_ID: \$\{\{ inputs\.frontend_bridge_run_id \}\}/);
+  assert.match(block, /EXPECTED_RUN_ATTEMPT: \$\{\{ steps\.frontend_bridge_run\.outputs\.run_attempt \}\}/);
+  assert.match(block, /verify-production-frontend-bridge-evidence\.mjs/);
+});
+
+test("rendezvous cleanup cannot prevent production compensation and remains terminally enforced", () => {
+  const cleanup = position("Finalize both single-use production browser rendezvous variables");
+  const marker = position("Resolve the immutable marker artifact metadata");
+  const compensation = position("Compensate Pages if final verification or mandatory upload fails");
+  const finalFailure = position("Fail closed when the terminal artifact was not captured");
+  assert.ok(cleanup < marker && marker < compensation && compensation < finalFailure);
+  const cleanupBlock = workflow.slice(cleanup, marker);
+  assert.match(cleanupBlock, /id: real_browser_rendezvous_cleanup/);
+  assert.match(cleanupBlock, /if: always\(\)/);
+  assert.match(cleanupBlock, /continue-on-error: true/);
+  assert.equal(cleanupBlock.match(/\|\| cleanup_status=1/g)?.length, 2);
+  assert.match(cleanupBlock, /exit "\$cleanup_status"/);
+  const compensationBlock = workflow.slice(compensation, finalFailure);
+  assert.match(compensationBlock, /steps\.real_browser_rendezvous_cleanup\.outcome == 'failure'/);
+  const terminalBlock = workflow.slice(finalFailure);
+  assert.match(terminalBlock, /steps\.real_browser_rendezvous_cleanup\.outcome == 'failure'/);
+});
+
+test("production rendezvous shell bodies receive workflow data only through environment bindings", () => {
+  for (const stepName of [
+    "Create the complete UI-owned production fixture on the exact sealed preview",
+    "Clear the single-use production browser rendezvous variables",
+    "Finalize both single-use production browser rendezvous variables",
+  ]) {
+    const body = literalRunBody(stepName);
+    assert.doesNotMatch(body, /\$\{\{\s*inputs\./);
+    assert.doesNotMatch(body, /\$\{\{\s*github\.(?:sha|run_id|run_attempt)/);
+    assert.match(body, /--candidate-sha "\$CANDIDATE_SHA"/);
+    assert.match(body, /--control-sha "\$(?:QA_CMS_CONTROL_SHA|CONTROL_SHA)"/);
+    assert.match(body, /--run-id "\$(?:QA_CMS_PARENT_RUN_ID|PARENT_RUN_ID)"/);
+    assert.match(body, /--run-attempt "\$(?:QA_CMS_PARENT_RUN_ATTEMPT|PARENT_RUN_ATTEMPT)"/);
   }
 });
 

@@ -4,9 +4,16 @@ import test from "node:test";
 import { CmsContentPayloadSchema } from "../../src/shared/contracts/cms-content.ts";
 import {
   bindUiCreatedStateToFixture,
+  buildEditorialCleanupSql,
+  buildFixtureAuditSql,
+  buildOwnedContentCleanupSql,
+  buildRecoveredFormRetirementSql,
   buildRouteDefinitions,
   capabilityManifestReady,
+  recoverInterruptedUiResourceBinding,
   resolveTarget,
+  retireRecoveredFormResources,
+  validateScopedRoleCleanupAssignments,
   validateFixtureState,
 } from "./cms-browser-fixture.mjs";
 
@@ -44,6 +51,80 @@ const featureKeys = [
   "ev2.ai_execute",
   "ev2.system_assurance",
 ];
+
+function createAdminMock(initialTables) {
+  const tables = structuredClone(initialTables);
+  const mutations = [];
+
+  class Query {
+    constructor(table) {
+      this.table = table;
+      this.action = "select";
+      this.value = null;
+      this.filters = [];
+    }
+
+    select() {
+      return this;
+    }
+
+    update(value) {
+      this.action = "update";
+      this.value = value;
+      return this;
+    }
+
+    insert(value) {
+      this.action = "insert";
+      this.value = value;
+      return this;
+    }
+
+    eq(column, value) {
+      this.filters.push((row) => row[column] === value);
+      return this;
+    }
+
+    neq(column, value) {
+      this.filters.push((row) => row[column] !== value);
+      return this;
+    }
+
+    like(column, value) {
+      const prefix = value.endsWith("%") ? value.slice(0, -1) : value;
+      this.filters.push((row) =>
+        value.endsWith("%") ? String(row[column] ?? "").startsWith(prefix) : row[column] === value,
+      );
+      return this;
+    }
+
+    async execute() {
+      const rows = tables[this.table] ?? [];
+      const matches = rows.filter((row) => this.filters.every((filter) => filter(row)));
+      if (this.action === "select") return { data: structuredClone(matches), error: null };
+      if (this.action === "update") {
+        for (const row of matches) Object.assign(row, structuredClone(this.value));
+        mutations.push({ table: this.table, action: "update", count: matches.length });
+        return { data: null, error: null };
+      }
+      const inserted = Array.isArray(this.value) ? this.value : [this.value];
+      rows.push(...structuredClone(inserted));
+      tables[this.table] = rows;
+      mutations.push({ table: this.table, action: "insert", count: inserted.length });
+      return { data: null, error: null };
+    }
+
+    then(resolve, reject) {
+      return this.execute().then(resolve, reject);
+    }
+  }
+
+  return {
+    admin: { from: (table) => new Query(table) },
+    mutations,
+    tables,
+  };
+}
 
 test("the staging and production targets are exact and production is literally SHA-authorized", () => {
   assert.deepEqual(resolveTarget("staging", sha), {
@@ -263,6 +344,491 @@ test("actor-only fixture state is bound to environment, project, SHA and synthet
       ),
     /QA_CMS_FIXTURE_STATE_REFUSED/,
   );
+  assert.equal(
+    validateFixtureState(
+      { ...state, leadFormId: "10000000-0000-4000-8000-000000000005" },
+      "staging",
+      state.projectRef,
+      sha,
+    ).leadFormId,
+    "10000000-0000-4000-8000-000000000005",
+  );
+});
+
+test("interrupted UI cleanup rediscovers and neutralizes the exact actor-owned form, lead and outbox", async () => {
+  const actorId = "10000000-0000-4000-8000-000000000001";
+  const formId = "10000000-0000-4000-8000-000000000005";
+  const versionId = "10000000-0000-4000-8000-000000000006";
+  const leadId = "10000000-0000-4000-8000-000000000007";
+  const campaignId = "20000000-0000-4000-8000-000000000008";
+  const outboxOneId = "10000000-0000-4000-8000-000000000008";
+  const outboxTwoId = "10000000-0000-4000-8000-000000000009";
+  const campaignPath = `/campanhas/qa-lead-${runTag.toLowerCase()}-deadbeef`;
+  const qaProvenance = {
+    qa_actor_id: actorId,
+    qa_run_tag: runTag,
+    qa_candidate_sha: sha,
+    qa_environment: "staging",
+  };
+  const state = {
+    schemaVersion: 1,
+    environment: "staging",
+    projectRef: "glcqsosxwgmlhzgcsnzv",
+    expectedSha: sha,
+    runTag,
+    status: "ready",
+    setupAudited: true,
+    authLifecycleEnabled: false,
+    actorId,
+    managedActorId: "10000000-0000-4000-8000-000000000002",
+    existingIdentityActorId: "10000000-0000-4000-8000-000000000003",
+    recoveryActorId: null,
+    invitedActorId: null,
+    leadId: null,
+    leadOutboxId: null,
+    leadFormId: null,
+    leadCampaignId: null,
+    leadReference: null,
+    leadStatus: null,
+    leadCampaignPath: null,
+    itemIds: [],
+    terminalArchivedTombstone: null,
+    documentIds: [],
+  };
+  const mock = createAdminMock({
+    cms_form_definitions: [
+      {
+        id: formId,
+        form_key: `qa-ops-${runTag.toLowerCase()}-deadbeef`,
+        status: "published",
+        active_version_id: versionId,
+        created_by: actorId,
+        updated_by: actorId,
+        ...qaProvenance,
+      },
+    ],
+    cms_form_versions: [{ id: versionId, form_id: formId, status: "published", created_by: actorId }],
+    cms_leads: [
+      {
+        id: leadId,
+        reference_code: "LD-QAINTERRUPTED",
+        form_id: formId,
+        form_version_id: versionId,
+        status: "responded",
+        anonymized_at: null,
+        origin_path: campaignPath,
+        origin_source: "campaign",
+        campaign_id: campaignId,
+        product_id: null,
+        payload: { email: "synthetic@example.invalid" },
+        utm: { source: "qa" },
+        ...qaProvenance,
+      },
+    ],
+    cms_content_items: [
+      {
+        id: campaignId,
+        content_type: "campaign",
+        slug: campaignPath.slice("/campanhas/".length),
+        workflow_status: "published",
+        created_by: actorId,
+        updated_by: actorId,
+      },
+    ],
+    cms_content_drafts: [
+      {
+        item_id: campaignId,
+        updated_by: actorId,
+        payload: {
+          contentType: "campaign",
+          title: `${runTag} CAMPANHA`,
+          route: { path: campaignPath },
+        },
+      },
+    ],
+    cms_lead_outbox: [
+      { id: outboxOneId, lead_id: leadId, status: "failed" },
+      { id: outboxTwoId, lead_id: leadId, status: "pending" },
+    ],
+    cms_lead_status_history: [],
+  });
+  let persisted = 0;
+
+  const recovered = await recoverInterruptedUiResourceBinding(state, mock.admin, {
+    environment: "staging",
+    candidateSha: sha,
+    persist: () => {
+      persisted += 1;
+    },
+  });
+
+  assert.equal(recovered.leadFormId, formId);
+  assert.equal(recovered.leadId, leadId);
+  assert.equal(recovered.leadCampaignId, campaignId);
+  assert.equal(recovered.leadReference, "LD-QAINTERRUPTED");
+  assert.equal(recovered.leadCampaignPath, campaignPath);
+  assert.equal(recovered.leadOutboxId, null, "multiple valid events are cleaned by lead, not guessed");
+  assert.equal(persisted, 1);
+  assert.equal(mock.tables.cms_leads.filter((lead) => !lead.anonymized_at).length, 1);
+  assert.equal(mock.tables.cms_lead_outbox.filter((entry) => entry.status !== "completed").length, 2);
+  assert.equal(mock.tables.cms_form_definitions.filter((form) => form.status !== "retired").length, 1);
+
+  const now = "2026-09-08T12:00:00.000Z";
+  let retirementSql = "";
+  await retireRecoveredFormResources(recovered, async (sql) => {
+    retirementSql = sql;
+    for (const version of mock.tables.cms_form_versions) {
+      if (version.form_id === recovered.leadFormId) version.status = "retired";
+    }
+    const form = mock.tables.cms_form_definitions.find(({ id }) => id === recovered.leadFormId);
+    Object.assign(form, { status: "retired", active_version_id: null, updated_by: recovered.actorId });
+    const lead = mock.tables.cms_leads[0];
+    Object.assign(lead, {
+      payload: {},
+      utm: {},
+      assigned_to: null,
+      status: "anonymized",
+      anonymized_at: now,
+      last_activity_at: now,
+    });
+    if (mock.tables.cms_lead_status_history.length === 0) {
+      mock.tables.cms_lead_status_history.push({
+        lead_id: lead.id,
+        from_status: recovered.leadStatus,
+        to_status: "anonymized",
+        reason: "QA synthetic fixture cleanup",
+        actor_id: recovered.actorId,
+      });
+    }
+    for (const outbox of mock.tables.cms_lead_outbox) {
+      Object.assign(outbox, { status: "completed", locked_at: null, completed_at: now });
+    }
+    return [{ retired: true }];
+  });
+  assert.match(retirementSql, /QA_CMS_FIXTURE_FORM_VERSION_AFFECTED_IDS_MISMATCH/);
+  assert.match(retirementSql, /QA_CMS_FIXTURE_LEAD_AFFECTED_IDS_MISMATCH/);
+  assert.match(retirementSql, /QA_CMS_FIXTURE_LEAD_OUTBOX_AFFECTED_IDS_MISMATCH/);
+  assert.ok(
+    retirementSql.indexOf("update public.cms_form_definitions") <
+      retirementSql.indexOf("update public.cms_leads"),
+    "the form is retired while locked before the lead is neutralized",
+  );
+
+  assert.deepEqual(mock.tables.cms_leads[0].payload, {});
+  assert.deepEqual(mock.tables.cms_leads[0].utm, {});
+  assert.equal(mock.tables.cms_leads[0].status, "anonymized");
+  assert.equal(mock.tables.cms_leads[0].anonymized_at, now);
+  assert.equal(mock.tables.cms_lead_status_history.length, 1, "cleanup audit history is preserved");
+  await retireRecoveredFormResources(recovered, async (sql) => {
+    assert.equal(sql, retirementSql, "idempotent retry uses the same bound transaction");
+    return [{ retired: true }];
+  });
+  assert.equal(mock.tables.cms_lead_status_history.length, 1, "idempotent retry does not duplicate history");
+  assert.equal(
+    mock.tables.cms_lead_outbox.every((entry) => entry.status === "completed"),
+    true,
+  );
+  assert.equal(
+    mock.tables.cms_form_versions.every((version) => version.status === "retired"),
+    true,
+  );
+  assert.equal(mock.tables.cms_form_definitions[0].status, "retired");
+  assert.equal(mock.tables.cms_form_definitions[0].active_version_id, null);
+});
+
+test("interrupted UI recovery refuses ambiguous forms before any mutation", async () => {
+  const actorId = "10000000-0000-4000-8000-000000000001";
+  const state = {
+    schemaVersion: 1,
+    environment: "staging",
+    projectRef: "glcqsosxwgmlhzgcsnzv",
+    expectedSha: sha,
+    runTag,
+    status: "ready",
+    setupAudited: true,
+    authLifecycleEnabled: false,
+    actorId,
+    managedActorId: "10000000-0000-4000-8000-000000000002",
+    existingIdentityActorId: "10000000-0000-4000-8000-000000000003",
+    recoveryActorId: null,
+    invitedActorId: null,
+    leadId: null,
+    leadOutboxId: null,
+    leadFormId: null,
+    leadCampaignId: null,
+    leadReference: null,
+    leadStatus: null,
+    leadCampaignPath: null,
+    itemIds: [],
+    terminalArchivedTombstone: null,
+    documentIds: [],
+  };
+  const exactProvenance = {
+    status: "published",
+    active_version_id: null,
+    created_by: actorId,
+    updated_by: actorId,
+    qa_actor_id: actorId,
+    qa_run_tag: runTag,
+    qa_candidate_sha: sha,
+    qa_environment: "staging",
+  };
+  const mock = createAdminMock({
+    cms_form_definitions: [
+      {
+        id: "10000000-0000-4000-8000-000000000005",
+        form_key: `qa-ops-${runTag.toLowerCase()}-deadbeef`,
+        ...exactProvenance,
+      },
+      {
+        id: "10000000-0000-4000-8000-000000000006",
+        form_key: `qa-ops-${runTag.toLowerCase()}-cafebabe`,
+        ...exactProvenance,
+      },
+    ],
+  });
+
+  await assert.rejects(
+    recoverInterruptedUiResourceBinding(state, mock.admin, {
+      environment: "staging",
+      candidateSha: sha,
+    }),
+    /QA_CMS_FIXTURE_OPERATIONAL_FORM_AMBIGUOUS/,
+  );
+  assert.deepEqual(mock.mutations, []);
+});
+
+test("form retirement validates ownership and affected IDs in the same locked transaction", async () => {
+  const state = {
+    actorId: "10000000-0000-4000-8000-000000000001",
+    leadFormId: "10000000-0000-4000-8000-000000000005",
+    runTag,
+    expectedSha: sha,
+    environment: "staging",
+  };
+  const sql = buildRecoveredFormRetirementSql(state);
+  const firstMutation = sql.indexOf("update public.cms_form_versions");
+  for (const preflight of [
+    "from auth.users actor",
+    "from private.cms_qa_actor_leases lease",
+    "from public.cms_profiles profile",
+    "from public.cms_form_definitions form",
+    "from public.cms_form_versions version",
+    "QA_CMS_FIXTURE_FORM_CARDINALITY_MISMATCH",
+    "QA_CMS_FIXTURE_FORM_PROVENANCE_MISMATCH",
+    "QA_CMS_FIXTURE_FORM_VERSION_PROVENANCE_MISMATCH",
+  ]) {
+    const position = sql.indexOf(preflight);
+    assert.ok(position >= 0 && position < firstMutation, `${preflight} must precede mutation`);
+  }
+  assert.match(sql, /^begin;/);
+  assert.match(sql, /order by form\.id for update/);
+  assert.match(sql, /order by version\.id for update/);
+  assert.match(
+    sql,
+    /where form\.id='10000000-0000-4000-8000-000000000005'::uuid or \(\s*form\.created_by='10000000-0000-4000-8000-000000000001'::uuid and \(/,
+  );
+  assert.doesNotMatch(sql, /where form\.id=.* or form\.form_key~/);
+  assert.match(sql, /\^qa-ops-qa-cms-final-20260907-aaaaaaaa-\[a-f0-9\]\{8\}\$/);
+  assert.match(sql, /row\(form\.qa_actor_id,form\.qa_run_tag,form\.qa_candidate_sha,form\.qa_environment\)/);
+  assert.match(sql, /version\.created_by is distinct from '10000000-0000-4000-8000-000000000001'::uuid/);
+  assert.match(sql, /returning version\.id/);
+  assert.match(sql, /v_changed_ids is distinct from v_mutable_version_ids/);
+  assert.match(sql, /returning form\.id/);
+  assert.match(sql, /v_changed_ids is distinct from v_mutable_form_ids/);
+  assert.match(sql, /QA_CMS_FIXTURE_FORM_TERMINAL_STATE_INVALID/);
+  assert.match(sql, /commit;\s*select true as retired;$/);
+
+  let calls = 0;
+  await retireRecoveredFormResources(state, async (statement) => {
+    calls += 1;
+    assert.equal(statement, sql);
+    return [{ retired: true }];
+  });
+  assert.equal(calls, 1, "preflight and mutation use one management transaction");
+  await assert.rejects(
+    retireRecoveredFormResources(state, async () => [{ retired: false }]),
+    /QA_CMS_FIXTURE_FORM_RETIREMENT_FAILED/,
+  );
+});
+
+test("form retirement refuses an unbound target before issuing a database query", async () => {
+  let calls = 0;
+  await assert.rejects(
+    retireRecoveredFormResources(
+      {
+        actorId: "10000000-0000-4000-8000-000000000001",
+        leadFormId: "10000000-0000-4000-8000-000000000005",
+        runTag,
+        expectedSha: "b".repeat(40),
+        environment: "staging",
+      },
+      async () => {
+        calls += 1;
+        return [{ retired: true }];
+      },
+    ),
+    /QA_CMS_FIXTURE_FORM_RETIREMENT_BINDING_INVALID/,
+  );
+  assert.equal(calls, 0);
+});
+
+test("form retirement recognizes the exact lease-sweeper terminal history on recovery", () => {
+  const sql = buildRecoveredFormRetirementSql({
+    actorId: "10000000-0000-4000-8000-000000000001",
+    leadId: "10000000-0000-4000-8000-000000000006",
+    leadOutboxId: "10000000-0000-4000-8000-000000000007",
+    leadFormId: "10000000-0000-4000-8000-000000000005",
+    leadCampaignId: "10000000-0000-4000-8000-000000000008",
+    leadReference: "LD-QASWEEPER",
+    leadStatus: "anonymized",
+    leadCampaignPath: `/campanhas/qa-lead-${runTag.toLowerCase()}-deadbeef`,
+    runTag,
+    expectedSha: sha,
+    environment: "staging",
+  });
+  assert.match(sql, /history\.reason in \('QA synthetic fixture cleanup','QA synthetic lease expired'\)/);
+  assert.match(
+    sql,
+    /history\.from_status in \('new','assigned','in_service','responded','converted','disqualified','archived'\)/,
+  );
+  assert.match(sql, /if 'anonymized'='anonymized' or\s+v_lead\.status is distinct from 'anonymized'/);
+});
+
+test("same-SHA retired forms from another actor are outside the retirement candidate set", () => {
+  const sql = buildRecoveredFormRetirementSql({
+    actorId: "10000000-0000-4000-8000-000000000001",
+    leadFormId: "10000000-0000-4000-8000-000000000005",
+    runTag,
+    expectedSha: sha,
+    environment: "staging",
+  });
+  const actorScopedCandidates =
+    sql.match(
+      /form\.id='10000000-0000-4000-8000-000000000005'::uuid or \(\s*form\.created_by='10000000-0000-4000-8000-000000000001'::uuid and \(\s*form\.form_key~/g,
+    ) ?? [];
+  assert.equal(actorScopedCandidates.length, 2);
+});
+
+test("editorial cleanup is one locked transaction with exact graph bindings and form-first mutation", () => {
+  const actorIds = ["10000000-0000-4000-8000-000000000001", "10000000-0000-4000-8000-000000000002"];
+  const itemIds = ["10000000-0000-4000-8000-000000000020", "10000000-0000-4000-8000-000000000021"];
+  const state = {
+    actorId: actorIds[0],
+    leadId: "10000000-0000-4000-8000-000000000006",
+    leadOutboxId: "10000000-0000-4000-8000-000000000007",
+    leadFormId: "10000000-0000-4000-8000-000000000005",
+    leadCampaignId: itemIds[1],
+    leadReference: "LD-QAEDITORIAL",
+    leadStatus: "new",
+    leadCampaignPath: `/campanhas/qa-lead-${runTag.toLowerCase()}-deadbeef`,
+    runTag,
+    expectedSha: sha,
+    environment: "staging",
+  };
+  const contentSql = buildOwnedContentCleanupSql(state, actorIds, itemIds);
+  for (const preflight of [
+    "from auth.users actor",
+    "from private.cms_qa_actor_leases lease",
+    "from public.cms_content_items item",
+    "from public.cms_content_drafts draft",
+    "from public.cms_publications publication",
+    "from public.cms_published_projection projection",
+    "from public.cms_route_rules route",
+    "from public.cms_publication_outbox outbox",
+    "QA_CMS_FIXTURE_CONTENT_CARDINALITY_MISMATCH",
+    "QA_CMS_FIXTURE_CONTENT_PROVENANCE_MISMATCH",
+  ]) {
+    const position = contentSql.indexOf(preflight);
+    assert.ok(
+      position >= 0 && position < contentSql.indexOf("update public.cms_content_items"),
+      `${preflight} must precede mutation`,
+    );
+  }
+  for (const exactMutation of [
+    "QA_CMS_FIXTURE_CONTENT_AFFECTED_IDS_MISMATCH",
+    "QA_CMS_FIXTURE_PUBLICATION_AFFECTED_IDS_MISMATCH",
+    "QA_CMS_FIXTURE_PROJECTION_AFFECTED_IDS_MISMATCH",
+    "QA_CMS_FIXTURE_ROUTE_AFFECTED_IDS_MISMATCH",
+    "QA_CMS_FIXTURE_PUBLICATION_OUTBOX_AFFECTED_IDS_MISMATCH",
+    "QA_CMS_FIXTURE_CONTENT_TERMINAL_STATE_INVALID",
+  ]) {
+    assert.match(contentSql, new RegExp(exactMutation));
+  }
+  assert.match(contentSql, /returning item\.id/);
+  assert.match(contentSql, /returning publication\.item_id/);
+  assert.match(contentSql, /returning projection\.item_id/);
+  assert.match(contentSql, /returning route\.id/);
+  assert.match(contentSql, /returning outbox\.id/);
+
+  const combined = buildEditorialCleanupSql(state, actorIds, itemIds);
+  assert.match(combined, /^begin;/);
+  assert.equal((combined.match(/^commit;$/gm) ?? []).length, 1);
+  assert.equal((combined.match(/^select true as cleaned;$/gm) ?? []).length, 1);
+  assert.ok(
+    combined.indexOf("update public.cms_form_definitions") < combined.indexOf("update public.cms_leads") &&
+      combined.indexOf("update public.cms_leads") < combined.indexOf("update public.cms_content_items"),
+    "form, lead and content cleanup must remain ordered inside the same transaction",
+  );
+  assert.throws(
+    () => buildOwnedContentCleanupSql(state, [actorIds[1]], itemIds),
+    /QA_CMS_FIXTURE_CONTENT_CLEANUP_BINDING_INVALID/,
+  );
+});
+
+test("scoped-role cleanup rejects cross-user targets and accepts only exact QA provenance", () => {
+  const actorIds = ["10000000-0000-4000-8000-000000000001", "10000000-0000-4000-8000-000000000002"];
+  const assignment = {
+    id: "10000000-0000-4000-8000-000000000010",
+    user_id: actorIds[1],
+    role_key: "reviewer",
+    site_key: "main",
+    environment: "staging",
+    grant_type: "delegated",
+    reason: `${runTag} concessão restaurada para teardown.`,
+    expires_at: "2026-09-08T13:00:00.000Z",
+    granted_by: actorIds[0],
+    revoked_at: null,
+    lock_version: 2,
+  };
+  assert.deepEqual(
+    validateScopedRoleCleanupAssignments([assignment], actorIds, { runTag, environment: "staging" }),
+    [assignment],
+  );
+  assert.throws(
+    () =>
+      validateScopedRoleCleanupAssignments(
+        [{ ...assignment, user_id: "10000000-0000-4000-8000-000000000099" }],
+        actorIds,
+        { runTag, environment: "staging" },
+      ),
+    /QA_CMS_FIXTURE_SCOPED_ROLE_CLEANUP_PROVENANCE_MISMATCH/,
+  );
+  assert.throws(
+    () =>
+      validateScopedRoleCleanupAssignments([{ ...assignment, reason: "foreign" }], actorIds, {
+        runTag,
+        environment: "staging",
+      }),
+    /QA_CMS_FIXTURE_SCOPED_ROLE_CLEANUP_PROVENANCE_MISMATCH/,
+  );
+});
+
+test("fixture audit receipt is deterministic, locked and insertion-idempotent", () => {
+  const input = [
+    "10000000-0000-4000-8000-000000000001",
+    "cleanup",
+    runTag,
+    { environment: "staging", candidateSha: sha },
+  ];
+  const first = buildFixtureAuditSql(...input);
+  const second = buildFixtureAuditSql(...input);
+  assert.equal(first, second);
+  assert.match(first, /from auth\.users actor where actor\.id=.* for update/);
+  assert.match(first, /from private\.cms_qa_actor_leases lease where lease\.actor_id=.* for update/);
+  assert.match(first, /if v_total>1 or \(v_total=1 and v_exact<>1\)/);
+  assert.match(first, /if v_total=0 then\s*insert into public\.cms_audit_log/);
+  assert.match(first, /commit;\s*select true as recorded;$/);
 });
 
 test("the executable stays fail-closed and leaves no active synthetic surface", () => {
@@ -332,8 +898,8 @@ test("the executable stays fail-closed and leaves no active synthetic surface", 
   assert.match(source, /QA_CMS_FIXTURE_DOCUMENT_BLOB_RESIDUE/);
   assert.match(source, /QA_CMS_FIXTURE_DOCUMENT_BLOB_VERIFICATION_FAILED/);
   assert.match(source, /activeDocuments/);
-  assert.match(source, /workflow_status: "archived"/);
-  assert.match(source, /from\("cms_route_rules"\)\s*\.update\(\{ active: false \}\)/);
+  assert.match(source, /update public\.cms_content_items item set workflow_status='archived'/);
+  assert.match(source, /update public\.cms_route_rules route set active=false/);
   assert.match(
     source,
     /function terminalGonePath\(\)[\s\S]*`\/qa-cms-final-gone-\$\{expectedSha\.slice\(0, 8\)\}`/,
@@ -343,7 +909,7 @@ test("the executable stays fail-closed and leaves no active synthetic surface", 
   assert.match(source, /payload\?\.title !== `\$\{state\.runTag\} gone`/);
   assert.match(source, /payload\?\.summary !== "Página sintética para validar retirada gone\."/);
   assert.match(source, /status_code: 410, destination_path: null/);
-  assert.match(source, /QA_CMS_FIXTURE_PUBLICATION_OUTBOX_TERMINALIZATION_FAILED/);
+  assert.match(source, /QA_CMS_FIXTURE_PUBLICATION_OUTBOX_AFFECTED_IDS_MISMATCH/);
   assert.match(source, /\.in\("status", \["pending", "processing", "failed"\]\)/);
   assert.match(source, /actionablePublicationOutbox/);
   assert.match(source, /terminalArchivedTombstoneEvidence/);
@@ -357,9 +923,9 @@ test("the executable stays fail-closed and leaves no active synthetic surface", 
   );
   assert.match(finalCoverageSource, /const revisionOneTitle = `\$\{runTag\} gone`/);
   assert.match(finalCoverageSource, /summary: "Página sintética para validar retirada gone\."/);
-  assert.match(source, /from\("cms_publication_outbox"\)\.upsert/);
-  assert.match(source, /from\("cms_publications"\)\.delete\(\)/);
-  assert.match(source, /from\("cms_published_projection"\)\s*\.delete\(\)/);
+  assert.match(source, /insert into public\.cms_publication_outbox/);
+  assert.match(source, /delete from public\.cms_publications/);
+  assert.match(source, /delete from public\.cms_published_projection/);
   assert.match(source, /from\("cms_scoped_role_assignments"\)/);
   assert.match(
     source,
@@ -371,8 +937,12 @@ test("the executable stays fail-closed and leaves no active synthetic surface", 
   assert.match(source, /sessions_valid_after: now/);
   assert.match(source, /ban_duration: "876000h"/);
   assert.match(source, /from\("cms_lead_outbox"\)/);
+  assert.match(
+    source,
+    /from\("cms_form_versions"\)[\s\S]*?\.eq\("form_id", state\.leadFormId\)[\s\S]*?\.neq\("status", "retired"\)/,
+  );
   assert.match(source, /from\("cms_ai_execution_approvals"\)/);
-  assert.match(source, /status: "retired", active_version_id: null/);
+  assert.match(source, /set status='retired',active_version_id=null,updated_by=/);
   assert.match(source, /cms:qa\.fixture_setup/);
   assert.match(source, /cms:qa\.fixture_cleanup/);
   assert.match(source, /credentialsInStateOrReport: false/);

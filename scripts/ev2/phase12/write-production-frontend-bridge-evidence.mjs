@@ -62,15 +62,16 @@ const stateResult = validateFrontendBridgeState(state, {
 });
 if (!stateResult.valid)
   throw new Error(`G12_FRONTEND_BRIDGE_STATE_REFUSED:${stateResult.violations.join(",")}`);
-for (const [label, probeBytes, environment, profile] of [
-  ["preview", previewProbeBytes, "production-preview", "full"],
-  ["production", productionProbeBytes, "production", "full"],
+for (const [label, probeBytes, environment, profile, expectedOrigin] of [
+  ["preview", previewProbeBytes, "production-preview", "full", process.env.PREVIEW_DEPLOYMENT_ORIGIN],
+  ["production", productionProbeBytes, "production", "full", "https://gaiatecsistemas.com.br"],
 ]) {
   const report = JSON.parse(probeBytes.toString("utf8"));
   const result = validatePublicBridgeRolloutProbe(report, {
     candidateSha: state.candidateSha,
     environment,
     probeProfile: profile,
+    origin: expectedOrigin,
   });
   if (!result.valid) throw new Error(`G12_FRONTEND_BRIDGE_${String(label).toUpperCase()}_PROBE_REFUSED`);
 }
@@ -98,13 +99,14 @@ const stagingEvidence = JSON.parse(bytes.stagingEvidence.toString("utf8"));
 const stagingResult = validateStagingFrontendBridgeEvidence(stagingEvidence, {
   candidateSha: state.candidateSha,
   runId: process.env.STAGING_BRIDGE_RUN_ID,
+  runAttempt: process.env.STAGING_BRIDGE_RUN_ATTEMPT,
   controlSha: process.env.STAGING_BRIDGE_CONTROL_SHA,
 });
 if (!stagingResult.valid)
   throw new Error(`G12_FRONTEND_BRIDGE_STAGING_EVIDENCE_REFUSED:${stagingResult.violations.join(",")}`);
 const evidence = {
   ...state,
-  schemaVersion: 2,
+  schemaVersion: 5,
   event: "g12.production.frontend_bridge.promoted",
   preview: {
     deploymentId: process.env.PREVIEW_DEPLOYMENT_ID ?? "",
@@ -134,7 +136,11 @@ const evidence = {
     artifactDigest: process.env.STAGING_BRIDGE_ARTIFACT_DIGEST ?? "",
     evidenceSha256: sha256Bytes(bytes.stagingEvidence),
     canonicalDeploymentId: stagingEvidence.canonical.deploymentId,
-    functional: stagingEvidence.functionalCanaries.canonical,
+    canonicalHeadless: stagingEvidence.headlessCanaries.canonical,
+    compatibilityScope: stagingEvidence.compatibilityScope,
+    positiveBrowserRequiredAfterFullCandidateDeploy:
+      stagingEvidence.positiveBrowserRequiredAfterFullCandidateDeploy,
+    backendMutation: stagingEvidence.backendMutation,
   },
   productionSafety: {
     mode: "read-only-old-backend",
@@ -145,6 +151,10 @@ const evidence = {
     productionProbeSha256: sha256Bytes(productionProbeBytes),
     previewReadOnlySha256: sha256Bytes(previewReadOnlyBytes),
     productionReadOnlySha256: sha256Bytes(productionReadOnlyBytes),
+    positiveBrowserGate: "deferred-to-full-candidate-deploy",
+    positiveBrowserGateOwner: ".github/workflows/deploy-production.yml",
+    positiveBrowserSubmissionAttempted: false,
+    positiveBrowserHomologationClaimed: false,
   },
   rollbackReady: true,
 };

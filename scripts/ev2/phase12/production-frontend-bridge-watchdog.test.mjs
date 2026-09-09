@@ -345,7 +345,16 @@ test("evidence writer obtains preview identity only from validated post-deploy o
     resolve(root, "scripts/ev2/phase12/write-production-frontend-bridge-evidence.mjs"),
     "utf8",
   );
+  const verifier = await readFile(
+    resolve(root, "scripts/ev2/phase12/verify-production-frontend-bridge-evidence.mjs"),
+    "utf8",
+  );
   assert.doesNotMatch(source, /state\.preview/);
   assert.match(source, /process\.env\.PREVIEW_DEPLOYMENT_ID/);
   assert.match(source, /process\.env\.PREVIEW_CREATED_ON/);
+  assert.match(source, /runAttempt: process\.env\.STAGING_BRIDGE_RUN_ATTEMPT/);
+  assert.match(source, /process\.env\.PREVIEW_DEPLOYMENT_ORIGIN/);
+  assert.match(source, /"https:\/\/gaiatecsistemas\.com\.br"/);
+  assert.match(source, /origin: expectedOrigin/);
+  assert.match(verifier, /runAttempt: process\.env\.EXPECTED_RUN_ATTEMPT/);
 });

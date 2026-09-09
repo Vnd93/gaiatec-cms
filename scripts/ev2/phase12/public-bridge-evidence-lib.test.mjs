@@ -5,11 +5,128 @@ import { createHash } from "node:crypto";
 
 import {
   validatePublicBridgeForwardCanary,
+  validatePublicBridgeHeadlessCanary,
   validatePublicBridgeReadOnlyCanary,
   validatePublicBridgeRolloutProbe,
 } from "./public-bridge-evidence-lib.mjs";
 
 const SHA = "a".repeat(40);
+const PREVIEW_DEPLOYMENT_ID = "123e4567-e89b-42d3-a456-426614174001";
+const CANONICAL_DEPLOYMENT_ID = "123e4567-e89b-42d3-a456-426614174002";
+const PREVIEW_ORIGIN = "https://ev2-g12-canary.gaiatec-cms-staging.pages.dev";
+const PREVIEW_DEPLOYMENT_ORIGIN = "https://12345678.gaiatec-cms-staging.pages.dev";
+
+const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+
+function headlessReport() {
+  return {
+    schemaVersion: 1,
+    event: "g12.public_bridge.headless_canary",
+    status: "passed",
+    environment: "staging",
+    frontendSha: SHA,
+    backendContract: "legacy-f48",
+    origin: PREVIEW_ORIGIN,
+    deploymentOrigin: PREVIEW_DEPLOYMENT_ORIGIN,
+    deploymentIdentitySha256: sha256(PREVIEW_DEPLOYMENT_ID),
+    fixtureBindingSha256: "2".repeat(64),
+    contracts: {
+      page: "legacy-row-normalized-and-rendered",
+      campaign: "legacy-row-normalized-and-rendered",
+      form: "legacy-f48-normalized-and-rendered",
+      turnstile: "configured-real-widget-load-requested",
+      submission: "disabled-without-token",
+    },
+    observations: {
+      renderedPages: 1,
+      renderedCampaigns: 1,
+      renderedForms: 1,
+      turnstileScriptRequests: 1,
+      turnstileRequestFailures: 1,
+      turnstileConsoleFailures: 1,
+      backendMutationRequests: 0,
+      unexpectedConsole: 0,
+      requestFailures: 0,
+    },
+    boundary: {
+      uuidInDomOrStorage: 0,
+      tokenObserved: false,
+      submitDisabledWithoutToken: true,
+      unavailableFeedbackVisible: true,
+      intentionalFailureMode: "turnstile-network-unavailable",
+      secretsPersisted: false,
+    },
+  };
+}
+
+test("accepts the headless real-widget failure proof only with zero submission", () => {
+  assert.deepEqual(
+    validatePublicBridgeHeadlessCanary(headlessReport(), {
+      candidateSha: SHA,
+      environment: "staging",
+      origin: PREVIEW_ORIGIN,
+      deploymentOrigin: PREVIEW_DEPLOYMENT_ORIGIN,
+      deploymentId: PREVIEW_DEPLOYMENT_ID,
+    }),
+    { valid: true, violations: [] },
+  );
+  const mutation = headlessReport();
+  mutation.observations.backendMutationRequests = 1;
+  assert.ok(
+    validatePublicBridgeHeadlessCanary(mutation, {
+      origin: PREVIEW_ORIGIN,
+      deploymentOrigin: PREVIEW_DEPLOYMENT_ORIGIN,
+      deploymentId: PREVIEW_DEPLOYMENT_ID,
+    }).violations.includes("headless_observations_invalid"),
+  );
+  const falseTokenClaim = headlessReport();
+  falseTokenClaim.boundary.tokenObserved = true;
+  assert.ok(
+    validatePublicBridgeHeadlessCanary(falseTokenClaim, {
+      origin: PREVIEW_ORIGIN,
+      deploymentOrigin: PREVIEW_DEPLOYMENT_ORIGIN,
+      deploymentId: PREVIEW_DEPLOYMENT_ID,
+    }).violations.includes("headless_boundary_invalid"),
+  );
+});
+
+test("rejects cross-substituted staging deployment identity and origin evidence", () => {
+  const substitutedIdentity = headlessReport();
+  substitutedIdentity.deploymentIdentitySha256 = sha256(CANONICAL_DEPLOYMENT_ID);
+  assert.ok(
+    validatePublicBridgeHeadlessCanary(substitutedIdentity, {
+      candidateSha: SHA,
+      environment: "staging",
+      origin: PREVIEW_ORIGIN,
+      deploymentOrigin: PREVIEW_DEPLOYMENT_ORIGIN,
+      deploymentId: PREVIEW_DEPLOYMENT_ID,
+    }).violations.includes("headless_deployment_invalid"),
+  );
+
+  const substitutedOrigin = headlessReport();
+  substitutedOrigin.origin = "https://ev2-g17-canary.gaiatec-cms-staging.pages.dev";
+  assert.ok(
+    validatePublicBridgeHeadlessCanary(substitutedOrigin, {
+      candidateSha: SHA,
+      environment: "staging",
+      origin: PREVIEW_ORIGIN,
+      deploymentOrigin: PREVIEW_DEPLOYMENT_ORIGIN,
+      deploymentId: PREVIEW_DEPLOYMENT_ID,
+    }).violations.includes("headless_origin_invalid"),
+  );
+
+  const substitutedDeploymentOrigin = headlessReport();
+  substitutedDeploymentOrigin.deploymentOrigin = "https://ev2-g17-canary.gaiatec-cms-staging.pages.dev";
+  assert.ok(
+    validatePublicBridgeHeadlessCanary(substitutedDeploymentOrigin, {
+      candidateSha: SHA,
+      environment: "staging",
+      origin: PREVIEW_ORIGIN,
+      deploymentOrigin: PREVIEW_DEPLOYMENT_ORIGIN,
+      deploymentId: PREVIEW_DEPLOYMENT_ID,
+    }).violations.includes("headless_deployment_invalid"),
+  );
+});
 
 function metric(samples) {
   return {
@@ -67,51 +184,153 @@ test("accepts the actual rollout-probe total and per-route sample semantics", ()
   );
 });
 
+test("rejects rollout probes substituted across exact preview and canonical origins", () => {
+  const preview = {
+    ...report(),
+    environment: "production-preview",
+    origin: "https://wrong.gaiatec-website.pages.dev",
+  };
+  assert.ok(
+    validatePublicBridgeRolloutProbe(preview, {
+      candidateSha: SHA,
+      environment: "production-preview",
+      probeProfile: "full",
+      origin: "https://expected.gaiatec-website.pages.dev",
+    }).violations.includes("rollout_origin_invalid"),
+  );
+
+  const canonical = { ...report(), origin: "https://www.gaiatecsistemas.com.br" };
+  assert.ok(
+    validatePublicBridgeRolloutProbe(canonical, {
+      candidateSha: SHA,
+      environment: "production",
+      probeProfile: "full",
+      origin: "https://gaiatecsistemas.com.br",
+    }).violations.includes("rollout_origin_invalid"),
+  );
+});
+
 function forwardReport() {
   return {
-    schemaVersion: 1,
+    schemaVersion: 3,
     event: "g12.public_bridge.forward_compatibility",
     status: "passed",
     environment: "staging",
-    frontendSha: SHA,
-    backendContract: "forward-expand-contract",
+    candidateSha: SHA,
+    deploymentIdentitySha256: sha256(CANONICAL_DEPLOYMENT_ID),
+    proofMode: "direct-remote-negative-contract",
+    backendContract: "candidate-a-strict-turnstile",
     origin: "https://ev2-g17-canary.gaiatec-cms-staging.pages.dev",
     fixtureBindingSha256: "f".repeat(64),
-    contracts: {
-      frontendAToCandidate: "public-v2-exact-201",
-      loadedF48TabToCandidate: "legacy-f48-exact-201",
-      duplicateReplay: "legacy-f48-same-idempotency-201-duplicate",
-      productIdor: "legacy-product-id-unbound-422",
-      hybridEnvelope: "mixed-generation-400",
+    requestShapes: {
+      legacyEnvelope: "form-id-version-without-captcha-token",
+      hybridEnvelope: "legacy-plus-form-key-version-without-captcha-token",
     },
-    observations: {
-      modernAccepted: 1,
-      legacyAccepted: 1,
-      duplicateAccepted: 1,
-      productIdorRejected: 1,
-      hybridRejected: 1,
-      automaticRetries: 0,
+    remoteObservations: {
+      health: {
+        status: 200,
+        environment: "staging",
+        releaseSha: SHA,
+        releaseHeaderSha: SHA,
+      },
+      legacyEnvelope: {
+        status: 403,
+        error: "Confirme a verificação de segurança.",
+        challengeRequired: true,
+      },
+      hybridEnvelope: { status: 400, error: "Revise os campos do formulário." },
     },
-    boundary: { responseIds: 0, secretsPersisted: false },
+    evidenceScope: {
+      observedHere: [
+        "candidate-health-release-and-environment",
+        "legacy-envelope-without-captcha-token-403",
+        "hybrid-envelope-400",
+      ],
+      notObservedHere: [
+        "baseline-f48-browser-execution",
+        "browser-reload",
+        "positive-form-submission",
+        "turnstile-action-evaluation",
+        "turnstile-hostname-evaluation",
+        "turnstile-cdata-evaluation",
+      ],
+      complementaryEvidence: {
+        adversarialTurnstilePolicy: "tests/unit/security-origin.test.ts",
+        successfulCandidateBrowser: "cms-real-browser-attestation.json",
+      },
+    },
+    boundary: {
+      responseIdentifiersPersisted: 0,
+      secretsPersisted: false,
+    },
   };
 }
 
-test("accepts all three forward bridge directions and strict negative cases", () => {
-  assert.deepEqual(validatePublicBridgeForwardCanary(forwardReport(), { candidateSha: SHA }), {
+const forwardExpected = { candidateSha: SHA, deploymentId: CANONICAL_DEPLOYMENT_ID };
+
+test("accepts only remote negative observations bound to the exact candidate deployment", () => {
+  assert.deepEqual(validatePublicBridgeForwardCanary(forwardReport(), forwardExpected), {
     valid: true,
     violations: [],
   });
 });
 
-test("rejects omitted, extra, hybrid or retried forward evidence", () => {
-  const retry = forwardReport();
-  retry.observations.automaticRetries = 1;
-  assert.ok(validatePublicBridgeForwardCanary(retry).violations.includes("forward_observations_invalid"));
+test("rejects altered remote observations, scope or extra positive claims", () => {
+  const accepted = forwardReport();
+  accepted.remoteObservations.legacyEnvelope.status = 201;
   assert.ok(
-    validatePublicBridgeForwardCanary({ ...forwardReport(), rawPayload: {} }).violations.includes(
-      "forward_schema_invalid",
+    validatePublicBridgeForwardCanary(accepted, forwardExpected).violations.includes(
+      "forward_observations_invalid",
     ),
   );
+  const overScoped = forwardReport();
+  overScoped.evidenceScope.notObservedHere = overScoped.evidenceScope.notObservedHere.filter(
+    (claim) => claim !== "browser-reload",
+  );
+  assert.ok(
+    validatePublicBridgeForwardCanary(overScoped, forwardExpected).violations.includes(
+      "forward_scope_invalid",
+    ),
+  );
+  assert.ok(
+    validatePublicBridgeForwardCanary(
+      { ...forwardReport(), positiveSubmissionAccepted: true },
+      forwardExpected,
+    ).violations.includes("forward_schema_invalid"),
+  );
+});
+
+test("rejects a substituted candidate or deployment binding", () => {
+  assert.ok(
+    validatePublicBridgeForwardCanary(forwardReport(), {
+      ...forwardExpected,
+      candidateSha: "b".repeat(40),
+    }).violations.includes("forward_binding_invalid"),
+  );
+  assert.ok(
+    validatePublicBridgeForwardCanary(forwardReport(), {
+      ...forwardExpected,
+      deploymentId: PREVIEW_DEPLOYMENT_ID,
+    }).violations.includes("forward_binding_invalid"),
+  );
+});
+
+test("rejects every browser-only overclaim from the API-only forward canary", () => {
+  for (const [key, value] of [
+    ["baselineFrontendSha", "f48bb4530566456a0090a98cd39caf1cacb51b09"],
+    ["reloadRequired", true],
+    ["actionRequired", true],
+    ["hostnameRequired", true],
+    ["cdataRequired", true],
+  ]) {
+    assert.ok(
+      validatePublicBridgeForwardCanary(
+        { ...forwardReport(), [key]: value },
+        forwardExpected,
+      ).violations.includes("forward_schema_invalid"),
+      `${key} must not be accepted as an observation of this API-only canary`,
+    );
+  }
 });
 
 test("rejects a mathematically inconsistent response total", () => {

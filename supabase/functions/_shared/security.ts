@@ -19,14 +19,16 @@ export function isAllowedHostname(hostname: string | undefined): boolean {
 }
 
 export function isAllowedTurnstileVerification(
-  result: { success?: boolean; hostname?: string; action?: string },
+  result: { success?: boolean; hostname?: string; action?: string; cdata?: string },
   secret: string,
   expectedAction: string,
+  expectedCdata: string,
 ): boolean {
   return isTurnstileVerificationAccepted(result, {
     secret,
     environment: Deno.env.get("CMS_ENVIRONMENT"),
     expectedAction,
+    expectedCdata,
     configuredHostnames: Deno.env.get("TURNSTILE_ALLOWED_HOSTNAMES"),
     configuredOrigins: Deno.env.get("ALLOWED_ORIGINS"),
   });

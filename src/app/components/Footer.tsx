@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { Phone, MessageSquare, Mail, ArrowRight, Loader2, CheckCircle2, Linkedin, Instagram, Facebook, Youtube } from "lucide-react";
 import { usePublishedSiteShell } from "@/public/site-shell-context";
@@ -52,6 +52,9 @@ export function Footer() {
     import.meta.env.VITE_CONTACT_CAPTCHA_ALWAYS === "true",
   );
   const [newsletterCaptchaToken, setNewsletterCaptchaToken] = useState("");
+  const newsletterCaptchaTokenRef = useRef("");
+  const [newsletterCaptchaRefreshKey, setNewsletterCaptchaRefreshKey] = useState(0);
+  const newsletterSubmittingRef = useRef(false);
   const [newsletterIdempotencyKey, setNewsletterIdempotencyKey] = useState(() =>
     crypto.randomUUID(),
   );
@@ -75,7 +78,17 @@ export function Footer() {
 
   const handleNewsletter = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim() || !newsletterConsent || !newsletterForm || nlStatus === "submitting") return;
+    const captchaTokenForAttempt = newsletterCaptchaTokenRef.current || undefined;
+    if (
+      !email.trim() ||
+      !newsletterConsent ||
+      !newsletterForm ||
+      newsletterSubmittingRef.current ||
+      nlStatus === "submitting" ||
+      (newsletterCaptchaRequired && !captchaTokenForAttempt)
+    )
+      return;
+    newsletterSubmittingRef.current = true;
     setNlStatus("submitting");
     try {
       const emailField = newsletterForm.fields.find((field) => field.type === "email");
@@ -95,7 +108,7 @@ export function Footer() {
         source: "newsletter",
         consentAccepted: newsletterConsent,
         honeypot: newsletterWebsite,
-        captchaToken: newsletterCaptchaToken || undefined,
+        captchaToken: captchaTokenForAttempt,
       });
       setNlStatus("success");
       setEmail("");
@@ -103,13 +116,27 @@ export function Footer() {
       setNewsletterWebsite("");
       setNewsletterCaptchaRequired(import.meta.env.VITE_CONTACT_CAPTCHA_ALWAYS === "true");
       setNewsletterCaptchaToken("");
+      newsletterCaptchaTokenRef.current = "";
+      setNewsletterCaptchaRefreshKey((current) => current + 1);
       setNewsletterIdempotencyKey(crypto.randomUUID());
       setTimeout(() => setNlStatus("idle"), 6000);
     } catch (caught) {
-      if ((caught as Error & { challengeRequired?: boolean }).challengeRequired)
+      if ((caught as Error & { challengeRequired?: boolean }).challengeRequired) {
         setNewsletterCaptchaRequired(true);
+        setNewsletterCaptchaToken("");
+        newsletterCaptchaTokenRef.current = "";
+        setNewsletterCaptchaRefreshKey((current) => current + 1);
+        setNewsletterIdempotencyKey(crypto.randomUUID());
+      }
       setNlStatus("error");
+    } finally {
+      newsletterSubmittingRef.current = false;
     }
+  };
+
+  const handleNewsletterCaptchaToken = (token: string) => {
+    newsletterCaptchaTokenRef.current = token;
+    setNewsletterCaptchaToken(token);
   };
 
   const connectLinks = [
@@ -125,6 +152,8 @@ export function Footer() {
   ].filter((item): item is NonNullable<typeof item> => item !== null);
   const socialLinks = (settings?.socialLinks ?? []).map((item) => ({
     ...item,
+    href: item.url,
+    label: item.network,
     icon: SOCIAL_ICONS[item.network.toLowerCase()] ?? Linkedin,
   }));
 
@@ -175,7 +204,12 @@ export function Footer() {
                   />
                   <button
                     type="submit"
-                    disabled={nlStatus === "submitting" || newsletterFormLoading || !newsletterForm}
+                    disabled={
+                      nlStatus === "submitting" ||
+                      newsletterFormLoading ||
+                      !newsletterForm ||
+                      (newsletterCaptchaRequired && !newsletterCaptchaToken)
+                    }
                     className="inline-flex items-center justify-center gap-2 bg-[#0057DE] text-white px-6 py-3 text-[13px] uppercase tracking-[0.06em] hover:bg-[#0046b3] transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex-shrink-0"
                     style={{ fontWeight: 700 }}
                   >
@@ -200,7 +234,13 @@ export function Footer() {
                   </span>
                 </label>
                 {newsletterCaptchaRequired && (
-                  <TurnstileChallenge onToken={setNewsletterCaptchaToken} />
+                  <TurnstileChallenge
+                    key={newsletterIdempotencyKey}
+                    onToken={handleNewsletterCaptchaToken}
+                    cData={newsletterIdempotencyKey}
+                    refreshKey={newsletterCaptchaRefreshKey}
+                    tone="dark"
+                  />
                 )}
                 {!newsletterFormLoading && !newsletterForm && (
                   <p className="text-[13px] text-amber-300 mt-2.5" role="status">

@@ -160,7 +160,23 @@ async function verify() {
 async function get() {
   const output = resolve(argument("file"));
   const current = await github(variablePath, { allowNotFound: true });
-  if (!current.found) throw new Error("G12_RECOVERY_STATE_STORE_MISSING");
+  if (!current.found) {
+    if (!process.argv.includes("--allow-missing")) throw new Error("G12_RECOVERY_STATE_STORE_MISSING");
+    if (process.env.GITHUB_OUTPUT)
+      await appendFile(
+        process.env.GITHUB_OUTPUT,
+        `variable=${variable}\nsource=absent\nstate_present=false\n`,
+        "utf8",
+      );
+    console.log(
+      JSON.stringify({
+        event: "g12.recovery_state.confirmed_absent",
+        kind,
+        secretsDisclosed: false,
+      }),
+    );
+    return;
+  }
   const stored = parseStored(current.payload);
   const result = verifyRecoveryStateVariable(stored, hmacKey, expectedBinding());
   if (!result.valid) throw new Error(`G12_RECOVERY_STATE_STORE_READ_REFUSED:${result.violations.join(",")}`);
@@ -171,7 +187,11 @@ async function get() {
     flag: "wx",
   });
   if (process.env.GITHUB_OUTPUT)
-    await appendFile(process.env.GITHUB_OUTPUT, `variable=${variable}\nsource=variable\n`, "utf8");
+    await appendFile(
+      process.env.GITHUB_OUTPUT,
+      `variable=${variable}\nsource=variable\nstate_present=true\n`,
+      "utf8",
+    );
   console.log(
     JSON.stringify({
       event: "g12.recovery_state.recovered",

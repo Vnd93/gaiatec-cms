@@ -195,6 +195,7 @@ jobs:
         working-directory: control
         env:
           EXPECTED_RUN_ID: ${{ inputs.frontend_bridge_run_id }}
+          EXPECTED_RUN_ATTEMPT: ${{ steps.frontend_bridge_run.outputs.run_attempt }}
           EXPECTED_CONTROL_SHA: ${{ steps.frontend_bridge_run.outputs.control_sha }}
           EXPECTED_RELEASE: ${{ inputs.candidate_sha }}
         run: |
@@ -681,7 +682,7 @@ jobs:
           QA_CMS_PRODUCTION_READONLY_PREFLIGHT_REQUIRED: "true"
           QA_CMS_PRODUCTION_PREFLIGHT_REPORT_PATH: outputs/cms-production-readonly-preflight.json
           QA_CMS_EXPECTED_SHA: ${{ inputs.candidate_sha }}
-          QA_CMS_CANONICAL_BASELINE_SHA: ${{ steps.baseline.outputs.release }}
+          QA_CMS_CANONICAL_FRONTEND_SHA: ${{ steps.baseline.outputs.release }}
           QA_CMS_TARGET_ENVIRONMENT: production
           QA_CMS_PRODUCTION_AUTHORIZATION: ${{ inputs.confirmation }}
           QA_CMS_SEALED_PREVIEW_URL: ${{ steps.preflight.outputs.deployment-url }}
@@ -718,11 +719,31 @@ jobs:
         working-directory: candidate
         run: |
           set -euo pipefail
-          npx playwright test tests/e2e/cms-auth-lifecycle.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @mutating
-          npx playwright test tests/e2e/cms-final-coverage.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @ui-bootstrap
-          npx playwright test tests/e2e/cms-admin-ops-cycles.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @mutating
-          npx playwright test tests/e2e/cms-secondary-ui-cycles.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @mutating
-          npx playwright test tests/e2e/cms-security-boundaries.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @security-production
+          run_browser() {
+            env -u RELEASE_GUARD_TOKEN -u EVIDENCE_SALT npx playwright "$@"
+          }
+          run_browser test tests/e2e/cms-auth-lifecycle.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @mutating
+          node scripts/ev2/phase12/run-real-browser-attestation-consumer.mjs \
+            --environment production \
+            --candidate-sha "$CANDIDATE_SHA" \
+            --control-sha "$QA_CMS_CONTROL_SHA" \
+            --run-id "$QA_CMS_PARENT_RUN_ID" \
+            --run-attempt "$QA_CMS_PARENT_RUN_ATTEMPT" \
+            --run-tag "$QA_CMS_RUN_TAG" \
+            --challenge-file outputs/cms-real-browser-challenge-production.json \
+            --output-json outputs/cms-real-browser-attestation-production.json \
+            --output-png outputs/cms-real-browser-attestation-production.png \
+            --challenge-wait-seconds 2100 &
+          real_browser_consumer_pid=$!
+          trap 'kill "$real_browser_consumer_pid" 2>/dev/null || true; wait "$real_browser_consumer_pid" 2>/dev/null || true' EXIT
+          trap 'kill "$real_browser_consumer_pid" 2>/dev/null || true; wait "$real_browser_consumer_pid" 2>/dev/null || true; exit 130' INT
+          trap 'kill "$real_browser_consumer_pid" 2>/dev/null || true; wait "$real_browser_consumer_pid" 2>/dev/null || true; exit 143' TERM
+          run_browser test tests/e2e/cms-final-coverage.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @ui-bootstrap
+          wait "$real_browser_consumer_pid"
+          trap - EXIT INT TERM
+          run_browser test tests/e2e/cms-admin-ops-cycles.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @mutating
+          run_browser test tests/e2e/cms-secondary-ui-cycles.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @mutating
+          run_browser test tests/e2e/cms-security-boundaries.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @security-production
         env:
           PLAYWRIGHT_BASE_URL: https://gaiatecsistemas.com.br
           QA_CMS_SEALED_PREVIEW_URL: ${{ steps.preflight.outputs.deployment-url }}
@@ -736,6 +757,45 @@ jobs:
           QA_CMS_EXPECTED_SHA: ${{ inputs.candidate_sha }}
           QA_CMS_TARGET_ENVIRONMENT: production
           QA_CMS_PRODUCTION_AUTHORIZATION: ${{ inputs.confirmation }}
+          QA_CMS_REAL_BROWSER_REQUIRED: "true"
+          QA_CMS_REAL_BROWSER_CHALLENGE_PATH: outputs/cms-real-browser-challenge-production.json
+          QA_CMS_REAL_BROWSER_ATTESTATION_PATH: outputs/cms-real-browser-attestation-production.json
+          QA_CMS_REAL_BROWSER_SCREENSHOT_PATH: outputs/cms-real-browser-attestation-production.png
+          QA_CMS_PARENT_RUN_ID: ${{ github.run_id }}
+          QA_CMS_PARENT_RUN_ATTEMPT: ${{ github.run_attempt }}
+          QA_CMS_CONTROL_SHA: ${{ github.sha }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          GITHUB_REPOSITORY: Vnd93/gaiatec-cms
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          EVIDENCE_SALT: ${{ secrets.EVIDENCE_SALT }}
+      - name: Clear the single-use production browser rendezvous variables
+        if: always()
+        timeout-minutes: 5
+        working-directory: candidate
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CONTROL_SHA: ${{ github.sha }}
+          PARENT_RUN_ID: ${{ github.run_id }}
+          PARENT_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_REPOSITORY: Vnd93/gaiatec-cms
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          EVIDENCE_SALT: ${{ secrets.EVIDENCE_SALT }}
+        run: |
+          set -euo pipefail
+          cleanup_status=0
+          node scripts/ev2/phase12/run-real-browser-attestation-consumer.mjs clear-challenge \
+            --environment production \
+            --run-id "$PARENT_RUN_ID" \
+            --run-attempt "$PARENT_RUN_ATTEMPT" \
+            --allow-missing || cleanup_status=1
+          node scripts/ev2/phase12/real-browser-attestation-store.mjs clear \
+            --environment production \
+            --candidate-sha "$CANDIDATE_SHA" \
+            --run-id "$PARENT_RUN_ID" \
+            --run-attempt "$PARENT_RUN_ATTEMPT" \
+            --control-sha "$CONTROL_SHA" \
+            --allow-missing || cleanup_status=1
+          exit "$cleanup_status"
       - name: Execute every semantic route control on the exact sealed preview
         timeout-minutes: 25
         working-directory: candidate
@@ -815,10 +875,16 @@ jobs:
           node scripts/qa/materialize-cms-terminal-coverage.mjs
           --inventory outputs/cms-coverage-production.json
           --runtime outputs/cms-final-coverage-production.json
+          --setup outputs/cms-browser-production-setup.json
           --auth outputs/cms-auth-lifecycle-production.json
           --admin outputs/cms-admin-ops-cycles-production.json
           --secondary outputs/cms-secondary-ui-cycles-production.json
           --security outputs/cms-security-boundaries-production.json
+          --real-browser outputs/cms-real-browser-attestation-production.json
+          --real-browser-screenshot outputs/cms-real-browser-attestation-production.png
+          --run-id "${{ github.run_id }}"
+          --run-attempt "${{ github.run_attempt }}"
+          --control-sha "${{ github.sha }}"
           --cleanup outputs/cms-browser-production-cleanup.json
           --residue ../g12-production-residue.json
           --sha "${{ inputs.candidate_sha }}"
@@ -1168,6 +1234,8 @@ jobs:
             candidate/outputs/cms-production-readonly-preflight.json
             candidate/outputs/cms-final-coverage-production.json
             candidate/outputs/cms-admin-ops-cycles-production.json
+            candidate/outputs/cms-real-browser-attestation-production.json
+            candidate/outputs/cms-real-browser-attestation-production.png
             candidate/outputs/cms-secondary-ui-cycles-production.json
             candidate/outputs/cms-security-boundaries-production.json
             candidate/outputs/cms-terminal-coverage-matrix-production.json
@@ -1207,6 +1275,36 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: control/.nvmrc
+      - name: Finalize both single-use production browser rendezvous variables
+        id: real_browser_rendezvous_cleanup
+        if: always()
+        continue-on-error: true
+        timeout-minutes: 5
+        working-directory: control
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CONTROL_SHA: ${{ github.sha }}
+          PARENT_RUN_ID: ${{ github.run_id }}
+          PARENT_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_REPOSITORY: Vnd93/gaiatec-cms
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          EVIDENCE_SALT: ${{ secrets.EVIDENCE_SALT }}
+        run: |
+          set -euo pipefail
+          cleanup_status=0
+          node scripts/ev2/phase12/run-real-browser-attestation-consumer.mjs clear-challenge \
+            --environment production \
+            --run-id "$PARENT_RUN_ID" \
+            --run-attempt "$PARENT_RUN_ATTEMPT" \
+            --allow-missing || cleanup_status=1
+          node scripts/ev2/phase12/real-browser-attestation-store.mjs clear \
+            --environment production \
+            --candidate-sha "$CANDIDATE_SHA" \
+            --run-id "$PARENT_RUN_ID" \
+            --run-attempt "$PARENT_RUN_ATTEMPT" \
+            --control-sha "$CONTROL_SHA" \
+            --allow-missing || cleanup_status=1
+          exit "$cleanup_status"
       - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3
         with:
           version: 2.116.0
@@ -1642,6 +1740,7 @@ jobs:
         if: >-
           always() && needs.deploy.result == 'success' && !failure() &&
           steps.marker.outcome == 'success' &&
+          steps.real_browser_rendezvous_cleanup.outcome == 'success' &&
           steps.terminal_evidence_upload.outcome == 'success'
         timeout-minutes: 5
         working-directory: control
@@ -1657,7 +1756,8 @@ jobs:
         id: finalizer_terminal_compensation
         if: >-
           always() && steps.marker.outcome == 'success' &&
-          (failure() || steps.terminal_evidence_upload.outcome != 'success')
+          (failure() || steps.real_browser_rendezvous_cleanup.outcome == 'failure' ||
+          steps.terminal_evidence_upload.outcome != 'success')
         timeout-minutes: 10
         working-directory: control
         env:
@@ -1688,7 +1788,8 @@ jobs:
       - name: Fail closed when the terminal artifact was not captured
         if: >-
           always() && steps.marker.outcome == 'success' &&
-          steps.terminal_evidence_upload.outcome != 'success'
+          (steps.real_browser_rendezvous_cleanup.outcome == 'failure' ||
+          steps.terminal_evidence_upload.outcome != 'success')
         run: exit 1
       - name: Fail closed when the production deploy job was skipped
         if: always() && needs.deploy.result == 'skipped'

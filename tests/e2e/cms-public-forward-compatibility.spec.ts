@@ -1,4 +1,4 @@
-import { expect, test, type BrowserContext, type Route } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
@@ -8,7 +8,22 @@ import { loadCmsUiCreatedState, type CmsUiCreatedState } from "./cms-ui-created-
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const FULL_SHA = /^[a-f0-9]{40}$/;
+const CANONICAL_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const UUID_ANYWHERE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i;
+const STAGING_ORIGIN = "https://ev2-g17-canary.gaiatec-cms-staging.pages.dev";
+const OBSERVED_HERE = [
+  "candidate-health-release-and-environment",
+  "legacy-envelope-without-captcha-token-403",
+  "hybrid-envelope-400",
+] as const;
+const NOT_OBSERVED_HERE = [
+  "baseline-f48-browser-execution",
+  "browser-reload",
+  "positive-form-submission",
+  "turnstile-action-evaluation",
+  "turnstile-hostname-evaluation",
+  "turnstile-cdata-evaluation",
+] as const;
 
 type RecordValue = Record<string, unknown>;
 
@@ -27,6 +42,7 @@ function configuration(baseURL: string | undefined) {
   const origin = new URL(baseURL ?? "https://invalid.invalid");
   const supabase = new URL(process.env.QA_CMS_BRIDGE_SUPABASE_URL ?? "https://invalid.invalid");
   const anonKey = process.env.QA_CMS_BRIDGE_SUPABASE_ANON_KEY ?? "";
+  const deploymentId = process.env.QA_CMS_FORWARD_DEPLOYMENT_ID ?? "";
   const statePath = process.env.QA_CMS_UI_CREATED_STATE_PATH ?? "outputs/cms-ui-created-state.json";
   const stateFile = resolve(root, statePath);
   const stateFromRoot = relative(root, stateFile);
@@ -44,11 +60,12 @@ function configuration(baseURL: string | undefined) {
   })();
   if (
     !FULL_SHA.test(candidateSha) ||
-    origin.origin !== "https://ev2-g17-canary.gaiatec-cms-staging.pages.dev" ||
+    origin.origin !== STAGING_ORIGIN ||
     origin.pathname !== "/" ||
     supabase.origin !== "https://glcqsosxwgmlhzgcsnzv.supabase.co" ||
     supabase.pathname !== "/" ||
     !anonKey ||
+    !CANONICAL_UUID.test(deploymentId) ||
     !stateFromRoot ||
     stateFromRoot === ".." ||
     stateFromRoot.startsWith("../") ||
@@ -59,6 +76,7 @@ function configuration(baseURL: string | undefined) {
     throw new Error("QA_CMS_FORWARD_CONFIGURATION_REFUSED");
   return {
     candidateSha,
+    deploymentId,
     origin: origin.origin,
     supabaseOrigin: supabase.origin,
     anonKey,
@@ -73,201 +91,134 @@ function configuration(baseURL: string | undefined) {
   };
 }
 
-function assertModernRequest(value: unknown, state: CmsUiCreatedState) {
-  if (
-    !exactKeys(value, [
-      "formKey",
-      "formVersion",
-      "submissionToken",
-      "fields",
-      "origin",
-      "consent",
-      "honeypot",
-      "captchaToken",
-    ]) ||
-    value.formKey !== state.form.key ||
-    value.formVersion !== 1 ||
-    !/^[a-f0-9]{32}$/.test(String(value.submissionToken ?? "")) ||
-    !exactKeys(value.origin, ["path", "source", "campaignPath", "utm"]) ||
-    value.origin.path !== state.lead.campaignPath ||
-    value.origin.source !== "campaign" ||
-    value.origin.campaignPath !== state.lead.campaignPath ||
-    !exactKeys(value.origin.utm, []) ||
-    !exactKeys(value.consent, ["accepted", "text", "version"]) ||
-    value.consent.accepted !== true ||
-    typeof value.consent.text !== "string" ||
-    typeof value.consent.version !== "string" ||
-    value.honeypot !== "" ||
-    typeof value.captchaToken !== "string" ||
-    value.captchaToken.length < 10 ||
-    !exactKeys(value.fields, ["email"])
-  )
-    throw new Error("QA_CMS_FORWARD_MODERN_ENVELOPE_REFUSED");
-  return value;
-}
-
-function legacyCampaignBody(modern: RecordValue, state: CmsUiCreatedState) {
-  return {
+function staleF48CampaignBody(state: CmsUiCreatedState) {
+  const body = {
     formId: state.form.id,
     formVersionId: state.form.versionId,
     idempotencyKey: randomUUID(),
-    fields: modern.fields,
+    fields: { email: `qa-forward-stale-${randomUUID()}@example.invalid` },
     origin: {
       path: state.lead.campaignPath,
       source: "campaign",
       campaignId: state.ids.campaignId,
       utm: {},
     },
-    consent: modern.consent,
+    consent: {
+      accepted: true,
+      text: `${state.runTag} consentimento sintético exclusivo de homologação.`,
+      version: "qa-v2",
+    },
     honeypot: "",
-    captchaToken: modern.captchaToken,
   };
+  if (
+    !exactKeys(body, [
+      "formId",
+      "formVersionId",
+      "idempotencyKey",
+      "fields",
+      "origin",
+      "consent",
+      "honeypot",
+    ]) ||
+    "captchaToken" in body
+  ) {
+    throw new Error("QA_CMS_FORWARD_STALE_F48_ENVELOPE_REFUSED");
+  }
+  return body;
 }
 
-async function submitCampaign(
-  context: BrowserContext,
-  state: CmsUiCreatedState,
-  rewrite?: (modern: RecordValue) => RecordValue,
-) {
-  const page = await context.newPage();
-  let requestCount = 0;
-  let original: RecordValue | null = null;
-  let rewritten: RecordValue | null = null;
-  if (rewrite) {
-    await page.route("**/functions/v1/lead-capture", async (route: Route) => {
-      requestCount += 1;
-      original = assertModernRequest(route.request().postDataJSON(), state);
-      rewritten = rewrite(original);
-      const headers: Record<string, string> = {
-        ...route.request().headers(),
-        "content-type": "application/json",
-      };
-      delete headers["content-length"];
-      await route.continue({ headers, postData: JSON.stringify(rewritten) });
-    });
-  } else {
-    page.on("request", (request) => {
-      if (request.method() === "POST" && new URL(request.url()).pathname.endsWith("/lead-capture")) {
-        requestCount += 1;
-        original = assertModernRequest(request.postDataJSON(), state);
-      }
-    });
-  }
-  try {
-    const navigation = await page.goto(state.lead.campaignPath, { waitUntil: "domcontentloaded" });
-    expect(navigation?.status()).toBe(200);
-    const form = page.locator(`form[data-form-key="${state.form.key}"]`);
-    await expect(form).toBeVisible({ timeout: 20_000 });
-    await form.locator('input[type="email"]').fill(`qa-forward-${randomUUID()}@example.invalid`);
-    await form.locator('input[name="consent"]').check();
-    await expect(page.getByLabel("Verificação de segurança")).toBeVisible();
-    const submit = form.getByRole("button", { name: "Enviar teste sintético" });
-    await expect(submit).toBeEnabled({ timeout: 60_000 });
-    const responsePromise = page.waitForResponse(
-      (response) =>
-        response.request().method() === "POST" &&
-        new URL(response.url()).pathname.endsWith("/functions/v1/lead-capture"),
-      { timeout: 45_000 },
-    );
-    await submit.click();
-    const response = await responsePromise;
-    expect(requestCount).toBe(1);
-    return { response, original: original!, rewritten };
-  } finally {
-    await page.close();
-  }
-}
-
-test("@public-forward prova A e aba f48 contra backend candidato sem fallback frouxo", async ({
-  browser,
+test("@public-forward prova por requisições remotas que envelopes obsoletos falham fechados", async ({
+  request,
   baseURL,
 }) => {
   const config = configuration(baseURL);
-  test.setTimeout(6 * 60_000);
-  const context = await browser.newContext({ baseURL: config.origin, serviceWorkers: "block" });
-  try {
-    const modern = await submitCampaign(context, config.state);
-    const modernPayload = (await modern.response.json()) as RecordValue;
-    expect(modern.response.status()).toBe(201);
-    expect(exactKeys(modernPayload, ["reference", "duplicate"])).toBe(true);
-    expect(modernPayload.duplicate).toBe(false);
+  test.setTimeout(90_000);
+  const endpoint = `${config.supabaseOrigin}/functions/v1/lead-capture`;
+  const headers = {
+    apikey: config.anonKey,
+    Origin: config.origin,
+    "Content-Type": "application/json",
+  };
+  const staleF48Body = staleF48CampaignBody(config.state);
 
-    let legacyBody: RecordValue | null = null;
-    const legacy = await submitCampaign(context, config.state, (request) => {
-      legacyBody = legacyCampaignBody(request, config.state);
-      return legacyBody;
-    });
-    const legacyPayload = (await legacy.response.json()) as RecordValue;
-    expect(legacy.response.status()).toBe(201);
-    expect(exactKeys(legacyPayload, ["reference", "duplicate"])).toBe(true);
-    expect(legacyPayload.duplicate).toBe(false);
-    expect(legacyBody).not.toBeNull();
+  const health = await request.get(`${config.origin}/healthz`, {
+    headers: { "cache-control": "no-store" },
+  });
+  const healthPayload = (await health.json()) as RecordValue;
+  expect(health.status()).toBe(200);
+  expect(healthPayload).toMatchObject({
+    environment: "staging",
+    release: config.candidateSha,
+  });
+  expect(health.headers()["x-release"]).toBe(config.candidateSha);
 
-    const duplicate = await context.request.post(`${config.supabaseOrigin}/functions/v1/lead-capture`, {
-      headers: { apikey: config.anonKey, Origin: config.origin, "Content-Type": "application/json" },
-      data: legacyBody!,
-    });
-    const duplicatePayload = (await duplicate.json()) as RecordValue;
-    expect(duplicate.status()).toBe(201);
-    expect(exactKeys(duplicatePayload, ["reference", "duplicate"])).toBe(true);
-    expect(duplicatePayload.reference).toBe(legacyPayload.reference);
-    expect(duplicatePayload.duplicate).toBe(true);
+  const legacy = await request.post(endpoint, { headers, data: staleF48Body });
+  expect(legacy.status()).toBe(403);
+  const legacyPayload = (await legacy.json()) as RecordValue;
+  expect(legacyPayload).toEqual({
+    error: "Confirme a verificação de segurança.",
+    challengeRequired: true,
+  });
 
-    const productIdor = await submitCampaign(context, config.state, (request) => ({
-      ...legacyCampaignBody(request, config.state),
-      idempotencyKey: randomUUID(),
-      origin: {
-        path: `/produtos/${config.state.runTag.toLowerCase()}-produto`,
-        source: "product",
-        productId: config.state.ids.productId,
-        utm: {},
+  const hybrid = await request.post(endpoint, {
+    headers,
+    data: { ...staleF48Body, formKey: config.state.form.key, formVersion: 1 },
+  });
+  expect(hybrid.status()).toBe(400);
+  const hybridPayload = (await hybrid.json()) as RecordValue;
+  expect(hybridPayload).toEqual({ error: "Revise os campos do formulário." });
+
+  const report = {
+    schemaVersion: 3,
+    event: "g12.public_bridge.forward_compatibility",
+    status: "passed",
+    environment: "staging",
+    candidateSha: config.candidateSha,
+    deploymentIdentitySha256: createHash("sha256").update(config.deploymentId).digest("hex"),
+    proofMode: "direct-remote-negative-contract",
+    backendContract: "candidate-a-strict-turnstile",
+    origin: config.origin,
+    fixtureBindingSha256: createHash("sha256")
+      .update(`${config.state.runTag}:${config.state.form.key}:${config.candidateSha}:${config.deploymentId}`)
+      .digest("hex"),
+    requestShapes: {
+      legacyEnvelope: "form-id-version-without-captcha-token",
+      hybridEnvelope: "legacy-plus-form-key-version-without-captcha-token",
+    },
+    remoteObservations: {
+      health: {
+        status: health.status(),
+        environment: String(healthPayload.environment ?? ""),
+        releaseSha: String(healthPayload.release ?? ""),
+        releaseHeaderSha: health.headers()["x-release"] ?? "",
       },
-    }));
-    expect(productIdor.response.status()).toBe(422);
-    expect(await productIdor.response.json()).toEqual({ error: "Origem do formulário inválida." });
-
-    const hybrid = await context.request.post(`${config.supabaseOrigin}/functions/v1/lead-capture`, {
-      headers: { apikey: config.anonKey, Origin: config.origin, "Content-Type": "application/json" },
-      data: { ...legacyBody!, formKey: config.state.form.key, formVersion: 1 },
-    });
-    expect(hybrid.status()).toBe(400);
-    expect(await hybrid.json()).toEqual({ error: "Revise os campos do formulário." });
-
-    const report = {
-      schemaVersion: 1,
-      event: "g12.public_bridge.forward_compatibility",
-      status: "passed",
-      environment: "staging",
-      frontendSha: config.candidateSha,
-      backendContract: "forward-expand-contract",
-      origin: config.origin,
-      fixtureBindingSha256: createHash("sha256")
-        .update(`${config.state.runTag}:${config.state.form.key}:${config.candidateSha}`)
-        .digest("hex"),
-      contracts: {
-        frontendAToCandidate: "public-v2-exact-201",
-        loadedF48TabToCandidate: "legacy-f48-exact-201",
-        duplicateReplay: "legacy-f48-same-idempotency-201-duplicate",
-        productIdor: "legacy-product-id-unbound-422",
-        hybridEnvelope: "mixed-generation-400",
+      legacyEnvelope: {
+        status: legacy.status(),
+        error: String(legacyPayload.error ?? ""),
+        challengeRequired: legacyPayload.challengeRequired,
       },
-      observations: {
-        modernAccepted: 1,
-        legacyAccepted: 1,
-        duplicateAccepted: 1,
-        productIdorRejected: 1,
-        hybridRejected: 1,
-        automaticRetries: 0,
+      hybridEnvelope: {
+        status: hybrid.status(),
+        error: String(hybridPayload.error ?? ""),
       },
-      boundary: { responseIds: 0, secretsPersisted: false },
-    };
-    const serialized = `${JSON.stringify(report, null, 2)}\n`;
-    if (UUID_ANYWHERE.test(serialized) || serialized.includes(config.anonKey)) {
-      throw new Error("QA_CMS_FORWARD_EVIDENCE_SENSITIVE");
-    }
-    mkdirSync(dirname(config.reportFile), { recursive: true });
-    writeFileSync(config.reportFile, serialized, { mode: 0o600 });
-  } finally {
-    await context.close();
+    },
+    evidenceScope: {
+      observedHere: OBSERVED_HERE,
+      notObservedHere: NOT_OBSERVED_HERE,
+      complementaryEvidence: {
+        adversarialTurnstilePolicy: "tests/unit/security-origin.test.ts",
+        successfulCandidateBrowser: "cms-real-browser-attestation.json",
+      },
+    },
+    boundary: {
+      responseIdentifiersPersisted: 0,
+      secretsPersisted: false,
+    },
+  };
+  const serialized = `${JSON.stringify(report, null, 2)}\n`;
+  if (UUID_ANYWHERE.test(serialized) || serialized.includes(config.anonKey)) {
+    throw new Error("QA_CMS_FORWARD_EVIDENCE_SENSITIVE");
   }
+  mkdirSync(dirname(config.reportFile), { recursive: true });
+  writeFileSync(config.reportFile, serialized, { mode: 0o600 });
 });

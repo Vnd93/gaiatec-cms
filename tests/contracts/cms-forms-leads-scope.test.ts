@@ -147,9 +147,12 @@ describe("authoritative forms and leads QA scope", () => {
     expect(finalCoverage).toContain('getByRole("button", { name: "Novo formulário", exact: true }).click()');
     expect(finalCoverage).toContain('"cms-leads",\n    "save_form"');
     expect(finalCoverage).toContain('"cms-leads",\n    "publish_form"');
-    expect(finalCoverage).toContain(
-      'new URL(response.url()).pathname.endsWith("/functions/v1/lead-capture")',
-    );
+    expect(finalCoverage).toContain("createCmsRealBrowserChallenge");
+    expect(finalCoverage).toContain("waitForCmsRealBrowserAttestation");
+    expect(finalCoverage).toContain("selectSingleAttestedLead(initialItems, reference)");
+    expect(finalCoverage).toContain("reference_code: `eq.${reference}`");
+    expect(finalCoverage).toContain("emailHashMatched");
+    expect(finalCoverage).not.toMatch(/turnstile(?:Token|Response)|captchaToken/i);
     expect(finalCoverage).toContain("writeCmsUiCreatedState");
     expect(uiCreatedState).toContain("QA_CMS_UI_STATE_BINDING_INVALID");
     expect(uiCreatedState).toContain('form.status !== "published"');

@@ -178,6 +178,7 @@ jobs:
         working-directory: control
         env:
           EXPECTED_RUN_ID: ${{ inputs.staging_bridge_run_id }}
+          EXPECTED_RUN_ATTEMPT: ${{ steps.staging_bridge_run.outputs.run_attempt }}
           EXPECTED_CONTROL_SHA: ${{ steps.staging_bridge_run.outputs.control_sha }}
           EXPECTED_RELEASE: ${{ inputs.candidate_sha }}
         run: >-
@@ -577,6 +578,7 @@ jobs:
         working-directory: control
         env:
           EXPECTED_RUN_ID: ${{ github.run_id }}
+          EXPECTED_RUN_ATTEMPT: ${{ github.run_attempt }}
           EXPECTED_CONTROL_SHA: ${{ github.sha }}
           EXPECTED_RELEASE: ${{ inputs.candidate_sha }}
           EXPECTED_DEPLOYMENT_ID: ${{ steps.promote.outputs.deployment-id }}

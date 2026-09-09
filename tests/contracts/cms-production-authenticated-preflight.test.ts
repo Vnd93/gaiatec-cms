@@ -68,6 +68,11 @@ describe("production authenticated read-only sealed-artifact preflight", () => {
     expect(browser).toContain("tokensPersisted: false");
     expect(browser).toContain("canonicalFrontendDuringPreflightSha");
     expect(browser).toContain("preparedBackendCandidateSha");
+    expect(workflow).toContain("QA_CMS_CANONICAL_FRONTEND_SHA: ${{ steps.baseline.outputs.release }}");
+    expect(workflow).not.toContain("QA_CMS_CANONICAL_BASELINE_SHA");
+    expect(browser).toContain("requireCanonicalFrontendCandidate(");
+    expect(browser).toContain("process.env.QA_CMS_CANONICAL_FRONTEND_SHA");
+    expect(releaseEvidence).toContain("payload?.canonicalFrontendDuringPreflightSha === candidateSha");
     expect(browser).toContain('test.use({ trace: "off", screenshot: "off", video: "off" })');
   });
 

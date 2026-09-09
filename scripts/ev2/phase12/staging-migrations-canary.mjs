@@ -2120,7 +2120,9 @@ async function residue() {
     retainedCmsAuditEvents: cmsAudit.json.length,
     retainedRdoAuditEvents: rdoAudit.json.length,
     retainedSyntheticActors: ids.length,
-    semantics: "zero-active-residue; archived fixtures and immutable audit retained",
+    semantics: ids.length
+      ? "zero-active-residue; archived fixtures and immutable audit retained"
+      : "zero-active-residue; no synthetic actor or operation created",
   };
 }
 
@@ -2198,10 +2200,11 @@ try {
         "synthetic_pim_business_residue_zero_after_terminal",
         Object.values(finalResidue.terminalPim).every((value) => value === 0),
       );
-      check(
-        "immutable_audit_retained",
-        finalResidue.retainedCmsAuditEvents > 0 && finalResidue.retainedRdoAuditEvents > 0,
-      );
+      if (actors.length > 0)
+        check(
+          "immutable_audit_retained",
+          finalResidue.retainedCmsAuditEvents > 0 && finalResidue.retainedRdoAuditEvents > 0,
+        );
     } catch (error) {
       cleanupError ??= error;
     }

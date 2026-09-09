@@ -352,45 +352,65 @@ export function sessionRefreshRevocationSemanticSql(alias) {
   const applyCommand =
     "public.cms_apply_user_command_scoped(uuid,text,uuid,text,text,text[],text,text,text,timestamptz,uuid,uuid)";
   const resolveSession = "public.cms_resolve_session_scoped(uuid,text,text,text,text,timestamptz,uuid)";
+  const resolveSessionCore =
+    "private.cms_resolve_session_core_0087(uuid,text,text,text,text,timestamptz,uuid)";
   const resolveScopedAccess = "public.cms_resolve_scoped_access(uuid,text,text,text,text,timestamptz)";
-  return `pg_get_functiondef(to_regprocedure('${applyCommand}'))
+  const normalized = (signature) =>
+    `regexp_replace(pg_get_functiondef(to_regprocedure('${signature}')), '[[:space:]]+', ' ', 'g')`;
+  const applyCommandDefinition = normalized(applyCommand);
+  const resolveSessionDefinition = normalized(resolveSession);
+  const resolveSessionCoreDefinition = normalized(resolveSessionCore);
+  const resolveScopedAccessDefinition = normalized(resolveScopedAccess);
+  return `coalesce(
+      ${applyCommandDefinition}
       like '%from public.cms_login_events event%'
-      and pg_get_functiondef(to_regprocedure('${applyCommand}'))
+      and ${applyCommandDefinition}
         like '%from auth.sessions auth_session%'
-      and pg_get_functiondef(to_regprocedure('${applyCommand}'))
+      and ${applyCommandDefinition}
         like '%extensions.digest(auth_session.id::text,''sha256'')%'
-      and pg_get_functiondef(to_regprocedure('${applyCommand}'))
+      and ${applyCommandDefinition}
         like '%p_action in (''revoke_sessions'',''suspend'',''reactivate'')%'
-      and pg_get_functiondef(to_regprocedure('${applyCommand}'))
+      and ${applyCommandDefinition}
         like '%insert into public.cms_session_revocations%'
-      and pg_get_functiondef(to_regprocedure('${applyCommand}'))
+      and ${applyCommandDefinition}
         like '%''admin_command''%'
-      and pg_get_functiondef(to_regprocedure('${applyCommand}'))
+      and ${applyCommandDefinition}
         like '%coalesce((v_result->>''duplicate'')::boolean,false) is false%'
       and strpos(
-        pg_get_functiondef(to_regprocedure('${applyCommand}')),
+        ${applyCommandDefinition},
         'coalesce((v_result->>''duplicate'')::boolean,false) is false'
       ) < strpos(
-        pg_get_functiondef(to_regprocedure('${applyCommand}')),
+        ${applyCommandDefinition},
         'insert into public.cms_session_revocations'
       )
-      and pg_get_functiondef(to_regprocedure('${applyCommand}'))
+      and ${applyCommandDefinition}
         not like '%insert into auth.%'
-      and pg_get_functiondef(to_regprocedure('${applyCommand}'))
+      and ${applyCommandDefinition}
         not like '%update auth.%'
-      and pg_get_functiondef(to_regprocedure('${applyCommand}'))
+      and ${applyCommandDefinition}
         not like '%delete from auth.%'
-      and pg_get_functiondef(to_regprocedure('${applyCommand}'))
+      and ${applyCommandDefinition}
         not like '%rdo_%'
-      and pg_get_functiondef(to_regprocedure('${resolveSession}'))
+      and ${resolveSessionDefinition}
+        like '%private.cms_resolve_session_core_0087(%'
+      and ${resolveSessionCoreDefinition}
+        like '%extensions.digest(p_session_id, ''sha256'')%'
+      and ${resolveSessionCoreDefinition}
+        like '%from public.cms_session_revocations revocation%'
+      and ${resolveSessionCoreDefinition}
+        like '%''CMS_SESSION_REVOKED''%'
+      and ${resolveSessionCoreDefinition}
         like '%permission.critical%'
-      and pg_get_functiondef(to_regprocedure('${resolveSession}'))
-        like '%p_event_type=''logout''%'
-      and pg_get_functiondef(to_regprocedure('${resolveSession}'))
+      and ${resolveSessionDefinition}
+        like '%if p_event_type = ''logout'' then%'
+      and ${resolveSessionDefinition}
+        like '%insert into public.cms_session_revocations%'
+      and ${resolveSessionDefinition}
         like '%''self_logout''%'
-      and pg_get_functiondef(to_regprocedure('${resolveScopedAccess}'))
-        like '%permission.critical%'
-      as ${alias}`;
+      and ${resolveScopedAccessDefinition}
+        like '%bool_or(permission.critical)%',
+      false
+    ) as ${alias}`;
 }
 
 export function leadOriginBindingSemanticSql(alias) {

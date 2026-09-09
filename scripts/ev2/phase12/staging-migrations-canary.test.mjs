@@ -192,8 +192,10 @@ test("database preflights require every 0082-0088 contract, exact ACL and semant
   assert.match(contracts, /from auth\.sessions auth_session/);
   assert.match(contracts, /p_action in \(''revoke_sessions'',''suspend'',''reactivate''\)/);
   assert.match(contracts, /insert into public\.cms_session_revocations/);
+  assert.match(contracts, /private\.cms_resolve_session_core_0087/);
+  assert.match(contracts, /CMS_SESSION_REVOKED/);
   assert.match(contracts, /permission\.critical/);
-  assert.match(contracts, /p_event_type=''logout''/);
+  assert.match(contracts, /if p_event_type = ''logout'' then/);
   assert.match(contracts, /''self_logout''/);
   assert.match(contracts, /join public\.cms_publications published/);
   assert.match(contracts, /for share of projection, item, published/);
@@ -624,13 +626,28 @@ test("canary report is sanitized, synthetic-only and verifies zero active residu
   assert.match(source, /QA-CMS-FINAL-\$\{qaDate\}-\$\{expectedSha\.slice\(0, 8\)\}/);
   assert.match(source, /"synthetic_active_residue_zero"/);
   assert.match(source, /"immutable_audit_retained"/);
-  assert.match(source, /semantics: "zero-active-residue; archived fixtures and immutable audit retained"/);
+  assert.match(source, /"zero-active-residue; archived fixtures and immutable audit retained"/);
   assert.match(source, /syntheticOnly: true/);
   assert.match(source, /realDataUsed: false/);
   assert.match(source, /productionMutations: 0/);
   assert.match(source, /secretsPersisted: false/);
   assert.match(source, /writeFileSync\(reportPath/);
   assert.doesNotMatch(source, /console\.(?:log|error)\([^)]*(?:accessToken|anonKey|serviceKey)/);
+});
+
+test("pre-actor preflight failures preserve the operation error without inventing missing audit", async () => {
+  const source = await read("scripts/ev2/phase12/staging-migrations-canary.mjs");
+  const terminal = source.slice(source.indexOf("} finally {"), source.indexOf("const passed ="));
+
+  assert.match(
+    terminal,
+    /if \(actors\.length > 0\)\s+check\(\s*"immutable_audit_retained",\s*finalResidue\.retainedCmsAuditEvents > 0 && finalResidue\.retainedRdoAuditEvents > 0,\s*\);/,
+  );
+  assert.match(source, /: "zero-active-residue; no synthetic actor or operation created"/);
+  assert.match(
+    source,
+    /cleanupError\s*\?\s*"G12_STAGING_MIGRATION_CANARY_CLEANUP_FAILED"\s*:\s*"G12_STAGING_MIGRATION_CANARY_OPERATION_FAILED"/,
+  );
 });
 
 test("staging workflow runs the canary only after migrations/functions and uploads its report", async () => {

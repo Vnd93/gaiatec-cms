@@ -27,9 +27,12 @@ if (
 
 const variablePath = `/repos/${repository}/actions/variables/${PRODUCTION_MUTATION_MARKER_VARIABLE}`;
 
-async function github(path, { method = "GET", body, allowNotFound = false } = {}) {
+async function github(path, { method = "GET", body, allowNotFound = false, retryNotFound = false } = {}) {
+  if (retryNotFound && (method !== "GET" || allowNotFound))
+    throw new Error("G12_PRODUCTION_MARKER_STORE_RETRY_MODE_REFUSED");
+  const maximumAttempts = retryNotFound ? 6 : 4;
   let lastFailure = "transport";
-  for (let attempt = 1; attempt <= 4; attempt += 1) {
+  for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
     try {
       const response = await fetch(`https://api.github.com${path}`, {
         method,
@@ -46,13 +49,18 @@ async function github(path, { method = "GET", body, allowNotFound = false } = {}
       if (allowNotFound && response.status === 404) return { found: false, payload: null };
       if (response.ok) return { found: true, payload };
       lastFailure = String(response.status);
-      if (![408, 429].includes(response.status) && response.status < 500)
+      if (
+        !(retryNotFound && response.status === 404) &&
+        ![408, 429].includes(response.status) &&
+        response.status < 500
+      )
         throw new Error(`G12_PRODUCTION_MARKER_STORE_API_REFUSED:${response.status}`);
     } catch (error) {
       if (String(error?.message ?? "").startsWith("G12_PRODUCTION_MARKER_STORE_API_REFUSED:")) throw error;
       lastFailure = "transport";
     }
-    if (attempt < 4) await new Promise((resolve) => setTimeout(resolve, 1_000 * 2 ** (attempt - 1)));
+    if (attempt < maximumAttempts)
+      await new Promise((resolve) => setTimeout(resolve, Math.min(1_000 * 2 ** (attempt - 1), 8_000)));
   }
   throw new Error(`G12_PRODUCTION_MARKER_STORE_API_RETRY_EXHAUSTED:${lastFailure}`);
 }
@@ -99,7 +107,7 @@ async function put() {
       body: { name: PRODUCTION_MUTATION_MARKER_VARIABLE, value: JSON.stringify(wrapper) },
     });
   }
-  const verified = await github(variablePath);
+  const verified = await github(variablePath, { retryNotFound: true });
   const stored = parseStored(verified.payload);
   const result = verifyProductionMutationMarkerVariable(stored, hmacKey, expected);
   if (!result.valid || !sameProductionMutationMarkerVariable(stored, wrapper))

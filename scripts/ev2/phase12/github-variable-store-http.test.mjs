@@ -157,6 +157,140 @@ function recoveryGetFixture() {
   return { key, runId, controlSha, kind, state, variable, stored };
 }
 
+test("recovery state put verifies an eventually visible GitHub variable without repeating the POST", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "g12-recovery-eventual-write-"));
+  try {
+    const fixture = recoveryGetFixture();
+    const statePath = join(directory, "state.json");
+    const outputPath = join(directory, "github-output.txt");
+    await writeFile(statePath, `${JSON.stringify(fixture.state)}\n`, "utf8");
+    const calls = [];
+    let variableReads = 0;
+
+    await runCli(
+      "./recovery-state-store.mjs",
+      ["put", "--kind", fixture.kind, "--file", statePath],
+      {
+        GITHUB_REPOSITORY: "Vnd93/gaiatec-cms",
+        RELEASE_GUARD_TOKEN: "t".repeat(40),
+        RECOVERY_STATE_HMAC_KEY: fixture.key,
+        GITHUB_RUN_ID: fixture.runId,
+        GITHUB_RUN_ATTEMPT: "1",
+        CONTROL_SHA: fixture.controlSha,
+        GITHUB_OUTPUT: outputPath,
+      },
+      async (url, options = {}) => {
+        const method = options.method ?? "GET";
+        calls.push({ url: String(url), method, body: options.body });
+        if (method === "POST") return new Response(null, { status: 201 });
+        if (method === "GET") {
+          variableReads += 1;
+          if (variableReads <= 2)
+            return new Response(JSON.stringify({ message: "Not Found" }), {
+              status: 404,
+              headers: { "Content-Type": "application/json" },
+            });
+          return new Response(JSON.stringify({ name: fixture.variable, value: fixture.stored }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({ message: "Unexpected method" }), { status: 500 });
+      },
+    );
+
+    assert.deepEqual(
+      calls.map(({ method }) => method),
+      ["GET", "POST", "GET", "GET"],
+    );
+    assert.deepEqual(JSON.parse(calls[1].body), {
+      name: fixture.variable,
+      value: fixture.stored,
+    });
+    assert.equal(await readFile(outputPath, "utf8"), `variable=${fixture.variable}\nsource=variable\n`);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("production marker put verifies an eventually visible GitHub variable without repeating the POST", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "g12-production-marker-eventual-write-"));
+  try {
+    const key = "3".repeat(64);
+    const marker = productionMarker();
+    const markerPath = join(directory, "marker.json");
+    await writeFile(markerPath, `${JSON.stringify(marker)}\n`, "utf8");
+    const artifact = {
+      id: "998877",
+      digest: "e".repeat(64),
+      name: "production-mutation-123456-2",
+    };
+    const stored = sealProductionMutationMarkerVariable(
+      {
+        marker,
+        artifactId: artifact.id,
+        artifactDigest: artifact.digest,
+        artifactName: artifact.name,
+      },
+      key,
+    );
+    const calls = [];
+    let variableReads = 0;
+
+    await runCli(
+      "./production-mutation-marker-store.mjs",
+      [
+        "put",
+        "--file",
+        markerPath,
+        "--artifact-id",
+        artifact.id,
+        "--artifact-digest",
+        artifact.digest,
+        "--artifact-name",
+        artifact.name,
+      ],
+      {
+        GITHUB_REPOSITORY: "Vnd93/gaiatec-cms",
+        RELEASE_GUARD_TOKEN: "t".repeat(40),
+        PRODUCTION_MARKER_HMAC_KEY: key,
+        GITHUB_RUN_ID: "123456",
+        GITHUB_RUN_ATTEMPT: "2",
+        CONTROL_SHA: "d".repeat(40),
+      },
+      async (url, options = {}) => {
+        const method = options.method ?? "GET";
+        calls.push({ url: String(url), method, body: options.body });
+        if (method === "POST") return new Response(null, { status: 201 });
+        if (method === "GET") {
+          variableReads += 1;
+          if (variableReads <= 2)
+            return new Response(JSON.stringify({ message: "Not Found" }), {
+              status: 404,
+              headers: { "Content-Type": "application/json" },
+            });
+          return new Response(
+            JSON.stringify({ name: PRODUCTION_MUTATION_MARKER_VARIABLE, value: JSON.stringify(stored) }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return new Response(JSON.stringify({ message: "Unexpected method" }), { status: 500 });
+      },
+    );
+
+    assert.deepEqual(
+      calls.map(({ method }) => method),
+      ["GET", "POST", "GET", "GET"],
+    );
+    assert.deepEqual(JSON.parse(calls[1].body), {
+      name: PRODUCTION_MUTATION_MARKER_VARIABLE,
+      value: JSON.stringify(stored),
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("recovery state get only treats a confirmed 404 as absent when explicitly allowed", async () => {
   const directory = await mkdtemp(join(tmpdir(), "g12-recovery-absent-"));
   try {

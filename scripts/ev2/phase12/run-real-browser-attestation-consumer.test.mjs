@@ -552,6 +552,42 @@ test("the HTTP client recovers only a lost DELETE response and refuses an initia
   assert.equal(recoveryCalls, 2);
 });
 
+test("the HTTP client retries a post-write 404 only when explicitly requested", async () => {
+  const path = "/repos/Vnd93/gaiatec-cms/actions/variables/G12_STAGING_REAL_BROWSER_CHALLENGE_7654321_2";
+  const sleeps = [];
+  let calls = 0;
+  const client = createRealBrowserBrokerGitHubClient({
+    token: "release-guard-token-never-print-123456789",
+    repositoryName: "Vnd93/gaiatec-cms",
+    fetchImplementation: async () => {
+      calls += 1;
+      if (calls === 1)
+        return new Response(JSON.stringify({ message: "Not Found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      return new Response(JSON.stringify({ name: "eventually-visible", value: "sealed" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+    sleep: async (milliseconds) => sleeps.push(milliseconds),
+  });
+
+  assert.deepEqual(await client(path, { retryNotFound: true }), {
+    found: true,
+    payload: { name: "eventually-visible", value: "sealed" },
+    status: 200,
+    recoveredLostDelete: false,
+  });
+  assert.equal(calls, 2);
+  assert.deepEqual(sleeps, [1_000]);
+  await assert.rejects(
+    client(path, { method: "POST", retryNotFound: true }),
+    /G12_REAL_BROWSER_CHALLENGE_GITHUB_RETRY_MODE_REFUSED/,
+  );
+});
+
 test("claim confirms terminal 404 after recovering a lost HTTP DELETE response", async () => {
   const suffix = `consumer-claim-lost-delete-${process.pid}-${randomBytes(4).toString("hex")}`;
   const relativeReport = `outputs/${suffix}-report.json`;

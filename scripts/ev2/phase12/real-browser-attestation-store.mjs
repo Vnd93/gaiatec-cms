@@ -152,9 +152,13 @@ function parseJson(value, label) {
 }
 
 function createGitHubClient({ token, fetchImplementation, sleep }) {
-  async function request(path, { method = "GET", body, allowNotFound = false } = {}) {
+  async function request(path, { method = "GET", body, allowNotFound = false, retryNotFound = false } = {}) {
+    if (retryNotFound && (method !== "GET" || allowNotFound)) {
+      throw new Error("G12_REAL_BROWSER_STORE_RETRY_MODE_REFUSED");
+    }
+    const maximumAttempts = retryNotFound ? 6 : 4;
     let lastFailure = "transport";
-    for (let attempt = 1; attempt <= 4; attempt += 1) {
+    for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
       try {
         const response = await fetchImplementation(`${API_ROOT}${path}`, {
           method,
@@ -173,7 +177,11 @@ function createGitHubClient({ token, fetchImplementation, sleep }) {
         }
         if (response.ok) return { found: true, payload, status: response.status };
         lastFailure = String(response.status);
-        if (![408, 429].includes(response.status) && response.status < 500) {
+        if (
+          !(retryNotFound && response.status === 404) &&
+          ![408, 429].includes(response.status) &&
+          response.status < 500
+        ) {
           throw new Error(`G12_REAL_BROWSER_STORE_API_REFUSED:${response.status}`);
         }
       } catch (error) {
@@ -182,7 +190,7 @@ function createGitHubClient({ token, fetchImplementation, sleep }) {
         }
         lastFailure = "transport";
       }
-      if (attempt < 4) await sleep(1_000 * 2 ** (attempt - 1));
+      if (attempt < maximumAttempts) await sleep(Math.min(1_000 * 2 ** (attempt - 1), 8_000));
     }
     throw new Error(`G12_REAL_BROWSER_STORE_API_RETRY_EXHAUSTED:${lastFailure}`);
   }
@@ -305,7 +313,7 @@ async function put({ values, environment, github, now }) {
     body: { name: variable, value: serialized },
   });
   if (creation.status !== 201) throw new Error("G12_REAL_BROWSER_STORE_CREATE_STATUS_REFUSED");
-  const written = await github(variablePath);
+  const written = await github(variablePath, { retryNotFound: true });
   const created = verifyStored({
     payload: written.payload,
     variable,

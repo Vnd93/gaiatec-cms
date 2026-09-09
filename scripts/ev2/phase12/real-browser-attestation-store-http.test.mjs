@@ -343,6 +343,41 @@ test("put authenticates Vnd93, creates only when absent, and rejects every occup
   }
 });
 
+test("put tolerates a transient 404 only while verifying its exact newly created attestation", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "g12-browser-put-eventual-write-"));
+  try {
+    const input = fixture();
+    const files = await writeInputFiles(directory, input.report);
+    const variable = realBrowserAttestationVariableName(input.report);
+    const server = githubServer({ variableGetFailures: new Map([[variable, 2]]) });
+    const sleeps = [];
+    await runQuiet({
+      argv: [
+        process.execPath,
+        "real-browser-attestation-store.mjs",
+        "put",
+        "--file",
+        files.reportPath,
+        "--screenshot",
+        files.screenshotPath,
+      ],
+      environment: putEnvironment(),
+      fetchImplementation: server.fetchImplementation,
+      sleep: async (milliseconds) => sleeps.push(milliseconds),
+    });
+
+    assert.equal(server.variables.has(variable), true);
+    assert.deepEqual(
+      server.calls.map(({ method }) => method),
+      ["GET", "GET", "POST", "GET", "GET"],
+    );
+    assert.equal(server.calls.filter(({ method }) => method === "POST").length, 1);
+    assert.deepEqual(sleeps, [1_000]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("put refuses non-broker execution, wrong GitHub identity, auth errors, and transport exhaustion", async () => {
   const directory = await mkdtemp(join(tmpdir(), "g12-browser-auth-"));
   try {

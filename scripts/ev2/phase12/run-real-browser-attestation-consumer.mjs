@@ -118,14 +118,18 @@ export function createRealBrowserBrokerGitHubClient({
   }
   return async function request(
     path,
-    { method = "GET", body, allowNotFound = false, recoverLostDelete = false } = {},
+    { method = "GET", body, allowNotFound = false, recoverLostDelete = false, retryNotFound = false } = {},
   ) {
     if (recoverLostDelete && method !== "DELETE") {
       throw new Error("G12_REAL_BROWSER_CHALLENGE_GITHUB_DELETE_RECOVERY_REFUSED");
     }
+    if (retryNotFound && (method !== "GET" || allowNotFound)) {
+      throw new Error("G12_REAL_BROWSER_CHALLENGE_GITHUB_RETRY_MODE_REFUSED");
+    }
+    const maximumAttempts = retryNotFound ? 6 : 4;
     let lastFailure = "transport";
     let deleteTransportFailure = false;
-    for (let attempt = 1; attempt <= 4; attempt += 1) {
+    for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
       try {
         const response = await fetchImplementation(`${apiRoot}${path}`, {
           method,
@@ -157,7 +161,11 @@ export function createRealBrowserBrokerGitHubClient({
           return { found: true, payload, status: response.status, recoveredLostDelete: false };
         }
         lastFailure = String(response.status);
-        if (![408, 429].includes(response.status) && response.status < 500) {
+        if (
+          !(retryNotFound && response.status === 404) &&
+          ![408, 429].includes(response.status) &&
+          response.status < 500
+        ) {
           throw new Error(`G12_REAL_BROWSER_CHALLENGE_GITHUB_HTTP_${response.status}`);
         }
       } catch (error) {
@@ -167,7 +175,7 @@ export function createRealBrowserBrokerGitHubClient({
         lastFailure = "transport";
         if (method === "DELETE" && recoverLostDelete) deleteTransportFailure = true;
       }
-      if (attempt < 4) await sleep(1_000 * 2 ** (attempt - 1));
+      if (attempt < maximumAttempts) await sleep(Math.min(1_000 * 2 ** (attempt - 1), 8_000));
     }
     throw new Error(`G12_REAL_BROWSER_CHALLENGE_GITHUB_RETRY_EXHAUSTED:${lastFailure}`);
   };
@@ -211,7 +219,7 @@ async function publishChallengeVariable(challenge) {
     method: "POST",
     body: { name: variable, value },
   });
-  const stored = await githubRequest(path);
+  const stored = await githubRequest(path, { retryNotFound: true });
   if (stored.payload?.name !== variable || stored.payload?.value !== value) {
     throw new Error("G12_REAL_BROWSER_CHALLENGE_CREATE_VERIFICATION_FAILED");
   }

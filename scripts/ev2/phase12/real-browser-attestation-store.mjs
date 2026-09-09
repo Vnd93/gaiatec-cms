@@ -152,11 +152,18 @@ function parseJson(value, label) {
 }
 
 function createGitHubClient({ token, fetchImplementation, sleep }) {
-  async function request(path, { method = "GET", body, allowNotFound = false, retryNotFound = false } = {}) {
-    if (retryNotFound && (method !== "GET" || allowNotFound)) {
+  async function request(
+    path,
+    { method = "GET", body, allowNotFound = false, retryNotFound = false, retryPresent = false } = {},
+  ) {
+    if (
+      (retryNotFound && retryPresent) ||
+      (retryNotFound && (method !== "GET" || allowNotFound)) ||
+      (retryPresent && (method !== "GET" || !allowNotFound))
+    ) {
       throw new Error("G12_REAL_BROWSER_STORE_RETRY_MODE_REFUSED");
     }
-    const maximumAttempts = retryNotFound ? 6 : 4;
+    const maximumAttempts = retryNotFound || retryPresent ? 6 : 4;
     let lastFailure = "transport";
     for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
       try {
@@ -175,14 +182,20 @@ function createGitHubClient({ token, fetchImplementation, sleep }) {
         if (allowNotFound && response.status === 404) {
           return { found: false, payload: null, status: response.status };
         }
-        if (response.ok) return { found: true, payload, status: response.status };
-        lastFailure = String(response.status);
-        if (
-          !(retryNotFound && response.status === 404) &&
-          ![408, 429].includes(response.status) &&
-          response.status < 500
-        ) {
-          throw new Error(`G12_REAL_BROWSER_STORE_API_REFUSED:${response.status}`);
+        if (response.ok) {
+          if (!retryPresent || attempt === maximumAttempts) {
+            return { found: true, payload, status: response.status };
+          }
+          lastFailure = "still-present";
+        } else {
+          lastFailure = String(response.status);
+          if (
+            !(retryNotFound && response.status === 404) &&
+            ![408, 429].includes(response.status) &&
+            response.status < 500
+          ) {
+            throw new Error(`G12_REAL_BROWSER_STORE_API_REFUSED:${response.status}`);
+          }
         }
       } catch (error) {
         if (String(error?.message ?? "").startsWith("G12_REAL_BROWSER_STORE_API_REFUSED:")) {
@@ -420,7 +433,7 @@ async function consume({ values, environment, github, clock, sleep }) {
       now: deletionNow,
     });
     await github(variablePath, { method: "DELETE", allowNotFound: true });
-    const terminal = await github(variablePath, { allowNotFound: true });
+    const terminal = await github(variablePath, { allowNotFound: true, retryPresent: true });
     if (terminal.found) throw new Error("G12_REAL_BROWSER_STORE_CLEAR_VERIFICATION_FAILED");
 
     await link(temporaryPng, outputPng);
@@ -510,7 +523,7 @@ async function clear({ values, allowMissing, environment, github, now }) {
     throw new Error("G12_REAL_BROWSER_STORE_CLEAR_PREDELETE_SNAPSHOT_MISMATCH");
   }
   await github(variablePath, { method: "DELETE", allowNotFound: true });
-  const terminal = await github(variablePath, { allowNotFound: true });
+  const terminal = await github(variablePath, { allowNotFound: true, retryPresent: true });
   if (terminal.found) throw new Error("G12_REAL_BROWSER_STORE_CLEAR_VERIFICATION_FAILED");
   if (environment.GITHUB_OUTPUT) {
     await appendFile(environment.GITHUB_OUTPUT, `variable=${variable}\nvariable_cleared=true\n`, "utf8");

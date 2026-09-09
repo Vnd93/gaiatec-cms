@@ -198,6 +198,10 @@ test("promotion requires headless fail-closed cleanup while full staging owns po
   assert.match(workflow, /steps\.preview_headless\.outcome == 'success'/);
   assert.match(workflow, /steps\.preview_cleanup\.outcome == 'success'/);
   assert.match(workflow, /steps\.preview_residue\.outcome == 'success'/);
+  assert.match(
+    workflow,
+    /staging-pages-state\.mjs compensate[\s\S]*--wrangler-script \.\.\/baseline\/node_modules\/wrangler\/bin\/wrangler\.js/,
+  );
   assert.match(workflow, /PREVIEW_DEPLOYMENT_ORIGIN: \$\{\{ steps\.preview\.outputs\.deployment-url \}\}/);
   assert.match(
     workflow,

@@ -435,6 +435,7 @@ jobs:
         run: >-
           node scripts/ev2/phase12/staging-pages-state.mjs compensate
           --dist ../baseline/dist --seal ../baseline/outputs/staging-baseline-dist-seal.json
+          --wrangler-script ../baseline/node_modules/wrangler/bin/wrangler.js
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

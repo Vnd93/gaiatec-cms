@@ -4,6 +4,7 @@ import {
   G12_BUDGETS,
   isFullSha,
   percentile,
+  retryStrictBoundaryWindow,
   validateHealthContract,
   validateReleaseManifest,
 } from "./release-guard-lib.mjs";
@@ -17,6 +18,7 @@ const requestTimeoutMs = Number(process.env.EV2_G12_REQUEST_TIMEOUT_MS ?? 10_000
 const readinessAttempts = Number(process.env.EV2_G12_READINESS_ATTEMPTS ?? 10);
 const readinessIntervalMs = Number(process.env.EV2_G12_READINESS_INTERVAL_MS ?? 1_500);
 const warmupSamplesPerRoute = Number(process.env.EV2_G12_WARMUP_SAMPLES_PER_ROUTE ?? 3);
+const warmupAttempts = Number(process.env.EV2_G12_WARMUP_ATTEMPTS ?? readinessAttempts);
 const reportPath = process.env.EV2_G12_REPORT_PATH;
 const expectedCspMode =
   process.env.EV2_G12_CSP_MODE ??
@@ -38,7 +40,10 @@ if (
   readinessIntervalMs > 5_000 ||
   !Number.isInteger(warmupSamplesPerRoute) ||
   warmupSamplesPerRoute < 1 ||
-  warmupSamplesPerRoute > 10
+  warmupSamplesPerRoute > 10 ||
+  !Number.isInteger(warmupAttempts) ||
+  warmupAttempts < 1 ||
+  warmupAttempts > 20
 )
   throw new Error("G12_PROBE_INPUT_REFUSED: exact origin, full SHA and at least five samples are required.");
 
@@ -145,7 +150,11 @@ async function warmRoutes() {
   }
 }
 
-await warmRoutes();
+await retryStrictBoundaryWindow({
+  attempts: warmupAttempts,
+  verify: warmRoutes,
+  wait: () => new Promise((resolve) => setTimeout(resolve, readinessIntervalMs)),
+});
 
 async function request(path, expectedStatus, category = "route") {
   const startedAt = performance.now();

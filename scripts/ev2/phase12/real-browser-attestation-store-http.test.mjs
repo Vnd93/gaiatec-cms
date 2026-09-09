@@ -149,6 +149,7 @@ function githubServer({
   variableStatus = null,
   deleteStatus = null,
   loseFirstDeleteResponse = false,
+  staleReadsAfterDelete = 0,
   beforeDelete = null,
   beforeVariableGet = null,
 } = {}) {
@@ -156,6 +157,8 @@ function githubServer({
   const calls = [];
   let lostDelete = false;
   const getCounts = new Map();
+  const deletedSnapshots = new Map();
+  const postDeleteReads = new Map();
   const fetchImplementation = async (input, options = {}) => {
     const url = new URL(input);
     const method = options.method ?? "GET";
@@ -203,6 +206,16 @@ function githubServer({
         getCounts.set(variable, count);
         if (beforeVariableGet) await beforeVariableGet({ variable, count, variables });
         const hiddenFor = variableGetFailures.get(variable) ?? 0;
+        if (!variables.has(variable) && deletedSnapshots.has(variable)) {
+          const staleReadCount = (postDeleteReads.get(variable) ?? 0) + 1;
+          postDeleteReads.set(variable, staleReadCount);
+          if (staleReadCount <= staleReadsAfterDelete) {
+            return new Response(JSON.stringify(deletedSnapshots.get(variable)), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+        }
         if (count <= hiddenFor || !variables.has(variable)) {
           return new Response(JSON.stringify({ message: "Not Found" }), {
             status: 404,
@@ -228,7 +241,9 @@ function githubServer({
             headers: { "Content-Type": "application/json" },
           });
         }
+        const deletedSnapshot = variables.get(variable);
         const existed = variables.delete(variable);
+        if (existed && staleReadsAfterDelete > 0) deletedSnapshots.set(variable, deletedSnapshot);
         if (loseFirstDeleteResponse && !lostDelete) {
           lostDelete = true;
           throw new TypeError("simulated lost DELETE response");
@@ -714,6 +729,97 @@ test("consume uses documented unconditional DELETE and recovers a lost successfu
       server.calls.slice(-3).map(({ method }) => method),
       ["DELETE", "DELETE", "GET"],
     );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("consume waits for eventual DELETE visibility before materializing evidence", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "g12-browser-eventual-delete-"));
+  try {
+    const input = fixture();
+    const server = githubServer({
+      initial: {
+        [input.wrapper.variable]: {
+          name: input.wrapper.variable,
+          value: serializeRealBrowserAttestationVariable(input.wrapper),
+          created_at: "2026-09-08T14:59:00.000Z",
+          updated_at: "2026-09-08T14:59:30.000Z",
+        },
+      },
+      staleReadsAfterDelete: 1,
+    });
+    const outputJson = join(directory, "attestation.json");
+    await runQuiet({
+      argv: [
+        process.execPath,
+        "real-browser-attestation-store.mjs",
+        "consume",
+        ...expectedArguments(input.report, input.broker.controlSha),
+        "--output-json",
+        outputJson,
+        "--output-png",
+        join(directory, "proof.png"),
+        "--poll-seconds",
+        "0",
+      ],
+      environment: coreEnvironment(),
+      fetchImplementation: server.fetchImplementation,
+    });
+
+    assert.deepEqual(
+      server.calls.slice(-3).map(({ method }) => method),
+      ["DELETE", "GET", "GET"],
+    );
+    assert.equal(JSON.parse(await readFile(outputJson, "utf8")).variableCleared, true);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("consume stays fail-closed and materializes nothing while a deleted variable remains visible", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "g12-browser-persistent-delete-"));
+  try {
+    const input = fixture();
+    const server = githubServer({
+      initial: {
+        [input.wrapper.variable]: {
+          name: input.wrapper.variable,
+          value: serializeRealBrowserAttestationVariable(input.wrapper),
+          created_at: "2026-09-08T14:59:00.000Z",
+          updated_at: "2026-09-08T14:59:30.000Z",
+        },
+      },
+      staleReadsAfterDelete: 99,
+    });
+    const outputJson = join(directory, "attestation.json");
+    const outputPng = join(directory, "proof.png");
+    await assert.rejects(
+      runQuiet({
+        argv: [
+          process.execPath,
+          "real-browser-attestation-store.mjs",
+          "consume",
+          ...expectedArguments(input.report, input.broker.controlSha),
+          "--output-json",
+          outputJson,
+          "--output-png",
+          outputPng,
+          "--poll-seconds",
+          "0",
+        ],
+        environment: coreEnvironment(),
+        fetchImplementation: server.fetchImplementation,
+      }),
+      /G12_REAL_BROWSER_STORE_CLEAR_VERIFICATION_FAILED/,
+    );
+
+    assert.equal(
+      server.calls.slice(-6).every(({ method }) => method === "GET"),
+      true,
+    );
+    await assert.rejects(readFile(outputJson), { code: "ENOENT" });
+    await assert.rejects(readFile(outputPng), { code: "ENOENT" });
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

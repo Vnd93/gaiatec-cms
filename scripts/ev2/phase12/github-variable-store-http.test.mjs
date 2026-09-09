@@ -21,16 +21,21 @@ function normalizedHeaders(headers = {}) {
   return Object.fromEntries(Object.entries(headers).map(([name, value]) => [name.toLowerCase(), value]));
 }
 
-function variableFetch(variable, serializedValue, calls, { loseFirstDeleteResponse = false } = {}) {
-  let getCount = 0;
+function variableFetch(
+  variable,
+  serializedValue,
+  calls,
+  { loseFirstDeleteResponse = false, staleReadsAfterDelete = 0 } = {},
+) {
   let deleteCount = 0;
+  let deleted = false;
+  let postDeleteReads = 0;
   return async (url, options = {}) => {
     const method = options.method ?? "GET";
     const headers = normalizedHeaders(options.headers);
     calls.push({ url: String(url), method, headers, body: options.body });
     if (method === "GET") {
-      getCount += 1;
-      if (getCount === 1)
+      if (!deleted || postDeleteReads++ < staleReadsAfterDelete)
         return new Response(JSON.stringify({ name: variable, value: serializedValue }), {
           status: 200,
           headers: { "Content-Type": "application/json", ETag: 'W/"github-weak-etag"' },
@@ -42,6 +47,7 @@ function variableFetch(variable, serializedValue, calls, { loseFirstDeleteRespon
     }
     if (method === "DELETE") {
       deleteCount += 1;
+      deleted = true;
       if (headers["if-match"])
         return new Response(JSON.stringify({ message: "Bad Request" }), {
           status: 400,
@@ -64,20 +70,29 @@ function variableFetch(variable, serializedValue, calls, { loseFirstDeleteRespon
   };
 }
 
-async function runCli(relativeScript, args, environment, fetchImplementation) {
+async function runCli(
+  relativeScript,
+  args,
+  environment,
+  fetchImplementation,
+  { setTimeoutImplementation } = {},
+) {
   const originalArgv = process.argv;
   const originalFetch = globalThis.fetch;
+  const originalSetTimeout = globalThis.setTimeout;
   const originalEnvironment = new Map(Object.keys(environment).map((name) => [name, process.env[name]]));
   const script = new URL(relativeScript, import.meta.url);
   script.searchParams.set("http-contract-test", String((importSequence += 1)));
   process.argv = [process.execPath, script.pathname, ...args];
   for (const [name, value] of Object.entries(environment)) process.env[name] = value;
   globalThis.fetch = fetchImplementation;
+  if (setTimeoutImplementation) globalThis.setTimeout = setTimeoutImplementation;
   try {
     await import(script.href);
   } finally {
     process.argv = originalArgv;
     globalThis.fetch = originalFetch;
+    globalThis.setTimeout = originalSetTimeout;
     for (const [name, value] of originalEnvironment) {
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;
@@ -664,6 +679,95 @@ test("recovery state clear accepts retry 404 after a remotely applied DELETE los
   }
 });
 
+test("recovery state clear waits for an eventually consistent DELETE before failing closed", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "g12-recovery-eventual-delete-"));
+  try {
+    const fixture = recoveryGetFixture();
+    const statePath = join(directory, "state.json");
+    const outputPath = join(directory, "github-output.txt");
+    await writeFile(statePath, `${JSON.stringify(fixture.state)}\n`, "utf8");
+    const calls = [];
+
+    await runCli(
+      "./recovery-state-store.mjs",
+      [
+        "clear",
+        "--kind",
+        fixture.kind,
+        "--file",
+        statePath,
+        "--run-id",
+        fixture.runId,
+        "--run-attempt",
+        "1",
+        "--control-sha",
+        fixture.controlSha,
+      ],
+      {
+        GITHUB_REPOSITORY: "Vnd93/gaiatec-cms",
+        RELEASE_GUARD_TOKEN: "t".repeat(40),
+        RECOVERY_STATE_HMAC_KEY: fixture.key,
+        GITHUB_OUTPUT: outputPath,
+      },
+      variableFetch(fixture.variable, fixture.stored, calls, { staleReadsAfterDelete: 1 }),
+    );
+
+    assert.deepEqual(
+      calls.map(({ method }) => method),
+      ["GET", "DELETE", "GET", "GET"],
+    );
+    assert.equal(await readFile(outputPath, "utf8"), "cleared=true\n");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("recovery state clear stays fail-closed when the deleted value remains visible", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "g12-recovery-persistent-delete-"));
+  try {
+    const fixture = recoveryGetFixture();
+    const statePath = join(directory, "state.json");
+    const outputPath = join(directory, "github-output.txt");
+    await writeFile(statePath, `${JSON.stringify(fixture.state)}\n`, "utf8");
+    const calls = [];
+
+    await assert.rejects(
+      runCli(
+        "./recovery-state-store.mjs",
+        [
+          "clear",
+          "--kind",
+          fixture.kind,
+          "--file",
+          statePath,
+          "--run-id",
+          fixture.runId,
+          "--run-attempt",
+          "1",
+          "--control-sha",
+          fixture.controlSha,
+        ],
+        {
+          GITHUB_REPOSITORY: "Vnd93/gaiatec-cms",
+          RELEASE_GUARD_TOKEN: "t".repeat(40),
+          RECOVERY_STATE_HMAC_KEY: fixture.key,
+          GITHUB_OUTPUT: outputPath,
+        },
+        variableFetch(fixture.variable, fixture.stored, calls, { staleReadsAfterDelete: 99 }),
+        { setTimeoutImplementation: (callback) => callback() },
+      ),
+      /G12_RECOVERY_STATE_STORE_CLEAR_VERIFICATION_FAILED/,
+    );
+    assert.deepEqual(
+      calls.map(({ method }) => method),
+      ["GET", "DELETE", "GET", "GET", "GET", "GET", "GET", "GET"],
+    );
+    await assert.rejects(readFile(outputPath, "utf8"), { code: "ENOENT" });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("production marker clear also omits unsupported conditional DELETE headers", async () => {
   const directory = await mkdtemp(join(tmpdir(), "g12-production-marker-http-"));
   try {
@@ -695,6 +799,91 @@ test("production marker clear also omits unsupported conditional DELETE headers"
 
     assertDocumentedDelete(calls);
     assert.equal(await readFile(outputPath, "utf8"), "cleared=true\n");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("production marker clear waits for eventual DELETE visibility", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "g12-production-marker-eventual-delete-"));
+  try {
+    const key = "7".repeat(64);
+    const marker = productionMarker();
+    const stored = sealProductionMutationMarkerVariable(
+      {
+        marker,
+        artifactId: "998877",
+        artifactDigest: "e".repeat(64),
+        artifactName: "production-mutation-123456-2",
+      },
+      key,
+    );
+    const outputPath = join(directory, "github-output.txt");
+    const calls = [];
+
+    await runCli(
+      "./production-mutation-marker-store.mjs",
+      ["clear", "--run-id", "123456", "--run-attempt", "2", "--control-sha", "d".repeat(40)],
+      {
+        GITHUB_REPOSITORY: "Vnd93/gaiatec-cms",
+        RELEASE_GUARD_TOKEN: "t".repeat(40),
+        PRODUCTION_MARKER_HMAC_KEY: key,
+        GITHUB_OUTPUT: outputPath,
+      },
+      variableFetch(PRODUCTION_MUTATION_MARKER_VARIABLE, JSON.stringify(stored), calls, {
+        staleReadsAfterDelete: 1,
+      }),
+    );
+
+    assert.deepEqual(
+      calls.map(({ method }) => method),
+      ["GET", "DELETE", "GET", "GET"],
+    );
+    assert.equal(await readFile(outputPath, "utf8"), "cleared=true\n");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("production marker clear stays fail-closed when deletion never becomes visible", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "g12-production-marker-persistent-delete-"));
+  try {
+    const key = "7".repeat(64);
+    const marker = productionMarker();
+    const stored = sealProductionMutationMarkerVariable(
+      {
+        marker,
+        artifactId: "998877",
+        artifactDigest: "e".repeat(64),
+        artifactName: "production-mutation-123456-2",
+      },
+      key,
+    );
+    const outputPath = join(directory, "github-output.txt");
+    const calls = [];
+
+    await assert.rejects(
+      runCli(
+        "./production-mutation-marker-store.mjs",
+        ["clear", "--run-id", "123456", "--run-attempt", "2", "--control-sha", "d".repeat(40)],
+        {
+          GITHUB_REPOSITORY: "Vnd93/gaiatec-cms",
+          RELEASE_GUARD_TOKEN: "t".repeat(40),
+          PRODUCTION_MARKER_HMAC_KEY: key,
+          GITHUB_OUTPUT: outputPath,
+        },
+        variableFetch(PRODUCTION_MUTATION_MARKER_VARIABLE, JSON.stringify(stored), calls, {
+          staleReadsAfterDelete: 99,
+        }),
+        { setTimeoutImplementation: (callback) => callback() },
+      ),
+      /G12_PRODUCTION_MARKER_STORE_CLEAR_VERIFICATION_FAILED/,
+    );
+    assert.deepEqual(
+      calls.map(({ method }) => method),
+      ["GET", "DELETE", "GET", "GET", "GET", "GET", "GET", "GET"],
+    );
+    await assert.rejects(readFile(outputPath, "utf8"), { code: "ENOENT" });
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

@@ -23,6 +23,7 @@ import {
   resolveCspEvidenceBinding,
   resolveCspEvidenceRepositoryPath,
   resolveDpoEvidenceReference,
+  retryStrictBoundaryWindow,
   selectLatestCiWorkflowRun,
   resolveG12EvidenceRepositoryPath,
   validateApprovalRecord,
@@ -700,9 +701,41 @@ test("rollout probe waits for a stable boundary before starting its strict measu
   assert.match(probe, /boundaryHeadersValid/);
   assert.match(probe, /G12_PROBE_NOT_READY/);
   assert.match(probe, /EV2_G12_WARMUP_SAMPLES_PER_ROUTE/);
+  assert.match(probe, /EV2_G12_WARMUP_ATTEMPTS/);
   assert.match(probe, /G12_PROBE_WARMUP_FAILED/);
+  assert.match(probe, /retryStrictBoundaryWindow/);
   assert.ok(probe.indexOf("if (!ready)") < probe.indexOf("async function request"));
-  assert.ok(probe.indexOf("await warmRoutes()") < probe.indexOf("async function request"));
+  assert.ok(probe.indexOf("retryStrictBoundaryWindow({") < probe.indexOf("async function request"));
+});
+
+test("strict boundary warmup retries a whole failed window and still fails after bounded exhaustion", async () => {
+  const waits = [];
+  let attempts = 0;
+  await retryStrictBoundaryWindow({
+    attempts: 3,
+    verify: async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("G12_PROBE_WARMUP_FAILED: transient alias boundary");
+    },
+    wait: async () => waits.push(attempts),
+  });
+  assert.equal(attempts, 2);
+  assert.deepEqual(waits, [1]);
+
+  const terminal = new Error("G12_PROBE_WARMUP_FAILED: persistent alias boundary");
+  attempts = 0;
+  await assert.rejects(
+    retryStrictBoundaryWindow({
+      attempts: 3,
+      verify: async () => {
+        attempts += 1;
+        throw terminal;
+      },
+      wait: async () => waits.push(attempts),
+    }),
+    (error) => error === terminal,
+  );
+  assert.equal(attempts, 3);
 });
 
 function rolloutWindow(offsetMinutes = 0) {

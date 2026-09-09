@@ -118,15 +118,26 @@ export function createRealBrowserBrokerGitHubClient({
   }
   return async function request(
     path,
-    { method = "GET", body, allowNotFound = false, recoverLostDelete = false, retryNotFound = false } = {},
+    {
+      method = "GET",
+      body,
+      allowNotFound = false,
+      recoverLostDelete = false,
+      retryNotFound = false,
+      retryPresent = false,
+    } = {},
   ) {
     if (recoverLostDelete && method !== "DELETE") {
       throw new Error("G12_REAL_BROWSER_CHALLENGE_GITHUB_DELETE_RECOVERY_REFUSED");
     }
-    if (retryNotFound && (method !== "GET" || allowNotFound)) {
+    if (
+      (retryNotFound && retryPresent) ||
+      (retryNotFound && (method !== "GET" || allowNotFound)) ||
+      (retryPresent && (method !== "GET" || !allowNotFound || recoverLostDelete))
+    ) {
       throw new Error("G12_REAL_BROWSER_CHALLENGE_GITHUB_RETRY_MODE_REFUSED");
     }
-    const maximumAttempts = retryNotFound ? 6 : 4;
+    const maximumAttempts = retryNotFound || retryPresent ? 6 : 4;
     let lastFailure = "transport";
     let deleteTransportFailure = false;
     for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
@@ -158,15 +169,19 @@ export function createRealBrowserBrokerGitHubClient({
           return { found: false, payload, status: response.status, recoveredLostDelete: false };
         }
         if (response.ok) {
-          return { found: true, payload, status: response.status, recoveredLostDelete: false };
-        }
-        lastFailure = String(response.status);
-        if (
-          !(retryNotFound && response.status === 404) &&
-          ![408, 429].includes(response.status) &&
-          response.status < 500
-        ) {
-          throw new Error(`G12_REAL_BROWSER_CHALLENGE_GITHUB_HTTP_${response.status}`);
+          if (!retryPresent || attempt === maximumAttempts) {
+            return { found: true, payload, status: response.status, recoveredLostDelete: false };
+          }
+          lastFailure = "still-present";
+        } else {
+          lastFailure = String(response.status);
+          if (
+            !(retryNotFound && response.status === 404) &&
+            ![408, 429].includes(response.status) &&
+            response.status < 500
+          ) {
+            throw new Error(`G12_REAL_BROWSER_CHALLENGE_GITHUB_HTTP_${response.status}`);
+          }
         }
       } catch (error) {
         if (String(error?.message ?? "").startsWith("G12_REAL_BROWSER_CHALLENGE_GITHUB_HTTP_")) {
@@ -246,7 +261,7 @@ async function clearChallengeVariable({ environment, runId, runAttempt, allowMis
     throw new Error("G12_REAL_BROWSER_CHALLENGE_NOT_FOUND");
   }
   await githubRequest(path, { method: "DELETE" });
-  const terminal = await githubRequest(path, { allowNotFound: true });
+  const terminal = await githubRequest(path, { allowNotFound: true, retryPresent: true });
   if (terminal.found) throw new Error("G12_REAL_BROWSER_CHALLENGE_CLEAR_VERIFICATION_FAILED");
   return { variable, absent: true };
 }
@@ -543,7 +558,7 @@ export async function claimChallengeVariable(
   if (deletion.status !== 204 && !(deletion.status === 404 && deletion.recoveredLostDelete === true)) {
     throw new Error("G12_REAL_BROWSER_CHALLENGE_CLAIM_DELETE_REFUSED");
   }
-  const terminal = await request(path, { allowNotFound: true });
+  const terminal = await request(path, { allowNotFound: true, retryPresent: true });
   if (terminal.found || terminal.status !== 404) {
     throw new Error("G12_REAL_BROWSER_CHALLENGE_CLAIM_CLEAR_VERIFICATION_FAILED");
   }
@@ -664,7 +679,7 @@ async function compareAndClearAttestation({ request, path, snapshot, verifySnaps
   if (deletion.status !== 204 && !(deletion.status === 404 && deletion.recoveredLostDelete === true)) {
     throw new Error("G12_REAL_BROWSER_HANDSHAKE_DELETE_REFUSED");
   }
-  const terminal = await request(path, { allowNotFound: true });
+  const terminal = await request(path, { allowNotFound: true, retryPresent: true });
   if (terminal.found || terminal.status !== 404) {
     throw new Error("G12_REAL_BROWSER_HANDSHAKE_CLEAR_VERIFICATION_FAILED");
   }

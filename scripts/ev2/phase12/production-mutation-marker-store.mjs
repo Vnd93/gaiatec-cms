@@ -27,10 +27,17 @@ if (
 
 const variablePath = `/repos/${repository}/actions/variables/${PRODUCTION_MUTATION_MARKER_VARIABLE}`;
 
-async function github(path, { method = "GET", body, allowNotFound = false, retryNotFound = false } = {}) {
-  if (retryNotFound && (method !== "GET" || allowNotFound))
+async function github(
+  path,
+  { method = "GET", body, allowNotFound = false, retryNotFound = false, retryPresent = false } = {},
+) {
+  if (
+    (retryNotFound && retryPresent) ||
+    (retryNotFound && (method !== "GET" || allowNotFound)) ||
+    (retryPresent && (method !== "GET" || !allowNotFound))
+  )
     throw new Error("G12_PRODUCTION_MARKER_STORE_RETRY_MODE_REFUSED");
-  const maximumAttempts = retryNotFound ? 6 : 4;
+  const maximumAttempts = retryNotFound || retryPresent ? 6 : 4;
   let lastFailure = "transport";
   for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
     try {
@@ -47,14 +54,18 @@ async function github(path, { method = "GET", body, allowNotFound = false, retry
       });
       const payload = response.status === 204 ? null : await response.json().catch(() => null);
       if (allowNotFound && response.status === 404) return { found: false, payload: null };
-      if (response.ok) return { found: true, payload };
-      lastFailure = String(response.status);
-      if (
-        !(retryNotFound && response.status === 404) &&
-        ![408, 429].includes(response.status) &&
-        response.status < 500
-      )
-        throw new Error(`G12_PRODUCTION_MARKER_STORE_API_REFUSED:${response.status}`);
+      if (response.ok) {
+        if (!retryPresent || attempt === maximumAttempts) return { found: true, payload };
+        lastFailure = "still-present";
+      } else {
+        lastFailure = String(response.status);
+        if (
+          !(retryNotFound && response.status === 404) &&
+          ![408, 429].includes(response.status) &&
+          response.status < 500
+        )
+          throw new Error(`G12_PRODUCTION_MARKER_STORE_API_REFUSED:${response.status}`);
+      }
     } catch (error) {
       if (String(error?.message ?? "").startsWith("G12_PRODUCTION_MARKER_STORE_API_REFUSED:")) throw error;
       lastFailure = "transport";
@@ -139,7 +150,7 @@ async function clear() {
   if (!result.valid)
     throw new Error(`G12_PRODUCTION_MARKER_STORE_CLEAR_REFUSED:${result.violations.join(",")}`);
   await github(variablePath, { method: "DELETE", allowNotFound: true });
-  const terminal = await github(variablePath, { allowNotFound: true });
+  const terminal = await github(variablePath, { allowNotFound: true, retryPresent: true });
   if (terminal.found) throw new Error("G12_PRODUCTION_MARKER_STORE_CLEAR_VERIFICATION_FAILED");
   if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, "cleared=true\n", "utf8");
   console.log(

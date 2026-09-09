@@ -279,6 +279,26 @@ export function percentile(values, percentileValue) {
   return sorted[Math.min(rank - 1, sorted.length - 1)];
 }
 
+export async function retryStrictBoundaryWindow({ attempts, verify, wait }) {
+  if (!Number.isInteger(attempts) || attempts < 1 || attempts > 20 || typeof verify !== "function") {
+    throw new Error("G12_STRICT_BOUNDARY_RETRY_INPUT_REFUSED");
+  }
+  if (attempts > 1 && typeof wait !== "function") {
+    throw new Error("G12_STRICT_BOUNDARY_RETRY_INPUT_REFUSED");
+  }
+  let failure = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      await verify();
+      return;
+    } catch (error) {
+      failure = error;
+    }
+    if (attempt < attempts) await wait();
+  }
+  throw failure;
+}
+
 export function evaluateProbeWindow(evidence) {
   const violations = [];
   if (!isFullSha(evidence?.candidateSha)) violations.push("candidate_sha_invalid");

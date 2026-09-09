@@ -228,7 +228,7 @@ async function deployOriginal(context, state, expectedCurrent) {
   const sealPath = resolve(argument("seal"));
   if (!argument("dist") || !argument("seal")) throw new Error("G12_STAGING_COMPENSATION_ARTIFACT_REQUIRED");
   await verifySealedBaseline(distPath, sealPath, state.originalRelease);
-  const wranglerScript = resolve("node_modules/wrangler/bin/wrangler.js");
+  const wranglerScript = resolve(argument("wrangler-script") || "node_modules/wrangler/bin/wrangler.js");
   const compensationMarker =
     state.compensationMarker ||
     `g12-staging-deploy-compensation-${process.env.GITHUB_RUN_ID ?? "0"}-${

@@ -232,6 +232,14 @@ function attestationRecord(report, observedNow) {
   };
 }
 
+test("every broker DELETE terminal uses bounded eventual-consistency polling", async () => {
+  const source = await readFile(
+    resolve(repositoryRoot, "scripts/ev2/phase12/run-real-browser-attestation-consumer.mjs"),
+    "utf8",
+  );
+  assert.equal((source.match(/allowNotFound: true, retryPresent: true/g) ?? []).length, 3);
+});
+
 test("the broker workflow claims, stores, handshakes, and always clears without expressions in shell", async () => {
   const workflow = await readFile(
     resolve(repositoryRoot, ".github/workflows/submit-real-browser-attestation.yml"),
@@ -586,6 +594,70 @@ test("the HTTP client retries a post-write 404 only when explicitly requested", 
     client(path, { method: "POST", retryNotFound: true }),
     /G12_REAL_BROWSER_CHALLENGE_GITHUB_RETRY_MODE_REFUSED/,
   );
+});
+
+test("the HTTP client waits for an eventually invisible deleted variable only when explicitly requested", async () => {
+  const path = "/repos/Vnd93/gaiatec-cms/actions/variables/G12_STAGING_REAL_BROWSER_CHALLENGE_7654321_2";
+  const sleeps = [];
+  let calls = 0;
+  const client = createRealBrowserBrokerGitHubClient({
+    token: "release-guard-token-never-print-123456789",
+    repositoryName: "Vnd93/gaiatec-cms",
+    fetchImplementation: async () => {
+      calls += 1;
+      if (calls === 1) {
+        return new Response(JSON.stringify({ name: "stale-deleted-variable", value: "sealed" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ message: "Not Found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+    sleep: async (milliseconds) => sleeps.push(milliseconds),
+  });
+
+  assert.deepEqual(await client(path, { allowNotFound: true, retryPresent: true }), {
+    found: false,
+    payload: { message: "Not Found" },
+    status: 404,
+    recoveredLostDelete: false,
+  });
+  assert.equal(calls, 2);
+  assert.deepEqual(sleeps, [1_000]);
+  await assert.rejects(
+    client(path, { method: "DELETE", allowNotFound: true, retryPresent: true }),
+    /G12_REAL_BROWSER_CHALLENGE_GITHUB_RETRY_MODE_REFUSED/,
+  );
+});
+
+test("the HTTP client remains fail-closed after the bounded deleted-variable visibility window", async () => {
+  const path = "/repos/Vnd93/gaiatec-cms/actions/variables/G12_STAGING_REAL_BROWSER_CHALLENGE_7654321_2";
+  const sleeps = [];
+  let calls = 0;
+  const client = createRealBrowserBrokerGitHubClient({
+    token: "release-guard-token-never-print-123456789",
+    repositoryName: "Vnd93/gaiatec-cms",
+    fetchImplementation: async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ name: "still-visible", value: "sealed" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+    sleep: async (milliseconds) => sleeps.push(milliseconds),
+  });
+
+  assert.deepEqual(await client(path, { allowNotFound: true, retryPresent: true }), {
+    found: true,
+    payload: { name: "still-visible", value: "sealed" },
+    status: 200,
+    recoveredLostDelete: false,
+  });
+  assert.equal(calls, 6);
+  assert.deepEqual(sleeps, [1_000, 2_000, 4_000, 8_000, 8_000]);
 });
 
 test("claim confirms terminal 404 after recovering a lost HTTP DELETE response", async () => {

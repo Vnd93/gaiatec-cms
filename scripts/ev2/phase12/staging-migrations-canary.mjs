@@ -4,7 +4,11 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
 import { QA_ACTOR_LEASE_TTL_MINUTES } from "../../qa/qa-actor-lease.mjs";
-import { canaryFailureIdentity, canaryFailureStage } from "./canary-failure-identity.mjs";
+import {
+  authFailureIdentity,
+  canaryFailureIdentity,
+  canaryFailureStage,
+} from "./canary-failure-identity.mjs";
 import {
   CMS_LEAD_ORIGIN_BINDING_0084_OWNER_ONLY_HELPERS,
   CMS_PUBLIC_RELATION_LIMIT_0085_OWNER_ONLY_HELPERS,
@@ -352,7 +356,7 @@ async function createActor(label) {
   });
   if (enrolled.error || !enrolled.data?.totp?.secret)
     throw new Error("G12_STAGING_SYNTHETIC_MFA_ENROLL_FAILED");
-  let lastFailure = false;
+  let lastFailure = null;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     const challenge = await client.auth.mfa.challenge({ factorId: enrolled.data.id });
     if (challenge.error) throw new Error("G12_STAGING_SYNTHETIC_MFA_CHALLENGE_FAILED");
@@ -377,10 +381,14 @@ async function createActor(label) {
       });
       return actor;
     }
-    lastFailure = true;
-    await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
+    lastFailure = verified.error ?? { status: 0, code: "session_incomplete" };
+    // Retrying inside the same 30 second window resends the identical code, so the retry could
+    // never tell a rejected code from a transient failure. Wait for the counter to advance.
+    const boundaryMs = (Math.floor(clock / 30_000) + 1) * 30_000 - clock + 1_000;
+    await new Promise((resolve) => setTimeout(resolve, Math.min(Math.max(boundaryMs, 1_000), 31_000)));
   }
-  if (lastFailure) throw new Error("G12_STAGING_SYNTHETIC_MFA_VERIFY_FAILED");
+  if (lastFailure)
+    throw new Error(`G12_STAGING_SYNTHETIC_MFA_VERIFY_FAILED:${authFailureIdentity(lastFailure)}`);
   return actor;
 }
 

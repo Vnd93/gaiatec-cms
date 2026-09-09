@@ -22,3 +22,22 @@ export function canaryFailureStage({ operationError, cleanupError }) {
   if (cleanupError) return "cleanup";
   return null;
 }
+
+// A rejected sign-in or MFA verification only says what happened through the auth service's own
+// status and error slug. Both are bounded identifiers, never free text and never a credential, so
+// they are safe to carry into a coded failure. Anything unexpected collapses to "unknown".
+const SAFE_SLUG = /^[a-z][a-z0-9_]{0,39}$/;
+// A credential can be shaped like a slug, so slug shape alone is not enough for something that lands
+// in a published evidence artifact. Anything carrying a known secret prefix is refused outright.
+const CREDENTIAL_LIKE = /^(?:sbp?|sb|eyj|bearer|token|secret|apikey|key|password|pat)_/i;
+
+function safeSlug(value) {
+  return typeof value === "string" && SAFE_SLUG.test(value) && !CREDENTIAL_LIKE.test(value);
+}
+
+export function authFailureIdentity(error) {
+  const status = Number(error?.status);
+  const code = safeSlug(error?.code) ? error.code : "unknown";
+  const httpStatus = Number.isInteger(status) && status >= 100 && status <= 599 ? String(status) : "0";
+  return `${httpStatus}:${code}`;
+}

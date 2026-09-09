@@ -402,6 +402,27 @@ test("bridge probes sample enough to make p95 a percentile instead of the maximu
   assert.doesNotMatch(workflow, /EV2_G12_(?:PUBLIC_P95|BUDGET)/);
 });
 
+test("only the probes aimed at a freshly deployed target wait for it to converge", async () => {
+  const workflow = await readFile(".github/workflows/promote-staging-frontend-bridge.yml", "utf8");
+
+  // The preview and canonical probes measure a deployment that is seconds old, so they are allowed to
+  // wait for the alias to converge. The baseline probe measures an alias that has been live for a long
+  // time and keeps the default window, so a genuinely unavailable baseline still fails fast.
+  const readiness = [...workflow.matchAll(/EV2_G12_READINESS_ATTEMPTS: "(\d+)"/g)];
+  assert.equal(readiness.length, 2);
+  for (const [, attempts] of readiness) assert.ok(Number(attempts) <= 20);
+  const baseline = workflow.indexOf("Prove live alias is the expected old-backend baseline");
+  const previewDeploy = workflow.indexOf("Deploy sealed A to isolated staging preview branch");
+  assert.ok(baseline < previewDeploy);
+  assert.ok(workflow.indexOf("EV2_G12_READINESS_ATTEMPTS") > previewDeploy);
+
+  // Waiting longer must not become a way to assert less: budget, sampling and gate stay untouched.
+  const guard = await readFile("scripts/ev2/phase12/release-guard-lib.mjs", "utf8");
+  assert.match(guard, /publicP95Ms: 1500/);
+  assert.match(guard, /availabilityPercent: 99\.9/);
+  for (const [, count] of workflow.matchAll(/EV2_G12_SAMPLE_COUNT: "(\d+)"/g)) assert.ok(Number(count) >= 20);
+});
+
 test("a lost bridge runner cannot leave the legacy public backend live on staging", async () => {
   const watchdog = await readFile(".github/workflows/promote-staging-frontend-bridge-watchdog.yml", "utf8");
 

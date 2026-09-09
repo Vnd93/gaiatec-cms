@@ -59,11 +59,12 @@ function uniqueMediaIds(values: unknown[]): string[] {
 
 function documentIdentity(document: DocumentReference): string | null {
   if (typeof document.id !== "string" || typeof document.storagePath !== "string") return null;
+  // A shared file may have a different display title in each immutable content
+  // revision. Deduplication still binds every security-relevant field.
   return JSON.stringify([
     document.id.toLowerCase(),
     document.storagePath,
     document.kind,
-    document.title,
     document.sha256,
     document.revision,
     document.language,

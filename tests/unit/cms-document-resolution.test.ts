@@ -54,6 +54,77 @@ describe("governed public document resolution", () => {
     });
   });
 
+  it("keeps the versioned display title outside the governed file identity", async () => {
+    const { client } = createClient({
+      data: [
+        {
+          id: reference.id,
+          storage_path: reference.storagePath,
+          kind: reference.kind,
+          title: "Título atual da biblioteca",
+          sha256: reference.sha256,
+          revision: reference.revision,
+          language: reference.language.toLowerCase(),
+          visibility: reference.visibility,
+          rights_confirmed: true,
+          processing_status: "ready",
+          scan_status: "clean",
+          scan_engine: "clamav-corporate-v1",
+          source_kind: "official_company",
+          synthetic_expires_at: null,
+          archived_at: null,
+        },
+      ],
+      error: null,
+    });
+
+    await expect(
+      resolveDocumentAssets(
+        client as never,
+        [{ ...reference, title: "Título preservado nesta revisão editorial" }],
+        "validated",
+      ),
+    ).resolves.toEqual({ [reference.id]: "validated" });
+  });
+
+  it("still rejects every changed governed file-identity field", async () => {
+    const approvedAsset = {
+      id: reference.id,
+      storage_path: reference.storagePath,
+      kind: reference.kind,
+      title: reference.title,
+      sha256: reference.sha256,
+      revision: reference.revision,
+      language: reference.language.toLowerCase(),
+      visibility: reference.visibility,
+      rights_confirmed: true,
+      processing_status: "ready",
+      scan_status: "clean",
+      scan_engine: "clamav-corporate-v1",
+      source_kind: "official_company",
+      synthetic_expires_at: null,
+      archived_at: null,
+    };
+    const governedChanges: Array<[string, unknown]> = [
+      ["storage_path", `cms-documents/${reference.id}/other.pdf`],
+      ["kind", "datasheet"],
+      ["sha256", "b".repeat(64)],
+      ["revision", "2"],
+      ["language", "en"],
+      ["visibility", "private"],
+      ["rights_confirmed", false],
+    ];
+
+    for (const [field, value] of governedChanges) {
+      const { client } = createClient({
+        data: [{ ...approvedAsset, [field]: value }],
+        error: null,
+      });
+
+      await expect(resolveDocumentAssets(client as never, [reference], "validated")).resolves.toEqual({});
+    }
+  });
+
   it("propagates a database failure instead of silently omitting documents", async () => {
     const databaseError = new Error("database unavailable");
     const { client } = createClient({ data: null, error: databaseError });

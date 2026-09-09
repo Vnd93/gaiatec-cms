@@ -364,6 +364,44 @@ test("legacy document backfill preflights malformed data and blocks promotion un
     "document_rights_unconfirmed",
   ])
     assert.ok(preflight.includes(adversarialClass), `missing legacy preflight ${adversarialClass}`);
+  const documentIdentityConflict = preflight.slice(
+    preflight.indexOf("select 'document_id_conflict'"),
+    preflight.indexOf("select 'document_storage_identity_conflict'"),
+  );
+  assert.doesNotMatch(documentIdentityConflict, /value ->> 'title'/);
+  for (const governedIdentityField of [
+    "storage_path",
+    "value ->> 'kind'",
+    "value ->> 'revision'",
+    "lower(value ->> 'language')",
+    "value ->> 'visibility'",
+    "value ->> 'sha256'",
+    "value ->> 'rightsConfirmed'",
+  ])
+    assert.ok(
+      documentIdentityConflict.includes(governedIdentityField),
+      `missing governed document identity field ${governedIdentityField}`,
+    );
+  assert.match(preflight, /select 'document_title_invalid'/);
+  const promotionGateIdentity = migration.slice(
+    migration.indexOf("create or replace function public.cms_legacy_documents_promotion_ready"),
+    migration.indexOf("revoke all on function public.cms_reserve_document_asset"),
+  );
+  const publicationValidator = migration.slice(
+    migration.indexOf("create or replace function public.cms_validate_governed_product_documents"),
+    migration.indexOf("create trigger cms_governed_product_documents_validate"),
+  );
+  assert.doesNotMatch(promotionGateIdentity, /asset\.title = reference\.value ->> 'title'/);
+  assert.match(publicationValidator, /jsonb_typeof\(v_document -> 'title'\) is distinct from 'string'/);
+  assert.match(
+    publicationValidator,
+    /char_length\(btrim\(coalesce\(v_document ->> 'title', ''\)\)\) not between 1 and 180/,
+  );
+  assert.doesNotMatch(migration, /asset\.title = v_document ->> 'title'/);
+  assert.doesNotMatch(attestation, /asset\.title = v_document ->> 'title'/);
+  assert.doesNotMatch(attestation, /document ->> 'title' = asset\.title/);
+  assert.match(attestation, /jsonb_typeof\(p_document -> 'title'\) = 'string'/);
+  assert.match(attestation, /char_length\(btrim\(p_document ->> 'title'\)\) between 1 and 180/);
   assert.match(preflight, /validation_issue_count=%s reason_counts=%s/);
   assert.doesNotMatch(preflight, /target_id|storage_path=%s|document_id=%s/);
   assert.match(

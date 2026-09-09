@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
-select plan(56);
+select plan(61);
 
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -207,6 +207,99 @@ select is((
 select is((select count(*)::integer from public.cms_audit_log
   where action='cms:documents.security_approve' and target_id='57000000-0000-4000-8000-000000000010'),
   1, 'security approval creates exactly one audit event');
+select lives_ok(
+  $$select private.cms_validate_preview_document_scope(
+    '57000000-0000-4000-8000-000000000001', 'product',
+    jsonb_build_object('documents', jsonb_build_array(jsonb_build_object(
+      'id', '57000000-0000-4000-8000-000000000010', 'kind', 'manual',
+      'title', 'Título preservado por esta revisão editorial',
+      'storagePath', 'cms-documents/57000000-0000-4000-8000-000000000010/manual.pdf',
+      'sha256', repeat('b',64), 'revision', '1', 'language', 'pt-BR',
+      'visibility', 'public', 'rightsConfirmed', true
+    ))),
+    'aal2', 'documents-session', now()-interval '1 minute'
+  )$$,
+  'a versioned display title does not change the governed file identity'
+);
+select throws_ok(
+  $$select private.cms_validate_preview_document_scope(
+    '57000000-0000-4000-8000-000000000001', 'product',
+    jsonb_build_object('documents', jsonb_build_array(jsonb_build_object(
+      'id', '57000000-0000-4000-8000-000000000010', 'kind', 'manual',
+      'title', 'Título preservado por esta revisão editorial',
+      'storagePath', 'cms-documents/57000000-0000-4000-8000-000000000010/manual.pdf',
+      'sha256', repeat('f',64), 'revision', '1', 'language', 'pt-BR',
+      'visibility', 'public', 'rightsConfirmed', true
+    ))),
+    'aal2', 'documents-session', now()-interval '1 minute'
+  )$$,
+  '42501', 'CMS_PREVIEW_DOCUMENT_SCOPE_INVALID',
+  'a versioned title never permits a changed cryptographic identity'
+);
+
+insert into public.cms_content_items(id, content_type, slug, created_by, updated_by)
+values(
+  '57000000-0000-4000-8000-000000000070', 'product', 'qa-versioned-document-title',
+  '57000000-0000-4000-8000-000000000001', '57000000-0000-4000-8000-000000000001'
+);
+insert into public.cms_content_revisions(
+  id, item_id, revision_number, schema_version, payload, seo, provenance,
+  source_draft_version, reason, created_by
+) values(
+  '57000000-0000-4000-8000-000000000071',
+  '57000000-0000-4000-8000-000000000070', 1, 1,
+  jsonb_build_object(
+    'title', 'Produto QA-CMS-FINAL-20260907-bbbbbbbb com título documental versionado',
+    'pilotState', 'synthetic_test',
+    'seo', jsonb_build_object('indexable', false),
+    'documents', jsonb_build_array(jsonb_build_object(
+      'id', '57000000-0000-4000-8000-000000000010', 'kind', 'manual',
+      'title', 'Título preservado por esta revisão editorial',
+      'storagePath', 'cms-documents/57000000-0000-4000-8000-000000000010/manual.pdf',
+      'sha256', repeat('b',64), 'revision', '1', 'language', 'pt-BR',
+      'visibility', 'public', 'rightsConfirmed', true
+    ))
+  ),
+  '{}', '[{"rightsConfirmed":true}]', 1,
+  'Fixture de título documental versionado', '57000000-0000-4000-8000-000000000001'
+);
+alter table public.cms_published_projection disable trigger cms_phase7_projection_validate;
+alter table public.cms_published_projection disable trigger cms_claim_product_identifiers_0078;
+alter table public.cms_published_projection disable trigger cms_pim_active_skus_before_publication;
+alter table public.cms_published_projection disable trigger cms_product_validate_publication;
+alter table public.cms_published_projection disable trigger cms_projection_sync_product;
+select lives_ok(
+  $$insert into public.cms_published_projection(
+    item_id, revision_id, content_type, slug, schema_version, consumer_id,
+    renderer_key, payload, seo, content_version, cache_tag, etag, published_at
+  ) select
+    item.id, revision.id, 'product', item.slug, 1,
+    (select consumer_id from public.cms_capability_registry order by consumer_id limit 1),
+    'fixture', revision.payload, '{}', 1,
+    'cms:product:' || item.id::text, '"' || repeat('7',64) || '"', now()
+  from public.cms_content_items item
+  join public.cms_content_revisions revision on revision.item_id = item.id
+  where item.id = '57000000-0000-4000-8000-000000000070'$$,
+  'publication accepts a versioned display title with the same governed file identity'
+);
+alter table public.cms_published_projection enable trigger cms_projection_sync_product;
+alter table public.cms_published_projection enable trigger cms_product_validate_publication;
+alter table public.cms_published_projection enable trigger cms_pim_active_skus_before_publication;
+alter table public.cms_published_projection enable trigger cms_claim_product_identifiers_0078;
+alter table public.cms_published_projection enable trigger cms_phase7_projection_validate;
+select is((
+  select count(*)::integer
+  from public.cms_public_document_download_target(
+    '57000000-0000-4000-8000-000000000010', repeat('b',64)
+  )
+), 1, 'the public download target resolves a published versioned display title');
+select is(
+  public.cms_legacy_documents_promotion_ready(), true,
+  'the promotion gate accepts title variation while preserving governed identity'
+);
+delete from public.cms_published_projection
+where item_id='57000000-0000-4000-8000-000000000070';
+
 select is((public.cms_review_document_security(
   '57000000-0000-4000-8000-000000000002',
   '57000000-0000-4000-8000-000000000010', repeat('b',64),

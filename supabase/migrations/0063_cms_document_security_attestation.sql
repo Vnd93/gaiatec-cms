@@ -268,7 +268,6 @@ begin
     where asset.id = (v_document ->> 'id')::uuid
       and asset.storage_path = v_document ->> 'storagePath'
       and asset.kind = v_document ->> 'kind'
-      and asset.title = v_document ->> 'title'
       and asset.sha256 = v_document ->> 'sha256'
       and asset.revision = v_document ->> 'revision'
       and asset.language = lower(v_document ->> 'language')
@@ -775,7 +774,6 @@ begin
     where asset.id = (v_document ->> 'id')::uuid
       and asset.storage_path = v_document ->> 'storagePath'
       and asset.kind = v_document ->> 'kind'
-      and asset.title = v_document ->> 'title'
       and asset.sha256 = v_document ->> 'sha256'
       and asset.revision = v_document ->> 'revision'
       and asset.language = lower(v_document ->> 'language')
@@ -1951,7 +1949,6 @@ as $$
         and lower(document ->> 'id') = asset.id::text
         and document ->> 'storagePath' = asset.storage_path
         and document ->> 'kind' = asset.kind
-        and document ->> 'title' = asset.title
         and document ->> 'sha256' = asset.sha256
         and document ->> 'revision' = asset.revision
         and lower(document ->> 'language') = asset.language

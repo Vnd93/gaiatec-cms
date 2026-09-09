@@ -95,6 +95,39 @@ describe("cms-public batched asset resolution", () => {
     expect(resolveDocuments.mock.calls[0][0]).toEqual([sharedDocument]);
   });
 
+  it("shares one governed URL across versioned display titles", async () => {
+    const resolveMedia = vi.fn(async () => ({ mediaUrls: {}, mediaAlt: {} }));
+    const resolveDocuments = vi.fn(async (documents: Array<{ id?: unknown }>) =>
+      Object.fromEntries(documents.map((document) => [String(document.id), "https://docs/shared"])),
+    );
+    const governed = {
+      id: documentId(7),
+      storagePath: `cms-documents/${documentId(7)}/file.pdf`,
+      kind: "manual",
+      title: "Título atual",
+      sha256: "a".repeat(64),
+      revision: "1",
+      language: "pt-br",
+      visibility: "public",
+      rightsConfirmed: true,
+    };
+
+    const result = await resolvePublicAssetBatch(
+      [
+        { assetIds: [], documents: [governed] },
+        { assetIds: [], documents: [{ ...governed, title: "Título da revisão anterior" }] },
+      ],
+      { resolveMedia, resolveDocuments },
+    );
+
+    expect(resolveDocuments).toHaveBeenCalledTimes(1);
+    expect(resolveDocuments.mock.calls[0][0]).toHaveLength(1);
+    expect(result.map(({ documentUrls }) => documentUrls)).toEqual([
+      { [governed.id]: "https://docs/shared" },
+      { [governed.id]: "https://docs/shared" },
+    ]);
+  });
+
   it("deduplicates references before enforcing the response-wide budget", async () => {
     const uniqueAssets = Array.from({ length: PUBLIC_MEDIA_REFERENCE_LIMIT }, (_, index) => assetId(index));
     const uniqueDocuments = Array.from({ length: PUBLIC_DOCUMENT_REFERENCE_LIMIT }, (_, index) => ({

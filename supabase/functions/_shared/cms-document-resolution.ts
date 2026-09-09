@@ -58,11 +58,12 @@ function canonicalDocumentId(value: unknown): string | null {
 }
 
 function matchesGovernedAsset(reference: DocumentReference, asset: DocumentAsset): boolean {
+  // The display title belongs to the versioned editorial reference. File
+  // identity remains fail-closed on path, hash and governed security metadata.
   return (
     canonicalDocumentId(asset.id) === canonicalDocumentId(reference.id) &&
     asset.storage_path === reference.storagePath &&
     asset.kind === reference.kind &&
-    asset.title === reference.title &&
     asset.sha256 === reference.sha256 &&
     asset.revision === reference.revision &&
     asset.language === String(reference.language ?? "").toLowerCase() &&

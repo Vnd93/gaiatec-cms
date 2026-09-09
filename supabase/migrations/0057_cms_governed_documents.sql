@@ -269,13 +269,15 @@ begin
     group by source_scope, id_text
     having count(*) > 1
     union all
+    -- O título é apresentação editorial versionada e pode evoluir sem trocar
+    -- o arquivo. A identidade governada continua presa ao caminho, hash e aos
+    -- demais metadados de segurança abaixo.
     select 'document_id_conflict'
     from stored_references
     group by id_text
     having count(distinct jsonb_build_array(
       storage_path,
       value ->> 'kind',
-      value ->> 'title',
       value ->> 'revision',
       lower(value ->> 'language'),
       value ->> 'visibility',
@@ -1061,7 +1063,8 @@ end;
 $$;
 
 -- O conteúdo publicado só pode apontar para o mesmo ativo validado. Isso impede
--- troca de UUID, caminho, hash ou metadados no payload antes da publicação.
+-- troca de UUID, caminho, hash ou metadados de segurança no payload antes da
+-- publicação. O título continua validado, mas pertence à revisão editorial.
 create or replace function public.cms_validate_governed_product_documents()
 returns trigger
 language plpgsql
@@ -1086,6 +1089,10 @@ begin
     order by value ->> 'id'
   loop
     if new.content_type <> 'product' then continue; end if;
+    if jsonb_typeof(v_document -> 'title') is distinct from 'string'
+       or char_length(btrim(coalesce(v_document ->> 'title', ''))) not between 1 and 180 then
+      raise exception 'CMS_PRODUCT_DOCUMENT_SHAPE_INVALID' using errcode = '23514';
+    end if;
     if v_document ? 'officialUrl'
        or nullif(v_document ->> 'storagePath', '') is null then
       raise exception 'CMS_PRODUCT_DOCUMENT_LOCATION_INVALID' using errcode = '23514';
@@ -1099,7 +1106,6 @@ begin
       where asset.id = (v_document ->> 'id')::uuid
         and asset.storage_path = v_document ->> 'storagePath'
         and asset.kind = v_document ->> 'kind'
-        and asset.title = v_document ->> 'title'
         and asset.sha256 = v_document ->> 'sha256'
         and asset.revision = v_document ->> 'revision'
         and asset.language = lower(v_document ->> 'language')
@@ -1306,7 +1312,6 @@ as $$
       on asset.id::text = lower(reference.value ->> 'id')
      and asset.storage_path = reference.value ->> 'storagePath'
      and asset.kind = reference.value ->> 'kind'
-     and asset.title = reference.value ->> 'title'
      and asset.sha256 = reference.value ->> 'sha256'
      and asset.revision = reference.value ->> 'revision'
      and asset.language = lower(reference.value ->> 'language')

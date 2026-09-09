@@ -953,6 +953,12 @@ async function handleRequest(request, env) {
     }
   }
   if (managed && !managed.ok && managed.status !== 404) {
+    // A static public route is served from the bundle whatever the managed lookup answers, so an
+    // upstream failure there must not take the route down. The lookup still runs first, so a managed
+    // page or route rule that does resolve keeps winning exactly as before.
+    if (isPublicRoute(path)) {
+      return spaResponse(request, env, 200, { noindex: stagingHost });
+    }
     return spaResponse(request, env, 503, { noindex: true });
   }
 

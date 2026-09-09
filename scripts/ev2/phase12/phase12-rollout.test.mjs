@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 import worker, { contentSecurityPolicy } from "../../../cloudflare/_worker.js";
@@ -46,6 +46,15 @@ const read = (path) => readFile(path, "utf8");
 const sha = "a".repeat(40);
 const cspPolicySha256 = createHash("sha256").update(contentSecurityPolicy()).digest("hex");
 const cspAdminPolicySha256 = createHash("sha256").update(contentSecurityPolicy("/admin")).digest("hex");
+
+test("production function inventory exactly matches the source directories in canonical order", async () => {
+  const sourceFunctions = (await readdir("supabase/functions", { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory() && entry.name !== "_shared")
+    .map((entry) => entry.name)
+    .sort();
+
+  assert.deepEqual(PRODUCTION_FUNCTIONS, sourceFunctions);
+});
 
 test("text evidence digest is stable across Git and Windows line endings", () => {
   const lf = Buffer.from('{"gate":"G12"}\n{"decision":"approved"}\n', "utf8");

@@ -330,3 +330,89 @@ test("promotion requires headless fail-closed cleanup while full staging owns po
   assert.match(productionWriter, /positiveBrowserGate: "deferred-to-full-candidate-deploy"/);
   assert.match(productionWriter, /positiveBrowserHomologationClaimed: false/);
 });
+
+test("the legacy public backend is swapped in under an exclusive lease and always restored", async () => {
+  const workflow = await readFile(".github/workflows/promote-staging-frontend-bridge.yml", "utf8");
+
+  // The legacy contract is pinned to the release production actually serves; it is never an input.
+  assert.match(workflow, /LEGACY_PUBLIC_BACKEND_SHA: f48bb4530566456a0090a98cd39caf1cacb51b09/);
+  assert.match(workflow, /ref: f48bb4530566456a0090a98cd39caf1cacb51b09, fetch-depth: 0, path: legacy/);
+  assert.match(workflow, /git merge-base --is-ancestor "\$LEGACY_PUBLIC_BACKEND_SHA"/);
+  assert.match(workflow, /test "\$\(git -C \.\.\/legacy rev-parse HEAD\)" = "\$LEGACY_PUBLIC_BACKEND_SHA"/);
+
+  const prepare = workflow.indexOf("Plan the temporary legacy public backend swap without mutating anything");
+  const lease = workflow.indexOf("Take the exclusive legacy backend lease before any swap");
+  const engage = workflow.indexOf("Swap staging to the legacy public backend under the held lease");
+  const previewFixture = workflow.indexOf("Setup isolated public bridge render fixture on old backend");
+  const canonicalHeadless = workflow.indexOf(
+    "Headless-prove canonical render and fail-closed Turnstile boundary",
+  );
+  const restore = workflow.indexOf("Restore the candidate public backend in every outcome");
+  const canonicalCleanup = workflow.indexOf("Cleanup canonical fixture");
+  const release = workflow.indexOf("Release the legacy backend lease only after a proven restore");
+
+  // Nothing mutates before the lease is held, and no fixture runs before the swap is proven.
+  assert.ok(prepare >= 0 && prepare < lease && lease < engage && engage < previewFixture);
+  // The restore has to happen while the canonical fixture form still exists, so public-v2 can be proven.
+  assert.ok(canonicalHeadless < restore && restore < canonicalCleanup && canonicalCleanup < release);
+
+  assert.match(workflow, /cms-public-legacy-bridge\.mjs prepare/);
+  assert.match(workflow, /cms-public-legacy-bridge\.mjs engage/);
+  assert.match(workflow, /cms-public-legacy-bridge\.mjs restore/);
+  assert.match(workflow, /recovery-state-store\.mjs put --kind staging-cms-public-legacy/);
+  assert.match(workflow, /recovery-state-store\.mjs clear --kind staging-cms-public-legacy/);
+  assert.match(workflow, /steps\.legacy_prepare\.outcome == 'success'/);
+  assert.match(workflow, /steps\.legacy_lease\.outcome == 'success'/);
+  assert.match(workflow, /always\(\) && steps\.legacy_engage\.outcome == 'success'/);
+  assert.match(
+    workflow,
+    /REQUIRE_CONTRACT_PROBE: \$\{\{ steps\.canonical_fixture\.outcome == 'success' \}\}/,
+  );
+  assert.match(workflow, /--probe-state outputs\/staging-bridge-canonical-state\.json/);
+
+  // A run that engaged the legacy backend and did not restore it must fail, and the lease is only
+  // released once the restore itself succeeded.
+  assert.match(workflow, /The legacy public backend stayed engaged on staging\./);
+  assert.match(workflow, /if \[ "\$LEGACY_ENGAGE" = success \] && \[ "\$LEGACY_RESTORE" != success \]; then/);
+  assert.match(
+    workflow,
+    /always\(\) && steps\.legacy_lease\.outcome == 'success' &&\s*\n\s*steps\.legacy_restore\.outcome == 'success'/,
+  );
+
+  // The swap is a staging-only operation: the production project must never appear in it.
+  const legacySection = workflow.slice(prepare, canonicalCleanup);
+  assert.equal(legacySection.includes("chfuhctnhqgyjowkvllv"), false);
+  assert.equal(legacySection.includes("gaiatecsistemas.com.br"), false);
+  assert.match(legacySection, /QA_CMS_LEGACY_BRIDGE_ENVIRONMENT: staging/);
+});
+
+test("a lost bridge runner cannot leave the legacy public backend live on staging", async () => {
+  const watchdog = await readFile(".github/workflows/promote-staging-frontend-bridge-watchdog.yml", "utf8");
+
+  // The legacy restore owns its own job so it cannot be skipped by the frontend compensation path.
+  assert.match(watchdog, /^ {2}restore-legacy-public-backend:$/m);
+  assert.match(
+    watchdog,
+    /recovery-state-store\.mjs get\s+--allow-missing\s+--kind staging-cms-public-legacy/,
+  );
+  assert.match(watchdog, /cms-public-legacy-bridge\.mjs restore/);
+  assert.match(watchdog, /recovery-state-store\.mjs clear\s+--kind staging-cms-public-legacy/);
+
+  const job = watchdog.slice(watchdog.indexOf("  restore-legacy-public-backend:"));
+  // The candidate release is taken from the sealed lease, never from the event payload.
+  assert.match(job, /ref: \$\{\{ steps\.legacy_plan\.outputs\.candidate_sha \}\}/);
+  assert.match(job, /G12_STAGING_LEGACY_WATCHDOG_TARGET_REFUSED/);
+  assert.match(job, /G12_STAGING_LEGACY_WATCHDOG_RELEASE_REFUSED/);
+  assert.match(job, /steps\.legacy_state\.outputs\.state_present == 'true'/);
+  // A held lease must end restored, and the lease is only released after that restore succeeded.
+  assert.match(job, /if \[ "\$STATE_PRESENT" = true \]; then test "\$RESTORE" = success; exit 0; fi/);
+  assert.match(job, /test "\$RESTORE" = skipped/);
+  assert.match(job, /if: steps\.legacy_restore\.outcome == 'success'/);
+  assert.equal(job.includes("chfuhctnhqgyjowkvllv"), false);
+
+  const programs = nodeHeredocs(watchdog);
+  for (const [index, program] of programs.entries()) {
+    const parsed = spawnSync(process.execPath, ["--check"], { input: program, encoding: "utf8" });
+    assert.equal(parsed.status, 0, `watchdog inline Node ${index + 1}: ${parsed.stderr}`);
+  }
+});

@@ -14,6 +14,10 @@ const RECOVERY_KINDS = Object.freeze({
     event: "g12.production.rollback.prepared",
     variable: "G12_PRODUCTION_ROLLBACK_RECOVERY",
   },
+  "staging-cms-public-legacy": {
+    event: "g12.staging.cms_public_legacy.engaged",
+    variable: "G12_STAGING_CMS_PUBLIC_LEGACY_RECOVERY",
+  },
   "staging-deploy": {
     event: "g12.staging.deploy.prepared",
     variable: "G12_STAGING_DEPLOY_RECOVERY",

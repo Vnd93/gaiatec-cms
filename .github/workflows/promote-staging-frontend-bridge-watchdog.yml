@@ -415,3 +415,134 @@ jobs:
               steps.clear_state.outcome != 'skipped'))) ||
           !contains(fromJSON('["true","false"]'), steps.watchdog_state.outputs.recovery_required))
         run: exit 1
+
+  # An incomplete bridge can leave the temporary legacy public backend live on staging when the
+  # runner itself is lost, which the in-run always() restore cannot cover. This job owns that case
+  # and is deliberately independent of the frontend compensation job.
+  restore-legacy-public-backend:
+    if: >-
+      github.event.workflow_run.conclusion != 'success' &&
+      github.event.workflow_run.event == 'workflow_dispatch' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.path == '.github/workflows/promote-staging-frontend-bridge.yml' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: staging
+    steps:
+      - name: Checkout the exact trusted bridge control revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          path: control
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: control/.nvmrc
+      - name: Read any legacy public backend lease left by the incomplete run
+        id: legacy_state
+        continue-on-error: true
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs get
+          --allow-missing
+          --kind staging-cms-public-legacy
+          --file ../legacy-state/staging-cms-public-legacy-state.json
+          --run-id "${{ github.event.workflow_run.id }}"
+          --run-attempt "${{ github.event.workflow_run.run_attempt }}"
+          --control-sha "${{ github.event.workflow_run.head_sha }}"
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+      - name: Resolve the candidate release recorded in the lease
+        id: legacy_plan
+        if: steps.legacy_state.outputs.state_present == 'true'
+        run: |
+          node <<'NODE'
+          const { appendFileSync, readFileSync } = require("node:fs");
+          const state = JSON.parse(readFileSync("legacy-state/staging-cms-public-legacy-state.json", "utf8"));
+          if (state.event !== "g12.staging.cms_public_legacy.engaged")
+            throw new Error("G12_STAGING_LEGACY_WATCHDOG_STATE_REFUSED");
+          if (state.environment !== "staging" || state.projectRef !== "glcqsosxwgmlhzgcsnzv")
+            throw new Error("G12_STAGING_LEGACY_WATCHDOG_TARGET_REFUSED");
+          if (state.functionSlug !== "cms-public")
+            throw new Error("G12_STAGING_LEGACY_WATCHDOG_TARGET_REFUSED");
+          const candidate = state.candidate?.sha ?? "";
+          const legacy = state.legacy?.sha ?? "";
+          if (!/^[a-f0-9]{40}$/.test(candidate) || !/^[a-f0-9]{40}$/.test(legacy) || candidate === legacy)
+            throw new Error("G12_STAGING_LEGACY_WATCHDOG_RELEASE_REFUSED");
+          appendFileSync(process.env.GITHUB_OUTPUT, `candidate_sha=${candidate}\nlegacy_sha=${legacy}\n`);
+          NODE
+      - name: Checkout the exact candidate backend recorded in the lease
+        if: steps.legacy_state.outputs.state_present == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ steps.legacy_plan.outputs.candidate_sha }}
+          fetch-depth: 0
+          path: candidate
+      - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3
+        if: steps.legacy_state.outputs.state_present == 'true'
+        with:
+          version: 2.116.0
+      - name: Bind the recovered lease to the candidate checkout
+        if: steps.legacy_state.outputs.state_present == 'true'
+        run: |
+          set -euo pipefail
+          test "$(git -C candidate rev-parse HEAD)" = "${{ steps.legacy_plan.outputs.candidate_sha }}"
+          mkdir -p candidate/outputs
+          cp legacy-state/staging-cms-public-legacy-state.json \
+            candidate/outputs/staging-cms-public-legacy-state.json
+      - name: Restore the candidate public backend recorded in the lease
+        id: legacy_restore
+        if: steps.legacy_state.outputs.state_present == 'true'
+        continue-on-error: true
+        working-directory: candidate
+        run: >-
+          node scripts/qa/cms-public-legacy-bridge.mjs restore
+          --candidate-source .
+          --state outputs/staging-cms-public-legacy-state.json
+          --report outputs/staging-cms-public-legacy-watchdog-restore.json
+        env:
+          QA_CMS_LEGACY_BRIDGE_ENVIRONMENT: staging
+          QA_CMS_LEGACY_BRIDGE_CANDIDATE_SHA: ${{ steps.legacy_plan.outputs.candidate_sha }}
+          QA_CMS_LEGACY_BRIDGE_LEGACY_SHA: ${{ steps.legacy_plan.outputs.legacy_sha }}
+          QA_CMS_LEGACY_BRIDGE_RUN_ID: ${{ github.event.workflow_run.id }}
+          QA_CMS_LEGACY_BRIDGE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          QA_CMS_LEGACY_BRIDGE_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Upload the watchdog restore evidence
+        if: always() && steps.legacy_restore.outcome != 'skipped'
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: staging-cms-public-legacy-watchdog-${{ github.run_id }}-${{ github.run_attempt }}
+          path: candidate/outputs/staging-cms-public-legacy-watchdog-restore.json
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Release the legacy backend lease only after a proven restore
+        if: steps.legacy_restore.outcome == 'success'
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs clear
+          --kind staging-cms-public-legacy
+          --file ../legacy-state/staging-cms-public-legacy-state.json
+          --run-id "${{ github.event.workflow_run.id }}"
+          --run-attempt "${{ github.event.workflow_run.run_attempt }}"
+          --control-sha "${{ github.event.workflow_run.head_sha }}"
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+      - name: Fail closed unless every held legacy lease was restored
+        if: always()
+        env:
+          STATE_READ: ${{ steps.legacy_state.outcome }}
+          STATE_PRESENT: ${{ steps.legacy_state.outputs.state_present }}
+          RESTORE: ${{ steps.legacy_restore.outcome }}
+        run: |
+          set -euo pipefail
+          if [ "$STATE_READ" != success ]; then
+            echo "::error::The legacy public backend lease could not be read."
+            exit 1
+          fi
+          if [ "$STATE_PRESENT" = true ]; then test "$RESTORE" = success; exit 0; fi
+          test "$RESTORE" = skipped

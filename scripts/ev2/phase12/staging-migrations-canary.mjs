@@ -4,6 +4,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
 import { QA_ACTOR_LEASE_TTL_MINUTES } from "../../qa/qa-actor-lease.mjs";
+import { canaryFailureIdentity, canaryFailureStage } from "./canary-failure-identity.mjs";
 import {
   CMS_LEAD_ORIGIN_BINDING_0084_OWNER_ONLY_HELPERS,
   CMS_PUBLIC_RELATION_LIMIT_0085_OWNER_ONLY_HELPERS,
@@ -2228,6 +2229,9 @@ const report = {
   revocationLatencyMs: revocationLatencyMs ?? null,
   sessionRevocationLatencyMs: sessionRevocationLatencyMs ?? null,
   residue: finalResidue ?? null,
+  failureStage: canaryFailureStage({ operationError, cleanupError }),
+  operationFailure: canaryFailureIdentity(operationError),
+  cleanupFailure: canaryFailureIdentity(cleanupError),
   syntheticOnly: true,
   realDataUsed: false,
   productionMutations: 0,

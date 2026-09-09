@@ -759,13 +759,19 @@ const handleRequest = async (req: Request) => {
         return json({ error: "Conteúdo temporariamente indisponível." }, 503, { "Cache-Control": "no-store" });
       return legacyRule ? json({ kind: "route", rule: presentRouteRule(legacyRule) }, 200, { "Cache-Control": PUBLIC_REVALIDATE }) : json({ kind: "fallback" }, 200, { "Cache-Control": PUBLIC_REVALIDATE });
     }
-    const page = await enrichMedia(row);
+    // Media, related items and form bindings all derive from the row that was already read, so the
+    // managed page paid three sequential round trips for work that has no ordering between its parts.
+    // They are resolved together and the same precedence and fail-closed handling are kept below.
+    const [page, relatedResult, formBindings] = await Promise.all([
+      enrichMedia(row),
+      loadProjectionRowsByIds(relationIdsFor(row)),
+      resolveGovernedFormBindings(row),
+    ]);
     if (!page) return json({ error: "Não encontrado." }, 404, { "Cache-Control": "no-store" });
-    const { data: relatedRows, error: relatedError } = await loadProjectionRowsByIds(relationIdsFor(row));
+    const { data: relatedRows, error: relatedError } = relatedResult;
     if (relatedError)
       return json({ error: "Conteúdo temporariamente indisponível." }, 503, { "Cache-Control": "no-store" });
     const relatedItems = (relatedRows ?? []).map(summarizeRelated);
-    const formBindings = await resolveGovernedFormBindings(row);
     if (formBindings.error)
       return json({ error: "Formulário temporariamente indisponível." }, 503, { "Cache-Control": "no-store" });
     return json({

@@ -64,6 +64,27 @@ describe("cms-public bounded query contract", () => {
     expect(handler).toContain('json({ kind: "fallback" }');
   });
 
+  it("resolves a managed page in one round trip instead of three sequential lookups", () => {
+    const start = publicApi.indexOf('if (type === "page-by-path")');
+    const end = publicApi.indexOf('if (type === "posts")', start);
+    const handler = publicApi.slice(start, end);
+    const managed = handler.slice(handler.indexOf("enrichMedia(row)") - 400);
+
+    // Media, related items and form bindings all derive from the row that was already read, so the
+    // heaviest public surface must not pay three sequential round trips for them.
+    expect(managed).toContain("await Promise.all([");
+    expect(managed).not.toContain("await enrichMedia(row)");
+    expect(managed).not.toContain("await loadProjectionRowsByIds(relationIdsFor(row))");
+    expect(managed).not.toContain("await resolveGovernedFormBindings(row)");
+
+    // Precedence and fail-closed handling must survive: missing page is 404, a failed relation or
+    // form binding is 503, and the 404 is still decided before either 503.
+    expect(managed.indexOf("404")).toBeLessThan(managed.indexOf("relatedError"));
+    expect(managed.indexOf("relatedError")).toBeLessThan(managed.indexOf("formBindings.error"));
+    expect(managed).toContain("Conteúdo temporariamente indisponível.");
+    expect(managed).toContain("Formulário temporariamente indisponível.");
+  });
+
   it("rate limits only expensive anonymous search surfaces before their bounded scan", () => {
     const rateLimitStart = publicApi.indexOf("if (expensivePublicSearch)");
     const collectionScanStart = publicApi.indexOf("let projectionQuery = client");

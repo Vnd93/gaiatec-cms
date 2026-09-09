@@ -650,6 +650,18 @@ test("pre-actor preflight failures preserve the operation error without inventin
   );
 });
 
+test("management SQL accepts the documented created response without relaxing other requests", async () => {
+  const source = await read("scripts/ev2/phase12/staging-migrations-canary.mjs");
+  const managementQuery = source.slice(
+    source.indexOf("async function managementQuery"),
+    source.indexOf("async function loadContext"),
+  );
+
+  assert.match(managementQuery, /allowed: \[200, 201\]/);
+  assert.match(source, /async function request\([^)]*allowed = \[200\]/);
+  assert.doesNotMatch(source.slice(source.indexOf("async function loadContext")), /allowed: \[200, 201\]/);
+});
+
 test("staging workflow runs the canary only after migrations/functions and uploads its report", async () => {
   const workflow = await read(".github/workflows/deploy-staging.yml");
   const migrations = workflow.indexOf("Apply the exact candidate migrations to staging");

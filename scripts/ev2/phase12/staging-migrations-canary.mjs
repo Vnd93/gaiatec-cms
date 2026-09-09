@@ -178,6 +178,7 @@ async function managementQuery(query) {
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}` },
     body: { query },
+    allowed: [200, 201],
   });
   return response.json;
 }

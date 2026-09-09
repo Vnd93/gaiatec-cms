@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  classifyFunctionDeploymentOutput,
   deployWithVerifiedCompensation,
   evaluateCandidateFunctionDeployment,
   evaluateFunctionDeploymentReceipt,
   evaluateKnownFunctionInventory,
+  mergeFunctionDeploymentOutcome,
 } from "./production-function-deployment-lib.mjs";
 
 test("function deployment completes and verifies without compensation", () => {
@@ -104,7 +106,7 @@ test("live preflight rejects unmanaged, inactive and invalid JWT mode records", 
   assert.match(result.violations.join(","), /unknown:unmanaged/);
 });
 
-test("candidate verification requires exact remote digest and monotonic version advancement", () => {
+test("candidate verification requires exact remote digest and a proven deploy outcome", () => {
   const before = [
     {
       name: "known",
@@ -130,9 +132,20 @@ test("candidate verification requires exact remote digest and monotonic version 
     publicFunctions: new Set(),
     candidateSourceDigests: { known: "c".repeat(64) },
     baselineSourceDigests: { known: "d".repeat(64) },
+    deploymentOutcomes: { known: "deployed" },
   });
   assert.equal(result.valid, true);
   assert.equal(result.deployments[0].bundleSha256, "b".repeat(64));
+
+  const missingOutcome = evaluateCandidateFunctionDeployment({
+    beforePayload: before,
+    afterPayload: after,
+    managedFunctions: ["known"],
+    publicFunctions: new Set(),
+    candidateSourceDigests: { known: "c".repeat(64) },
+    baselineSourceDigests: { known: "d".repeat(64) },
+  });
+  assert.match(missingOutcome.violations.join(","), /deployment_outcome_invalid/);
 
   const stale = evaluateCandidateFunctionDeployment({
     beforePayload: before,
@@ -141,23 +154,160 @@ test("candidate verification requires exact remote digest and monotonic version 
     publicFunctions: new Set(),
     candidateSourceDigests: { known: "c".repeat(64) },
     baselineSourceDigests: { known: "d".repeat(64) },
+    deploymentOutcomes: { known: "deployed" },
   });
   assert.equal(stale.valid, false);
   assert.match(stale.violations.join(","), /version_not_advanced/);
 
   const idempotentRecovery = evaluateCandidateFunctionDeployment({
     beforePayload: before,
-    afterPayload: [{ ...before[0], version: 4, updated_at: "2026-09-07T12:01:00Z" }],
+    afterPayload: before,
     managedFunctions: ["known"],
     publicFunctions: new Set(),
     candidateSourceDigests: { known: "c".repeat(64) },
     baselineSourceDigests: { known: "d".repeat(64) },
+    deploymentOutcomes: { known: "no-change" },
   });
   assert.equal(
     idempotentRecovery.valid,
     true,
-    "a deterministic redeploy of an already-live candidate remains recoverable when its version advances",
+    "the pinned CLI no-change outcome makes an already-live candidate retryable",
   );
+
+  const digestChangedWithoutVersion = evaluateCandidateFunctionDeployment({
+    beforePayload: before,
+    afterPayload: [{ ...before[0], ezbr_sha256: "b".repeat(64) }],
+    managedFunctions: ["known"],
+    publicFunctions: new Set(),
+    candidateSourceDigests: { known: "c".repeat(64) },
+    baselineSourceDigests: { known: "d".repeat(64) },
+    deploymentOutcomes: { known: "no-change" },
+  });
+  assert.match(digestChangedWithoutVersion.violations.join(","), /bundle_changed_without_version/);
+
+  const stickyDeployedOutcome = mergeFunctionDeploymentOutcome("deployed", "no-change");
+  assert.equal(stickyDeployedOutcome, "deployed");
+  const retryAfterPartialAdvance = evaluateCandidateFunctionDeployment({
+    beforePayload: before,
+    afterPayload: after,
+    managedFunctions: ["known"],
+    publicFunctions: new Set(),
+    candidateSourceDigests: { known: "c".repeat(64) },
+    baselineSourceDigests: { known: "d".repeat(64) },
+    deploymentOutcomes: { known: stickyDeployedOutcome },
+  });
+  assert.equal(
+    retryAfterPartialAdvance.valid,
+    true,
+    "compensation can confirm a version advanced by the first partial deployment pass",
+  );
+
+  const unprovenConcurrentAdvance = evaluateCandidateFunctionDeployment({
+    beforePayload: before,
+    afterPayload: after,
+    managedFunctions: ["known"],
+    publicFunctions: new Set(),
+    candidateSourceDigests: { known: "c".repeat(64) },
+    baselineSourceDigests: { known: "d".repeat(64) },
+    deploymentOutcomes: { known: "no-change" },
+  });
+  assert.match(unprovenConcurrentAdvance.violations.join(","), /no_change_version_advanced/);
+
+  const skippedVersion = evaluateCandidateFunctionDeployment({
+    beforePayload: before,
+    afterPayload: [{ ...after[0], version: 5 }],
+    managedFunctions: ["known"],
+    publicFunctions: new Set(),
+    candidateSourceDigests: { known: "c".repeat(64) },
+    baselineSourceDigests: { known: "d".repeat(64) },
+    deploymentOutcomes: { known: "deployed" },
+  });
+  assert.match(skippedVersion.violations.join(","), /version_advance_invalid/);
+});
+
+test("function deployment output classification is exact and fail-closed", () => {
+  const common = {
+    name: "cms-ai",
+    projectRef: "glcqsosxwgmlhzgcsnzv",
+  };
+  assert.equal(
+    classifyFunctionDeploymentOutput({
+      ...common,
+      stdout: "Deployed Functions on project glcqsosxwgmlhzgcsnzv: cms-ai\n",
+      stderr: "No change found in Function: cms-ai\n",
+    }),
+    "no-change",
+  );
+  assert.equal(
+    classifyFunctionDeploymentOutput({
+      ...common,
+      stdout: "Deployed Functions on project glcqsosxwgmlhzgcsnzv: cms-ai\n",
+      stderr: "",
+    }),
+    "deployed",
+  );
+  assert.equal(mergeFunctionDeploymentOutcome(undefined, "no-change"), "no-change");
+  assert.equal(mergeFunctionDeploymentOutcome("no-change", "deployed"), "deployed");
+  assert.equal(mergeFunctionDeploymentOutcome("deployed", "no-change"), "deployed");
+  assert.throws(() => mergeFunctionDeploymentOutcome("unknown", "no-change"), /OUTCOME_INVALID/);
+  assert.throws(
+    () => classifyFunctionDeploymentOutput({ ...common, stdout: "deployment accepted\n", stderr: "" }),
+    /G12_FUNCTION_DEPLOY_OUTPUT_UNCONFIRMED/,
+  );
+  assert.throws(
+    () =>
+      classifyFunctionDeploymentOutput({
+        ...common,
+        stdout: "Deployed Functions on project glcqsosxwgmlhzgcsnzv: cms-ai-rogue\n",
+        stderr: "No change found in Function: cms-ai-rogue\n",
+      }),
+    /G12_FUNCTION_DEPLOY_OUTPUT_UNCONFIRMED/,
+  );
+  assert.equal(
+    classifyFunctionDeploymentOutput({
+      ...common,
+      stdout: "Deployed Functions on project glcqsosxwgmlhzgcsnzv: cms-ai\n",
+      stderr: "warning only\n",
+    }),
+    "deployed",
+  );
+});
+
+test("numeric Supabase management timestamps are normalized before verification", () => {
+  const before = [
+    {
+      name: "known",
+      status: "ACTIVE",
+      version: 3,
+      verify_jwt: true,
+      ezbr_sha256: "a".repeat(64),
+      updated_at: 1788932414142,
+    },
+  ];
+  const result = evaluateCandidateFunctionDeployment({
+    beforePayload: before,
+    afterPayload: before,
+    managedFunctions: ["known"],
+    publicFunctions: new Set(),
+    candidateSourceDigests: { known: "c".repeat(64) },
+    baselineSourceDigests: { known: "d".repeat(64) },
+    deploymentOutcomes: { known: "no-change" },
+  });
+  assert.equal(result.valid, true);
+  assert.match(result.deployments[0].updatedAt, /^2026-09-09T/);
+
+  for (const invalidTimestamp of [0, 123, "123", "1999-12-31T23:59:59Z", "not-a-date"]) {
+    const invalid = evaluateCandidateFunctionDeployment({
+      beforePayload: [{ ...before[0], updated_at: invalidTimestamp }],
+      afterPayload: [{ ...before[0], updated_at: invalidTimestamp }],
+      managedFunctions: ["known"],
+      publicFunctions: new Set(),
+      candidateSourceDigests: { known: "c".repeat(64) },
+      baselineSourceDigests: { known: "d".repeat(64) },
+      deploymentOutcomes: { known: "no-change" },
+    });
+    assert.match(invalid.violations.join(","), /updated_at_invalid/);
+  }
 });
 
 test("live inventory must match the immutable candidate receipt by source, bundle and version", () => {

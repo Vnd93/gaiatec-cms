@@ -9,9 +9,11 @@ import {
   PUBLIC_FUNCTIONS,
 } from "./production-backend-lib.mjs";
 import {
+  classifyFunctionDeploymentOutput,
   deployWithVerifiedCompensation,
   evaluateCandidateFunctionDeployment,
   evaluateKnownFunctionInventory,
+  mergeFunctionDeploymentOutcome,
   sourceDigestInventory,
 } from "./production-function-deployment-lib.mjs";
 
@@ -53,15 +55,21 @@ if (rollbackFunctions.length === 0 || rollbackFunctions.some((name) => !PRODUCTI
 const candidateSourceDigests = sourceDigestInventory(sourceRoot, PRODUCTION_FUNCTIONS);
 const baselineSourceDigests = sourceDigestInventory(rollbackSourceRoot, rollbackFunctions);
 
-function run(args, { cwd = sourceRoot, capture = false } = {}) {
+function run(args, { cwd = sourceRoot, capture = false, captureAll = false } = {}) {
+  const captureOutput = capture || captureAll;
   const result = spawnSync("supabase", args, {
     cwd,
-    encoding: capture ? "utf8" : undefined,
-    stdio: capture ? ["ignore", "pipe", "inherit"] : "inherit",
+    encoding: captureOutput ? "utf8" : undefined,
+    stdio: captureAll ? ["ignore", "pipe", "pipe"] : capture ? ["ignore", "pipe", "inherit"] : "inherit",
     timeout: 5 * 60 * 1000,
   });
+  if (captureAll) {
+    process.stdout.write(result.stdout ?? "");
+    process.stderr.write(result.stderr ?? "");
+  }
   if (result.error || result.status !== 0)
     throw new Error(`SUPABASE_COMMAND_FAILED:${args.slice(0, 3).join(":")}`);
+  if (captureAll) return { stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
   return capture ? result.stdout : "";
 }
 
@@ -71,6 +79,8 @@ const liveBefore = JSON.parse(
 const liveBeforeResult = evaluateKnownFunctionInventory(liveBefore, PRODUCTION_FUNCTIONS, PUBLIC_FUNCTIONS);
 if (!liveBeforeResult.valid)
   throw new Error(`G12_PRODUCTION_FUNCTION_LIVE_INVENTORY_UNSAFE:${liveBeforeResult.violations.join(",")}`);
+
+const deploymentOutcomes = {};
 
 function deployOne(name) {
   const args = [
@@ -83,7 +93,11 @@ function deployOne(name) {
     join(sourceRoot, "supabase", "functions", "import_map.json"),
   ];
   if (PUBLIC_FUNCTIONS.has(name)) args.push("--no-verify-jwt");
-  run(args);
+  const output = run(args, { captureAll: true });
+  deploymentOutcomes[name] = mergeFunctionDeploymentOutcome(
+    deploymentOutcomes[name],
+    classifyFunctionDeploymentOutput({ ...output, name, projectRef }),
+  );
 }
 
 let verifiedDeployment;
@@ -101,6 +115,7 @@ function verifyCandidate() {
     publicFunctions: PUBLIC_FUNCTIONS,
     candidateSourceDigests,
     baselineSourceDigests,
+    deploymentOutcomes,
   });
   const violations = [...inventory.violations, ...result.violations];
   if (violations.length > 0)

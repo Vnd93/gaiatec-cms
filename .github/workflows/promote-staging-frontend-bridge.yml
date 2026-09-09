@@ -157,7 +157,7 @@ jobs:
           EV2_G12_ORIGIN: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
           EV2_G12_EXPECTED_SHA: ${{ inputs.expected_baseline_sha }}
           EV2_G12_ENVIRONMENT: staging
-          EV2_G12_SAMPLE_COUNT: "5"
+          EV2_G12_SAMPLE_COUNT: "20"
       - name: Capture canonical staging state before any deployment or fixture
         id: baseline_state
         working-directory: control
@@ -243,7 +243,7 @@ jobs:
           EV2_G12_ORIGIN: https://ev2-g12-canary.gaiatec-cms-staging.pages.dev
           EV2_G12_EXPECTED_SHA: ${{ inputs.candidate_sha }}
           EV2_G12_ENVIRONMENT: staging
-          EV2_G12_SAMPLE_COUNT: "5"
+          EV2_G12_SAMPLE_COUNT: "20"
           EV2_G12_REPORT_PATH: ../staging-bridge-preview-probe.json
       - name: Plan the temporary legacy public backend swap without mutating anything
         id: legacy_prepare
@@ -376,7 +376,7 @@ jobs:
           EV2_G12_ORIGIN: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
           EV2_G12_EXPECTED_SHA: ${{ inputs.candidate_sha }}
           EV2_G12_ENVIRONMENT: staging
-          EV2_G12_SAMPLE_COUNT: "5"
+          EV2_G12_SAMPLE_COUNT: "20"
           EV2_G12_REPORT_PATH: ../staging-bridge-canonical-probe.json
       - name: Setup canonical public bridge fixture
         id: canonical_fixture

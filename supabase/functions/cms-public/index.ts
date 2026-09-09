@@ -730,22 +730,31 @@ const handleRequest = async (req: Request) => {
   if (type === "page-by-path") {
     const path = url.searchParams.get("path") ?? "";
     if (!publicPathPattern.test(path) || path.length > 300) return json({ error: "Não encontrado." }, 404);
-    const { data: row, error: pageError } = await client
-      .from("cms_published_projection")
-      .select(PUBLISHED_PROJECTION_COLUMNS)
-      .in("content_type", ["page", "homepage"])
-      .eq("payload->route->>path", path)
-      .order("published_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    // Resolving a public path asked the projection, the managed rules and the legacy redirects in
+    // three sequential round trips, so the negative answer that every static public route receives
+    // paid all three. The lookups are independent, so they are issued together and the same
+    // precedence and fail-closed handling are applied to the settled results.
+    const [pageResult, managedRuleResult, legacyRuleResult] = await Promise.all([
+      client
+        .from("cms_published_projection")
+        .select(PUBLISHED_PROJECTION_COLUMNS)
+        .in("content_type", ["page", "homepage"])
+        .eq("payload->route->>path", path)
+        .order("published_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      client.from("cms_route_rules").select("destination_path,status_code").eq("source_path", path).eq("active", true).maybeSingle(),
+      client.from("cms_redirects").select("destination_path,status_code").eq("source_path", path).eq("active", true).maybeSingle(),
+    ]);
+    const { data: row, error: pageError } = pageResult;
     if (pageError)
       return json({ error: "Conteúdo temporariamente indisponível." }, 503, { "Cache-Control": "no-store" });
     if (!row) {
-      const { data: managedRule, error: managedRuleError } = await client.from("cms_route_rules").select("destination_path,status_code").eq("source_path", path).eq("active", true).maybeSingle();
+      const { data: managedRule, error: managedRuleError } = managedRuleResult;
       if (managedRuleError)
         return json({ error: "Conteúdo temporariamente indisponível." }, 503, { "Cache-Control": "no-store" });
       if (managedRule) return json({ kind: "route", rule: presentRouteRule(managedRule) }, 200, { "Cache-Control": PUBLIC_REVALIDATE });
-      const { data: legacyRule, error: legacyRuleError } = await client.from("cms_redirects").select("destination_path,status_code").eq("source_path", path).eq("active", true).maybeSingle();
+      const { data: legacyRule, error: legacyRuleError } = legacyRuleResult;
       if (legacyRuleError)
         return json({ error: "Conteúdo temporariamente indisponível." }, 503, { "Cache-Control": "no-store" });
       return legacyRule ? json({ kind: "route", rule: presentRouteRule(legacyRule) }, 200, { "Cache-Control": PUBLIC_REVALIDATE }) : json({ kind: "fallback" }, 200, { "Cache-Control": PUBLIC_REVALIDATE });

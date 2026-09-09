@@ -41,6 +41,29 @@ describe("cms-public bounded query contract", () => {
     expect(formHandler).not.toContain('client.from("cms_published_projection")');
   });
 
+  it("resolves a public path in one round trip instead of three sequential lookups", () => {
+    const start = publicApi.indexOf('if (type === "page-by-path")');
+    const end = publicApi.indexOf('if (type === "posts")', start);
+    expect(start).toBeGreaterThan(0);
+    expect(end).toBeGreaterThan(start);
+    const handler = publicApi.slice(start, end);
+
+    // Every static public route receives the negative answer, so the three independent lookups must
+    // be issued together; going back to sequential awaits reintroduces the latency regression.
+    expect(handler).toContain("await Promise.all([");
+    expect(handler).not.toContain('await client.from("cms_route_rules")');
+    expect(handler).not.toContain('await client.from("cms_redirects")');
+    expect(handler).not.toMatch(/\.maybeSingle\(\);\s*\n\s*if \(pageError\)/);
+
+    // Precedence and fail-closed handling must survive the change.
+    expect(handler.indexOf("managedRule")).toBeLessThan(handler.indexOf("legacyRule"));
+    for (const failure of ["pageError", "managedRuleError", "legacyRuleError"]) {
+      expect(handler).toContain(failure);
+    }
+    expect(handler).toContain('"Cache-Control": "no-store"');
+    expect(handler).toContain('json({ kind: "fallback" }');
+  });
+
   it("rate limits only expensive anonymous search surfaces before their bounded scan", () => {
     const rateLimitStart = publicApi.indexOf("if (expensivePublicSearch)");
     const collectionScanStart = publicApi.indexOf("let projectionQuery = client");

@@ -386,6 +386,22 @@ test("the legacy public backend is swapped in under an exclusive lease and alway
   assert.match(legacySection, /QA_CMS_LEGACY_BRIDGE_ENVIRONMENT: staging/);
 });
 
+test("bridge probes sample enough to make p95 a percentile instead of the maximum", async () => {
+  const workflow = await readFile(".github/workflows/promote-staging-frontend-bridge.yml", "utf8");
+  const guard = await readFile("scripts/ev2/phase12/release-guard-lib.mjs", "utf8");
+
+  // percentile() returns sorted[ceil(0.95 * n) - 1], so at n=5 the reported p95 is the slowest of the
+  // five samples and a single cold response decides the gate. Production already samples 20.
+  const counts = [...workflow.matchAll(/EV2_G12_SAMPLE_COUNT: "(\d+)"/g)].map((match) => Number(match[1]));
+  assert.ok(counts.length >= 3);
+  for (const count of counts)
+    assert.ok(count >= 20, `sample count ${count} is below the 20 used in production`);
+
+  // The latency budget itself must stay where it is; only the sample size was corrected.
+  assert.match(guard, /publicP95Ms: 1500/);
+  assert.doesNotMatch(workflow, /EV2_G12_(?:PUBLIC_P95|BUDGET)/);
+});
+
 test("a lost bridge runner cannot leave the legacy public backend live on staging", async () => {
   const watchdog = await readFile(".github/workflows/promote-staging-frontend-bridge-watchdog.yml", "utf8");
 

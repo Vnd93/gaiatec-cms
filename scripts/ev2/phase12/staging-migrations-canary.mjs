@@ -9,6 +9,7 @@ import {
   canaryFailureIdentity,
   canaryFailureStage,
 } from "./canary-failure-identity.mjs";
+import { mfaSessionTokens } from "./mfa-session.mjs";
 import {
   CMS_LEAD_ORIGIN_BINDING_0084_OWNER_ONLY_HELPERS,
   CMS_PUBLIC_RELATION_LIMIT_0085_OWNER_ONLY_HELPERS,
@@ -366,13 +367,13 @@ async function createActor(label) {
       challengeId: challenge.data.id,
       code: totp(enrolled.data.totp.secret, clock),
     });
-    const session = verified.data?.session;
-    actor.token = session?.access_token ?? verified.data?.access_token ?? "";
-    actor.refreshToken = session?.refresh_token ?? "";
+    const tokens = mfaSessionTokens(verified);
+    actor.token = tokens.accessToken;
+    actor.refreshToken = tokens.refreshToken;
     actor.factorId = enrolled.data.id;
     actor.totpSecret = enrolled.data.totp.secret;
     actor.lastTotpCounter = Math.floor(clock / 30_000);
-    if (!verified.error && actor.token && actor.refreshToken) {
+    if (tokens.complete) {
       await rest("cms_profiles", {
         method: "PATCH",
         query: `user_id=eq.${actor.id}`,
@@ -415,11 +416,11 @@ async function createFreshMfaSession(actor) {
     challengeId: challenge.data.id,
     code: totp(actor.totpSecret, clock),
   });
-  const session = verified.data?.session;
-  if (verified.error || !session?.access_token || !session.refresh_token)
-    throw new Error("G12_STAGING_SYNTHETIC_FRESH_MFA_VERIFY_FAILED");
-  actor.token = session.access_token;
-  actor.refreshToken = session.refresh_token;
+  const tokens = mfaSessionTokens(verified);
+  if (!tokens.complete)
+    throw new Error(`G12_STAGING_SYNTHETIC_FRESH_MFA_VERIFY_FAILED:${authFailureIdentity(verified.error)}`);
+  actor.token = tokens.accessToken;
+  actor.refreshToken = tokens.refreshToken;
   actor.lastTotpCounter = Math.floor(clock / 30_000);
 }
 

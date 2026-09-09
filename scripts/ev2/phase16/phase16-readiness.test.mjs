@@ -1349,13 +1349,28 @@ test("CSP is enforced only on production targets and contains the audited browse
     new Request("https://ev2-g12-preflight.gaiatec-website.pages.dev/assets/avif-encoder.worker-test.js"),
     env,
   );
+  const stagingAvifWorker = await worker.fetch(
+    new Request("https://ev2-g16-csp.gaiatec-cms-staging.pages.dev/assets/avif-encoder.worker-test.js"),
+    env,
+  );
   const enforced = preview.headers.get("content-security-policy") ?? "";
   const reportOnly = staging.headers.get("content-security-policy-report-only") ?? "";
+  const expectedReportOnly = contentSecurityPolicy()
+    .split("; ")
+    .filter((directive) => directive !== "upgrade-insecure-requests")
+    .join("; ");
   assert.equal(enforced, contentSecurityPolicy());
+  assert.match(enforced, /(?:^|; )upgrade-insecure-requests$/);
   assert.equal(preview.headers.has("content-security-policy-report-only"), false);
-  assert.equal(reportOnly, contentSecurityPolicy());
+  assert.equal(reportOnly, expectedReportOnly);
+  assert.doesNotMatch(reportOnly, /(?:^|; )upgrade-insecure-requests(?:;|$)/);
+  assert.equal(`${reportOnly}; upgrade-insecure-requests`, enforced);
   assert.equal(staging.headers.has("content-security-policy"), false);
   assert.equal(stagingEnforcementCanary.headers.get("content-security-policy"), contentSecurityPolicy());
+  assert.match(
+    stagingEnforcementCanary.headers.get("content-security-policy") ?? "",
+    /(?:^|; )upgrade-insecure-requests$/,
+  );
   assert.equal(stagingEnforcementCanary.headers.has("content-security-policy-report-only"), false);
   const adminPolicy = admin.headers.get("content-security-policy") ?? "";
   assert.equal(adminPolicy, contentSecurityPolicy("/admin"));
@@ -1365,6 +1380,12 @@ test("CSP is enforced only on production targets and contains the audited browse
   assert.equal(avifWorkerPolicy, contentSecurityPolicy("/assets/avif-encoder.worker-test.js"));
   assert.match(avifWorkerPolicy, /default-src 'none'/);
   assert.match(avifWorkerPolicy, /script-src 'self' 'wasm-unsafe-eval'/);
+  assert.equal(avifWorker.headers.has("content-security-policy-report-only"), false);
+  assert.equal(
+    stagingAvifWorker.headers.get("content-security-policy-report-only"),
+    contentSecurityPolicy("/assets/avif-encoder.worker-test.js"),
+  );
+  assert.equal(stagingAvifWorker.headers.has("content-security-policy"), false);
   assert.doesNotMatch(contentSecurityPolicy(), /wasm-unsafe-eval|unsafe-eval/);
   for (const origin of ["https://brasilapi.com.br", "https://nominatim.openstreetmap.org"])
     assert.match(enforced, new RegExp(origin.replaceAll(".", "\\.")));

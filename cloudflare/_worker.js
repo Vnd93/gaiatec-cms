@@ -50,6 +50,13 @@ export function contentSecurityPolicy(pathname = "/") {
     : CONTENT_SECURITY_POLICY;
 }
 
+function reportOnlyContentSecurityPolicy(pathname = "/") {
+  return contentSecurityPolicy(pathname)
+    .split("; ")
+    .filter((directive) => directive !== "upgrade-insecure-requests")
+    .join("; ");
+}
+
 const STATIC_REDIRECTS = new Map([
   ["/servicos/calibracao-rbc-laboratorio", "/servicos/calibracao-de-instrumentos"],
   ["/setores", "/industrias"],
@@ -166,7 +173,7 @@ function applyContentSecurityPolicy(headers, environment, env, pathname) {
   headers.delete(enforce ? "Content-Security-Policy-Report-Only" : "Content-Security-Policy");
   headers.set(
     enforce ? "Content-Security-Policy" : "Content-Security-Policy-Report-Only",
-    contentSecurityPolicy(pathname),
+    enforce ? contentSecurityPolicy(pathname) : reportOnlyContentSecurityPolicy(pathname),
   );
   return headers;
 }

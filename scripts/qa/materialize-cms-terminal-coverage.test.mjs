@@ -458,6 +458,15 @@ function fixture() {
   };
 }
 
+function productionFixture() {
+  const input = fixture();
+  input.environment = "production";
+  input.runtime.mutatingEntityLifecycles.environment = "production confirmed by /healthz";
+  for (const report of Object.values(input.reports)) report.environment = "production";
+  input.realBrowser.environment = "production";
+  return input;
+}
+
 function scenarioOnceFixture() {
   const input = fixture();
   const surfaceId = "products-list";
@@ -599,6 +608,69 @@ test("materializa matriz terminal completa, SHA-bound e sem estados provisórios
   assert.equal(result.redesignDivergences[0].status.startsWith("passed"), true);
   assert.equal(result.productPimAuthority.state.startsWith("passed"), true);
   assert.doesNotThrow(() => assertCmsTerminalCoverage(result));
+});
+
+test("materializa e valida os nomes reais das evidências de produção", () => {
+  const result = materializeCmsTerminalCoverage(productionFixture());
+  assert.deepEqual(
+    Object.fromEntries(
+      [
+        "inventory",
+        "setup",
+        "cleanup",
+        "residue",
+        "runtime",
+        "auth",
+        "admin",
+        "secondary",
+        "security",
+        "realBrowser",
+        "realBrowserScreenshot",
+      ].map((key) => [key, result.evidenceManifest[key]]),
+    ),
+    {
+      inventory: "cms-coverage-production.json",
+      setup: "cms-browser-production-setup.json",
+      cleanup: "cms-browser-production-cleanup.json",
+      residue: "g12-production-residue.json",
+      runtime: "cms-final-coverage-production.json",
+      auth: "cms-auth-lifecycle-production.json",
+      admin: "cms-admin-ops-cycles-production.json",
+      secondary: "cms-secondary-ui-cycles-production.json",
+      security: "cms-security-boundaries-production.json",
+      realBrowser: "cms-real-browser-attestation-production.json",
+      realBrowserScreenshot: "cms-real-browser-attestation-production.png",
+    },
+  );
+  assert.doesNotThrow(() => assertCmsTerminalCoverage(result));
+});
+
+test("recusa adulteração dos bindings críticos do manifesto de evidências", () => {
+  const mutations = [
+    ["inventory", "g12-cms-coverage-matrix.json"],
+    ["setup", "cms-browser-mutating-setup.json"],
+    ["cleanup", "cms-browser-mutating-cleanup.json"],
+    ["residue", "cms-browser-mutating-residue.json"],
+    ["runtime", "cms-final-coverage.json"],
+    ["auth", "cms-auth-lifecycle.json"],
+    ["admin", "cms-admin-ops-cycles.json"],
+    ["secondary", "cms-secondary-ui-cycles.json"],
+    ["security", "cms-security-boundaries.json"],
+    ["shaBinding", "abcdef1234567890abcdef1234567890abcdef12"],
+    ["allReportsPassed", false],
+    ["setupStatus", "passed"],
+    ["cleanupStatus", "ready"],
+    ["residueStatus", "cleaned"],
+  ];
+  for (const [key, value] of mutations) {
+    const report = materializeCmsTerminalCoverage(productionFixture());
+    report.evidenceManifest[key] = value;
+    assert.throws(
+      () => assertCmsTerminalCoverage(report),
+      /CMS_TERMINAL_EVIDENCE_MANIFEST_BINDING_INVALID/,
+      key,
+    );
+  }
 });
 
 test("preserva sourceControl N/A canônico sem contar execução ou backend", () => {

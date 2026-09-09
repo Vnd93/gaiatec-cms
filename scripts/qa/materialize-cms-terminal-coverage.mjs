@@ -15,6 +15,36 @@ const terminalFailurePattern =
 const evidenceLabels = ["auth", "admin", "secondary", "security"];
 const runTagPattern = /^QA-CMS-FINAL-[0-9]{8}-[0-9a-f]{8}$/;
 
+function evidenceManifestFileNames(environment) {
+  return environment === "production"
+    ? {
+        inventory: "cms-coverage-production.json",
+        setup: "cms-browser-production-setup.json",
+        cleanup: "cms-browser-production-cleanup.json",
+        residue: "g12-production-residue.json",
+        runtime: "cms-final-coverage-production.json",
+        auth: "cms-auth-lifecycle-production.json",
+        admin: "cms-admin-ops-cycles-production.json",
+        secondary: "cms-secondary-ui-cycles-production.json",
+        security: "cms-security-boundaries-production.json",
+        realBrowser: "cms-real-browser-attestation-production.json",
+        realBrowserScreenshot: "cms-real-browser-attestation-production.png",
+      }
+    : {
+        inventory: "g12-cms-coverage-matrix.json",
+        setup: "cms-browser-mutating-setup.json",
+        cleanup: "cms-browser-mutating-cleanup.json",
+        residue: "cms-browser-mutating-residue.json",
+        runtime: "cms-final-coverage.json",
+        auth: "cms-auth-lifecycle.json",
+        admin: "cms-admin-ops-cycles.json",
+        secondary: "cms-secondary-ui-cycles.json",
+        security: "cms-security-boundaries.json",
+        realBrowser: "cms-real-browser-attestation.json",
+        realBrowserScreenshot: "cms-real-browser-attestation.png",
+      };
+}
+
 function record(value, message) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(message);
   return value;
@@ -1547,11 +1577,19 @@ export function assertCmsTerminalCoverage(value) {
   ) {
     throw new Error("CMS_TERMINAL_REPORT_CLAIMS_INVALID");
   }
-  const realBrowserManifest = record(report.evidenceManifest, "CMS_TERMINAL_REAL_BROWSER_MANIFEST_INVALID");
-  const suffix = report.environment === "production" ? "-production" : "";
+  const realBrowserManifest = record(report.evidenceManifest, "CMS_TERMINAL_EVIDENCE_MANIFEST_INVALID");
+  const expectedEvidenceFiles = evidenceManifestFileNames(report.environment);
   if (
-    realBrowserManifest.realBrowser !== `cms-real-browser-attestation${suffix}.json` ||
-    realBrowserManifest.realBrowserScreenshot !== `cms-real-browser-attestation${suffix}.png` ||
+    Object.entries(expectedEvidenceFiles).some(([key, file]) => realBrowserManifest[key] !== file) ||
+    realBrowserManifest.shaBinding !== candidateSha ||
+    realBrowserManifest.allReportsPassed !== true ||
+    realBrowserManifest.setupStatus !== "ready" ||
+    realBrowserManifest.cleanupStatus !== "cleaned" ||
+    realBrowserManifest.residueStatus !== "passed"
+  ) {
+    throw new Error("CMS_TERMINAL_EVIDENCE_MANIFEST_BINDING_INVALID");
+  }
+  if (
     realBrowserManifest.realBrowserStatus !== "passed" ||
     realBrowserManifest.realBrowserChannel !== "iab-workflow-dispatch-hmac" ||
     realBrowserManifest.realBrowserCanonicalFrontendReleaseBound !== true ||
@@ -2145,17 +2183,7 @@ export function materializeCmsTerminalCoverage(input) {
       terminalSemanticStateSetups: semanticStateSetupLedger.size,
     },
     evidenceManifest: {
-      inventory: "g12-cms-coverage-matrix.json",
-      setup: "cms-browser-mutating-setup.json",
-      cleanup: "cms-browser-mutating-cleanup.json",
-      residue: "cms-browser-mutating-residue.json",
-      runtime: "cms-final-coverage.json",
-      auth: "cms-auth-lifecycle.json",
-      admin: "cms-admin-ops-cycles.json",
-      secondary: "cms-secondary-ui-cycles.json",
-      security: "cms-security-boundaries.json",
-      realBrowser: `cms-real-browser-attestation${environment === "production" ? "-production" : ""}.json`,
-      realBrowserScreenshot: `cms-real-browser-attestation${environment === "production" ? "-production" : ""}.png`,
+      ...evidenceManifestFileNames(environment),
       realBrowserStatus: realBrowserSummary.status,
       realBrowserChannel: realBrowserSummary.channel,
       realBrowserCanonicalFrontendReleaseBound: realBrowserSummary.canonicalFrontendReleaseBound,

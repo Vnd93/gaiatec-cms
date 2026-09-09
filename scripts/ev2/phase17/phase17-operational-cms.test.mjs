@@ -154,3 +154,12 @@ test("staging operational canary invokes the pinned Supabase CLI on Windows and 
   assert.match(canary, /: pinned/);
   assert.match(canary, /result\.error \|\| result\.status !== 0/);
 });
+
+test("staging operational commands bind idempotency to the exact envelope", async () => {
+  const canary = await read("scripts/ev2/phase17/staging-canary.mjs");
+  assert.match(
+    canary,
+    /const commandEnvelope = envelope\(environment\);[\s\S]*"X-Idempotency-Key": commandEnvelope\.commandId[\s\S]*envelope: commandEnvelope/,
+  );
+  assert.doesNotMatch(canary, /idempotent \? \{ "X-Idempotency-Key": randomUUID\(\) \}/);
+});

@@ -234,15 +234,16 @@ async function edge(
   values = {},
   { allowed = [200], environment = "staging", idempotent = false } = {},
 ) {
+  const commandEnvelope = envelope(environment);
   return request(`${context.url}/functions/v1/${functionName}`, {
     method: "POST",
     headers: {
       apikey: context.anonKey,
       Authorization: `Bearer ${actor.token}`,
       Origin: ORIGIN,
-      ...(idempotent ? { "X-Idempotency-Key": randomUUID() } : {}),
+      ...(idempotent ? { "X-Idempotency-Key": commandEnvelope.commandId } : {}),
     },
-    body: { action, envelope: envelope(environment), ...values },
+    body: { action, envelope: commandEnvelope, ...values },
     allowed,
   });
 }

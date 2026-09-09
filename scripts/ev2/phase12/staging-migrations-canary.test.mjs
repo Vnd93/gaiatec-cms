@@ -4,6 +4,16 @@ import test from "node:test";
 
 const read = (file) => readFile(file, "utf8");
 
+test("staging Edge commands bind idempotency to the exact command envelope", async () => {
+  const source = await read("scripts/ev2/phase12/staging-migrations-canary.mjs");
+
+  assert.match(
+    source,
+    /const commandEnvelope = envelope\(expectedVersion\);[\s\S]*"X-Idempotency-Key": commandEnvelope\.commandId[\s\S]*envelope: commandEnvelope/,
+  );
+  assert.doesNotMatch(source, /idempotent \? \{ "X-Idempotency-Key": randomUUID\(\) \}/);
+});
+
 test("staging migration canary is fail-closed on the one authorized project and exact SHA", async () => {
   const source = await read("scripts/ev2/phase12/staging-migrations-canary.mjs");
 

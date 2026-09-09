@@ -431,15 +431,16 @@ async function edgeCommand(
   values = {},
   { allowed = [200], idempotent = false, expectedVersion } = {},
 ) {
+  const commandEnvelope = envelope(expectedVersion);
   return request(`${context.url}/functions/v1/${functionName}`, {
     method: "POST",
     headers: {
       apikey: context.anonKey,
       Authorization: `Bearer ${actor.token}`,
       Origin: TARGET.origin,
-      ...(idempotent ? { "X-Idempotency-Key": randomUUID() } : {}),
+      ...(idempotent ? { "X-Idempotency-Key": commandEnvelope.commandId } : {}),
     },
-    body: { action, envelope: envelope(expectedVersion), ...values },
+    body: { action, envelope: commandEnvelope, ...values },
     allowed,
   });
 }

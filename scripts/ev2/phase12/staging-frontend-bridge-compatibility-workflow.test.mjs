@@ -423,6 +423,36 @@ test("only the probes aimed at a freshly deployed target wait for it to converge
   for (const [, count] of workflow.matchAll(/EV2_G12_SAMPLE_COUNT: "(\d+)"/g)) assert.ok(Number(count) >= 20);
 });
 
+test("the staging deploy and its watchdog measure percentiles, not maxima", async () => {
+  const deployStaging = await readFile(".github/workflows/deploy-staging.yml", "utf8");
+  const watchdog = await readFile(".github/workflows/deploy-staging-watchdog.yml", "utf8");
+  const guard = await readFile("scripts/ev2/phase12/release-guard-lib.mjs", "utf8");
+
+  // Same defect the bridge had: percentile() at n=5 returns the slowest of five samples, so one cold
+  // response decides a gate. Every probe in both workflows samples at production size.
+  for (const workflow of [deployStaging, watchdog]) {
+    const counts = [...workflow.matchAll(/EV2_G12_SAMPLE_COUNT: "(\d+)"/g)].map((m) => Number(m[1]));
+    assert.ok(counts.length > 0);
+    for (const count of counts) assert.ok(count >= 20, `sample count ${count} still reports a maximum`);
+  }
+
+  // The waits are only for targets these workflows just deployed or restored. The baseline and the
+  // terminal probes keep the default window so a genuinely broken alias still fails fast.
+  assert.equal([...deployStaging.matchAll(/EV2_G12_READINESS_ATTEMPTS/g)].length, 2);
+  assert.equal([...watchdog.matchAll(/EV2_G12_READINESS_ATTEMPTS/g)].length, 1);
+  const baseline = deployStaging.indexOf("../g12-staging-live-baseline.json");
+  const terminal = deployStaging.indexOf("../g12-staging-terminal-probe.json");
+  for (const probe of [baseline, terminal]) {
+    const block = deployStaging.slice(probe, probe + 400);
+    assert.doesNotMatch(block, /EV2_G12_READINESS_ATTEMPTS/);
+  }
+
+  // Waiting longer and sampling more must not become a way to assert less.
+  assert.match(guard, /publicP95Ms: 1500/);
+  assert.match(guard, /availabilityPercent: 99\.9/);
+  assert.match(guard, /http5xxRatePercent: 0\.1/);
+});
+
 test("a lost bridge runner cannot leave the legacy public backend live on staging", async () => {
   const watchdog = await readFile(".github/workflows/promote-staging-frontend-bridge-watchdog.yml", "utf8");
 

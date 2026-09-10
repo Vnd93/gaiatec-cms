@@ -26,6 +26,7 @@ import {
   qaActorRuntimeRepairsSemanticSql,
   runtimeIntegrityRepairsSemanticSql,
   operationalEventsReadScaleSemanticSql,
+  qaActorLeaseWindowSemanticSql,
   qaLeaseDocumentCanonicalFenceSemanticSql,
   runtimeIntegrityFollowupSemanticSql,
   sessionRefreshRevocationSemanticSql,
@@ -81,9 +82,9 @@ test("the repository migration history is contiguous", () => {
   assert.equal(manifest[0].version, "0001");
   assert.equal(manifest.at(-1)?.version, String(manifest.length).padStart(4, "0"));
   assert.deepEqual(G12_PINNED_MIGRATION_TAIL.at(-1), {
-    version: "0090",
-    file: "0090_cms_qa_lease_document_canonical_fence.sql",
-    sha256: "295f8adcfac409de8dd86f6f557da78a5a5a0d6836cf9b3af52f02608f6d18c9",
+    version: "0091",
+    file: "0091_cms_qa_actor_lease_window.sql",
+    sha256: "a7d95d5ac9784d5ec7040945bc11f9369f1dd0ac9695d29068a2f8570ca2adad",
   });
   assert.deepEqual(manifest.slice(-G12_PINNED_MIGRATION_TAIL.length), G12_PINNED_MIGRATION_TAIL);
   for (const migration of manifest.slice(-G12_PINNED_MIGRATION_TAIL.length)) {
@@ -641,4 +642,21 @@ test("0090 semantic preflight proves the lease accepts only the state the fence 
   assert.match(contract, /^coalesce\(/);
   assert.match(contract, /, false\) as qa_lease_document_canonical_fence_0090_semantics_exact$/);
   assert.throws(() => qaLeaseDocumentCanonicalFenceSemanticSql("Bad Alias"));
+});
+
+test("0091 semantic preflight proves the lease covers the window without widening anything", () => {
+  const contract = qaActorLeaseWindowSemanticSql("qa_actor_lease_window_0091_semantics_exact");
+
+  assert.ok(contract.includes("240 minutes"));
+  assert.ok(contract.includes("not like '%119 minutes%'"));
+
+  // Estender o prazo nao pode remover a recuperacao automatica nem abrir o gatilho.
+  assert.ok(contract.includes("cms_sweep_expired_qa_actor_leases"));
+  assert.ok(contract.includes("cms_capture_qa_actor_lease"));
+  assert.match(contract, /not has_function_privilege\('anon'/);
+  assert.match(contract, /not has_function_privilege\('authenticated'/);
+
+  assert.match(contract, /^coalesce\(/);
+  assert.match(contract, /, false\) as qa_actor_lease_window_0091_semantics_exact$/);
+  assert.throws(() => qaActorLeaseWindowSemanticSql("Bad Alias"));
 });

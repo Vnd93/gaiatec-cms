@@ -18,6 +18,7 @@ import {
   qaActorRuntimeRepairsSemanticSql,
   runtimeIntegrityRepairsSemanticSql,
   operationalEventsReadScaleSemanticSql,
+  qaActorLeaseWindowSemanticSql,
   qaLeaseDocumentCanonicalFenceSemanticSql,
   runtimeIntegrityFollowupSemanticSql,
   sessionRefreshRevocationSemanticSql,
@@ -153,6 +154,7 @@ const [result] = await managementRequest(`/v1/projects/${STAGING_PROJECT_REF}/da
       ${runtimeIntegrityFollowupSemanticSql("runtime_integrity_followup_0088_semantics_exact")},
       ${operationalEventsReadScaleSemanticSql("operational_events_read_scale_0089_semantics_exact")},
       ${qaLeaseDocumentCanonicalFenceSemanticSql("qa_lease_document_canonical_fence_0090_semantics_exact")},
+      ${qaActorLeaseWindowSemanticSql("qa_actor_lease_window_0091_semantics_exact")},
       exists(
         select 1 from pg_catalog.pg_trigger t
         where t.tgrelid = 'private.cms_qa_actor_leases'::regclass
@@ -236,6 +238,7 @@ const checks = [
   "runtime_integrity_followup_0088_semantics_exact",
   "operational_events_read_scale_0089_semantics_exact",
   "qa_lease_document_canonical_fence_0090_semantics_exact",
+  "qa_actor_lease_window_0091_semantics_exact",
   "qa_rate_limit_proof_cleanup_present",
   "qa_actor_auth_trigger_present",
   "qa_actor_marker_trigger_present",

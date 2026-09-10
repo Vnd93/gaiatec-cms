@@ -50,6 +50,11 @@ export const G12_PINNED_MIGRATION_TAIL = Object.freeze([
     file: "0090_cms_qa_lease_document_canonical_fence.sql",
     sha256: "295f8adcfac409de8dd86f6f557da78a5a5a0d6836cf9b3af52f02608f6d18c9",
   }),
+  Object.freeze({
+    version: "0091",
+    file: "0091_cms_qa_actor_lease_window.sql",
+    sha256: "a7d95d5ac9784d5ec7040945bc11f9369f1dd0ac9695d29068a2f8570ca2adad",
+  }),
 ]);
 
 export const CMS_MEDIA_UPLOAD_ABORT_0082_RPCS = Object.freeze([
@@ -853,5 +858,30 @@ export function qaLeaseDocumentCanonicalFenceSemanticSql(alias) {
       and not has_function_privilege('anon', '${lease}', 'EXECUTE')
       and not has_function_privilege('authenticated', '${lease}', 'EXECUTE')
       and has_function_privilege('service_role', '${lease}', 'EXECUTE')
+    , false) as ${alias}`;
+}
+
+// A 0091 estendeu o prazo da lease do ator sintetico para 240 minutos, porque a janela autenticada de
+// staging passou a conter tambem a prova de compatibilidade do rollback. Verificar isso contra o banco
+// real importa porque o watchdog varre leases expiradas de minuto em minuto: um prazo curto demais
+// derrubaria um ator ainda em uso no meio do gate.
+export function qaActorLeaseWindowSemanticSql(alias) {
+  if (!/^[a-z][a-z0-9_]*$/.test(alias)) fail("qa-actor-lease-window-alias");
+  const capture = "private.cms_capture_qa_actor_lease()";
+  const sweeper = "private.cms_sweep_expired_qa_actor_leases(integer)";
+  const definition = `regexp_replace(pg_get_functiondef(to_regprocedure('${capture}')), '[[:space:]]+', ' ', 'g')`;
+  return `coalesce(
+      to_regprocedure('${capture}') is not null
+      and to_regprocedure('${sweeper}') is not null
+      and ${definition} like '%240 minutes%'
+      and ${definition} not like '%119 minutes%'
+      and not has_function_privilege('anon', '${capture}', 'EXECUTE')
+      and not has_function_privilege('authenticated', '${capture}', 'EXECUTE')
+      and exists (
+        select 1 from pg_catalog.pg_trigger t
+        where t.tgrelid = 'auth.users'::regclass
+          and t.tgname = 'cms_capture_qa_actor_lease'
+          and not t.tgisinternal
+      )
     , false) as ${alias}`;
 }

@@ -2135,33 +2135,31 @@ test("release workflows and reduced canary are immutable, staged and production 
     backendCompatibility,
     /"0090": \[\s*"supabase\/tests\/rls_cms_qa_lease_document_canonical_fence\.test\.sql",\s*"tests\/contracts\/cms-qa-lease-document-canonical-fence\.test\.ts"/,
   );
-  // A travessia autenticada do frontend de rollback le o handoff das entidades nascidas na UI, e o
-  // bloco nao o produzia: o arquivo so era escrito muito depois, pelo ciclo do candidato, entao esse
-  // gate so podia reprovar com ENOENT. O ciclo mutante, por sua vez, recusa qualquer origem que nao
-  // seja a fixada do ambiente, o que exclui a URL efemera do canario de rollback.
+  assert.match(
+    backendCompatibility,
+    /"0091": \[\s*"supabase\/tests\/rls_cms_qa_actor_lease_window\.test\.sql",\s*"tests\/contracts\/cms-qa-actor-lease-window\.test\.ts"/,
+  );
+  // A travessia autenticada do frontend de rollback le o handoff das entidades nascidas na UI, que so
+  // existem entre a criacao e a revogacao do ator mutante. Ela roda, portanto, depois do ciclo do
+  // candidato e antes da revogacao, e nada dentro do bloco de rollback pode mutar, porque o ciclo
+  // mutante recusa qualquer origem que nao seja a fixada do ambiente.
   {
-    const bootstrap = deployStaging.indexOf(
-      "Create the UI entities on the canonical origin before traversing the rollback frontend",
+    const candidateCycle = deployStaging.indexOf(
+      "Run the complete authenticated mutating editorial cycle first",
     );
     const traversal = deployStaging.indexOf(
       "Traverse the rollback frontend with an AAL2 session against the candidate backend",
     );
-    const candidateDeploy = deployStaging.indexOf("Deploy the immutable staging candidate");
-    assert.ok(bootstrap > 0 && traversal > 0 && candidateDeploy > 0);
-    assert.ok(bootstrap < traversal, "the rollback handoff must be produced before it is read");
-    assert.ok(traversal < candidateDeploy, "rollback compatibility stays proven before publication");
+    const revoke = deployStaging.indexOf("Revoke the mutating browser actor and verify zero active residue");
+    assert.ok(candidateCycle > 0 && traversal > 0 && revoke > 0);
+    assert.ok(candidateCycle < traversal, "the handoff must exist before the rollback traversal");
+    assert.ok(traversal < revoke, "the entities must still exist when the rollback traversal runs");
 
-    const block = deployStaging.slice(bootstrap, traversal);
-    assert.match(block, /--grep @ui-bootstrap/);
-    // A criacao acontece na origem canonica; percorrer a URL efemera e somente leitura e continua ali.
-    assert.match(block, /PLAYWRIGHT_BASE_URL: https:\/\/ev2-g17-canary\.gaiatec-cms-staging\.pages\.dev/);
-    assert.match(block, /QA_CMS_UI_CREATED_STATE_PATH: outputs\/cms-ui-created-rollback-state\.json/);
-    const traversalBlock = deployStaging.slice(traversal, traversal + 900);
-    assert.match(traversalBlock, /deployment-url/);
-    assert.match(
-      traversalBlock,
-      /QA_CMS_UI_CREATED_STATE_PATH: outputs\/cms-ui-created-rollback-state\.json/,
-    );
+    const rollbackTraversal = deployStaging.slice(traversal, traversal + 900);
+    assert.doesNotMatch(rollbackTraversal, /--grep @ui-bootstrap/);
+    assert.doesNotMatch(rollbackTraversal, /--grep @mutating/);
+    assert.match(rollbackTraversal, /QA_CMS_ROLLBACK_COMPATIBILITY: "true"/);
+    assert.match(rollbackTraversal, /deployment-url/);
   }
   assert.match(stagingDatabaseVerify, /media_upload_abort_0082_rpcs_privileges_exact/);
   assert.match(stagingDatabaseVerify, /media_upload_abort_0082_helpers_locked/);

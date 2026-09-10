@@ -26,6 +26,10 @@ const watchdogMigration = readFileSync(
   new URL("../../supabase/migrations/0061_cms_qa_actor_lease_watchdog.sql", import.meta.url),
   "utf8",
 );
+const leaseWindowMigration = readFileSync(
+  new URL("../../supabase/migrations/0091_cms_qa_actor_lease_window.sql", import.meta.url),
+  "utf8",
+);
 const stagingWorkflow = readFileSync(
   new URL("../../.github/workflows/deploy-staging.yml", import.meta.url),
   "utf8",
@@ -986,7 +990,10 @@ test("the database watchdog atomically leases and revokes only exact synthetic a
   assert.match(watchdogMigration, /after insert on auth\.users/);
   assert.match(watchdogMigration, /before update of raw_user_meta_data on auth\.users/);
   assert.match(watchdogMigration, /'CMS_QA_ACTOR_MARKER_IMMUTABLE'/);
+  // 0091 estendeu a lease porque a janela autenticada passou a conter tambem a prova de
+  // compatibilidade do rollback, que so pode rodar enquanto as entidades criadas na UI existem.
   assert.match(watchdogMigration, /v_created_at \+ interval '119 minutes'/);
+  assert.match(leaseWindowMigration, /v_created_at \+ interval '240 minutes'/);
   assert.match(watchdogMigration, /expires_at <= created_at \+ interval '120 minutes'/);
   assert.match(watchdogMigration, /cms_qa_override_window_is_valid/);
   assert.match(watchdogMigration, /evaluator_count <> 4/);
@@ -1050,9 +1057,11 @@ test("the database watchdog atomically leases and revokes only exact synthetic a
 });
 
 test("the exact QA lease outlives each single-run authenticated lifecycle budget", () => {
+  // A lease efetiva e a que 0091 instala; 0061 continua sendo a origem historica do gatilho.
   const leaseMinutes = Number(
-    watchdogMigration.match(/v_created_at \+ interval '(\d+) minutes'/)?.[1] ?? "0",
+    leaseWindowMigration.match(/v_created_at \+ interval '(\d+) minutes'/)?.[1] ?? "0",
   );
+  assert.equal(leaseMinutes, 240);
   for (const [name, workflow, setupId, cleanupId] of [
     ["staging", stagingWorkflow, "browser_mutating_fixture", "browser_mutating_cleanup"],
     ["production", productionWorkflow, "production_browser_fixture", "production_browser_cleanup"],
@@ -1080,7 +1089,7 @@ test("the exact QA lease outlives each single-run authenticated lifecycle budget
     assert.match(lifecycle, /--grep @ui-bootstrap/);
     assert.match(lifecycle, /--grep @semantic/);
     const budget = timeouts.reduce((total, timeout) => total + timeout, 0);
-    assert.ok(budget <= 115, `${name} setup-to-cleanup budget must be at most 115 minutes`);
+    assert.ok(budget <= 200, `${name} setup-to-cleanup budget must be at most 200 minutes`);
     assert.ok(budget < leaseMinutes, `${name} lease must outlive the complete pre-cleanup budget`);
   }
   assert.doesNotMatch(stagingWorkflow, /id: browser_routes_fixture/);

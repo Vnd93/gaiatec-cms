@@ -20,9 +20,17 @@ test("staging proves the approved rollback frontend through an isolated AAL2 bro
     "Traverse the rollback frontend with an AAL2 session against the candidate backend",
   );
   const cleanup = workflow.indexOf("Revoke the rollback compatibility actor and verify zero active residue");
-  const candidateDeploy = workflow.indexOf("Deploy the immutable staging candidate");
+  const candidateCycle = workflow.indexOf("Run the complete authenticated mutating editorial cycle first");
+  const evidence = workflow.indexOf("Bind staging evidence to mandatory artifact IDs and digests");
   assert.ok(rollbackDeploy >= 0 && rollbackDeploy < fixture);
-  assert.ok(fixture < traversal && traversal < cleanup && cleanup < candidateDeploy);
+  assert.ok(fixture < traversal && traversal < cleanup);
+  // A travessia le o handoff das entidades nascidas na UI, e elas so existem entre a criacao e a
+  // revogacao do ator mutante. Antes da publicacao do candidato o alias canonico ainda serve o build
+  // do bridge e o ciclo mutante recusa qualquer outra origem, entao esse handoff nao pode existir la.
+  // A prova continua dentro do mesmo run e antes de qualquer passo de producao, sobre as mesmas
+  // entidades reais que o candidato acabou de percorrer.
+  assert.ok(candidateCycle > 0 && candidateCycle < traversal);
+  assert.ok(evidence > 0 && cleanup < evidence);
   assert.match(workflow, /QA_CMS_FRONTEND_EXPECTED_SHA: \$\{\{ inputs\.rollback_ref \}\}/);
   assert.match(workflow, /QA_CMS_EXPECTED_SHA: \$\{\{ steps\.candidate\.outputs\.sha \}\}/);
   assert.match(workflow, /QA_CMS_ROLLBACK_COMPATIBILITY: "true"/);

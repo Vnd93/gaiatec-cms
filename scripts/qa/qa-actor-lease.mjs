@@ -1,7 +1,7 @@
 const SHA_PATTERN = /^[0-9a-f]{40}$/;
 const RUN_TAG_PATTERN = /^QA-CMS-FINAL-[0-9]{8}-[0-9a-f]{8}$/;
 const ENVIRONMENTS = new Set(["staging", "production"]);
-export const QA_ACTOR_LEASE_TTL_MINUTES = 119;
+export const QA_ACTOR_LEASE_TTL_MINUTES = 240;
 export const QA_ACTOR_LEASE_MAX_MINUTES = 120;
 
 function assertIdentity({ actorId, runTag, candidateSha, environment }) {

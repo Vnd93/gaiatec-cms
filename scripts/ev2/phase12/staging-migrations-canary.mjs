@@ -116,6 +116,7 @@ let contentFixture;
 let overrideId;
 let projectionCreated = false;
 let operationError;
+const fixtureCloseFailures = [];
 let cleanupError;
 let finalResidue;
 let revocationLatencyMs;
@@ -1978,15 +1979,18 @@ async function closeActors() {
 }
 
 async function closeFixtures() {
-  const failures = [];
+  // Every closer used to be swallowed the same way, so a failed teardown said only that something
+  // failed. Record which closer and its coded identity, and keep running the remaining closers so
+  // one broken teardown cannot leave the others unattempted.
   for (const close of [closeMediaFixture, closeDocumentFixture, closePimFixture, closeActors]) {
     try {
       await close();
-    } catch {
-      failures.push(true);
+    } catch (error) {
+      fixtureCloseFailures.push({ closer: close.name, failure: canaryFailureIdentity(error) });
     }
   }
-  if (failures.length) throw new Error("G12_STAGING_MIGRATION_CANARY_FIXTURE_CLOSE_FAILED");
+  if (fixtureCloseFailures.length)
+    throw new Error(`G12_STAGING_MIGRATION_CANARY_FIXTURE_CLOSE_FAILED:${fixtureCloseFailures[0].closer}`);
 }
 
 async function residue() {
@@ -2239,6 +2243,7 @@ const report = {
   sessionRevocationLatencyMs: sessionRevocationLatencyMs ?? null,
   residue: finalResidue ?? null,
   failureStage: canaryFailureStage({ operationError, cleanupError }),
+  fixtureCloseFailures,
   operationFailure: canaryFailureIdentity(operationError),
   cleanupFailure: canaryFailureIdentity(cleanupError),
   syntheticOnly: true,

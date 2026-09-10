@@ -87,3 +87,24 @@ test("the MFA retry waits for a new TOTP window instead of resending the same co
   assert.match(loop, /Math\.floor\(clock \/ 30_000\) \+ 1\) \* 30_000/);
   assert.doesNotMatch(loop, /setTimeout\(resolve, attempt \* 1000\)/);
 });
+
+test("a failed teardown names the closer and keeps attempting the rest", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const canary = await readFile("scripts/ev2/phase12/staging-migrations-canary.mjs", "utf8");
+  const start = canary.indexOf("async function closeFixtures()");
+  const closeFixtures = canary.slice(start, canary.indexOf("async function residue()", start));
+
+  // The old teardown swallowed every closer identically, so a failure said only that something failed.
+  assert.doesNotMatch(closeFixtures, /catch \{/);
+  assert.match(closeFixtures, /closer: close\.name/);
+  assert.match(closeFixtures, /canaryFailureIdentity\(error\)/);
+  assert.match(closeFixtures, /FIXTURE_CLOSE_FAILED:\$\{fixtureCloseFailures\[0\]\.closer\}/);
+
+  // One broken closer must not leave the remaining ones unattempted, so the loop cannot rethrow early.
+  assert.ok(
+    closeFixtures.indexOf("catch (error)") < closeFixtures.indexOf("if (fixtureCloseFailures.length)"),
+  );
+
+  // The detail has to reach the report, not just the thrown message.
+  assert.match(canary, /^\s*fixtureCloseFailures,$/m);
+});

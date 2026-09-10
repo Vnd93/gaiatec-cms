@@ -175,8 +175,11 @@ select is(
     select min(extract(epoch from (expires_at - created_at)))::integer
     from private.cms_qa_actor_leases
   ),
-  7140,
-  'every automatically captured lease expires after 119 minutes'
+  14400,
+  -- 0091 estendeu o prazo porque a janela autenticada passou a conter tambem a prova de
+  -- compatibilidade do rollback, que so pode rodar enquanto as entidades criadas na UI existem. A
+  -- lease continua sendo um prazo fechado, apenas maior que a janela que ela cobre.
+  'every automatically captured lease expires after 240 minutes'
 );
 select is(
   (

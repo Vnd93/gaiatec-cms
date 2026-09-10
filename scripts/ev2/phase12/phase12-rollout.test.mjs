@@ -2139,6 +2139,10 @@ test("release workflows and reduced canary are immutable, staged and production 
     backendCompatibility,
     /"0091": \[\s*"supabase\/tests\/rls_cms_qa_actor_lease_window\.test\.sql",\s*"tests\/contracts\/cms-qa-actor-lease-window\.test\.ts"/,
   );
+  assert.match(
+    backendCompatibility,
+    /"0092": \[\s*"supabase\/tests\/rls_cms_qa_override_window\.test\.sql",\s*"tests\/contracts\/cms-qa-override-window\.test\.ts"/,
+  );
   // A travessia autenticada do frontend de rollback le o handoff das entidades nascidas na UI, que so
   // existem entre a criacao e a revogacao do ator mutante. Ela roda, portanto, depois do ciclo do
   // candidato e antes da revogacao, e nada dentro do bloco de rollback pode mutar, porque o ciclo

@@ -272,6 +272,7 @@ test("canary proves refresh-resistant session revocation without banning Auth", 
   assert.match(source, /"0089"/);
   assert.match(source, /"0090"/);
   assert.match(source, /"0091"/);
+  assert.match(source, /"0092"/);
   assert.match(source, /migrationManifest: sourceMigrations/);
   assert.doesNotMatch(source, /console\.(?:log|error)\([^)]*(?:password|refreshToken|totpSecret)/);
 });

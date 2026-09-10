@@ -27,6 +27,7 @@ import {
   runtimeIntegrityRepairsSemanticSql,
   operationalEventsReadScaleSemanticSql,
   qaActorLeaseWindowSemanticSql,
+  qaOverrideWindowSemanticSql,
   qaLeaseDocumentCanonicalFenceSemanticSql,
   runtimeIntegrityFollowupSemanticSql,
   sessionRefreshRevocationSemanticSql,
@@ -82,9 +83,9 @@ test("the repository migration history is contiguous", () => {
   assert.equal(manifest[0].version, "0001");
   assert.equal(manifest.at(-1)?.version, String(manifest.length).padStart(4, "0"));
   assert.deepEqual(G12_PINNED_MIGRATION_TAIL.at(-1), {
-    version: "0091",
-    file: "0091_cms_qa_actor_lease_window.sql",
-    sha256: "d98aa8d1fb4a26d139ec3bcc2faf4765eccf9085387e527b5237e701d6ce4d67",
+    version: "0092",
+    file: "0092_cms_qa_override_window.sql",
+    sha256: "1ea5459fdfb945a9686a8049d1b7727f296d91f8f03c7a80f5d36abf808f12d8",
   });
   assert.deepEqual(manifest.slice(-G12_PINNED_MIGRATION_TAIL.length), G12_PINNED_MIGRATION_TAIL);
   for (const migration of manifest.slice(-G12_PINNED_MIGRATION_TAIL.length)) {
@@ -653,9 +654,6 @@ test("0091 semantic preflight proves the lease covers the window without widenin
   // Reescrever o corpo antigo apagaria os reparos de 0086; a verificacao prova que sobreviveram.
   assert.ok(contract.includes("transaction_timestamp()"));
   assert.ok(contract.includes("CMS_QA_ACTOR_METADATA_INVALID"));
-  // A janela dos overrides deriva do prazo da lease e tem teto proprio, que sobe junto.
-  assert.ok(contract.includes("cms_qa_override_window_is_valid"));
-  assert.ok(contract.includes("241 minutes"));
   assert.ok(contract.includes("not like '%119 minutes%'"));
 
   // Estender o prazo nao pode remover a recuperacao automatica nem abrir o gatilho.
@@ -667,4 +665,21 @@ test("0091 semantic preflight proves the lease covers the window without widenin
   assert.match(contract, /^coalesce\(/);
   assert.match(contract, /, false\) as qa_actor_lease_window_0091_semantics_exact$/);
   assert.throws(() => qaActorLeaseWindowSemanticSql("Bad Alias"));
+});
+
+test("0092 semantic preflight proves the override window follows the lease", () => {
+  const contract = qaOverrideWindowSemanticSql("qa_override_window_0092_semantics_exact");
+
+  assert.ok(contract.includes("241 minutes"));
+  assert.ok(contract.includes("not like '%120 minutes%'"));
+
+  // A excecao continua amarrada a lease sintetica exata e continua fechada.
+  assert.ok(contract.includes("cms_qa_actor_marker_is_exact"));
+  assert.ok(contract.includes("p_expires_at > p_starts_at"));
+  assert.match(contract, /not has_function_privilege\('anon'/);
+  assert.match(contract, /not has_function_privilege\('authenticated'/);
+
+  assert.match(contract, /^coalesce\(/);
+  assert.match(contract, /, false\) as qa_override_window_0092_semantics_exact$/);
+  assert.throws(() => qaOverrideWindowSemanticSql("Bad Alias"));
 });

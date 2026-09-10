@@ -180,6 +180,10 @@ const compatibilityTests = {
     "supabase/tests/rls_cms_qa_actor_lease_window.test.sql",
     "tests/contracts/cms-qa-actor-lease-window.test.ts",
   ],
+  "0092": [
+    "supabase/tests/rls_cms_qa_override_window.test.sql",
+    "tests/contracts/cms-qa-override-window.test.ts",
+  ],
 };
 for (const migration of additions) {
   const version = migration.version;

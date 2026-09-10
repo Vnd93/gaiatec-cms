@@ -53,7 +53,12 @@ export const G12_PINNED_MIGRATION_TAIL = Object.freeze([
   Object.freeze({
     version: "0091",
     file: "0091_cms_qa_actor_lease_window.sql",
-    sha256: "d98aa8d1fb4a26d139ec3bcc2faf4765eccf9085387e527b5237e701d6ce4d67",
+    sha256: "2465fadfff8d3e2025ef1c24e49394241df48f1edb1c41f49cfddd435dd8f7f1",
+  }),
+  Object.freeze({
+    version: "0092",
+    file: "0092_cms_qa_override_window.sql",
+    sha256: "1ea5459fdfb945a9686a8049d1b7727f296d91f8f03c7a80f5d36abf808f12d8",
   }),
 ]);
 
@@ -877,11 +882,6 @@ export function qaActorLeaseWindowSemanticSql(alias) {
       and ${definition} not like '%119 minutes%'
       and ${definition} like '%transaction_timestamp()%'
       and ${definition} like '%CMS_QA_ACTOR_METADATA_INVALID%'
-      and regexp_replace(
-            pg_get_functiondef(
-              to_regprocedure('private.cms_qa_override_window_is_valid(uuid,text,timestamptz,timestamptz)')
-            ), '[[:space:]]+', ' ', 'g'
-          ) like '%241 minutes%'
       and exists (
         select 1 from pg_catalog.pg_constraint c
         where c.conrelid = 'private.cms_qa_actor_leases'::regclass
@@ -896,5 +896,23 @@ export function qaActorLeaseWindowSemanticSql(alias) {
           and t.tgname = 'cms_capture_qa_actor_lease'
           and not t.tgisinternal
       )
+    , false) as ${alias}`;
+}
+
+// A janela das sobreposicoes de flag deriva do prazo da lease e tinha teto proprio. Verificar isso
+// contra o banco real importa porque os dois vivem em migrations diferentes: com eles em desacordo, o
+// manifesto de capacidades marca toda flag como indisponivel e o ator sintetico nao fica pronto.
+export function qaOverrideWindowSemanticSql(alias) {
+  if (!/^[a-z][a-z0-9_]*$/.test(alias)) fail("qa-override-window-alias");
+  const validator = "private.cms_qa_override_window_is_valid(uuid,text,timestamptz,timestamptz)";
+  const definition = `regexp_replace(pg_get_functiondef(to_regprocedure('${validator}')), '[[:space:]]+', ' ', 'g')`;
+  return `coalesce(
+      to_regprocedure('${validator}') is not null
+      and ${definition} like '%241 minutes%'
+      and ${definition} not like '%120 minutes%'
+      and ${definition} like '%cms_qa_actor_marker_is_exact%'
+      and ${definition} like '%p_expires_at > p_starts_at%'
+      and not has_function_privilege('anon', '${validator}', 'EXECUTE')
+      and not has_function_privilege('authenticated', '${validator}', 'EXECUTE')
     , false) as ${alias}`;
 }

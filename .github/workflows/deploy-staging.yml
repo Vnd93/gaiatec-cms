@@ -11,11 +11,20 @@ on:
         description: SHA completo do frontend atualmente aprovado para provar compatibilidade de rollback
         required: true
       frontend_bridge_run_id:
-        description: Run que promoveu o mesmo SHA A ao alias staging sobre o backend anterior
-        required: true
+        description: >-
+          Run que promoveu o mesmo SHA A ao alias staging sobre o backend anterior. Exigido pelo run
+          canonico; o passe de diagnostico nao o usa, porque nao publica nem sela nada.
+        required: false
       ev2_draft_v2_candidate:
         description: Habilitar somente o adapter cliente candidato EV2.2
         required: true
+        type: boolean
+        default: false
+      diagnostic_run:
+        description: >-
+          Passe de diagnostico. Colhe todas as falhas em uma passada, nao muta staging fora de
+          fixtures sinteticas, nao sela artefato, nao publica, nao emite evidencia.
+        required: false
         type: boolean
         default: false
 
@@ -29,6 +38,10 @@ concurrency:
 
 jobs:
   deploy:
+    # Passe de diagnostico e run canonico sao mutuamente exclusivos. A proibicao da secao 4.2 da
+    # instrucao de otimizacao fica estrutural: em diagnostico este job inteiro nao existe, entao
+    # nenhum step de selo, publicacao, promocao ou evidencia pode ser alcancado por engano.
+    if: ${{ !inputs.diagnostic_run }}
     runs-on: ubuntu-latest
     timeout-minutes: 240
     environment: staging
@@ -54,6 +67,9 @@ jobs:
           test "$DISPATCH_REF" = refs/heads/main
           test "${DISPATCH_ACTOR,,}" = vnd93
           test "${TRIGGERING_ACTOR,,}" = vnd93
+          # `grep` de string vazia devolve string vazia, entao a comparacao sozinha aceitaria um
+          # valor ausente. O run canonico exige a ponte: a ausencia tem de reprovar aqui.
+          test -n "$FRONTEND_BRIDGE_RUN_ID"
           test "$(printf '%s' "$FRONTEND_BRIDGE_RUN_ID" | grep -E '^[1-9][0-9]*$')" = "$FRONTEND_BRIDGE_RUN_ID"
       - name: Checkout exact staging candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -986,9 +1002,322 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  diagnostic:
+    # Bloco 2 da INSTRUCAO_OTIMIZACAO_ENTREGA_CMS_GAIATEC.md, secao 4.
+    #
+    # Proposito: colher TODAS as falhas do candidato em uma unica passada, para que a correcao seja
+    # feita em lote num unico SHA, em vez de um defeito por rodada.
+    #
+    # Limite honesto, repetido no relatorio: este passe NAO aplica migration, NAO configura secret,
+    # NAO faz deploy de Edge Function, NAO publica bytes e NAO sela artefato. Ele exercita o codigo
+    # do candidato contra o staging como ele esta agora. Logo, ele nao valida migration nova nem
+    # funcao nova do candidato; isso continua sendo exclusividade do run canonico.
+    #
+    # A unica mutacao permitida e em fixture sintetica, com ator e run_tag proprios do run. A
+    # limpeza e a prova de residuo zero permanecem obrigatorias e fail-closed tambem aqui.
+    if: ${{ inputs.diagnostic_run }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    environment: staging
+    steps:
+      # --- Guardas. Falham rapido mesmo em diagnostico: sem elas nada abaixo tem sentido. ---
+      - name: Validate staging dispatch branch before any diagnostic work
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+          DISPATCH_ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+        run: |
+          set -euo pipefail
+          test "$DISPATCH_REF" = refs/heads/main
+          test "${DISPATCH_ACTOR,,}" = vnd93
+          test "${TRIGGERING_ACTOR,,}" = vnd93
+      - name: Checkout exact staging candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.git_ref }}
+          fetch-depth: 0
+          path: candidate
+      - name: Checkout approved rollback frontend baseline
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.rollback_ref }}
+          fetch-depth: 0
+          path: baseline
+      - name: Resolve and verify the exact staging candidate
+        id: candidate
+        working-directory: candidate
+        env:
+          ROLLBACK_REF: ${{ inputs.rollback_ref }}
+        run: |
+          set -euo pipefail
+          candidate_sha="$(git rev-parse HEAD)"
+          git fetch origin main
+          git merge-base --is-ancestor "$candidate_sha" origin/main
+          test "$(printf '%s' "$ROLLBACK_REF" | grep -E '^[a-f0-9]{40}$')" = "$ROLLBACK_REF"
+          test "$(git -C ../baseline rev-parse HEAD)" = "$ROLLBACK_REF"
+          echo "sha=$candidate_sha" >> "$GITHUB_OUTPUT"
+      - name: Resolve what staging actually serves right now
+        id: live
+        run: |
+          set -euo pipefail
+          for alias in ev2-g12-canary ev2-g17-canary; do
+            release="$(curl -fsS --max-time 30 "https://$alias.gaiatec-cms-staging.pages.dev/healthz" | jq -r '.release')"
+            test "$(printf '%s' "$release" | grep -E '^[a-f0-9]{40}$')" = "$release"
+            case "$alias" in
+              ev2-g12-canary) echo "g12_sha=$release" >> "$GITHUB_OUTPUT" ;;
+              ev2-g17-canary) echo "g17_sha=$release" >> "$GITHUB_OUTPUT" ;;
+            esac
+          done
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: candidate/.nvmrc
+          cache: npm
+          cache-dependency-path: candidate/package-lock.json
+      - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3
+        with:
+          version: 2.116.0
+      - name: Link the Supabase CLI to the authorized staging project
+        working-directory: candidate
+        env:
+          STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test "$STAGING_SUPABASE_PROJECT_REF" = "glcqsosxwgmlhzgcsnzv"
+          # `link` e local: escreve supabase/.temp no workspace e nao muta o projeto remoto. Os
+          # canarios recusam o alvo quando o CLI nao esta vinculado, e sem isso nenhum check roda.
+          # Nenhum `db push` aqui: aplicar migration continua exclusividade do run canonico.
+          supabase link --project-ref "$STAGING_SUPABASE_PROJECT_REF" --yes
+      - name: Install the exact candidate
+        working-directory: candidate
+        run: npm ci
+      - name: Install the browser the canaries drive
+        working-directory: candidate
+        run: npx playwright install --with-deps chromium
+
+      # --- Gates. Cada um roda ate o fim; a falha e registrada, nao aborta a passada. ---
+      - name: DIAGNOSTIC local check suite
+        id: gate_local_check
+        continue-on-error: true
+        working-directory: candidate
+        run: |
+          npm run check
+          npm audit --audit-level=high
+      - name: DIAGNOSTIC source-backed CMS coverage matrix
+        id: gate_coverage_matrix
+        continue-on-error: true
+        working-directory: candidate
+        run: node scripts/qa/cms-coverage-inventory.mjs --output outputs/g12-cms-coverage-matrix.json
+      - name: DIAGNOSTIC append-only backend and rollback compatibility
+        id: gate_backend_compatibility
+        continue-on-error: true
+        working-directory: candidate
+        run: |
+          mkdir -p outputs
+          node scripts/ev2/phase12/verify-backend-forward-compatibility.mjs \
+            --candidate . --baseline ../baseline --report outputs/g12-backend-compatibility.json
+      - name: DIAGNOSTIC live staging database against candidate source
+        id: gate_staging_database
+        continue-on-error: true
+        working-directory: candidate
+        env:
+          STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/ev2/phase12/verify-staging-database.mjs --source . | tee ../diagnostic-staging-database.json
+      - name: DIAGNOSTIC post-baseline migration scenarios with isolated synthetic data
+        id: gate_migrations_canary
+        continue-on-error: true
+        timeout-minutes: 30
+        working-directory: candidate
+        run: node scripts/ev2/phase12/staging-migrations-canary.mjs
+        env:
+          G12_MIGRATION_CANARY_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          G12_MIGRATION_CANARY_REPORT_PATH: ../diagnostic-staging-migrations-canary.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: DIAGNOSTIC G11 system canary against the live isolated alias
+        id: gate_g11_canary
+        continue-on-error: true
+        timeout-minutes: 40
+        working-directory: candidate
+        run: npm run canary:ev2:phase11
+        env:
+          # Este passe nao publica nada, entao o alias serve o SHA anterior. O canario, porem, e o do
+          # candidato: e exatamente esse par, codigo novo contra o backend atual, que expoe a classe
+          # de defeito de fixture contra schema que consumiu seis candidatos.
+          EV2_G11_CANDIDATE_ORIGIN: https://ev2-g12-canary.gaiatec-cms-staging.pages.dev
+          EV2_G11_EXPECTED_SHA: ${{ steps.live.outputs.g12_sha }}
+          EV2_G11_REPORT_PATH: ../diagnostic-g11-canary.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: DIAGNOSTIC public route probe and latency budget
+        id: gate_live_probe
+        continue-on-error: true
+        working-directory: candidate
+        run: node scripts/ev2/phase12/rollout-probe.mjs
+        env:
+          EV2_G12_ORIGIN: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
+          EV2_G12_EXPECTED_SHA: ${{ steps.live.outputs.g17_sha }}
+          EV2_G12_ENVIRONMENT: staging
+          EV2_G12_PROBE_PROFILE: full
+          EV2_G12_SAMPLE_COUNT: "20"
+          EV2_G12_WARMUP_SAMPLES_PER_ROUTE: "20"
+          EV2_G12_REPORT_PATH: ../diagnostic-staging-probe.json
+      - name: DIAGNOSTIC public, anonymous, CORS and secret boundaries
+        id: gate_boundary
+        continue-on-error: true
+        working-directory: candidate
+        run: node scripts/ev2/phase12/probe-supabase-boundary.mjs | tee ../diagnostic-staging-boundary.json
+        env:
+          CMS_BACKEND_ENVIRONMENT: staging
+          CMS_BACKEND_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          CMS_BACKEND_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          CMS_BACKEND_ORIGIN: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
+      - name: DIAGNOSTIC governed editorial lifecycle end to end
+        id: gate_lifecycle
+        continue-on-error: true
+        timeout-minutes: 30
+        working-directory: candidate
+        run: |
+          qa_date="$(date -u +%Y%m%d)"
+          export GAIATEC_QA_RUN_TAG="QA-CMS-FINAL-${qa_date}-${GAIATEC_EXPECTED_SHA:0:8}"
+          node scripts/phase7/staging-roundtrip.mjs | tee ../diagnostic-staging-lifecycle.json
+        env:
+          GAIATEC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          GAIATEC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          GAIATEC_STAGING_ORIGIN: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
+          GAIATEC_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: DIAGNOSTIC operational CMS canary
+        id: gate_phase17_canary
+        continue-on-error: true
+        timeout-minutes: 30
+        working-directory: candidate
+        run: npm run canary:ev2:phase17 | tee ../diagnostic-g17-canary.json
+        env:
+          EV2_G17_EXPECTED_SHA: ${{ steps.live.outputs.g17_sha }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      # --- Fixture autenticada. Mutacao permitida: ator e run_tag proprios deste run. ---
+      # A fixture autenticada exige duas coisas ao mesmo tempo: que `git rev-parse HEAD` do checkout
+      # seja o SHA esperado e que `/healthz` de ev2-g17-canary sirva esse mesmo SHA. Num passe que
+      # nao publica nada as duas condicoes se excluem, e forcar qualquer uma delas produz falha
+      # garantida — pior do que nao rodar, porque ensina a ignorar o vermelho do passe.
+      #
+      # Entao ela roda exatamente quando pode: quando o alias ja serve o candidato, o que acontece ao
+      # rediagnosticar um SHA que o run canonico ja publicou. Fora disso o gate fica `skipped`, e o
+      # relatorio o reporta como nao exercitado em vez de aprovado.
+      - name: DIAGNOSTIC isolated MFA actor provisioning
+        id: gate_browser_fixture
+        if: steps.live.outputs.g17_sha == steps.candidate.outputs.sha
+        continue-on-error: true
+        timeout-minutes: 10
+        working-directory: candidate
+        run: node scripts/qa/cms-browser-fixture.mjs setup
+        env:
+          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          QA_CMS_TARGET_ENVIRONMENT: staging
+          QA_CMS_PROVISION_AUTH_LIFECYCLE: "true"
+          QA_CMS_FIXTURE_STATE_PATH: outputs/diagnostic-browser-state.json
+          QA_CMS_FIXTURE_REPORT_PATH: outputs/diagnostic-browser-setup.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      # --- Limpeza e residuo: obrigatorios e fail-closed, mesmo em diagnostico. ---
+      - name: Revoke the diagnostic actor and verify zero active residue
+        id: diagnostic_cleanup
+        if: always() && steps.gate_browser_fixture.outcome != 'skipped'
+        continue-on-error: true
+        timeout-minutes: 15
+        working-directory: candidate
+        run: node scripts/qa/cms-browser-fixture.mjs cleanup
+        env:
+          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          QA_CMS_TARGET_ENVIRONMENT: staging
+          QA_CMS_FIXTURE_STATE_PATH: outputs/diagnostic-browser-state.json
+          QA_CMS_FIXTURE_REPORT_PATH: outputs/diagnostic-browser-cleanup.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Retry the diagnostic actor cleanup after a cleanup failure
+        if: always() && steps.diagnostic_cleanup.outcome == 'failure'
+        timeout-minutes: 15
+        working-directory: candidate
+        run: node scripts/qa/cms-browser-fixture.mjs cleanup
+        env:
+          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          QA_CMS_TARGET_ENVIRONMENT: staging
+          QA_CMS_FIXTURE_STATE_PATH: outputs/diagnostic-browser-state.json
+          QA_CMS_FIXTURE_REPORT_PATH: outputs/diagnostic-browser-cleanup-retry.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Prove terminal zero residue for the diagnostic lease
+        id: gate_residue
+        if: always() && steps.gate_browser_fixture.outcome != 'skipped'
+        timeout-minutes: 10
+        working-directory: candidate
+        run: node scripts/qa/cms-browser-fixture.mjs residue
+        env:
+          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          QA_CMS_TARGET_ENVIRONMENT: staging
+          QA_CMS_FIXTURE_STATE_PATH: outputs/diagnostic-browser-state.json
+          QA_CMS_FIXTURE_REPORT_PATH: outputs/diagnostic-browser-residue.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      # --- Relatorio consolidado ---
+      - name: Refuse any evidence file touched by a diagnostic pass
+        if: always()
+        working-directory: candidate
+        run: test -z "$(git status --porcelain --untracked-files=all -- .github/release-controls/evidence)"
+      - name: Materialize the consolidated diagnostic report
+        id: diagnostic_report
+        if: always()
+        env:
+          CANDIDATE_SHA: ${{ steps.candidate.outputs.sha }}
+          LIVE_G12_SHA: ${{ steps.live.outputs.g12_sha }}
+          LIVE_G17_SHA: ${{ steps.live.outputs.g17_sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          OUTCOME_LOCAL_CHECK: ${{ steps.gate_local_check.outcome }}
+          OUTCOME_COVERAGE_MATRIX: ${{ steps.gate_coverage_matrix.outcome }}
+          OUTCOME_BACKEND_COMPATIBILITY: ${{ steps.gate_backend_compatibility.outcome }}
+          OUTCOME_STAGING_DATABASE: ${{ steps.gate_staging_database.outcome }}
+          OUTCOME_MIGRATIONS_CANARY: ${{ steps.gate_migrations_canary.outcome }}
+          OUTCOME_G11_CANARY: ${{ steps.gate_g11_canary.outcome }}
+          OUTCOME_LIVE_PROBE: ${{ steps.gate_live_probe.outcome }}
+          OUTCOME_BOUNDARY: ${{ steps.gate_boundary.outcome }}
+          OUTCOME_LIFECYCLE: ${{ steps.gate_lifecycle.outcome }}
+          OUTCOME_PHASE17_CANARY: ${{ steps.gate_phase17_canary.outcome }}
+          OUTCOME_BROWSER_FIXTURE: ${{ steps.gate_browser_fixture.outcome }}
+          OUTCOME_DIAGNOSTIC_CLEANUP: ${{ steps.diagnostic_cleanup.outcome }}
+          OUTCOME_RESIDUE: ${{ steps.gate_residue.outcome }}
+        run: node candidate/scripts/ev2/phase12/diagnostic-report.mjs --output diagnostic-report.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: diagnostic-${{ steps.candidate.outputs.sha }}
+          path: |
+            diagnostic-report.json
+            diagnostic-staging-database.json
+            diagnostic-staging-migrations-canary.json
+            diagnostic-g11-canary.json
+            diagnostic-staging-probe.json
+            diagnostic-staging-boundary.json
+            diagnostic-staging-lifecycle.json
+            diagnostic-g17-canary.json
+            candidate/outputs/diagnostic-browser-setup.json
+            candidate/outputs/diagnostic-browser-cleanup.json
+            candidate/outputs/diagnostic-browser-cleanup-retry.json
+            candidate/outputs/diagnostic-browser-residue.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Fail the diagnostic pass when any gate reproved
+        if: always()
+        env:
+          FAILED_GATES: ${{ steps.diagnostic_report.outputs.failed_gates }}
+        run: |
+          set -euo pipefail
+          test -n "$FAILED_GATES"
+          test "$FAILED_GATES" = "0"
+
   finalize:
+    # O finalizador compensa mutacoes do run canonico. Em diagnostico nao ha mutacao para compensar.
     needs: deploy
-    if: always()
+    if: always() && !inputs.diagnostic_run
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: staging

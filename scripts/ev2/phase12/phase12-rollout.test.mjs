@@ -44,6 +44,18 @@ import { PRODUCTION_RELEASE_EVIDENCE_PATHS } from "./production-release-evidence
 import { stagingReconcileDecision } from "./staging-pages-state.mjs";
 
 const read = (path) => readFile(path, "utf8");
+
+// Recorta o corpo de um job do workflow. Contagens que expressam uma regra de um job — por exemplo
+// uma fixture sintetica por janela — tem de ser feitas dentro dele, e nao no arquivo inteiro, senao
+// a regra passa a depender de quantos jobs o arquivo tem.
+function workflowJob(workflow, name) {
+  const normalized = workflow.replaceAll("\r\n", "\n");
+  const start = normalized.indexOf(`\n  ${name}:\n`);
+  assert.ok(start >= 0, `job ${name} ausente`);
+  const rest = normalized.slice(start + 1);
+  const next = rest.slice(1).search(/\n {2}[a-z_]+:\n/);
+  return next >= 0 ? rest.slice(0, next + 1) : rest;
+}
 const sha = "a".repeat(40);
 const cspPolicySha256 = createHash("sha256").update(contentSecurityPolicy()).digest("hex");
 const cspAdminPolicySha256 = createHash("sha256").update(contentSecurityPolicy("/admin")).digest("hex");
@@ -473,9 +485,12 @@ test("staging workflow exercises the exact-SHA governed lifecycle with disposabl
   // One independently leased actor proves the retained rollback frontend. One
   // exact-candidate actor then owns bootstrap, all mutating suites, the semantic
   // traversal and terminal cleanup/residue under the same SHA/runTag.
-  assert.equal((workflow.match(/cms-browser-fixture\.mjs setup/g) ?? []).length, 2);
-  assert.equal((workflow.match(/cms-browser-fixture\.mjs cleanup/g) ?? []).length, 4);
-  assert.equal((workflow.match(/cms-browser-fixture\.mjs residue/g) ?? []).length, 1);
+  // A contagem e do job canonico, nao do arquivo. O passe de diagnostico e um job proprio, que nunca
+  // roda no mesmo run que este, e carrega a fixture sintetica dele com ator e run_tag proprios.
+  const canonical = workflowJob(workflow, "deploy");
+  assert.equal((canonical.match(/cms-browser-fixture\.mjs setup/g) ?? []).length, 2);
+  assert.equal((canonical.match(/cms-browser-fixture\.mjs cleanup/g) ?? []).length, 4);
+  assert.equal((canonical.match(/cms-browser-fixture\.mjs residue/g) ?? []).length, 1);
   assert.ok(
     workflow.indexOf("Run the complete authenticated mutating editorial cycle first") <
       workflow.indexOf("Traverse every authenticated route, menu and required viewport on the same lease"),
@@ -551,7 +566,9 @@ test("staging workflow exercises the exact-SHA governed lifecycle with disposabl
       workflow.indexOf("Deploy the immutable staging candidate"),
   );
   assert.match(workflow, /--commit-message "\$\{\{ steps\.staging_state\.outputs\.run_marker \}\}"/);
-  assert.match(workflow, /needs: deploy\s+if: always\(\)/);
+  // O finalizador roda mesmo quando o deploy falha, e so nao roda no passe de diagnostico, que
+  // nao muta nada para compensar.
+  assert.match(workflow, /needs: deploy\s+if: always\(\) && !inputs\.diagnostic_run/);
   assert.match(workflow, /staging-pages-state\.mjs compensate/);
   assert.match(workflow, /staging-pages-state\.mjs assert-owned/);
   assert.match(workflow, /staging-pages-state\.mjs assert-original/);
@@ -562,7 +579,10 @@ test("staging workflow exercises the exact-SHA governed lifecycle with disposabl
   assert.match(workflow, /STATE_ARTIFACT_DIGEST/);
   assert.match(workflow, /CANDIDATE_ARTIFACT_DIGEST/);
   assert.match(workflow, /staging-artifact-bindings\.json/);
-  assert.doesNotMatch(workflow, /if-no-files-found: warn/);
+  // Escopo e o job canonico: e nele que a falta de um arquivo de evidencia tem de derrubar o
+  // upload. O passe de diagnostico nao produz evidencia, e varios arquivos dele sao legitimamente
+  // opcionais, como o relatorio de retentativa que so existe se houve retentativa.
+  assert.doesNotMatch(workflowJob(workflow, "deploy"), /if-no-files-found: warn/);
   assert.match(workflow, /Prove the live staging alias matches the approved rollback SHA/);
   assert.match(workflow, /g12-staging-live-baseline\.json/);
   assert.ok(
@@ -578,7 +598,12 @@ test("staging workflow exercises the exact-SHA governed lifecycle with disposabl
   assert.doesNotMatch(workflow, /ALLOWED_ORIGINS[^\n]*\*/);
   assert.doesNotMatch(workflow, /candidate\/g12-(?:canary|backend-compatibility|cms-coverage-matrix)\.json/);
   assert.doesNotMatch(workflow, /candidate\/g16-csp-browser\.json/);
-  assert.equal((workflow.match(/git status --porcelain --untracked-files=all/g) ?? []).length, 3);
+  // Tres provas de checkout limpo no run canonico. A verificacao do passe de diagnostico e outra
+  // coisa: ela e filtrada ao diretorio de evidencia e vive no job dele.
+  assert.equal(
+    (workflowJob(workflow, "deploy").match(/git status --porcelain --untracked-files=all/g) ?? []).length,
+    3,
+  );
   assert.match(workflow, /id: browser_mutating_cleanup/);
   assert.doesNotMatch(workflow, /id: browser_routes_cleanup/);
   assert.match(workflow, /Retry cleanup for the same isolated browser lease/);

@@ -127,7 +127,10 @@ export function validatePublicBridgeRolloutProbe(report, expected = {}) {
     report.violations.length !== 0 ||
     !Number.isSafeInteger(report?.warmupSamplesPerRoute) ||
     report.warmupSamplesPerRoute < 1 ||
-    report.warmupSamplesPerRoute > 10 ||
+    // O teto acompanha o do proprio probe: aquecer pelo menos tanto quanto se mede, com limite
+    // fechado. Manter 10 aqui recusava a evidencia de um probe valido.
+    report.warmupSamplesPerRoute > 40 ||
+    report.warmupSamplesPerRoute < routeSamples ||
     report?.sampleCount !== routeSamples ||
     report?.measuredResponses !== routes.length * routeSamples + 2 ||
     !Number.isSafeInteger(report?.requestTimeoutMs) ||

@@ -145,7 +145,8 @@ function report() {
     schemaVersion: 1,
     event: "g12.rollout.probe",
     probeProfile: "full",
-    warmupSamplesPerRoute: 3,
+    // A evidencia so aceita um probe que aqueceu pelo menos tanto quanto mediu.
+    warmupSamplesPerRoute: samplesPerRoute,
     origin: "https://gaiatecsistemas.com.br",
     candidateSha: SHA,
     environment: "production",

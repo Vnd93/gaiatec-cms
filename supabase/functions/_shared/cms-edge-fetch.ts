@@ -30,11 +30,17 @@ export function isEdgeFetchTimeout(error: unknown): boolean {
   return String((error as { message?: string })?.message ?? "").includes("CMS_EDGE_FETCH_TIMEOUT:");
 }
 
+const IDEMPOTENT = /^(?:GET|HEAD)$/i;
+
 export function boundedFetch(
   timeoutMs: number = CMS_EDGE_FETCH_TIMEOUT_MS,
   transport: typeof fetch = fetch,
+  // Uma leitura que estourou o prazo no transporte nao diz se o servidor chegou a receber o pedido, e
+  // repetir uma leitura nao tem efeito colateral. Uma escrita nunca e repetida aqui: quem sabe se ela
+  // e idempotente e quem a emite, e essa decisao fica com o chamador.
+  retryIdempotentOnTimeout = false,
 ): typeof fetch {
-  return async (input: RequestInfo | URL, init?: RequestInit) => {
+  const attempt: typeof fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const controller = new AbortController();
     let expire: (reason: unknown) => void = () => {};
     // O prazo nao pode depender de o transporte honrar o abort. Abortar libera o socket, mas quem
@@ -67,6 +73,19 @@ export function boundedFetch(
     } finally {
       clearTimeout(expired);
       caller?.removeEventListener("abort", forward);
+    }
+  };
+  if (!retryIdempotentOnTimeout) return attempt;
+  return async (input: RequestInfo | URL, init?: RequestInit) => {
+    try {
+      return await attempt(input, init);
+    } catch (error) {
+      const method = String(
+        init?.method ?? (input instanceof Request ? input.method : "GET"),
+      );
+      const cancelled = init?.signal?.aborted ?? (input instanceof Request ? input.signal.aborted : false);
+      if (!isEdgeFetchTimeout(error) || !IDEMPOTENT.test(method) || cancelled) throw error;
+      return await attempt(input, init);
     }
   };
 }

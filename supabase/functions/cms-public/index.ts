@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { boundedFetch } from "../_shared/cms-edge-fetch.ts";
 import { containsInternalProductValue, sanitizePublicPayload, sanitizePublicSeo } from "../_shared/cms-public-projection.ts";
 import { resolveMediaAssets } from "../_shared/cms-media-resolution.ts";
 import {
@@ -64,6 +65,9 @@ const qaProofCorsHeaders = (req: Request) => {
   };
 };
 const PUBLIC_REVALIDATE = "public, max-age=0, must-revalidate";
+// O Worker publico aborta a chamada a esta funcao em 5 segundos. Duas tentativas de 1,8 segundo
+// cabem folgadamente dentro desse teto, deixando espaco para o restante do trabalho da requisicao.
+const PUBLIC_UPSTREAM_TIMEOUT_MS = 1_800;
 const rawJson = (body: unknown, status = 200, extra: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { ...headers, "Content-Type": "application/json; charset=utf-8", ...extra } });
 const json = (body: unknown, status = 200, extra: Record<string, string> = {}) => {
   if (status >= 200 && status < 300 && publicWireLeak(body)) {
@@ -205,7 +209,16 @@ const handleRequest = async (req: Request) => {
   const environment = Deno.env.get("CMS_ENVIRONMENT");
   if (!isConfiguredCmsEnvironment(environment)) return json({ error: "Serviço indisponível." }, 503);
   const url = requestUrl, type = url.searchParams.get("type") ?? "detail";
-  const client = createClient(supabaseUrl, service ?? anon, { auth: { persistSession: false } });
+  // Quem chama esta funcao e o Worker publico, que desiste em 5 segundos e sintetiza 503. Uma
+  // leitura que demore mais do que isso nunca chega a ser util: o pedido ja foi abandonado. Medido no
+  // staging, o p50 das rotas publicas fica em torno de 450 ms e o que estoura o orcamento sao paradas
+  // isoladas, com o maximo travado exatamente no teto do Worker. Cada chamada de saida passa a ter
+  // prazo bem abaixo desse teto, para que a funcao responda dentro da janela de quem espera em vez de
+  // ser abandonada nela.
+  const client = createClient(supabaseUrl, service ?? anon, {
+    global: { fetch: boundedFetch(PUBLIC_UPSTREAM_TIMEOUT_MS, fetch, true) },
+    auth: { persistSession: false },
+  });
   const publicEndpoint = `${supabaseUrl}/functions/v1/cms-public`;
   const loadPublicResource = async () => {
     const kind = url.searchParams.get("kind") ?? "";

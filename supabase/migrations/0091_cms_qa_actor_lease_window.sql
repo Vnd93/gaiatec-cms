@@ -112,7 +112,8 @@ begin
     select 1 from pg_catalog.pg_constraint c
     where c.conrelid = 'private.cms_qa_actor_leases'::regclass
       and c.conname = 'cms_qa_actor_leases_check1'
-      and pg_get_constraintdef(c.oid) like '%241 minutes%'
+      -- O Postgres renderiza o literal normalizado, entao a comparacao e pela forma canonica.
+      and pg_get_constraintdef(c.oid) like '%04:01:00%'
   ) then
     raise exception 'CMS_QA_LEASE_WINDOW_CONSTRAINT_NOT_APPLIED' using errcode = '55000';
   end if;

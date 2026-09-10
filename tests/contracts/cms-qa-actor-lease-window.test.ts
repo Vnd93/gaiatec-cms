@@ -19,6 +19,8 @@ describe("qa actor lease window", () => {
     // O prazo tambem e uma restricao da tabela; sem ela nenhuma lease longa e gravavel.
     expect(migration).toContain("cms_qa_actor_leases_check1");
     expect(migration).toContain("interval '241 minutes'");
+    // A sonda compara pela forma canonica, porque o Postgres normaliza o literal do intervalo.
+    expect(migration).toContain("04:01:00");
     expect(migration).toContain("expires_at > created_at");
     expect(migration).toContain("CMS_QA_LEASE_WINDOW_CONSTRAINT_NOT_APPLIED");
   });

@@ -38,7 +38,7 @@ select ok(to_regprocedure('private.cms_sweep_expired_qa_actor_leases(integer)') 
 -- novo teto sem deixar de ser um limite superior fechado.
 select ok((select pg_get_constraintdef(c.oid) from pg_catalog.pg_constraint c
   where c.conrelid = 'private.cms_qa_actor_leases'::regclass
-    and c.conname = 'cms_qa_actor_leases_check1') like '%241 minutes%',
+    and c.conname = 'cms_qa_actor_leases_check1') like '%04:01:00%',
   'the lease constraint accepts the window and still bounds it');
 
 select * from finish();

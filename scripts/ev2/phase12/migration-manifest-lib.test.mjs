@@ -84,7 +84,7 @@ test("the repository migration history is contiguous", () => {
   assert.deepEqual(G12_PINNED_MIGRATION_TAIL.at(-1), {
     version: "0091",
     file: "0091_cms_qa_actor_lease_window.sql",
-    sha256: "92a9c6350606d63fe8bc53c9595cae51f77451e64d74d76d6fb71793ddba2fe9",
+    sha256: "eb074e151cab709dae48ba3aab3ef8a3488db3c912c4df2e6584962f7b46ee83",
   });
   assert.deepEqual(manifest.slice(-G12_PINNED_MIGRATION_TAIL.length), G12_PINNED_MIGRATION_TAIL);
   for (const migration of manifest.slice(-G12_PINNED_MIGRATION_TAIL.length)) {
@@ -648,6 +648,8 @@ test("0091 semantic preflight proves the lease covers the window without widenin
   const contract = qaActorLeaseWindowSemanticSql("qa_actor_lease_window_0091_semantics_exact");
 
   assert.ok(contract.includes("240 minutes"));
+  // A restricao e comparada pela forma canonica, porque o Postgres normaliza o literal.
+  assert.ok(contract.includes("04:01:00"));
   assert.ok(contract.includes("not like '%119 minutes%'"));
 
   // Estender o prazo nao pode remover a recuperacao automatica nem abrir o gatilho.

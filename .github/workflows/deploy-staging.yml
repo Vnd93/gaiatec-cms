@@ -416,77 +416,6 @@ jobs:
           # sample size and the latency budget stay exactly as they are.
           EV2_G12_READINESS_ATTEMPTS: "20"
           EV2_G12_READINESS_INTERVAL_MS: "4000"
-      - name: Install the isolated browser for authenticated rollback compatibility
-        working-directory: candidate
-        run: npx playwright install --with-deps chromium
-      - name: Provision an isolated MFA actor for authenticated rollback compatibility
-        id: rollback_browser_fixture
-        working-directory: candidate
-        run: node scripts/qa/cms-browser-fixture.mjs setup
-        env:
-          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
-          QA_CMS_TARGET_ENVIRONMENT: staging
-          QA_CMS_FIXTURE_STATE_PATH: outputs/cms-browser-rollback-state.json
-          QA_CMS_FIXTURE_REPORT_PATH: outputs/cms-browser-rollback-setup.json
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      # A travessia autenticada consome o handoff das entidades nascidas na UI, e o bloco de
-      # compatibilidade de rollback nao produzia esse handoff: ele so era escrito muito depois, pelo
-      # ciclo mutante do candidato. O bloco precisa ser autossuficiente, e criar as entidades pelo
-      # proprio frontend de rollback e o que de fato prova a compatibilidade, nao apenas le-las.
-      - name: Create the UI entities through the rollback frontend before traversing it
-        timeout-minutes: 45
-        working-directory: candidate
-        run: >-
-          npx playwright test tests/e2e/cms-final-coverage.spec.ts
-          --project=desktop-chromium --workers=1 --retries=0
-          --grep @ui-bootstrap
-        env:
-          PLAYWRIGHT_BASE_URL: ${{ steps.rollback_compatibility_deploy.outputs.deployment-url }}
-          QA_CMS_REPORT_PATH: outputs/cms-rollback-ui-bootstrap.json
-          QA_CMS_UI_CREATED_STATE_PATH: outputs/cms-ui-created-rollback-state.json
-          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
-          QA_CMS_FRONTEND_EXPECTED_SHA: ${{ inputs.rollback_ref }}
-          QA_CMS_ROLLBACK_COMPATIBILITY: "true"
-          QA_CMS_TARGET_ENVIRONMENT: staging
-      - name: Traverse the rollback frontend with an AAL2 session against the candidate backend
-        timeout-minutes: 25
-        working-directory: candidate
-        run: >-
-          npx playwright test tests/e2e/cms-final-coverage.spec.ts
-          --project=desktop-chromium --workers=1 --retries=0
-          --grep "sessão AAL2 percorre todas as superfícies"
-        env:
-          PLAYWRIGHT_BASE_URL: ${{ steps.rollback_compatibility_deploy.outputs.deployment-url }}
-          QA_CMS_REPORT_PATH: outputs/cms-rollback-authenticated-compatibility.json
-          QA_CMS_UI_CREATED_STATE_PATH: outputs/cms-ui-created-rollback-state.json
-          QA_CMS_COVERAGE_INVENTORY_PATH: ../baseline/outputs/cms-coverage-rollback.json
-          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
-          QA_CMS_FRONTEND_EXPECTED_SHA: ${{ inputs.rollback_ref }}
-          QA_CMS_ROLLBACK_COMPATIBILITY: "true"
-          QA_CMS_TARGET_ENVIRONMENT: staging
-      - name: Revoke the rollback compatibility actor and verify zero active residue
-        id: rollback_browser_cleanup
-        if: always() && steps.rollback_browser_fixture.outcome != 'skipped'
-        working-directory: candidate
-        run: node scripts/qa/cms-browser-fixture.mjs cleanup
-        env:
-          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
-          QA_CMS_TARGET_ENVIRONMENT: staging
-          QA_CMS_FIXTURE_STATE_PATH: outputs/cms-browser-rollback-state.json
-          QA_CMS_FIXTURE_REPORT_PATH: outputs/cms-browser-rollback-cleanup.json
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      - name: Retry rollback compatibility actor cleanup after a cleanup failure
-        if: >-
-          always() && steps.rollback_browser_fixture.outcome != 'skipped' &&
-          steps.rollback_browser_cleanup.outcome == 'failure'
-        working-directory: candidate
-        run: node scripts/qa/cms-browser-fixture.mjs cleanup
-        env:
-          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
-          QA_CMS_TARGET_ENVIRONMENT: staging
-          QA_CMS_FIXTURE_STATE_PATH: outputs/cms-browser-rollback-state.json
-          QA_CMS_FIXTURE_REPORT_PATH: outputs/cms-browser-rollback-cleanup-retry.json
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       - name: Build the staging shell from the same SHA
         working-directory: candidate
         run: npm run build:staging
@@ -774,6 +703,63 @@ jobs:
           QA_CMS_UI_CREATED_STATE_PATH: outputs/cms-ui-created-state.json
           QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
           QA_CMS_TARGET_ENVIRONMENT: staging
+      # A travessia autenticada do frontend de rollback le o handoff das entidades nascidas na UI, e
+      # esse handoff so pode ser criado contra a origem canonica de staging: o ciclo mutante recusa,
+      # por seguranca, qualquer origem diferente da fixada para o ambiente, inclusive a URL efemera do
+      # proprio canario de rollback. Por isso o bloco autenticado de rollback roda aqui, depois de a
+      # travessia do candidato ter consumido o mesmo handoff e antes de o ator mutante ser revogado,
+      # que e a unica janela em que as entidades existem.
+      - name: Install the isolated browser for authenticated rollback compatibility
+        working-directory: candidate
+        run: npx playwright install --with-deps chromium
+      - name: Provision an isolated MFA actor for authenticated rollback compatibility
+        id: rollback_browser_fixture
+        working-directory: candidate
+        run: node scripts/qa/cms-browser-fixture.mjs setup
+        env:
+          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          QA_CMS_TARGET_ENVIRONMENT: staging
+          QA_CMS_FIXTURE_STATE_PATH: outputs/cms-browser-rollback-state.json
+          QA_CMS_FIXTURE_REPORT_PATH: outputs/cms-browser-rollback-setup.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Traverse the rollback frontend with an AAL2 session against the candidate backend
+        timeout-minutes: 25
+        working-directory: candidate
+        run: >-
+          npx playwright test tests/e2e/cms-final-coverage.spec.ts
+          --project=desktop-chromium --workers=1 --retries=0
+          --grep "sessão AAL2 percorre todas as superfícies"
+        env:
+          PLAYWRIGHT_BASE_URL: ${{ steps.rollback_compatibility_deploy.outputs.deployment-url }}
+          QA_CMS_REPORT_PATH: outputs/cms-rollback-authenticated-compatibility.json
+          QA_CMS_COVERAGE_INVENTORY_PATH: ../baseline/outputs/cms-coverage-rollback.json
+          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          QA_CMS_FRONTEND_EXPECTED_SHA: ${{ inputs.rollback_ref }}
+          QA_CMS_ROLLBACK_COMPATIBILITY: "true"
+          QA_CMS_TARGET_ENVIRONMENT: staging
+      - name: Revoke the rollback compatibility actor and verify zero active residue
+        id: rollback_browser_cleanup
+        if: always() && steps.rollback_browser_fixture.outcome != 'skipped'
+        working-directory: candidate
+        run: node scripts/qa/cms-browser-fixture.mjs cleanup
+        env:
+          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          QA_CMS_TARGET_ENVIRONMENT: staging
+          QA_CMS_FIXTURE_STATE_PATH: outputs/cms-browser-rollback-state.json
+          QA_CMS_FIXTURE_REPORT_PATH: outputs/cms-browser-rollback-cleanup.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Retry rollback compatibility actor cleanup after a cleanup failure
+        if: >-
+          always() && steps.rollback_browser_fixture.outcome != 'skipped' &&
+          steps.rollback_browser_cleanup.outcome == 'failure'
+        working-directory: candidate
+        run: node scripts/qa/cms-browser-fixture.mjs cleanup
+        env:
+          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          QA_CMS_TARGET_ENVIRONMENT: staging
+          QA_CMS_FIXTURE_STATE_PATH: outputs/cms-browser-rollback-state.json
+          QA_CMS_FIXTURE_REPORT_PATH: outputs/cms-browser-rollback-cleanup-retry.json
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       - name: Revoke the mutating browser actor and verify zero active residue
         id: browser_mutating_cleanup
         if: always() && steps.browser_mutating_fixture.outcome != 'skipped'

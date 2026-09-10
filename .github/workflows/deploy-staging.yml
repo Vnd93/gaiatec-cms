@@ -11,8 +11,10 @@ on:
         description: SHA completo do frontend atualmente aprovado para provar compatibilidade de rollback
         required: true
       frontend_bridge_run_id:
-        description: Run que promoveu o mesmo SHA A ao alias staging sobre o backend anterior
-        required: true
+        description: >-
+          Run que promoveu o mesmo SHA A ao alias staging sobre o backend anterior. Exigido pelo run
+          canonico; o passe de diagnostico nao o usa, porque nao publica nem sela nada.
+        required: false
       ev2_draft_v2_candidate:
         description: Habilitar somente o adapter cliente candidato EV2.2
         required: true
@@ -65,6 +67,9 @@ jobs:
           test "$DISPATCH_REF" = refs/heads/main
           test "${DISPATCH_ACTOR,,}" = vnd93
           test "${TRIGGERING_ACTOR,,}" = vnd93
+          # `grep` de string vazia devolve string vazia, entao a comparacao sozinha aceitaria um
+          # valor ausente. O run canonico exige a ponte: a ausencia tem de reprovar aqui.
+          test -n "$FRONTEND_BRIDGE_RUN_ID"
           test "$(printf '%s' "$FRONTEND_BRIDGE_RUN_ID" | grep -E '^[1-9][0-9]*$')" = "$FRONTEND_BRIDGE_RUN_ID"
       - name: Checkout exact staging candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -1071,6 +1076,18 @@ jobs:
       - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3
         with:
           version: 2.116.0
+      - name: Link the Supabase CLI to the authorized staging project
+        working-directory: candidate
+        env:
+          STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test "$STAGING_SUPABASE_PROJECT_REF" = "glcqsosxwgmlhzgcsnzv"
+          # `link` e local: escreve supabase/.temp no workspace e nao muta o projeto remoto. Os
+          # canarios recusam o alvo quando o CLI nao esta vinculado, e sem isso nenhum check roda.
+          # Nenhum `db push` aqui: aplicar migration continua exclusividade do run canonico.
+          supabase link --project-ref "$STAGING_SUPABASE_PROJECT_REF" --yes
       - name: Install the exact candidate
         working-directory: candidate
         run: npm ci
@@ -1177,6 +1194,9 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
       # --- Fixture autenticada. Mutacao permitida: ator e run_tag proprios deste run. ---
+      # A fixture confere `/healthz` de ev2-g17-canary contra QA_CMS_EXPECTED_SHA. Este passe nao
+      # publica nada, entao o alias serve o SHA anterior: exigir o candidato aqui recusa com
+      # QA_CMS_FIXTURE_RELEASE_MISMATCH antes de provisionar qualquer ator.
       - name: DIAGNOSTIC isolated MFA actor provisioning
         id: gate_browser_fixture
         continue-on-error: true
@@ -1184,7 +1204,7 @@ jobs:
         working-directory: candidate
         run: node scripts/qa/cms-browser-fixture.mjs setup
         env:
-          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          QA_CMS_EXPECTED_SHA: ${{ steps.live.outputs.g17_sha }}
           QA_CMS_TARGET_ENVIRONMENT: staging
           QA_CMS_PROVISION_AUTH_LIFECYCLE: "true"
           QA_CMS_FIXTURE_STATE_PATH: outputs/diagnostic-browser-state.json
@@ -1200,7 +1220,7 @@ jobs:
         working-directory: candidate
         run: node scripts/qa/cms-browser-fixture.mjs cleanup
         env:
-          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          QA_CMS_EXPECTED_SHA: ${{ steps.live.outputs.g17_sha }}
           QA_CMS_TARGET_ENVIRONMENT: staging
           QA_CMS_FIXTURE_STATE_PATH: outputs/diagnostic-browser-state.json
           QA_CMS_FIXTURE_REPORT_PATH: outputs/diagnostic-browser-cleanup.json
@@ -1211,18 +1231,19 @@ jobs:
         working-directory: candidate
         run: node scripts/qa/cms-browser-fixture.mjs cleanup
         env:
-          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          QA_CMS_EXPECTED_SHA: ${{ steps.live.outputs.g17_sha }}
           QA_CMS_TARGET_ENVIRONMENT: staging
           QA_CMS_FIXTURE_STATE_PATH: outputs/diagnostic-browser-state.json
           QA_CMS_FIXTURE_REPORT_PATH: outputs/diagnostic-browser-cleanup-retry.json
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       - name: Prove terminal zero residue for the diagnostic lease
+        id: gate_residue
         if: always() && steps.gate_browser_fixture.outcome != 'skipped'
         timeout-minutes: 10
         working-directory: candidate
         run: node scripts/qa/cms-browser-fixture.mjs residue
         env:
-          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
+          QA_CMS_EXPECTED_SHA: ${{ steps.live.outputs.g17_sha }}
           QA_CMS_TARGET_ENVIRONMENT: staging
           QA_CMS_FIXTURE_STATE_PATH: outputs/diagnostic-browser-state.json
           QA_CMS_FIXTURE_REPORT_PATH: outputs/diagnostic-browser-residue.json
@@ -1254,6 +1275,7 @@ jobs:
           OUTCOME_PHASE17_CANARY: ${{ steps.gate_phase17_canary.outcome }}
           OUTCOME_BROWSER_FIXTURE: ${{ steps.gate_browser_fixture.outcome }}
           OUTCOME_DIAGNOSTIC_CLEANUP: ${{ steps.diagnostic_cleanup.outcome }}
+          OUTCOME_RESIDUE: ${{ steps.gate_residue.outcome }}
         run: node candidate/scripts/ev2/phase12/diagnostic-report.mjs --output diagnostic-report.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()

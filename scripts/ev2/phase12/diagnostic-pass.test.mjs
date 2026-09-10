@@ -71,7 +71,68 @@ test("the diagnostic job cannot mutate staging beyond its own synthetic fixtures
 
   // A unica escrita permitida e a fixture sintetica, com ator e run_tag proprios do run.
   assert.match(diagnostic, /cms-browser-fixture\.mjs setup/);
-  assert.match(diagnostic, /QA_CMS_EXPECTED_SHA: \$\{\{ steps\.candidate\.outputs\.sha \}\}/);
+
+  // `link` e local: escreve supabase/.temp e nao muta o projeto remoto. Sem ele os canarios recusam
+  // o alvo e nenhum check chega a rodar, entao o passe precisa dele — e so dele.
+  assert.match(diagnostic, /supabase link --project-ref "\$STAGING_SUPABASE_PROJECT_REF" --yes/);
+});
+
+test("gates that compare the served release expect what staging actually serves", () => {
+  const diagnostic = jobBody("diagnostic");
+  // Nada e publicado por este passe, entao o alias serve o SHA anterior. Exigir o candidato faz o
+  // gate recusar antes de exercitar qualquer coisa: foi assim que a fixture de navegador reprovou
+  // com QA_CMS_FIXTURE_RELEASE_MISMATCH e o canario G11 com "ALVO RECUSADO".
+  assert.doesNotMatch(diagnostic, /QA_CMS_EXPECTED_SHA: \$\{\{ steps\.candidate\.outputs\.sha \}\}/);
+  assert.equal(
+    (diagnostic.match(/QA_CMS_EXPECTED_SHA: \$\{\{ steps\.live\.outputs\.g17_sha \}\}/g) ?? []).length,
+    4,
+  );
+  assert.match(diagnostic, /EV2_G11_EXPECTED_SHA: \$\{\{ steps\.live\.outputs\.g12_sha \}\}/);
+  assert.match(diagnostic, /EV2_G12_EXPECTED_SHA: \$\{\{ steps\.live\.outputs\.g17_sha \}\}/);
+  assert.match(diagnostic, /EV2_G17_EXPECTED_SHA: \$\{\{ steps\.live\.outputs\.g17_sha \}\}/);
+
+  // A identidade da fixture, que nao e comparada com release servido, continua no candidato.
+  assert.match(diagnostic, /G12_MIGRATION_CANARY_EXPECTED_SHA: \$\{\{ steps\.candidate\.outputs\.sha \}\}/);
+});
+
+test("a gate whose precondition failed is never reported as a vacuous pass", () => {
+  // Limpar o que nunca foi provisionado tem sucesso sem exercitar nada.
+  const { report } = runReport({
+    OUTCOME_BROWSER_FIXTURE: "failure",
+    OUTCOME_DIAGNOSTIC_CLEANUP: "success",
+    OUTCOME_RESIDUE: "success",
+  });
+  const byGate = Object.fromEntries(report.gates.map((gate) => [gate.gate, gate]));
+  assert.equal(byGate["diagnostic.browser_fixture"].result, "FAIL");
+  assert.equal(byGate["diagnostic.cleanup"].result, "SKIPPED");
+  assert.equal(byGate["diagnostic.residue"].result, "SKIPPED");
+  assert.equal(byGate["diagnostic.cleanup"].dependsOn, "diagnostic.browser_fixture");
+
+  // Com a pre-condicao aprovada, o mesmo desfecho volta a valer.
+  const healthy = runReport({
+    OUTCOME_BROWSER_FIXTURE: "success",
+    OUTCOME_DIAGNOSTIC_CLEANUP: "success",
+    OUTCOME_RESIDUE: "success",
+  }).report;
+  const healthyByGate = Object.fromEntries(healthy.gates.map((gate) => [gate.gate, gate]));
+  assert.equal(healthyByGate["diagnostic.cleanup"].result, "PASS");
+  assert.equal(healthyByGate["diagnostic.residue"].result, "PASS");
+
+  // E a falha propria do dependente continua sendo reportada como falha.
+  const broken = runReport({
+    OUTCOME_BROWSER_FIXTURE: "success",
+    OUTCOME_RESIDUE: "failure",
+  }).report;
+  assert.equal(broken.gates.find((gate) => gate.gate === "diagnostic.residue").result, "FAIL");
+});
+
+test("the canonical run refuses a missing frontend bridge run id", () => {
+  // `grep` de string vazia devolve string vazia, entao a comparacao sozinha aceitaria a ausencia.
+  const guard = workflow.slice(workflow.indexOf("Validate staging dispatch branch before any mutation"));
+  assert.match(guard.slice(0, 900), /test -n "\$FRONTEND_BRIDGE_RUN_ID"/);
+  // A entrada deixou de ser obrigatoria porque o passe de diagnostico nao a usa; quem exige e o guarda.
+  const input = workflow.slice(workflow.indexOf("      frontend_bridge_run_id:"));
+  assert.match(input.slice(0, 400), /required: false/);
 });
 
 test("every diagnostic gate collects its failure instead of aborting the pass", () => {
@@ -111,6 +172,7 @@ test("the consolidated report names cause, entity and remediation for every repr
     OUTCOME_PHASE17_CANARY: "success",
     OUTCOME_BROWSER_FIXTURE: "success",
     OUTCOME_DIAGNOSTIC_CLEANUP: "failure",
+    OUTCOME_RESIDUE: "success",
   });
 
   // Criterio de aceite da secao 4.3: uma passada sobre um candidato com tres defeitos reporta os tres.

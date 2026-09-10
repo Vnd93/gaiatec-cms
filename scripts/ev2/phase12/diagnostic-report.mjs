@@ -115,9 +115,22 @@ const GATES = [
     gate: "diagnostic.cleanup",
     cause: "CMS_DIAGNOSTIC_CLEANUP_REPROVED",
     entity: "scripts/qa/cms-browser-fixture.mjs cleanup",
-    expected: "lease concluida, ator revogado e residuo ativo zero",
+    expected: "lease concluida e ator revogado",
     remediation:
       "A conclusao de lease deve dizer a causa retornada pelo banco; se ela falhou em silencio, esse silencio e o defeito a corrigir primeiro.",
+    // Limpar o que nunca foi provisionado tem sucesso sem exercitar nada. Sem esta dependencia o
+    // gate apareceria como PASS vazio justamente quando o provisionamento reprovou.
+    dependsOn: "BROWSER_FIXTURE",
+  },
+  {
+    key: "RESIDUE",
+    gate: "diagnostic.residue",
+    cause: "CMS_DIAGNOSTIC_RESIDUE_REPROVED",
+    entity: "scripts/qa/cms-browser-fixture.mjs residue",
+    expected: "residuo ativo zero para a lease do run, provado apos a limpeza",
+    remediation:
+      "Nomear o residuo que sobreviveu a limpeza terminal; residuo remanescente nunca pode ser tratado como pendencia.",
+    dependsOn: "BROWSER_FIXTURE",
   },
 ];
 
@@ -148,18 +161,23 @@ const candidateSha = process.env.CANDIDATE_SHA ?? "";
 if (!SHA_PATTERN.test(candidateSha)) throw new Error("CMS_DIAGNOSTIC_REPORT_CANDIDATE_SHA_INVALID");
 
 const runTag = qaRunTag(candidateSha);
+const observedOf = (key) => process.env[`OUTCOME_${key}`] || "not_reached";
 const gates = GATES.map((entry) => {
   // Um step que nunca chegou a rodar reporta cadeia vazia; isso e ausencia de sinal, e ausencia de
   // sinal e tratada como reprovacao, nunca como pendencia.
-  const observed = process.env[`OUTCOME_${entry.key}`] || "not_reached";
-  const passed = observed === "success";
-  const skipped = observed === "skipped";
+  const observed = observedOf(entry.key);
+  // Um gate cuja pre-condicao reprovou nao foi exercitado: um sucesso dele aqui e vazio, e reportar
+  // PASS mentiria sobre a cobertura da passada. A reprovacao propria continua sendo reportada.
+  const vacuous = entry.dependsOn ? observedOf(entry.dependsOn) !== "success" : false;
+  const passed = observed === "success" && !vacuous;
+  const skipped = observed === "skipped" || (vacuous && observed === "success");
   return {
     gate: entry.gate,
     result: passed ? "PASS" : skipped ? "SKIPPED" : "FAIL",
     cause: passed || skipped ? null : entry.cause,
     entity: entry.entity,
     observed,
+    ...(entry.dependsOn ? { dependsOn: GATES.find((g) => g.key === entry.dependsOn).gate } : {}),
     expected: entry.expected,
     remediation: passed || skipped ? null : entry.remediation,
     sha: candidateSha,

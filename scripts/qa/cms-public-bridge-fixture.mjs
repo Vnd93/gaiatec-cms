@@ -66,6 +66,20 @@ function refuse(code) {
   throw new Error(`QA_CMS_PUBLIC_BRIDGE_${code}`);
 }
 
+// Uma recusa que nao diz o que a base respondeu obriga a repetir o run inteiro para descobrir. O
+// codigo do PostgREST e um slug fechado, e a mensagem das excecoes deste projeto tambem, entao os
+// dois podem viajar. Qualquer outra coisa vira "unknown": nada de texto livre, endereco ou payload.
+const SAFE_DB_CODE = /^[0-9A-Z]{5}$/;
+const SAFE_DB_MESSAGE = /^CMS_[A-Z0-9_]{3,60}$/;
+
+function databaseFailureIdentity(error) {
+  const code = SAFE_DB_CODE.test(String(error?.code ?? "")) ? String(error.code) : "unknown";
+  const message = SAFE_DB_MESSAGE.test(String(error?.message ?? "").trim())
+    ? String(error.message).trim()
+    : "unknown";
+  return `${code}:${message}`;
+}
+
 function assertContained(pathname) {
   const fromRoot = relative(root, resolve(pathname));
   if (!fromRoot || fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
@@ -1353,7 +1367,14 @@ async function cleanupState(context, state) {
       p_candidate_sha: candidateSha,
       p_environment: environment,
     });
-    if (completed.error || completed.data?.status !== "cleaned") refuse("ACTOR_LEASE_COMPLETION_FAILED");
+    if (completed.error || completed.data?.status !== "cleaned")
+      refuse(
+        `ACTOR_LEASE_COMPLETION_FAILED:${
+          completed.error
+            ? databaseFailureIdentity(completed.error)
+            : `status:${SAFE_DB_MESSAGE.test(String(completed.data?.status ?? "")) ? "unexpected" : String(completed.data?.status ?? "absent").slice(0, 20)}`
+        }`,
+      );
   }
   state.status = "cleaned";
   writeState(state);

@@ -784,3 +784,44 @@ export function runtimeIntegrityFollowupSemanticSql(alias) {
       and not has_schema_privilege('service_role','public','CREATE')
     , false) as ${alias}`;
 }
+
+// A 0089 separou o predicado da politica de eventos operacionais em uma metade de sessao e uma de
+// linha, e adicionou os indices que tornam o limite efetivo. Sem isso a leitura de diagnosticos
+// reavalia a linhagem de permissao por linha e estoura o statement_timeout. Esta verificacao roda
+// contra o banco real do ambiente e prova, ao mesmo tempo, que a separacao existe e que ela nao
+// afrouxou nenhuma das tres condicoes originais.
+export function operationalEventsReadScaleSemanticSql(alias) {
+  if (!/^[a-z][a-z0-9_]*$/.test(alias)) fail("operational-events-read-scale-alias");
+  const session = "public.cms_system_operational_session_scope_allowed()";
+  const row = "public.cms_system_operational_event_row_allowed(uuid)";
+  const definition = (signature) =>
+    `regexp_replace(pg_get_functiondef(to_regprocedure('${signature}')), '[[:space:]]+', ' ', 'g')`;
+  const policy = `(select pg_catalog.pg_get_expr(p.polqual, p.polrelid) from pg_catalog.pg_policy p
+        where p.polname = 'cms_operational_events_authoritative_read'
+          and p.polrelid = 'public.cms_operational_events'::regclass)`;
+  const index = (name) => `(select i.indexdef from pg_catalog.pg_indexes i
+        where i.schemaname = 'public' and i.tablename = 'cms_operational_events'
+          and i.indexname = '${name}')`;
+  return `coalesce(
+      to_regprocedure('${session}') is not null
+      and to_regprocedure('${row}') is not null
+      and (select p.prosecdef and p.provolatile = 's'
+             and array_to_string(p.proconfig, ',') like '%search_path=pg_catalog, private, pg_temp%'
+           from pg_catalog.pg_proc p where p.oid = to_regprocedure('${session}'))
+      and (select p.prosecdef and p.provolatile = 's'
+             and array_to_string(p.proconfig, ',') like '%search_path=pg_catalog, private, pg_temp%'
+           from pg_catalog.pg_proc p where p.oid = to_regprocedure('${row}'))
+      and not has_function_privilege('anon', '${session}', 'EXECUTE')
+      and not has_function_privilege('anon', '${row}', 'EXECUTE')
+      and has_function_privilege('authenticated', '${session}', 'EXECUTE')
+      and has_function_privilege('authenticated', '${row}', 'EXECUTE')
+      and ${policy} like '%cms_system_operational_session_scope_allowed%'
+      and ${policy} like '%cms_system_operational_event_row_allowed%'
+      and ${definition(session)} like '%cms_system_permission_lineage_allowed%'
+      and ${definition(session)} like '%cms:diagnostics.read%'
+      and ${definition(row)} like '%cms_system_operational_event_scope_allowed%'
+      and ${index("cms_operational_events_unresolved_recent_idx")} like '%(created_at DESC)%'
+      and ${index("cms_operational_events_unresolved_recent_idx")} like '%WHERE (resolved_at IS NULL)%'
+      and ${index("cms_operational_events_recent_idx")} like '%(created_at DESC)%'
+    , false) as ${alias}`;
+}

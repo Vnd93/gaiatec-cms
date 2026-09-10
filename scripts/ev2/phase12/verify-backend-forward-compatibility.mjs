@@ -168,7 +168,10 @@ const compatibilityTests = {
     "supabase/tests/rls_cms_deployed_command_actor_context.test.sql",
     "tests/contracts/cms-runtime-integrity-followup.test.ts",
   ],
-  "0089": ["tests/contracts/cms-operational-events-read-scale.test.ts"],
+  "0089": [
+    "supabase/tests/rls_cms_operational_events_read_scale.test.sql",
+    "tests/contracts/cms-operational-events-read-scale.test.ts",
+  ],
 };
 for (const migration of additions) {
   const version = migration.version;

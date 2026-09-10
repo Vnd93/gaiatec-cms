@@ -25,6 +25,7 @@ import {
   publicRelationLimitSemanticSql,
   qaActorRuntimeRepairsSemanticSql,
   runtimeIntegrityRepairsSemanticSql,
+  operationalEventsReadScaleSemanticSql,
   runtimeIntegrityFollowupSemanticSql,
   sessionRefreshRevocationSemanticSql,
   serviceOnlyRpcContractSql,
@@ -548,4 +549,37 @@ test("0082 schema preflight requires both validated constraints and the hardened
     () => mediaUploadAbortSchemaContractSql("unsafe-alias"),
     /G12_MIGRATION_MANIFEST_INVALID:media-upload-schema-alias/,
   );
+});
+
+test("0089 semantic preflight proves the diagnostics predicate was split without being loosened", () => {
+  const contract = operationalEventsReadScaleSemanticSql(
+    "operational_events_read_scale_0089_semantics_exact",
+  );
+
+  // The split is only correct if both halves survive as privileged, stable, search-path locked
+  // routines and the policy keeps requiring both of them.
+  for (const marker of [
+    "cms_system_operational_session_scope_allowed",
+    "cms_system_operational_event_row_allowed",
+    "p.prosecdef and p.provolatile = 's'",
+    "search_path=pg_catalog, private, pg_temp",
+    "cms_operational_events_authoritative_read",
+    "cms_system_permission_lineage_allowed",
+    "cms:diagnostics.read",
+    "cms_system_operational_event_scope_allowed",
+    "cms_operational_events_unresolved_recent_idx",
+    "WHERE (resolved_at IS NULL)",
+    "cms_operational_events_recent_idx",
+  ])
+    assert.ok(contract.includes(marker), marker);
+
+  // A predicate anon can call is a diagnostics leak, so the negative has to be asserted too.
+  assert.match(contract, /not has_function_privilege\('anon'/);
+  assert.match(contract, /has_function_privilege\('authenticated'/);
+
+  // The check has to fail closed: a missing routine makes to_regprocedure null, and coalesce turns
+  // the whole expression into false rather than into null.
+  assert.match(contract, /^coalesce\(/);
+  assert.match(contract, /, false\) as operational_events_read_scale_0089_semantics_exact$/);
+  assert.throws(() => operationalEventsReadScaleSemanticSql("Bad Alias"));
 });

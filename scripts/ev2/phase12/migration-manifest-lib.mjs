@@ -53,7 +53,7 @@ export const G12_PINNED_MIGRATION_TAIL = Object.freeze([
   Object.freeze({
     version: "0091",
     file: "0091_cms_qa_actor_lease_window.sql",
-    sha256: "2465fadfff8d3e2025ef1c24e49394241df48f1edb1c41f49cfddd435dd8f7f1",
+    sha256: "d98aa8d1fb4a26d139ec3bcc2faf4765eccf9085387e527b5237e701d6ce4d67",
   }),
 ]);
 
@@ -877,6 +877,11 @@ export function qaActorLeaseWindowSemanticSql(alias) {
       and ${definition} not like '%119 minutes%'
       and ${definition} like '%transaction_timestamp()%'
       and ${definition} like '%CMS_QA_ACTOR_METADATA_INVALID%'
+      and regexp_replace(
+            pg_get_functiondef(
+              to_regprocedure('private.cms_qa_override_window_is_valid(uuid,text,timestamptz,timestamptz)')
+            ), '[[:space:]]+', ' ', 'g'
+          ) like '%241 minutes%'
       and exists (
         select 1 from pg_catalog.pg_constraint c
         where c.conrelid = 'private.cms_qa_actor_leases'::regclass

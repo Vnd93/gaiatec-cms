@@ -49,6 +49,34 @@ begin
 end;
 $qa_lease_window$;
 
+-- A janela dos overrides de feature flag e derivada do prazo da lease, e tem teto proprio. Ele sobe
+-- junto, pelo mesmo motivo e com o mesmo cuidado: a definicao instalada e ajustada, nao reescrita.
+do $qa_override_window$
+declare
+  v_definition text;
+  v_original text;
+begin
+  select pg_get_functiondef(
+    'private.cms_qa_override_window_is_valid(uuid,text,timestamptz,timestamptz)'::regprocedure
+  ) into v_definition;
+  v_original := v_definition;
+
+  if position($old$interval '120 minutes'$old$ in v_definition) > 0 then
+    v_definition := replace(
+      v_definition,
+      $old$interval '120 minutes'$old$,
+      $new$interval '241 minutes'$new$
+    );
+  elsif position($new$interval '241 minutes'$new$ in v_definition) = 0 then
+    raise exception 'CMS_QA_OVERRIDE_WINDOW_DRIFT' using errcode = 'P0001';
+  end if;
+
+  if v_definition is distinct from v_original then
+    execute v_definition;
+  end if;
+end;
+$qa_override_window$;
+
 alter table private.cms_qa_actor_leases
   drop constraint if exists cms_qa_actor_leases_check1;
 alter table private.cms_qa_actor_leases
@@ -72,6 +100,13 @@ begin
   -- Os reparos de 0086 tem de continuar instalados: reescrever o corpo antigo os apagaria.
   if v_definition !~ 'transaction_timestamp\(\)' or v_definition !~ 'CMS_QA_ACTOR_METADATA_INVALID' then
     raise exception 'CMS_QA_LEASE_CAPTURE_REPAIRS_LOST' using errcode = '55000';
+  end if;
+  if regexp_replace(
+       pg_get_functiondef(
+         'private.cms_qa_override_window_is_valid(uuid,text,timestamptz,timestamptz)'::regprocedure
+       ), '[[:space:]]+', ' ', 'g'
+     ) !~ 'interval ''241 minutes''' then
+    raise exception 'CMS_QA_OVERRIDE_WINDOW_NOT_APPLIED' using errcode = '55000';
   end if;
   if not exists (
     select 1 from pg_catalog.pg_constraint c

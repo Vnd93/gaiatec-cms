@@ -15,6 +15,10 @@ describe("qa actor lease window", () => {
     expect(migration).toContain("interval '240 minutes'");
     expect(migration).toContain("'leaseMinutes', 240");
     expect(migration).toContain("CMS_QA_LEASE_CAPTURE_REPAIRS_LOST");
+    // A janela dos overrides de feature flag deriva do prazo da lease e tinha teto proprio.
+    expect(migration).toContain("cms_qa_override_window_is_valid");
+    expect(migration).toContain("CMS_QA_OVERRIDE_WINDOW_NOT_APPLIED");
+    expect(lease).toContain("QA_ACTOR_LEASE_MAX_MINUTES = 241");
     expect(migration).not.toContain("create or replace function private.cms_capture_qa_actor_lease");
     // A migration ainda cita o prazo antigo, mas apenas na sonda que recusa a instalacao obsoleta.
     expect(migration).not.toContain("v_created_at + interval '119 minutes'");

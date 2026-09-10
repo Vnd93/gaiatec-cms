@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(10);
+select plan(11);
 
 -- A janela autenticada de staging passou a conter tambem a prova de compatibilidade do rollback, que
 -- so pode rodar enquanto as entidades criadas na UI existem. A lease do ator sintetico precisa
@@ -48,6 +48,12 @@ select ok(strpos(pg_get_functiondef(
 select ok(strpos(pg_get_functiondef(
   'private.cms_capture_qa_actor_lease()'::regprocedure
 ),'CMS_QA_ACTOR_METADATA_INVALID') > 0,'the 0086 metadata guard survived the deadline change');
+
+-- A janela dos overrides de feature flag deriva do prazo da lease e tinha teto proprio de 120
+-- minutos, que recusava qualquer provisionamento depois da mudanca.
+select ok(strpos(pg_get_functiondef(
+  'private.cms_qa_override_window_is_valid(uuid,text,timestamptz,timestamptz)'::regprocedure
+),'241 minutes') > 0,'the override window follows the lease it derives from');
 
 select * from finish();
 rollback;

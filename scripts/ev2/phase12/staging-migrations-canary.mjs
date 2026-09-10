@@ -193,8 +193,15 @@ async function request(
   } catch {
     payload = null;
   }
-  if (!allowed.includes(response.status))
-    throw new Error(`G12_STAGING_HTTP_FAILED:${method}:${new URL(url).pathname}:${response.status}`);
+  if (!allowed.includes(response.status)) {
+    // A status alone says the call failed, not why. The project's own error codes are closed slugs
+    // and name the cause; every other field of the body can carry user data and is never read.
+    const code =
+      typeof payload?.code === "string" && /^CMS_[A-Z0-9_]{3,60}$/.test(payload.code)
+        ? `:${payload.code}`
+        : "";
+    throw new Error(`G12_STAGING_HTTP_FAILED:${method}:${new URL(url).pathname}:${response.status}${code}`);
+  }
   return {
     status: response.status,
     json: payload,

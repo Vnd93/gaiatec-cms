@@ -1,5 +1,6 @@
 import { z } from "npm:zod@4.4.3";
 import { authenticateCms } from "../_shared/cms-auth.ts";
+import { isEdgeFetchTimeout } from "../_shared/cms-edge-fetch.ts";
 import { MAX_PDF_BYTES, validatePassivePdf } from "../_shared/cms-pdf-validation.ts";
 import {
   removeAndVerifyStorageObject,
@@ -1569,6 +1570,19 @@ Deno.serve(async (req) => {
       segregation ||
       publishedReference;
     const notFound = message.includes("NOT_FOUND");
+    // Uma chamada de saida que estourou o prazo tem causa conhecida e precisa chegar ao operador
+    // com ela, senao vira um 500 sem diagnostico e a investigacao recomeca do zero.
+    if (isEdgeFetchTimeout(error))
+      return json(
+        req,
+        {
+          error: "Um servico de apoio nao respondeu no prazo. Repita a operacao.",
+          code: "CMS_EDGE_UPSTREAM_TIMEOUT",
+          upstream: message.slice("CMS_EDGE_FETCH_TIMEOUT:".length, 200),
+          correlationId: parsed.data.envelope.correlationId,
+        },
+        504,
+      );
     return json(
       req,
       {

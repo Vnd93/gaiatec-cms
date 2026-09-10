@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient, type User } from "jsr:@supabase/supabase-js@2";
+import { boundedFetch } from "./cms-edge-fetch.ts";
 import { cleanText } from "./security.ts";
 
 export type CmsClaims = { aal: "aal1" | "aal2"; sessionId: string; issuedAt: string };
@@ -30,13 +31,16 @@ export async function authenticateCms(req: Request): Promise<{
   const claims = readClaims(authHeader);
   if (!url || !anonKey || !serviceRole || !claims) return null;
   const caller = createClient(url, anonKey, {
-    global: { headers: { Authorization: authHeader } },
+    global: { fetch: boundedFetch(), headers: { Authorization: authHeader } },
     auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
   });
   const { data, error } = await caller.auth.getUser(authHeader.replace(/^Bearer\s+/i, ""));
   if (error || !data.user) return null;
   return {
-    admin: createClient(url, serviceRole, { auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false } }),
+    admin: createClient(url, serviceRole, {
+      global: { fetch: boundedFetch() },
+      auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
+    }),
     user: data.user,
     claims,
   };

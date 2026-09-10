@@ -77,6 +77,24 @@ test("carries the auth service status and slug without carrying anything else", 
   assert.equal(canaryFailureIdentity(new Error(coded)), coded);
 });
 
+test("a rejected call carries the CMS error code and nothing else from the body", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const canary = await readFile("scripts/ev2/phase12/staging-migrations-canary.mjs", "utf8");
+
+  // Only a closed CMS slug may be appended; a message, an email or a path from the body may not.
+  assert.match(canary, /\/\^CMS_\[A-Z0-9_\]\{3,60\}\$\/\.test\(payload\.code\)/);
+
+  // The enriched identity still has to survive the sanitizer, otherwise the cause is dropped.
+  const coded = "G12_STAGING_HTTP_FAILED:POST:/functions/v1/cms-documents:504:CMS_EDGE_UPSTREAM_TIMEOUT";
+  assert.equal(canaryFailureIdentity(new Error(coded)), coded);
+
+  // A body that tried to smuggle free text into the identity is reduced, not echoed.
+  assert.equal(
+    canaryFailureIdentity(new Error("G12_STAGING_HTTP_FAILED:POST:/x:504:failed for pedro@example.com")),
+    "UNCODED_FAILURE:Error",
+  );
+});
+
 test("the MFA retry waits for a new TOTP window instead of resending the same code", async () => {
   const { readFile } = await import("node:fs/promises");
   const canary = await readFile("scripts/ev2/phase12/staging-migrations-canary.mjs", "utf8");

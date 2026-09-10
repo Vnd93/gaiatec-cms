@@ -892,25 +892,42 @@ export function capabilityManifestReady(manifest, environment) {
   );
 }
 
+// Prontidao e um estado que o sistema alcanca, nao um instante. O ator acabou de receber papeis e
+// sobreposicoes de flag, e a avaliacao do manifesto de capacidades pode chegar alguns instantes
+// depois. Uma janela curta de espera nao afrouxa nada: a condicao exigida continua exatamente a
+// mesma, apenas deixa de ser lida no primeiro milissegundo possivel.
+//
+// Quando ela nao e alcancada, a falha precisa dizer o que faltou. Antes ela dizia apenas que a sessao
+// nao estava pronta, e as tres razoes possiveis, resposta nao 200, acesso negado e manifesto ausente,
+// ficavam indistinguiveis, o que custou um ciclo inteiro de staging para descobrir.
 async function assertReadySession(token) {
-  const response = await fetch(`${context.url}/functions/v1/cms-session`, {
-    method: "POST",
-    headers: {
-      apikey: context.anonKey,
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      Origin: target.origin,
-    },
-    body: JSON.stringify({ action: "resolve" }),
-    signal: AbortSignal.timeout(20_000),
-  });
-  const result = response.ok ? await response.json().catch(() => null) : null;
-  if (
-    response.status !== 200 ||
-    result?.accessGranted !== true ||
-    !capabilityManifestReady(result.ev2Capabilities, target.environment)
-  )
-    throw new Error("QA_CMS_FIXTURE_SESSION_NOT_READY");
+  let status = 0;
+  let accessGranted = false;
+  let capabilities = false;
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 2_000));
+    const response = await fetch(`${context.url}/functions/v1/cms-session`, {
+      method: "POST",
+      headers: {
+        apikey: context.anonKey,
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        Origin: target.origin,
+      },
+      body: JSON.stringify({ action: "resolve" }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    const result = response.ok ? await response.json().catch(() => null) : null;
+    status = response.status;
+    accessGranted = result?.accessGranted === true;
+    capabilities = capabilityManifestReady(result?.ev2Capabilities, target.environment);
+    if (status === 200 && accessGranted && capabilities) return;
+  }
+  throw new Error(
+    `QA_CMS_FIXTURE_SESSION_NOT_READY:${status}:${accessGranted ? "granted" : "denied"}:${
+      capabilities ? "capabilities" : "no_capabilities"
+    }`,
+  );
 }
 
 export function buildRouteDefinitions(runTag, nonce = randomUUID().slice(0, 8)) {

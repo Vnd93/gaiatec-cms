@@ -29,3 +29,29 @@ describe("admin session resolution", () => {
     expect(context).toContain("signal: AbortSignal.timeout(10_000)");
   });
 });
+
+describe("qa fixture readiness", () => {
+  const fixture = readFileSync("scripts/qa/cms-browser-fixture.mjs", "utf8");
+
+  it("waits for readiness instead of reading it in the first instant", () => {
+    // The actor has just received its roles and flag overrides, and the capability manifest can be
+    // evaluated moments later. The required condition is unchanged; only the instant it is read is.
+    const block = fixture.slice(fixture.indexOf("async function assertReadySession"));
+    expect(block.slice(0, 1800)).toContain("for (let attempt = 0; attempt < 6; attempt += 1)");
+    expect(block.slice(0, 1800)).toContain("setTimeout(resolve, 2_000)");
+    expect(block.slice(0, 1800)).toContain("status === 200 && accessGranted && capabilities");
+  });
+
+  it("names which of the three conditions was missing", () => {
+    // The previous message said only that the session was not ready, which cost a full staging cycle.
+    expect(fixture).toContain("QA_CMS_FIXTURE_SESSION_NOT_READY:${status}:");
+    expect(fixture).toContain('accessGranted ? "granted" : "denied"');
+    expect(fixture).toContain('capabilities ? "capabilities" : "no_capabilities"');
+    // Only closed words and a status travel: nothing from the response body.
+    const message = fixture.slice(
+      fixture.indexOf("QA_CMS_FIXTURE_SESSION_NOT_READY:${status}"),
+      fixture.indexOf("QA_CMS_FIXTURE_SESSION_NOT_READY:${status}") + 240,
+    );
+    expect(message).not.toMatch(/result\?\.|body|error/);
+  });
+});

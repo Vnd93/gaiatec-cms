@@ -89,6 +89,15 @@ describe("bounded edge fetch", () => {
 
   it("recognises its own timeout so callers can map it to a status", () => {
     expect(isEdgeFetchTimeout(new Error("CMS_EDGE_FETCH_TIMEOUT:GET:/rest/v1/x:30000"))).toBe(true);
+
+    // postgrest-js does not surface the thrown error: it returns { error } whose message is
+    // "<name>: <message>". A prefix match would miss exactly the path that matters most.
+    expect(isEdgeFetchTimeout({ message: "Error: CMS_EDGE_FETCH_TIMEOUT:POST:/rest/v1/rpc/x:30000" })).toBe(
+      true,
+    );
+    expect(
+      isEdgeFetchTimeout({ message: "FetchError: CMS_EDGE_FETCH_TIMEOUT:POST:/rest/v1/rpc/x:30000" }),
+    ).toBe(true);
     expect(isEdgeFetchTimeout(new Error("boom"))).toBe(false);
     expect(isEdgeFetchTimeout(undefined)).toBe(false);
     expect(CMS_EDGE_FETCH_TIMEOUT_MS).toBe(30_000);

@@ -23,8 +23,11 @@ export function edgeRequestIdentity(input: RequestInfo | URL, init?: RequestInit
   return `${method}:${SAFE_PATH.test(path) ? path : "unknown"}`;
 }
 
+// O erro raramente chega puro: o postgrest-js embrulha uma rejeicao de fetch como
+// "<name>: <message>" antes de devolve-la em `error`, entao um prefixo exato nunca casaria com o
+// caminho que mais importa. O codigo so e produzido aqui, portanto conte-lo ja o identifica.
 export function isEdgeFetchTimeout(error: unknown): boolean {
-  return String((error as { message?: string })?.message ?? "").startsWith("CMS_EDGE_FETCH_TIMEOUT:");
+  return String((error as { message?: string })?.message ?? "").includes("CMS_EDGE_FETCH_TIMEOUT:");
 }
 
 export function boundedFetch(

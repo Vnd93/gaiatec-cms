@@ -1236,6 +1236,14 @@ async function reviewSecurity(
   return json(req, data, 200);
 }
 
+// A causa da recusa precisa chegar ao operador sem carregar texto livre: um SQLSTATE tem forma
+// fechada de cinco caracteres, e o prazo de saida das funcoes de borda ja tem codigo proprio.
+function confirmCause(sqlState: string, message: string): string {
+  if (/^[0-9A-Z]{5}$/.test(sqlState)) return sqlState;
+  if (message.includes("CMS_EDGE_FETCH_TIMEOUT")) return "FETCH_TIMEOUT";
+  return "UNKNOWN";
+}
+
 async function neutralizeSynthetic(
   req: Request,
   identity: Identity,
@@ -1318,27 +1326,34 @@ async function neutralizeSynthetic(
   const requestHash = await sha256(
     JSON.stringify({ documentId: asset.documentId, expectedSha256: asset.expectedSha256 }),
   );
-  const confirmed = await identity.admin.rpc("cms_confirm_synthetic_document_removal", {
-    p_actor_id: identity.user.id,
-    p_document_id: asset.documentId,
-    p_expected_sha256: asset.expectedSha256,
-    p_environment: environment,
-    p_aal: identity.claims.aal,
-    p_session_id: identity.claims.sessionId,
-    p_issued_at: identity.claims.issuedAt,
-    p_idempotency_key: key,
-    p_request_hash: requestHash,
-    p_correlation_id: correlationId,
-  });
+  const confirmRemoval = () =>
+    identity.admin.rpc("cms_confirm_synthetic_document_removal", {
+      p_actor_id: identity.user.id,
+      p_document_id: asset.documentId,
+      p_expected_sha256: asset.expectedSha256,
+      p_environment: environment,
+      p_aal: identity.claims.aal,
+      p_session_id: identity.claims.sessionId,
+      p_issued_at: identity.claims.issuedAt,
+      p_idempotency_key: key,
+      p_request_hash: requestHash,
+      p_correlation_id: correlationId,
+    });
+  let confirmed = await confirmRemoval();
+  // A confirmacao e idempotente por construcao: a mesma chave de idempotencia devolve o recibo ja
+  // gravado em vez de escrever de novo. Um prazo de transporte estourado nao diz se o servidor
+  // chegou a receber o pedido, e essa e exatamente a situacao em que repetir uma vez e seguro. Uma
+  // recusa deliberada, como o fence canonico, nao e repetida.
+  if (confirmed.error && isEdgeFetchTimeout(confirmed.error)) confirmed = await confirmRemoval();
   // O fence canonico de 0063 recusa marcar o blob como removido enquanto o token de upload assinado
   // ainda puder escrever no caminho. Esse e o desfecho projetado da neutralizacao dentro da janela,
   // nao uma falha: o acesso ja foi revogado, o objeto ja saiu do Storage, e a escritura canonica fica
   // agendada para o reconciliador de blobs. Tratar isso como falha registrava um erro inexistente e
   // devolvia 503 para uma operacao que deu certo.
+  const confirmMessage = String((confirmed.error as { message?: string } | null)?.message ?? "");
+  const confirmSqlState = String((confirmed.error as { code?: string } | null)?.code ?? "");
   const canonicalFenceActive =
-    String((confirmed.error as { message?: string } | null)?.message ?? "").includes(
-      "CMS_DOCUMENT_CANONICAL_WRITE_FENCE_ACTIVE",
-    ) || (confirmed.error as { code?: string } | null)?.code === "40001";
+    confirmMessage.includes("CMS_DOCUMENT_CANONICAL_WRITE_FENCE_ACTIVE") || confirmSqlState === "40001";
   if (confirmed.error && canonicalFenceActive)
     return json(
       req,
@@ -1363,7 +1378,10 @@ async function neutralizeSynthetic(
       req,
       {
         error: "O arquivo foi removido, mas a confirmação de segurança precisa ser repetida.",
-        code: "CMS_DOCUMENT_BLOB_REMOVAL_PENDING",
+        // Um unico codigo para toda causa deixou um run reprovar sem dizer o que recusou a
+        // confirmacao. A causa entra no proprio codigo, e apenas em forma fechada: um SQLSTATE, o
+        // prazo de saida estourado, ou desconhecida. Nada do corpo do erro e ecoado.
+        code: `CMS_DOCUMENT_BLOB_CONFIRM_FAILED_${confirmCause(confirmSqlState, confirmMessage)}`,
         correlationId,
       },
       503,

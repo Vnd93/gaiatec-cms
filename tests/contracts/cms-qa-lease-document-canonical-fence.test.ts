@@ -72,6 +72,32 @@ describe("qa lease document canonical fence", () => {
     expect(closer.slice(0, 1600)).toMatch(/allowed: \[200\]/);
   });
 
+  it("names the cause when the confirmation is refused", () => {
+    // A single CMS_DOCUMENT_BLOB_REMOVAL_PENDING for every possible cause let a run fail without
+    // saying what refused the write, which cost a full staging cycle to find out.
+    expect(handler).toContain("CMS_DOCUMENT_BLOB_CONFIRM_FAILED_");
+    expect(handler).toContain("function confirmCause(");
+    // Only a closed SQLSTATE, the edge deadline, or an explicit unknown may travel.
+    expect(handler).toMatch(/\/\^\[0-9A-Z\]\{5\}\$\/\.test\(sqlState\)/);
+    expect(handler).toContain('return "FETCH_TIMEOUT"');
+    expect(handler).toContain('return "UNKNOWN"');
+    const cause = handler.slice(handler.indexOf("function confirmCause("));
+    expect(cause.slice(0, 400)).not.toContain("message)");
+  });
+
+  it("retries the confirmation only when the transport gave no answer", () => {
+    // Idempotent by construction: the same key replays the stored receipt instead of writing again,
+    // so a single retry after a transport deadline cannot double apply. A deliberate refusal must
+    // not be retried, or a fenced write would be attempted twice for nothing.
+    expect(handler).toContain("const confirmRemoval = () =>");
+    expect(handler).toContain(
+      "if (confirmed.error && isEdgeFetchTimeout(confirmed.error)) confirmed = await confirmRemoval();",
+    );
+    const neutralize = handler.slice(handler.indexOf("async function neutralizeSynthetic"));
+    const retries = neutralize.match(/await confirmRemoval\(\)/g)?.length ?? 0;
+    expect(retries).toBe(2);
+  });
+
   it("declares as many pgTAP assertions as it actually runs", () => {
     const planned = Number(/select plan\((\d+)\);/.exec(database)?.[1]);
     const asserted = database.match(/^select (?:ok|is|isnt)\(/gm)?.length ?? 0;

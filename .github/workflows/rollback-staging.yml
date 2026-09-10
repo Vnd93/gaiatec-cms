@@ -193,7 +193,7 @@ jobs:
           EV2_G12_EXPECTED_SHA: ${{ steps.original_staging.outputs.release }}
           EV2_G12_ENVIRONMENT: staging
           EV2_G12_PROBE_PROFILE: full
-          EV2_G12_SAMPLE_COUNT: "5"
+          EV2_G12_SAMPLE_COUNT: "20"
           EV2_G12_REPORT_PATH: ../g12-staging-rollback-original-probe.json
       - name: Checkout exact live baseline for deterministic recovery fallback
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -399,7 +399,7 @@ jobs:
           EV2_G12_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
           EV2_G12_ENVIRONMENT: staging
           EV2_G12_PROBE_PROFILE: full
-          EV2_G12_SAMPLE_COUNT: "5"
+          EV2_G12_SAMPLE_COUNT: "20"
           EV2_G12_REPORT_PATH: ../g12-staging-rollback-probe.json
       - name: Probe retained public, anonymous, CORS and secret boundaries
         id: target_boundary
@@ -507,7 +507,7 @@ jobs:
           EV2_G12_EXPECTED_SHA: ${{ steps.original_staging.outputs.release }}
           EV2_G12_ENVIRONMENT: staging
           EV2_G12_PROBE_PROFILE: full
-          EV2_G12_SAMPLE_COUNT: "5"
+          EV2_G12_SAMPLE_COUNT: "20"
           EV2_G12_REPORT_PATH: ../g12-staging-rollback-compensation-probe.json
       - name: Upload mandatory compensation evidence
         id: compensation_evidence_upload

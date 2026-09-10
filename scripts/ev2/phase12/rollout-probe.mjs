@@ -13,11 +13,15 @@ const origin = (process.env.EV2_G12_ORIGIN ?? "").replace(/\/$/, "");
 const expectedSha = process.env.EV2_G12_EXPECTED_SHA ?? "";
 const environment = process.env.EV2_G12_ENVIRONMENT ?? "";
 const probeProfile = process.env.EV2_G12_PROBE_PROFILE ?? "full";
-const sampleCount = Number(process.env.EV2_G12_SAMPLE_COUNT ?? (environment === "production" ? 20 : 5));
+// percentile(values, 95) at n=5 returns the maximum, so a five sample probe reports the worst
+// response as if it were the tail. Twenty is the smallest size at which p95 excludes a sample.
+const sampleCount = Number(process.env.EV2_G12_SAMPLE_COUNT ?? 20);
 const requestTimeoutMs = Number(process.env.EV2_G12_REQUEST_TIMEOUT_MS ?? 10_000);
 const readinessAttempts = Number(process.env.EV2_G12_READINESS_ATTEMPTS ?? 10);
 const readinessIntervalMs = Number(process.env.EV2_G12_READINESS_INTERVAL_MS ?? 1_500);
-const warmupSamplesPerRoute = Number(process.env.EV2_G12_WARMUP_SAMPLES_PER_ROUTE ?? 3);
+// A redeploy leaves every public route cold; three requests are not enough to leave the cold
+// start out of the measured window.
+const warmupSamplesPerRoute = Number(process.env.EV2_G12_WARMUP_SAMPLES_PER_ROUTE ?? 8);
 const warmupAttempts = Number(process.env.EV2_G12_WARMUP_ATTEMPTS ?? readinessAttempts);
 const reportPath = process.env.EV2_G12_REPORT_PATH;
 const expectedCspMode =

@@ -92,7 +92,7 @@ jobs:
           EV2_G12_ORIGIN: ${{ steps.deploy.outputs.deployment-url }}
           EV2_G12_EXPECTED_SHA: ${{ inputs.expected_sha }}
           EV2_G12_ENVIRONMENT: staging
-          EV2_G12_SAMPLE_COUNT: "5"
+          EV2_G12_SAMPLE_COUNT: "20"
           EV2_G12_REPORT_PATH: g13-http-probe.json
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

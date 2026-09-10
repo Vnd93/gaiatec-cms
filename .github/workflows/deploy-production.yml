@@ -417,7 +417,7 @@ jobs:
           EV2_G12_EXPECTED_SHA: ${{ inputs.candidate_sha }}
           EV2_G12_ENVIRONMENT: production-preview
           EV2_G12_PROBE_PROFILE: technical
-          EV2_G12_SAMPLE_COUNT: "5"
+          EV2_G12_SAMPLE_COUNT: "20"
           EV2_G12_REPORT_PATH: ../g12-preflight-technical.json
       - name: Require the complete corporate MFA preflight configuration
         working-directory: candidate
@@ -650,7 +650,7 @@ jobs:
           EV2_G12_EXPECTED_SHA: ${{ inputs.candidate_sha }}
           EV2_G12_ENVIRONMENT: production-preview
           EV2_G12_PROBE_PROFILE: full
-          EV2_G12_SAMPLE_COUNT: "5"
+          EV2_G12_SAMPLE_COUNT: "20"
           EV2_G12_REPORT_PATH: ../g12-preflight-probe.json
       - name: Provision the exact confirmed corporate MFA operator on the prepared backend
         id: production_operator

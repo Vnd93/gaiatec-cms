@@ -45,7 +45,7 @@ try {
       EV2_G12_ORIGIN: candidateOrigin,
       EV2_G12_EXPECTED_SHA: candidateSha,
       EV2_G12_ENVIRONMENT: "staging",
-      EV2_G12_SAMPLE_COUNT: "5",
+      EV2_G12_SAMPLE_COUNT: "20",
       EV2_G12_REPORT_PATH: probePath,
     });
     const probe = JSON.parse(readFileSync(probePath, "utf8"));

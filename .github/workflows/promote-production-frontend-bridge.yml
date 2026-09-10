@@ -460,7 +460,7 @@ jobs:
           EV2_G12_EXPECTED_SHA: ${{ inputs.candidate_sha }}
           EV2_G12_ENVIRONMENT: production-preview
           EV2_G12_PROBE_PROFILE: full
-          EV2_G12_SAMPLE_COUNT: "5"
+          EV2_G12_SAMPLE_COUNT: "20"
           EV2_G12_REPORT_PATH: ../g12-production-frontend-bridge-preview.json
       - name: Browser-prove preview renders without any legacy backend mutation
         working-directory: candidate

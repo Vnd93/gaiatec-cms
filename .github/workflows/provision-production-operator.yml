@@ -118,7 +118,7 @@ jobs:
           EV2_G12_ENVIRONMENT: production
           EV2_G12_PRODUCTION_AUTHORIZED: "true"
           EV2_G12_PROBE_PROFILE: full
-          EV2_G12_SAMPLE_COUNT: "5"
+          EV2_G12_SAMPLE_COUNT: "20"
           EV2_G12_REPORT_PATH: ${{ runner.temp }}/production-operator-health.json
         run: node scripts/ev2/phase12/rollout-probe.mjs
       - name: Provision the confirmed MFA operator without exposing identity

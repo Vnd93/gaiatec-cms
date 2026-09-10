@@ -111,7 +111,7 @@ jobs:
           EV2_G12_EXPECTED_SHA: ${{ inputs.expected_sha }}
           EV2_G12_ENVIRONMENT: staging
           EV2_G12_CSP_MODE: enforce
-          EV2_G12_SAMPLE_COUNT: "5"
+          EV2_G12_SAMPLE_COUNT: "20"
           EV2_G12_REPORT_PATH: g16-csp-http-evidence.json
       - if: env.CANARY_DEPLOY_CONFIGURED == 'true'
         run: npx playwright install --with-deps chromium

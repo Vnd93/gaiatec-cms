@@ -253,7 +253,7 @@ jobs:
           EV2_G12_EXPECTED_SHA: ${{ steps.watchdog_state.outputs.original_release }}
           EV2_G12_ENVIRONMENT: staging
           EV2_G12_PROBE_PROFILE: full
-          EV2_G12_SAMPLE_COUNT: "5"
+          EV2_G12_SAMPLE_COUNT: "20"
           EV2_G12_REPORT_PATH: ../g12-staging-rollback-watchdog-probe.json
       - name: Seal non-sensitive watchdog evidence
         id: watchdog_evidence

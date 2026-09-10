@@ -12,10 +12,14 @@ describe("public upstream deadline", () => {
     // The worker aborts its call to this function at five seconds and synthesises a 503, so a read
     // that takes longer than that is never useful: the request it answers has already been abandoned.
     expect(worker).toContain("setTimeout(() => controller.abort(), 5_000)");
-    expect(fn).toContain("const PUBLIC_UPSTREAM_TIMEOUT_MS = 1_800;");
+    expect(fn).toContain("const PUBLIC_UPSTREAM_TIMEOUT_MS = 900;");
     const budget = Number(/PUBLIC_UPSTREAM_TIMEOUT_MS = ([\d_]+);/.exec(fn)?.[1].replace(/_/g, ""));
-    // Two attempts have to fit inside the caller's ceiling with room for the rest of the request.
-    expect(budget * 2).toBeLessThan(5000);
+    // Two attempts have to fit inside the caller's ceiling with room for the rest of the request,
+    // and the worst case has to stay near the latency budget rather than three times over it.
+    expect(budget * 2).toBeLessThan(2000);
+    // And the deadline still has to sit far above the healthy latency, measured around 390 ms for the
+    // whole route, so a normal read is never cut off.
+    expect(budget).toBeGreaterThan(600);
   });
 
   it("retries the read once instead of being abandoned mid-stall", () => {

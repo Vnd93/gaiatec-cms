@@ -65,9 +65,13 @@ const qaProofCorsHeaders = (req: Request) => {
   };
 };
 const PUBLIC_REVALIDATE = "public, max-age=0, must-revalidate";
-// O Worker publico aborta a chamada a esta funcao em 5 segundos. Duas tentativas de 1,8 segundo
-// cabem folgadamente dentro desse teto, deixando espaco para o restante do trabalho da requisicao.
-const PUBLIC_UPSTREAM_TIMEOUT_MS = 1_800;
+// O Worker publico aborta a chamada a esta funcao em 5 segundos, entao esse e o teto. O piso vem do
+// trabalho real: medido no staging, a rota publica inteira responde em torno de 390 ms de mediana, e
+// cada leitura isolada fica bem abaixo disso. Com 1.800 ms por tentativa, uma leitura parada custava
+// ate 3,6 segundos somando a repeticao, e foram essas amostras que mantiveram o p95 acima do
+// orcamento mesmo depois de o teto de 5 segundos desaparecer. Novecentos milissegundos ficam cerca de
+// dez vezes acima da latencia saudavel, detectam a parada cedo e mantem o pior caso em 1,8 segundo.
+const PUBLIC_UPSTREAM_TIMEOUT_MS = 900;
 const rawJson = (body: unknown, status = 200, extra: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { ...headers, "Content-Type": "application/json; charset=utf-8", ...extra } });
 const json = (body: unknown, status = 200, extra: Record<string, string> = {}) => {
   if (status >= 200 && status < 300 && publicWireLeak(body)) {

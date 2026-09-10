@@ -2135,6 +2135,32 @@ test("release workflows and reduced canary are immutable, staged and production 
     backendCompatibility,
     /"0090": \[\s*"supabase\/tests\/rls_cms_qa_lease_document_canonical_fence\.test\.sql",\s*"tests\/contracts\/cms-qa-lease-document-canonical-fence\.test\.ts"/,
   );
+  // A travessia autenticada do frontend de rollback consome o handoff das entidades nascidas na UI.
+  // Sem um passo que o produza dentro do proprio bloco de rollback, esse gate so podia reprovar com
+  // ENOENT, e foi o que aconteceu: o handoff so era escrito muito depois, pelo ciclo do candidato.
+  {
+    const bootstrap = deployStaging.indexOf(
+      "Create the UI entities through the rollback frontend before traversing it",
+    );
+    const traversal = deployStaging.indexOf(
+      "Traverse the rollback frontend with an AAL2 session against the candidate backend",
+    );
+    const candidateCycle = deployStaging.indexOf(
+      "Run the complete authenticated mutating editorial cycle first",
+    );
+    assert.ok(bootstrap > 0 && traversal > 0 && candidateCycle > 0);
+    assert.ok(bootstrap < traversal, "the rollback handoff must be produced before it is read");
+    assert.ok(traversal < candidateCycle, "the rollback block must stay self-sufficient and early");
+    const block = deployStaging.slice(bootstrap, traversal);
+    assert.match(block, /--grep @ui-bootstrap/);
+    assert.match(block, /QA_CMS_UI_CREATED_STATE_PATH: outputs\/cms-ui-created-rollback-state\.json/);
+    // O handoff do rollback nao pode ser o mesmo arquivo do candidato, senao um sobrescreve o outro.
+    const traversalBlock = deployStaging.slice(traversal, traversal + 900);
+    assert.match(
+      traversalBlock,
+      /QA_CMS_UI_CREATED_STATE_PATH: outputs\/cms-ui-created-rollback-state\.json/,
+    );
+  }
   assert.match(stagingDatabaseVerify, /media_upload_abort_0082_rpcs_privileges_exact/);
   assert.match(stagingDatabaseVerify, /media_upload_abort_0082_helpers_locked/);
   assert.match(stagingDatabaseVerify, /session_refresh_revocation_0083_semantics_exact/);

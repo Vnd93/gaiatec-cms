@@ -158,6 +158,9 @@ jobs:
           EV2_G12_EXPECTED_SHA: ${{ inputs.expected_baseline_sha }}
           EV2_G12_ENVIRONMENT: staging
           EV2_G12_SAMPLE_COUNT: "20"
+          # Redeploying the function inventory leaves every public route cold, which inflates the
+          # tail while the p50 stays healthy. Warmup exists to keep that out of the measurement.
+          EV2_G12_WARMUP_SAMPLES_PER_ROUTE: "8"
       - name: Capture canonical staging state before any deployment or fixture
         id: baseline_state
         working-directory: control
@@ -244,6 +247,9 @@ jobs:
           EV2_G12_EXPECTED_SHA: ${{ inputs.candidate_sha }}
           EV2_G12_ENVIRONMENT: staging
           EV2_G12_SAMPLE_COUNT: "20"
+          # Redeploying the function inventory leaves every public route cold, which inflates the
+          # tail while the p50 stays healthy. Warmup exists to keep that out of the measurement.
+          EV2_G12_WARMUP_SAMPLES_PER_ROUTE: "8"
           EV2_G12_REPORT_PATH: ../staging-bridge-preview-probe.json
           # This target was deployed seconds ago, so the probe has to wait for the alias to
           # converge before it can measure it. Only the wait changes; every assertion, the
@@ -382,6 +388,9 @@ jobs:
           EV2_G12_EXPECTED_SHA: ${{ inputs.candidate_sha }}
           EV2_G12_ENVIRONMENT: staging
           EV2_G12_SAMPLE_COUNT: "20"
+          # Redeploying the function inventory leaves every public route cold, which inflates the
+          # tail while the p50 stays healthy. Warmup exists to keep that out of the measurement.
+          EV2_G12_WARMUP_SAMPLES_PER_ROUTE: "8"
           EV2_G12_REPORT_PATH: ../staging-bridge-canonical-probe.json
           # This target was deployed seconds ago, so the probe has to wait for the alias to
           # converge before it can measure it. Only the wait changes; every assertion, the

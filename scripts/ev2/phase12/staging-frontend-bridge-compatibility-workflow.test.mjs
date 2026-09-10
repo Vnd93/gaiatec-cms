@@ -453,6 +453,30 @@ test("the staging deploy and its watchdog measure percentiles, not maxima", asyn
   assert.match(guard, /http5xxRatePercent: 0\.1/);
 });
 
+test("every staging probe warms the routes before it measures them", async () => {
+  const files = [
+    ".github/workflows/promote-staging-frontend-bridge.yml",
+    ".github/workflows/deploy-staging.yml",
+    ".github/workflows/deploy-staging-watchdog.yml",
+  ];
+  const guard = await readFile("scripts/ev2/phase12/release-guard-lib.mjs", "utf8");
+
+  for (const file of files) {
+    const workflow = await readFile(file, "utf8");
+    const samples = [...workflow.matchAll(/EV2_G12_SAMPLE_COUNT: "(\d+)"/g)];
+    const warmups = [...workflow.matchAll(/EV2_G12_WARMUP_SAMPLES_PER_ROUTE: "(\d+)"/g)];
+    // Redeploying the function inventory leaves every public route cold, so a probe that measures
+    // before warming reports a tail that says nothing about the release.
+    assert.equal(warmups.length, samples.length, `${file} has an unwarmed probe`);
+    for (const [, warmup] of warmups) assert.ok(Number(warmup) >= 8 && Number(warmup) <= 10);
+  }
+
+  // Warming more must not become a way to assert less.
+  assert.match(guard, /publicP95Ms: 1500/);
+  assert.match(guard, /availabilityPercent: 99\.9/);
+  assert.match(guard, /http5xxRatePercent: 0\.1/);
+});
+
 test("a lost bridge runner cannot leave the legacy public backend live on staging", async () => {
   const watchdog = await readFile(".github/workflows/promote-staging-frontend-bridge-watchdog.yml", "utf8");
 

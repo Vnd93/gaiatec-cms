@@ -15,9 +15,17 @@ import {
 // O painel espera esta resolucao por 10 segundos e, se ela nao voltar, mostra a tela de validacao
 // indisponivel. Medido no staging, tres resolucoes identicas disparadas na montagem competiam entre
 // si e as tres estouraram em 10,58 s, deixando o operador sem acesso a superficie. Cada chamada de
-// saida ganha prazo bem abaixo do que o painel concede, para que a funcao responda dentro da janela
-// em vez de ser abandonada nela.
-const SESSION_UPSTREAM_TIMEOUT_MS = 3_000;
+// saida ganha prazo abaixo do que o painel concede, para que a funcao responda dentro da janela em
+// vez de ser abandonada nela.
+//
+// O prazo nao pode ser apertado demais. O manifesto de capacidades avalia doze flags, cada uma com a
+// sua cadeia de autorizacao, e para um ator sintetico recem provisionado esse trabalho e mais longo do
+// que para um operador ja aquecido. Com tres segundos, a resolucao voltava 200 e com acesso concedido
+// mas sem o manifesto, e o provisionamento reprovava com
+// QA_CMS_FIXTURE_SESSION_NOT_READY:200:granted:no_capabilities. Seis segundos cobrem o trabalho real,
+// medido entre 0,9 e 1,7 s no caminho quente, e ainda deixam quatro segundos de folga no que o painel
+// concede. Uma unica tentativa: repetir aqui poderia somar dois prazos e estourar a janela do painel.
+const SESSION_UPSTREAM_TIMEOUT_MS = 6_000;
 
 const ACTION_EVENT = {
   resolve: "login_success",
@@ -132,7 +140,7 @@ Deno.serve(async (req) => {
   const token = authHeader.replace(/^Bearer\s+/i, "");
   const caller = createClient(url, anonKey, {
     global: {
-      fetch: boundedFetch(SESSION_UPSTREAM_TIMEOUT_MS, fetch, true),
+      fetch: boundedFetch(SESSION_UPSTREAM_TIMEOUT_MS),
       headers: { Authorization: authHeader },
     },
     auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },

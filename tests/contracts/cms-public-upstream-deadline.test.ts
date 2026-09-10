@@ -32,11 +32,15 @@ describe("admin session deadline", () => {
     // staging, three identical resolutions fired on mount competed with each other and all three
     // exceeded 10.58 s, leaving the operator without access to the surface.
     expect(adminAuth).toContain("signal: AbortSignal.timeout(10_000)");
-    expect(session).toContain("const SESSION_UPSTREAM_TIMEOUT_MS = 3_000;");
+    expect(session).toContain("const SESSION_UPSTREAM_TIMEOUT_MS = 6_000;");
     const budget = Number(/SESSION_UPSTREAM_TIMEOUT_MS = ([\d_]+);/.exec(session)?.[1].replace(/_/g, ""));
-    // Two attempts have to fit inside the panel's ceiling with room to spare.
-    expect(budget * 2).toBeLessThan(10000);
-    expect(session).toContain("boundedFetch(SESSION_UPSTREAM_TIMEOUT_MS, fetch, true)");
+    // The budget has to leave real room inside the panel's ceiling, and it has to cover the work:
+    // the capability manifest evaluates twelve flags and a three second budget answered 200 with
+    // access granted but no manifest, failing provisioning with no_capabilities.
+    expect(budget).toBeGreaterThan(5000);
+    expect(budget).toBeLessThan(8000);
+    // A single attempt here: retrying could add two deadlines and exceed the panel's own window.
     expect(session).toContain("boundedFetch(SESSION_UPSTREAM_TIMEOUT_MS)");
+    expect(session).not.toContain("boundedFetch(SESSION_UPSTREAM_TIMEOUT_MS, fetch, true)");
   });
 });

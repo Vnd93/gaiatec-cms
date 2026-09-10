@@ -6,95 +6,56 @@ begin;
 -- orcamento de prazos explicitos dessa janela passa de 110 para cerca de 165 minutos, e a lease do
 -- ator sintetico tem de sobreviver a ela inteira, senao o watchdog varre um ator ainda em uso.
 --
--- A lease sobe de 119 para 240 minutos, que e o mesmo teto do job. Nada mais muda: o watchdog continua
--- varrendo leases expiradas de minuto em minuto, os privilegios continuam os mesmos, e uma lease
--- abandonada continua sendo recolhida automaticamente, apenas mais tarde.
+-- O prazo vive em dois lugares: no gatilho que grava a lease e na restricao da tabela, que e a
+-- barreira que recusa uma lease longa demais. Os dois sobem juntos, de 119 para 240 minutos, que e o
+-- mesmo teto do job. Nada mais muda: o watchdog continua varrendo leases expiradas de minuto em
+-- minuto, os privilegios continuam os mesmos, e uma lease abandonada continua sendo recolhida
+-- automaticamente, apenas mais tarde.
+--
+-- O gatilho e reescrito a partir da definicao instalada, e nao a partir do texto de 0061, porque 0086
+-- ja o reparou depois disso. Recriar o corpo antigo reverteria aqueles reparos.
 
--- O prazo tambem esta codificado como restricao da tabela, e ela e a barreira que recusa uma lease
--- longa demais. A restricao acompanha o novo teto, continua exigindo que o vencimento seja posterior
--- a criacao, e continua sendo um limite superior fechado: nada pode gravar uma lease sem prazo.
+do $qa_lease_window$
+declare
+  v_definition text;
+  v_original text;
+begin
+  select pg_get_functiondef('private.cms_capture_qa_actor_lease()'::regprocedure) into v_definition;
+  v_original := v_definition;
+
+  if position($old$interval '119 minutes'$old$ in v_definition) > 0 then
+    v_definition := replace(
+      v_definition,
+      $old$interval '119 minutes'$old$,
+      $new$interval '240 minutes'$new$
+    );
+  elsif position($new$interval '240 minutes'$new$ in v_definition) = 0 then
+    raise exception 'CMS_QA_LEASE_TTL_DRIFT' using errcode = 'P0001';
+  end if;
+
+  if position($old$'leaseMinutes', 119$old$ in v_definition) > 0 then
+    v_definition := replace(
+      v_definition,
+      $old$'leaseMinutes', 119$old$,
+      $new$'leaseMinutes', 240$new$
+    );
+  elsif position($new$'leaseMinutes', 240$new$ in v_definition) = 0 then
+    raise exception 'CMS_QA_LEASE_AUDIT_DRIFT' using errcode = 'P0001';
+  end if;
+
+  if v_definition is distinct from v_original then
+    execute v_definition;
+  end if;
+end;
+$qa_lease_window$;
+
 alter table private.cms_qa_actor_leases
   drop constraint if exists cms_qa_actor_leases_check1;
 alter table private.cms_qa_actor_leases
   add constraint cms_qa_actor_leases_check1
   check (expires_at > created_at and expires_at <= created_at + interval '241 minutes');
 
-create or replace function private.cms_capture_qa_actor_lease()
-returns trigger
-language plpgsql
-security definer
-set search_path = pg_catalog, public, private, auth, pg_temp
-as $$
-declare
-  v_run_tag text;
-  v_candidate_sha text;
-  v_environment text;
-  v_created_at timestamptz := statement_timestamp();
-begin
-  if not (
-    new.raw_user_meta_data -> 'synthetic' = 'true'::jsonb
-    and new.raw_user_meta_data ->> 'purpose' = 'qa-cms-browser'
-  ) then
-    return new;
-  end if;
-
-  v_run_tag := new.raw_user_meta_data ->> 'runTag';
-  v_candidate_sha := new.raw_user_meta_data ->> 'candidateSha';
-  v_environment := new.raw_user_meta_data ->> 'environment';
-
-  if v_run_tag is null
-     or v_run_tag !~ '^QA-CMS-FINAL-[0-9]{8}-[0-9a-f]{8}$'
-     or v_candidate_sha is null
-     or v_candidate_sha !~ '^[0-9a-f]{40}$'
-     or right(v_run_tag, 9) <> ('-' || left(v_candidate_sha, 8))
-     or v_environment is null
-     or v_environment not in ('staging', 'production') then
-    raise exception 'CMS_QA_ACTOR_METADATA_INVALID' using errcode = '22023';
-  end if;
-
-  insert into private.cms_qa_actor_leases (
-    actor_id,
-    run_tag,
-    candidate_sha,
-    environment,
-    created_at,
-    expires_at
-  ) values (
-    new.id,
-    v_run_tag,
-    v_candidate_sha,
-    v_environment,
-    v_created_at,
-    v_created_at + interval '240 minutes'
-  );
-
-  insert into public.cms_audit_log (
-    actor_id,
-    action,
-    target_type,
-    target_id,
-    event_data,
-    correlation_id
-  ) values (
-    new.id,
-    'cms:qa.fixture_lease_created',
-    'qa_fixture',
-    v_run_tag,
-    jsonb_build_object(
-      'schemaVersion', 1,
-      'syntheticOnly', true,
-      'environment', v_environment,
-      'candidateSha', v_candidate_sha,
-      'leaseMinutes', 240
-    ),
-    gen_random_uuid()
-  );
-
-  return new;
-end;
-$$;
-
-do $qa_lease_ttl_probe$
+do $qa_lease_window_probe$
 declare
   v_definition text;
 begin
@@ -107,6 +68,10 @@ begin
   end if;
   if v_definition ~ 'interval ''119 minutes''' then
     raise exception 'CMS_QA_LEASE_TTL_STALE' using errcode = '55000';
+  end if;
+  -- Os reparos de 0086 tem de continuar instalados: reescrever o corpo antigo os apagaria.
+  if v_definition !~ 'transaction_timestamp\(\)' or v_definition !~ 'CMS_QA_ACTOR_METADATA_INVALID' then
+    raise exception 'CMS_QA_LEASE_CAPTURE_REPAIRS_LOST' using errcode = '55000';
   end if;
   if not exists (
     select 1 from pg_catalog.pg_constraint c
@@ -129,6 +94,6 @@ begin
     raise exception 'CMS_QA_LEASE_TRIGGER_MISSING' using errcode = '55000';
   end if;
 end;
-$qa_lease_ttl_probe$;
+$qa_lease_window_probe$;
 
 commit;

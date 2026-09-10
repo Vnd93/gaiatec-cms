@@ -993,7 +993,9 @@ test("the database watchdog atomically leases and revokes only exact synthetic a
   // 0091 estendeu a lease porque a janela autenticada passou a conter tambem a prova de
   // compatibilidade do rollback, que so pode rodar enquanto as entidades criadas na UI existem.
   assert.match(watchdogMigration, /v_created_at \+ interval '119 minutes'/);
-  assert.match(leaseWindowMigration, /v_created_at \+ interval '240 minutes'/);
+  // 0091 ajusta a definicao instalada em vez de reescrever o corpo, para nao perder os reparos de
+  // 0086, entao o prazo aparece como o literal de substituicao e nao junto de v_created_at.
+  assert.match(leaseWindowMigration, /interval '240 minutes'/);
   assert.match(watchdogMigration, /expires_at <= created_at \+ interval '120 minutes'/);
   assert.match(watchdogMigration, /cms_qa_override_window_is_valid/);
   assert.match(watchdogMigration, /evaluator_count <> 4/);
@@ -1059,7 +1061,7 @@ test("the database watchdog atomically leases and revokes only exact synthetic a
 test("the exact QA lease outlives each single-run authenticated lifecycle budget", () => {
   // A lease efetiva e a que 0091 instala; 0061 continua sendo a origem historica do gatilho.
   const leaseMinutes = Number(
-    leaseWindowMigration.match(/v_created_at \+ interval '(\d+) minutes'/)?.[1] ?? "0",
+    leaseWindowMigration.match(/\$new\$interval '(\d+) minutes'\$new\$/)?.[1] ?? "0",
   );
   assert.equal(leaseMinutes, 240);
   for (const [name, workflow, setupId, cleanupId] of [

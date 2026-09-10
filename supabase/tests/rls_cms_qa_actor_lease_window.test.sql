@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(8);
+select plan(10);
 
 -- A janela autenticada de staging passou a conter tambem a prova de compatibilidade do rollback, que
 -- so pode rodar enquanto as entidades criadas na UI existem. A lease do ator sintetico precisa
@@ -40,6 +40,14 @@ select ok((select pg_get_constraintdef(c.oid) from pg_catalog.pg_constraint c
   where c.conrelid = 'private.cms_qa_actor_leases'::regclass
     and c.conname = 'cms_qa_actor_leases_check1') like '%04:01:00%',
   'the lease constraint accepts the window and still bounds it');
+
+-- Reescrever o corpo antigo apagaria os reparos que 0086 aplicou a esta mesma funcao.
+select ok(strpos(pg_get_functiondef(
+  'private.cms_capture_qa_actor_lease()'::regprocedure
+),'transaction_timestamp()') > 0,'the 0086 timestamp repair survived the deadline change');
+select ok(strpos(pg_get_functiondef(
+  'private.cms_capture_qa_actor_lease()'::regprocedure
+),'CMS_QA_ACTOR_METADATA_INVALID') > 0,'the 0086 metadata guard survived the deadline change');
 
 select * from finish();
 rollback;

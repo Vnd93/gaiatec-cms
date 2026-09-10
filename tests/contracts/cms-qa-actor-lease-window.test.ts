@@ -9,8 +9,13 @@ const database = readFileSync("supabase/tests/rls_cms_qa_actor_lease_window.test
 
 describe("qa actor lease window", () => {
   it("extends only the deadline, and by the amount the window needs", () => {
-    expect(migration).toContain("v_created_at + interval '240 minutes'");
+    // A migration nao reescreve o corpo antigo: ela ajusta a definicao instalada, senao os reparos
+    // que 0086 aplicou a essa mesma funcao seriam perdidos.
+    expect(migration).toContain("pg_get_functiondef('private.cms_capture_qa_actor_lease()'::regprocedure)");
+    expect(migration).toContain("interval '240 minutes'");
     expect(migration).toContain("'leaseMinutes', 240");
+    expect(migration).toContain("CMS_QA_LEASE_CAPTURE_REPAIRS_LOST");
+    expect(migration).not.toContain("create or replace function private.cms_capture_qa_actor_lease");
     // A migration ainda cita o prazo antigo, mas apenas na sonda que recusa a instalacao obsoleta.
     expect(migration).not.toContain("v_created_at + interval '119 minutes'");
     expect(migration).toContain("CMS_QA_LEASE_TTL_STALE");

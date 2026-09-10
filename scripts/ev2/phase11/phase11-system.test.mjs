@@ -284,3 +284,24 @@ test("G11 executable controls remain reproducible and fail-closed", async () => 
   assert.match(workflow, /ev2-g11-canary/);
   assert.match(workflow, /VITE_EV2_SYSTEM_ASSURANCE_CANDIDATE/);
 });
+
+test("the G11 synthetic lead uses an origin the schema actually accepts", async () => {
+  const canary = await readFile("scripts/ev2/phase11/staging-canary.mjs", "utf8");
+  const binding = await readFile("supabase/migrations/0084_cms_lead_origin_form_binding.sql", "utf8");
+
+  // 0084 accepts an origin for a corporate published form only from a campaign, a product, or the
+  // closed vocabulary of site sources. A synthetic name was refused with
+  // CMS_LEAD_ORIGIN_SCOPE_FORBIDDEN before any assurance check could run.
+  assert.match(binding, /v_source in \('site', 'contact', 'newsletter', 'website'\)/);
+  const accepted = ["site", "contact", "newsletter", "website"];
+  const source = /origin_source: "([^"]+)"/.exec(canary)?.[1];
+  assert.ok(accepted.includes(source), `origin_source ${source} is not accepted by 0084`);
+
+  // And the path stays outside the space the same guard reserves for QA fixtures on this form.
+  const path = /origin_path: "([^"]+)"/.exec(canary)?.[1];
+  assert.ok(path && !path.startsWith("/qa-cms-final/"), `origin_path ${path} is reserved for fixtures`);
+
+  // The synthetic nature is still explicit where it belongs.
+  assert.match(canary, /reference_code: "LD-G11-/);
+  assert.match(canary, /synthetic: true/);
+});

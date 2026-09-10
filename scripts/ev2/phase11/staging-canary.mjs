@@ -451,8 +451,17 @@ async function createSyntheticLead(ctx) {
       form_version_id: form.json[0].active_version_id,
       idempotency_key: randomUUID(),
       payload: { synthetic: true, contact: "g11@example.invalid" },
+      // A origem de um lead nao e texto livre: 0084 exige que ela seja aceita para o formulario que
+      // recebe a captura. O formulario usado aqui e um formulario corporativo publicado, sem ator de
+      // QA, e para esse caso a origem so e aceita quando vem de campanha, de produto, ou de uma das
+      // fontes do vocabulario fechado do site. `ev2-g11-canary` nunca esteve nesse conjunto, entao a
+      // insercao era recusada com CMS_LEAD_ORIGIN_SCOPE_FORBIDDEN antes de qualquer verificacao.
+      //
+      // A natureza sintetica do registro continua explicita onde ela pertence: no codigo de
+      // referencia, no proprio payload e no encerramento que o canario executa. O caminho continua
+      // fora do espaco reservado as fixtures de QA, que o mesmo guarda recusa para este formulario.
       origin_path: "/g11-synthetic",
-      origin_source: "ev2-g11-canary",
+      origin_source: "site",
       utm: {},
       status: "new",
       sla_due_at: new Date(Date.now() + 30 * 60_000).toISOString(),

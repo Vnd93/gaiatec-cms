@@ -45,6 +45,11 @@ export const G12_PINNED_MIGRATION_TAIL = Object.freeze([
     file: "0089_cms_operational_events_read_scale.sql",
     sha256: "bd6d418cd7271ed91d7e0d360c0100c7ad10998777ec27672ea4a6659fa22cad",
   }),
+  Object.freeze({
+    version: "0090",
+    file: "0090_cms_qa_lease_document_canonical_fence.sql",
+    sha256: "295f8adcfac409de8dd86f6f557da78a5a5a0d6836cf9b3af52f02608f6d18c9",
+  }),
 ]);
 
 export const CMS_MEDIA_UPLOAD_ABORT_0082_RPCS = Object.freeze([
@@ -823,5 +828,30 @@ export function operationalEventsReadScaleSemanticSql(alias) {
       and ${index("cms_operational_events_unresolved_recent_idx")} like '%(created_at DESC)%'
       and ${index("cms_operational_events_unresolved_recent_idx")} like '%WHERE (resolved_at IS NULL)%'
       and ${index("cms_operational_events_recent_idx")} like '%(created_at DESC)%'
+    , false) as ${alias}`;
+}
+
+// A 0090 aceita, para concluir a lease do ator sintetico, o unico estado que o fence canonico de 0063
+// permite dentro de um run: acesso revogado com a escritura canonica ainda agendada. Verificar isso
+// contra o banco real importa porque as duas regras vivem em migrations diferentes e so entram em
+// conflito quando um documento sintetico existe de fato.
+export function qaLeaseDocumentCanonicalFenceSemanticSql(alias) {
+  if (!/^[a-z][a-z0-9_]*$/.test(alias)) fail("qa-lease-document-fence-alias");
+  const lease = "public.cms_complete_qa_actor_lease(uuid,text,text,text)";
+  const fence = "private.cms_document_canonical_write_fence()";
+  const definition = (signature) =>
+    `regexp_replace(pg_get_functiondef(to_regprocedure('${signature}')), '[[:space:]]+', ' ', 'g')`;
+  return `coalesce(
+      to_regprocedure('${lease}') is not null
+      and to_regprocedure('${fence}') is not null
+      and ${definition(lease)} like '%canonical_cleanup_not_before > v_now%'
+      and ${definition(lease)} like '%blob_disposition = ''access_revoked''%'
+      and ${definition(lease)} like '%upload_disposition not in%'
+      and ${definition(lease)} like '%CMS_QA_ACTOR_CLEANUP_INCOMPLETE%'
+      and ${definition(lease)} like '%banned_until > v_now%'
+      and ${definition(fence)} like '%CMS_DOCUMENT_CANONICAL_WRITE_FENCE_ACTIVE%'
+      and not has_function_privilege('anon', '${lease}', 'EXECUTE')
+      and not has_function_privilege('authenticated', '${lease}', 'EXECUTE')
+      and has_function_privilege('service_role', '${lease}', 'EXECUTE')
     , false) as ${alias}`;
 }

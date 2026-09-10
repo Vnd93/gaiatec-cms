@@ -270,6 +270,7 @@ test("canary proves refresh-resistant session revocation without banning Auth", 
   assert.match(source, /"0087"/);
   assert.match(source, /"0088"/);
   assert.match(source, /"0089"/);
+  assert.match(source, /"0090"/);
   assert.match(source, /migrationManifest: sourceMigrations/);
   assert.doesNotMatch(source, /console\.(?:log|error)\([^)]*(?:password|refreshToken|totpSecret)/);
 });
@@ -336,7 +337,15 @@ test("canary covers governed private PDFs and terminally removes the synthetic b
   );
   assert.doesNotMatch(cleanup, /method: "PATCH"/);
   assert.doesNotMatch(cleanup, /archive_document/);
-  assert.match(cleanup, /CMS_DOCUMENT_BLOB_REMOVAL_PENDING/);
+  // This used to require that a bare CMS_DOCUMENT_BLOB_REMOVAL_PENDING be accepted as a valid
+  // outcome. That made the check unfalsifiable for the exact condition the lease teardown enforces:
+  // a run could pass every scenario and then fail to close, because the blob had never advanced. The
+  // two legitimate outcomes are the blob already removed, or revoked with the canonical write
+  // scheduled by the fence, and both are now asserted positively.
+  assert.doesNotMatch(cleanup, /CMS_DOCUMENT_BLOB_REMOVAL_PENDING/);
+  assert.match(cleanup, /allowed: \[200\]/);
+  assert.match(cleanup, /blobDisposition === "removed"/);
+  assert.match(cleanup, /canonicalCleanupScheduled === true/);
 });
 
 test("legacy document backfill preflights malformed data and blocks promotion until exact re-attestation", async () => {

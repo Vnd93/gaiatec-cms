@@ -26,6 +26,7 @@ import {
   qaActorRuntimeRepairsSemanticSql,
   runtimeIntegrityRepairsSemanticSql,
   operationalEventsReadScaleSemanticSql,
+  qaLeaseDocumentCanonicalFenceSemanticSql,
   runtimeIntegrityFollowupSemanticSql,
   sessionRefreshRevocationSemanticSql,
   serviceOnlyRpcContractSql,
@@ -80,9 +81,9 @@ test("the repository migration history is contiguous", () => {
   assert.equal(manifest[0].version, "0001");
   assert.equal(manifest.at(-1)?.version, String(manifest.length).padStart(4, "0"));
   assert.deepEqual(G12_PINNED_MIGRATION_TAIL.at(-1), {
-    version: "0089",
-    file: "0089_cms_operational_events_read_scale.sql",
-    sha256: "bd6d418cd7271ed91d7e0d360c0100c7ad10998777ec27672ea4a6659fa22cad",
+    version: "0090",
+    file: "0090_cms_qa_lease_document_canonical_fence.sql",
+    sha256: "295f8adcfac409de8dd86f6f557da78a5a5a0d6836cf9b3af52f02608f6d18c9",
   });
   assert.deepEqual(manifest.slice(-G12_PINNED_MIGRATION_TAIL.length), G12_PINNED_MIGRATION_TAIL);
   for (const migration of manifest.slice(-G12_PINNED_MIGRATION_TAIL.length)) {
@@ -582,4 +583,62 @@ test("0089 semantic preflight proves the diagnostics predicate was split without
   assert.match(contract, /^coalesce\(/);
   assert.match(contract, /, false\) as operational_events_read_scale_0089_semantics_exact$/);
   assert.throws(() => operationalEventsReadScaleSemanticSql("Bad Alias"));
+});
+
+test("0090 semantic preflight proves the lease accepts only the state the fence imposes", () => {
+  const contract = qaLeaseDocumentCanonicalFenceSemanticSql(
+    "qa_lease_document_canonical_fence_0090_semantics_exact",
+  );
+
+  // The tolerance is bounded by the fence still being in the future; without that clause a document
+  // whose reconciliation genuinely failed would count as clean.
+  assert.ok(contract.includes("canonical_cleanup_not_before > v_now"));
+  assert.ok(contract.includes("blob_disposition = ''access_revoked''"));
+
+  // Everything the lease demanded before has to be verified as still demanded.
+  for (const marker of [
+    "upload_disposition not in",
+    "CMS_QA_ACTOR_CLEANUP_INCOMPLETE",
+    "banned_until > v_now",
+    "CMS_DOCUMENT_CANONICAL_WRITE_FENCE_ACTIVE",
+  ])
+    assert.ok(contract.includes(marker), marker);
+
+  // The lease is a service_role surface and must not become reachable from a browser session.
+  assert.match(contract, /not has_function_privilege\('anon'/);
+  assert.match(contract, /not has_function_privilege\('authenticated'/);
+  assert.match(contract, /and has_function_privilege\('service_role'/);
+
+  assert.match(contract, /^coalesce\(/);
+  assert.match(contract, /, false\) as qa_lease_document_canonical_fence_0090_semantics_exact$/);
+  assert.throws(() => qaLeaseDocumentCanonicalFenceSemanticSql("Bad Alias"));
+});
+
+test("0090 semantic preflight proves the lease accepts only the state the fence imposes", () => {
+  const contract = qaLeaseDocumentCanonicalFenceSemanticSql(
+    "qa_lease_document_canonical_fence_0090_semantics_exact",
+  );
+
+  // The tolerance is bounded by the fence still being in the future; without that clause a document
+  // whose reconciliation genuinely failed would count as clean.
+  assert.ok(contract.includes("canonical_cleanup_not_before > v_now"));
+  assert.ok(contract.includes("blob_disposition = ''access_revoked''"));
+
+  // Everything the lease demanded before has to be verified as still demanded.
+  for (const marker of [
+    "upload_disposition not in",
+    "CMS_QA_ACTOR_CLEANUP_INCOMPLETE",
+    "banned_until > v_now",
+    "CMS_DOCUMENT_CANONICAL_WRITE_FENCE_ACTIVE",
+  ])
+    assert.ok(contract.includes(marker), marker);
+
+  // The lease is a service_role surface and must not become reachable from a browser session.
+  assert.match(contract, /not has_function_privilege\('anon'/);
+  assert.match(contract, /not has_function_privilege\('authenticated'/);
+  assert.match(contract, /and has_function_privilege\('service_role'/);
+
+  assert.match(contract, /^coalesce\(/);
+  assert.match(contract, /, false\) as qa_lease_document_canonical_fence_0090_semantics_exact$/);
+  assert.throws(() => qaLeaseDocumentCanonicalFenceSemanticSql("Bad Alias"));
 });

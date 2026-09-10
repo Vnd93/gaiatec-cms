@@ -1330,6 +1330,27 @@ async function neutralizeSynthetic(
     p_request_hash: requestHash,
     p_correlation_id: correlationId,
   });
+  // O fence canonico de 0063 recusa marcar o blob como removido enquanto o token de upload assinado
+  // ainda puder escrever no caminho. Esse e o desfecho projetado da neutralizacao dentro da janela,
+  // nao uma falha: o acesso ja foi revogado, o objeto ja saiu do Storage, e a escritura canonica fica
+  // agendada para o reconciliador de blobs. Tratar isso como falha registrava um erro inexistente e
+  // devolvia 503 para uma operacao que deu certo.
+  const canonicalFenceActive =
+    String((confirmed.error as { message?: string } | null)?.message ?? "").includes(
+      "CMS_DOCUMENT_CANONICAL_WRITE_FENCE_ACTIVE",
+    ) || (confirmed.error as { code?: string } | null)?.code === "40001";
+  if (confirmed.error && canonicalFenceActive)
+    return json(
+      req,
+      {
+        documentId: asset.documentId,
+        status: "neutralized",
+        blobDisposition: "access_revoked",
+        canonicalCleanupScheduled: true,
+        correlationId,
+      },
+      200,
+    );
   if (confirmed.error) {
     await recordBlobCleanupFailure(
       identity,

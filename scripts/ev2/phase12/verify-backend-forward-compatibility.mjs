@@ -172,6 +172,10 @@ const compatibilityTests = {
     "supabase/tests/rls_cms_operational_events_read_scale.test.sql",
     "tests/contracts/cms-operational-events-read-scale.test.ts",
   ],
+  "0090": [
+    "supabase/tests/rls_cms_qa_lease_document_canonical_fence.test.sql",
+    "tests/contracts/cms-qa-lease-document-canonical-fence.test.ts",
+  ],
 };
 for (const migration of additions) {
   const version = migration.version;

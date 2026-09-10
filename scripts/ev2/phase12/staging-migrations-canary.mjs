@@ -94,6 +94,7 @@ const scenarioCoverage = [
   "0087",
   "0088",
   "0089",
+  "0090",
 ];
 const accessToken = process.env.SUPABASE_ACCESS_TOKEN ?? "";
 const expectedSha = process.env.G12_MIGRATION_CANARY_EXPECTED_SHA ?? "";
@@ -1883,14 +1884,19 @@ async function closeDocumentFixture() {
     { documentId: documentFixture.id },
     // Measured deliberately: the default budget could not tell a slow neutralization from a
     // stuck one, and the elapsed time reaches the report either way.
-    { allowed: [200, 503], idempotent: true, timeoutMs: 120_000 },
+    { allowed: [200], idempotent: true, timeoutMs: 120_000 },
   );
+  // Aceitar um 503 generico tornava esta verificacao infalsificavel justamente na condicao que o
+  // teardown exige, e foi por isso que a lease reprovou com todas as 116 verificacoes aprovadas. Os
+  // dois desfechos legitimos sao o blob ja removido ou o blob revogado com a escritura canonica
+  // agendada pelo fence; qualquer outra coisa e falha.
   check(
     "documents_fixture_neutralized_fenced",
-    (neutralized.status === 200 &&
+    neutralized.status === 200 &&
       neutralized.json?.status === "neutralized" &&
-      neutralized.json?.blobDisposition === "removed") ||
-      (neutralized.status === 503 && neutralized.json?.code === "CMS_DOCUMENT_BLOB_REMOVAL_PENDING"),
+      (neutralized.json?.blobDisposition === "removed" ||
+        (neutralized.json?.blobDisposition === "access_revoked" &&
+          neutralized.json?.canonicalCleanupScheduled === true)),
   );
   documentNeutralizationMs = neutralized.elapsedMs ?? null;
   documentFixture.archived = true;

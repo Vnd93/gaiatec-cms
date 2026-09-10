@@ -305,3 +305,20 @@ test("the G11 synthetic lead uses an origin the schema actually accepts", async 
   assert.match(canary, /reference_code: "LD-G11-/);
   assert.match(canary, /synthetic: true/);
 });
+
+test("the G11 synthetic lead is visible to the actor that has to close it", async () => {
+  const canary = await readFile("scripts/ev2/phase11/staging-canary.mjs", "utf8");
+  const scope = await readFile("supabase/migrations/0072_cms_forms_leads_authoritative_scope.sql", "utf8");
+
+  // A caller holding a QA lease only sees leads bound to an actor of the same run. Without the bind,
+  // the operator that had just created the fixture could not find it: retrying the delivery answered
+  // CMS_LEAD_DELIVERY_NOT_FOUND and anonymising answered CMS_LEAD_NOT_FOUND, both as 404.
+  assert.match(scope, /owner\.actor_id = lead\.qa_actor_id/);
+  assert.match(scope, /owner\.run_tag = caller\.run_tag/);
+
+  const insert = canary.slice(canary.indexOf("async function createSyntheticLead"));
+  assert.match(insert.slice(0, 2400), /qa_actor_id: operator\.id/);
+
+  // The bind is also what keeps the fixture visible inside its own run instead of widening it.
+  assert.match(canary, /operator = await createActor\(/);
+});

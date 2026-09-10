@@ -462,6 +462,12 @@ async function createSyntheticLead(ctx) {
       // fora do espaco reservado as fixtures de QA, que o mesmo guarda recusa para este formulario.
       origin_path: "/g11-synthetic",
       origin_source: "site",
+      // O escopo de leads de 0072 exige que um chamador com lease de QA so enxergue leads amarrados a
+      // um ator do mesmo run. Sem esse vinculo, o proprio operador que acabou de criar a fixture nao a
+      // encontra: reprocessar a entrega respondia CMS_LEAD_DELIVERY_NOT_FOUND e anonimizar respondia
+      // CMS_LEAD_NOT_FOUND, as duas com 404. O vinculo tambem e o que mantem a fixture visivel apenas
+      // dentro do proprio run, em vez de amplia-la para qualquer operador.
+      qa_actor_id: operator.id,
       utm: {},
       status: "new",
       sla_due_at: new Date(Date.now() + 30 * 60_000).toISOString(),

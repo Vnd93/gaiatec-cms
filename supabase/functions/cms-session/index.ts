@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { boundedFetch } from "../_shared/cms-edge-fetch.ts";
 import { isConfiguredCmsEnvironment } from "../_shared/ev2-environment.ts";
 import {
   cleanText,
@@ -10,6 +11,13 @@ import {
   json,
   readJsonLimited,
 } from "../_shared/security.ts";
+
+// O painel espera esta resolucao por 10 segundos e, se ela nao voltar, mostra a tela de validacao
+// indisponivel. Medido no staging, tres resolucoes identicas disparadas na montagem competiam entre
+// si e as tres estouraram em 10,58 s, deixando o operador sem acesso a superficie. Cada chamada de
+// saida ganha prazo bem abaixo do que o painel concede, para que a funcao responda dentro da janela
+// em vez de ser abandonada nela.
+const SESSION_UPSTREAM_TIMEOUT_MS = 3_000;
 
 const ACTION_EVENT = {
   resolve: "login_success",
@@ -123,7 +131,10 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get("Authorization") ?? "";
   const token = authHeader.replace(/^Bearer\s+/i, "");
   const caller = createClient(url, anonKey, {
-    global: { headers: { Authorization: authHeader } },
+    global: {
+      fetch: boundedFetch(SESSION_UPSTREAM_TIMEOUT_MS, fetch, true),
+      headers: { Authorization: authHeader },
+    },
     auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
   });
   const { data: authData, error: authError } = await caller.auth.getUser(token);
@@ -140,6 +151,7 @@ Deno.serve(async (req) => {
   if (!(action in ACTION_EVENT)) return json(req, { error: "Ação inválida." }, 400);
 
   const admin = createClient(url, serviceRole, {
+    global: { fetch: boundedFetch(SESSION_UPSTREAM_TIMEOUT_MS) },
     auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
   });
   try {

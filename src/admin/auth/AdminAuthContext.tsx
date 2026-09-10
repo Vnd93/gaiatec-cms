@@ -99,7 +99,34 @@ function isSessionSnapshot(value: unknown): value is SessionSnapshot {
   return true;
 }
 
-async function invokeSession(session: Session, action: "resolve" | "mfa" | "recovery" | "logout") {
+// Ao montar, tres gatilhos independentes pedem a mesma resolucao para o mesmo token: a leitura
+// inicial da sessao e dois eventos do proprio cliente de autenticacao. O guarda de requisicao ja
+// descartava os resultados tardios, mas as tres chamadas saiam mesmo assim e disputavam entre si.
+// Medido no staging, as tres partiam com sete milissegundos de diferenca e levavam 4.038, 3.707 e
+// 3.104 ms, e o portao de acesso esperava por todas.
+//
+// Duas chamadas identicas, mesmo token e mesma acao, nao podem produzir respostas diferentes: a
+// resposta e uma fotografia daquele token. Enquanto uma esta em voo, as demais reaproveitam a mesma
+// promessa. Nada e enfraquecido, cada chamador continua conferindo o proprio identificador de
+// requisicao antes de aplicar o resultado, e uma acao diferente ou um token diferente continuam
+// sendo uma chamada propria.
+const sessionInFlight = new Map<string, Promise<SessionSnapshot>>();
+
+async function invokeSession(
+  session: Session,
+  action: "resolve" | "mfa" | "recovery" | "logout",
+): Promise<SessionSnapshot> {
+  const key = `${action}:${session.access_token}`;
+  const running = sessionInFlight.get(key);
+  if (running) return running;
+  const started = requestSession(session, action).finally(() => {
+    sessionInFlight.delete(key);
+  });
+  sessionInFlight.set(key, started);
+  return started;
+}
+
+async function requestSession(session: Session, action: "resolve" | "mfa" | "recovery" | "logout") {
   const response = await fetch(`${SUPABASE_URL}/functions/v1/cms-session`, {
     method: "POST",
     headers: {

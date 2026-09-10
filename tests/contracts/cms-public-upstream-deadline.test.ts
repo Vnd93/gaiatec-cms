@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 
 const fn = readFileSync("supabase/functions/cms-public/index.ts", "utf8");
 const worker = readFileSync("cloudflare/_worker.js", "utf8");
+const session = readFileSync("supabase/functions/cms-session/index.ts", "utf8");
+const adminAuth = readFileSync("src/admin/auth/AdminAuthContext.tsx", "utf8");
 
 describe("public upstream deadline", () => {
   it("gives up well before the caller does", () => {
@@ -21,5 +23,20 @@ describe("public upstream deadline", () => {
     // Measured on staging: the public routes sit around 450 ms at the median and the budget breaches
     // came from isolated stalls whose maximum was pinned exactly at the worker's ceiling.
     expect(fn).toContain("global: { fetch:");
+  });
+});
+
+describe("admin session deadline", () => {
+  it("answers inside the window the panel actually waits", () => {
+    // The panel gives the resolution ten seconds and then shows the unavailable screen. Measured on
+    // staging, three identical resolutions fired on mount competed with each other and all three
+    // exceeded 10.58 s, leaving the operator without access to the surface.
+    expect(adminAuth).toContain("signal: AbortSignal.timeout(10_000)");
+    expect(session).toContain("const SESSION_UPSTREAM_TIMEOUT_MS = 3_000;");
+    const budget = Number(/SESSION_UPSTREAM_TIMEOUT_MS = ([\d_]+);/.exec(session)?.[1].replace(/_/g, ""));
+    // Two attempts have to fit inside the panel's ceiling with room to spare.
+    expect(budget * 2).toBeLessThan(10000);
+    expect(session).toContain("boundedFetch(SESSION_UPSTREAM_TIMEOUT_MS, fetch, true)");
+    expect(session).toContain("boundedFetch(SESSION_UPSTREAM_TIMEOUT_MS)");
   });
 });

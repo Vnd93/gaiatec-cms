@@ -468,7 +468,13 @@ test("every staging probe warms the routes before it measures them", async () =>
     // Redeploying the function inventory leaves every public route cold, so a probe that measures
     // before warming reports a tail that says nothing about the release.
     assert.equal(warmups.length, samples.length, `${file} has an unwarmed probe`);
-    for (const [, warmup] of warmups) assert.ok(Number(warmup) >= 8 && Number(warmup) <= 10);
+    // A faixa anterior, de 8 a 10, permitia medir mais do que se aquece, e foi assim que /produtos
+    // reprovou com p50 de 417 ms e p95 de 1934 ms: parte da janela medida caiu em isolate frio.
+    // A regra agora e aquecer pelo menos tanto quanto se mede, com um teto que continua fechado.
+    for (const [index, [, warmup]] of warmups.entries()) {
+      assert.ok(Number(warmup) >= Number(samples[index][1]), `${file} measures more than it warms`);
+      assert.ok(Number(warmup) <= 40, `${file} warms beyond the bounded ceiling`);
+    }
   }
 
   // Warming more must not become a way to assert less.

@@ -19,9 +19,12 @@ const sampleCount = Number(process.env.EV2_G12_SAMPLE_COUNT ?? 20);
 const requestTimeoutMs = Number(process.env.EV2_G12_REQUEST_TIMEOUT_MS ?? 10_000);
 const readinessAttempts = Number(process.env.EV2_G12_READINESS_ATTEMPTS ?? 10);
 const readinessIntervalMs = Number(process.env.EV2_G12_READINESS_INTERVAL_MS ?? 1_500);
-// A redeploy leaves every public route cold; three requests are not enough to leave the cold
-// start out of the measured window.
-const warmupSamplesPerRoute = Number(process.env.EV2_G12_WARMUP_SAMPLES_PER_ROUTE ?? 8);
+// Um deploy deixa toda rota publica fria, e o probe de baseline mede o alias logo depois de uma
+// publicacao. Com oito aquecimentos para vinte amostras medidas, parte da janela medida ainda cai em
+// isolate frio: foi o que reprovou /produtos com p95 1934 ms enquanto o p50 ficou em 417 ms e vinte e
+// cinco amostras quentes ficaram abaixo de 870 ms. A regra passa a ser aquecer pelo menos tanto
+// quanto se mede, para que nenhuma amostra medida seja a primeira a chegar naquele caminho.
+const warmupSamplesPerRoute = Number(process.env.EV2_G12_WARMUP_SAMPLES_PER_ROUTE ?? sampleCount);
 const warmupAttempts = Number(process.env.EV2_G12_WARMUP_ATTEMPTS ?? readinessAttempts);
 const reportPath = process.env.EV2_G12_REPORT_PATH;
 const expectedCspMode =
@@ -44,7 +47,8 @@ if (
   readinessIntervalMs > 5_000 ||
   !Number.isInteger(warmupSamplesPerRoute) ||
   warmupSamplesPerRoute < 1 ||
-  warmupSamplesPerRoute > 10 ||
+  // O teto acompanha a nova regra de aquecer tanto quanto se mede, e continua sendo um teto.
+  warmupSamplesPerRoute > 40 ||
   !Number.isInteger(warmupAttempts) ||
   warmupAttempts < 1 ||
   warmupAttempts > 20

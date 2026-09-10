@@ -8,12 +8,14 @@ import test from "node:test";
 // probe at a time left 25 of 33 invocations still measuring a maximum, which is why the corrected
 // value belongs in the default rather than in each caller.
 const MINIMUM_SAMPLES = 20;
-const MINIMUM_WARMUP = 8;
+const MINIMUM_WARMUP = 20;
 
 test("the probe defaults measure a percentile and warm the routes first", async () => {
   const probe = await readFile("scripts/ev2/phase12/rollout-probe.mjs", "utf8");
   assert.match(probe, /EV2_G12_SAMPLE_COUNT \?\? 20\)/);
-  assert.match(probe, /EV2_G12_WARMUP_SAMPLES_PER_ROUTE \?\? 8\)/);
+  // Aquecer menos do que se mede deixa parte da janela medida caindo em isolate frio, que foi
+  // exatamente o que reprovou /produtos com p50 de 417 ms e p95 de 1934 ms.
+  assert.match(probe, /EV2_G12_WARMUP_SAMPLES_PER_ROUTE \?\? sampleCount\)/);
 
   // The default must not depend on the environment: staging gates block production just as hard.
   assert.doesNotMatch(probe, /EV2_G12_SAMPLE_COUNT \?\? \(environment/);
@@ -44,8 +46,18 @@ test("no workflow or script downgrades the probe below the corrected sampling", 
         `${path} samples ${value} times, which reports a maximum instead of a p95`,
       );
     }
-    for (const [, value] of source.matchAll(/EV2_G12_WARMUP_SAMPLES_PER_ROUTE: "(\d+)"/g))
-      assert.ok(Number(value) >= MINIMUM_WARMUP, `${path} warms only ${value} times per route`);
+    const samples = [...source.matchAll(/EV2_G12_SAMPLE_COUNT: "(\d+)"/g)].map((m) => Number(m[1]));
+    const warmups = [...source.matchAll(/EV2_G12_WARMUP_SAMPLES_PER_ROUTE: "(\d+)"/g)].map((m) =>
+      Number(m[1]),
+    );
+    for (const value of warmups)
+      assert.ok(value >= MINIMUM_WARMUP, `${path} warms only ${value} times per route`);
+    // Nenhum ponto pode medir mais do que aquece, senao a primeira amostra medida e a fria.
+    for (const [index, warmup] of warmups.entries())
+      assert.ok(
+        warmup >= (samples[index] ?? MINIMUM_WARMUP),
+        `${path} measures ${samples[index]} but warms only ${warmup}`,
+      );
   }
   // A refactor that removed every explicit override would make this test pass vacuously.
   assert.ok(overrides >= 20, `only ${overrides} explicit sample counts were inspected`);

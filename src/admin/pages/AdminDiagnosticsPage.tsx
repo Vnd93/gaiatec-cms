@@ -73,11 +73,17 @@ function operationalEventLabel(eventType: string): string {
   return "Ocorrência operacional";
 }
 
+// A contagem exata de alertas abertos avalia a autorizacao por linha em todo o acervo, e era ela que
+// estourava o tempo limite da tela: a leitura da lista responde em centenas de milissegundos, a
+// contagem exata levava mais de oito segundos e voltava como erro. A tela pede uma linha a mais do que
+// exibe: se ela vier, existem mais alertas do que os listados, e isso e dito sem inventar um numero.
+const EVENT_PAGE_SIZE = 50;
+
 export default function AdminDiagnosticsPage() {
   const { session, profile } = useAdminAuth();
   const candidateEnabled = isEv2FeatureEnabled(profile, "ev2.system_assurance");
   const [events, setEvents] = useState<Event[]>([]),
-    [eventTotal, setEventTotal] = useState(0),
+    [hasMoreEvents, setHasMoreEvents] = useState(false),
     [outbox, setOutbox] = useState(0),
     [discovery, setDiscovery] = useState<Record<keyof typeof discoveryLabels, number>>({
       service: 0,
@@ -98,10 +104,10 @@ export default function AdminDiagnosticsPage() {
     const baseline = Promise.all([
       supabase
         .from("cms_operational_events")
-        .select("id,event_type,error_code,correlation_id,created_at", { count: "exact" })
+        .select("id,event_type,error_code,correlation_id,created_at")
         .is("resolved_at", null)
         .order("created_at", { ascending: false })
-        .limit(50),
+        .limit(EVENT_PAGE_SIZE + 1),
       supabase
         .from("cms_publication_outbox")
         .select("id", { count: "exact", head: true })
@@ -125,8 +131,9 @@ export default function AdminDiagnosticsPage() {
         if (eventResult.error || queueResult.error || discoveryResult.error)
           setError("Diagnóstico indisponível.");
         else {
-          setEvents((eventResult.data ?? []) as Event[]);
-          setEventTotal(eventResult.count ?? 0);
+          const openEvents = (eventResult.data ?? []) as Event[];
+          setEvents(openEvents.slice(0, EVENT_PAGE_SIZE));
+          setHasMoreEvents(openEvents.length > EVENT_PAGE_SIZE);
           setOutbox(queueResult.count ?? 0);
           setDiscovery(
             (discoveryResult.data ?? []).reduce(
@@ -194,7 +201,10 @@ export default function AdminDiagnosticsPage() {
               <span>publicações pendentes ou com falha</span>
             </article>
             <article>
-              <strong>{eventTotal}</strong>
+              <strong>
+                {events.length}
+                {hasMoreEvents ? "+" : ""}
+              </strong>
               <span>alertas abertos</span>
             </article>
             {(Object.keys(discoveryLabels) as Array<keyof typeof discoveryLabels>).map((kind) => (
@@ -327,9 +337,9 @@ export default function AdminDiagnosticsPage() {
               />
             ) : (
               <>
-                {eventTotal > events.length && (
+                {hasMoreEvents && (
                   <p className="admin-help">
-                    Exibindo os {events.length} alertas mais recentes de {eventTotal} abertos.
+                    Exibindo os {events.length} alertas mais recentes; há outros alertas abertos além destes.
                   </p>
                 )}
                 {events.map((event) => (

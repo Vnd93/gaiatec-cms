@@ -93,6 +93,7 @@ const scenarioCoverage = [
   "0086",
   "0087",
   "0088",
+  "0089",
 ];
 const accessToken = process.env.SUPABASE_ACCESS_TOKEN ?? "";
 const expectedSha = process.env.G12_MIGRATION_CANARY_EXPECTED_SHA ?? "";

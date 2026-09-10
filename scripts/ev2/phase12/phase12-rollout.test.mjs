@@ -2127,6 +2127,10 @@ test("release workflows and reduced canary are immutable, staged and production 
     backendCompatibility,
     /"0088": \[\s*"supabase\/tests\/rls_cms_media_upload_abort\.test\.sql",\s*"supabase\/tests\/rls_ev2_phase10_ai\.test\.sql",\s*"supabase\/tests\/rls_ev2_phase5_dam\.test\.sql",\s*"supabase\/tests\/rls_ev2_phase11_system\.test\.sql",\s*"supabase\/tests\/rls_cms_deployed_command_actor_context\.test\.sql",\s*"tests\/contracts\/cms-runtime-integrity-followup\.test\.ts"/,
   );
+  assert.match(
+    backendCompatibility,
+    /"0089": \[\s*"tests\/contracts\/cms-operational-events-read-scale\.test\.ts"/,
+  );
   assert.match(stagingDatabaseVerify, /media_upload_abort_0082_rpcs_privileges_exact/);
   assert.match(stagingDatabaseVerify, /media_upload_abort_0082_helpers_locked/);
   assert.match(stagingDatabaseVerify, /session_refresh_revocation_0083_semantics_exact/);

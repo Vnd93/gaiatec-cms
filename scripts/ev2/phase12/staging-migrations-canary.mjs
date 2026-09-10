@@ -117,6 +117,7 @@ let overrideId;
 let projectionCreated = false;
 let operationError;
 const fixtureCloseFailures = [];
+let documentNeutralizationMs = null;
 let cleanupError;
 let finalResidue;
 let revocationLatencyMs;
@@ -161,13 +162,29 @@ function check(name, condition, detail = "contract") {
   if (!condition) throw new Error(`G12_STAGING_MIGRATION_CANARY_FAILED:${name}`);
 }
 
-async function request(url, { method = "GET", headers = {}, body, allowed = [200] } = {}) {
-  const response = await fetch(url, {
-    method,
-    headers: { ...headers, ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(45_000),
-  });
+async function request(
+  url,
+  { method = "GET", headers = {}, body, allowed = [200], timeoutMs = 45_000 } = {},
+) {
+  const startedAt = Date.now();
+  let response;
+  try {
+    response = await fetch(url, {
+      method,
+      headers: { ...headers, ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (error) {
+    // A bare TimeoutError does not say how long the call was given, which is exactly what a slow
+    // operation has to be told apart from a stuck one.
+    if (error?.name === "TimeoutError" || error?.name === "AbortError")
+      throw new Error(
+        `G12_STAGING_HTTP_TIMEOUT:${method}:${new URL(url).pathname}:${Date.now() - startedAt}`,
+        { cause: error },
+      );
+    throw error;
+  }
   const text = await response.text();
   let payload;
   try {
@@ -177,7 +194,12 @@ async function request(url, { method = "GET", headers = {}, body, allowed = [200
   }
   if (!allowed.includes(response.status))
     throw new Error(`G12_STAGING_HTTP_FAILED:${method}:${new URL(url).pathname}:${response.status}`);
-  return { status: response.status, json: payload, headers: response.headers };
+  return {
+    status: response.status,
+    json: payload,
+    headers: response.headers,
+    elapsedMs: Date.now() - startedAt,
+  };
 }
 
 async function managementQuery(query) {
@@ -441,7 +463,7 @@ async function edgeCommand(
   functionName,
   action,
   values = {},
-  { allowed = [200], idempotent = false, expectedVersion } = {},
+  { allowed = [200], idempotent = false, expectedVersion, timeoutMs } = {},
 ) {
   const commandEnvelope = envelope(expectedVersion);
   return request(`${context.url}/functions/v1/${functionName}`, {
@@ -454,6 +476,7 @@ async function edgeCommand(
     },
     body: { action, envelope: commandEnvelope, ...values },
     allowed,
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
   });
 }
 
@@ -1850,7 +1873,9 @@ async function closeDocumentFixture() {
     "cms-documents",
     "neutralize_synthetic",
     { documentId: documentFixture.id },
-    { allowed: [200, 503], idempotent: true },
+    // Measured deliberately: the default budget could not tell a slow neutralization from a
+    // stuck one, and the elapsed time reaches the report either way.
+    { allowed: [200, 503], idempotent: true, timeoutMs: 120_000 },
   );
   check(
     "documents_fixture_neutralized_fenced",
@@ -1859,6 +1884,7 @@ async function closeDocumentFixture() {
       neutralized.json?.blobDisposition === "removed") ||
       (neutralized.status === 503 && neutralized.json?.code === "CMS_DOCUMENT_BLOB_REMOVAL_PENDING"),
   );
+  documentNeutralizationMs = neutralized.elapsedMs ?? null;
   documentFixture.archived = true;
 }
 
@@ -2244,6 +2270,7 @@ const report = {
   residue: finalResidue ?? null,
   failureStage: canaryFailureStage({ operationError, cleanupError }),
   fixtureCloseFailures,
+  documentNeutralizationMs,
   operationFailure: canaryFailureIdentity(operationError),
   cleanupFailure: canaryFailureIdentity(cleanupError),
   syntheticOnly: true,

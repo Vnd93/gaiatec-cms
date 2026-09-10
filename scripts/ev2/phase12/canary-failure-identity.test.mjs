@@ -108,3 +108,28 @@ test("a failed teardown names the closer and keeps attempting the rest", async (
   // The detail has to reach the report, not just the thrown message.
   assert.match(canary, /^\s*fixtureCloseFailures,$/m);
 });
+
+test("a timed out call says how long it was given, and the neutralization gets a measured budget", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const canary = await readFile("scripts/ev2/phase12/staging-migrations-canary.mjs", "utf8");
+
+  // A bare TimeoutError cannot tell a slow operation from a stuck one; the elapsed budget can.
+  assert.match(canary, /G12_STAGING_HTTP_TIMEOUT:\$\{method\}/);
+  assert.match(canary, /signal: AbortSignal\.timeout\(timeoutMs\)/);
+  assert.match(canary, /elapsedMs: Date\.now\(\) - startedAt/);
+
+  // The longer budget is deliberate, bounded and applies only to the neutralization teardown.
+  assert.match(canary, /timeoutMs = 45_000/);
+  const overrides = [...canary.matchAll(/timeoutMs: (\d[\d_]*)/g)].map((m) => m[1]);
+  assert.deepEqual(overrides, ["120_000"]);
+  const close = canary.slice(canary.indexOf("async function closeDocumentFixture()"));
+  assert.match(close.slice(0, 1500), /timeoutMs: 120_000/);
+
+  // The measurement has to reach the report, otherwise the run proves nothing about the duration.
+  assert.match(canary, /documentNeutralizationMs = neutralized\.elapsedMs/);
+  assert.match(canary, /^\s*documentNeutralizationMs,$/m);
+
+  // The coded timeout must survive the sanitizer so the diagnosis is not dropped.
+  const coded = "G12_STAGING_HTTP_TIMEOUT:POST:/functions/v1/cms-documents:120001";
+  assert.equal(canaryFailureIdentity(new Error(coded)), coded);
+});

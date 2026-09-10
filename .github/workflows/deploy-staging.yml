@@ -1091,6 +1091,9 @@ jobs:
       - name: Install the exact candidate
         working-directory: candidate
         run: npm ci
+      - name: Install the browser the canaries drive
+        working-directory: candidate
+        run: npx playwright install --with-deps chromium
 
       # --- Gates. Cada um roda ate o fim; a falha e registrada, nao aborta a passada. ---
       - name: DIAGNOSTIC local check suite
@@ -1194,17 +1197,23 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
       # --- Fixture autenticada. Mutacao permitida: ator e run_tag proprios deste run. ---
-      # A fixture confere `/healthz` de ev2-g17-canary contra QA_CMS_EXPECTED_SHA. Este passe nao
-      # publica nada, entao o alias serve o SHA anterior: exigir o candidato aqui recusa com
-      # QA_CMS_FIXTURE_RELEASE_MISMATCH antes de provisionar qualquer ator.
+      # A fixture autenticada exige duas coisas ao mesmo tempo: que `git rev-parse HEAD` do checkout
+      # seja o SHA esperado e que `/healthz` de ev2-g17-canary sirva esse mesmo SHA. Num passe que
+      # nao publica nada as duas condicoes se excluem, e forcar qualquer uma delas produz falha
+      # garantida — pior do que nao rodar, porque ensina a ignorar o vermelho do passe.
+      #
+      # Entao ela roda exatamente quando pode: quando o alias ja serve o candidato, o que acontece ao
+      # rediagnosticar um SHA que o run canonico ja publicou. Fora disso o gate fica `skipped`, e o
+      # relatorio o reporta como nao exercitado em vez de aprovado.
       - name: DIAGNOSTIC isolated MFA actor provisioning
         id: gate_browser_fixture
+        if: steps.live.outputs.g17_sha == steps.candidate.outputs.sha
         continue-on-error: true
         timeout-minutes: 10
         working-directory: candidate
         run: node scripts/qa/cms-browser-fixture.mjs setup
         env:
-          QA_CMS_EXPECTED_SHA: ${{ steps.live.outputs.g17_sha }}
+          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
           QA_CMS_TARGET_ENVIRONMENT: staging
           QA_CMS_PROVISION_AUTH_LIFECYCLE: "true"
           QA_CMS_FIXTURE_STATE_PATH: outputs/diagnostic-browser-state.json
@@ -1220,7 +1229,7 @@ jobs:
         working-directory: candidate
         run: node scripts/qa/cms-browser-fixture.mjs cleanup
         env:
-          QA_CMS_EXPECTED_SHA: ${{ steps.live.outputs.g17_sha }}
+          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
           QA_CMS_TARGET_ENVIRONMENT: staging
           QA_CMS_FIXTURE_STATE_PATH: outputs/diagnostic-browser-state.json
           QA_CMS_FIXTURE_REPORT_PATH: outputs/diagnostic-browser-cleanup.json
@@ -1231,7 +1240,7 @@ jobs:
         working-directory: candidate
         run: node scripts/qa/cms-browser-fixture.mjs cleanup
         env:
-          QA_CMS_EXPECTED_SHA: ${{ steps.live.outputs.g17_sha }}
+          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
           QA_CMS_TARGET_ENVIRONMENT: staging
           QA_CMS_FIXTURE_STATE_PATH: outputs/diagnostic-browser-state.json
           QA_CMS_FIXTURE_REPORT_PATH: outputs/diagnostic-browser-cleanup-retry.json
@@ -1243,7 +1252,7 @@ jobs:
         working-directory: candidate
         run: node scripts/qa/cms-browser-fixture.mjs residue
         env:
-          QA_CMS_EXPECTED_SHA: ${{ steps.live.outputs.g17_sha }}
+          QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
           QA_CMS_TARGET_ENVIRONMENT: staging
           QA_CMS_FIXTURE_STATE_PATH: outputs/diagnostic-browser-state.json
           QA_CMS_FIXTURE_REPORT_PATH: outputs/diagnostic-browser-residue.json

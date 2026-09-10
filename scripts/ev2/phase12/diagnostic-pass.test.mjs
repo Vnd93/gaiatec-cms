@@ -80,19 +80,30 @@ test("the diagnostic job cannot mutate staging beyond its own synthetic fixtures
 test("gates that compare the served release expect what staging actually serves", () => {
   const diagnostic = jobBody("diagnostic");
   // Nada e publicado por este passe, entao o alias serve o SHA anterior. Exigir o candidato faz o
-  // gate recusar antes de exercitar qualquer coisa: foi assim que a fixture de navegador reprovou
-  // com QA_CMS_FIXTURE_RELEASE_MISMATCH e o canario G11 com "ALVO RECUSADO".
-  assert.doesNotMatch(diagnostic, /QA_CMS_EXPECTED_SHA: \$\{\{ steps\.candidate\.outputs\.sha \}\}/);
-  assert.equal(
-    (diagnostic.match(/QA_CMS_EXPECTED_SHA: \$\{\{ steps\.live\.outputs\.g17_sha \}\}/g) ?? []).length,
-    4,
-  );
+  // gate recusar antes de exercitar qualquer coisa: foi assim que o canario G11 reprovou com
+  // "ALVO RECUSADO" e a fixture de navegador com QA_CMS_FIXTURE_RELEASE_MISMATCH.
   assert.match(diagnostic, /EV2_G11_EXPECTED_SHA: \$\{\{ steps\.live\.outputs\.g12_sha \}\}/);
   assert.match(diagnostic, /EV2_G12_EXPECTED_SHA: \$\{\{ steps\.live\.outputs\.g17_sha \}\}/);
   assert.match(diagnostic, /EV2_G17_EXPECTED_SHA: \$\{\{ steps\.live\.outputs\.g17_sha \}\}/);
 
-  // A identidade da fixture, que nao e comparada com release servido, continua no candidato.
+  // A identidade da fixture, que nao e comparada com release servido, fica no candidato.
   assert.match(diagnostic, /G12_MIGRATION_CANARY_EXPECTED_SHA: \$\{\{ steps\.candidate\.outputs\.sha \}\}/);
+
+  // Os canarios dirigem navegador; sem o executavel eles reprovam por ausencia de ferramenta.
+  assert.match(diagnostic, /npx playwright install --with-deps chromium/);
+});
+
+test("the authenticated browser cycle runs only when the alias already serves the candidate", () => {
+  const diagnostic = jobBody("diagnostic");
+  // A fixture exige o mesmo SHA em `git rev-parse HEAD` e em `/healthz`. Num passe que nao publica as
+  // duas condicoes se excluem, e forcar qualquer uma produz falha garantida.
+  const fixture = diagnostic.slice(diagnostic.indexOf("DIAGNOSTIC isolated MFA actor provisioning"));
+  assert.match(fixture.slice(0, 400), /if: steps\.live\.outputs\.g17_sha == steps\.candidate\.outputs\.sha/);
+  assert.match(fixture.slice(0, 700), /QA_CMS_EXPECTED_SHA: \$\{\{ steps\.candidate\.outputs\.sha \}\}/);
+
+  // E o limite fica escrito no relatorio, para ninguem ler a ausencia como cobertura.
+  const report = readFileSync(reportScript, "utf8");
+  assert.match(report, /ciclo autenticado de navegador so e exercitado quando o alias ja serve o candidato/);
 });
 
 test("a gate whose precondition failed is never reported as a vacuous pass", () => {

@@ -16,6 +16,11 @@ describe("qa actor lease window", () => {
     expect(migration).toContain("CMS_QA_LEASE_TTL_STALE");
     // The client side constant has to agree, or the lease payload is refused as tampered.
     expect(lease).toContain("QA_ACTOR_LEASE_TTL_MINUTES = 240");
+    // O prazo tambem e uma restricao da tabela; sem ela nenhuma lease longa e gravavel.
+    expect(migration).toContain("cms_qa_actor_leases_check1");
+    expect(migration).toContain("interval '241 minutes'");
+    expect(migration).toContain("expires_at > created_at");
+    expect(migration).toContain("CMS_QA_LEASE_WINDOW_CONSTRAINT_NOT_APPLIED");
   });
 
   it("keeps the lease longer than the window it has to cover", () => {

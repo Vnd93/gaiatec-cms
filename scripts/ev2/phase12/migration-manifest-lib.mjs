@@ -53,7 +53,7 @@ export const G12_PINNED_MIGRATION_TAIL = Object.freeze([
   Object.freeze({
     version: "0091",
     file: "0091_cms_qa_actor_lease_window.sql",
-    sha256: "a7d95d5ac9784d5ec7040945bc11f9369f1dd0ac9695d29068a2f8570ca2adad",
+    sha256: "92a9c6350606d63fe8bc53c9595cae51f77451e64d74d76d6fb71793ddba2fe9",
   }),
 ]);
 
@@ -875,6 +875,12 @@ export function qaActorLeaseWindowSemanticSql(alias) {
       and to_regprocedure('${sweeper}') is not null
       and ${definition} like '%240 minutes%'
       and ${definition} not like '%119 minutes%'
+      and exists (
+        select 1 from pg_catalog.pg_constraint c
+        where c.conrelid = 'private.cms_qa_actor_leases'::regclass
+          and c.conname = 'cms_qa_actor_leases_check1'
+          and pg_catalog.pg_get_constraintdef(c.oid) like '%241 minutes%'
+      )
       and not has_function_privilege('anon', '${capture}', 'EXECUTE')
       and not has_function_privilege('authenticated', '${capture}', 'EXECUTE')
       and exists (

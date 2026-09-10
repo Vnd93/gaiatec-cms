@@ -10,6 +10,15 @@ begin;
 -- varrendo leases expiradas de minuto em minuto, os privilegios continuam os mesmos, e uma lease
 -- abandonada continua sendo recolhida automaticamente, apenas mais tarde.
 
+-- O prazo tambem esta codificado como restricao da tabela, e ela e a barreira que recusa uma lease
+-- longa demais. A restricao acompanha o novo teto, continua exigindo que o vencimento seja posterior
+-- a criacao, e continua sendo um limite superior fechado: nada pode gravar uma lease sem prazo.
+alter table private.cms_qa_actor_leases
+  drop constraint if exists cms_qa_actor_leases_check1;
+alter table private.cms_qa_actor_leases
+  add constraint cms_qa_actor_leases_check1
+  check (expires_at > created_at and expires_at <= created_at + interval '241 minutes');
+
 create or replace function private.cms_capture_qa_actor_lease()
 returns trigger
 language plpgsql
@@ -98,6 +107,14 @@ begin
   end if;
   if v_definition ~ 'interval ''119 minutes''' then
     raise exception 'CMS_QA_LEASE_TTL_STALE' using errcode = '55000';
+  end if;
+  if not exists (
+    select 1 from pg_catalog.pg_constraint c
+    where c.conrelid = 'private.cms_qa_actor_leases'::regclass
+      and c.conname = 'cms_qa_actor_leases_check1'
+      and pg_get_constraintdef(c.oid) like '%241 minutes%'
+  ) then
+    raise exception 'CMS_QA_LEASE_WINDOW_CONSTRAINT_NOT_APPLIED' using errcode = '55000';
   end if;
   if has_function_privilege('authenticated', 'private.cms_capture_qa_actor_lease()', 'EXECUTE') then
     raise exception 'CMS_QA_LEASE_TRIGGER_PRIVILEGE_WIDENED' using errcode = '55000';

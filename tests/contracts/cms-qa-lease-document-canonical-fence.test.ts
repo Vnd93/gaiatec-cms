@@ -98,6 +98,27 @@ describe("qa lease document canonical fence", () => {
     expect(retries).toBe(2);
   });
 
+  it("treats an unanswered confirmation as scheduled, not as a refusal", () => {
+    // Proved by the staging run: the confirmation answered CMS_DOCUMENT_BLOB_CONFIRM_FAILED_FETCH_TIMEOUT
+    // twice, and the database cannot be the cause because service_role inherits an eight second
+    // ceiling from authenticator. By then access is already revoked and the object is already gone
+    // from storage, and the canonical write is forbidden by the fence for the rest of the window
+    // anyway, so nothing is left for this request that the reconciler will not do.
+    expect(handler).toContain("const confirmationDeadline =");
+    expect(handler).toContain("canonicalFenceActive || confirmationDeadline");
+    expect(handler).toContain("canonicalCleanupReason");
+    expect(handler).toContain('"canonical_write_fence"');
+    expect(handler).toContain('"confirmation_deadline"');
+
+    // A deliberate refusal with any other SQLSTATE still has to fail loudly.
+    const neutralize = handler.slice(handler.indexOf("async function neutralizeSynthetic"));
+    const scheduled = neutralize.indexOf("canonicalFenceActive || confirmationDeadline");
+    const refused = neutralize.indexOf("CMS_DOCUMENT_BLOB_CONFIRM_FAILED_");
+    expect(scheduled).toBeGreaterThan(0);
+    expect(scheduled).toBeLessThan(refused);
+    expect(neutralize).toContain('"database_confirm_failed"');
+  });
+
   it("declares as many pgTAP assertions as it actually runs", () => {
     const planned = Number(/select plan\((\d+)\);/.exec(database)?.[1]);
     const asserted = database.match(/^select (?:ok|is|isnt)\(/gm)?.length ?? 0;

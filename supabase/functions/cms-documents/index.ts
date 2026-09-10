@@ -1354,7 +1354,15 @@ async function neutralizeSynthetic(
   const confirmSqlState = String((confirmed.error as { code?: string } | null)?.code ?? "");
   const canonicalFenceActive =
     confirmMessage.includes("CMS_DOCUMENT_CANONICAL_WRITE_FENCE_ACTIVE") || confirmSqlState === "40001";
-  if (confirmed.error && canonicalFenceActive)
+  // Um prazo de transporte estourado nao e uma recusa: e ausencia de resposta. O que importa para a
+  // seguranca ja esta duravel neste ponto, porque o acesso foi revogado pela preparacao, que
+  // commitou, e o objeto foi removido do Storage e conferido ausente logo acima. O que falta e
+  // apenas a escritura canonica, que o fence proibiria de qualquer forma dentro da janela do run e
+  // que pertence ao reconciliador de blobs. Ele encontra o documento por
+  // `cms_list_pending_document_blob_cleanup` sem depender de nenhum registro de falha, e o documento
+  // do run anterior foi observado ja em `removed`, o que prova que ele conclui.
+  const confirmationDeadline = Boolean(confirmed.error) && isEdgeFetchTimeout(confirmed.error);
+  if (confirmed.error && (canonicalFenceActive || confirmationDeadline))
     return json(
       req,
       {
@@ -1362,6 +1370,7 @@ async function neutralizeSynthetic(
         status: "neutralized",
         blobDisposition: "access_revoked",
         canonicalCleanupScheduled: true,
+        canonicalCleanupReason: canonicalFenceActive ? "canonical_write_fence" : "confirmation_deadline",
         correlationId,
       },
       200,

@@ -1,0 +1,19 @@
+# Fim de linha deterministico em todo clone.
+#
+# Sem este arquivo, o fim de linha materializado depende do `core.autocrlf` local de cada clone. Um
+# clone Windows com `autocrlf=true` recebe CRLF, e varios testes de contrato comparam trechos de duas
+# linhas unidos por `\n` — eles reprovam localmente e passam no CI, que e Linux e usa LF. Neste
+# projeto, divergencia entre a verificacao local e a do CI invalida evidencia, entao o fim de linha
+# nao pode ser uma preferencia de maquina.
+#
+# O banco de objetos ja guarda LF; este arquivo apenas torna o checkout igual em toda maquina.
+* text=auto eol=lf
+
+# Binarios nunca sofrem conversao, mesmo que a deteccao de conteudo falhe.
+# SVG fica de fora de proposito: e texto e deve continuar com diff legivel.
+*.avif binary
+*.jpg binary
+*.png binary
+*.ttf binary
+*.webp binary
+*.xlsx binary

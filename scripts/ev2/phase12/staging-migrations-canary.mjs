@@ -288,6 +288,20 @@ async function authenticationClock() {
   return Number.isFinite(serverDate) ? serverDate : Date.now();
 }
 
+// Uma recusa que nao diz o que a base respondeu obriga a repetir o run inteiro. Apenas identificadores
+// fechados viajam: o SQLSTATE do PostgREST e o slug das excecoes deste projeto.
+function leaseFailureIdentity(result) {
+  if (!result?.error) {
+    const status = String(result?.data?.status ?? "absent");
+    return `status:${/^[a-z_]{1,20}$/.test(status) ? status : "unknown"}`;
+  }
+  const code = /^[0-9A-Z]{5}$/.test(String(result.error.code ?? "")) ? String(result.error.code) : "unknown";
+  const message = /^CMS_[A-Z0-9_]{3,60}$/.test(String(result.error.message ?? "").trim())
+    ? String(result.error.message).trim()
+    : "unknown";
+  return `${code}:${message}`;
+}
+
 async function actorLeaseStatus(actorId) {
   const result = await context.admin.rpc("cms_qa_actor_lease_status", {
     p_actor_id: actorId,
@@ -315,20 +329,36 @@ async function assertActorLease(actorId, expectedStatus) {
   return lease;
 }
 
+// A conclusao da lease exige que o ator ja esteja banido, sem sessao, com perfil suspenso e sem
+// residuo. Ela e chamada logo depois da revogacao, e esses efeitos nao ficam visiveis no mesmo
+// instante. Lido no banco segundos depois de uma recusa, todas as condicoes estavam satisfeitas, o que
+// mostra corrida e nao residuo. A janela de convergencia nao afrouxa nada: a RPC continua exigindo
+// exatamente as mesmas condicoes, apenas deixa de ser consultada no primeiro instante possivel.
 async function completeActorLease(actorId) {
-  const result = await context.admin.rpc("cms_complete_qa_actor_lease", {
-    p_actor_id: actorId,
-    p_run_tag: qaTag,
-    p_candidate_sha: expectedSha,
-    p_environment: "staging",
-  });
+  let result;
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 2_000));
+    result = await context.admin.rpc("cms_complete_qa_actor_lease", {
+      p_actor_id: actorId,
+      p_run_tag: qaTag,
+      p_candidate_sha: expectedSha,
+      p_environment: "staging",
+    });
+    if (
+      !result.error &&
+      result.data?.schemaVersion === 1 &&
+      result.data?.status === "cleaned" &&
+      typeof result.data?.replayed === "boolean"
+    )
+      break;
+  }
   if (
     result.error ||
     result.data?.schemaVersion !== 1 ||
     result.data?.status !== "cleaned" ||
     typeof result.data?.replayed !== "boolean"
   )
-    throw new Error("G12_STAGING_SYNTHETIC_LEASE_COMPLETION_FAILED");
+    throw new Error(`G12_STAGING_SYNTHETIC_LEASE_COMPLETION_FAILED:${leaseFailureIdentity(result)}`);
   await assertActorLease(actorId, "cleaned");
 }
 

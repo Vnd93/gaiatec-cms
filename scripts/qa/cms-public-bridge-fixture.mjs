@@ -1361,12 +1361,20 @@ async function cleanupState(context, state) {
     "select to_regprocedure('public.cms_complete_qa_actor_lease(uuid,text,text,text)') is not null as available;",
   );
   if (leaseSupport?.available === true) {
-    const completed = await context.admin.rpc("cms_complete_qa_actor_lease", {
-      p_actor_id: state.actorId,
-      p_run_tag: state.runTag,
-      p_candidate_sha: candidateSha,
-      p_environment: environment,
-    });
+    // Mesma corrida do canario: a conclusao exige o ator ja banido, sem sessao e com perfil suspenso,
+    // e ela e chamada logo apos a revogacao. A condicao exigida nao muda, apenas deixa de ser lida no
+    // primeiro instante.
+    let completed;
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 2_000));
+      completed = await context.admin.rpc("cms_complete_qa_actor_lease", {
+        p_actor_id: state.actorId,
+        p_run_tag: state.runTag,
+        p_candidate_sha: candidateSha,
+        p_environment: environment,
+      });
+      if (!completed.error && completed.data?.status === "cleaned") break;
+    }
     if (completed.error || completed.data?.status !== "cleaned")
       refuse(
         `ACTOR_LEASE_COMPLETION_FAILED:${

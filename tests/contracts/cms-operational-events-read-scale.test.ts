@@ -44,6 +44,16 @@ describe("operational events read scale", () => {
     expect(migration).toContain("cms_operational_events_recent_idx");
   });
 
+  it("declares as many pgTAP assertions as it actually runs", () => {
+    // pgTAP exits non-zero when the plan and the assertions disagree, and a plan that is one short
+    // hides the last assertion instead of running it. CI caught exactly that.
+    const database = readFileSync("supabase/tests/rls_cms_operational_events_read_scale.test.sql", "utf8");
+    const planned = Number(/select plan\((\d+)\);/.exec(database)?.[1]);
+    const asserted = database.match(/^select (?:ok|is|isnt)\(/gm)?.length ?? 0;
+    expect(asserted).toBeGreaterThan(0);
+    expect(planned).toBe(asserted);
+  });
+
   it("fails closed if the policy or the index did not land", () => {
     expect(migration).toContain("CMS_OPERATIONAL_EVENTS_POLICY_NOT_SPLIT");
     expect(migration).toContain("CMS_OPERATIONAL_EVENTS_INDEX_MISSING");

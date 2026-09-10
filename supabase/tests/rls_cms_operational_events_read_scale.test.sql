@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(20);
+select plan(21);
 
 -- A politica de 0076 avaliava, dentro de um predicado por linha, duas condicoes que nao dependem de
 -- linha. A 0089 separa onde cada uma e avaliada sem afrouxar nenhuma delas. O que este teste protege
@@ -86,14 +86,11 @@ select ok((select indexdef from pg_indexes where schemaname='public'
   and indexname='cms_operational_events_recent_idx') like '%(created_at DESC)%',
   'historical events are indexed newest first');
 
-insert into public.cms_operational_events(id,severity,event_type,correlation_id,error_code)
-values ('89000000-0000-4000-8000-000000000001','warning','cms.read_scale_probe.anon',
-        '89000000-0000-4000-8000-000000000002','read_scale_probe');
-set local role anon;
-select is((select count(*)::integer from public.cms_operational_events
-  where event_type='cms.read_scale_probe.anon'),0,
-  'diagnostics stay closed to anonymous callers');
-reset role;
+-- A politica e "to authenticated", mas a barreira anterior a ela e mais forte e precisa continuar
+-- existindo: anon nao tem sequer o privilegio de leitura na tabela, entao a tentativa nem chega a
+-- ser avaliada pela politica.
+select is(has_table_privilege('anon','public.cms_operational_events','SELECT'),false,
+  'diagnostics stay closed to anonymous callers before RLS is even consulted');
 
 select * from finish();
 rollback;

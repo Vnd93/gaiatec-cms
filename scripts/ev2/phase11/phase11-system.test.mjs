@@ -285,40 +285,73 @@ test("G11 executable controls remain reproducible and fail-closed", async () => 
   assert.match(workflow, /VITE_EV2_SYSTEM_ASSURANCE_CANDIDATE/);
 });
 
-test("the G11 synthetic lead uses an origin the schema actually accepts", async () => {
+test("the G11 synthetic lead uses the only origin 0084 accepts for its own form", async () => {
   const canary = await readFile("scripts/ev2/phase11/staging-canary.mjs", "utf8");
   const binding = await readFile("supabase/migrations/0084_cms_lead_origin_form_binding.sql", "utf8");
 
-  // 0084 accepts an origin for a corporate published form only from a campaign, a product, or the
-  // closed vocabulary of site sources. A synthetic name was refused with
-  // CMS_LEAD_ORIGIN_SCOPE_FORBIDDEN before any assurance check could run.
-  assert.match(binding, /v_source in \('site', 'contact', 'newsletter', 'website'\)/);
-  const accepted = ["site", "contact", "newsletter", "website"];
-  const source = /origin_source: "([^"]+)"/.exec(canary)?.[1];
-  assert.ok(accepted.includes(source), `origin_source ${source} is not accepted by 0084`);
+  // For a form owned by a QA run, 0084 accepts exactly one origin: the source `qa_fixture` on the
+  // route of that run, with no campaign and no product. The closed site vocabulary that a corporate
+  // form accepts is refused here, so an origin borrowed from it fails with
+  // CMS_LEAD_ORIGIN_SCOPE_FORBIDDEN before any assurance check can run.
+  assert.match(binding, /if v_source = 'qa_fixture' then\s+return v_campaign_id is null/);
+  assert.match(binding, /v_path = '\/qa-cms-final\/' \|\| lower\(v_form\.qa_run_tag\)/);
 
-  // And the path stays outside the space the same guard reserves for QA fixtures on this form.
-  const path = /origin_path: "([^"]+)"/.exec(canary)?.[1];
-  assert.ok(path && !path.startsWith("/qa-cms-final/"), `origin_path ${path} is reserved for fixtures`);
+  assert.match(canary, /origin_source: "qa_fixture"/);
+  assert.match(canary, /origin_path: qaFixtureOriginPath/);
+  assert.match(canary, /const qaFixtureOriginPath = "\/qa-cms-final\/" \+ qaRunTag\.toLowerCase\(\);/);
+
+  // Campaign and product would flip the same guard to the projection branch and refuse the capture.
+  const insert = canary.slice(canary.indexOf("async function createSyntheticLead"));
+  const body = insert.slice(0, insert.indexOf("async function closeSyntheticResidue"));
+  assert.doesNotMatch(body, /campaign_id:/);
+  assert.doesNotMatch(body, /product_id:/);
 
   // The synthetic nature is still explicit where it belongs.
   assert.match(canary, /reference_code: "LD-G11-/);
   assert.match(canary, /synthetic: true/);
 });
 
-test("the G11 synthetic lead is visible to the actor that has to close it", async () => {
+test("the G11 canary owns the form it captures the synthetic lead on", async () => {
   const canary = await readFile("scripts/ev2/phase11/staging-canary.mjs", "utf8");
   const scope = await readFile("supabase/migrations/0072_cms_forms_leads_authoritative_scope.sql", "utf8");
 
-  // A caller holding a QA lease only sees leads bound to an actor of the same run. Without the bind,
-  // the operator that had just created the fixture could not find it: retrying the delivery answered
-  // CMS_LEAD_DELIVERY_NOT_FOUND and anonymising answered CMS_LEAD_NOT_FOUND, both as 404.
-  assert.match(scope, /owner\.actor_id = lead\.qa_actor_id/);
-  assert.match(scope, /owner\.run_tag = caller\.run_tag/);
+  // A caller holding a QA lease only reaches a form owned by an actor holding a lease of the same
+  // run, and a lead inherits its provenance from that form. A corporate form can never satisfy the
+  // predicate, so the operator that had just created the fixture could not find it: retrying the
+  // delivery answered CMS_LEAD_DELIVERY_NOT_FOUND and anonymising answered CMS_LEAD_NOT_FOUND.
+  assert.match(scope, /on owner\.actor_id = form\.qa_actor_id\s+and owner\.run_tag = caller\.run_tag/);
+  assert.match(scope, /new\.qa_actor_id := v_form\.qa_actor_id;/);
 
+  // So the run creates, versions and publishes its own form, through the same commands the panel
+  // exposes, as the very operator that later has to close the fixture.
+  const create = canary.slice(canary.indexOf("async function createQaFixtureForm"));
+  const createBody = create.slice(0, create.indexOf("async function createSyntheticLead"));
+  assert.match(createBody, /leads\(ctx, operator, \{\s+action: "save_form"/);
+  assert.match(createBody, /leads\(ctx, operator, \{\s+action: "publish_form"/);
+  assert.match(createBody, /qa_fixture_form_owned_by_run/);
+  assert.match(createBody, /form\?\.qa_actor_id === operator\.id/);
+  assert.match(createBody, /form\?\.qa_run_tag === qaRunTag/);
+  assert.match(createBody, /form\?\.active_version_id === qaFormVersionId/);
+
+  // And the capture uses that form instead of picking whichever form happens to be published.
   const insert = canary.slice(canary.indexOf("async function createSyntheticLead"));
-  assert.match(insert.slice(0, 2400), /qa_actor_id: operator\.id/);
-
-  // The bind is also what keeps the fixture visible inside its own run instead of widening it.
+  const body = insert.slice(0, insert.indexOf("async function closeSyntheticResidue"));
+  assert.match(body, /form_id: qaFormId,/);
+  assert.match(body, /form_version_id: qaFormVersionId,/);
+  assert.doesNotMatch(body, /cms_form_definitions/);
+  assert.match(canary, /await createQaFixtureForm\(context\);\s+await createSyntheticLead\(context\);/);
   assert.match(canary, /operator = await createActor\(/);
+});
+
+test("the G11 run leaves no live form behind", async () => {
+  const canary = await readFile("scripts/ev2/phase11/staging-canary.mjs", "utf8");
+  const scope = await readFile("supabase/migrations/0072_cms_forms_leads_authoritative_scope.sql", "utf8");
+
+  // Completing the lease retires every form the run owns, so the residue proof has to look at it.
+  assert.match(scope, /set status='retired',active_version_id=null,updated_by=old\.actor_id/);
+  assert.match(canary, /activeQaForms: liveQaForms\.json\.length,/);
+  assert.match(canary, /remaining\.activeQaForms === 0 &&/);
+
+  // The retained tombstone is counted by the run that produced it, not by a free-text origin.
+  assert.match(canary, /qa_run_tag=eq\.\$\{qaRunTag\}&anonymized_at=not\.is\.null/);
 });

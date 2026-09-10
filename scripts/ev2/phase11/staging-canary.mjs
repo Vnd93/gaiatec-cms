@@ -28,6 +28,8 @@ const expectedSha = process.env.EV2_G11_EXPECTED_SHA;
 if (!/^[0-9a-f]{40}$/.test(expectedSha ?? ""))
   throw new Error("Defina EV2_G11_EXPECTED_SHA com o SHA completo explicitamente autorizado.");
 const qaRunTag = createQaRunTag(expectedSha);
+// A 0084 aceita a origem `qa_fixture` somente na rota exata do run que possui o formulario.
+const qaFixtureOriginPath = "/qa-cms-final/" + qaRunTag.toLowerCase();
 const supabaseAccessToken = process.env.SUPABASE_ACCESS_TOKEN ?? "";
 
 const canaryStartedAt = new Date().toISOString();
@@ -40,6 +42,8 @@ let operator;
 let reviewer;
 let leadId;
 let outboxId;
+let qaFormId;
+let qaFormVersionId;
 let broadOverrideId;
 
 function quoteWindowsArgument(value) {
@@ -433,11 +437,73 @@ function runAccessibility() {
   return { critical: 0, serious: 0 };
 }
 
-async function createSyntheticLead(ctx) {
-  const form = await rest(ctx, "cms_form_definitions", {
-    query: "status=eq.published&active_version_id=not.is.null&select=id,active_version_id&limit=1",
+async function createQaFixtureForm(ctx) {
+  // O escopo de formularios de 0072 so aceita um chamador de QA quando o formulario pertence a um
+  // ator com lease do mesmo run. Um formulario corporativo publicado nunca satisfaz esse predicado,
+  // entao o canario precisa possuir o formulario que usa: e o operador do run que o cria, versiona e
+  // publica, pelos mesmos comandos que o painel expoe.
+  const saved = await leads(ctx, operator, {
+    action: "save_form",
+    formId: null,
+    expectedLockVersion: null,
+    formKey: "qa-g11-" + suffix,
+    title: "Formulário sintético G11 " + qaRunTag,
+    purpose: "Captura sintética exclusiva do canário EV2.11, retirada no encerramento do lease.",
+    definition: {
+      fields: [
+        {
+          id: randomUUID(),
+          key: "contato",
+          label: "Contato sintético",
+          type: "email",
+          required: true,
+          maxLength: 180,
+          options: [],
+          personalData: true,
+          order: 0,
+        },
+      ],
+      successMessage: "Captura sintética registrada.",
+      submitLabel: "Enviar",
+    },
+    consentText: "Consentimento exclusivamente sintético do canário G11.",
+    consentVersion: "g11-synthetic-v1",
+    privacyPath: "/politica-de-privacidade",
+    slaMinutes: 30,
+    retentionDays: 1,
+    reason: "Formulário sintético do canário G11 " + qaRunTag,
   });
-  if (!form.json[0]) throw new Error("Nenhum formulário publicado disponível para a fixture sintética G11.");
+  qaFormId = saved.json.formId;
+  qaFormVersionId = saved.json.versionId;
+  await leads(ctx, operator, {
+    action: "publish_form",
+    formId: qaFormId,
+    versionId: qaFormVersionId,
+    expectedLockVersion: saved.json.lockVersion,
+  });
+  const stored = await rest(ctx, "cms_form_definitions", {
+    query:
+      "id=eq." +
+      qaFormId +
+      "&select=status,active_version_id,created_by,qa_actor_id,qa_run_tag,qa_candidate_sha,qa_environment",
+  });
+  const form = stored.json[0];
+  check(
+    "qa_fixture_form_owned_by_run",
+    form?.status === "published" &&
+      form?.active_version_id === qaFormVersionId &&
+      form?.created_by === operator.id &&
+      form?.qa_actor_id === operator.id &&
+      form?.qa_run_tag === qaRunTag &&
+      form?.qa_candidate_sha === expectedSha &&
+      form?.qa_environment === "staging",
+    JSON.stringify(form),
+  );
+}
+
+async function createSyntheticLead(ctx) {
+  if (!qaFormId || !qaFormVersionId)
+    throw new Error("O formulário sintético do run G11 precisa existir antes da captura sintética.");
   leadId = randomUUID();
   outboxId = randomUUID();
   const leadCorrelation = randomUUID();
@@ -447,27 +513,21 @@ async function createSyntheticLead(ctx) {
     body: {
       id: leadId,
       reference_code: "LD-G11-" + suffix.toUpperCase(),
-      form_id: form.json[0].id,
-      form_version_id: form.json[0].active_version_id,
+      form_id: qaFormId,
+      form_version_id: qaFormVersionId,
       idempotency_key: randomUUID(),
       payload: { synthetic: true, contact: "g11@example.invalid" },
-      // A origem de um lead nao e texto livre: 0084 exige que ela seja aceita para o formulario que
-      // recebe a captura. O formulario usado aqui e um formulario corporativo publicado, sem ator de
-      // QA, e para esse caso a origem so e aceita quando vem de campanha, de produto, ou de uma das
-      // fontes do vocabulario fechado do site. `ev2-g11-canary` nunca esteve nesse conjunto, entao a
-      // insercao era recusada com CMS_LEAD_ORIGIN_SCOPE_FORBIDDEN antes de qualquer verificacao.
+      // A origem de um lead nao e texto livre: 0084 a valida contra o formulario que recebe a
+      // captura. Para um formulario de QA a unica origem aceita e `qa_fixture` na rota exata
+      // `/qa-cms-final/<run tag em minusculas>`, sem campanha e sem produto. Fora disso a insercao e
+      // recusada com CMS_LEAD_ORIGIN_SCOPE_FORBIDDEN antes de qualquer verificacao.
       //
-      // A natureza sintetica do registro continua explicita onde ela pertence: no codigo de
-      // referencia, no proprio payload e no encerramento que o canario executa. O caminho continua
-      // fora do espaco reservado as fixtures de QA, que o mesmo guarda recusa para este formulario.
-      origin_path: "/g11-synthetic",
-      origin_source: "site",
-      // O escopo de leads de 0072 exige que um chamador com lease de QA so enxergue leads amarrados a
-      // um ator do mesmo run. Sem esse vinculo, o proprio operador que acabou de criar a fixture nao a
-      // encontra: reprocessar a entrega respondia CMS_LEAD_DELIVERY_NOT_FOUND e anonimizar respondia
-      // CMS_LEAD_NOT_FOUND, as duas com 404. O vinculo tambem e o que mantem a fixture visivel apenas
-      // dentro do proprio run, em vez de amplia-la para qualquer operador.
-      qa_actor_id: operator.id,
+      // A provenienca de QA do lead nao e enviada aqui: o gatilho de 0072 a copia do formulario, e o
+      // formulario pertence ao operador deste run. E esse vinculo que mantem a fixture visivel para o
+      // proprio operador -- sem ele, reprocessar a entrega responde CMS_LEAD_DELIVERY_NOT_FOUND e
+      // anonimizar responde CMS_LEAD_NOT_FOUND -- e visivel somente dentro do run.
+      origin_path: qaFixtureOriginPath,
+      origin_source: "qa_fixture",
       utm: {},
       status: "new",
       sla_due_at: new Date(Date.now() + 30 * 60_000).toISOString(),
@@ -692,6 +752,7 @@ async function residue(ctx) {
     retainedAudit,
     leaseStatuses,
     sessionRows,
+    liveQaForms,
   ] = await Promise.all([
     actorIds.length
       ? rest(ctx, "cms_profiles", {
@@ -738,7 +799,7 @@ async function residue(ctx) {
       query: "display_email=like.ev2-g11-*@example.invalid&select=user_id",
     }),
     rest(ctx, "cms_leads", {
-      query: "origin_source=eq.ev2-g11-canary&anonymized_at=not.is.null&select=id",
+      query: `qa_run_tag=eq.${qaRunTag}&anonymized_at=not.is.null&select=id`,
     }),
     actorIds.length
       ? rest(ctx, "cms_audit_log", {
@@ -766,6 +827,9 @@ async function residue(ctx) {
             .join(",")})`,
         )
       : Promise.resolve([{ count: 0 }]),
+    rest(ctx, "cms_form_definitions", {
+      query: `qa_run_tag=eq.${qaRunTag}&or=(status.neq.retired,active_version_id.not.is.null)&select=id`,
+    }),
   ]);
   return {
     activeActors: profiles.json.length,
@@ -780,6 +844,7 @@ async function residue(ctx) {
     activeRdoAccess: rdoAccess.json.length,
     activeOwnedContent: ownedItems.json.length,
     activeSessions: Number(sessionRows[0]?.count ?? 0),
+    activeQaForms: liveQaForms.json.length,
     personalLeadPayloads: leadsResult.json.length,
     retainedSyntheticActors: retainedActors.json.length,
     retainedAnonymizedLeads: retainedLeads.json.length,
@@ -845,6 +910,7 @@ try {
     production.json.code,
   );
 
+  await createQaFixtureForm(context);
   await createSyntheticLead(context);
   await rpc(context, "cms_finish_lead_outbox", {
     p_id: outboxId,
@@ -1102,6 +1168,7 @@ try {
           remaining.activeRdoAccess === 0 &&
           remaining.activeOwnedContent === 0 &&
           remaining.activeSessions === 0 &&
+          remaining.activeQaForms === 0 &&
           remaining.personalLeadPayloads === 0 &&
           remaining.cleanedLeases === actorIds.length &&
           remaining.retainedLeaseAuditEvents >= actorIds.length * 2,

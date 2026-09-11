@@ -123,6 +123,14 @@ export function loadCmsUiCreatedState(input: {
   exactKeys(lead, ["reference", "status", "campaignPath"]);
 
   const idValues = [lease.actorId, ...Object.values(ids), form.id, form.versionId];
+  // Mesma normalizacao de urlSegmentFromText para o runTag, que e o prefixo que a UI produz.
+  const runTagSlug = String(parsed.runTag)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
   if (
     parsed.schemaVersion !== 1 ||
     parsed.status !== "ready" ||
@@ -134,8 +142,17 @@ export function loadCmsUiCreatedState(input: {
     idValues.some((value) => typeof value !== "string" || !uuidPattern.test(value)) ||
     typeof form.key !== "string" ||
     form.key.length > 150 ||
-    !/^qa-ops-qa-cms-final-[0-9]{8}-[0-9a-f]{8}-[0-9a-f]{8}$/.test(form.key) ||
-    !form.key.startsWith(`qa-ops-${String(parsed.runTag).toLowerCase()}-`) ||
+    typeof form.fieldKey !== "string" ||
+    form.fieldKey.length > 150 ||
+    // A chave nao e digitada em lugar nenhum: AdminFormsPage a deriva do TITULO por
+    // urlSegmentFromText, e a do campo, do ROTULO. O padrao anterior exigia `qa-ops-...`, uma
+    // forma que o produto nunca produz — este validador recusaria o handoff mesmo que o spec o
+    // escrevesse. O que precisa continuar amarrado e o vinculo com o runTag deste run, nao um
+    // prefixo inventado.
+    !slugPattern.test(form.key) ||
+    !slugPattern.test(form.fieldKey) ||
+    !form.key.startsWith(`${runTagSlug}-`) ||
+    !form.fieldKey.startsWith(`${runTagSlug}-`) ||
     form.status !== "published" ||
     typeof lead.reference !== "string" ||
     !/^LD-[A-Z0-9]+$/.test(lead.reference) ||

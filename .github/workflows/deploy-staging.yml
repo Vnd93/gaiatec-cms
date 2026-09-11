@@ -104,6 +104,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           FRONTEND_BRIDGE_RUN_ID: ${{ inputs.frontend_bridge_run_id }}
+        # `cmd | tee` sob `bash -e` devolve o status do tee, sempre 0. `shell: bash` liga
+        # `-eo pipefail`, entao a falha do comando da esquerda volta a reprovar o passo.
+        shell: bash
         run: >-
           node scripts/ev2/phase12/verify-staging-frontend-bridge-run.mjs
           --run-id "$FRONTEND_BRIDGE_RUN_ID"
@@ -318,6 +321,9 @@ jobs:
         env:
           STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        # `cmd | tee` sob `bash -e` devolve o status do tee, sempre 0. `shell: bash` liga
+        # `-eo pipefail`, entao a falha do comando da esquerda volta a reprovar o passo.
+        shell: bash
         run: node scripts/ev2/phase12/configure-staging-auth.mjs | tee ../g12-staging-auth.json
       - name: Deploy the complete exact-candidate Edge Function inventory to staging
         working-directory: candidate
@@ -335,6 +341,9 @@ jobs:
           STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
+          # `cmd | tee` sob `bash -e` devolve o status do tee, sempre 0. `-e` ja vem ligado por
+          # padrao; falta so o pipefail para a falha do comando da esquerda reprovar o passo.
+          set -o pipefail
           supabase functions list --project-ref "$STAGING_SUPABASE_PROJECT_REF" --output json > ../g12-staging-functions.json
           node scripts/ev2/phase12/verify-production-functions.mjs \
           --file ../g12-staging-functions.json \
@@ -379,6 +388,9 @@ jobs:
             --candidate "${{ inputs.rollback_ref }}"
       - name: Verify the staging recovery artifact before durable handoff
         working-directory: candidate
+        # `cmd | tee` sob `bash -e` devolve o status do tee, sempre 0. `shell: bash` liga
+        # `-eo pipefail`, entao a falha do comando da esquerda volta a reprovar o passo.
+        shell: bash
         run: >-
           node scripts/ev2/phase12/verify-production-dist-seal.mjs
           --dist ../baseline/dist
@@ -630,8 +642,17 @@ jobs:
           QA_CMS_FIXTURE_STATE_PATH: outputs/cms-browser-mutating-state.json
           QA_CMS_FIXTURE_REPORT_PATH: outputs/cms-browser-mutating-setup.json
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      # A cadeia serial deste passo declara tetos que somam ~107 minutos, e so o rendezvous de
+      # navegador real vale 35 (--challenge-wait-seconds 2100). Com 55, o runner matava o passo no
+      # meio do ciclo mutante, deixando ator sintetico, lead e entidades vivos em staging.
+      #
+      # 80 e o maximo que cabe: a guarda de lease exige que a soma dos tetos entre setup e cleanup do
+      # ator mutante fique em 200 minutos, e os demais passos da janela ja consomem 120. Cobrir os
+      # ~107 declarados exigiria alargar a janela de lease, que vive numa migration (0091, 240 min) e
+      # nao e mudanca de janela congelada. O residuo esta registrado no HANDOFF: melhora real de 55
+      # para 80, com o conflito restante escalado em vez de resolvido afrouxando a guarda.
       - name: Run the complete authenticated mutating editorial cycle first
-        timeout-minutes: 55
+        timeout-minutes: 80
         working-directory: candidate
         run: |
           set -euo pipefail
@@ -654,6 +675,15 @@ jobs:
           trap 'kill "$real_browser_consumer_pid" 2>/dev/null || true; wait "$real_browser_consumer_pid" 2>/dev/null || true' EXIT
           trap 'kill "$real_browser_consumer_pid" 2>/dev/null || true; wait "$real_browser_consumer_pid" 2>/dev/null || true; exit 130' INT
           trap 'kill "$real_browser_consumer_pid" 2>/dev/null || true; wait "$real_browser_consumer_pid" 2>/dev/null || true; exit 143' TERM
+          # O consumidor roda em segundo plano e suas precondicoes duras (token e salt ausentes,
+          # identidade GitHub diferente de Vnd93, desafio ja existente) falham em segundos. Sem
+          # esta checagem a suite abaixo roda assim mesmo, bloqueia os 15 minutos inteiros
+          # esperando um arquivo que ninguem vai escrever, e reprova com
+          # QA_CMS_REAL_BROWSER_ATTESTATION_TIMEOUT — causa errada, erro real descartado.
+          sleep 5
+          if ! kill -0 "$real_browser_consumer_pid" 2>/dev/null; then
+            wait "$real_browser_consumer_pid"
+          fi
           run_browser test tests/e2e/cms-final-coverage.spec.ts --project=desktop-chromium --workers=1 --retries=0 --grep @ui-bootstrap
           wait "$real_browser_consumer_pid"
           trap - EXIT INT TERM
@@ -724,8 +754,10 @@ jobs:
           QA_CMS_BRIDGE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
           QA_CMS_BRIDGE_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
           QA_CMS_BRIDGE_REPORT_PATH: outputs/cms-public-forward-compatibility.json
+      # Teto do passo acima do teto do teste: iguais, o runner mata o passo antes do finally que
+      # grava o relatorio exigido pelo gate de evidencia.
       - name: Traverse every authenticated route, menu and required viewport on the same lease
-        timeout-minutes: 25
+        timeout-minutes: 30
         working-directory: candidate
         run: >-
           npx playwright test tests/e2e/cms-final-coverage.spec.ts
@@ -744,14 +776,17 @@ jobs:
       # e antes de qualquer passo de producao. A lease do ator sintetico foi estendida em 0091 para
       # sobreviver a janela inteira.
       - name: Traverse the rollback frontend with an AAL2 session against the candidate backend
-        timeout-minutes: 25
+        timeout-minutes: 30
         working-directory: candidate
         run: >-
           npx playwright test tests/e2e/cms-final-coverage.spec.ts
           --project=desktop-chromium --workers=1 --retries=0
           --grep "sessão AAL2 percorre todas as superfícies"
         env:
-          PLAYWRIGHT_BASE_URL: ${{ steps.rollback_compatibility_deploy.outputs.deployment-url }}
+          # O allowlist de origem e conjunto exato e contem o ALIAS, nao a URL efemera por
+          # deployment. Apontar para a URL efemera faz cms-session devolver 403 em toda sessao e o
+          # login AAL2 nunca resolver o perfil.
+          PLAYWRIGHT_BASE_URL: https://ev2-g12-rollback-compat.gaiatec-cms-staging.pages.dev
           QA_CMS_REPORT_PATH: outputs/cms-rollback-authenticated-compatibility.json
           QA_CMS_COVERAGE_INVENTORY_PATH: ../baseline/outputs/cms-coverage-rollback.json
           QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
@@ -761,6 +796,10 @@ jobs:
       - name: Revoke the rollback compatibility actor and verify zero active residue
         id: rollback_browser_cleanup
         if: always() && steps.rollback_browser_fixture.outcome != 'skipped'
+        # Sem isto, uma falha transitoria de teardown reprova o job em definitivo e o gate final,
+        # que roda sob if: success(), nunca mais fica verdadeiro — o retry abaixo existe e nao
+        # salva nada. O retry permanece fatal, entao uma falha dupla continua fechando o job.
+        continue-on-error: true
         timeout-minutes: 15
         working-directory: candidate
         run: node scripts/qa/cms-browser-fixture.mjs cleanup
@@ -769,6 +808,10 @@ jobs:
           QA_CMS_TARGET_ENVIRONMENT: staging
           QA_CMS_FIXTURE_STATE_PATH: outputs/cms-browser-rollback-state.json
           QA_CMS_FIXTURE_REPORT_PATH: outputs/cms-browser-rollback-cleanup.json
+          # Caminho proprio: sem ele a limpeza do rollback reescreve o bloco de cleanup da
+          # evidencia do ciclo MUTANTE, afirmando teardown concluido enquanto o ator mutante
+          # ainda esta inteiro.
+          QA_CMS_ADMIN_OPS_REPORT_PATH: outputs/cms-browser-rollback-admin-ops.json
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       - name: Retry rollback compatibility actor cleanup after a cleanup failure
         if: >-
@@ -782,6 +825,7 @@ jobs:
           QA_CMS_TARGET_ENVIRONMENT: staging
           QA_CMS_FIXTURE_STATE_PATH: outputs/cms-browser-rollback-state.json
           QA_CMS_FIXTURE_REPORT_PATH: outputs/cms-browser-rollback-cleanup-retry.json
+          QA_CMS_ADMIN_OPS_REPORT_PATH: outputs/cms-browser-rollback-admin-ops.json
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       # Cinco atores sao encerrados sequencialmente aqui, e desde o transporte duravel cada um pode
       # custar a tentativa PostgREST mais ate noventa segundos de requisicao de gestao. O orcamento de
@@ -852,6 +896,9 @@ jobs:
           CSP_EVIDENCE_PATH: ../g16-csp-browser.json
       - name: Run authenticated synthetic canary against the deployed backend
         working-directory: candidate
+        # `cmd | tee` sob `bash -e` devolve o status do tee, sempre 0. `shell: bash` liga
+        # `-eo pipefail`, entao a falha do comando da esquerda volta a reprovar o passo.
+        shell: bash
         run: npm run canary:ev2:phase17 | tee ../g17-staging-canary.json
         env:
           EV2_G17_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
@@ -859,6 +906,9 @@ jobs:
       - name: Exercise the governed editorial lifecycle end to end
         working-directory: candidate
         run: |
+          # `cmd | tee` sob `bash -e` devolve o status do tee, sempre 0. `-e` ja vem ligado por
+          # padrao; falta so o pipefail para a falha do comando da esquerda reprovar o passo.
+          set -o pipefail
           qa_date="$(date -u +%Y%m%d)"
           export GAIATEC_QA_RUN_TAG="QA-CMS-FINAL-${qa_date}-${GAIATEC_EXPECTED_SHA:0:8}"
           node scripts/phase7/staging-roundtrip.mjs | tee ../g12-staging-lifecycle.json
@@ -870,6 +920,9 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       - name: Probe public, anonymous, CORS and secret boundaries
         working-directory: candidate
+        # `cmd | tee` sob `bash -e` devolve o status do tee, sempre 0. `shell: bash` liga
+        # `-eo pipefail`, entao a falha do comando da esquerda volta a reprovar o passo.
+        shell: bash
         run: node scripts/ev2/phase12/probe-supabase-boundary.mjs | tee ../g12-staging-boundary.json
         env:
           CMS_BACKEND_ENVIRONMENT: staging
@@ -879,6 +932,9 @@ jobs:
       - name: Revalidate the immutable candidate after all staging gates
         if: always() && steps.staging_candidate_artifact.outcome == 'success'
         working-directory: candidate
+        # `cmd | tee` sob `bash -e` devolve o status do tee, sempre 0. `shell: bash` liga
+        # `-eo pipefail`, entao a falha do comando da esquerda volta a reprovar o passo.
+        shell: bash
         run: >-
           node scripts/ev2/phase12/verify-production-dist-seal.mjs
           --dist dist
@@ -930,43 +986,85 @@ jobs:
       - name: Require every successful staging evidence file before upload
         if: success()
         run: |
-          for file in \
-            candidate/outputs/staging-artifact-bindings.json \
-            candidate/outputs/cms-auth-lifecycle.json \
-            candidate/outputs/cms-final-coverage.json \
-            candidate/outputs/cms-admin-ops-cycles.json \
-            candidate/outputs/cms-secondary-ui-cycles.json \
-            candidate/outputs/cms-security-boundaries.json \
-            candidate/outputs/cms-ui-created-state.json \
-            candidate/outputs/cms-real-browser-attestation.json \
-            candidate/outputs/cms-real-browser-attestation.png \
-            candidate/outputs/cms-public-forward-compatibility.json \
-            candidate/outputs/cms-browser-mutating-setup.json \
-            candidate/outputs/cms-browser-mutating-cleanup.json \
-            candidate/outputs/cms-browser-mutating-residue.json \
-            candidate/outputs/cms-terminal-coverage-matrix.json \
-            candidate/outputs/g12-cms-coverage-matrix.json \
-            candidate/outputs/cms-browser-rollback-setup.json \
-            candidate/outputs/cms-browser-rollback-cleanup.json \
-            candidate/outputs/cms-rollback-authenticated-compatibility.json \
-            candidate/outputs/g12-staging-function-deployment.json \
-            candidate/outputs/g12-backend-compatibility.json \
-            baseline/outputs/cms-coverage-rollback.json \
-            candidate/outputs/g12-canary.json \
-            g16-csp-browser.json \
-            g12-staging-database.json \
-            g12-staging-auth.json \
-            g12-staging-functions.json \
-            g12-staging-migrations-canary.json \
-            g12-staging-live-baseline.json \
-            g12-staging-rollback-compatibility.json \
-            g12-staging-probe.json \
-            g12-staging-boundary.json \
-            g12-staging-lifecycle.json \
+          evidence_files=(
+            candidate/outputs/staging-artifact-bindings.json
+            candidate/outputs/cms-auth-lifecycle.json
+            candidate/outputs/cms-final-coverage.json
+            candidate/outputs/cms-admin-ops-cycles.json
+            candidate/outputs/cms-secondary-ui-cycles.json
+            candidate/outputs/cms-security-boundaries.json
+            candidate/outputs/cms-ui-created-state.json
+            candidate/outputs/cms-real-browser-attestation.json
+            candidate/outputs/cms-real-browser-attestation.png
+            candidate/outputs/cms-public-forward-compatibility.json
+            candidate/outputs/cms-browser-mutating-setup.json
+            candidate/outputs/cms-browser-mutating-cleanup.json
+            candidate/outputs/cms-browser-mutating-residue.json
+            candidate/outputs/cms-terminal-coverage-matrix.json
+            candidate/outputs/g12-cms-coverage-matrix.json
+            candidate/outputs/cms-browser-rollback-setup.json
+            candidate/outputs/cms-browser-rollback-cleanup.json
+            candidate/outputs/cms-rollback-authenticated-compatibility.json
+            candidate/outputs/g12-staging-function-deployment.json
+            candidate/outputs/g12-backend-compatibility.json
+            baseline/outputs/cms-coverage-rollback.json
+            candidate/outputs/g12-canary.json
+            g16-csp-browser.json
+            g12-staging-database.json
+            g12-staging-auth.json
+            g12-staging-functions.json
+            g12-staging-migrations-canary.json
+            g12-staging-live-baseline.json
+            g12-staging-rollback-compatibility.json
+            g12-staging-probe.json
+            g12-staging-boundary.json
+            g12-staging-lifecycle.json
             g17-staging-canary.json
+          )
+          for file in "${evidence_files[@]}"
           do
             test -s "$file"
           done
+          # `test -s` mede TAMANHO, nao veredito. Um relatorio que diz `"status":"failed"` por
+          # dentro tem bytes e passava; e o banner do npm impresso antes do canario deixa o
+          # arquivo nao-vazio por construcao mesmo quando o canario estoura no primeiro check.
+          # A presenca continua exigida acima; aqui se exige que o conteudo nao seja uma
+          # reprovacao nem deixe de ser JSON.
+          evidence_json=(
+            candidate/outputs/staging-artifact-bindings.json
+            candidate/outputs/cms-auth-lifecycle.json
+            candidate/outputs/cms-final-coverage.json
+            candidate/outputs/cms-admin-ops-cycles.json
+            candidate/outputs/cms-secondary-ui-cycles.json
+            candidate/outputs/cms-security-boundaries.json
+            candidate/outputs/cms-ui-created-state.json
+            candidate/outputs/cms-real-browser-attestation.json
+            candidate/outputs/cms-public-forward-compatibility.json
+            candidate/outputs/cms-browser-mutating-setup.json
+            candidate/outputs/cms-browser-mutating-cleanup.json
+            candidate/outputs/cms-browser-mutating-residue.json
+            candidate/outputs/cms-terminal-coverage-matrix.json
+            candidate/outputs/g12-cms-coverage-matrix.json
+            candidate/outputs/cms-browser-rollback-setup.json
+            candidate/outputs/cms-browser-rollback-cleanup.json
+            candidate/outputs/cms-rollback-authenticated-compatibility.json
+            candidate/outputs/g12-staging-function-deployment.json
+            candidate/outputs/g12-backend-compatibility.json
+            baseline/outputs/cms-coverage-rollback.json
+            candidate/outputs/g12-canary.json
+            g16-csp-browser.json
+            g12-staging-database.json
+            g12-staging-auth.json
+            g12-staging-functions.json
+            g12-staging-migrations-canary.json
+            g12-staging-live-baseline.json
+            g12-staging-rollback-compatibility.json
+            g12-staging-probe.json
+            g12-staging-boundary.json
+            g12-staging-lifecycle.json
+            g17-staging-canary.json
+          )
+          node scripts/ev2/phase12/verify-staging-evidence.mjs "${evidence_json[@]}"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
@@ -1130,6 +1228,9 @@ jobs:
         env:
           STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        # `cmd | tee` sob `bash -e` devolve o status do tee, sempre 0. `shell: bash` liga
+        # `-eo pipefail`, entao a falha do comando da esquerda volta a reprovar o passo.
+        shell: bash
         run: node scripts/ev2/phase12/verify-staging-database.mjs --source . | tee ../diagnostic-staging-database.json
       - name: DIAGNOSTIC post-baseline migration scenarios with isolated synthetic data
         id: gate_migrations_canary
@@ -1175,6 +1276,9 @@ jobs:
         id: gate_boundary
         continue-on-error: true
         working-directory: candidate
+        # `cmd | tee` sob `bash -e` devolve o status do tee, sempre 0. `shell: bash` liga
+        # `-eo pipefail`, entao a falha do comando da esquerda volta a reprovar o passo.
+        shell: bash
         run: node scripts/ev2/phase12/probe-supabase-boundary.mjs | tee ../diagnostic-staging-boundary.json
         env:
           CMS_BACKEND_ENVIRONMENT: staging
@@ -1187,6 +1291,9 @@ jobs:
         timeout-minutes: 30
         working-directory: candidate
         run: |
+          # `cmd | tee` sob `bash -e` devolve o status do tee, sempre 0. `-e` ja vem ligado por
+          # padrao; falta so o pipefail para a falha do comando da esquerda reprovar o passo.
+          set -o pipefail
           qa_date="$(date -u +%Y%m%d)"
           export GAIATEC_QA_RUN_TAG="QA-CMS-FINAL-${qa_date}-${GAIATEC_EXPECTED_SHA:0:8}"
           node scripts/phase7/staging-roundtrip.mjs | tee ../diagnostic-staging-lifecycle.json
@@ -1201,6 +1308,9 @@ jobs:
         continue-on-error: true
         timeout-minutes: 30
         working-directory: candidate
+        # `cmd | tee` sob `bash -e` devolve o status do tee, sempre 0. `shell: bash` liga
+        # `-eo pipefail`, entao a falha do comando da esquerda volta a reprovar o passo.
+        shell: bash
         run: npm run canary:ev2:phase17 | tee ../diagnostic-g17-canary.json
         env:
           EV2_G17_EXPECTED_SHA: ${{ steps.live.outputs.g17_sha }}

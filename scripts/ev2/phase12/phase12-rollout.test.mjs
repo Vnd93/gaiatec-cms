@@ -2225,11 +2225,21 @@ test("release workflows and reduced canary are immutable, staged and production 
     assert.ok(candidateCycle < traversal, "the handoff must exist before the rollback traversal");
     assert.ok(traversal < revoke, "the entities must still exist when the rollback traversal runs");
 
-    const rollbackTraversal = deployStaging.slice(traversal, traversal + 900);
+    // Recortar por contagem de caracteres amarra a assercao ao tamanho do passo: um comentario a
+    // mais empurrava o env para fora da janela e a regra passava a nao valer sem ninguem notar.
+    const rollbackTraversal = deployStaging.slice(traversal, revoke);
     assert.doesNotMatch(rollbackTraversal, /--grep @ui-bootstrap/);
     assert.doesNotMatch(rollbackTraversal, /--grep @mutating/);
     assert.match(rollbackTraversal, /QA_CMS_ROLLBACK_COMPATIBILITY: "true"/);
-    assert.match(rollbackTraversal, /deployment-url/);
+    // A travessia tem de apontar para o ALIAS. A URL efemera por deployment nao esta no allowlist
+    // de origem, que e conjunto exato, entao cms-session devolveria 403 em toda sessao e o login
+    // AAL2 nunca resolveria o perfil. A assercao anterior exigia justamente a URL efemera, ou
+    // seja, fixava o defeito.
+    assert.match(
+      rollbackTraversal,
+      /PLAYWRIGHT_BASE_URL: https:\/\/ev2-g12-rollback-compat\.gaiatec-cms-staging\.pages\.dev/,
+    );
+    assert.doesNotMatch(rollbackTraversal, /PLAYWRIGHT_BASE_URL:[^\n]*deployment-url/);
   }
   assert.match(stagingDatabaseVerify, /media_upload_abort_0082_rpcs_privileges_exact/);
   assert.match(stagingDatabaseVerify, /media_upload_abort_0082_helpers_locked/);

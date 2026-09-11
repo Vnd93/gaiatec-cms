@@ -115,20 +115,34 @@ export function evaluateBackupScope({ authDataDump, storageDataDump, sourceInven
   if (missingFromDump.length || missingFromInventory.length)
     throw new Error("BACKUP_SCOPE_DUMP_INVENTORY_MISMATCH");
 
+  let runtimeOnlyTables = [];
   if (restored) {
     const divergences = describeScopeDivergence(source, restored);
-    if (divergences.length) {
+    // Uma tabela que existe no alvo, nao existe na origem e esta VAZIA e o runtime gerenciado do
+    // alvo sendo mais novo do que o da origem: o stack local subiu uma versao de storage-api que
+    // acrescenta tabelas que a producao ainda nao tem. Isso nao e restauracao incompleta.
+    //
+    // A tolerancia nao abre buraco: uma tabela que a producao tem e o restore nao trouxe aparece
+    // como `absent_from_restore`, e qualquer tabela extra COM linhas e dado surgindo do nada.
+    // As duas continuam reprovando.
+    const runtimeOnly = divergences.filter(
+      (divergence) => divergence.reason === "absent_from_source" && divergence.restoredRows === 0,
+    );
+    runtimeOnlyTables = runtimeOnly.map((divergence) => divergence.table).sort();
+    const blocking = divergences.filter((divergence) => !runtimeOnly.includes(divergence));
+    if (blocking.length) {
       // Nome de tabela e contagem de linhas ja viajam na cobertura do manifesto selado, entao
       // dize-los aqui nao alarga exposicao nenhuma — e a diferenca entre saber QUAL tabela nao
       // voltou e ter apenas um codigo que obriga a reexecutar o drill para adivinhar.
       const error = new Error(
         `BACKUP_SCOPE_RESTORE_FINGERPRINT_MISMATCH: ${JSON.stringify({
-          divergentTables: divergences.length,
-          divergences: divergences.slice(0, SCOPE_DIVERGENCE_LIMIT),
-          truncated: divergences.length > SCOPE_DIVERGENCE_LIMIT,
+          divergentTables: blocking.length,
+          runtimeOnlyTables,
+          divergences: blocking.slice(0, SCOPE_DIVERGENCE_LIMIT),
+          truncated: blocking.length > SCOPE_DIVERGENCE_LIMIT,
         })}`,
       );
-      error.scopeDivergences = divergences;
+      error.scopeDivergences = blocking;
       throw error;
     }
   }
@@ -157,6 +171,9 @@ export function evaluateBackupScope({ authDataDump, storageDataDump, sourceInven
       fullRowMetadataFingerprint: true,
     },
     excludedPlatformTables: MANAGED_TABLE_EXCLUSIONS,
+    // Declarado, nao silenciado: e a diferenca de versao entre o runtime do alvo efemero e o da
+    // producao, e quem le a evidencia precisa poder ver que ela existe.
+    runtimeOnlyTables,
     sessionReplicationRestoreVerified: Boolean(restored),
     containsRawIdentifiers: false,
     containsObjectNames: false,

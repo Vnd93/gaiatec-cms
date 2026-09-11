@@ -356,6 +356,41 @@ test("backup scope fingerprints every portable Auth and Storage table without ex
   assert.equal(restored.auth.restoreVerified, true);
   assert.equal(restored.storage.restoreVerified, true);
   assert.equal(restored.sessionReplicationRestoreVerified, true);
+  // O alvo efemero sobe uma versao de storage-api mais nova do que a de producao e ganha tabelas
+  // vazias que a origem nao tem. Reprovar por isso seria reprovar o drill pela versao do container;
+  // aceitar em silencio seria esconder que a evidencia foi comparada contra um runtime diferente.
+  const withRuntimeOnly = evaluateBackupScope({
+    authDataDump: authDump,
+    storageDataDump: storageDump,
+    sourceInventory: inventory,
+    restoredInventory: `${inventory}
+storage.iceberg_tables\t0\t${"0".repeat(64)}\n`,
+  });
+  assert.deepEqual(withRuntimeOnly.runtimeOnlyTables, ["storage.iceberg_tables"]);
+  assert.equal(withRuntimeOnly.storage.restoreVerified, true);
+  assert.deepEqual(
+    evaluateBackupScope({
+      authDataDump: authDump,
+      storageDataDump: storageDump,
+      sourceInventory: inventory,
+      restoredInventory: inventory,
+    }).runtimeOnlyTables,
+    [],
+  );
+
+  // O limite da tolerancia: tabela extra COM linhas e dado surgindo do nada, e continua reprovando.
+  assert.throws(
+    () =>
+      evaluateBackupScope({
+        authDataDump: authDump,
+        storageDataDump: storageDump,
+        sourceInventory: inventory,
+        restoredInventory: `${inventory}
+storage.iceberg_tables\t3\t${"0".repeat(64)}\n`,
+      }),
+    /BACKUP_SCOPE_RESTORE_FINGERPRINT_MISMATCH/,
+  );
+
   let scopeFailure;
   try {
     evaluateBackupScope({

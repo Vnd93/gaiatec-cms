@@ -33,7 +33,7 @@ export type CmsUiCreatedState = {
     pageId: string;
     campaignId: string;
   };
-  form: { id: string; versionId: string; key: string; status: "published" };
+  form: { id: string; versionId: string; key: string; fieldKey: string; status: "published" };
   lead: {
     reference: string;
     status: "new" | "assigned" | "in_service" | "responded" | "converted" | "disqualified" | "archived";
@@ -119,7 +119,7 @@ export function loadCmsUiCreatedState(input: {
     "pageId",
     "campaignId",
   ]);
-  exactKeys(form, ["id", "versionId", "key", "status"]);
+  exactKeys(form, ["id", "versionId", "key", "fieldKey", "status"]);
   exactKeys(lead, ["reference", "status", "campaignPath"]);
 
   const idValues = [lease.actorId, ...Object.values(ids), form.id, form.versionId];

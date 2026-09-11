@@ -96,7 +96,10 @@ function staleF48CampaignBody(state: CmsUiCreatedState) {
     formId: state.form.id,
     formVersionId: state.form.versionId,
     idempotencyKey: randomUUID(),
-    fields: { email: `qa-forward-stale-${randomUUID()}@example.invalid` },
+    // A chave do campo e a do formulario publicado, derivada do rotulo pela UI. Com `email`
+    // hardcoded a validacao recusa como unknown-field e devolve 422 ANTES do portao de captcha,
+    // de modo que a assercao de 403 falha e o fail-closed que ela verifica nunca roda.
+    fields: { [state.form.fieldKey]: `qa-forward-stale-${randomUUID()}@example.invalid` },
     origin: {
       path: state.lead.campaignPath,
       source: "campaign",

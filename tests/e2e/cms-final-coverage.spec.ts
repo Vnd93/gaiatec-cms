@@ -35,6 +35,9 @@ import {
   type CmsSourceControlExecution,
   type CmsSourceControlNotApplicable,
 } from "./cms-semantic-control-contract";
+// A mesma funcao que a UI usa para derivar chave de formulario e de campo. Reimplementar a regra
+// aqui deixaria o spec livre para divergir do comportamento que ele existe para verificar.
+import { urlSegmentFromText } from "../../src/admin/url-segment";
 import {
   loadCmsUiCreatedState,
   writeCmsUiCreatedState,
@@ -238,6 +241,7 @@ type EditorialSurfacePlan = {
 type SyntheticFormFixture = {
   formId: string;
   formKey: string;
+  fieldKey: string;
   title: string;
   fieldLabel: string;
   campaignHeading: string;
@@ -1060,9 +1064,12 @@ async function createAndRollbackSyntheticForm(
   onCreated?: (form: SyntheticFormFixture) => void,
 ): Promise<SyntheticFormFixture> {
   const instance = randomUUID().replaceAll("-", "").slice(0, 8);
-  const formKey = `qa-ops-${runTag.toLowerCase()}-${instance}`;
   const title = `${runTag} Formulário operacional ${instance}`;
   const fieldLabel = `${runTag} E-mail sintético`;
+  // Derivadas como AdminFormsPage deriva: resolvedKey = urlSegmentFromText(title, 100) e
+  // field.key = urlSegmentFromText(field.label, 100). Nenhuma das duas e digitada em lugar nenhum.
+  const formKey = urlSegmentFromText(title, 100);
+  const fieldKey = urlSegmentFromText(fieldLabel, 100);
   const campaignHeading = `${runTag} Formulário controlado`;
   await page.goto("/admin/marketing/formularios", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Formulários versionados" })).toBeVisible();
@@ -1133,7 +1140,7 @@ async function createAndRollbackSyntheticForm(
   );
   const formId = String(created.result.formId ?? "");
   const versionOneId = String(created.result.versionId ?? "");
-  const fixture = { formId, formKey, title, fieldLabel, campaignHeading, versionOneId };
+  const fixture = { formId, formKey, fieldKey, title, fieldLabel, campaignHeading, versionOneId };
   if (/^[0-9a-f-]{36}$/i.test(formId)) onCreated?.(fixture);
   if (
     !/^[0-9a-f-]{36}$/i.test(formId) ||
@@ -4502,6 +4509,11 @@ test.describe.serial("homologação final CMS source-backed", () => {
     );
     const source = inventory();
     const protectedRoutes = source.matrix.filter((item) => item.testMode === "authenticated");
+    // Sao ~38 rotas autenticadas, cada uma com goto, boot do bundle admin e redirect ate
+    // /admin/login, agora contra o edge da Cloudflare e nao contra 127.0.0.1. O teto padrao de
+    // 30s do Playwright nao cobre o laco; o teste irmao @semantic declara orcamento proprio pelo
+    // mesmo motivo, e este nao declarava nenhum.
+    test.setTimeout(Math.max(10 * 60_000, (protectedRoutes.length + 4) * 4_000));
     const observations: Array<Record<string, unknown>> = [];
 
     for (const surface of protectedRoutes) {
@@ -4595,7 +4607,11 @@ test.describe.serial("homologação final CMS source-backed", () => {
     const createdState = uiCreatedState(mutationTargetEnvironment(), auth.expectedSha, runTag);
     const ids = createdState.ids;
     const frontendExpectedSha = authenticatedFrontendSha(auth.expectedSha);
-    const rollbackCompatibility = frontendExpectedSha !== auth.expectedSha;
+    // A desigualdade de SHA nunca e verdadeira: o passo 3 do job forca
+    // `test "$ROLLBACK_REF" = "$candidate_sha"`. Derivar o modo dela deixava o ramo morto e o passo
+    // percorrendo as quatro viewports, sem atestar o que o nome dele promete. A desigualdade segue
+    // existindo como validacao dentro de authenticatedFrontendSha.
+    const rollbackCompatibility = process.env.QA_CMS_ROLLBACK_COMPATIBILITY === "true";
     const testedViewports = rollbackCompatibility
       ? viewportMatrix.filter(({ name }) => name === "1440x900")
       : viewportMatrix;
@@ -5027,7 +5043,11 @@ test.describe.serial("homologação final CMS source-backed", () => {
     );
     if (!configuration.enabled) throw new Error("Gate mutante inconsistente após o opt-in.");
 
-    test.setTimeout(25 * 60_000);
+    // 15 destes minutos pertencem a espera humana da atestacao em navegador real, cujo teto e
+    // acoplado ao expiresAt do desafio e por isso nao pode subir: uma atestacao mais velha reprova na
+    // validacao de binding. Logo e o envelope que precisa cobrir o rendezvous MAIS o ciclo editorial,
+    // em vez de deixar ~10 minutos para tudo o que vem depois da espera.
+    test.setTimeout(40 * 60_000);
     const { environment, auth, runTag, supabaseOrigin } = configuration;
     const source = inventory();
     let plans: EditorialSurfacePlan[] = [];
@@ -5914,6 +5934,10 @@ test.describe.serial("homologação final CMS source-backed", () => {
             id: pendingUiHandoff.form.formId,
             versionId: pendingUiHandoff.form.versionOneId,
             key: pendingUiHandoff.form.formKey,
+            // A chave do campo tambem e derivada pela UI, a partir do rotulo. Quem consome o
+            // handoff precisa dela: inventar `email` produz `unknown-field` e 422, e o portao de
+            // captcha que o gate existe para provar nunca chega a ser exercitado.
+            fieldKey: pendingUiHandoff.form.fieldKey,
             status: "published",
           },
           lead: pendingUiHandoff.lead,

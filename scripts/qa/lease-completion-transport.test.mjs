@@ -14,7 +14,11 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const FIXTURE = "scripts/qa/cms-browser-fixture.mjs";
+// A guarda lia UM arquivo enquanto o passo 48 roda DOIS specs, nos dois projetos do Playwright.
+// Proibir `networkidle` em um e deixar o vizinho livre e a forma mais barata de a regra existir
+// sem valer: products-catalog.spec.ts mantinha tres navegacoes contra o mesmo alias publicado.
 const SPEC = "tests/e2e/routes-and-a11y.spec.ts";
+const PUBLISHED_ALIAS_SPECS = [SPEC, "tests/e2e/products-catalog.spec.ts"];
 
 const read = (path) => readFile(path, "utf8");
 
@@ -109,23 +113,38 @@ test("managementQuery propaga status e SQLSTATE em vez de uma mensagem generica"
   assert.doesNotMatch(fixture, /QA_CMS_FIXTURE_MANAGEMENT_QUERY_FAILED[^\n]*\$\{detail\}/);
 });
 
-test("nenhuma navegacao da suite usa networkidle", async () => {
-  const spec = await read(SPEC);
+test("nenhuma navegacao das suites contra o alias publicado usa networkidle", async () => {
+  for (const path of PUBLISHED_ALIAS_SPECS) {
+    const spec = await read(path);
 
-  // `networkidle` nao assenta contra um origin publicado com service worker ativo: cada contexto novo
-  // do Playwright reinstala e pre-cacheia, e o silencio de rede nao chega em 30 s. Aumentar o prazo
-  // so troca falha rapida por lenta.
-  assert.doesNotMatch(spec, /waitUntil:\s*"networkidle"/);
-  assert.doesNotMatch(spec, /waitUntil:\s*'networkidle'/);
+    // `networkidle` nao assenta de forma confiavel contra um origin publicado com service worker
+    // ativo: o SW assume o controle no activate, a pagina recarrega no controllerchange e a
+    // revalidacao em segundo plano mantem requisicoes de pe. Aumentar o prazo so troca falha
+    // rapida por lenta.
+    assert.doesNotMatch(spec, /waitUntil:\s*"networkidle"/, path);
+    assert.doesNotMatch(spec, /waitUntil:\s*'networkidle'/, path);
 
-  const navigations = spec.match(/page\.goto\([^)]*waitUntil:\s*"([a-z]+)"/g) ?? [];
-  assert.ok(
-    navigations.length >= 6,
-    `esperava ao menos 6 navegacoes explicitas, achei ${navigations.length}`,
-  );
-  for (const navigation of navigations) {
-    assert.match(navigation, /waitUntil:\s*"(load|commit|domcontentloaded)"/);
+    const navigations = spec.match(/page\.goto\([^)]*waitUntil:\s*"([a-z]+)"/g) ?? [];
+    for (const navigation of navigations) {
+      assert.match(navigation, /waitUntil:\s*"(load|commit|domcontentloaded)"/, path);
+    }
   }
+
+  // A contagem continua amarrada ao spec que declara a travessia completa; products-catalog tem
+  // tres navegacoes por desenho e exigir seis dele reprovaria a guarda em vez do defeito.
+  const routes = await read(SPEC);
+  const routeNavigations = routes.match(/page\.goto\([^)]*waitUntil:\s*"([a-z]+)"/g) ?? [];
+  assert.ok(
+    routeNavigations.length >= 6,
+    `esperava ao menos 6 navegacoes explicitas, achei ${routeNavigations.length}`,
+  );
+});
+
+test("o spec que intercepta cms-public bloqueia o service worker", async () => {
+  // Request interception nao e confiavel quando um service worker controla a pagina. Sem o bloqueio,
+  // o spec pode observar o catalogo real de staging e ainda assim afirmar que verificou a fixture.
+  const catalog = await read("tests/e2e/products-catalog.spec.ts");
+  assert.match(catalog, /test\.use\(\{\s*serviceWorkers:\s*"block"\s*\}\);/);
 });
 
 test("cada navegacao trocada mantem assercao explicita sobre o conteudo que examina", async () => {

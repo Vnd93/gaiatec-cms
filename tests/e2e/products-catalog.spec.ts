@@ -1,5 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 
+// A interceptacao de cms-public abaixo e incondicional, e request interception nao e confiavel
+// quando um service worker controla a pagina. Sem isto o spec pode observar o catalogo real de
+// staging em vez da fixture que ele afirma verificar.
+test.use({ serviceWorkers: "block" });
+
 const governedImageUrl =
   "https://media.gaiatec-qa.invalid/functions/v1/cms-public?type=media&kind=product&slug=produto-imagem-governada&slot=primary";
 const onePixelPng = Buffer.from(
@@ -135,7 +140,7 @@ async function mockPublishedProductWithGovernedImage(page: Page) {
 
 test("product catalog preserves filters, cards and comparison flow", async ({ page }) => {
   await mockProductCatalog(page);
-  await page.goto("/produtos", { waitUntil: "networkidle" });
+  await page.goto("/produtos", { waitUntil: "load" });
 
   await expect(page.getByRole("heading", { name: /encontre o equipamento certo/i })).toBeVisible();
   await expect(page.getByRole("complementary", { name: "Filtros do catálogo" })).toBeVisible();
@@ -167,7 +172,7 @@ test("product catalog preserves filters, cards and comparison flow", async ({ pa
 test("product catalog remains usable on a narrow viewport", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile-chromium", "mobile layout");
   await mockProductCatalog(page);
-  await page.goto("/produtos", { waitUntil: "networkidle" });
+  await page.goto("/produtos", { waitUntil: "load" });
 
   const card = page.locator(".catalog-product-card").first();
   await expect(card).toBeVisible();
@@ -203,7 +208,7 @@ test("published governed image loads cross-site without a CORP browser failure",
   await mockPublishedProductWithGovernedImage(page);
 
   const mediaResponsePromise = page.waitForResponse((response) => response.url() === governedImageUrl);
-  await page.goto("/produtos/produto-imagem-governada", { waitUntil: "networkidle" });
+  await page.goto("/produtos/produto-imagem-governada", { waitUntil: "load" });
   const mediaResponse = await mediaResponsePromise;
   const image = page.getByRole("img", { name: "Imagem pública governada" });
 

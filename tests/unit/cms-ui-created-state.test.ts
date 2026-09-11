@@ -34,7 +34,9 @@ const state: CmsUiCreatedState = {
   form: {
     id: "80000000-0000-4000-8000-000000000010",
     versionId: "80000000-0000-4000-8000-000000000011",
-    key: "qa-ops-qa-cms-final-20260907-aaaaaaaa-deadbeef",
+    // Chaves como a UI as deriva: do titulo e do rotulo, nunca digitadas.
+    key: "qa-cms-final-20260907-aaaaaaaa-formulario-operacional-deadbeef",
+    fieldKey: "qa-cms-final-20260907-aaaaaaaa-e-mail-sintetico",
     status: "published",
   },
   lead: {

@@ -14,7 +14,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 const RUN_ID_PATTERN = /^[1-9]\d{5,19}$/;
 const ARCHIVE_FILE_PATTERN = /^supabase-production-backup-([1-9]\d{5,19})-([1-9]\d*)\.tar\.gz\.gpg$/;
 const RESTORE_CHECKS = Object.freeze([
-  "portableRoleCatalogMatched",
+  "dumpGovernedRolesRestored",
   "schemaRestored",
   "publicTableInventoryMatched",
   "publicRowCountsMatched",
@@ -279,18 +279,32 @@ export function validateProductionBackupManifest(
     violations.push("backup_manifest_unproven_coverage_invalid");
   if (
     drillPerformed &&
-    (manifest?.coverage?.roles?.portableRoleCatalogMatched !== true ||
+    (manifest?.coverage?.roles?.dumpGovernedRolesRestored !== true ||
+      manifest?.coverage?.roles?.rolesChangedButNotConverged !== 0 ||
       manifest?.coverage?.roles?.rolesRestoredExactly !== false ||
       manifest?.coverage?.roles?.credentialsRestored !== false ||
+      !Number.isSafeInteger(manifest?.coverage?.roles?.rolesNotReconstructableFromDump) ||
+      !Number.isSafeInteger(manifest?.coverage?.roles?.rolesDivergingFromTargetBaseline) ||
+      !Number.isSafeInteger(manifest?.coverage?.roles?.dumpCreateRoleStatements) ||
       !SHA256_PATTERN.test(manifest?.coverage?.roles?.portableCatalogSha256 ?? ""))
   )
     violations.push("backup_manifest_role_scope_invalid");
+  // Um papel que o dump nao consegue reconstruir so pode existir junto da limitacao declarada. Sem
+  // essa amarra, o escopo enumerado viraria um numero que ninguem precisa explicar.
+  if (
+    drillPerformed &&
+    manifest?.coverage?.roles?.dumpCreateRoleStatements === 0 &&
+    !(manifest?.intentionalLimitations ?? []).includes(
+      "role-existence-is-not-restored-by-the-role-dump",
+    )
+  )
+    violations.push("backup_manifest_role_existence_limitation_undeclared");
   if (
     !drillPerformed &&
     (manifest?.coverage?.roles?.event !== "supabase.backup.roles.source-verified" ||
       manifest?.coverage?.roles?.credentialsIncludedInFingerprint !== false ||
       !SHA256_PATTERN.test(manifest?.coverage?.roles?.portableCatalogSha256 ?? "") ||
-      "portableRoleCatalogMatched" in (manifest?.coverage?.roles ?? {}))
+      "dumpGovernedRolesRestored" in (manifest?.coverage?.roles ?? {}))
   )
     violations.push("backup_manifest_unproven_role_scope_invalid");
   if (!validReportBindings(manifest?.reports, { drillPerformed }))
@@ -360,6 +374,10 @@ export function buildProductionBackupEvidence(manifest, { manifestBytes, now } =
     reportDigests: manifest.reports,
     roleRestore: {
       portableRoleCatalogMatched: manifest.coverage.roles.portableRoleCatalogMatched,
+      dumpGovernedRolesRestored: manifest.coverage.roles.dumpGovernedRolesRestored,
+      rolesNotReconstructableFromDump: manifest.coverage.roles.rolesNotReconstructableFromDump,
+      rolesDivergingFromTargetBaseline: manifest.coverage.roles.rolesDivergingFromTargetBaseline,
+      dumpCreateRoleStatements: manifest.coverage.roles.dumpCreateRoleStatements,
       rolesRestoredExactly: manifest.coverage.roles.rolesRestoredExactly,
       credentialsRestored: manifest.coverage.roles.credentialsRestored,
       limitation: manifest.coverage.roles.limitation,

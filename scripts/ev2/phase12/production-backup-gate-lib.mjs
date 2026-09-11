@@ -234,7 +234,8 @@ export function verifyDownloadedProductionBackup({
     restoreRoles?.schemaVersion !== 1 ||
     restoreRoles?.event !== "supabase.backup.roles.restore-verified" ||
     restoreRoles?.phase !== "restore" ||
-    restoreRoles?.portableRoleCatalogMatched !== true ||
+    restoreRoles?.dumpGovernedRolesRestored !== true ||
+    restoreRoles?.rolesChangedButNotConverged !== 0 ||
     restoreRoles?.rolesRestoredExactly !== false ||
     restoreRoles?.credentialsRestored !== false ||
     restoreRoles?.platformManagedGucSettingsRestored !== false ||

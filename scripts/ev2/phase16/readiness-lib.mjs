@@ -163,7 +163,7 @@ export function validateBackupEvidenceBinding(control, evidence, { evidenceSha25
   if (
     !checks ||
     [
-      "portableRoleCatalogMatched",
+      "dumpGovernedRolesRestored",
       "schemaRestored",
       "publicTableInventoryMatched",
       "publicRowCountsMatched",
@@ -179,7 +179,8 @@ export function validateBackupEvidenceBinding(control, evidence, { evidenceSha25
     violations.push("backup_evidence_restore_checks_incomplete");
   if (checks?.rolesRestored !== false) violations.push("backup_evidence_role_restore_claim_invalid");
   if (
-    evidence?.roleRestore?.portableRoleCatalogMatched !== true ||
+    evidence?.roleRestore?.dumpGovernedRolesRestored !== true ||
+    !Number.isSafeInteger(evidence?.roleRestore?.rolesNotReconstructableFromDump) ||
     evidence?.roleRestore?.rolesRestoredExactly !== false ||
     evidence?.roleRestore?.credentialsRestored !== false ||
     evidence?.roleRestore?.limitation !== "role-passwords-and-role-settings-are-not-restored"

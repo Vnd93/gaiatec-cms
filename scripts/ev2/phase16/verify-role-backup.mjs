@@ -161,6 +161,7 @@ export function buildRoleRestoreReport({
   sourceDetail,
   restoredDetail,
   baselineDetail,
+  dumpShape,
 }) {
   const restored = parseRoleFingerprint(restoredSource);
   // Um relatorio de origem malformado nao e uma divergencia de restauracao. Antes as duas falhas
@@ -193,11 +194,29 @@ export function buildRoleRestoreReport({
   );
   assertRoleDetailMatchesAggregate(restored, restoredRoles, "BACKUP_ROLE_RESTORED_DETAIL_INCONSISTENT");
 
-  if (
-    restored.roleCount !== sourceReport.roleCount ||
-    restored.fingerprint !== sourceReport.portableCatalogSha256
-  ) {
-    const divergence = describeRoleDivergence(sourceRoles, restoredRoles, baselineRoles);
+  if (!Number.isSafeInteger(dumpShape?.createRoleStatements) || dumpShape.createRoleStatements < 0)
+    throw new Error("BACKUP_ROLE_DUMP_SHAPE_REQUIRED");
+
+  const divergence = describeRoleDivergence(sourceRoles, restoredRoles, baselineRoles);
+  const catalogMatched =
+    restored.roleCount === sourceReport.roleCount &&
+    restored.fingerprint === sourceReport.portableCatalogSha256;
+
+  // Um papel ausente do alvo que tambem nao estava na linha de base so e limite legitimo enquanto
+  // o dump nao emite `CREATE ROLE`. No dia em que emitir, o mesmo papel ausente volta a ser
+  // falha de restauracao — a excecao morre sozinha em vez de virar permissao permanente.
+  const rolesNotReconstructableFromDump =
+    dumpShape.createRoleStatements === 0 ? divergence.missingRolesAbsentFromBaseline : 0;
+  const rolesMissingDespiteTarget =
+    divergence.rolesMissingFromRestore - rolesNotReconstructableFromDump;
+
+  // O que o backup consegue provar: nada que o dump governou deixou de convergir, o alvo nao
+  // perdeu papel que ja tinha e nao ganhou papel que a origem nao tem.
+  const dumpGovernedRolesRestored =
+    divergence.driftedRolesChangedButNotConverged === 0 &&
+    divergence.rolesOnlyInRestore === 0 &&
+    rolesMissingDespiteTarget === 0;
+  if (!dumpGovernedRolesRestored) {
     const error = new Error(
       `BACKUP_ROLE_RESTORE_FINGERPRINT_MISMATCH: ${JSON.stringify(divergence)}`,
     );
@@ -209,13 +228,31 @@ export function buildRoleRestoreReport({
     event: "supabase.backup.roles.restore-verified",
     phase: "restore",
     roleCount: restored.roleCount,
+    sourceRoleCount: sourceReport.roleCount,
+    baselineRoleCount: baselineRoles.length,
     portableCatalogSha256: restored.fingerprint,
+    sourceCatalogSha256: sourceReport.portableCatalogSha256,
     sourceRoleDumpSha256: sourceReport.roleDumpSha256,
-    portableRoleCatalogMatched: true,
+    // Fato relatado, nao condicao de aprovacao: contra um alvo gerenciado e pre-semeado a
+    // igualdade de catalogo nao e alcancavel, e afirmar o contrario seria inventar cobertura.
+    portableRoleCatalogMatched: catalogMatched,
+    // Condicao de aprovacao: o que o dump governa foi restaurado.
+    dumpGovernedRolesRestored: true,
+    rolesRestoredIdentically: divergence.identicalRoles,
+    rolesNotReconstructableFromDump,
+    rolesDivergingFromTargetBaseline: divergence.driftedRolesUntouchedByRestore,
+    rolesChangedButNotConverged: 0,
+    dumpCreateRoleStatements: dumpShape.createRoleStatements,
     rolesRestoredExactly: false,
     credentialsRestored: false,
     platformManagedGucSettingsRestored: false,
     limitation: "role-passwords-and-role-settings-are-not-restored",
+    limitations: [
+      "role-passwords-and-role-settings-are-not-restored",
+      ...(dumpShape.createRoleStatements === 0
+        ? ["role-existence-is-not-restored-by-the-role-dump"]
+        : []),
+    ],
     containsRoleNames: false,
   };
 }
@@ -246,7 +283,15 @@ async function main() {
     const sourceDetail = argument("--source-detail");
     const restoredDetail = argument("--restored-detail");
     const baselineDetail = argument("--baseline-detail");
-    if (!sourceReport || !restored || !sourceDetail || !restoredDetail || !baselineDetail)
+    const dumpShapePath = argument("--dump-shape");
+    if (
+      !sourceReport ||
+      !restored ||
+      !sourceDetail ||
+      !restoredDetail ||
+      !baselineDetail ||
+      !dumpShapePath
+    )
       throw new Error("BACKUP_ROLE_RESTORE_PATHS_REQUIRED");
     report = buildRoleRestoreReport({
       sourceReport: JSON.parse(await readFile(sourceReport, "utf8")),
@@ -254,6 +299,7 @@ async function main() {
       sourceDetail: await readFile(sourceDetail, "utf8"),
       restoredDetail: await readFile(restoredDetail, "utf8"),
       baselineDetail: await readFile(baselineDetail, "utf8"),
+      dumpShape: JSON.parse(await readFile(dumpShapePath, "utf8")),
     });
   } else {
     throw new Error("BACKUP_ROLE_REPORT_MODE_INVALID");
@@ -264,6 +310,8 @@ async function main() {
       event: report.event,
       roleCount: report.roleCount,
       portableCatalogMatched: report.portableRoleCatalogMatched ?? report.beforeAfterExact,
+      dumpGovernedRolesRestored: report.dumpGovernedRolesRestored ?? null,
+      rolesNotReconstructableFromDump: report.rolesNotReconstructableFromDump ?? null,
       exactCredentialRestoreClaimed: false,
       identifiersExposed: false,
     }),

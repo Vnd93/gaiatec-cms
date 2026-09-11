@@ -188,12 +188,14 @@ if (
 if (
   restoreDrillPerformed &&
   (restoreRoles.value?.event !== "supabase.backup.roles.restore-verified" ||
-    restoreRoles.value?.portableRoleCatalogMatched !== true ||
+    restoreRoles.value?.dumpGovernedRolesRestored !== true ||
+    restoreRoles.value?.rolesChangedButNotConverged !== 0 ||
     restoreRoles.value?.rolesRestoredExactly !== false ||
     restoreRoles.value?.credentialsRestored !== false ||
     restoreRoles.value?.platformManagedGucSettingsRestored !== false ||
     restoreRoles.value?.limitation !== "role-passwords-and-role-settings-are-not-restored" ||
-    restoreRoles.value?.portableCatalogSha256 !== sourceRoles.value.portableCatalogSha256)
+    !Array.isArray(restoreRoles.value?.limitations) ||
+    restoreRoles.value?.sourceCatalogSha256 !== sourceRoles.value.portableCatalogSha256)
 )
   throw new Error("ROLE_RESTORE_REPORT_INVALID");
 
@@ -219,7 +221,7 @@ const completeDataRestoreDrill =
   restoreStorage.value.restoreVerified === true;
 const restoreVerifications = {
   rolesRestored: false,
-  portableRoleCatalogMatched: restoreRoles?.value?.portableRoleCatalogMatched === true,
+  dumpGovernedRolesRestored: restoreRoles?.value?.dumpGovernedRolesRestored === true,
   schemaRestored: completeDataRestoreDrill,
   publicTableInventoryMatched: completeDataRestoreDrill,
   publicRowCountsMatched: completeDataRestoreDrill,
@@ -297,10 +299,16 @@ const manifest = {
   },
   completeDataRestoreDrill,
   completeDisasterRecovery: false,
+  // As limitacoes que o proprio relatorio de papeis declara entram aqui. A que importa hoje e a
+  // existencia de papel: um dump sem CREATE ROLE nao recria um papel perdido, e isso e mais largo
+  // do que a frase sobre senhas e settings que ja existia.
   intentionalLimitations: [
     "auth-runtime-credential-and-mfa-challenges-require-a-target-environment-drill",
     "role-passwords-and-role-settings-are-not-restored",
     "platform-schema-migration-ledgers-are-recreated-by-the-managed-runtime",
+    ...(restoreRoles?.value?.limitations ?? []).filter(
+      (limitation) => limitation !== "role-passwords-and-role-settings-are-not-restored",
+    ),
   ],
   sensitiveValuesLogged: false,
 };

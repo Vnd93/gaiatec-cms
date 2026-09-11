@@ -797,10 +797,20 @@ test("role evidence detects source races and states the portable restore limitat
     sourceDetail: catalog.detailSource,
     restoredDetail: catalog.detailSource,
     baselineDetail: catalog.detailSource,
+    dumpShape: { createRoleStatements: 0 },
   });
   assert.equal(source.raceVerified, true);
   assert.equal(source.credentialsIncludedInFingerprint, false);
   assert.equal(restored.portableRoleCatalogMatched, true);
+  assert.equal(restored.dumpGovernedRolesRestored, true);
+  assert.equal(restored.rolesChangedButNotConverged, 0);
+  assert.equal(restored.rolesNotReconstructableFromDump, 0);
+  assert.equal(restored.sourceCatalogSha256, source.portableCatalogSha256);
+  // Um dump sem CREATE ROLE nao recria papel perdido, e isso tem de estar dito no proprio
+  // relatorio, nao apenas na cabeca de quem leu o log uma vez.
+  assert.ok(
+    restored.limitations.includes("role-existence-is-not-restored-by-the-role-dump"),
+  );
   assert.equal(restored.rolesRestoredExactly, false);
   assert.equal(restored.credentialsRestored, false);
   assert.equal(restored.platformManagedGucSettingsRestored, false);
@@ -848,6 +858,7 @@ test("a role restore divergence names what diverged without naming a role", () =
       sourceDetail: catalog.detailSource,
       restoredDetail: restoredCatalog.detailSource,
       baselineDetail: restoredCatalog.detailSource,
+      dumpShape: { createRoleStatements: 1 },
     });
   } catch (error) {
     thrown = error;
@@ -898,6 +909,89 @@ test("a role restore divergence names what diverged without naming a role", () =
   assert.doesNotMatch(thrown.message, /[a-f0-9]{64}/);
 });
 
+test("the declared role scope passes only while the dump cannot create a role", () => {
+  const catalog = roleCatalog(PRODUCTION_ROLES);
+  const source = buildRoleSourceReport({
+    beforeSource: catalog.aggregate,
+    afterSource: catalog.aggregate,
+    roleDump: Buffer.from("synthetic role dump"),
+  });
+
+  // Exatamente o que a producao mede: um papel que o alvo efemero nunca teve, e um papel que diverge
+  // no valor de fabrica do alvo sem que a restauracao o tenha tocado.
+  const targetRoles = [
+    ...PRODUCTION_ROLES.slice(1, 7),
+    { name: "supabase_storage_admin", attributes: "factory", memberOf: ["authenticator"] },
+  ];
+  const target = roleCatalog(targetRoles);
+
+  const report = buildRoleRestoreReport({
+    sourceReport: source,
+    restoredSource: target.aggregate,
+    sourceDetail: catalog.detailSource,
+    restoredDetail: target.detailSource,
+    baselineDetail: target.detailSource,
+    dumpShape: { createRoleStatements: 0 },
+  });
+
+  // A igualdade de catalogo continua sendo relatada como o que e: falsa. O que aprova e o escopo que
+  // o dump governa, e o que ele nao alcanca sai enumerado em vez de silenciado.
+  assert.equal(report.portableRoleCatalogMatched, false);
+  assert.equal(report.dumpGovernedRolesRestored, true);
+  assert.equal(report.rolesNotReconstructableFromDump, 1);
+  assert.equal(report.rolesDivergingFromTargetBaseline, 1);
+  assert.equal(report.rolesChangedButNotConverged, 0);
+  assert.equal(report.sourceRoleCount, 8);
+  assert.equal(report.baselineRoleCount, 7);
+  assert.ok(report.limitations.includes("role-existence-is-not-restored-by-the-role-dump"));
+
+  // E a excecao morre sozinha: no dia em que o dump emitir CREATE ROLE, o mesmo papel ausente volta a
+  // ser falha de restauracao, sem ninguem precisar lembrar de reapertar o gate.
+  assert.throws(
+    () =>
+      buildRoleRestoreReport({
+        sourceReport: source,
+        restoredSource: target.aggregate,
+        sourceDetail: catalog.detailSource,
+        restoredDetail: target.detailSource,
+        baselineDetail: target.detailSource,
+        dumpShape: { createRoleStatements: 1 },
+      }),
+    /BACKUP_ROLE_RESTORE_FINGERPRINT_MISMATCH/,
+  );
+
+  // Papel que a restauracao TOCOU e ainda assim nao convergiu nunca e limite declarado: e defeito.
+  const movedByRestore = roleCatalog([
+    ...PRODUCTION_ROLES.slice(1, 7),
+    { name: "supabase_storage_admin", attributes: "moved-by-restore" },
+  ]);
+  assert.throws(
+    () =>
+      buildRoleRestoreReport({
+        sourceReport: source,
+        restoredSource: movedByRestore.aggregate,
+        sourceDetail: catalog.detailSource,
+        restoredDetail: movedByRestore.detailSource,
+        baselineDetail: target.detailSource,
+        dumpShape: { createRoleStatements: 0 },
+      }),
+    /BACKUP_ROLE_RESTORE_FINGERPRINT_MISMATCH/,
+  );
+
+  // A composicao do dump e obrigatoria: sem ela a excecao nao tem como ser condicional.
+  assert.throws(
+    () =>
+      buildRoleRestoreReport({
+        sourceReport: source,
+        restoredSource: target.aggregate,
+        sourceDetail: catalog.detailSource,
+        restoredDetail: target.detailSource,
+        baselineDetail: target.detailSource,
+      }),
+    /BACKUP_ROLE_DUMP_SHAPE_REQUIRED/,
+  );
+});
+
 test("the per-role detail is not taken on trust: it has to rebuild the aggregate", () => {
   const catalog = roleCatalog(PRODUCTION_ROLES);
   const source = buildRoleSourceReport({
@@ -917,6 +1011,7 @@ test("the per-role detail is not taken on trust: it has to rebuild the aggregate
         sourceDetail: foreign.detailSource,
         restoredDetail: catalog.detailSource,
         baselineDetail: catalog.detailSource,
+        dumpShape: { createRoleStatements: 0 },
       }),
     /BACKUP_ROLE_SOURCE_DETAIL_INCONSISTENT/,
   );
@@ -928,6 +1023,7 @@ test("the per-role detail is not taken on trust: it has to rebuild the aggregate
         sourceDetail: catalog.detailSource,
         restoredDetail: foreign.detailSource,
         baselineDetail: catalog.detailSource,
+        dumpShape: { createRoleStatements: 0 },
       }),
     /BACKUP_ROLE_RESTORED_DETAIL_INCONSISTENT/,
   );
@@ -967,6 +1063,7 @@ test("a malformed source report no longer reads as a restore divergence", () => 
         sourceDetail: catalog.detailSource,
         restoredDetail: catalog.detailSource,
         baselineDetail: catalog.detailSource,
+        dumpShape: { createRoleStatements: 0 },
       }),
     /BACKUP_ROLE_SOURCE_REPORT_INVALID/,
   );
@@ -1159,6 +1256,7 @@ test("backup manifest seals the archive and binds distinct source and restore ev
     sourceDetail: roleCatalogFixture.detailSource,
     restoredDetail: roleCatalogFixture.detailSource,
     baselineDetail: roleCatalogFixture.detailSource,
+    dumpShape: { createRoleStatements: 0 },
   });
   const environment = {
     ...process.env,
@@ -1964,7 +2062,8 @@ test("production and canary workflows retain evidence and stay behind their boun
   assert.match(manifestWriter, /metadataAggregateSha256/);
   assert.match(manifestWriter, /reports:/);
   assert.match(manifestWriter, /storageSnapshotStability/);
-  assert.match(manifestWriter, /portableRoleCatalogMatched/);
+  assert.match(manifestWriter, /dumpGovernedRolesRestored/);
+  assert.match(manifestWriter, /role-existence-is-not-restored-by-the-role-dump|limitations/);
   assert.match(manifestWriter, /rolesRestored: false/);
   assert.match(manifestWriter, /completeDataRestoreDrill/);
   assert.match(manifestWriter, /completeDisasterRecovery: false/);

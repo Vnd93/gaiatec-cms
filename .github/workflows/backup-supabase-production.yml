@@ -319,7 +319,8 @@ jobs:
             psql "$local_db_url" --no-psqlrc -X -v ON_ERROR_STOP=1 -c \
             "drop schema if exists public cascade; drop schema if exists private cascade;"
           node scripts/ev2/phase16/prepare-role-restore.mjs \
-            "$restore_dir/extracted/roles.sql" "$restore_dir/roles.restore.sql"
+            "$restore_dir/extracted/roles.sql" "$restore_dir/roles.restore.sql" \
+            | tee "$restore_dir/role-dump-shape.json"
           run_restore_psql BACKUP_RESTORE_PORTABLE_ROLES_FAILED \
             psql "$local_db_url" --no-psqlrc -X -v ON_ERROR_STOP=1 -f "$restore_dir/roles.restore.sql"
           psql "$local_db_url" --no-psqlrc -X -qAt -v ON_ERROR_STOP=1 \
@@ -332,6 +333,7 @@ jobs:
             --restored "$restore_dir/restored-roles.tsv" \
             --restored-detail "$restore_dir/restored-roles-detail.tsv" \
             --baseline-detail "$restore_dir/baseline-roles-detail.tsv" \
+            --dump-shape "$restore_dir/role-dump-shape.json" \
             --output "$artifact_dir/role-restore-report.json"
           run_restore_psql BACKUP_RESTORE_APPLICATION_SCHEMA_FAILED \
             psql "$local_db_url" --no-psqlrc -X -v ON_ERROR_STOP=1 -f "$restore_dir/extracted/schema.sql"

@@ -515,7 +515,13 @@ test("staging workflow exercises the exact-SHA governed lifecycle with disposabl
     "the immutable shell must pass its probe before the synthetic lifecycle starts",
   );
   assert.match(workflow, /g12-staging-lifecycle\.json/);
-  assert.match(workflow, /^\s+g12-canary\.json$/m);
+  // O relatorio do canario phase12 mora dentro do checkout, e nao na raiz do workspace: o script
+  // recusa caminho fora do proprio cwd, e o step roda em `candidate`. `../g12-canary.json` seria
+  // recusado com G12_REPORT_PATH_REFUSED ao fim do canario, com staging ja mutado.
+  assert.match(workflow, /^\s+candidate\/outputs\/g12-canary\.json$/m);
+  // Apenas o canario phase12 tem essa guarda; rollout-probe.mjs escreve onde mandarem, e por isso os
+  // demais relatorios podem continuar na raiz do workspace.
+  assert.doesNotMatch(workflow, /EV2_G12_REPORT_PATH: \.\.\/g12-canary\.json/);
   assert.match(workflow, /^\s+g16-csp-browser\.json$/m);
   assert.match(workflow, /candidate\/outputs\/cms-final-coverage\.json/);
   assert.match(workflow, /candidate\/outputs\/cms-auth-lifecycle\.json/);

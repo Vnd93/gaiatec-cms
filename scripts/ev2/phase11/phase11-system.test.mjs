@@ -397,10 +397,15 @@ test("a measurement reproval names the budget it missed", async () => {
 
   // `record_run` responde apenas `failed`, sem dizer qual orcamento estourou. Sem isto a reprovacao
   // nao tem causa em lugar nenhum: nem na resposta, nem no log.
-  assert.match(
-    canary,
-    /missedBudgets = budgetsMissed\(operatorCapability\.json\.baselines, submittedMetrics\)/,
+  assert.match(canary, /const missedBudgets = budgetsMissed\(backendBaselines, metrics\);/);
+  // Medir nao e afirmar: as metricas de backend saem sempre, inclusive quando a medicao e pulada,
+  // porque e por elas que se descobre qual orcamento estourou sem gastar o run canonico.
+  assert.ok(
+    canary.indexOf("const missedBudgets = budgetsMissed") < canary.indexOf("let measurementEvidence = null;"),
+    "a emissao das metricas tem de ficar fora do guarda",
   );
+  // Acessibilidade nao medida nao pode ser comparada: reportaria um estouro que nao houve.
+  assert.match(canary, /\.filter\(\(\[metric\]\) => metric in metrics\)/);
   assert.match(canary, /"event": "g11\.metrics"|event: "g11\.metrics"/);
   assert.match(canary, /JSON\.stringify\(\{ \.\.\.record\.json, missedBudgets \}\)/);
 
@@ -460,12 +465,18 @@ test("a frontend gate is reported as unexercised, never as passed, when the alia
   const guarded = canary.slice(canary.indexOf("  let measurementEvidence = null;"));
   assert.match(guarded.slice(0, 4000), /\} else \{[\s\S]*?skip\(name, "EV2_G11_FRONTEND_UNDER_TEST=false/);
   for (const name of [
-    "accessibility_critical_serious_zero",
     "measurement_requires_independent_review",
     "independent_review_required",
     "segregated_review_accepted",
   ])
     assert.ok(guarded.includes(`"${name}"`), `${name} precisa sair como nao exercitado`);
+
+  // Acessibilidade tem tratamento proprio, antes do guarda: ela e a unica que depende da pagina.
+  assert.match(canary, /const accessibility = frontendUnderTest \? runAccessibility\(\) : null;/);
+  assert.match(
+    canary,
+    /skip\(\s*"accessibility_critical_serious_zero",\s*"EV2_G11_FRONTEND_UNDER_TEST=false/,
+  );
 
   // SKIPPED nao pode contar como exercitado nem como aprovado, senao a ausencia vira cobertura.
   assert.match(canary, /checks\.filter\(\(entry\) => entry\.result === "PASS"\)\.length/);

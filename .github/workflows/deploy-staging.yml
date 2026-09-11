@@ -574,7 +574,11 @@ jobs:
         run: npm run canary:ev2:phase12
         env:
           EV2_G12_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
-          EV2_G12_REPORT_PATH: ../g12-canary.json
+          # O script recusa relatorio fora do proprio cwd, e este step roda em `candidate`, entao
+          # `../g12-canary.json` cai no workspace e e recusado com G12_REPORT_PATH_REFUSED. A escrita
+          # fica depois do `finally`, de modo que a recusa so chegaria ao fim do canario, ja com
+          # staging mutado e o alias publicado. `outputs/` e ignorado pelo git, como os demais.
+          EV2_G12_REPORT_PATH: outputs/g12-canary.json
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       - name: Revalidate immutable bytes before the enforced-CSP canary
         working-directory: candidate
@@ -779,11 +783,14 @@ jobs:
           QA_CMS_FIXTURE_STATE_PATH: outputs/cms-browser-rollback-state.json
           QA_CMS_FIXTURE_REPORT_PATH: outputs/cms-browser-rollback-cleanup-retry.json
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      # Cinco atores sao encerrados sequencialmente aqui, e desde o transporte duravel cada um pode
+      # custar a tentativa PostgREST mais ate noventa segundos de requisicao de gestao. O orcamento de
+      # cinco minutos e anterior a essa mudanca; o cleanup de rollback ja usa quinze.
       - name: Revoke the mutating browser actor and verify zero active residue
         id: browser_mutating_cleanup
         if: always() && steps.browser_mutating_fixture.outcome != 'skipped'
         continue-on-error: true
-        timeout-minutes: 5
+        timeout-minutes: 15
         working-directory: candidate
         run: node scripts/qa/cms-browser-fixture.mjs cleanup
         env:
@@ -794,7 +801,7 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       - name: Retry cleanup for the same isolated browser lease
         if: always() && steps.browser_mutating_cleanup.outcome == 'failure'
-        timeout-minutes: 5
+        timeout-minutes: 15
         working-directory: candidate
         run: node scripts/qa/cms-browser-fixture.mjs cleanup
         env:
@@ -805,7 +812,7 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       - name: Prove terminal zero residue for the same isolated browser lease
         if: always() && steps.browser_mutating_cleanup.outcome != 'skipped'
-        timeout-minutes: 5
+        timeout-minutes: 15
         working-directory: candidate
         run: node scripts/qa/cms-browser-fixture.mjs residue
         env:
@@ -945,7 +952,7 @@ jobs:
             candidate/outputs/g12-staging-function-deployment.json \
             candidate/outputs/g12-backend-compatibility.json \
             baseline/outputs/cms-coverage-rollback.json \
-            g12-canary.json \
+            candidate/outputs/g12-canary.json \
             g16-csp-browser.json \
             g12-staging-database.json \
             g12-staging-auth.json \
@@ -987,7 +994,7 @@ jobs:
             candidate/outputs/g12-staging-function-deployment.json
             candidate/outputs/g12-backend-compatibility.json
             baseline/outputs/cms-coverage-rollback.json
-            g12-canary.json
+            candidate/outputs/g12-canary.json
             g16-csp-browser.json
             g12-staging-database.json
             g12-staging-auth.json

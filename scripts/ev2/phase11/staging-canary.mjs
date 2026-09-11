@@ -1151,26 +1151,49 @@ try {
   // `measured`. Declarar zero a partir de uma varredura que nao mediu o candidato seria afirmar ao
   // banco algo que nao foi verificado. Entao, sem frontend sob teste, nada disso roda: os checks
   // saem como NAO EXERCITADOS, que e diferente de aprovados.
-  let measurementEvidence = null;
-  if (frontendUnderTest) {
-    const accessibility = runAccessibility();
+  // O alias so serve o candidato depois que um run canonico o publica. Medir a pagina publicada num
+  // passe que nao publica e medir o build ANTERIOR, e o numero obtido nao e do candidato. Isso ja
+  // produziu falso negativo: uma varredura devolveu zero violacoes e a seguinte, mesma fonte e mesmo
+  // alias, devolveu dezesseis, porque o elemento infrator e transitorio.
+  const accessibility = frontendUnderTest ? runAccessibility() : null;
+  if (frontendUnderTest)
     check(
       "accessibility_critical_serious_zero",
       accessibility.critical === 0 && accessibility.serious === 0,
       JSON.stringify(accessibility),
     );
+  else
+    skip(
+      "accessibility_critical_serious_zero",
+      "EV2_G11_FRONTEND_UNDER_TEST=false: o alias publicado nao serve o candidato",
+    );
 
-    const metrics = {
-      availabilityPercent: publicLoad.availabilityPercent,
-      adminReadP95Ms: Math.round(percentile(snapshotDurations, 95)),
-      commandP95Ms: Math.round(percentile(commandDurations, 95)),
-      adminReadWallP95Ms: Math.round(percentile(snapshotWallDurations, 95)),
-      commandWallP95Ms: Math.round(percentile(commandWallDurations, 95)),
-      outboxLagP95Ms: latestSnapshot.metrics.outboxWorstLagSeconds * 1000,
-      auditCoveragePercent: latestSnapshot.metrics.auditCoveragePercent,
-      restoreRpoMinutes: restore.rpoMinutes,
-      restoreRtoMinutes: Math.ceil(restore.durationMs / 60_000),
-    };
+  const metrics = {
+    availabilityPercent: publicLoad.availabilityPercent,
+    adminReadP95Ms: Math.round(percentile(snapshotDurations, 95)),
+    commandP95Ms: Math.round(percentile(commandDurations, 95)),
+    adminReadWallP95Ms: Math.round(percentile(snapshotWallDurations, 95)),
+    commandWallP95Ms: Math.round(percentile(commandWallDurations, 95)),
+    outboxLagP95Ms: latestSnapshot.metrics.outboxWorstLagSeconds * 1000,
+    auditCoveragePercent: latestSnapshot.metrics.auditCoveragePercent,
+    restoreRpoMinutes: restore.rpoMinutes,
+    restoreRtoMinutes: Math.ceil(restore.durationMs / 60_000),
+  };
+
+  // Medir nao e afirmar. As metricas de backend sao calculadas e registradas SEMPRE, inclusive quando
+  // a medicao nao pode ser submetida, porque e por elas que se descobre qual orcamento estourou. Sem
+  // isto o unico lugar capaz de nomear o orcamento seria o run canonico, que e justamente o caro.
+  //
+  // Os orcamentos comparados aqui sao so os que estas metricas cobrem. Acessibilidade fica de fora
+  // quando nao foi medida: compara-la contra um valor ausente reportaria um estouro que nao houve.
+  const backendBaselines = Object.fromEntries(
+    Object.entries(operatorCapability.json.baselines ?? {}).filter(([metric]) => metric in metrics),
+  );
+  const missedBudgets = budgetsMissed(backendBaselines, metrics);
+  console.log(JSON.stringify({ event: "g11.metrics", frontendUnderTest, submitted: metrics, missedBudgets }));
+
+  let measurementEvidence = null;
+  if (frontendUnderTest) {
     // `SKIPPED` nao entra nem no total nem no aprovado: contar como exercitado inflaria a cobertura.
     const measuredChecks = checks.filter((entry) => entry.result === "PASS").length;
     const report = {
@@ -1191,15 +1214,6 @@ try {
       syntheticOnly: true,
       realDataUsed: false,
     };
-    // A resposta de `record_run` diz apenas `failed`, sem nomear o orcamento estourado. Sem isto, a
-    // reprovacao nao tem causa em lugar nenhum: nem na resposta, nem no log.
-    const submittedMetrics = {
-      ...metrics,
-      accessibilityCritical: report.accessibilityCritical,
-      accessibilitySerious: report.accessibilitySerious,
-    };
-    const missedBudgets = budgetsMissed(operatorCapability.json.baselines, submittedMetrics);
-    console.log(JSON.stringify({ event: "g11.metrics", submitted: submittedMetrics, missedBudgets }));
     const record = await system(
       context,
       operator,
@@ -1239,7 +1253,6 @@ try {
     measurementEvidence = { metrics, assuranceRunId: record.json.runId };
   } else {
     for (const name of [
-      "accessibility_critical_serious_zero",
       "measurement_requires_independent_review",
       "independent_review_required",
       "segregated_review_accepted",

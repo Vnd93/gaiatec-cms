@@ -73,6 +73,38 @@ function summarize(inventory, schema, restored) {
   };
 }
 
+// Quantas tabelas divergentes descrever antes de truncar. As contagens continuam exatas.
+const SCOPE_DIVERGENCE_LIMIT = 20;
+
+// Uma divergencia de escopo tem tres formas distintas, e a correcao de cada uma e outra: tabela
+// que o restore nao trouxe, tabela que apareceu sem estar na origem, e tabela presente nos dois
+// lados cujas linhas ou cujo conteudo nao batem.
+export function describeScopeDivergence(source, restored) {
+  const tables = [...new Set([...source.keys(), ...restored.keys()])].sort();
+  const divergences = [];
+  for (const table of tables) {
+    const left = source.get(table);
+    const right = restored.get(table);
+    if (!left) divergences.push({ table, reason: "absent_from_source", restoredRows: right.rows });
+    else if (!right)
+      divergences.push({ table, reason: "absent_from_restore", sourceRows: left.rows });
+    else if (left.rows !== right.rows)
+      divergences.push({
+        table,
+        reason: "row_count_differs",
+        sourceRows: left.rows,
+        restoredRows: right.rows,
+      });
+    else if (left.fingerprint !== right.fingerprint)
+      divergences.push({
+        table,
+        reason: "content_differs",
+        rows: left.rows,
+      });
+  }
+  return divergences;
+}
+
 export function evaluateBackupScope({ authDataDump, storageDataDump, sourceInventory, restoredInventory }) {
   const source = parseBackupInventory(sourceInventory);
   const restored = restoredInventory === undefined ? null : parseBackupInventory(restoredInventory);
@@ -84,21 +116,21 @@ export function evaluateBackupScope({ authDataDump, storageDataDump, sourceInven
     throw new Error("BACKUP_SCOPE_DUMP_INVENTORY_MISMATCH");
 
   if (restored) {
-    const restoredTables = [...restored.keys()];
-    if (
-      restoredTables.length !== source.size ||
-      restoredTables.some((table) => {
-        const sourceRecord = source.get(table);
-        const restoredRecord = restored.get(table);
-        return (
-          !sourceRecord ||
-          !restoredRecord ||
-          sourceRecord.rows !== restoredRecord.rows ||
-          sourceRecord.fingerprint !== restoredRecord.fingerprint
-        );
-      })
-    )
-      throw new Error("BACKUP_SCOPE_RESTORE_FINGERPRINT_MISMATCH");
+    const divergences = describeScopeDivergence(source, restored);
+    if (divergences.length) {
+      // Nome de tabela e contagem de linhas ja viajam na cobertura do manifesto selado, entao
+      // dize-los aqui nao alarga exposicao nenhuma — e a diferenca entre saber QUAL tabela nao
+      // voltou e ter apenas um codigo que obriga a reexecutar o drill para adivinhar.
+      const error = new Error(
+        `BACKUP_SCOPE_RESTORE_FINGERPRINT_MISMATCH: ${JSON.stringify({
+          divergentTables: divergences.length,
+          divergences: divergences.slice(0, SCOPE_DIVERGENCE_LIMIT),
+          truncated: divergences.length > SCOPE_DIVERGENCE_LIMIT,
+        })}`,
+      );
+      error.scopeDivergences = divergences;
+      throw error;
+    }
   }
 
   const phase = restored ? "restore" : "source";

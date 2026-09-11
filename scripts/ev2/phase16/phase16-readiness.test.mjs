@@ -21,7 +21,7 @@ import {
   verifyRestoredStorageObjects,
   verifyStorageSnapshotStability,
 } from "./storage-object-backup.mjs";
-import { evaluateBackupScope } from "./verify-backup-scope.mjs";
+import { describeScopeDivergence, evaluateBackupScope } from "./verify-backup-scope.mjs";
 import {
   buildRoleRestoreReport,
   buildRoleSourceReport,
@@ -356,15 +356,42 @@ test("backup scope fingerprints every portable Auth and Storage table without ex
   assert.equal(restored.auth.restoreVerified, true);
   assert.equal(restored.storage.restoreVerified, true);
   assert.equal(restored.sessionReplicationRestoreVerified, true);
-  assert.throws(
-    () =>
-      evaluateBackupScope({
-        authDataDump: authDump,
-        storageDataDump: storageDump,
-        sourceInventory: inventory,
-        restoredInventory: inventory.replace("7".repeat(64), "9".repeat(64)),
-      }),
-    /BACKUP_SCOPE_RESTORE_FINGERPRINT_MISMATCH/,
+  let scopeFailure;
+  try {
+    evaluateBackupScope({
+      authDataDump: authDump,
+      storageDataDump: storageDump,
+      sourceInventory: inventory,
+      restoredInventory: inventory.replace("7".repeat(64), "9".repeat(64)),
+    });
+  } catch (error) {
+    scopeFailure = error;
+  }
+  assert.match(scopeFailure?.message ?? "", /^BACKUP_SCOPE_RESTORE_FINGERPRINT_MISMATCH: /);
+
+  // Tabela que voltou com conteudo diferente, tabela que nao voltou e tabela que apareceu do nada
+  // exigem correcoes distintas. O codigo sozinho obrigava a reexecutar o drill so para descobrir
+  // qual das tres aconteceu, e um drill custa uma passada inteira contra producao.
+  assert.equal(scopeFailure.scopeDivergences.length, 1);
+  assert.equal(scopeFailure.scopeDivergences[0].reason, "content_differs");
+  assert.ok(scopeFailure.scopeDivergences[0].table.startsWith("auth.") ||
+    scopeFailure.scopeDivergences[0].table.startsWith("storage."));
+
+  const missing = describeScopeDivergence(
+    new Map([["auth.users", { rows: 4, fingerprint: "a" }]]),
+    new Map(),
+  );
+  assert.deepEqual(missing, [{ table: "auth.users", reason: "absent_from_restore", sourceRows: 4 }]);
+  assert.deepEqual(
+    describeScopeDivergence(new Map(), new Map([["storage.objects", { rows: 9, fingerprint: "b" }]])),
+    [{ table: "storage.objects", reason: "absent_from_source", restoredRows: 9 }],
+  );
+  assert.deepEqual(
+    describeScopeDivergence(
+      new Map([["auth.sessions", { rows: 3, fingerprint: "c" }]]),
+      new Map([["auth.sessions", { rows: 2, fingerprint: "c" }]]),
+    ),
+    [{ table: "auth.sessions", reason: "row_count_differs", sourceRows: 3, restoredRows: 2 }],
   );
   assert.throws(
     () =>

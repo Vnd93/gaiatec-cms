@@ -202,6 +202,7 @@ function fixture() {
         storageFullRowFingerprintsMatched: true,
         storageMetadataReappliedAfterUpload: true,
         storagePayloadsByteIdentical: true,
+        objectPayloadsExercised: true,
         archiveDigestStable: true,
       },
     },

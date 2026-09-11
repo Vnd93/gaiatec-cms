@@ -295,6 +295,24 @@ export function validateProductionBackupManifest(
     !(manifest?.intentionalLimitations ?? []).includes("role-existence-is-not-restored-by-the-role-dump")
   )
     violations.push("backup_manifest_role_existence_limitation_undeclared");
+  // Mesma regra para midia: zero objeto satisfaz por ausencia toda verificacao de payload, e um
+  // drill nessas condicoes so pode selar se disser isso. Sem a amarra, `storagePayloadsByteIdentical`
+  // continua verdadeiro e passa a valer como prova de algo que nao aconteceu.
+  if (
+    drillPerformed &&
+    manifest?.coverage?.storage?.objectPayloads?.objects === 0 &&
+    (manifest?.restoreDrill?.verifications?.objectPayloadsExercised !== false ||
+      !(manifest?.intentionalLimitations ?? []).includes(
+        "object-payload-restore-not-exercised-without-objects",
+      ))
+  )
+    violations.push("backup_manifest_object_payload_exercise_undeclared");
+  if (
+    drillPerformed &&
+    manifest?.coverage?.storage?.objectPayloads?.objects > 0 &&
+    manifest?.restoreDrill?.verifications?.objectPayloadsExercised !== true
+  )
+    violations.push("backup_manifest_object_payload_exercise_invalid");
   if (
     !drillPerformed &&
     (manifest?.coverage?.roles?.event !== "supabase.backup.roles.source-verified" ||

@@ -258,6 +258,10 @@ const restoreVerifications = {
   storageFullRowFingerprintsMatched: completeDataRestoreDrill,
   storageMetadataReappliedAfterUpload: restoreStorage?.value?.metadataReappliedAfterUpload === true,
   storagePayloadsByteIdentical: completeDataRestoreDrill,
+  // Zero objeto satisfaz por ausencia toda verificacao de payload acima. Sem este campo, quem
+  // consome a evidencia le `storagePayloadsByteIdentical: true` e conclui que a restauracao de
+  // midia foi provada, quando nao houve midia nenhuma para restaurar.
+  objectPayloadsExercised: Number(restoreStorage?.value?.objects ?? 0) > 0,
   archiveDigestStable: true,
 };
 
@@ -336,6 +340,9 @@ const manifest = {
     ...(restoreRoles?.value?.limitations ?? []).filter(
       (limitation) => limitation !== "role-passwords-and-role-settings-are-not-restored",
     ),
+    ...(restoreDrillPerformed && Number(restoreStorage?.value?.objects ?? 0) === 0
+      ? ["object-payload-restore-not-exercised-without-objects"]
+      : []),
   ],
   sensitiveValuesLogged: false,
 };

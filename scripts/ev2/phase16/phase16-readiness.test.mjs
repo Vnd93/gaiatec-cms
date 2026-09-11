@@ -1471,6 +1471,39 @@ test("backup manifest seals the archive and binds distinct source and restore ev
       /backup_manifest_rto_exceeded/,
     );
 
+    // Zero objeto satisfaz por ausencia todas as verificacoes de payload, e a mais forte delas,
+    // `storagePayloadsByteIdentical`, continua saindo verdadeira. Um drill nessas condicoes so pode
+    // selar se disser que nao exercitou nada — senao a evidencia afirma prova de midia que nao houve.
+    const emptyObjects = structuredClone(manifest);
+    emptyObjects.coverage.storage.objectPayloads.objects = 0;
+    emptyObjects.coverage.storage.objectPayloads.bytes = 0;
+    const undeclared = validateProductionBackupManifest(emptyObjects, {
+      now: new Date(Date.parse(emptyObjects.sealedAt) + 1),
+    });
+    assert.equal(undeclared.valid, false);
+    assert.ok(undeclared.violations.includes("backup_manifest_object_payload_exercise_undeclared"));
+
+    const declared = structuredClone(emptyObjects);
+    declared.restoreDrill.verifications.objectPayloadsExercised = false;
+    declared.intentionalLimitations = [
+      ...declared.intentionalLimitations,
+      "object-payload-restore-not-exercised-without-objects",
+    ];
+    assert.ok(
+      !validateProductionBackupManifest(declared, {
+        now: new Date(Date.parse(declared.sealedAt) + 1),
+      }).violations.includes("backup_manifest_object_payload_exercise_undeclared"),
+    );
+
+    // E o inverso: havendo objeto, declarar que nao exercitou e falso, e tambem e recusado.
+    const lying = structuredClone(manifest);
+    lying.restoreDrill.verifications.objectPayloadsExercised = false;
+    assert.ok(
+      validateProductionBackupManifest(lying, {
+        now: new Date(Date.parse(lying.sealedAt) + 1),
+      }).violations.includes("backup_manifest_object_payload_exercise_invalid"),
+    );
+
     // O run diario nao faz drill. Ate aqui o manifesto desse modo era selado e publicado sem passar
     // por validacao nenhuma: a afirmacao "restauracao nao provada" existia por convencao de quem
     // escrevia o arquivo, e nada impedia um manifesto sem drill de carimbar restauracao.

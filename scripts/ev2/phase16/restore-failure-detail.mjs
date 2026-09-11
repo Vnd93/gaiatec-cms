@@ -42,17 +42,11 @@ async function main() {
   const logPath = argument("--log");
   const failureCode = argument("--code");
   if (!logPath || !failureCode) throw new Error("RESTORE_FAILURE_DETAIL_ARGUMENTS_REQUIRED");
-  let log = "";
-  try {
-    log = await readFile(logPath, "utf8");
-  } catch {
-    // Log ausente e um fato a relatar, nao um motivo para mascarar a falha que trouxe ate aqui.
-    log = "";
-  }
+  // Log ausente e um fato a relatar, nao um motivo para mascarar a falha que trouxe ate aqui: o
+  // detalhe sai vazio e o passo continua reprovando pelo codigo que ja tinha.
+  const log = await readFile(logPath, "utf8").catch(() => "");
   const detail = extractRestoreFailureDetail(log);
-  console.log(
-    JSON.stringify({ event: "supabase.restore.failure-detail", failureCode, ...detail }),
-  );
+  console.log(JSON.stringify({ event: "supabase.restore.failure-detail", failureCode, ...detail }));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();

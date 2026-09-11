@@ -187,13 +187,13 @@ export function validateProductionBackupManifest(
   if (
     drillPerformed &&
     (drill?.outcome !== "passed" ||
-    drill?.target !== "ephemeral-local-supabase" ||
-    !Number.isFinite(drillStartedAt) ||
-    !Number.isFinite(drillCompletedAt) ||
-    drillCompletedAt < drillStartedAt ||
-    !Number.isSafeInteger(drill?.durationSeconds) ||
-    drill.durationSeconds <= 0 ||
-    Math.abs(drill.durationSeconds - Math.round((drillCompletedAt - drillStartedAt) / 1000)) > 2)
+      drill?.target !== "ephemeral-local-supabase" ||
+      !Number.isFinite(drillStartedAt) ||
+      !Number.isFinite(drillCompletedAt) ||
+      drillCompletedAt < drillStartedAt ||
+      !Number.isSafeInteger(drill?.durationSeconds) ||
+      drill.durationSeconds <= 0 ||
+      Math.abs(drill.durationSeconds - Math.round((drillCompletedAt - drillStartedAt) / 1000)) > 2)
   )
     violations.push("backup_manifest_restore_drill_invalid");
   if (
@@ -220,9 +220,7 @@ export function validateProductionBackupManifest(
   // arquivo, que nao depende de restaurar nada.
   if (
     !drillPerformed &&
-    RESTORE_CHECKS.some(
-      (key) => drill?.verifications?.[key] !== (key === "archiveDigestStable"),
-    )
+    RESTORE_CHECKS.some((key) => drill?.verifications?.[key] !== (key === "archiveDigestStable"))
   )
     violations.push("backup_manifest_unproven_restore_checks_invalid");
   if (drill?.verifications?.rolesRestored !== false)
@@ -234,33 +232,33 @@ export function validateProductionBackupManifest(
   if (
     drillPerformed &&
     (manifest?.coverage?.auth?.tableInventoryComplete !== true ||
-    !Number.isSafeInteger(manifest?.coverage?.auth?.tableCount) ||
-    manifest.coverage.auth.tableCount < 3 ||
-    !SHA256_PATTERN.test(manifest?.coverage?.auth?.aggregateSha256 ?? "") ||
-    manifest?.coverage?.auth?.restoreVerified !== true ||
-    manifest?.coverage?.storage?.metadata?.fullRowMetadataFingerprint !== true ||
-    !Number.isSafeInteger(manifest?.coverage?.storage?.metadata?.tableCount) ||
-    manifest.coverage.storage.metadata.tableCount < 2 ||
-    !SHA256_PATTERN.test(manifest?.coverage?.storage?.metadata?.aggregateSha256 ?? "") ||
-    manifest?.coverage?.storage?.metadata?.restoreVerified !== true ||
-    manifest?.coverage?.storage?.objectPayloads?.restoreVerified !== true ||
-    manifest?.coverage?.storage?.objectPayloads?.exportVerified !== true ||
-    manifest?.coverage?.storage?.objectPayloads?.payloadUploadVerified !== true ||
-    manifest?.coverage?.storage?.objectPayloads?.metadataReappliedAfterUpload !== true ||
-    manifest?.coverage?.storage?.objectPayloads?.metadataAggregateSha256 !==
-      manifest?.coverage?.storage?.metadata?.aggregateSha256 ||
-    manifest?.coverage?.storage?.objectPayloads?.snapshotStabilityVerified !== true ||
-    manifest?.coverage?.storage?.objectPayloads?.metadataSignals?.updatedAt !==
-      manifest?.coverage?.storage?.objectPayloads?.objects ||
-    manifest?.coverage?.storage?.objectPayloads?.metadataSignals?.strongFingerprint !==
-      manifest?.coverage?.storage?.objectPayloads?.objects ||
-    manifest?.coverage?.storage?.objectPayloads?.metadataSignals?.contentFingerprint !==
-      manifest?.coverage?.storage?.objectPayloads?.objects ||
-    manifest?.coverage?.storage?.objectPayloads?.snapshotAt !== manifest?.snapshotAt ||
-    manifest?.coverage?.storage?.objectPayloads?.snapshotWalLsn !== manifest?.snapshotWalLsn ||
-    !Number.isFinite(parseDate(manifest?.coverage?.storage?.objectPayloads?.snapshotVerifiedAt)) ||
-    parseDate(manifest?.coverage?.storage?.objectPayloads?.snapshotVerifiedAt) < snapshotAt ||
-    parseDate(manifest?.coverage?.storage?.objectPayloads?.snapshotVerifiedAt) > sealedAt)
+      !Number.isSafeInteger(manifest?.coverage?.auth?.tableCount) ||
+      manifest.coverage.auth.tableCount < 3 ||
+      !SHA256_PATTERN.test(manifest?.coverage?.auth?.aggregateSha256 ?? "") ||
+      manifest?.coverage?.auth?.restoreVerified !== true ||
+      manifest?.coverage?.storage?.metadata?.fullRowMetadataFingerprint !== true ||
+      !Number.isSafeInteger(manifest?.coverage?.storage?.metadata?.tableCount) ||
+      manifest.coverage.storage.metadata.tableCount < 2 ||
+      !SHA256_PATTERN.test(manifest?.coverage?.storage?.metadata?.aggregateSha256 ?? "") ||
+      manifest?.coverage?.storage?.metadata?.restoreVerified !== true ||
+      manifest?.coverage?.storage?.objectPayloads?.restoreVerified !== true ||
+      manifest?.coverage?.storage?.objectPayloads?.exportVerified !== true ||
+      manifest?.coverage?.storage?.objectPayloads?.payloadUploadVerified !== true ||
+      manifest?.coverage?.storage?.objectPayloads?.metadataReappliedAfterUpload !== true ||
+      manifest?.coverage?.storage?.objectPayloads?.metadataAggregateSha256 !==
+        manifest?.coverage?.storage?.metadata?.aggregateSha256 ||
+      manifest?.coverage?.storage?.objectPayloads?.snapshotStabilityVerified !== true ||
+      manifest?.coverage?.storage?.objectPayloads?.metadataSignals?.updatedAt !==
+        manifest?.coverage?.storage?.objectPayloads?.objects ||
+      manifest?.coverage?.storage?.objectPayloads?.metadataSignals?.strongFingerprint !==
+        manifest?.coverage?.storage?.objectPayloads?.objects ||
+      manifest?.coverage?.storage?.objectPayloads?.metadataSignals?.contentFingerprint !==
+        manifest?.coverage?.storage?.objectPayloads?.objects ||
+      manifest?.coverage?.storage?.objectPayloads?.snapshotAt !== manifest?.snapshotAt ||
+      manifest?.coverage?.storage?.objectPayloads?.snapshotWalLsn !== manifest?.snapshotWalLsn ||
+      !Number.isFinite(parseDate(manifest?.coverage?.storage?.objectPayloads?.snapshotVerifiedAt)) ||
+      parseDate(manifest?.coverage?.storage?.objectPayloads?.snapshotVerifiedAt) < snapshotAt ||
+      parseDate(manifest?.coverage?.storage?.objectPayloads?.snapshotVerifiedAt) > sealedAt)
   )
     violations.push("backup_manifest_coverage_incomplete");
   // Sem drill a cobertura vem dos relatorios de ORIGEM, e eles tem de continuar dizendo que nada
@@ -294,9 +292,7 @@ export function validateProductionBackupManifest(
   if (
     drillPerformed &&
     manifest?.coverage?.roles?.dumpCreateRoleStatements === 0 &&
-    !(manifest?.intentionalLimitations ?? []).includes(
-      "role-existence-is-not-restored-by-the-role-dump",
-    )
+    !(manifest?.intentionalLimitations ?? []).includes("role-existence-is-not-restored-by-the-role-dump")
   )
     violations.push("backup_manifest_role_existence_limitation_undeclared");
   if (

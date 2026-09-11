@@ -684,10 +684,7 @@ test("the staging watchdog stays quiet for a run that never reached its mutating
   assert.match(classify, /parent-classification-failed[^\n]*"deployExecuted":true/);
 
   assert.match(compensate, /needs: classify-parent-run/);
-  assert.match(
-    compensate,
-    /needs\.classify-parent-run\.outputs\.deploy_executed == 'true'/,
-  );
+  assert.match(compensate, /needs\.classify-parent-run\.outputs\.deploy_executed == 'true'/);
 
   // O gatilho original continua intacto: a mudanca acrescenta uma condicao, nao afrouxa nenhuma.
   for (const condition of [

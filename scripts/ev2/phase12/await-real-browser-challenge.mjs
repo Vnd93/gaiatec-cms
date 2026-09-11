@@ -40,7 +40,13 @@ function attemptFetch({ environment, runId, runAttempt, output }) {
     // Um desafio que ainda nao nasceu e indistinguivel, pela ferramenta, de qualquer outra falha de
     // leitura. Por isso a espera nunca afirma "ainda nao publicado": ela relata a ultima recusa e
     // continua tentando ate o prazo.
-    return { ready: false, reason: String(error?.stderr || error?.message || "").trim().split("\n").at(-1) };
+    return {
+      ready: false,
+      reason: String(error?.stderr || error?.message || "")
+        .trim()
+        .split("\n")
+        .at(-1),
+    };
   }
 }
 
@@ -50,7 +56,8 @@ export async function awaitRealBrowserChallenge(
 ) {
   if (!["staging", "production"].includes(environment)) throw new Error("CHALLENGE_WAIT_ENVIRONMENT_INVALID");
   if (!/^[1-9]\d{5,19}$/.test(String(runId))) throw new Error("CHALLENGE_WAIT_RUN_ID_INVALID");
-  if (!Number.isSafeInteger(runAttempt) || runAttempt < 1) throw new Error("CHALLENGE_WAIT_RUN_ATTEMPT_INVALID");
+  if (!Number.isSafeInteger(runAttempt) || runAttempt < 1)
+    throw new Error("CHALLENGE_WAIT_RUN_ATTEMPT_INVALID");
   if (!outputDirectory) throw new Error("CHALLENGE_WAIT_OUTPUT_REQUIRED");
   if (!Number.isFinite(intervalMs) || intervalMs < 1_000) throw new Error("CHALLENGE_WAIT_INTERVAL_INVALID");
 

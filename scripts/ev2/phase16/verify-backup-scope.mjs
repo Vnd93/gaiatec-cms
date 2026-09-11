@@ -86,8 +86,7 @@ export function describeScopeDivergence(source, restored) {
     const left = source.get(table);
     const right = restored.get(table);
     if (!left) divergences.push({ table, reason: "absent_from_source", restoredRows: right.rows });
-    else if (!right)
-      divergences.push({ table, reason: "absent_from_restore", sourceRows: left.rows });
+    else if (!right) divergences.push({ table, reason: "absent_from_restore", sourceRows: left.rows });
     else if (left.rows !== right.rows)
       divergences.push({
         table,

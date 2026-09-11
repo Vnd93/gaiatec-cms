@@ -272,14 +272,20 @@ export function encodeCanonicalPng({ width, height, pixels }) {
       palette[index * 3 + 1] = (key >> 8) & 0xff;
       palette[index * 3 + 2] = key & 0xff;
     }
-    push(3, width, 1, (raw, rowBytes) => {
-      for (let row = 0; row < height; row += 1)
-        for (let column = 0; column < width; column += 1) {
-          const base = (row * width + column) * 4;
-          const key = (pixels[base] << 16) | (pixels[base + 1] << 8) | pixels[base + 2];
-          raw[row * rowBytes + column] = colors.get(key);
-        }
-    }, [chunk("PLTE", palette)]);
+    push(
+      3,
+      width,
+      1,
+      (raw, rowBytes) => {
+        for (let row = 0; row < height; row += 1)
+          for (let column = 0; column < width; column += 1) {
+            const base = (row * width + column) * 4;
+            const key = (pixels[base] << 16) | (pixels[base + 1] << 8) | pixels[base + 2];
+            raw[row * rowBytes + column] = colors.get(key);
+          }
+      },
+      [chunk("PLTE", palette)],
+    );
   }
   if (opaque) {
     push(2, width * 3, 3, (raw, rowBytes) => {
@@ -314,8 +320,7 @@ export function canonicalizeScreenshot(source, { maxBytes = 28_000 } = {}) {
     const { colorType, buffer } = encodeCanonicalPng(scaled);
     if (buffer.length <= maxBytes || factor === 8) {
       const verdict = validateRealBrowserScreenshotPng(buffer);
-      if (!verdict.valid)
-        throw new Error(`SCREENSHOT_CANONICAL_REFUSED:${verdict.violations.join(",")}`);
+      if (!verdict.valid) throw new Error(`SCREENSHOT_CANONICAL_REFUSED:${verdict.violations.join(",")}`);
       return {
         buffer,
         bytes: buffer.length,
@@ -346,10 +351,22 @@ async function main() {
   const maxBytes = Number(argument("--max-bytes", "28000"));
   const result = canonicalizeScreenshot(await readFile(input), { maxBytes });
   await writeFile(output, result.buffer, { mode: 0o600 });
-  const { buffer, ...reported } = result;
-  console.log(JSON.stringify({ event: "g12.real_browser.screenshot.canonicalized", ...reported }));
-  if (!result.withinBudget)
-    throw new Error(`SCREENSHOT_BUDGET_EXCEEDED:${result.bytes}>${maxBytes}`);
+  console.log(
+    JSON.stringify({
+      event: "g12.real_browser.screenshot.canonicalized",
+      bytes: result.bytes,
+      width: result.width,
+      height: result.height,
+      sourceWidth: result.sourceWidth,
+      sourceHeight: result.sourceHeight,
+      downscaleFactor: result.downscaleFactor,
+      colorType: result.colorType,
+      withinBudget: result.withinBudget,
+      base64Bytes: result.base64Bytes,
+      variableBudgetBytes: result.variableBudgetBytes,
+    }),
+  );
+  if (!result.withinBudget) throw new Error(`SCREENSHOT_BUDGET_EXCEEDED:${result.bytes}>${maxBytes}`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();

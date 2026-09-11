@@ -7,7 +7,7 @@ test("only the PostgreSQL diagnostic lines survive, and the noise around them do
   const log = [
     "SET",
     "CREATE EXTENSION",
-    "psql:/tmp/restore/schema.sql:912: ERROR:  role \"app_reader\" does not exist",
+    'psql:/tmp/restore/schema.sql:912: ERROR:  role "app_reader" does not exist',
     "STATEMENT:  ALTER TABLE public.cms_forms OWNER TO app_reader;",
     "CREATE TABLE",
   ].join("\n");
@@ -16,7 +16,7 @@ test("only the PostgreSQL diagnostic lines survive, and the noise around them do
   // O objetivo e nomear a causa. Despejar o log inteiro carregaria DDL sem necessidade e ainda
   // esconderia a linha que importa no meio de centenas de "CREATE TABLE".
   assert.equal(detail.lines.length, 2);
-  assert.match(detail.lines[0], /ERROR:  role "app_reader" does not exist/);
+  assert.match(detail.lines[0], /ERROR: {2}role "app_reader" does not exist/);
   assert.match(detail.lines[1], /^STATEMENT:/);
   assert.equal(detail.diagnosticLines, 2);
   assert.equal(detail.truncated, false);
@@ -24,15 +24,14 @@ test("only the PostgreSQL diagnostic lines survive, and the noise around them do
 
 test("a credential shape pasted into a diagnostic line never reaches the run log", () => {
   const detail = extractRestoreFailureDetail(
-    'ERROR:  invalid input for token sbp_0123456789abcdef0123456789abcdef',
+    "ERROR:  invalid input for token sbp_0123456789abcdef0123456789abcdef",
   );
   assert.equal(detail.lines[0], "[detalhe suprimido: formato de credencial]");
   assert.ok(!detail.lines[0].includes("sbp_"));
 
   // E o mesmo vale para e-mail, que e a forma que mais aparece por descuido em DDL restaurada.
   assert.equal(
-    extractRestoreFailureDetail("DETAIL:  Key (email)=(operador@gaiatecsistemas.com.br) exists.")
-      .lines[0],
+    extractRestoreFailureDetail("DETAIL:  Key (email)=(operador@gaiatecsistemas.com.br) exists.").lines[0],
     "[detalhe suprimido: formato de credencial]",
   );
 });

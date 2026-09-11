@@ -120,8 +120,7 @@ export function describeRoleDivergence(sourceRoles, restoredRoles, baselineRoles
     // Quantos papeis ausentes o alvo tambem nao tinha antes do dump: esses o dump simplesmente
     // nao carrega. E quantos papeis divergentes o dump nao tocou, tendo ficado no valor de
     // fabrica do alvo efemero.
-    missingRolesAbsentFromBaseline: missing.filter((role) => !baselineByName.has(role.nameHash))
-      .length,
+    missingRolesAbsentFromBaseline: missing.filter((role) => !baselineByName.has(role.nameHash)).length,
     driftedRolesUntouchedByRestore: untouchedByRestore,
     driftedRolesChangedButNotConverged: drifted.length - untouchedByRestore,
     baselineRoleCount: baselineRoles.length,
@@ -207,8 +206,7 @@ export function buildRoleRestoreReport({
   // falha de restauracao — a excecao morre sozinha em vez de virar permissao permanente.
   const rolesNotReconstructableFromDump =
     dumpShape.createRoleStatements === 0 ? divergence.missingRolesAbsentFromBaseline : 0;
-  const rolesMissingDespiteTarget =
-    divergence.rolesMissingFromRestore - rolesNotReconstructableFromDump;
+  const rolesMissingDespiteTarget = divergence.rolesMissingFromRestore - rolesNotReconstructableFromDump;
 
   // O que o backup consegue provar: nada que o dump governou deixou de convergir, o alvo nao
   // perdeu papel que ja tinha e nao ganhou papel que a origem nao tem.
@@ -217,9 +215,7 @@ export function buildRoleRestoreReport({
     divergence.rolesOnlyInRestore === 0 &&
     rolesMissingDespiteTarget === 0;
   if (!dumpGovernedRolesRestored) {
-    const error = new Error(
-      `BACKUP_ROLE_RESTORE_FINGERPRINT_MISMATCH: ${JSON.stringify(divergence)}`,
-    );
+    const error = new Error(`BACKUP_ROLE_RESTORE_FINGERPRINT_MISMATCH: ${JSON.stringify(divergence)}`);
     error.roleRestoreDivergence = divergence;
     throw error;
   }
@@ -249,9 +245,7 @@ export function buildRoleRestoreReport({
     limitation: "role-passwords-and-role-settings-are-not-restored",
     limitations: [
       "role-passwords-and-role-settings-are-not-restored",
-      ...(dumpShape.createRoleStatements === 0
-        ? ["role-existence-is-not-restored-by-the-role-dump"]
-        : []),
+      ...(dumpShape.createRoleStatements === 0 ? ["role-existence-is-not-restored-by-the-role-dump"] : []),
     ],
     containsRoleNames: false,
   };
@@ -284,14 +278,7 @@ async function main() {
     const restoredDetail = argument("--restored-detail");
     const baselineDetail = argument("--baseline-detail");
     const dumpShapePath = argument("--dump-shape");
-    if (
-      !sourceReport ||
-      !restored ||
-      !sourceDetail ||
-      !restoredDetail ||
-      !baselineDetail ||
-      !dumpShapePath
-    )
+    if (!sourceReport || !restored || !sourceDetail || !restoredDetail || !baselineDetail || !dumpShapePath)
       throw new Error("BACKUP_ROLE_RESTORE_PATHS_REQUIRED");
     report = buildRoleRestoreReport({
       sourceReport: JSON.parse(await readFile(sourceReport, "utf8")),

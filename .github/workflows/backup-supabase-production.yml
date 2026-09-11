@@ -288,7 +288,7 @@ jobs:
           ROLE_SOURCE_DETAIL_PATH: ${{ steps.backup.outputs.source_role_detail }}
         run: |
           set -euo pipefail
-          restore_started_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          restore_started_at="$(date -u +'%Y-%m-%dT%H:%M:%S.%3NZ')"
           restore_started_epoch="$(date +%s)"
           restore_dir="$RUNNER_TEMP/gaiatec-supabase-$GITHUB_RUN_ID/restore"
           artifact_dir="$RUNNER_TEMP/gaiatec-backup-artifact-$GITHUB_RUN_ID"
@@ -478,7 +478,7 @@ jobs:
 
           node scripts/ev2/phase16/backup-archive-seal.mjs verify \
             --archive "$BACKUP_ARCHIVE_PATH" --seal "$BACKUP_ARCHIVE_SEAL_PATH"
-          restore_completed_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          restore_completed_at="$(date -u +'%Y-%m-%dT%H:%M:%S.%3NZ')"
           restore_completed_epoch="$(date +%s)"
           restore_duration_seconds="$((restore_completed_epoch - restore_started_epoch))"
           test "$restore_duration_seconds" -gt 0

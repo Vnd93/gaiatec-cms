@@ -87,8 +87,11 @@ GRANT anon TO authenticator;
   assert.equal(result.createRoleStatements, 0);
   assert.equal(result.alterRoleStatements, 4);
   assert.equal(result.grantStatements, 1);
-  assert.equal(prepareRoleRestore(`CREATE ROLE app_reader;
-${source}`).createRoleStatements, 1);
+  assert.equal(
+    prepareRoleRestore(`CREATE ROLE app_reader;
+${source}`).createRoleStatements,
+    1,
+  );
   assert.doesNotMatch(result.sql, /log_min_messages|ALTER ROLE authenticator SET/);
   assert.match(result.sql, /ALTER ROLE postgres WITH SUPERUSER/);
   assert.match(result.sql, /ALTER ROLE authenticated RESET statement_timeout/);
@@ -409,8 +412,10 @@ storage.iceberg_tables\t3\t${"0".repeat(64)}\n`,
   // qual das tres aconteceu, e um drill custa uma passada inteira contra producao.
   assert.equal(scopeFailure.scopeDivergences.length, 1);
   assert.equal(scopeFailure.scopeDivergences[0].reason, "content_differs");
-  assert.ok(scopeFailure.scopeDivergences[0].table.startsWith("auth.") ||
-    scopeFailure.scopeDivergences[0].table.startsWith("storage."));
+  assert.ok(
+    scopeFailure.scopeDivergences[0].table.startsWith("auth.") ||
+      scopeFailure.scopeDivergences[0].table.startsWith("storage."),
+  );
 
   const missing = describeScopeDivergence(
     new Map([["auth.users", { rows: 4, fingerprint: "a" }]]),
@@ -805,7 +810,6 @@ test("Storage snapshot proof fails closed on every pre/post race and download bi
   );
 });
 
-
 // Catalogo sintetico de papeis coerente com fingerprint-roles.sql e fingerprint-roles-detail.sql: o
 // agregado e, por construcao, o sha256 da concatenacao dos hashes por papel em ordem. Um fixture que
 // nao respeitasse isso passaria a testar um acordo que a producao nao tem.
@@ -870,9 +874,7 @@ test("role evidence detects source races and states the portable restore limitat
   assert.equal(restored.sourceCatalogSha256, source.portableCatalogSha256);
   // Um dump sem CREATE ROLE nao recria papel perdido, e isso tem de estar dito no proprio
   // relatorio, nao apenas na cabeca de quem leu o log uma vez.
-  assert.ok(
-    restored.limitations.includes("role-existence-is-not-restored-by-the-role-dump"),
-  );
+  assert.ok(restored.limitations.includes("role-existence-is-not-restored-by-the-role-dump"));
   assert.equal(restored.rolesRestoredExactly, false);
   assert.equal(restored.credentialsRestored, false);
   assert.equal(restored.platformManagedGucSettingsRestored, false);
@@ -887,7 +889,6 @@ test("role evidence detects source races and states the portable restore limitat
     /BACKUP_ROLE_CATALOG_RACED/,
   );
 });
-
 
 test("a role restore divergence names what diverged without naming a role", () => {
   const catalog = roleCatalog(PRODUCTION_ROLES);
@@ -944,13 +945,11 @@ test("a role restore divergence names what diverged without naming a role", () =
   assert.equal(divergence.missingProfiles[0].canLogin, true);
   assert.ok(!("name" in divergence.missingProfiles[0]));
   assert.equal(divergence.extraProfiles.length, 2);
-  assert.deepEqual(
-    divergence.driftedFields[0].map((entry) => entry.field).sort(),
-    ["connectionLimit", "memberOf"],
-  );
-  const connectionLimit = divergence.driftedFields[0].find(
-    (entry) => entry.field === "connectionLimit",
-  );
+  assert.deepEqual(divergence.driftedFields[0].map((entry) => entry.field).sort(), [
+    "connectionLimit",
+    "memberOf",
+  ]);
+  const connectionLimit = divergence.driftedFields[0].find((entry) => entry.field === "connectionLimit");
   assert.equal(connectionLimit.source, -1);
   assert.equal(connectionLimit.restored, 60);
   const memberOf = divergence.driftedFields[0].find((entry) => entry.field === "memberOf");
@@ -1139,10 +1138,7 @@ test("the detail refuses shapes that would make the rebuild meaningless", () => 
   assert.throws(() => parseRoleDetail(`${digest("a")}\n`), /BACKUP_ROLE_DETAIL_INVALID/);
   // Sem perfil a divergencia volta a ser indescritivel; com nome dentro dele, descreve-la passaria
   // a expor o catalogo de papeis da producao.
-  assert.throws(
-    () => parseRoleDetail(`${digest("a")}\t${digest("b")}\n`),
-    /BACKUP_ROLE_DETAIL_INVALID/,
-  );
+  assert.throws(() => parseRoleDetail(`${digest("a")}\t${digest("b")}\n`), /BACKUP_ROLE_DETAIL_INVALID/);
   assert.throws(
     () => parseRoleDetail(`${digest("a")}\t${digest("b")}\t{"name":"postgres"}\n`),
     /BACKUP_ROLE_DETAIL_PROFILE_INVALID/,
@@ -1154,10 +1150,7 @@ test("the detail refuses shapes that would make the rebuild meaningless", () => 
   // A ordem tem de vir do valor do hash, nao do rotulo: montar o par ja ordenado e emiti-lo ao
   // contrario e a unica forma estavel de exercitar a recusa.
   const ordered = [line("a", "first"), line("b", "second")].sort();
-  assert.throws(
-    () => parseRoleDetail(`${ordered[1]}\n${ordered[0]}\n`),
-    /BACKUP_ROLE_DETAIL_UNORDERED/,
-  );
+  assert.throws(() => parseRoleDetail(`${ordered[1]}\n${ordered[0]}\n`), /BACKUP_ROLE_DETAIL_UNORDERED/);
   assert.throws(
     () => parseRoleDetail(`${line("a", "same")}\n${line("b", "same")}\n`),
     /BACKUP_ROLE_DETAIL_DUPLICATED/,
@@ -1500,8 +1493,7 @@ test("backup manifest seals the archive and binds distinct source and restore ev
     assert.equal(unproven.reports.restore, null);
     assert.equal(unproven.coverage.auth.restoreVerified, false);
     assert.equal(
-      validateProductionBackupManifest(unproven, { now: new Date(Date.parse(unproven.sealedAt) + 1) })
-        .valid,
+      validateProductionBackupManifest(unproven, { now: new Date(Date.parse(unproven.sealedAt) + 1) }).valid,
       true,
     );
 

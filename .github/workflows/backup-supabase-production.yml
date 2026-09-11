@@ -298,6 +298,9 @@ jobs:
             local failure_code="$1"
             shift
             if ! "$@" >>"$restore_dir/psql-restore.log" 2>&1; then
+              # O codigo diz onde quebrou; sem isto a causa morre com o diretorio no teardown.
+              node scripts/ev2/phase16/restore-failure-detail.mjs \
+                --log "$restore_dir/psql-restore.log" --code "$failure_code" || true
               printf '::error::%s\n' "$failure_code" >&2
               return 1
             fi

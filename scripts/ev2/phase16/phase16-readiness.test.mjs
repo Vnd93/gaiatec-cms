@@ -1482,8 +1482,11 @@ test("production and canary workflows retain evidence and stay behind their boun
   assert.match(backup, /storage-object-backup\.mjs verify-restore/);
   assert.match(backup, /storage-object-source\.jsonl/);
   assert.match(backup, /storage-object-after\.jsonl/);
-  assert.match(backup, /'version', to_jsonb\(storage\.objects\) ->> 'version'/);
-  assert.match(backup, /'updatedAt', to_jsonb\(storage\.objects\) ->> 'updated_at'/);
+  // Esta assercao fixava o texto literal `to_jsonb(storage.objects)`, que nao e SQL valido dentro de
+  // um `from storage.objects` sem alias. Ela foi escrita no mesmo commit que o defeito e o prendeu no
+  // lugar: o dump so reprovou quando a validacao, que falhava antes dele, parou de esconde-lo.
+  assert.match(backup, /'version', to_jsonb\(object\) ->> 'version'/);
+  assert.match(backup, /'updatedAt', to_jsonb\(object\) ->> 'updated_at'/);
   assert.match(backup, /'eTag', coalesce\(metadata ->> 'eTag', metadata ->> 'etag'\)/);
   assert.match(backup, /'checksum', coalesce\(metadata ->> 'checksum', metadata ->> 'sha256'\)/);
   assert.match(backup, /storage-object-index\.json/);
@@ -1645,4 +1648,22 @@ test("production and canary workflows retain evidence and stay behind their boun
   assert.match(cspCanaryScript, /new Worker\(workerPath/);
   assert.match(cspCanaryScript, /workerPolicySha256/);
   assert.match(cspCanaryScript, /adminAvifProbe\.brand !== "ftypavif"/);
+});
+
+test("the storage inventory query names the table it reads from", async () => {
+  const workflow = await readFile(".github/workflows/backup-supabase-production.yml", "utf8");
+
+  // O alias implicito de `storage.objects` e `objects`, nao `storage.objects`. Sem nomear a tabela,
+  // `to_jsonb(storage.objects)` faz o parser ler `storage` como tabela, e o dump inteiro morre com
+  // "missing FROM-clause entry for table storage" — foi assim que o run 34607986457 reprovou, no
+  // primeiro backup que chegou a passar da validacao desde 8 de setembro.
+  // A assercao mira o USO, nao a mencao: o comentario que explica o defeito no proprio workflow cita
+  // a forma quebrada de proposito, e proibir a string nua tornaria a explicacao impossivel de manter.
+  assert.doesNotMatch(workflow, /to_jsonb\(storage\.objects\) ->>/);
+
+  // As duas consultas de inventario leem a mesma tabela e as duas precisam do alias.
+  const aliased = workflow.match(/from storage\.objects as object/g) ?? [];
+  assert.equal(aliased.length, 2);
+  const referenced = workflow.match(/to_jsonb\(object\)/g) ?? [];
+  assert.equal(referenced.length, 4);
 });

@@ -189,12 +189,15 @@ jobs:
             'size', case when metadata ->> 'size' ~ '^\d+$' then (metadata ->> 'size')::bigint else null end,
             'contentType', coalesce(metadata ->> 'mimetype', 'application/octet-stream'),
             'cacheControl', coalesce(metadata ->> 'cacheControl', '3600'),
-            'version', to_jsonb(storage.objects) ->> 'version',
-            'updatedAt', to_jsonb(storage.objects) ->> 'updated_at',
+            'version', to_jsonb(object) ->> 'version',
+            'updatedAt', to_jsonb(object) ->> 'updated_at',
             'eTag', coalesce(metadata ->> 'eTag', metadata ->> 'etag'),
             'checksum', coalesce(metadata ->> 'checksum', metadata ->> 'sha256')
           )::text
-          from storage.objects
+          -- O alias implicito de `storage.objects` e `objects`, nao `storage.objects`: sem nomea-lo,
+          -- `to_jsonb(storage.objects)` faz o parser ler `storage` como tabela e responder
+          -- "missing FROM-clause entry for table storage". O alias explicito resolve a linha inteira.
+          from storage.objects as object
           order by bucket_id, name;
           commit;
           SQL
@@ -225,12 +228,15 @@ jobs:
             'size', case when metadata ->> 'size' ~ '^\d+$' then (metadata ->> 'size')::bigint else null end,
             'contentType', coalesce(metadata ->> 'mimetype', 'application/octet-stream'),
             'cacheControl', coalesce(metadata ->> 'cacheControl', '3600'),
-            'version', to_jsonb(storage.objects) ->> 'version',
-            'updatedAt', to_jsonb(storage.objects) ->> 'updated_at',
+            'version', to_jsonb(object) ->> 'version',
+            'updatedAt', to_jsonb(object) ->> 'updated_at',
             'eTag', coalesce(metadata ->> 'eTag', metadata ->> 'etag'),
             'checksum', coalesce(metadata ->> 'checksum', metadata ->> 'sha256')
           )::text
-          from storage.objects
+          -- O alias implicito de `storage.objects` e `objects`, nao `storage.objects`: sem nomea-lo,
+          -- `to_jsonb(storage.objects)` faz o parser ler `storage` como tabela e responder
+          -- "missing FROM-clause entry for table storage". O alias explicito resolve a linha inteira.
+          from storage.objects as object
           order by bucket_id, name;
           SQL
           node scripts/ev2/phase16/storage-object-backup.mjs verify-snapshot \

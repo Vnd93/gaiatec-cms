@@ -141,8 +141,18 @@ test("nenhuma navegacao das suites contra o alias publicado usa networkidle", as
 });
 
 test("o spec que intercepta cms-public bloqueia o service worker", async () => {
-  // Request interception nao e confiavel quando um service worker controla a pagina. Sem o bloqueio,
-  // o spec pode observar o catalogo real de staging e ainda assim afirmar que verificou a fixture.
+  // ATENCAO A QUEM FOR REVISAR ESTA TRAVA: o bloqueio NAO e necessario para a interceptacao
+  // funcionar. Isso foi MEDIDO contra o alias publicado, com o service worker registrado, ativo em
+  // escopo "/" e com `navigator.serviceWorker.controller` verdadeiro: o `page.route` interceptou
+  // normalmente, 10 chamadas de cms-public em contexto novo e 5 em contexto ja aquecido, e o spec
+  // passou nos dois projetos. A afirmacao anterior, de que interceptacao nao seria confiavel sob um
+  // service worker controlador, e FALSA e foi retirada daqui de proposito -- justificativa errada
+  // dentro de uma trava e armadilha: quem testasse veria que nao procede e removeria a trava inteira.
+  //
+  // O bloqueio fica por dois motivos que continuam valendo: remove o service worker como variavel de
+  // um spec que intercepta rede, e e a convencao ja estabelecida no repositorio, usada por
+  // cms-admin-ops-cycles, cms-secondary-ui-cycles, cms-auth-invite-recovery e pelo preflight de
+  // producao. Uniformidade aqui vale mais que a economia de uma linha.
   const catalog = await read("tests/e2e/products-catalog.spec.ts");
   assert.match(catalog, /test\.use\(\{\s*serviceWorkers:\s*"block"\s*\}\);/);
 });

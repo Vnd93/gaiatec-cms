@@ -1,8 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// A interceptacao de cms-public abaixo e incondicional, e request interception nao e confiavel
-// quando um service worker controla a pagina. Sem isto o spec pode observar o catalogo real de
-// staging em vez da fixture que ele afirma verificar.
+// O bloqueio NAO e necessario para a interceptacao funcionar: medido contra o alias publicado, com
+// o service worker ativo em escopo "/" e controlando a pagina, o `page.route` interceptou cms-public
+// normalmente e o spec passou nos dois projetos. Ele fica porque remove o service worker como
+// variavel de um spec que intercepta rede, e porque e a convencao do repositorio -- a mesma de
+// cms-admin-ops-cycles, cms-secondary-ui-cycles, cms-auth-invite-recovery e do preflight de producao.
 test.use({ serviceWorkers: "block" });
 
 const governedImageUrl =

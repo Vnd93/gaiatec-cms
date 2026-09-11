@@ -314,6 +314,24 @@ jobs:
 
           supabase start
           local_db_url="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+          # A restauracao do schema morreu em `permission denied to change default privileges`:
+          # `ALTER DEFAULT PRIVILEGES FOR ROLE X` exige ser X ou superusuario, e o principal
+          # `postgres` do alvo efemero nao e nenhum dos dois. Um desastre real seria restaurado
+          # com o principal administrativo, entao o drill passa a usar o mesmo.
+          # As duas linhas abaixo sao do container efemero e nao de producao: valores de fabrica
+          # do stack local, descartados no teardown.
+          psql "$local_db_url" --no-psqlrc -X -qAt -v ON_ERROR_STOP=1 -c \
+            "select 'restore.principal=' || current_user || ' superuser=' ||
+             (select rolsuper from pg_roles where rolname = current_user)::text"
+          psql "$local_db_url" --no-psqlrc -X -qAt -v ON_ERROR_STOP=1 -c \
+            "select 'restore.superusers=' || coalesce(string_agg(rolname, ',' order by rolname), '')
+             from pg_roles where rolsuper"
+          local_admin_db_url="postgresql://supabase_admin:postgres@127.0.0.1:54322/postgres"
+          if ! psql "$local_admin_db_url" --no-psqlrc -X -qAt -v ON_ERROR_STOP=1 \
+            -c "select 'restore.admin_principal=' || current_user"; then
+            echo '::error::BACKUP_RESTORE_ADMIN_PRINCIPAL_UNAVAILABLE'
+            exit 1
+          fi
           # Catalogo de fabrica do alvo ANTES do dump. E ele que distingue um papel que o dump nao
           # carrega de um papel que o dump carrega e nao consegue restaurar.
           psql "$local_db_url" --no-psqlrc -X -qAt -v ON_ERROR_STOP=1 \
@@ -339,10 +357,10 @@ jobs:
             --dump-shape "$restore_dir/role-dump-shape.json" \
             --output "$artifact_dir/role-restore-report.json"
           run_restore_psql BACKUP_RESTORE_APPLICATION_SCHEMA_FAILED \
-            psql "$local_db_url" --no-psqlrc -X -v ON_ERROR_STOP=1 -f "$restore_dir/extracted/schema.sql"
+            psql "$local_admin_db_url" --no-psqlrc -X -v ON_ERROR_STOP=1 -f "$restore_dir/extracted/schema.sql"
 
           run_restore_psql BACKUP_RESTORE_MANAGED_TABLE_RESET_FAILED \
-            psql "$local_db_url" --no-psqlrc -X -v ON_ERROR_STOP=1 <<'SQL'
+            psql "$local_admin_db_url" --no-psqlrc -X -v ON_ERROR_STOP=1 <<'SQL'
           do $$
           declare target_tables text;
           begin
@@ -361,7 +379,7 @@ jobs:
           end $$;
           SQL
           run_restore_psql BACKUP_RESTORE_DATA_REPLAY_FAILED \
-            psql "$local_db_url" --no-psqlrc -X -v ON_ERROR_STOP=1 \
+            psql "$local_admin_db_url" --no-psqlrc -X -v ON_ERROR_STOP=1 \
             --set=APPLICATION_DATA="$restore_dir/extracted/application-data.sql" \
             --set=AUTH_DATA="$restore_dir/extracted/auth-data.sql" \
             --set=STORAGE_DATA="$restore_dir/extracted/storage-data.sql" <<'SQL'
@@ -373,10 +391,10 @@ jobs:
           commit;
           SQL
 
-          psql "$local_db_url" --no-psqlrc -X -v ON_ERROR_STOP=1 -Atc \
+          psql "$local_admin_db_url" --no-psqlrc -X -v ON_ERROR_STOP=1 -Atc \
             "select schemaname || '.' || tablename from pg_tables where schemaname in ('public', 'private') order by 1" \
             > "$restore_dir/restored-application-tables.txt"
-          psql "$local_db_url" --no-psqlrc -X -qAt -v ON_ERROR_STOP=1 \
+          psql "$local_admin_db_url" --no-psqlrc -X -qAt -v ON_ERROR_STOP=1 \
             --set=SNAPSHOT_MODE=false --set=SNAPSHOT_ID=unused \
             --file scripts/ev2/phase16/fingerprint-application.sql \
             > "$restore_dir/restored-application-fingerprints.tsv"
@@ -399,7 +417,7 @@ jobs:
           # Upload creates a new metadata row. Reapply the exact Storage snapshot
           # afterwards so owner, version, metadata and timestamps remain faithful.
           run_restore_psql BACKUP_RESTORE_STORAGE_METADATA_REAPPLY_FAILED \
-            psql "$local_db_url" --no-psqlrc -X -v ON_ERROR_STOP=1 \
+            psql "$local_admin_db_url" --no-psqlrc -X -v ON_ERROR_STOP=1 \
             --set=STORAGE_DATA="$restore_dir/extracted/storage-data.sql" <<'SQL'
           begin;
           set local session_replication_role = replica;
@@ -423,7 +441,7 @@ jobs:
           commit;
           SQL
 
-          psql "$local_db_url" --no-psqlrc -X -qAt -v ON_ERROR_STOP=1 \
+          psql "$local_admin_db_url" --no-psqlrc -X -qAt -v ON_ERROR_STOP=1 \
             --set=SNAPSHOT_MODE=false --set=SNAPSHOT_ID=unused \
             --file scripts/ev2/phase16/fingerprint-auth-storage.sql \
             > "$restore_dir/restored-auth-storage-inventory.tsv"

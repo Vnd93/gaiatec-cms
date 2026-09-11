@@ -171,7 +171,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={busy}
-                className="mt-8 w-full bg-[var(--rdo-orange)] py-3.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--rdo-orange-strong)] disabled:opacity-55"
+                className="mt-8 w-full bg-[var(--rdo-orange-on-white)] py-3.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--rdo-orange-on-white-hover)] disabled:opacity-55"
               >
                 {busy ? "Entrando…" : "Entrar"}
               </button>
@@ -200,7 +200,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={busy}
-                className="mt-8 w-full bg-[var(--rdo-orange)] py-3.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--rdo-orange-strong)] disabled:opacity-55"
+                className="mt-8 w-full bg-[var(--rdo-orange-on-white)] py-3.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--rdo-orange-on-white-hover)] disabled:opacity-55"
               >
                 {busy ? "Enviando…" : "Enviar código"}
               </button>
@@ -231,7 +231,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={busy || codigo.length < 6}
-                className="mt-8 w-full bg-[var(--rdo-orange)] py-3.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--rdo-orange-strong)] disabled:opacity-55"
+                className="mt-8 w-full bg-[var(--rdo-orange-on-white)] py-3.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--rdo-orange-on-white-hover)] disabled:opacity-55"
               >
                 {busy ? "Entrando…" : "Entrar"}
               </button>

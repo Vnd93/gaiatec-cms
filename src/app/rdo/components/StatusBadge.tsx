@@ -3,7 +3,7 @@ import { STATUS_LABEL } from "../lib/types";
 
 const STYLES: Record<RdoStatus, string> = {
   rascunho: "bg-amber-50 text-amber-700",
-  finalizado: "bg-[var(--rdo-orange-soft)] text-[var(--rdo-orange-strong)]",
+  finalizado: "bg-[var(--rdo-orange-soft)] text-[var(--rdo-orange-ink-on-soft)]",
   arquivado: "bg-zinc-100 text-zinc-500",
 };
 

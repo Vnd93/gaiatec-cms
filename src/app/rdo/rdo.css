@@ -12,10 +12,21 @@
   --rdo-blue: #0057de;
   --rdo-blue-strong: #0048b8;
   --rdo-blue-soft: #eef3fe;
-  /* Acento de marca / status */
+  /* Acento de marca / status — uso DECORATIVO: bordas, foco, spinner, ponto de status.
+     Nenhum destes carrega texto por cima, então o contraste de texto não se aplica a eles. */
   --rdo-orange: #f87010;
   --rdo-orange-strong: #d9600a;
   --rdo-orange-soft: #fff2e8;
+
+  /* Superfícies de laranja que CARREGAM TEXTO. Separadas de propósito: `--rdo-orange` puro dá
+     2.87:1 com branco e `--rdo-orange-strong` dá 3.73:1, os dois abaixo dos 4.5:1 que a WCAG
+     exige para texto normal. Medido no alias publicado: violação `color-contrast` serious no
+     botão de entrar do RDO, que está vivo em produção.
+     Os valores abaixo são o escurecimento MÍNIMO que passa, mantendo o matiz — não escolha
+     estética. Contrastes conferidos pelo teste de tokens: 4.53, 5.89 e 4.59. */
+  --rdo-orange-on-white: #c1570c;
+  --rdo-orange-on-white-hover: #a44a0a;
+  --rdo-orange-ink-on-soft: #b65108;
 
   /* Neutros (zinc) */
   --rdo-ink: #09090b;

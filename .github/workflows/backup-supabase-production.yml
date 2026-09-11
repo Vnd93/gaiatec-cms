@@ -403,7 +403,24 @@ jobs:
 
           local_status="$(supabase status -o env)"
           local_api_url="$(printf '%s\n' "$local_status" | sed -nE 's/^API_URL="?([^\"]+)"?$/\1/p')"
-          local_service_key="$(printf '%s\n' "$local_status" | sed -nE 's/^SERVICE_ROLE_KEY="?([^\"]+)"?$/\1/p')"
+          # Nomes das chaves que o CLI devolveu, nunca os valores. A extracao falhou como
+          # STORAGE_TARGET_SERVICE_KEY_REQUIRED sem dizer se a chave mudou de nome, de formato ou
+          # simplesmente nao veio, e sem isso a proxima tentativa seria chute.
+          printf '%s\n' "$local_status" | sed -nE 's/^([A-Z0-9_]+)=.*/local_status.key=\1/p'
+          # O CLI passou a emitir chave nova (`sb_secret_`) ao lado da legada; aceitar os dois
+          # nomes evita depender de qual versao do CLI o runner instalou.
+          local_service_key="$(printf '%s\n' "$local_status" \
+            | sed -nE 's/^(SERVICE_ROLE_KEY|SECRET_KEY)="?([^\"]+)"?$/\2/p' | head -1)"
+          case "$local_service_key" in
+            sb_secret_*) echo 'local_status.service_key_shape=opaque' ;;
+            *.*.*) echo 'local_status.service_key_shape=jwt' ;;
+            '') echo 'local_status.service_key_shape=absent' ;;
+            *) echo 'local_status.service_key_shape=unrecognized' ;;
+          esac
+          if [ -z "$local_service_key" ]; then
+            echo '::error::BACKUP_RESTORE_LOCAL_SERVICE_KEY_UNAVAILABLE'
+            exit 1
+          fi
           printf '::add-mask::%s\n' "$local_service_key"
           test -n "$local_api_url"
           test -n "$local_service_key"

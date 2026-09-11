@@ -45,6 +45,19 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # A regra de acoplamento entre migration e fixture resolve o intervalo de diff, entao
+          # precisa da historia completa.
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      # O contrato fixture x schema le as restricoes que as migrations declaram e avalia cada valor
+      # que as fixtures inserem contra elas. Ele pertence a este job porque e uma prova de banco,
+      # ainda que rode sem rede e em segundos.
+      - run: npm run test:qa
       - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3
         with:
           version: 2.116.0

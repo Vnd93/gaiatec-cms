@@ -37,6 +37,13 @@ jobs:
       CLOUDFLARE_CONFIGURED: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # Este job roda `npm run check`, e rollback-recovery-hardening.test.mjs clona o proprio
+          # repositorio e faz `checkout --detach` num SHA historico para provar que a recuperacao
+          # nao depende do checkout corrente. Num clone raso esse objeto nao existe e o teste morre
+          # com "fatal: unable to read tree", sem relacao com o que o PR mudou. O job `quality` ja
+          # usa historia completa pelo mesmo motivo.
+          fetch-depth: 0
       - if: github.event_name == 'workflow_dispatch'
         run: test "$(git rev-parse HEAD)" = "${{ inputs.expected_sha }}"
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7

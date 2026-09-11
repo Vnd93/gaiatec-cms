@@ -55,7 +55,11 @@ export function ProductCard({
             />
           </Link>
         ) : (
-          <span className="catalog-product-card__image-empty" aria-label="Produto sem imagem disponível">
+          <span
+            className="catalog-product-card__image-empty"
+            role="img"
+            aria-label="Produto sem imagem disponível"
+          >
             <ImageIcon size={38} aria-hidden="true" />
           </span>
         )}

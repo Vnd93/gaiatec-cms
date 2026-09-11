@@ -758,7 +758,7 @@ export default function AdminVisualStudioPage() {
         </div>
       )}
 
-      <div className="admin-visual-toolbar" aria-label="Ferramentas do documento visual">
+      <div className="admin-visual-toolbar" role="group" aria-label="Ferramentas do documento visual">
         <button type="button" disabled={!history.length || busy} onClick={undo} aria-label="Desfazer">
           <Undo2 size={16} aria-hidden="true" /> Desfazer
         </button>
@@ -844,7 +844,7 @@ export default function AdminVisualStudioPage() {
         </aside>
 
         <div className="admin-visual-canvas-column">
-          <div className="admin-visual-breakpoints" aria-label="Viewport de pré-visualização">
+          <div className="admin-visual-breakpoints" role="group" aria-label="Viewport de pré-visualização">
             {(["desktop", "tablet", "mobile"] as const).map((item) => (
               <button
                 key={item}
@@ -859,6 +859,7 @@ export default function AdminVisualStudioPage() {
           <div
             className="admin-visual-canvas"
             data-breakpoint={breakpoint}
+            role="group"
             aria-label={`Canvas ${breakpoint}`}
             onClickCapture={(event) => {
               if ((event.target as HTMLElement).closest("a")) {

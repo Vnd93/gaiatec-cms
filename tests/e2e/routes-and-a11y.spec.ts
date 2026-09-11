@@ -31,7 +31,7 @@ for (const route of routes) {
       }
     });
 
-    const response = await page.goto(route.path, { waitUntil: "networkidle" });
+    const response = await page.goto(route.path, { waitUntil: "load" });
     const edgeRuntime = Boolean(process.env.PLAYWRIGHT_EDGE || baseURL?.includes("pages.dev"));
     const expectedStatus =
       edgeRuntime && "edgeStatus" in route ? (route.edgeStatus ?? route.status) : route.status;
@@ -60,7 +60,10 @@ test("@a11y critical public journeys have no serious automated violations", asyn
     "/blog",
     "/campanhas/campanha-sintetica-inexistente",
   ]) {
-    await page.goto(route, { waitUntil: "networkidle" });
+    await page.goto(route, { waitUntil: "load" });
+    // Assercao direta de que a rota renderizou, no lugar do silencio de rede: mais forte, e
+    // deterministica onde `networkidle` nao e.
+    await expect(page.locator("h1").first()).toBeVisible();
     const results = await new AxeBuilder({ page }).analyze();
     const serious = results.violations.filter((violation) =>
       ["serious", "critical"].includes(violation.impact ?? ""),
@@ -83,7 +86,7 @@ test("staging exposes the clean-room launch projection", async ({ page, baseURL 
     ["/aplicacoes/medicao-estacoes-agua-esgoto", "Medição em Estações de Água e Esgoto"],
     ["/solucoes/instrumentacao-monitoramento-remoto", "Instrumentação e Monitoramento Remoto"],
   ] as const) {
-    const response = await page.goto(path, { waitUntil: "networkidle" });
+    const response = await page.goto(path, { waitUntil: "load" });
     expect(response?.status()).toBe(200);
     await expect(page.getByRole("heading", { name: heading, level: 1 })).toBeVisible();
     expect(await page.locator("body").evaluate((body) => body.scrollWidth <= body.clientWidth + 1)).toBe(
@@ -106,8 +109,9 @@ test("staging retires legacy gas detail routes and redirects replaced sectors", 
 });
 
 test("@a11y keyboard skip link moves focus to main content", async ({ page }) => {
-  await page.goto("/", { waitUntil: "networkidle" });
+  await page.goto("/", { waitUntil: "load" });
   const skip = page.getByRole("link", { name: "Pular para o conteúdo principal" });
+  await expect(skip).toBeAttached();
   await skip.focus();
   await skip.press("Enter");
   await expect(page.locator("#main-content")).toBeFocused();
@@ -141,8 +145,9 @@ test("new and consolidated admin routes remain fail-closed", async ({ page }) =>
 
 test("@a11y admin authentication keeps visible focus, contrast and reduced motion", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto("/admin/login", { waitUntil: "networkidle" });
+  await page.goto("/admin/login", { waitUntil: "load" });
   const email = page.getByLabel("E-mail corporativo");
+  await expect(email).toBeVisible();
   await email.focus();
   await expect(email).toBeFocused();
   const focusStyle = await email.evaluate((element) => {
@@ -158,8 +163,9 @@ test("@a11y admin authentication keeps visible focus, contrast and reduced motio
 
 test("@a11y mobile menu closes with Escape and restores scrolling", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile-chromium", "mobile interaction");
-  await page.goto("/", { waitUntil: "networkidle" });
+  await page.goto("/", { waitUntil: "load" });
   const menu = page.locator('button[aria-controls="mobile-navigation"]');
+  await expect(menu).toBeVisible();
   await menu.click();
   await expect(page.getByRole("navigation", { name: "Menu principal mobile" })).toBeVisible();
   await expect(menu).toHaveAttribute("aria-expanded", "true");

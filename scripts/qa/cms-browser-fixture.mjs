@@ -194,14 +194,20 @@ async function exactHealth() {
     throw new Error("QA_CMS_FIXTURE_RELEASE_MISMATCH");
 }
 
-async function managementQuery(query) {
+async function managementQuery(query, timeoutMs = 30_000) {
   const response = await fetch(`https://api.supabase.com/v1/projects/${target.ref}/database/query`, {
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
     body: JSON.stringify({ query }),
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
-  if (!response.ok) throw new Error("QA_CMS_FIXTURE_MANAGEMENT_QUERY_FAILED");
+  if (!response.ok) {
+    // A causa do banco nao pode se perder aqui: sem ela, uma falha de encerramento vira codigo nu e
+    // exige leitura de log bruto. So o identificador fechado viaja, nunca o corpo da resposta.
+    const detail = await response.text().catch(() => "");
+    const code = /"code"\s*:\s*"([0-9A-Z]{5})"/.exec(detail)?.[1] ?? "unknown";
+    throw new Error(`QA_CMS_FIXTURE_MANAGEMENT_QUERY_FAILED:${response.status}:${code}`);
+  }
   const payload = await response.json().catch(() => null);
   if (!Array.isArray(payload)) throw new Error("QA_CMS_FIXTURE_MANAGEMENT_RESPONSE_INVALID");
   return payload;
@@ -765,6 +771,27 @@ async function assertActorLease(actorId, runTag, expectedStatus) {
   return lease;
 }
 
+// O encerramento de lease dispara doze limpezas terminais num unico statement, e juntas elas varrem
+// mais de trinta tabelas do run. Pelo PostgREST isso corre sob o `statement_timeout` de oito segundos
+// herdado do `authenticator`, que nunca foi orcamento para essa varredura: o deploy 34528923953
+// reprovou aqui, e o canario G11 reproduziu a mesma causa tres vezes, SQLSTATE 57014.
+//
+// Nao adianta corrigir dentro da funcao: mudar `statement_timeout` ali nao reprograma o timer do
+// statement que ja esta correndo. O limite precisa ser armado ANTES do statement. Alargar no papel
+// `service_role` funcionaria, mas ele atende producao pelas Edge Functions, e afrouxar protecao de
+// producao para resolver teardown de QA e a troca errada.
+//
+// O teto de statement e necessariamente MENOR que o de requisicao: se o abort da requisicao cortar
+// primeiro, a causa do banco se perde e a falha volta a ser codigo nu.
+//
+// Transporte duravel identico ao ja provado em scripts/ev2/phase11/staging-canary.mjs, f3771d8.
+const LEASE_COMPLETION_STATEMENT_TIMEOUT_MS = 60_000;
+const LEASE_COMPLETION_REQUEST_TIMEOUT_MS = 90_000;
+
+function leaseStatementTimedOut(error) {
+  return /"code"\s*:\s*"57014"|:57014$|:57014:/.test(String(error?.message ?? "")) || error?.code === "57014";
+}
+
 async function completeActorLease(actorId, runTag) {
   const result = await context.admin.rpc("cms_complete_qa_actor_lease", {
     p_actor_id: actorId,
@@ -772,13 +799,44 @@ async function completeActorLease(actorId, runTag) {
     p_candidate_sha: expectedSha,
     p_environment: target.environment,
   });
+
+  let completed = result.data;
+  if (result.error) {
+    // A falha nomeia a si mesma: SQLSTATE do banco mais o identificador fechado do dominio.
+    const identity = `${result.error.code ?? "unknown"}:${
+      /CMS_[A-Z0-9_]{3,60}/.exec(result.error.message ?? "")?.[0] ?? "unknown"
+    }`;
+    if (!leaseStatementTimedOut(result.error))
+      throw new Error(`QA_CMS_FIXTURE_LEASE_COMPLETION_FAILED:${identity}`);
+
+    // A identidade e validada contra padroes fechados ANTES de qualquer interpolacao em SQL.
+    if (
+      !uuidPattern.test(actorId) ||
+      !runTagPattern.test(runTag) ||
+      !/^[0-9a-f]{40}$/.test(expectedSha) ||
+      !/^(staging|production)$/.test(target.environment)
+    )
+      throw new Error("QA_CMS_FIXTURE_LEASE_IDENTITY_UNSAFE", { cause: result.error });
+
+    const rows = await managementQuery(
+      [
+        `set statement_timeout = '${LEASE_COMPLETION_STATEMENT_TIMEOUT_MS}ms';`,
+        `select public.cms_complete_qa_actor_lease(`,
+        `'${actorId}'::uuid, '${runTag}',`,
+        `'${expectedSha}', '${target.environment}') as result;`,
+      ].join("\n"),
+      LEASE_COMPLETION_REQUEST_TIMEOUT_MS,
+    );
+    completed = rows.at(-1)?.result;
+    if (!completed) throw new Error("QA_CMS_FIXTURE_LEASE_DURABLE_COMPLETION_EMPTY", { cause: result.error });
+  }
+
   if (
-    result.error ||
-    result.data?.schemaVersion !== 1 ||
-    result.data?.status !== "cleaned" ||
-    typeof result.data?.replayed !== "boolean"
+    completed?.schemaVersion !== 1 ||
+    completed?.status !== "cleaned" ||
+    typeof completed?.replayed !== "boolean"
   )
-    throw new Error("QA_CMS_FIXTURE_LEASE_COMPLETION_FAILED");
+    throw new Error("QA_CMS_FIXTURE_LEASE_COMPLETION_INVALID");
   await assertActorLease(actorId, runTag, "cleaned");
 }
 

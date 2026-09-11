@@ -1,6 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import { mockCmsPublicFallbacks } from "./cms-public-mock";
+import { type ConsoleEntry, relevantConsoleErrors } from "./console-origins";
 
 test.beforeEach(async ({ page, baseURL }) => {
   if (!baseURL?.includes("pages.dev")) await mockCmsPublicFallbacks(page);
@@ -23,11 +24,10 @@ const routes = [
 
 for (const route of routes) {
   test(`smoke ${route.path}`, async ({ page, baseURL }) => {
-    const consoleErrors: string[] = [];
+    const consoleEntries: ConsoleEntry[] = [];
     page.on("console", (message) => {
       if (message.type() === "error") {
-        const location = message.location().url;
-        consoleErrors.push(location ? `${message.text()} @ ${location}` : message.text());
+        consoleEntries.push({ text: message.text(), url: message.location().url });
       }
     });
 
@@ -40,6 +40,8 @@ for (const route of routes) {
     expect(await page.locator("body").evaluate((body) => body.scrollWidth <= body.clientWidth + 1)).toBe(
       true,
     );
+    // Erro de origem de terceiro declarada nao reprova; erro de primeira parte reprova sempre.
+    const consoleErrors = relevantConsoleErrors(consoleEntries);
     const unexpectedConsoleErrors =
       expectedStatus >= 400
         ? consoleErrors.filter((message) => !message.endsWith(`@ ${page.url()}`))

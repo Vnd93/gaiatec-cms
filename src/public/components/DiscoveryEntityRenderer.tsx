@@ -57,7 +57,7 @@ export function DiscoveryEntityRenderer({
       </p>
       <h1>{p.title}</h1>
       {entity.kind === "service" && p.serviceKindRef?.label && (
-        <p className="new-catalog__chips" aria-label="Categoria do serviço">
+        <p className="new-catalog__chips" role="group" aria-label="Categoria do serviço">
           <span>{p.serviceKindRef.label}</span>
         </p>
       )}

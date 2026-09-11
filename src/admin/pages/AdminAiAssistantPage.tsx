@@ -327,7 +327,7 @@ export default function AdminAiAssistantPage() {
         </div>
       )}
 
-      <div className="admin-ai__metrics" aria-label="Limites da assistência">
+      <div className="admin-ai__metrics" role="group" aria-label="Limites da assistência">
         <div>
           <span>Site</span>
           <strong>Site principal · {environmentLabels[CMS_ENVIRONMENT]}</strong>

@@ -285,7 +285,7 @@ export default function AdminQualityPage() {
         <div className="admin-state">As verificações de qualidade estão desativadas para esta conta.</div>
       ) : (
         <>
-          <div className="admin-metrics" aria-label="Pendências por categoria">
+          <div className="admin-metrics" role="group" aria-label="Pendências por categoria">
             <article>
               <strong>{categoryCounts.seo}</strong>
               <span>busca</span>
@@ -333,7 +333,7 @@ export default function AdminQualityPage() {
             )}
           </div>
           {canWaive && (
-            <div className="admin-editor-grid" aria-labelledby="quality-waiver-title">
+            <div className="admin-editor-grid" role="group" aria-labelledby="quality-waiver-title">
               <h2 id="quality-waiver-title">Exceção temporária</h2>
               <label>
                 Achado a dispensar

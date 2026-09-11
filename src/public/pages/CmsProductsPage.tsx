@@ -160,7 +160,7 @@ export default function CmsProductsPage() {
             Buscar <ArrowRight size={17} aria-hidden="true" />
           </button>
         </form>
-        <div className="products-catalog__search-note" aria-label="Benefícios do catálogo">
+        <div className="products-catalog__search-note" role="group" aria-label="Benefícios do catálogo">
           <span>
             <ShieldCheck size={18} aria-hidden="true" /> Informações técnicas
           </span>
@@ -229,7 +229,7 @@ export default function CmsProductsPage() {
           </div>
 
           {hasActiveFilters && (
-            <div className="products-catalog__active-filters" aria-label="Filtros ativos">
+            <div className="products-catalog__active-filters" role="group" aria-label="Filtros ativos">
               {queryParam && (
                 <button type="button" onClick={() => setFilter("q", "")}>
                   Busca: {queryParam} <X size={14} aria-hidden="true" />
@@ -244,7 +244,12 @@ export default function CmsProductsPage() {
           )}
 
           {!collection && !error ? (
-            <div className="products-catalog__loading" aria-busy="true" aria-label="Carregando produtos">
+            <div
+              className="products-catalog__loading"
+              aria-busy="true"
+              role="status"
+              aria-label="Carregando produtos"
+            >
               {[0, 1, 2].map((item) => (
                 <div className="products-catalog__skeleton" key={item} aria-hidden="true">
                   <span />

@@ -113,7 +113,7 @@ export function PageBlockEditor({
         </strong>
         <span>{block.hidden ? "Oculto" : "Visível"}</span>
       </summary>
-      <div className="admin-page-block__toolbar" aria-label={`Ações do bloco ${index + 1}`}>
+      <div className="admin-page-block__toolbar" role="group" aria-label={`Ações do bloco ${index + 1}`}>
         <button
           type="button"
           onClick={() => onMove(-1)}

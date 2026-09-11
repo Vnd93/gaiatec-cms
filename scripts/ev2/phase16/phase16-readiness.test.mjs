@@ -197,13 +197,56 @@ test("backup configuration binds encrypted off-platform copy to the exact produc
     validateBackupConfig({ ...base, serviceRoleKey: "" }).violations.join(","),
     /backup_service_role_key_invalid/,
   );
+  // `pg_dump` exige conexao capaz de SESSAO. Duas satisfazem: o endpoint direto e o Supavisor em
+  // session mode. Quem separa session de transaction e a PORTA, nao o host nem o usuario.
+  const poolerHost = "aws-0-sa-east-1.pooler.supabase.com";
+  const poolerUser = `postgres.${PRODUCTION_SUPABASE_PROJECT_REF}`;
+  const poolerUrl = (port) =>
+    `postgresql://${poolerUser}:${"x".repeat(24)}@${poolerHost}:${port}/postgres?sslmode=require`;
+
+  // Session mode e aceito: era esta a configuracao que vinha produzindo backup com sucesso, e exigir
+  // o endpoint direto e impossivel neste ambiente, porque ele resolve so em IPv6.
+  assert.equal(validateBackupConfig({ ...base, databaseUrl: poolerUrl(5432) }).valid, true);
+
+  // Transaction mode continua recusado: ele nao sustenta pg_dump.
+  assert.match(
+    validateBackupConfig({ ...base, databaseUrl: poolerUrl(6543) }).violations.join(","),
+    /database_url_session_port_invalid/,
+  );
+
+  // Host que nao e nem o direto nem o Supavisor continua recusado.
   assert.match(
     validateBackupConfig({
       ...base,
-      databaseUrl: `postgresql://postgres:${"x".repeat(24)}@aws-0-sa-east-1.pooler.supabase.com:6543/postgres?sslmode=require`,
+      databaseUrl: `postgresql://postgres:${"x".repeat(24)}@db.exemplo.invalid:5432/postgres?sslmode=require`,
     }).violations.join(","),
-    /database_url_must_be_direct_session_endpoint|database_url_session_port_invalid/,
+    /database_url_must_be_session_capable_endpoint/,
   );
+
+  // O usuario acompanha o endpoint: `postgres` no direto, `postgres.<ref>` no Supavisor. Trocar um
+  // pelo outro e recusado nos dois sentidos.
+  assert.match(
+    validateBackupConfig({
+      ...base,
+      databaseUrl: `postgresql://postgres:${"x".repeat(24)}@${poolerHost}:5432/postgres?sslmode=require`,
+    }).violations.join(","),
+    /database_user_invalid/,
+  );
+  assert.match(
+    validateBackupConfig({
+      ...base,
+      databaseUrl: base.databaseUrl.replace("postgres:", `${poolerUser}:`),
+    }).violations.join(","),
+    /database_user_invalid/,
+  );
+
+  // E o resto do contrato nao foi afrouxado junto.
+  for (const [broken, expected] of [
+    [poolerUrl(5432).replace("?sslmode=require", ""), /database_tls_required/],
+    [poolerUrl(5432).replace("/postgres?", "/outro?"), /database_name_invalid/],
+    [poolerUrl(5432).replace("x".repeat(24), "curta"), /database_password_missing_or_short/],
+  ])
+    assert.match(validateBackupConfig({ ...base, databaseUrl: broken }).violations.join(","), expected);
   assert.match(
     validateBackupConfig({
       ...base,

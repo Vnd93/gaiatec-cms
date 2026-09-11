@@ -232,10 +232,21 @@ export function validateBackupConfig(config) {
   if (databaseUrl) {
     if (!["postgres:", "postgresql:"].includes(databaseUrl.protocol))
       violations.push("database_url_protocol_invalid");
-    if (databaseUrl.hostname !== `db.${projectRef}.supabase.co`)
-      violations.push("database_url_must_be_direct_session_endpoint");
+    // `pg_dump` exige conexao capaz de SESSAO, e sao duas as que servem: o endpoint direto do projeto
+    // e o Supavisor em session mode. O Supavisor em TRANSACTION mode nao serve, e quem separa os dois
+    // e a PORTA — 5432 e sessao, 6543 e transacao — nao o host nem o usuario, que sao iguais nos dois.
+    //
+    // A regra anterior exigia o endpoint direto e so ele. Ela reprovou uma configuracao que vinha
+    // produzindo backup com sucesso, e a troca que ela sugeria era impossivel neste ambiente: o
+    // endpoint direto do projeto resolve apenas em IPv6, e runner hospedado do GitHub nao tem egresso
+    // IPv6. Exigir o direto moveria a falha da validacao para a conexao, mais tarde e menos legivel.
+    const directEndpoint = databaseUrl.hostname === `db.${projectRef}.supabase.co`;
+    const poolerEndpoint = /^[a-z0-9-]+\.pooler\.supabase\.com$/.test(databaseUrl.hostname);
+    if (!directEndpoint && !poolerEndpoint) violations.push("database_url_must_be_session_capable_endpoint");
     if (databaseUrl.port !== "5432") violations.push("database_url_session_port_invalid");
-    if (decodeURIComponent(databaseUrl.username) !== "postgres") violations.push("database_user_invalid");
+    // O usuario acompanha o endpoint: `postgres` na conexao direta, `postgres.<ref>` no Supavisor.
+    const expectedUser = poolerEndpoint ? `postgres.${projectRef}` : "postgres";
+    if (decodeURIComponent(databaseUrl.username) !== expectedUser) violations.push("database_user_invalid");
     if (databaseUrl.pathname !== "/postgres") violations.push("database_name_invalid");
     if (decodeURIComponent(databaseUrl.password).length < 16)
       violations.push("database_password_missing_or_short");

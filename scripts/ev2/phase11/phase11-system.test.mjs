@@ -440,3 +440,42 @@ test("a measurement reproval names the budget it missed", async () => {
     /G11_UNKNOWN_BASELINE_DIRECTION:orcamentoDesconhecido/,
   );
 });
+
+test("a frontend gate is reported as unexercised, never as passed, when the alias serves an older build", async () => {
+  const canary = await readFile("scripts/ev2/phase11/staging-canary.mjs", "utf8");
+  const workflow = await readFile(".github/workflows/deploy-staging.yml", "utf8");
+  const report = await readFile("scripts/ev2/phase12/diagnostic-report.mjs", "utf8");
+
+  // O passe 34552942444 devolveu zero violacoes e o 34554432797, mesma fonte e mesmo alias, devolveu
+  // dezesseis: o elemento infrator e transitorio. Zero por sorte foi lido como prova uma vez.
+  assert.match(
+    canary,
+    /const frontendUnderTest = \(process\.env\.EV2_G11_FRONTEND_UNDER_TEST \?\? "true"\) !== "false";/,
+  );
+
+  // Verificar e o padrao: um run canonico que esquecesse de declarar nao pode deixar de verificar.
+  assert.match(canary, /\?\? "true"/);
+
+  // Sem frontend sob teste, os quatro checks saem como nao exercitados.
+  const guarded = canary.slice(canary.indexOf("  let measurementEvidence = null;"));
+  assert.match(guarded.slice(0, 4000), /\} else \{[\s\S]*?skip\(name, "EV2_G11_FRONTEND_UNDER_TEST=false/);
+  for (const name of [
+    "accessibility_critical_serious_zero",
+    "measurement_requires_independent_review",
+    "independent_review_required",
+    "segregated_review_accepted",
+  ])
+    assert.ok(guarded.includes(`"${name}"`), `${name} precisa sair como nao exercitado`);
+
+  // SKIPPED nao pode contar como exercitado nem como aprovado, senao a ausencia vira cobertura.
+  assert.match(canary, /checks\.filter\(\(entry\) => entry\.result === "PASS"\)\.length/);
+
+  // O passe declara o sinal, e o declara comparando o que o alias serve com o candidato.
+  assert.match(
+    workflow,
+    /EV2_G11_FRONTEND_UNDER_TEST: \$\{\{ steps\.live\.outputs\.g12_sha == steps\.candidate\.outputs\.sha \}\}/,
+  );
+
+  // E o limite fica escrito no relatorio, ao lado dos outros que o passe nao cobre.
+  assert.match(report, /Nao valida mudanca de FRONTEND do candidato/);
+});

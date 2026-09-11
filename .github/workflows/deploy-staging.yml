@@ -1146,6 +1146,9 @@ jobs:
           # de defeito de fixture contra schema que consumiu seis candidatos.
           EV2_G11_CANDIDATE_ORIGIN: https://ev2-g12-canary.gaiatec-cms-staging.pages.dev
           EV2_G11_EXPECTED_SHA: ${{ steps.live.outputs.g12_sha }}
+          # O alias so serve o candidato depois que um run canonico o publica. Enquanto isso, medir a
+          # pagina publicada e medir o build anterior, e o numero obtido nao e do candidato.
+          EV2_G11_FRONTEND_UNDER_TEST: ${{ steps.live.outputs.g12_sha == steps.candidate.outputs.sha }}
           EV2_G11_REPORT_PATH: ../diagnostic-g11-canary.json
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       - name: DIAGNOSTIC public route probe and latency budget

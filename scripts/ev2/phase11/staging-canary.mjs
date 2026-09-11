@@ -33,6 +33,9 @@ const expectedSha = process.env.EV2_G11_EXPECTED_SHA;
 if (!/^[0-9a-f]{40}$/.test(expectedSha ?? ""))
   throw new Error("Defina EV2_G11_EXPECTED_SHA com o SHA completo explicitamente autorizado.");
 const qaRunTag = createQaRunTag(expectedSha);
+// Falso por padrao seria perigoso ao contrario: um run canonico que esquecesse de declarar deixaria
+// de verificar acessibilidade em silencio. O padrao e verificar; so o passe de diagnostico desliga.
+const frontendUnderTest = (process.env.EV2_G11_FRONTEND_UNDER_TEST ?? "true") !== "false";
 // A 0084 aceita a origem `qa_fixture` somente na rota exata do run que possui o formulario.
 const qaFixtureOriginPath = "/qa-cms-final/" + qaRunTag.toLowerCase();
 const supabaseAccessToken = process.env.SUPABASE_ACCESS_TOKEN ?? "";
@@ -82,6 +85,13 @@ function runSupabase(args) {
 
 function supabaseJson(args) {
   return JSON.parse(runSupabase([...args, "--output", "json"]));
+}
+
+// Um check que nao foi exercitado nao e um check aprovado. Registrar `SKIPPED` mantem a diferenca
+// visivel no relatorio, em vez de deixar a ausencia parecer cobertura.
+function skip(name, reason) {
+  checks.push({ name, result: "SKIPPED", detail: reason });
+  console.log(JSON.stringify({ event: "g11.check", name, result: "SKIPPED", detail: reason }));
 }
 
 function check(name, condition, detail) {
@@ -1129,83 +1139,113 @@ try {
     JSON.stringify(restore),
   );
   check("transactional_restore_rto_within_budget", restore.durationMs <= 15 * 60_000, restore.durationMs);
-  const accessibility = runAccessibility();
-  check(
-    "accessibility_critical_serious_zero",
-    accessibility.critical === 0 && accessibility.serious === 0,
-    JSON.stringify(accessibility),
-  );
+  // O alias so serve o candidato depois que um run canonico o publica. Num passe que nao publica, a
+  // suite de acessibilidade mede o build ANTERIOR, e o numero que ela produz nao e do candidato.
+  //
+  // Isso ja produziu falso negativo: no passe 34552942444 a varredura devolveu zero violacoes e no
+  // 34554432797, mesma fonte e mesmo alias, devolveu dezesseis — o elemento infrator e transitorio e
+  // depende de estar no DOM no instante da varredura. Zero por sorte foi lido como prova.
+  //
+  // A medicao depende disso duas vezes: o relatorio enviado ao `record_run` declara
+  // `accessibilityCritical` e `accessibilitySerious`, e o backend exige ambos em zero para decidir
+  // `measured`. Declarar zero a partir de uma varredura que nao mediu o candidato seria afirmar ao
+  // banco algo que nao foi verificado. Entao, sem frontend sob teste, nada disso roda: os checks
+  // saem como NAO EXERCITADOS, que e diferente de aprovados.
+  let measurementEvidence = null;
+  if (frontendUnderTest) {
+    const accessibility = runAccessibility();
+    check(
+      "accessibility_critical_serious_zero",
+      accessibility.critical === 0 && accessibility.serious === 0,
+      JSON.stringify(accessibility),
+    );
 
-  const metrics = {
-    availabilityPercent: publicLoad.availabilityPercent,
-    adminReadP95Ms: Math.round(percentile(snapshotDurations, 95)),
-    commandP95Ms: Math.round(percentile(commandDurations, 95)),
-    adminReadWallP95Ms: Math.round(percentile(snapshotWallDurations, 95)),
-    commandWallP95Ms: Math.round(percentile(commandWallDurations, 95)),
-    outboxLagP95Ms: latestSnapshot.metrics.outboxWorstLagSeconds * 1000,
-    auditCoveragePercent: latestSnapshot.metrics.auditCoveragePercent,
-    restoreRpoMinutes: restore.rpoMinutes,
-    restoreRtoMinutes: Math.ceil(restore.durationMs / 60_000),
-  };
-  const measuredChecks = checks.length;
-  const report = {
-    suiteKey: "g11-staging-system",
-    candidateSha: expectedSha,
-    startedAt: canaryStartedAt,
-    finishedAt: new Date().toISOString(),
-    totalChecks: measuredChecks,
-    passedChecks: measuredChecks,
-    p0Count: 0,
-    p1Count: 0,
-    accessibilityCritical: accessibility.critical,
-    accessibilitySerious: accessibility.serious,
-    securityStatus: "passed",
-    restoreStatus: "passed",
-    metrics,
-    evidenceHash: createHash("sha256").update(JSON.stringify({ checks, metrics })).digest("hex"),
-    syntheticOnly: true,
-    realDataUsed: false,
-  };
-  // A resposta de `record_run` diz apenas `failed`, sem nomear o orcamento estourado. Sem isto, a
-  // reprovacao nao tem causa em lugar nenhum: nem na resposta, nem no log.
-  const submittedMetrics = {
-    ...metrics,
-    accessibilityCritical: report.accessibilityCritical,
-    accessibilitySerious: report.accessibilitySerious,
-  };
-  const missedBudgets = budgetsMissed(operatorCapability.json.baselines, submittedMetrics);
-  console.log(JSON.stringify({ event: "g11.metrics", submitted: submittedMetrics, missedBudgets }));
-  const record = await system(context, operator, "record_run", { report }, { idempotencyKey: randomUUID() });
-  check(
-    "measurement_requires_independent_review",
-    record.json.status === "measured" && record.json.requiresIndependentReview === true,
-    JSON.stringify({ ...record.json, missedBudgets }),
-  );
-  const selfReview = await system(
-    context,
-    operator,
-    "review_run",
-    { runId: record.json.runId, accept: true, rationale: "Tentativa negativa de autoaprovação" },
-    { idempotencyKey: randomUUID(), allowed: [409] },
-  );
-  check(
-    "independent_review_required",
-    selfReview.json.code === "CMS_SYSTEM_REVIEWER_SEPARATION_REQUIRED",
-    selfReview.json.code,
-  );
-  const accepted = await system(
-    context,
-    reviewer,
-    "review_run",
-    {
-      runId: record.json.runId,
-      accept: true,
-      rationale: "Evidência sintética G11 conferida por revisor segregado",
-    },
-    { idempotencyKey: randomUUID() },
-  );
-  check("segregated_review_accepted", accepted.json.status === "accepted", JSON.stringify(accepted.json));
-
+    const metrics = {
+      availabilityPercent: publicLoad.availabilityPercent,
+      adminReadP95Ms: Math.round(percentile(snapshotDurations, 95)),
+      commandP95Ms: Math.round(percentile(commandDurations, 95)),
+      adminReadWallP95Ms: Math.round(percentile(snapshotWallDurations, 95)),
+      commandWallP95Ms: Math.round(percentile(commandWallDurations, 95)),
+      outboxLagP95Ms: latestSnapshot.metrics.outboxWorstLagSeconds * 1000,
+      auditCoveragePercent: latestSnapshot.metrics.auditCoveragePercent,
+      restoreRpoMinutes: restore.rpoMinutes,
+      restoreRtoMinutes: Math.ceil(restore.durationMs / 60_000),
+    };
+    // `SKIPPED` nao entra nem no total nem no aprovado: contar como exercitado inflaria a cobertura.
+    const measuredChecks = checks.filter((entry) => entry.result === "PASS").length;
+    const report = {
+      suiteKey: "g11-staging-system",
+      candidateSha: expectedSha,
+      startedAt: canaryStartedAt,
+      finishedAt: new Date().toISOString(),
+      totalChecks: measuredChecks,
+      passedChecks: measuredChecks,
+      p0Count: 0,
+      p1Count: 0,
+      accessibilityCritical: accessibility.critical,
+      accessibilitySerious: accessibility.serious,
+      securityStatus: "passed",
+      restoreStatus: "passed",
+      metrics,
+      evidenceHash: createHash("sha256").update(JSON.stringify({ checks, metrics })).digest("hex"),
+      syntheticOnly: true,
+      realDataUsed: false,
+    };
+    // A resposta de `record_run` diz apenas `failed`, sem nomear o orcamento estourado. Sem isto, a
+    // reprovacao nao tem causa em lugar nenhum: nem na resposta, nem no log.
+    const submittedMetrics = {
+      ...metrics,
+      accessibilityCritical: report.accessibilityCritical,
+      accessibilitySerious: report.accessibilitySerious,
+    };
+    const missedBudgets = budgetsMissed(operatorCapability.json.baselines, submittedMetrics);
+    console.log(JSON.stringify({ event: "g11.metrics", submitted: submittedMetrics, missedBudgets }));
+    const record = await system(
+      context,
+      operator,
+      "record_run",
+      { report },
+      { idempotencyKey: randomUUID() },
+    );
+    check(
+      "measurement_requires_independent_review",
+      record.json.status === "measured" && record.json.requiresIndependentReview === true,
+      JSON.stringify({ ...record.json, missedBudgets }),
+    );
+    const selfReview = await system(
+      context,
+      operator,
+      "review_run",
+      { runId: record.json.runId, accept: true, rationale: "Tentativa negativa de autoaprovação" },
+      { idempotencyKey: randomUUID(), allowed: [409] },
+    );
+    check(
+      "independent_review_required",
+      selfReview.json.code === "CMS_SYSTEM_REVIEWER_SEPARATION_REQUIRED",
+      selfReview.json.code,
+    );
+    const accepted = await system(
+      context,
+      reviewer,
+      "review_run",
+      {
+        runId: record.json.runId,
+        accept: true,
+        rationale: "Evidência sintética G11 conferida por revisor segregado",
+      },
+      { idempotencyKey: randomUUID() },
+    );
+    check("segregated_review_accepted", accepted.json.status === "accepted", JSON.stringify(accepted.json));
+    measurementEvidence = { metrics, assuranceRunId: record.json.runId };
+  } else {
+    for (const name of [
+      "accessibility_critical_serious_zero",
+      "measurement_requires_independent_review",
+      "independent_review_required",
+      "segregated_review_accepted",
+    ])
+      skip(name, "EV2_G11_FRONTEND_UNDER_TEST=false: o alias publicado nao serve o candidato");
+  }
   const after = await baseline(context);
   check(
     "stable_manifest_and_default_flags_unchanged",
@@ -1213,7 +1253,9 @@ try {
       JSON.stringify(before.flags) === JSON.stringify(after.flags),
     JSON.stringify({ before, after }),
   );
-  finalEvidence = { before, after, metrics, assuranceRunId: record.json.runId };
+  finalEvidence = measurementEvidence
+    ? { before, after, ...measurementEvidence }
+    : { before, after, frontendUnderTest: false };
 } catch (error) {
   operationError = error;
 } finally {

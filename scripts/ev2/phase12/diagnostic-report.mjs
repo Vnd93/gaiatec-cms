@@ -140,6 +140,7 @@ const LIMITS = [
   "Nao aplica migration, nao configura secret e nao faz deploy de Edge Function.",
   "Nao publica bytes, nao sela artefato, nao promove e nao toca o alias canonico.",
   "Nao valida migration nova nem funcao nova do candidato; isso e exclusividade do run canonico.",
+  "Nao valida mudanca de FRONTEND do candidato: o alias publicado serve o SHA anterior, entao todo gate que inspeciona a pagina publicada avalia o build antigo. Um resultado verde ali nao e prova, e ja produziu falso negativo.",
   "Nao satisfaz gate, nao produz evidencia e nao pode ser citado em matriz terminal ou aprovacao.",
   "Mutacao permitida exclusivamente em fixture sintetica, com ator e run_tag proprios deste run.",
   "O ciclo autenticado de navegador so e exercitado quando o alias ja serve o candidato: a fixture exige o mesmo SHA no checkout e no release servido, e um passe que nao publica nao satisfaz as duas.",

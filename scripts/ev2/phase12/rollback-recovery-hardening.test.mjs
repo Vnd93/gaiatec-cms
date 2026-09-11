@@ -57,6 +57,26 @@ test("staging baseline inventory uses candidate tooling with a fail-closed expli
     read(".github/workflows/ci.yml"),
   ]);
   assert.match(ci, /jobs:\s+quality:[\s\S]*?actions\/checkout@[a-f0-9]+[\s\S]*?fetch-depth: 0/);
+
+  // Todo job que roda `npm run check` precisa de historia completa. O teste logo abaixo clona o
+  // proprio repositorio e faz `checkout --detach` num SHA historico; num clone raso esse objeto nao
+  // existe e ele morre com "fatal: unable to read tree", sem relacao com o que o candidato mudou.
+  const preview = await read(".github/workflows/preview.yml");
+  assert.match(preview, /actions\/checkout@[a-f0-9]+[\s\S]{0,600}?fetch-depth: 0/);
+  assert.ok(
+    preview.indexOf("fetch-depth: 0") < preview.indexOf("- run: npm run check"),
+    "a historia completa tem de ser pedida antes de `npm run check`",
+  );
+
+  // O contrato fixture x schema e prova de banco e roda no job que prova banco, com a historia que a
+  // regra de acoplamento entre migration e fixture precisa para resolver o intervalo de diff.
+  const database = ci.slice(ci.indexOf("  database:"), ci.indexOf("  browser:"));
+  assert.match(database, /fetch-depth: 0/);
+  assert.match(database, /run: npm run test:qa/);
+  assert.ok(
+    database.indexOf("npm run test:qa") < database.indexOf("supabase start"),
+    "o contrato roda sem rede e deve reprovar antes de subir o banco local",
+  );
   assert.match(
     workflow,
     /working-directory: baseline[\s\S]*node \.\.\/candidate\/scripts\/qa\/cms-coverage-inventory\.mjs \\\r?\n\s+--repository-root \. \\\r?\n\s+--output outputs\/cms-coverage-rollback\.json/,

@@ -15,8 +15,60 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  compensate-incomplete-staging-deploy:
+  # Um run de diagnostico de Deploy staging termina em failure por desenho e nao publica nada: o
+  # job `deploy` e pulado inteiro. O watchdog acordava assim mesmo e morria em
+  # G12_STAGING_WATCHDOG_STATE_UNAVAILABLE, deixando um run vermelho por passada de diagnostico.
+  # Falha esperada que se acumula esconde a falha real: uma compensacao que nao aconteceu ficaria
+  # indistinguivel do ruido. A discriminacao nao olha o input do pai, olha o fato que importa —
+  # se o job mutante chegou a executar.
+  classify-parent-run:
     if: >-
+      (github.event.workflow_run.conclusion == 'cancelled' ||
+      github.event.workflow_run.conclusion == 'failure' ||
+      github.event.workflow_run.conclusion == 'timed_out') &&
+      github.event.workflow_run.event == 'workflow_dispatch' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.path == '.github/workflows/deploy-staging.yml' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      deploy_executed: ${{ steps.parent.outputs.deploy_executed }}
+    steps:
+      - name: Decide whether the incomplete run reached its mutating deploy job
+        id: parent
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+        run: |
+          set -euo pipefail
+          # Se a classificacao nao puder ser feita, o watchdog segue como antes: nao compensar por
+          # nao saber seria o unico erro irrecuperavel desta decisao.
+          if ! conclusions="$(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$PARENT_RUN_ID/attempts/$PARENT_RUN_ATTEMPT/jobs" \
+            --jq '.jobs[] | select(.name == "deploy") | .conclusion')"; then
+            printf '{"event":"g12.staging.watchdog.parent-classification-failed","runId":"%s","runAttempt":"%s","deployExecuted":true}\n' \
+              "$PARENT_RUN_ID" "$PARENT_RUN_ATTEMPT"
+            echo "deploy_executed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Ausente ou skipped: nenhuma mutacao comecou, logo nao ha o que compensar. Qualquer
+          # outra conclusao (failure, cancelled, success) significa que o job mutante rodou, e ai
+          # a ausencia de estado pre-mutacao continua sendo falha dura no job seguinte.
+          if [ -z "$conclusions" ] || ! printf '%s\n' "$conclusions" | grep -qv '^skipped$'; then
+            executed=false
+          else
+            executed=true
+          fi
+          printf '{"event":"g12.staging.watchdog.parent-classified","runId":"%s","runAttempt":"%s","deployExecuted":%s}\n' \
+            "$PARENT_RUN_ID" "$PARENT_RUN_ATTEMPT" "$executed"
+          echo "deploy_executed=$executed" >> "$GITHUB_OUTPUT"
+
+  compensate-incomplete-staging-deploy:
+    needs: classify-parent-run
+    if: >-
+      needs.classify-parent-run.outputs.deploy_executed == 'true' &&
       (github.event.workflow_run.conclusion == 'cancelled' ||
       github.event.workflow_run.conclusion == 'failure' ||
       github.event.workflow_run.conclusion == 'timed_out') &&

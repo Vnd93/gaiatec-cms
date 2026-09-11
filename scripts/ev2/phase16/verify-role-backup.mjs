@@ -30,10 +30,20 @@ export function parseRoleDetail(source) {
   const lines = String(source).trim().split(/\r?\n/);
   if (!lines.length || lines[0] === "") throw new Error("BACKUP_ROLE_DETAIL_INVALID");
   const roles = lines.map((line) => {
-    const [nameHash, fingerprint, ...extra] = line.split("\t");
+    const [nameHash, fingerprint, attributes, ...extra] = line.split("\t");
     if (extra.length || !SHA256_PATTERN.test(nameHash ?? "") || !SHA256_PATTERN.test(fingerprint ?? ""))
       throw new Error("BACKUP_ROLE_DETAIL_INVALID");
-    return { nameHash, fingerprint };
+    let profile;
+    try {
+      profile = JSON.parse(attributes ?? "");
+    } catch {
+      throw new Error("BACKUP_ROLE_DETAIL_INVALID");
+    }
+    // O perfil e obrigatorio e nao pode conter nome: e ele que diz O QUE divergiu, e a ausencia
+    // da chave `name` e o que garante que dizer isso nao vira dizer QUEM.
+    if (!profile || typeof profile !== "object" || Array.isArray(profile) || "name" in profile)
+      throw new Error("BACKUP_ROLE_DETAIL_PROFILE_INVALID");
+    return { nameHash, fingerprint, profile };
   });
   const fingerprints = roles.map((role) => role.fingerprint);
   // A ordenacao e o que torna o agregado reproduzivel; fora de ordem o detalhe nao prova nada.
@@ -53,23 +63,56 @@ export function assertRoleDetailMatchesAggregate({ roleCount, fingerprint }, rol
 
 // Descricao sem nomes: o hash do nome separa "papel que o dump nao levou" de "papel presente cujo
 // atributo ou vinculo derivou". Sem essa separacao o agregado so sabe dizer "diferente".
+// Quantos papeis divergentes descrever antes de truncar. Uma divergencia estrutural produziria
+// dezenas de perfis e a mensagem deixaria de caber num log; as contagens acima continuam exatas.
+const DESCRIBED_ROLE_LIMIT = 5;
+
+function driftedFields(source, restored) {
+  const keys = [...new Set([...Object.keys(source), ...Object.keys(restored)])].sort();
+  return keys
+    .filter((key) => JSON.stringify(source[key]) !== JSON.stringify(restored[key]))
+    .map((key) =>
+      key === "memberOf"
+        ? {
+            field: key,
+            sourceCount: source[key]?.length ?? 0,
+            restoredCount: restored[key]?.length ?? 0,
+          }
+        : { field: key, source: source[key] ?? null, restored: restored[key] ?? null },
+    );
+}
+
 export function describeRoleDivergence(sourceRoles, restoredRoles) {
-  const restoredByName = new Map(restoredRoles.map((role) => [role.nameHash, role.fingerprint]));
+  const restoredByName = new Map(restoredRoles.map((role) => [role.nameHash, role]));
   const sourceNames = new Set(sourceRoles.map((role) => role.nameHash));
-  let identical = 0;
-  let drifted = 0;
+  const identical = [];
+  const drifted = [];
+  const missing = [];
   for (const role of sourceRoles) {
-    if (!restoredByName.has(role.nameHash)) continue;
-    if (restoredByName.get(role.nameHash) === role.fingerprint) identical += 1;
-    else drifted += 1;
+    const counterpart = restoredByName.get(role.nameHash);
+    if (!counterpart) missing.push(role);
+    else if (counterpart.fingerprint === role.fingerprint) identical.push(role);
+    else drifted.push([role, counterpart]);
   }
+  const extra = restoredRoles.filter((role) => !sourceNames.has(role.nameHash));
   return {
     sourceRoleCount: sourceRoles.length,
     restoredRoleCount: restoredRoles.length,
-    identicalRoles: identical,
-    rolesDriftedInRestore: drifted,
-    rolesMissingFromRestore: sourceRoles.length - identical - drifted,
-    rolesOnlyInRestore: restoredRoles.filter((role) => !sourceNames.has(role.nameHash)).length,
+    identicalRoles: identical.length,
+    rolesDriftedInRestore: drifted.length,
+    rolesMissingFromRestore: missing.length,
+    rolesOnlyInRestore: extra.length,
+    // Perfis sem nome: o suficiente para decidir se o dump deixou de levar um papel da aplicacao
+    // (defeito de backup) ou um papel que a plataforma recria sozinha (limite a declarar).
+    missingProfiles: missing.slice(0, DESCRIBED_ROLE_LIMIT).map((role) => role.profile),
+    extraProfiles: extra.slice(0, DESCRIBED_ROLE_LIMIT).map((role) => role.profile),
+    driftedFields: drifted
+      .slice(0, DESCRIBED_ROLE_LIMIT)
+      .map(([source, restored]) => driftedFields(source.profile, restored.profile)),
+    described:
+      missing.length <= DESCRIBED_ROLE_LIMIT &&
+      extra.length <= DESCRIBED_ROLE_LIMIT &&
+      drifted.length <= DESCRIBED_ROLE_LIMIT,
     containsRoleNames: false,
   };
 }

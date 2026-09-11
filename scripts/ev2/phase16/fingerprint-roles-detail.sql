@@ -46,7 +46,24 @@ with role_records as (
     encode(
       extensions.digest(convert_to(canonical::text, 'UTF8'), 'sha256'),
       'hex'
-    ) as fingerprint
+    ) as fingerprint,
+    -- Perfil do papel sem o nome: e o que permite dizer O QUE falta ou derivou (um papel de
+    -- LOGIN com bypassrls nao e a mesma coisa que um papel de plataforma sem login) sem dizer
+    -- QUEM. Os vinculos tambem viram hash, senao o nome voltaria pela lista de memberOf.
+    (
+      (canonical - 'name') || jsonb_build_object('memberOf', coalesce((
+        select jsonb_agg(
+          jsonb_build_object(
+            'role', encode(extensions.digest(convert_to(entry ->> 'role', 'UTF8'), 'sha256'), 'hex'),
+            'adminOption', entry -> 'adminOption'
+          )
+          order by entry ->> 'role'
+        )
+        from jsonb_array_elements(canonical -> 'memberOf') as entry
+      ), '[]'::jsonb))
+    )::text as attributes
   from role_records
 )
-select name_hash || chr(9) || fingerprint from role_hashes order by fingerprint;
+select name_hash || chr(9) || fingerprint || chr(9) || attributes
+from role_hashes
+order by fingerprint;

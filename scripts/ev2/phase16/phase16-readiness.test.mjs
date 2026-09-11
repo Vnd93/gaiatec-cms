@@ -745,11 +745,22 @@ function roleCatalog(roles) {
     .map((role) => ({
       nameHash: digest(`name:${role.name}`),
       fingerprint: digest(`role:${role.name}:${role.attributes ?? "base"}`),
+      profile: {
+        superuser: role.superuser ?? false,
+        canLogin: role.canLogin ?? true,
+        connectionLimit: role.connectionLimit ?? -1,
+        memberOf: (role.memberOf ?? []).map((parent) => ({
+          role: digest(`name:${parent}`),
+          adminOption: false,
+        })),
+      },
     }))
     .sort((left, right) => (left.fingerprint < right.fingerprint ? -1 : 1));
   return {
     aggregate: `${detail.length}\t${digest(detail.map((role) => role.fingerprint).join(""))}\n`,
-    detailSource: `${detail.map((role) => `${role.nameHash}\t${role.fingerprint}`).join("\n")}\n`,
+    detailSource: `${detail
+      .map((role) => `${role.nameHash}\t${role.fingerprint}\t${JSON.stringify(role.profile)}`)
+      .join("\n")}\n`,
   };
 }
 
@@ -809,7 +820,12 @@ test("a role restore divergence names what diverged without naming a role", () =
   // as tres causas produziam antes a mesma mensagem, sem numero nenhum.
   const restoredRoles = [
     ...PRODUCTION_ROLES.slice(1, 7),
-    { name: "supabase_storage_admin", attributes: "connectionLimit=60" },
+    {
+      name: "supabase_storage_admin",
+      attributes: "connectionLimit=60",
+      connectionLimit: 60,
+      memberOf: ["authenticator"],
+    },
     { name: "pgbouncer" },
     { name: "supabase_read_only_user" },
   ];
@@ -837,6 +853,26 @@ test("a role restore divergence names what diverged without naming a role", () =
   assert.equal(divergence.rolesMissingFromRestore, 1);
   assert.equal(divergence.rolesOnlyInRestore, 2);
   assert.equal(divergence.containsRoleNames, false);
+  assert.equal(divergence.described, true);
+
+  // Contagem sozinha nao diz se o dump deixou de levar um papel da aplicacao ou um papel que a
+  // plataforma recria: o perfil sem nome e o que separa os dois casos.
+  assert.equal(divergence.missingProfiles.length, 1);
+  assert.equal(divergence.missingProfiles[0].canLogin, true);
+  assert.ok(!("name" in divergence.missingProfiles[0]));
+  assert.equal(divergence.extraProfiles.length, 2);
+  assert.deepEqual(
+    divergence.driftedFields[0].map((entry) => entry.field).sort(),
+    ["connectionLimit", "memberOf"],
+  );
+  const connectionLimit = divergence.driftedFields[0].find(
+    (entry) => entry.field === "connectionLimit",
+  );
+  assert.equal(connectionLimit.source, -1);
+  assert.equal(connectionLimit.restored, 60);
+  const memberOf = divergence.driftedFields[0].find((entry) => entry.field === "memberOf");
+  assert.equal(memberOf.sourceCount, 0);
+  assert.equal(memberOf.restoredCount, 1);
 
   // A mensagem viaja em log de workflow: nenhum nome de papel e nenhum hash podem sair nela.
   for (const name of [...PRODUCTION_ROLES, ...restoredRoles].map((role) => role.name))
@@ -906,9 +942,24 @@ test("a malformed source report no longer reads as a restore divergence", () => 
 
 test("the detail refuses shapes that would make the rebuild meaningless", () => {
   const digest = (value) => createHash("sha256").update(value).digest("hex");
-  const line = (name, attributes) => `${digest(name)}\t${digest(attributes)}`;
+  const line = (name, attributes) =>
+    `${digest(name)}\t${digest(attributes)}\t${JSON.stringify({ canLogin: true })}`;
   assert.throws(() => parseRoleDetail(""), /BACKUP_ROLE_DETAIL_INVALID/);
   assert.throws(() => parseRoleDetail(`${digest("a")}\n`), /BACKUP_ROLE_DETAIL_INVALID/);
+  // Sem perfil a divergencia volta a ser indescritivel; com nome dentro dele, descreve-la passaria
+  // a expor o catalogo de papeis da producao.
+  assert.throws(
+    () => parseRoleDetail(`${digest("a")}\t${digest("b")}\n`),
+    /BACKUP_ROLE_DETAIL_INVALID/,
+  );
+  assert.throws(
+    () => parseRoleDetail(`${digest("a")}\t${digest("b")}\t{"name":"postgres"}\n`),
+    /BACKUP_ROLE_DETAIL_PROFILE_INVALID/,
+  );
+  assert.throws(
+    () => parseRoleDetail(`${digest("a")}\t${digest("b")}\t[]\n`),
+    /BACKUP_ROLE_DETAIL_PROFILE_INVALID/,
+  );
   // A ordem tem de vir do valor do hash, nao do rotulo: montar o par ja ordenado e emiti-lo ao
   // contrario e a unica forma estavel de exercitar a recusa.
   const ordered = [line("a", "first"), line("b", "second")].sort();
@@ -932,6 +983,10 @@ test("an identical catalog reports every role as identical", () => {
     rolesDriftedInRestore: 0,
     rolesMissingFromRestore: 0,
     rolesOnlyInRestore: 0,
+    missingProfiles: [],
+    extraProfiles: [],
+    driftedFields: [],
+    described: true,
     containsRoleNames: false,
   });
 });
@@ -947,7 +1002,11 @@ test("both role fingerprint queries derive from one canonical role shape", async
     source.slice(source.indexOf("with role_records as ("), source.indexOf("), role_hashes as ("));
   assert.equal(canonical(aggregate), canonical(detail));
   assert.ok(canonical(aggregate).includes("rolbypassrls"));
-  assert.match(detail, /select name_hash \|\| chr\(9\) \|\| fingerprint from role_hashes order by fingerprint;/);
+  assert.match(detail, /select name_hash \|\| chr\(9\) \|\| fingerprint \|\| chr\(9\) \|\| attributes/);
+  assert.match(detail, /order by fingerprint;/);
+  // O perfil so pode sair sem o nome e com os vinculos ja em hash.
+  assert.match(detail, /\(canonical - 'name'\)/);
+  assert.match(detail, /'role', encode\(extensions\.digest\(convert_to\(entry ->> 'role'/);
 });
 
 test("backup manifest seals the archive and binds distinct source and restore evidence", async () => {

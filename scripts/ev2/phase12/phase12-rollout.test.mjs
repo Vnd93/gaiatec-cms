@@ -664,6 +664,44 @@ test("staging watchdog compensates cancelled, timed-out and ambiguous deploys wi
   );
 });
 
+test("the staging watchdog stays quiet for a run that never reached its mutating job", async () => {
+  const watchdog = await read(".github/workflows/deploy-staging-watchdog.yml");
+  const classify = workflowJob(watchdog, "classify-parent-run");
+  const compensate = workflowJob(watchdog, "compensate-incomplete-staging-deploy");
+
+  // Uma passada de diagnostico termina em failure por desenho e pula o job `deploy` inteiro. O
+  // watchdog acordava, nao encontrava estado pre-mutacao e reprovava: falha esperada acumulada que
+  // torna indistinguivel a falha real de uma compensacao que nao aconteceu.
+  assert.match(classify, /attempts\/\$PARENT_RUN_ATTEMPT\/jobs/);
+  assert.match(classify, /select\(\.name == "deploy"\) \| \.conclusion/);
+  assert.match(classify, /\^skipped\$/);
+  assert.match(classify, /deploy_executed: \$\{\{ steps\.parent\.outputs\.deploy_executed \}\}/);
+
+  // A decisao nao pode se basear no input do pai: o que importa e se o job mutante executou.
+  assert.doesNotMatch(classify, /diagnostic_run/);
+
+  // Nao saber classificar nunca pode virar "nao compensar".
+  assert.match(classify, /parent-classification-failed[^\n]*"deployExecuted":true/);
+
+  assert.match(compensate, /needs: classify-parent-run/);
+  assert.match(
+    compensate,
+    /needs\.classify-parent-run\.outputs\.deploy_executed == 'true'/,
+  );
+
+  // O gatilho original continua intacto: a mudanca acrescenta uma condicao, nao afrouxa nenhuma.
+  for (const condition of [
+    /github\.event\.workflow_run\.conclusion == 'cancelled'/,
+    /github\.event\.workflow_run\.event == 'workflow_dispatch'/,
+    /github\.event\.workflow_run\.head_branch == 'main'/,
+    /github\.event\.workflow_run\.head_repository\.full_name == github\.repository/,
+  ])
+    assert.match(compensate, condition);
+
+  // Estado ausente depois de o job mutante ter rodado continua sendo falha dura.
+  assert.match(watchdog, /G12_STAGING_WATCHDOG_STATE_UNAVAILABLE/);
+});
+
 test("staging reconciliation is idempotent and refuses a concurrent external deployment", () => {
   const state = {
     originalRelease: "a".repeat(40),

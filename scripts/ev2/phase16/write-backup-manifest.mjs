@@ -304,12 +304,12 @@ const manifest = {
   ],
   sensitiveValuesLogged: false,
 };
-if (restoreDrillPerformed) {
-  const validation = validateProductionBackupManifest(manifest, {
-    now: new Date(Date.parse(sealedAt) + 1),
-  });
-  if (!validation.valid) throw new Error(`BACKUP_MANIFEST_REFUSED:${validation.violations.join(",")}`);
-}
+// Vale para os dois modos. O manifesto sem drill afirma que a restauracao NAO foi provada, e essa
+// afirmacao tambem precisa ser verificada: antes ela era selada e publicada sem validacao alguma.
+const validation = validateProductionBackupManifest(manifest, {
+  now: new Date(Date.parse(sealedAt) + 1),
+});
+if (!validation.valid) throw new Error(`BACKUP_MANIFEST_REFUSED:${validation.violations.join(",")}`);
 await writeFile(outputPath, `${JSON.stringify(manifest, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
 console.log(
   JSON.stringify({

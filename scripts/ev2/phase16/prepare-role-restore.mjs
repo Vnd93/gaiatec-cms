@@ -7,6 +7,12 @@ const MANAGED_DATABASE_SETTING =
 const MANAGED_SESSION_SETTING =
   /^[\t ]*(?:SET[\t ]+(?:(?:SESSION|LOCAL)[\t ]+)?"?log_min_messages"?[\t ]*(?:TO|=)[^;]*|SELECT[\t ]+(?:pg_catalog\.)?set_config[\t ]*\([\t ]*['"]log_min_messages['"][^;]*\))[\t ]*;[\t ]*(?:\r?\n|$)/gim;
 const MANAGED_GUC_NAME = /\blog_min_messages\b/i;
+// Classes de declaracao do dump de papeis. So contagens saem daqui: um `supabase db dump
+// --role-only` que nao emita nenhum CREATE ROLE nao consegue, por construcao, reconstruir um
+// papel que o alvo nao tenha — e isso e um limite do backup que precisa ser medido, nao suposto.
+const CREATE_ROLE_STATEMENT = /^[\t ]*CREATE[\t ]+ROLE\b/gim;
+const ALTER_ROLE_STATEMENT = /^[\t ]*ALTER[\t ]+ROLE\b/gim;
+const GRANT_STATEMENT = /^[\t ]*GRANT\b/gim;
 const SQL_STATEMENT = /[^;]*;/gim;
 const LEADING_DUMP_TRIVIA = /^(?:(?:[\t ]*(?:--[^\r\n]*|\\[^\r\n]*))[\t ]*(?:\r?\n|$)|[\t ]*(?:\r?\n|$))*/;
 
@@ -50,6 +56,9 @@ export function prepareRoleRestore(source) {
     removedDatabaseSettings,
     removedSessionSettings,
     removedManagedGucStatements,
+    createRoleStatements: source.match(CREATE_ROLE_STATEMENT)?.length ?? 0,
+    alterRoleStatements: source.match(ALTER_ROLE_STATEMENT)?.length ?? 0,
+    grantStatements: source.match(GRANT_STATEMENT)?.length ?? 0,
   };
 }
 
@@ -62,6 +71,9 @@ async function main() {
   console.log(
     JSON.stringify({
       event: "supabase.role_restore.prepared",
+      createRoleStatements: result.createRoleStatements,
+      alterRoleStatements: result.alterRoleStatements,
+      grantStatements: result.grantStatements,
       removedRoleSettings: result.removedRoleSettings,
       removedDatabaseSettings: result.removedDatabaseSettings,
       removedSessionSettings: result.removedSessionSettings,

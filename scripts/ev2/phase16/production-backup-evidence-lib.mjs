@@ -88,8 +88,12 @@ export async function verifyBackupArchiveSeal(path, seal) {
   return { valid, current };
 }
 
-function validReportBindings(reports) {
-  return Object.entries(REPORT_FILES).every(([phase, expected]) =>
+function validReportBindings(reports, { drillPerformed }) {
+  // Sem drill nao existe fase de restauracao, e um vinculo de relatorio de restauracao presente
+  // nesse caso nao seria um extra inofensivo: seria evidencia de restauracao sem restauracao.
+  if (!drillPerformed && reports?.restore !== null) return false;
+  const phases = drillPerformed ? Object.entries(REPORT_FILES) : [["source", REPORT_FILES.source]];
+  return phases.every(([phase, expected]) =>
     Object.entries(expected).every(([key, file]) => {
       const binding = reports?.[phase]?.[key];
       return (
@@ -176,18 +180,32 @@ export function validateProductionBackupManifest(
     if (Number.isFinite(maxAgeMinutes) && (maxAgeMinutes <= 0 || nowAt - snapshotAt > maxAgeMinutes * 60_000))
       violations.push("backup_manifest_rpo_expired");
   }
+  // Um manifesto sem drill nao e um manifesto pela metade: e a afirmacao de que a restauracao NAO
+  // foi provada. Ate aqui ele nao era validado de forma nenhuma, entao a unica coisa que
+  // sustentava essa afirmacao era a convencao de quem escreve o arquivo.
+  const drillPerformed = drill?.performed === true;
   if (
-    drill?.performed !== true ||
-    drill?.outcome !== "passed" ||
+    drillPerformed &&
+    (drill?.outcome !== "passed" ||
     drill?.target !== "ephemeral-local-supabase" ||
     !Number.isFinite(drillStartedAt) ||
     !Number.isFinite(drillCompletedAt) ||
     drillCompletedAt < drillStartedAt ||
     !Number.isSafeInteger(drill?.durationSeconds) ||
     drill.durationSeconds <= 0 ||
-    Math.abs(drill.durationSeconds - Math.round((drillCompletedAt - drillStartedAt) / 1000)) > 2
+    Math.abs(drill.durationSeconds - Math.round((drillCompletedAt - drillStartedAt) / 1000)) > 2)
   )
     violations.push("backup_manifest_restore_drill_invalid");
+  if (
+    !drillPerformed &&
+    (drill?.performed !== false ||
+      drill?.outcome !== "not_scheduled" ||
+      drill?.target !== null ||
+      drill?.startedAt !== null ||
+      drill?.completedAt !== null ||
+      drill?.durationSeconds !== null)
+  )
+    violations.push("backup_manifest_unproven_restore_shape_invalid");
   if (Number.isFinite(createdAt) && Number.isFinite(drillCompletedAt) && createdAt < drillCompletedAt)
     violations.push("backup_manifest_created_before_restore_completed");
   if (Number.isFinite(snapshotAt) && Number.isFinite(drillStartedAt) && snapshotAt > drillStartedAt)
@@ -196,14 +214,26 @@ export function validateProductionBackupManifest(
     violations.push("backup_manifest_archive_hashed_after_restore_started");
   if (Number.isFinite(rtoMinutes) && (rtoMinutes <= 0 || drill?.durationSeconds > rtoMinutes * 60))
     violations.push("backup_manifest_rto_exceeded");
-  if (RESTORE_CHECKS.some((key) => drill?.verifications?.[key] !== true))
+  if (drillPerformed && RESTORE_CHECKS.some((key) => drill?.verifications?.[key] !== true))
     violations.push("backup_manifest_restore_checks_incomplete");
+  // Sem drill, a unica verificacao que pode sair verdadeira e a estabilidade do digest do
+  // arquivo, que nao depende de restaurar nada.
+  if (
+    !drillPerformed &&
+    RESTORE_CHECKS.some(
+      (key) => drill?.verifications?.[key] !== (key === "archiveDigestStable"),
+    )
+  )
+    violations.push("backup_manifest_unproven_restore_checks_invalid");
   if (drill?.verifications?.rolesRestored !== false)
     violations.push("backup_manifest_role_restore_claim_invalid");
-  if (manifest?.completeDataRestoreDrill !== true)
+  if (drillPerformed && manifest?.completeDataRestoreDrill !== true)
     violations.push("backup_manifest_complete_restore_missing");
+  if (!drillPerformed && manifest?.completeDataRestoreDrill !== false)
+    violations.push("backup_manifest_complete_restore_claimed_without_drill");
   if (
-    manifest?.coverage?.auth?.tableInventoryComplete !== true ||
+    drillPerformed &&
+    (manifest?.coverage?.auth?.tableInventoryComplete !== true ||
     !Number.isSafeInteger(manifest?.coverage?.auth?.tableCount) ||
     manifest.coverage.auth.tableCount < 3 ||
     !SHA256_PATTERN.test(manifest?.coverage?.auth?.aggregateSha256 ?? "") ||
@@ -230,17 +260,41 @@ export function validateProductionBackupManifest(
     manifest?.coverage?.storage?.objectPayloads?.snapshotWalLsn !== manifest?.snapshotWalLsn ||
     !Number.isFinite(parseDate(manifest?.coverage?.storage?.objectPayloads?.snapshotVerifiedAt)) ||
     parseDate(manifest?.coverage?.storage?.objectPayloads?.snapshotVerifiedAt) < snapshotAt ||
-    parseDate(manifest?.coverage?.storage?.objectPayloads?.snapshotVerifiedAt) > sealedAt
+    parseDate(manifest?.coverage?.storage?.objectPayloads?.snapshotVerifiedAt) > sealedAt)
   )
     violations.push("backup_manifest_coverage_incomplete");
+  // Sem drill a cobertura vem dos relatorios de ORIGEM, e eles tem de continuar dizendo que nada
+  // foi restaurado. Cobertura de origem carimbada como restaurada seria a mentira que esta
+  // validacao existe para impedir.
   if (
-    manifest?.coverage?.roles?.portableRoleCatalogMatched !== true ||
-    manifest?.coverage?.roles?.rolesRestoredExactly !== false ||
-    manifest?.coverage?.roles?.credentialsRestored !== false ||
-    !SHA256_PATTERN.test(manifest?.coverage?.roles?.portableCatalogSha256 ?? "")
+    !drillPerformed &&
+    (manifest?.coverage?.auth?.tableInventoryComplete !== true ||
+      !SHA256_PATTERN.test(manifest?.coverage?.auth?.aggregateSha256 ?? "") ||
+      manifest?.coverage?.auth?.restoreVerified !== false ||
+      manifest?.coverage?.storage?.metadata?.restoreVerified !== false ||
+      manifest?.coverage?.storage?.objectPayloads?.restoreVerified !== false ||
+      manifest?.coverage?.storage?.objectPayloads?.exportVerified !== true ||
+      manifest?.coverage?.storage?.objectPayloads?.snapshotStabilityVerified !== true)
+  )
+    violations.push("backup_manifest_unproven_coverage_invalid");
+  if (
+    drillPerformed &&
+    (manifest?.coverage?.roles?.portableRoleCatalogMatched !== true ||
+      manifest?.coverage?.roles?.rolesRestoredExactly !== false ||
+      manifest?.coverage?.roles?.credentialsRestored !== false ||
+      !SHA256_PATTERN.test(manifest?.coverage?.roles?.portableCatalogSha256 ?? ""))
   )
     violations.push("backup_manifest_role_scope_invalid");
-  if (!validReportBindings(manifest?.reports)) violations.push("backup_manifest_report_binding_invalid");
+  if (
+    !drillPerformed &&
+    (manifest?.coverage?.roles?.event !== "supabase.backup.roles.source-verified" ||
+      manifest?.coverage?.roles?.credentialsIncludedInFingerprint !== false ||
+      !SHA256_PATTERN.test(manifest?.coverage?.roles?.portableCatalogSha256 ?? "") ||
+      "portableRoleCatalogMatched" in (manifest?.coverage?.roles ?? {}))
+  )
+    violations.push("backup_manifest_unproven_role_scope_invalid");
+  if (!validReportBindings(manifest?.reports, { drillPerformed }))
+    violations.push("backup_manifest_report_binding_invalid");
   if (!SHA256_PATTERN.test(manifest?.encryptedArchive?.sealSha256 ?? ""))
     violations.push("backup_manifest_archive_seal_invalid");
   if (

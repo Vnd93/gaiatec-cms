@@ -81,6 +81,14 @@ GRANT anon TO authenticator;
   assert.equal(result.removedDatabaseSettings, 1);
   assert.equal(result.removedSessionSettings, 3);
   assert.equal(result.removedManagedGucStatements, 1);
+  // Classes de declaracao do dump, so contagem. Um dump sem CREATE ROLE nao consegue reconstruir um
+  // papel que o alvo nao tenha, e essa e a diferenca entre backup completo e backup que so
+  // reconfigura o que ja existe.
+  assert.equal(result.createRoleStatements, 0);
+  assert.equal(result.alterRoleStatements, 4);
+  assert.equal(result.grantStatements, 1);
+  assert.equal(prepareRoleRestore(`CREATE ROLE app_reader;
+${source}`).createRoleStatements, 1);
   assert.doesNotMatch(result.sql, /log_min_messages|ALTER ROLE authenticator SET/);
   assert.match(result.sql, /ALTER ROLE postgres WITH SUPERUSER/);
   assert.match(result.sql, /ALTER ROLE authenticated RESET statement_timeout/);
@@ -788,6 +796,7 @@ test("role evidence detects source races and states the portable restore limitat
     restoredSource: fingerprint,
     sourceDetail: catalog.detailSource,
     restoredDetail: catalog.detailSource,
+    baselineDetail: catalog.detailSource,
   });
   assert.equal(source.raceVerified, true);
   assert.equal(source.credentialsIncludedInFingerprint, false);
@@ -838,6 +847,7 @@ test("a role restore divergence names what diverged without naming a role", () =
       restoredSource: restoredCatalog.aggregate,
       sourceDetail: catalog.detailSource,
       restoredDetail: restoredCatalog.detailSource,
+      baselineDetail: restoredCatalog.detailSource,
     });
   } catch (error) {
     thrown = error;
@@ -874,6 +884,14 @@ test("a role restore divergence names what diverged without naming a role", () =
   assert.equal(memberOf.sourceCount, 0);
   assert.equal(memberOf.restoredCount, 1);
 
+  // O alvo efemero nao se moveu: o papel ausente nunca esteve la e o divergente ficou no valor de
+  // fabrica. Isso e limite do que o dump carrega, e nao restauracao que falhou — e a distincao
+  // que decide se a correcao e no backup ou na declaracao de escopo.
+  assert.equal(divergence.baselineRoleCount, 9);
+  assert.equal(divergence.missingRolesAbsentFromBaseline, 1);
+  assert.equal(divergence.driftedRolesUntouchedByRestore, 1);
+  assert.equal(divergence.driftedRolesChangedButNotConverged, 0);
+
   // A mensagem viaja em log de workflow: nenhum nome de papel e nenhum hash podem sair nela.
   for (const name of [...PRODUCTION_ROLES, ...restoredRoles].map((role) => role.name))
     assert.ok(!thrown.message.includes(name), `nome ${name} vazou na mensagem`);
@@ -898,6 +916,7 @@ test("the per-role detail is not taken on trust: it has to rebuild the aggregate
         restoredSource: catalog.aggregate,
         sourceDetail: foreign.detailSource,
         restoredDetail: catalog.detailSource,
+        baselineDetail: catalog.detailSource,
       }),
     /BACKUP_ROLE_SOURCE_DETAIL_INCONSISTENT/,
   );
@@ -908,6 +927,7 @@ test("the per-role detail is not taken on trust: it has to rebuild the aggregate
         restoredSource: catalog.aggregate,
         sourceDetail: catalog.detailSource,
         restoredDetail: foreign.detailSource,
+        baselineDetail: catalog.detailSource,
       }),
     /BACKUP_ROLE_RESTORED_DETAIL_INCONSISTENT/,
   );
@@ -916,6 +936,17 @@ test("the per-role detail is not taken on trust: it has to rebuild the aggregate
       buildRoleRestoreReport({
         sourceReport: source,
         restoredSource: catalog.aggregate,
+      }),
+    /BACKUP_ROLE_DETAIL_REQUIRED/,
+  );
+  // Sem a linha de base do alvo, a divergencia volta a nao saber de quem e a culpa.
+  assert.throws(
+    () =>
+      buildRoleRestoreReport({
+        sourceReport: source,
+        restoredSource: catalog.aggregate,
+        sourceDetail: catalog.detailSource,
+        restoredDetail: catalog.detailSource,
       }),
     /BACKUP_ROLE_DETAIL_REQUIRED/,
   );
@@ -935,6 +966,7 @@ test("a malformed source report no longer reads as a restore divergence", () => 
         restoredSource: catalog.aggregate,
         sourceDetail: catalog.detailSource,
         restoredDetail: catalog.detailSource,
+        baselineDetail: catalog.detailSource,
       }),
     /BACKUP_ROLE_SOURCE_REPORT_INVALID/,
   );
@@ -976,7 +1008,7 @@ test("the detail refuses shapes that would make the rebuild meaningless", () => 
 test("an identical catalog reports every role as identical", () => {
   const catalog = roleCatalog(PRODUCTION_ROLES);
   const roles = parseRoleDetail(catalog.detailSource);
-  assert.deepEqual(describeRoleDivergence(roles, roles), {
+  assert.deepEqual(describeRoleDivergence(roles, roles, roles), {
     sourceRoleCount: 8,
     restoredRoleCount: 8,
     identicalRoles: 8,
@@ -986,6 +1018,10 @@ test("an identical catalog reports every role as identical", () => {
     missingProfiles: [],
     extraProfiles: [],
     driftedFields: [],
+    missingRolesAbsentFromBaseline: 0,
+    driftedRolesUntouchedByRestore: 0,
+    driftedRolesChangedButNotConverged: 0,
+    baselineRoleCount: 8,
     described: true,
     containsRoleNames: false,
   });
@@ -1122,6 +1158,7 @@ test("backup manifest seals the archive and binds distinct source and restore ev
     restoredSource: roleFingerprint,
     sourceDetail: roleCatalogFixture.detailSource,
     restoredDetail: roleCatalogFixture.detailSource,
+    baselineDetail: roleCatalogFixture.detailSource,
   });
   const environment = {
     ...process.env,
@@ -1280,6 +1317,57 @@ test("backup manifest seals the archive and binds distinct source and restore ev
       }).violations.join(","),
       /backup_manifest_rto_exceeded/,
     );
+
+    // O run diario nao faz drill. Ate aqui o manifesto desse modo era selado e publicado sem passar
+    // por validacao nenhuma: a afirmacao "restauracao nao provada" existia por convencao de quem
+    // escrevia o arquivo, e nada impedia um manifesto sem drill de carimbar restauracao.
+    const unprovenManifestPath = join(temporaryDirectory, "manifest-unproven.json");
+    await execFileAsync(process.execPath, [manifestScript], {
+      env: {
+        ...environment,
+        BACKUP_MANIFEST_PATH: unprovenManifestPath,
+        RESTORE_DRILL_PERFORMED: "false",
+        RESTORE_DRILL_PASSED: "",
+        RESTORE_DRILL_STARTED_AT: "",
+        RESTORE_DRILL_COMPLETED_AT: "",
+        RESTORE_DRILL_DURATION_SECONDS: "",
+      },
+    });
+    const unproven = JSON.parse(await readFile(unprovenManifestPath, "utf8"));
+    assert.equal(unproven.restoreDrill.performed, false);
+    assert.equal(unproven.restoreDrill.outcome, "not_scheduled");
+    assert.equal(unproven.completeDataRestoreDrill, false);
+    assert.equal(unproven.reports.restore, null);
+    assert.equal(unproven.coverage.auth.restoreVerified, false);
+    assert.equal(
+      validateProductionBackupManifest(unproven, { now: new Date(Date.parse(unproven.sealedAt) + 1) })
+        .valid,
+      true,
+    );
+
+    // E o inverso, que e o que importa: um manifesto sem drill que afirme restauracao tem de ser
+    // recusado, nao apenas ficar estranho no arquivo.
+    const claimed = structuredClone(unproven);
+    claimed.completeDataRestoreDrill = true;
+    claimed.restoreDrill.verifications.schemaRestored = true;
+    claimed.restoreDrill.outcome = "passed";
+    claimed.coverage.auth.restoreVerified = true;
+    claimed.reports.restore = manifest.reports.restore;
+    const refused = validateProductionBackupManifest(claimed, {
+      now: new Date(Date.parse(claimed.sealedAt) + 1),
+    });
+    assert.equal(refused.valid, false);
+    for (const violation of [
+      "backup_manifest_unproven_restore_shape_invalid",
+      "backup_manifest_unproven_restore_checks_invalid",
+      "backup_manifest_complete_restore_claimed_without_drill",
+      "backup_manifest_unproven_coverage_invalid",
+      "backup_manifest_report_binding_invalid",
+    ])
+      assert.ok(
+        refused.violations.includes(violation),
+        `violacao ${violation} ausente em ${refused.violations.join(",")}`,
+      );
   } finally {
     await rm(temporaryDirectory, { recursive: true, force: true });
   }

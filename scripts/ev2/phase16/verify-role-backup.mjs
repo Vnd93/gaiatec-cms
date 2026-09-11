@@ -82,8 +82,13 @@ function driftedFields(source, restored) {
     );
 }
 
-export function describeRoleDivergence(sourceRoles, restoredRoles) {
+// `baselineRoles` e o catalogo do alvo efemero ANTES de aplicar o dump. Sem ele so da para dizer
+// que houve divergencia; com ele da para dizer de quem e a culpa, que e a pergunta que decide a
+// correcao: um papel que o dump nao carrega e limite do backup a declarar; um papel que o dump
+// carrega e ainda assim nao chega igual e defeito de restauracao.
+export function describeRoleDivergence(sourceRoles, restoredRoles, baselineRoles = []) {
   const restoredByName = new Map(restoredRoles.map((role) => [role.nameHash, role]));
+  const baselineByName = new Map(baselineRoles.map((role) => [role.nameHash, role]));
   const sourceNames = new Set(sourceRoles.map((role) => role.nameHash));
   const identical = [];
   const drifted = [];
@@ -95,6 +100,9 @@ export function describeRoleDivergence(sourceRoles, restoredRoles) {
     else drifted.push([role, counterpart]);
   }
   const extra = restoredRoles.filter((role) => !sourceNames.has(role.nameHash));
+  const untouchedByRestore = drifted.filter(
+    ([, restored]) => baselineByName.get(restored.nameHash)?.fingerprint === restored.fingerprint,
+  ).length;
   return {
     sourceRoleCount: sourceRoles.length,
     restoredRoleCount: restoredRoles.length,
@@ -109,6 +117,14 @@ export function describeRoleDivergence(sourceRoles, restoredRoles) {
     driftedFields: drifted
       .slice(0, DESCRIBED_ROLE_LIMIT)
       .map(([source, restored]) => driftedFields(source.profile, restored.profile)),
+    // Quantos papeis ausentes o alvo tambem nao tinha antes do dump: esses o dump simplesmente
+    // nao carrega. E quantos papeis divergentes o dump nao tocou, tendo ficado no valor de
+    // fabrica do alvo efemero.
+    missingRolesAbsentFromBaseline: missing.filter((role) => !baselineByName.has(role.nameHash))
+      .length,
+    driftedRolesUntouchedByRestore: untouchedByRestore,
+    driftedRolesChangedButNotConverged: drifted.length - untouchedByRestore,
+    baselineRoleCount: baselineRoles.length,
     described:
       missing.length <= DESCRIBED_ROLE_LIMIT &&
       extra.length <= DESCRIBED_ROLE_LIMIT &&
@@ -144,6 +160,7 @@ export function buildRoleRestoreReport({
   restoredSource,
   sourceDetail,
   restoredDetail,
+  baselineDetail,
 }) {
   const restored = parseRoleFingerprint(restoredSource);
   // Um relatorio de origem malformado nao e uma divergencia de restauracao. Antes as duas falhas
@@ -164,10 +181,11 @@ export function buildRoleRestoreReport({
 
   // O detalhe por papel e obrigatorio: sem ele uma divergencia so sabe dizer "diferente", que foi
   // exatamente o que esta porta produziu ate aqui.
-  if (sourceDetail === undefined || restoredDetail === undefined)
+  if (sourceDetail === undefined || restoredDetail === undefined || baselineDetail === undefined)
     throw new Error("BACKUP_ROLE_DETAIL_REQUIRED");
   const sourceRoles = parseRoleDetail(sourceDetail);
   const restoredRoles = parseRoleDetail(restoredDetail);
+  const baselineRoles = parseRoleDetail(baselineDetail);
   assertRoleDetailMatchesAggregate(
     { roleCount: sourceReport.roleCount, fingerprint: sourceReport.portableCatalogSha256 },
     sourceRoles,
@@ -179,7 +197,7 @@ export function buildRoleRestoreReport({
     restored.roleCount !== sourceReport.roleCount ||
     restored.fingerprint !== sourceReport.portableCatalogSha256
   ) {
-    const divergence = describeRoleDivergence(sourceRoles, restoredRoles);
+    const divergence = describeRoleDivergence(sourceRoles, restoredRoles, baselineRoles);
     const error = new Error(
       `BACKUP_ROLE_RESTORE_FINGERPRINT_MISMATCH: ${JSON.stringify(divergence)}`,
     );
@@ -227,13 +245,15 @@ async function main() {
     const restored = argument("--restored");
     const sourceDetail = argument("--source-detail");
     const restoredDetail = argument("--restored-detail");
-    if (!sourceReport || !restored || !sourceDetail || !restoredDetail)
+    const baselineDetail = argument("--baseline-detail");
+    if (!sourceReport || !restored || !sourceDetail || !restoredDetail || !baselineDetail)
       throw new Error("BACKUP_ROLE_RESTORE_PATHS_REQUIRED");
     report = buildRoleRestoreReport({
       sourceReport: JSON.parse(await readFile(sourceReport, "utf8")),
       restoredSource: await readFile(restored, "utf8"),
       sourceDetail: await readFile(sourceDetail, "utf8"),
       restoredDetail: await readFile(restoredDetail, "utf8"),
+      baselineDetail: await readFile(baselineDetail, "utf8"),
     });
   } else {
     throw new Error("BACKUP_ROLE_REPORT_MODE_INVALID");

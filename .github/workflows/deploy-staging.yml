@@ -642,9 +642,16 @@ jobs:
           QA_CMS_FIXTURE_STATE_PATH: outputs/cms-browser-mutating-state.json
           QA_CMS_FIXTURE_REPORT_PATH: outputs/cms-browser-mutating-setup.json
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      # A cadeia serial deste passo declara tetos que somam ~107 minutos, e so o rendezvous de
-      # navegador real vale 35 (--challenge-wait-seconds 2100). Com 55, o runner matava o passo no
-      # meio do ciclo mutante, deixando ator sintetico, lead e entidades vivos em staging.
+      # A cadeia serial deste passo declara tetos por teste que somam ~107 minutos, dos quais o
+      # envelope do @ui-bootstrap sozinho vale 40. Com 55, o runner matava o passo no meio do
+      # ciclo mutante, deixando ator sintetico, lead e entidades vivos em staging.
+      #
+      # `--challenge-wait-seconds 2100` NAO e a janela do operador, e nao entra nesta soma: e o
+      # prazo do consumidor em segundo plano esperando o ARQUIVO de desafio aparecer em disco
+      # (run-real-browser-attestation-consumer.mjs, `access(challengeFile)`), e ele corre em
+      # paralelo. A janela humana e de 15 minutos, acoplada ao expiresAt do desafio e verificada
+      # de forma independente em quatro pontos. Ler os 2100 como orcamento humano planeja o dia
+      # com 20 minutos a mais do que existem.
       #
       # 80 e o maximo que cabe: a guarda de lease exige que a soma dos tetos entre setup e cleanup do
       # ator mutante fique em 200 minutos, e os demais passos da janela ja consomem 120. Cobrir os
@@ -899,7 +906,7 @@ jobs:
         # `cmd | tee` sob `bash -e` devolve o status do tee, sempre 0. `shell: bash` liga
         # `-eo pipefail`, entao a falha do comando da esquerda volta a reprovar o passo.
         shell: bash
-        run: npm run canary:ev2:phase17 | tee ../g17-staging-canary.json
+        run: node scripts/ev2/phase17/staging-canary.mjs | tee ../g17-staging-canary.json
         env:
           EV2_G17_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
@@ -1064,7 +1071,7 @@ jobs:
             g12-staging-lifecycle.json
             g17-staging-canary.json
           )
-          node scripts/ev2/phase12/verify-staging-evidence.mjs "${evidence_json[@]}"
+          node candidate/scripts/ev2/phase12/verify-staging-evidence.mjs "${evidence_json[@]}"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
@@ -1311,7 +1318,7 @@ jobs:
         # `cmd | tee` sob `bash -e` devolve o status do tee, sempre 0. `shell: bash` liga
         # `-eo pipefail`, entao a falha do comando da esquerda volta a reprovar o passo.
         shell: bash
-        run: npm run canary:ev2:phase17 | tee ../diagnostic-g17-canary.json
+        run: node scripts/ev2/phase17/staging-canary.mjs | tee ../diagnostic-g17-canary.json
         env:
           EV2_G17_EXPECTED_SHA: ${{ steps.live.outputs.g17_sha }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}

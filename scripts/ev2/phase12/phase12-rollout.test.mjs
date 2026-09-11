@@ -2119,7 +2119,12 @@ test("release workflows and reduced canary are immutable, staged and production 
   assert.match(deployStaging, /g12-staging-function-deployment\.json/);
   assert.match(deployStaging, /--environment staging --project-ref/);
   assert.match(deployStaging, /verify-staging-database\.mjs/);
-  assert.match(deployStaging, /canary:ev2:phase17/);
+  // O invariante e que o CANARIO roda, nao que ele seja invocado por `npm run`. A indirecao do
+  // npm escrevia o proprio banner em stdout, e o passo canaliza a saida para um arquivo que a
+  // evidencia exige ser JSON — o banner tornava o arquivo nao-JSON por construcao. Ancorar no
+  // script que de fato executa mantem a regra e remove a causa.
+  assert.match(deployStaging, /node scripts\/ev2\/phase17\/staging-canary\.mjs \| tee/);
+  assert.doesNotMatch(deployStaging, /npm run [a-z0-9:.-]+ \| tee/);
   assert.match(deployStaging, /--branch ev2-g17-canary/);
   assert.match(deployStaging, /Build the approved rollback frontend against the candidate backend/);
   assert.match(deployStaging, /working-directory: baseline/);

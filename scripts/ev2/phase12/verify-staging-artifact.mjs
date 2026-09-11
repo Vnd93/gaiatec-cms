@@ -174,6 +174,13 @@ const rollbackSetup = JSON.parse(rollbackSetupBytes.toString("utf8"));
 const rollbackCleanup = JSON.parse(rollbackCleanupBytes.toString("utf8"));
 const rollbackInventory = JSON.parse(rollbackInventoryBytes.toString("utf8"));
 const runTag = adminOps?.runTag;
+// Mesma normalizacao de urlSegmentFromText, que e o prefixo que a UI produz a partir do titulo.
+const runTagSlug = String(runTag ?? "")
+  .normalize("NFD")
+  .replace(/[̀-ͯ]/g, "")
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, "-")
+  .replace(/^-+|-+$/g, "");
 assertConsumedRealBrowserEvidence({
   report: realBrowserAttestation,
   screenshot: realBrowserScreenshotBytes,
@@ -820,7 +827,12 @@ if (
   uiCreatedIds.some((id) => !uuid.test(id ?? "")) ||
   uiCreatedState?.form?.status !== "published" ||
   String(uiCreatedState?.form?.key ?? "").length > 150 ||
-  !/^qa-ops-qa-cms-final-[0-9]{8}-[0-9a-f]{8}-[a-z0-9]+$/.test(uiCreatedState?.form?.key ?? "") ||
+  // A chave nao e digitada: AdminFormsPage a deriva do TITULO por urlSegmentFromText. O padrao
+  // `qa-ops-...` e uma forma que o produto NUNCA produz, entao este verificador recusaria o
+  // artefato de staging inteiro no fim de um run de ate 240 minutos. O que precisa continuar
+  // amarrado e o vinculo com o runTag deste run, nao um prefixo inventado.
+  !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(uiCreatedState?.form?.key ?? "") ||
+  !String(uiCreatedState?.form?.key ?? "").startsWith(`${runTagSlug}-`) ||
   !/^LD-[A-Z0-9]+$/.test(uiCreatedState?.lead?.reference ?? "") ||
   uiCreatedState?.lead?.reference !== realBrowserAttestation?.reference ||
   uiCreatedState?.lead?.campaignPath !== realBrowserAttestation?.campaignPath ||

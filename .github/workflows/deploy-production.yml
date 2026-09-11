@@ -564,6 +564,9 @@ jobs:
           CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
           CLOUDFLARE_CACHE_PURGE_TOKEN_ID: ${{ vars.CLOUDFLARE_CACHE_PURGE_TOKEN_ID }}
           CLOUDFLARE_CACHE_PURGE_TOKEN: ${{ secrets.CLOUDFLARE_CACHE_PURGE_TOKEN }}
+        # `cmd | tee` sob `bash -e` devolve o status do tee, sempre 0. `shell: bash` liga
+        # `-eo pipefail`, entao a falha do comando da esquerda volta a reprovar o passo.
+        shell: bash
         run: >-
           node scripts/ev2/phase12/configure-production-function-secrets.mjs
           | tee ../g12-production-edge-secrets.json
@@ -585,6 +588,9 @@ jobs:
         env:
           PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        # `cmd | tee` sob `bash -e` devolve o status do tee, sempre 0. `shell: bash` liga
+        # `-eo pipefail`, entao a falha do comando da esquerda volta a reprovar o passo.
+        shell: bash
         run: node scripts/ev2/phase12/configure-production-auth.mjs | tee ../g12-production-auth.json
       - name: Bind the scheduled outbox worker through Supabase Vault
         timeout-minutes: 10
@@ -593,12 +599,18 @@ jobs:
           PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           OUTBOX_WORKER_SECRET: ${{ secrets.OUTBOX_WORKER_SECRET }}
+        # `cmd | tee` sob `bash -e` devolve o status do tee, sempre 0. `shell: bash` liga
+        # `-eo pipefail`, entao a falha do comando da esquerda volta a reprovar o passo.
+        shell: bash
         run: node scripts/ev2/phase12/configure-production-vault.mjs | tee ../g12-production-vault.json
       - name: Verify database, RLS, cron, Vault and deployed function modes
         working-directory: control
         env:
           PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        # `cmd | tee` sob `bash -e` devolve o status do tee, sempre 0. `shell: bash` liga
+        # `-eo pipefail`, entao a falha do comando da esquerda volta a reprovar o passo.
+        shell: bash
         run: |
           supabase functions list --project-ref "$PRODUCTION_SUPABASE_PROJECT_REF" --output json > ../g12-production-functions.json
           node scripts/ev2/phase12/verify-production-functions.mjs \
@@ -625,6 +637,9 @@ jobs:
           install -m 600 ../g12-production-backend.json "$evidence_dir/database.json"
       - name: Probe public, anonymous, CORS and secret boundaries
         working-directory: candidate
+        # `cmd | tee` sob `bash -e` devolve o status do tee, sempre 0. `shell: bash` liga
+        # `-eo pipefail`, entao a falha do comando da esquerda volta a reprovar o passo.
+        shell: bash
         run: node scripts/ev2/phase12/probe-supabase-boundary.mjs | tee ../g12-production-boundary.json
         env:
           CMS_BACKEND_ENVIRONMENT: production
@@ -1110,6 +1125,9 @@ jobs:
           CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
           CLOUDFLARE_CACHE_PURGE_TOKEN_ID: ${{ vars.CLOUDFLARE_CACHE_PURGE_TOKEN_ID }}
           CLOUDFLARE_CACHE_PURGE_TOKEN: ${{ secrets.CLOUDFLARE_CACHE_PURGE_TOKEN }}
+        # `cmd | tee` sob `bash -e` devolve o status do tee, sempre 0. `shell: bash` liga
+        # `-eo pipefail`, entao a falha do comando da esquerda volta a reprovar o passo.
+        shell: bash
         run: >-
           node scripts/ev2/phase12/configure-production-function-secrets.mjs
           | tee ../g12-production-recovery-edge-secrets.json
@@ -1128,6 +1146,9 @@ jobs:
         env:
           PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        # `cmd | tee` sob `bash -e` devolve o status do tee, sempre 0. `shell: bash` liga
+        # `-eo pipefail`, entao a falha do comando da esquerda volta a reprovar o passo.
+        shell: bash
         run: >-
           node scripts/ev2/phase12/configure-production-auth.mjs
           | tee ../g12-production-recovery-auth.json
@@ -1147,6 +1168,9 @@ jobs:
           PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           OUTBOX_WORKER_SECRET: ${{ secrets.OUTBOX_WORKER_SECRET }}
+        # `cmd | tee` sob `bash -e` devolve o status do tee, sempre 0. `shell: bash` liga
+        # `-eo pipefail`, entao a falha do comando da esquerda volta a reprovar o passo.
+        shell: bash
         run: >-
           node scripts/ev2/phase12/configure-production-vault.mjs
           | tee ../g12-production-recovery-vault.json
@@ -1162,6 +1186,9 @@ jobs:
         env:
           PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        # `cmd | tee` sob `bash -e` devolve o status do tee, sempre 0. `shell: bash` liga
+        # `-eo pipefail`, entao a falha do comando da esquerda volta a reprovar o passo.
+        shell: bash
         run: |
           supabase functions list --project-ref "$PRODUCTION_SUPABASE_PROJECT_REF" --output json > ../g12-production-recovery-functions.json
           node scripts/ev2/phase12/verify-production-functions.mjs \
@@ -1176,6 +1203,9 @@ jobs:
         if: >-
           always() && steps.recovery_verification.outcome == 'success'
         working-directory: candidate
+        # `cmd | tee` sob `bash -e` devolve o status do tee, sempre 0. `shell: bash` liga
+        # `-eo pipefail`, entao a falha do comando da esquerda volta a reprovar o passo.
+        shell: bash
         run: >-
           node scripts/ev2/phase12/probe-supabase-boundary.mjs
           | tee ../g12-production-recovery-boundary.json

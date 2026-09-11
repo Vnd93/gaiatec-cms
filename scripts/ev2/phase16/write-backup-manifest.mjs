@@ -48,8 +48,12 @@ const [archiveSealBytes, sourceScope, sourceStorage, storageStability, sourceRol
 ]);
 const archiveSeal = JSON.parse(archiveSealBytes.toString("utf8"));
 const archiveSealDigest = await backupFileSha256(archiveSealPath);
-if (!(await verifyBackupArchiveSeal(archivePath, archiveSeal)).valid)
-  throw new Error("BACKUP_ARCHIVE_SEAL_MISMATCH");
+// Este selo e conferido DEPOIS do drill, entao ele prova que o arquivo continua batendo com o digest
+// mesmo apos ter sido decriptado e lido. O resultado tem de ALIMENTAR o campo do manifesto: fixar
+// `archiveDigestStable: true` deixava a afirmacao verdadeira por construcao, sobrevivendo ate a
+// remocao da propria verificacao que deveria sustenta-la.
+const archiveDigestStable = (await verifyBackupArchiveSeal(archivePath, archiveSeal)).valid;
+if (!archiveDigestStable) throw new Error("BACKUP_ARCHIVE_SEAL_MISMATCH");
 
 const restoreDrillPerformed = process.env.RESTORE_DRILL_PERFORMED === "true";
 const restoreDrillPassed = process.env.RESTORE_DRILL_PASSED === "true";
@@ -262,7 +266,7 @@ const restoreVerifications = {
   // consome a evidencia le `storagePayloadsByteIdentical: true` e conclui que a restauracao de
   // midia foi provada, quando nao houve midia nenhuma para restaurar.
   objectPayloadsExercised: Number(restoreStorage?.value?.objects ?? 0) > 0,
-  archiveDigestStable: true,
+  archiveDigestStable,
 };
 
 const manifest = {

@@ -119,6 +119,11 @@ type AuthSurfaceControl = {
   name: string;
   locator: (page: Page) => Locator;
   probeValue?: string;
+  // Estado inicial esperado da acao. O padrao e habilitada, que vale para quase todo botao; onde o
+  // produto nasce desabilitado ate a entrada ficar valida, a superficie declara `false` e a captura
+  // afirma o oposto. Sem isto, a captura exigia `toBeEnabled()` de toda acao e reprovava justamente
+  // o comportamento correto.
+  expectEnabled?: boolean;
 };
 
 type AuthSemanticExecution = {
@@ -789,7 +794,16 @@ async function captureAuthSurface(
           status: "passed",
         });
       } else if (control.kind === "action") {
-        await expect(locator).toBeEnabled();
+        // O estado inicial e afirmado contra o que a superficie declara, nao contra "habilitado"
+        // sempre. `Verificar e entrar` nasce `disabled={busy || code.length !== 6}`, e o proprio spec
+        // pina esse contrato adiante, ao esvaziar o campo e exigir `toBeDisabled()`. Exigir aqui o
+        // contrario reprovaria o produto correto -- e habilitar o botao com o campo vazio deixaria
+        // submeter codigo incompleto.
+        if (control.expectEnabled === false) {
+          await expect(locator).toBeDisabled();
+        } else {
+          await expect(locator).toBeEnabled();
+        }
         const semanticExecutionRef = cmsMutatingActionContractKey(input.surfaceId, control.name, ordinal);
         const report = relative(repositoryRoot, evidencePath).replaceAll("\\", "/");
         executions.push({
@@ -1877,6 +1891,11 @@ test.describe("CMS Auth invite and recovery lifecycle", () => {
           maxOccurrences: 2,
         },
         {
+          // Tres rejeicoes, todas feitas pelo proprio spec: a consulta direta logo apos a revogacao,
+          // a re-resolucao que o painel dispara no reload, e a negativa provada em
+          // `refreshAndProveCmsDenied`. A aba sai do painel em seguida, de proposito, para que a
+          // reconsulta periodica de 30 s nao acrescente ocorrencias que dependem do relogio em vez
+          // do teste. O teto mede comportamento, nao duracao de suite.
           id: "revoked-cms-session",
           method: "POST",
           path: "/functions/v1/cms-session",
@@ -2089,6 +2108,8 @@ test.describe("CMS Auth invite and recovery lifecycle", () => {
             id: "verify",
             kind: "action",
             name: "Verificar e entrar",
+            // Nasce desabilitado: MfaPage.tsx exige os seis digitos antes de permitir o envio.
+            expectEnabled: false,
             locator: (page) => page.getByRole("button", { name: "Verificar e entrar" }),
           },
           {
@@ -2393,6 +2414,14 @@ test.describe("CMS Auth invite and recovery lifecycle", () => {
       await createUnobservedAuthSession(invitePage, config, config.invitee, "unobserved-revocation");
       await revokeSessionsThroughUi(recoveryPage, invitePage, config);
       await refreshAndProveCmsDenied(invitePage, config, config.invitee, "unobserved-revocation");
+      // Provada a negativa, a aba sai do painel. Enquanto ela permanece na tela administrativa, o
+      // painel reconsulta /functions/v1/cms-session a cada 30 s (AdminAuthContext, setInterval de
+      // refreshCapabilities, mais o ouvinte de visibilitychange), e cada reconsulta soma outro 403 a
+      // uma sessao que ja foi revogada. Nada disso e feito pelo teste: sao repeticoes do relogio.
+      // Sem sair, a contagem da allowance vira funcao da DURACAO do resto da suite, e qualquer teto
+      // fixo passaria a depender da velocidade do runner. Navegar para uma rota publica desmonta o
+      // provedor administrativo e devolve a contagem ao que o spec de fato exercita.
+      await invitePage.goto("/", { waitUntil: "domcontentloaded" });
       const revocationAudit = await browserApi(
         recoveryPage,
         config,

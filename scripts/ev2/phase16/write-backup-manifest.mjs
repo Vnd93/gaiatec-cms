@@ -200,18 +200,45 @@ if (
   throw new Error("ROLE_RESTORE_REPORT_INVALID");
 
 const sealedAt = new Date().toISOString();
-if (
-  Date.parse(snapshotAt) > Date.parse(archiveSeal.hashedAt) ||
-  Date.parse(archiveSeal.hashedAt) > Date.parse(sealedAt) ||
-  !Number.isFinite(Date.parse(sourceStorage.value?.snapshotVerifiedAt ?? "")) ||
-  Date.parse(sourceStorage.value.snapshotVerifiedAt) < Date.parse(snapshotAt) ||
-  Date.parse(sourceStorage.value.snapshotVerifiedAt) > Date.parse(archiveSeal.hashedAt) ||
-  (restoreDrillPerformed &&
-    (Date.parse(snapshotAt) > Date.parse(restoreDrillStartedAt) ||
-      Date.parse(archiveSeal.hashedAt) > Date.parse(restoreDrillStartedAt) ||
-      Date.parse(restoreDrillCompletedAt) > Date.parse(sealedAt)))
-)
-  throw new Error("BACKUP_SNAPSHOT_TIMELINE_INVALID");
+// Oito condicoes distintas de ordem cronologica saiam com um codigo unico, e descobrir qual delas
+// reprovou custava uma passada inteira do drill contra producao. Cada uma se nomeia agora, e os
+// instantes viajam junto: nenhum deles e sensivel, e sao eles que explicam a ordem.
+const snapshotVerifiedAt = sourceStorage.value?.snapshotVerifiedAt ?? "";
+const timelineViolations = [
+  ["snapshot_after_archive_hashed", Date.parse(snapshotAt) > Date.parse(archiveSeal.hashedAt)],
+  ["archive_hashed_after_sealed", Date.parse(archiveSeal.hashedAt) > Date.parse(sealedAt)],
+  ["snapshot_verified_at_invalid", !Number.isFinite(Date.parse(snapshotVerifiedAt))],
+  ["snapshot_verified_before_snapshot", Date.parse(snapshotVerifiedAt) < Date.parse(snapshotAt)],
+  [
+    "snapshot_verified_after_archive_hashed",
+    Date.parse(snapshotVerifiedAt) > Date.parse(archiveSeal.hashedAt),
+  ],
+  [
+    "snapshot_after_restore_started",
+    restoreDrillPerformed && Date.parse(snapshotAt) > Date.parse(restoreDrillStartedAt),
+  ],
+  [
+    "archive_hashed_after_restore_started",
+    restoreDrillPerformed && Date.parse(archiveSeal.hashedAt) > Date.parse(restoreDrillStartedAt),
+  ],
+  [
+    "restore_completed_after_sealed",
+    restoreDrillPerformed && Date.parse(restoreDrillCompletedAt) > Date.parse(sealedAt),
+  ],
+]
+  .filter(([, failed]) => failed)
+  .map(([name]) => name);
+if (timelineViolations.length)
+  throw new Error(
+    `BACKUP_SNAPSHOT_TIMELINE_INVALID:${timelineViolations.join(",")}:${JSON.stringify({
+      snapshotAt,
+      snapshotVerifiedAt,
+      archiveHashedAt: archiveSeal.hashedAt,
+      restoreDrillStartedAt,
+      restoreDrillCompletedAt,
+      sealedAt,
+    })}`,
+  );
 
 const completeDataRestoreDrill =
   restoreDrillPerformed &&

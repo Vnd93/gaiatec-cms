@@ -22,7 +22,12 @@ import {
   verifyStorageSnapshotStability,
 } from "./storage-object-backup.mjs";
 import { evaluateBackupScope } from "./verify-backup-scope.mjs";
-import { buildRoleRestoreReport, buildRoleSourceReport } from "./verify-role-backup.mjs";
+import {
+  buildRoleRestoreReport,
+  buildRoleSourceReport,
+  describeRoleDivergence,
+  parseRoleDetail,
+} from "./verify-role-backup.mjs";
 import {
   PRODUCTION_SUPABASE_PROJECT_REF,
   classifySupabaseServiceKey,
@@ -730,14 +735,49 @@ test("Storage snapshot proof fails closed on every pre/post race and download bi
   );
 });
 
+
+// Catalogo sintetico de papeis coerente com fingerprint-roles.sql e fingerprint-roles-detail.sql: o
+// agregado e, por construcao, o sha256 da concatenacao dos hashes por papel em ordem. Um fixture que
+// nao respeitasse isso passaria a testar um acordo que a producao nao tem.
+function roleCatalog(roles) {
+  const digest = (value) => createHash("sha256").update(value).digest("hex");
+  const detail = roles
+    .map((role) => ({
+      nameHash: digest(`name:${role.name}`),
+      fingerprint: digest(`role:${role.name}:${role.attributes ?? "base"}`),
+    }))
+    .sort((left, right) => (left.fingerprint < right.fingerprint ? -1 : 1));
+  return {
+    aggregate: `${detail.length}\t${digest(detail.map((role) => role.fingerprint).join(""))}\n`,
+    detailSource: `${detail.map((role) => `${role.nameHash}\t${role.fingerprint}`).join("\n")}\n`,
+  };
+}
+
+const PRODUCTION_ROLES = [
+  { name: "postgres" },
+  { name: "authenticator" },
+  { name: "anon" },
+  { name: "authenticated" },
+  { name: "service_role" },
+  { name: "supabase_admin" },
+  { name: "supabase_auth_admin" },
+  { name: "supabase_storage_admin" },
+];
+
 test("role evidence detects source races and states the portable restore limitation honestly", () => {
-  const fingerprint = `8\t${"9".repeat(64)}\n`;
+  const catalog = roleCatalog(PRODUCTION_ROLES);
+  const fingerprint = catalog.aggregate;
   const source = buildRoleSourceReport({
     beforeSource: fingerprint,
     afterSource: fingerprint,
     roleDump: Buffer.from("synthetic role dump"),
   });
-  const restored = buildRoleRestoreReport({ sourceReport: source, restoredSource: fingerprint });
+  const restored = buildRoleRestoreReport({
+    sourceReport: source,
+    restoredSource: fingerprint,
+    sourceDetail: catalog.detailSource,
+    restoredDetail: catalog.detailSource,
+  });
   assert.equal(source.raceVerified, true);
   assert.equal(source.credentialsIncludedInFingerprint, false);
   assert.equal(restored.portableRoleCatalogMatched, true);
@@ -754,6 +794,160 @@ test("role evidence detects source races and states the portable restore limitat
       }),
     /BACKUP_ROLE_CATALOG_RACED/,
   );
+});
+
+
+test("a role restore divergence names what diverged without naming a role", () => {
+  const catalog = roleCatalog(PRODUCTION_ROLES);
+  const source = buildRoleSourceReport({
+    beforeSource: catalog.aggregate,
+    afterSource: catalog.aggregate,
+    roleDump: Buffer.from("synthetic role dump"),
+  });
+
+  // O alvo efemero perde um papel, tem outro com atributo derivado e ganha um que a origem nao tem:
+  // as tres causas produziam antes a mesma mensagem, sem numero nenhum.
+  const restoredRoles = [
+    ...PRODUCTION_ROLES.slice(1, 7),
+    { name: "supabase_storage_admin", attributes: "connectionLimit=60" },
+    { name: "pgbouncer" },
+    { name: "supabase_read_only_user" },
+  ];
+  const restoredCatalog = roleCatalog(restoredRoles);
+
+  let thrown;
+  try {
+    buildRoleRestoreReport({
+      sourceReport: source,
+      restoredSource: restoredCatalog.aggregate,
+      sourceDetail: catalog.detailSource,
+      restoredDetail: restoredCatalog.detailSource,
+    });
+  } catch (error) {
+    thrown = error;
+  }
+  assert.ok(thrown, "uma divergencia de catalogo tem de reprovar o drill");
+  assert.match(thrown.message, /^BACKUP_ROLE_RESTORE_FINGERPRINT_MISMATCH: /);
+
+  const divergence = thrown.roleRestoreDivergence;
+  assert.equal(divergence.sourceRoleCount, 8);
+  assert.equal(divergence.restoredRoleCount, 9);
+  assert.equal(divergence.identicalRoles, 6);
+  assert.equal(divergence.rolesDriftedInRestore, 1);
+  assert.equal(divergence.rolesMissingFromRestore, 1);
+  assert.equal(divergence.rolesOnlyInRestore, 2);
+  assert.equal(divergence.containsRoleNames, false);
+
+  // A mensagem viaja em log de workflow: nenhum nome de papel e nenhum hash podem sair nela.
+  for (const name of [...PRODUCTION_ROLES, ...restoredRoles].map((role) => role.name))
+    assert.ok(!thrown.message.includes(name), `nome ${name} vazou na mensagem`);
+  assert.doesNotMatch(thrown.message, /[a-f0-9]{64}/);
+});
+
+test("the per-role detail is not taken on trust: it has to rebuild the aggregate", () => {
+  const catalog = roleCatalog(PRODUCTION_ROLES);
+  const source = buildRoleSourceReport({
+    beforeSource: catalog.aggregate,
+    afterSource: catalog.aggregate,
+    roleDump: Buffer.from("synthetic role dump"),
+  });
+  const foreign = roleCatalog([...PRODUCTION_ROLES.slice(0, 7), { name: "dashboard_user" }]);
+
+  // Detalhe de um catalogo, agregado de outro: sem esta verificacao a comparacao descreveria uma
+  // divergencia que nao e a que reprovou, e a leitura do log apontaria para o lugar errado.
+  assert.throws(
+    () =>
+      buildRoleRestoreReport({
+        sourceReport: source,
+        restoredSource: catalog.aggregate,
+        sourceDetail: foreign.detailSource,
+        restoredDetail: catalog.detailSource,
+      }),
+    /BACKUP_ROLE_SOURCE_DETAIL_INCONSISTENT/,
+  );
+  assert.throws(
+    () =>
+      buildRoleRestoreReport({
+        sourceReport: source,
+        restoredSource: catalog.aggregate,
+        sourceDetail: catalog.detailSource,
+        restoredDetail: foreign.detailSource,
+      }),
+    /BACKUP_ROLE_RESTORED_DETAIL_INCONSISTENT/,
+  );
+  assert.throws(
+    () =>
+      buildRoleRestoreReport({
+        sourceReport: source,
+        restoredSource: catalog.aggregate,
+      }),
+    /BACKUP_ROLE_DETAIL_REQUIRED/,
+  );
+});
+
+test("a malformed source report no longer reads as a restore divergence", () => {
+  const catalog = roleCatalog(PRODUCTION_ROLES);
+  const source = buildRoleSourceReport({
+    beforeSource: catalog.aggregate,
+    afterSource: catalog.aggregate,
+    roleDump: Buffer.from("synthetic role dump"),
+  });
+  assert.throws(
+    () =>
+      buildRoleRestoreReport({
+        sourceReport: { ...source, raceVerified: false },
+        restoredSource: catalog.aggregate,
+        sourceDetail: catalog.detailSource,
+        restoredDetail: catalog.detailSource,
+      }),
+    /BACKUP_ROLE_SOURCE_REPORT_INVALID/,
+  );
+});
+
+test("the detail refuses shapes that would make the rebuild meaningless", () => {
+  const digest = (value) => createHash("sha256").update(value).digest("hex");
+  const line = (name, attributes) => `${digest(name)}\t${digest(attributes)}`;
+  assert.throws(() => parseRoleDetail(""), /BACKUP_ROLE_DETAIL_INVALID/);
+  assert.throws(() => parseRoleDetail(`${digest("a")}\n`), /BACKUP_ROLE_DETAIL_INVALID/);
+  // A ordem tem de vir do valor do hash, nao do rotulo: montar o par ja ordenado e emiti-lo ao
+  // contrario e a unica forma estavel de exercitar a recusa.
+  const ordered = [line("a", "first"), line("b", "second")].sort();
+  assert.throws(
+    () => parseRoleDetail(`${ordered[1]}\n${ordered[0]}\n`),
+    /BACKUP_ROLE_DETAIL_UNORDERED/,
+  );
+  assert.throws(
+    () => parseRoleDetail(`${line("a", "same")}\n${line("b", "same")}\n`),
+    /BACKUP_ROLE_DETAIL_DUPLICATED/,
+  );
+});
+
+test("an identical catalog reports every role as identical", () => {
+  const catalog = roleCatalog(PRODUCTION_ROLES);
+  const roles = parseRoleDetail(catalog.detailSource);
+  assert.deepEqual(describeRoleDivergence(roles, roles), {
+    sourceRoleCount: 8,
+    restoredRoleCount: 8,
+    identicalRoles: 8,
+    rolesDriftedInRestore: 0,
+    rolesMissingFromRestore: 0,
+    rolesOnlyInRestore: 0,
+    containsRoleNames: false,
+  });
+});
+
+test("both role fingerprint queries derive from one canonical role shape", async () => {
+  const [aggregate, detail] = await Promise.all([
+    read(new URL("./fingerprint-roles.sql", import.meta.url)),
+    read(new URL("./fingerprint-roles-detail.sql", import.meta.url)),
+  ]);
+  // Se as duas SQLs derivarem, o detalhe deixa de descrever o agregado que reprovou. A verificacao em
+  // tempo de execucao ja recusa isso; aqui a divergencia morre antes de custar um drill.
+  const canonical = (source) =>
+    source.slice(source.indexOf("with role_records as ("), source.indexOf("), role_hashes as ("));
+  assert.equal(canonical(aggregate), canonical(detail));
+  assert.ok(canonical(aggregate).includes("rolbypassrls"));
+  assert.match(detail, /select name_hash \|\| chr\(9\) \|\| fingerprint from role_hashes order by fingerprint;/);
 });
 
 test("backup manifest seals the archive and binds distinct source and restore evidence", async () => {
@@ -857,7 +1051,8 @@ test("backup manifest seals the archive and binds distinct source and restore ev
     containsObjectNames: false,
     containsBucketIdentifiers: false,
   };
-  const roleFingerprint = `8\t${"9".repeat(64)}\n`;
+  const roleCatalogFixture = roleCatalog(PRODUCTION_ROLES);
+  const roleFingerprint = roleCatalogFixture.aggregate;
   const sourceRoles = buildRoleSourceReport({
     beforeSource: roleFingerprint,
     afterSource: roleFingerprint,
@@ -866,6 +1061,8 @@ test("backup manifest seals the archive and binds distinct source and restore ev
   const restoreRoles = buildRoleRestoreReport({
     sourceReport: sourceRoles,
     restoredSource: roleFingerprint,
+    sourceDetail: roleCatalogFixture.detailSource,
+    restoredDetail: roleCatalogFixture.detailSource,
   });
   const environment = {
     ...process.env,

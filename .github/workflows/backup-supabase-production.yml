@@ -206,6 +206,11 @@ jobs:
 
           psql "$PRODUCTION_SUPABASE_DB_URL" --no-psqlrc -X -qAt -v ON_ERROR_STOP=1 \
             --file scripts/ev2/phase16/fingerprint-roles.sql > "$plain_dir/source-roles-after.tsv"
+          # Detalhe por papel do MESMO catalogo do agregado acima. Nao entra no arquivo selado nem
+          # em evidencia: existe para que uma divergencia de restauracao consiga se nomear sozinha,
+          # sem expor nome de papel.
+          psql "$PRODUCTION_SUPABASE_DB_URL" --no-psqlrc -X -qAt -v ON_ERROR_STOP=1 \
+            --file scripts/ev2/phase16/fingerprint-roles-detail.sql > "$plain_dir/source-roles-detail.tsv"
           node scripts/ev2/phase16/verify-role-backup.mjs source \
             --before "$plain_dir/source-roles-before.tsv" \
             --after "$plain_dir/source-roles-after.tsv" \
@@ -268,6 +273,7 @@ jobs:
           echo "source_storage_report=$plain_dir/storage-source-report.json" >> "$GITHUB_OUTPUT"
           echo "storage_stability_report=$plain_dir/storage-snapshot-stability.json" >> "$GITHUB_OUTPUT"
           echo "source_role_report=$plain_dir/role-source-report.json" >> "$GITHUB_OUTPUT"
+          echo "source_role_detail=$plain_dir/source-roles-detail.tsv" >> "$GITHUB_OUTPUT"
           echo "snapshot_at=$snapshot_at" >> "$GITHUB_OUTPUT"
           echo "snapshot_lsn=$snapshot_lsn" >> "$GITHUB_OUTPUT"
       - name: Prove decryption and complete data restore in an ephemeral Supabase
@@ -279,6 +285,7 @@ jobs:
           BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
           BACKUP_SOURCE_SCOPE_REPORT_PATH: ${{ steps.backup.outputs.source_scope_report }}
           ROLE_SOURCE_REPORT_PATH: ${{ steps.backup.outputs.source_role_report }}
+          ROLE_SOURCE_DETAIL_PATH: ${{ steps.backup.outputs.source_role_detail }}
         run: |
           set -euo pipefail
           restore_started_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
@@ -313,9 +320,13 @@ jobs:
             psql "$local_db_url" --no-psqlrc -X -v ON_ERROR_STOP=1 -f "$restore_dir/roles.restore.sql"
           psql "$local_db_url" --no-psqlrc -X -qAt -v ON_ERROR_STOP=1 \
             --file scripts/ev2/phase16/fingerprint-roles.sql > "$restore_dir/restored-roles.tsv"
+          psql "$local_db_url" --no-psqlrc -X -qAt -v ON_ERROR_STOP=1 \
+            --file scripts/ev2/phase16/fingerprint-roles-detail.sql > "$restore_dir/restored-roles-detail.tsv"
           node scripts/ev2/phase16/verify-role-backup.mjs restore \
             --source-report "$ROLE_SOURCE_REPORT_PATH" \
+            --source-detail "$ROLE_SOURCE_DETAIL_PATH" \
             --restored "$restore_dir/restored-roles.tsv" \
+            --restored-detail "$restore_dir/restored-roles-detail.tsv" \
             --output "$artifact_dir/role-restore-report.json"
           run_restore_psql BACKUP_RESTORE_APPLICATION_SCHEMA_FAILED \
             psql "$local_db_url" --no-psqlrc -X -v ON_ERROR_STOP=1 -f "$restore_dir/extracted/schema.sql"

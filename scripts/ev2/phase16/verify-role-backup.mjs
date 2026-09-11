@@ -24,6 +24,56 @@ export function parseRoleFingerprint(source) {
   return { roleCount, fingerprint };
 }
 
+// Linhas de fingerprint-roles-detail.sql: `<hash do nome>	<hash canonico>`, ordenadas pelo hash
+// canonico. Servem apenas para nomear uma divergencia; nenhum hash entra em relatorio, so contagens.
+export function parseRoleDetail(source) {
+  const lines = String(source).trim().split(/\r?\n/);
+  if (!lines.length || lines[0] === "") throw new Error("BACKUP_ROLE_DETAIL_INVALID");
+  const roles = lines.map((line) => {
+    const [nameHash, fingerprint, ...extra] = line.split("\t");
+    if (extra.length || !SHA256_PATTERN.test(nameHash ?? "") || !SHA256_PATTERN.test(fingerprint ?? ""))
+      throw new Error("BACKUP_ROLE_DETAIL_INVALID");
+    return { nameHash, fingerprint };
+  });
+  const fingerprints = roles.map((role) => role.fingerprint);
+  // A ordenacao e o que torna o agregado reproduzivel; fora de ordem o detalhe nao prova nada.
+  if (fingerprints.some((value, index) => index > 0 && value < fingerprints[index - 1]))
+    throw new Error("BACKUP_ROLE_DETAIL_UNORDERED");
+  if (new Set(fingerprints).size !== fingerprints.length) throw new Error("BACKUP_ROLE_DETAIL_DUPLICATED");
+  return roles;
+}
+
+// O detalhe nao e aceito por confianca: reconstroi count(*) e o sha256 da concatenacao ordenada e
+// tem de reproduzir exatamente o agregado que a SQL de fingerprint produziu no mesmo catalogo.
+// Divergencia aqui e defeito real (as duas SQLs derivaram, ou o catalogo mudou entre elas).
+export function assertRoleDetailMatchesAggregate({ roleCount, fingerprint }, roles, code) {
+  const rebuilt = sha256(roles.map((role) => role.fingerprint).join(""));
+  if (roles.length !== roleCount || rebuilt !== fingerprint) throw new Error(code);
+}
+
+// Descricao sem nomes: o hash do nome separa "papel que o dump nao levou" de "papel presente cujo
+// atributo ou vinculo derivou". Sem essa separacao o agregado so sabe dizer "diferente".
+export function describeRoleDivergence(sourceRoles, restoredRoles) {
+  const restoredByName = new Map(restoredRoles.map((role) => [role.nameHash, role.fingerprint]));
+  const sourceNames = new Set(sourceRoles.map((role) => role.nameHash));
+  let identical = 0;
+  let drifted = 0;
+  for (const role of sourceRoles) {
+    if (!restoredByName.has(role.nameHash)) continue;
+    if (restoredByName.get(role.nameHash) === role.fingerprint) identical += 1;
+    else drifted += 1;
+  }
+  return {
+    sourceRoleCount: sourceRoles.length,
+    restoredRoleCount: restoredRoles.length,
+    identicalRoles: identical,
+    rolesDriftedInRestore: drifted,
+    rolesMissingFromRestore: sourceRoles.length - identical - drifted,
+    rolesOnlyInRestore: restoredRoles.filter((role) => !sourceNames.has(role.nameHash)).length,
+    containsRoleNames: false,
+  };
+}
+
 export function buildRoleSourceReport({ beforeSource, afterSource, roleDump }) {
   const before = parseRoleFingerprint(beforeSource);
   const after = parseRoleFingerprint(afterSource);
@@ -46,8 +96,15 @@ export function buildRoleSourceReport({ beforeSource, afterSource, roleDump }) {
   };
 }
 
-export function buildRoleRestoreReport({ sourceReport, restoredSource }) {
+export function buildRoleRestoreReport({
+  sourceReport,
+  restoredSource,
+  sourceDetail,
+  restoredDetail,
+}) {
   const restored = parseRoleFingerprint(restoredSource);
+  // Um relatorio de origem malformado nao e uma divergencia de restauracao. Antes as duas falhas
+  // saiam com o mesmo codigo, e a leitura do log nao conseguia separa-las.
   if (
     sourceReport?.schemaVersion !== 1 ||
     sourceReport?.event !== "supabase.backup.roles.source-verified" ||
@@ -57,10 +114,35 @@ export function buildRoleRestoreReport({ sourceReport, restoredSource }) {
     sourceReport?.credentialsIncludedInFingerprint !== false ||
     !SHA256_PATTERN.test(sourceReport?.portableCatalogSha256 ?? "") ||
     !SHA256_PATTERN.test(sourceReport?.roleDumpSha256 ?? "") ||
+    !Number.isSafeInteger(sourceReport?.roleCount) ||
+    sourceReport.roleCount < 1
+  )
+    throw new Error("BACKUP_ROLE_SOURCE_REPORT_INVALID");
+
+  // O detalhe por papel e obrigatorio: sem ele uma divergencia so sabe dizer "diferente", que foi
+  // exatamente o que esta porta produziu ate aqui.
+  if (sourceDetail === undefined || restoredDetail === undefined)
+    throw new Error("BACKUP_ROLE_DETAIL_REQUIRED");
+  const sourceRoles = parseRoleDetail(sourceDetail);
+  const restoredRoles = parseRoleDetail(restoredDetail);
+  assertRoleDetailMatchesAggregate(
+    { roleCount: sourceReport.roleCount, fingerprint: sourceReport.portableCatalogSha256 },
+    sourceRoles,
+    "BACKUP_ROLE_SOURCE_DETAIL_INCONSISTENT",
+  );
+  assertRoleDetailMatchesAggregate(restored, restoredRoles, "BACKUP_ROLE_RESTORED_DETAIL_INCONSISTENT");
+
+  if (
     restored.roleCount !== sourceReport.roleCount ||
     restored.fingerprint !== sourceReport.portableCatalogSha256
-  )
-    throw new Error("BACKUP_ROLE_RESTORE_FINGERPRINT_MISMATCH");
+  ) {
+    const divergence = describeRoleDivergence(sourceRoles, restoredRoles);
+    const error = new Error(
+      `BACKUP_ROLE_RESTORE_FINGERPRINT_MISMATCH: ${JSON.stringify(divergence)}`,
+    );
+    error.roleRestoreDivergence = divergence;
+    throw error;
+  }
   return {
     schemaVersion: 1,
     event: "supabase.backup.roles.restore-verified",
@@ -100,10 +182,15 @@ async function main() {
   } else if (mode === "restore") {
     const sourceReport = argument("--source-report");
     const restored = argument("--restored");
-    if (!sourceReport || !restored) throw new Error("BACKUP_ROLE_RESTORE_PATHS_REQUIRED");
+    const sourceDetail = argument("--source-detail");
+    const restoredDetail = argument("--restored-detail");
+    if (!sourceReport || !restored || !sourceDetail || !restoredDetail)
+      throw new Error("BACKUP_ROLE_RESTORE_PATHS_REQUIRED");
     report = buildRoleRestoreReport({
       sourceReport: JSON.parse(await readFile(sourceReport, "utf8")),
       restoredSource: await readFile(restored, "utf8"),
+      sourceDetail: await readFile(sourceDetail, "utf8"),
+      restoredDetail: await readFile(restoredDetail, "utf8"),
     });
   } else {
     throw new Error("BACKUP_ROLE_REPORT_MODE_INVALID");

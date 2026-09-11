@@ -14,6 +14,47 @@ export const G11_BASELINES = Object.freeze({
 
 const finite = (value) => typeof value === "number" && Number.isFinite(value);
 
+// A direcao de cada comparacao mora aqui porque o orcamento diz o limite mas nao de que lado dele se
+// deve estar. Os limites em si vem do backend, na resposta de capability: comparar contra essa fonte,
+// e nao contra uma copia local, e o que impede a verificacao do canario de divergir em silencio do
+// que o banco aplica ao decidir `measured`.
+const BASELINE_DIRECTION = Object.freeze({
+  availabilityPercent: "atLeast",
+  auditCoveragePercent: "atLeast",
+  adminReadP95Ms: "atMost",
+  commandP95Ms: "atMost",
+  outboxLagP95Ms: "atMost",
+  restoreRtoMinutes: "atMost",
+  restoreRpoMinutes: "exactly",
+  accessibilityCritical: "exactly",
+  accessibilitySerious: "exactly",
+  p0Count: "exactly",
+  p1Count: "exactly",
+});
+
+export function budgetsMissed(baselines, measured) {
+  const missed = [];
+  for (const [metric, required] of Object.entries(baselines ?? {})) {
+    const direction = BASELINE_DIRECTION[metric];
+    // Orcamento novo que este canario nao sabe comparar nao pode passar despercebido: trata-lo como
+    // satisfeito transformaria ignorancia em aprovacao.
+    if (!direction) throw new Error(`G11_UNKNOWN_BASELINE_DIRECTION:${metric}`);
+    const observed = measured?.[metric];
+    if (typeof observed !== "number" || !Number.isFinite(observed)) {
+      missed.push({ metric, observed: null, required, direction });
+      continue;
+    }
+    const satisfied =
+      direction === "atLeast"
+        ? observed >= required
+        : direction === "atMost"
+          ? observed <= required
+          : observed === required;
+    if (!satisfied) missed.push({ metric, observed, required, direction });
+  }
+  return missed;
+}
+
 export function percentile(values, percentileValue) {
   if (!Array.isArray(values) || values.length === 0) throw new Error("Amostra vazia.");
   if (!finite(percentileValue) || percentileValue <= 0 || percentileValue > 100)

@@ -3,7 +3,12 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
-import { percentile, runHttpLoadProbe, serverTimingDuration } from "./system-assurance-lib.mjs";
+import {
+  budgetsMissed,
+  percentile,
+  runHttpLoadProbe,
+  serverTimingDuration,
+} from "./system-assurance-lib.mjs";
 import { resolveStableBaseline } from "./stable-baseline-lib.mjs";
 import { validateHealthContract, validateReleaseManifest } from "../phase12/release-guard-lib.mjs";
 import {
@@ -1161,11 +1166,20 @@ try {
     syntheticOnly: true,
     realDataUsed: false,
   };
+  // A resposta de `record_run` diz apenas `failed`, sem nomear o orcamento estourado. Sem isto, a
+  // reprovacao nao tem causa em lugar nenhum: nem na resposta, nem no log.
+  const submittedMetrics = {
+    ...metrics,
+    accessibilityCritical: report.accessibilityCritical,
+    accessibilitySerious: report.accessibilitySerious,
+  };
+  const missedBudgets = budgetsMissed(operatorCapability.json.baselines, submittedMetrics);
+  console.log(JSON.stringify({ event: "g11.metrics", submitted: submittedMetrics, missedBudgets }));
   const record = await system(context, operator, "record_run", { report }, { idempotencyKey: randomUUID() });
   check(
     "measurement_requires_independent_review",
     record.json.status === "measured" && record.json.requiresIndependentReview === true,
-    JSON.stringify(record.json),
+    JSON.stringify({ ...record.json, missedBudgets }),
   );
   const selfReview = await system(
     context,

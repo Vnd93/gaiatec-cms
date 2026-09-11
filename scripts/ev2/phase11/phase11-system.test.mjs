@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 import {
+  budgetsMissed,
   evaluateSystemEvidence,
   percentile,
   serverTimingDuration,
@@ -389,4 +390,53 @@ test("the G11 canary does not let a lease completion die on an eight second budg
 
   // E a falha de gestao passa a dizer a causa do banco, em vez de codigo nu.
   assert.match(canary, /G11_STAGING_MANAGEMENT_QUERY_FAILED:\$\{response\.status\}:\$\{code\}/);
+});
+
+test("a measurement reproval names the budget it missed", async () => {
+  const canary = await readFile("scripts/ev2/phase11/staging-canary.mjs", "utf8");
+
+  // `record_run` responde apenas `failed`, sem dizer qual orcamento estourou. Sem isto a reprovacao
+  // nao tem causa em lugar nenhum: nem na resposta, nem no log.
+  assert.match(
+    canary,
+    /missedBudgets = budgetsMissed\(operatorCapability\.json\.baselines, submittedMetrics\)/,
+  );
+  assert.match(canary, /"event": "g11\.metrics"|event: "g11\.metrics"/);
+  assert.match(canary, /JSON\.stringify\(\{ \.\.\.record\.json, missedBudgets \}\)/);
+
+  // Os limites vem do backend, nao de copia local: uma copia divergiria em silencio do que o banco
+  // aplica ao decidir `measured`.
+  assert.doesNotMatch(canary, /budgetsMissed\(G11_BASELINES/);
+
+  const baselines = { adminReadP95Ms: 500, availabilityPercent: 99.9, restoreRpoMinutes: 0 };
+  assert.deepEqual(
+    budgetsMissed(baselines, { adminReadP95Ms: 500, availabilityPercent: 99.9, restoreRpoMinutes: 0 }),
+    [],
+  );
+
+  // Cada direcao e respeitada: teto, piso e igualdade exata.
+  assert.deepEqual(
+    budgetsMissed(baselines, { adminReadP95Ms: 501, availabilityPercent: 99.9, restoreRpoMinutes: 0 }),
+    [{ metric: "adminReadP95Ms", observed: 501, required: 500, direction: "atMost" }],
+  );
+  assert.deepEqual(
+    budgetsMissed(baselines, { adminReadP95Ms: 10, availabilityPercent: 99.89, restoreRpoMinutes: 0 }),
+    [{ metric: "availabilityPercent", observed: 99.89, required: 99.9, direction: "atLeast" }],
+  );
+  assert.deepEqual(
+    budgetsMissed(baselines, { adminReadP95Ms: 10, availabilityPercent: 100, restoreRpoMinutes: 1 }),
+    [{ metric: "restoreRpoMinutes", observed: 1, required: 0, direction: "exactly" }],
+  );
+
+  // Metrica ausente conta como estourada, nunca como satisfeita.
+  const absent = budgetsMissed(baselines, { availabilityPercent: 100, restoreRpoMinutes: 0 });
+  assert.deepEqual(absent, [
+    { metric: "adminReadP95Ms", observed: null, required: 500, direction: "atMost" },
+  ]);
+
+  // E um orcamento que o canario nao sabe comparar reprova alto, em vez de ser ignorado.
+  assert.throws(
+    () => budgetsMissed({ orcamentoDesconhecido: 1 }, { orcamentoDesconhecido: 1 }),
+    /G11_UNKNOWN_BASELINE_DIRECTION:orcamentoDesconhecido/,
+  );
 });

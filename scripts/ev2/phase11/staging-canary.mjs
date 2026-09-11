@@ -155,7 +155,7 @@ async function leaseRpc(ctx, name, body) {
   return response.json;
 }
 
-async function managementQuery(query) {
+async function managementQuery(query, timeoutMs = 30_000) {
   const response = await fetch(`https://api.supabase.com/v1/projects/${TARGET.ref}/database/query`, {
     method: "POST",
     headers: {
@@ -163,12 +163,62 @@ async function managementQuery(query) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ query }),
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
-  if (!response.ok) throw new Error("Consulta segura de gestão do staging falhou.");
+  if (!response.ok) {
+    // A causa do banco nao pode se perder aqui: sem ela, uma falha de encerramento vira codigo nu e
+    // exige leitura de log bruto. So o identificador fechado viaja, nunca o corpo da resposta.
+    const detail = await response.text().catch(() => "");
+    const code = /"code"\s*:\s*"([0-9A-Z]{5})"/.exec(detail)?.[1] ?? "unknown";
+    throw new Error(`G11_STAGING_MANAGEMENT_QUERY_FAILED:${response.status}:${code}`);
+  }
   const payload = await response.json().catch(() => null);
   if (!Array.isArray(payload)) throw new Error("Resposta de gestão do staging inválida.");
   return payload;
+}
+
+// O encerramento de lease dispara doze limpezas terminais num unico statement, e juntas elas varrem
+// mais de trinta tabelas do run. Pelo PostgREST isso corre sob o `statement_timeout` de oito segundos
+// herdado do `authenticator`, que nao e orcamento para essa varredura: no run 34542229170 o
+// encerramento do ator pesado respondeu SQLSTATE 57014 enquanto o do ator leve, segundos antes,
+// passou.
+//
+// Nao adianta corrigir dentro da funcao: mudar `statement_timeout` ali nao reprograma o timer do
+// statement que ja esta correndo. O limite precisa ser armado ANTES do statement, e e isso que este
+// transporte faz, com teto explicito. A autorizacao continua dentro da funcao, que e SECURITY
+// DEFINER e confere a exatidao do marcador antes de qualquer coisa.
+const LEASE_COMPLETION_STATEMENT_TIMEOUT_MS = 60_000;
+const LEASE_COMPLETION_REQUEST_TIMEOUT_MS = 90_000;
+
+function statementTimedOut(error) {
+  return /"code"\s*:\s*"57014"|:57014$|:57014:/.test(String(error?.message ?? ""));
+}
+
+async function durableLeaseRpc(ctx, name, body) {
+  try {
+    return await leaseRpc(ctx, name, body);
+  } catch (error) {
+    if (name !== "cms_complete_qa_actor_lease" || !statementTimedOut(error)) throw error;
+    if (
+      !/^[0-9a-f-]{36}$/.test(body.p_actor_id ?? "") ||
+      !/^QA-CMS-FINAL-[0-9]{8}-[0-9a-f]{8}$/.test(body.p_run_tag ?? "") ||
+      !/^[0-9a-f]{40}$/.test(body.p_candidate_sha ?? "") ||
+      !/^(staging|production)$/.test(body.p_environment ?? "")
+    )
+      throw new Error("G11_STAGING_LEASE_IDENTITY_UNSAFE", { cause: error });
+    const rows = await managementQuery(
+      [
+        `set statement_timeout = '${LEASE_COMPLETION_STATEMENT_TIMEOUT_MS}ms';`,
+        `select public.cms_complete_qa_actor_lease(`,
+        `'${body.p_actor_id}'::uuid, '${body.p_run_tag}',`,
+        `'${body.p_candidate_sha}', '${body.p_environment}') as result;`,
+      ].join("\n"),
+      LEASE_COMPLETION_REQUEST_TIMEOUT_MS,
+    );
+    const result = rows.at(-1)?.result;
+    if (!result) throw new Error("G11_STAGING_LEASE_DURABLE_COMPLETION_EMPTY", { cause: error });
+    return result;
+  }
 }
 
 function envelope(environment = "staging") {
@@ -724,7 +774,7 @@ async function closeSyntheticResidue(ctx) {
       }),
     );
     await attempt(`lease:${actorId}`, () =>
-      completeQaActorLease((name, body) => leaseRpc(ctx, name, body), {
+      completeQaActorLease((name, body) => durableLeaseRpc(ctx, name, body), {
         actorId,
         runTag: qaRunTag,
         candidateSha: expectedSha,

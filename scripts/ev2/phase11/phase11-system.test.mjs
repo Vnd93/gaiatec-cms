@@ -355,3 +355,38 @@ test("the G11 run leaves no live form behind", async () => {
   // The retained tombstone is counted by the run that produced it, not by a free-text origin.
   assert.match(canary, /qa_run_tag=eq\.\$\{qaRunTag\}&anonymized_at=not\.is\.null/);
 });
+
+test("the G11 canary does not let a lease completion die on an eight second budget", async () => {
+  const canary = await readFile("scripts/ev2/phase11/staging-canary.mjs", "utf8");
+
+  // Encerrar uma lease dispara doze limpezas terminais num unico statement, e juntas elas varrem
+  // mais de trinta tabelas do run. Pelo PostgREST isso corre sob o statement_timeout de oito
+  // segundos herdado do authenticator, e o encerramento do ator pesado respondeu SQLSTATE 57014
+  // enquanto o do ator leve, segundos antes, passou.
+  assert.match(canary, /statementTimedOut/);
+  assert.match(canary, /57014/);
+
+  // Nao adianta corrigir dentro da funcao: mudar statement_timeout ali nao reprograma o timer do
+  // statement que ja esta correndo. O limite tem de ser armado antes do statement.
+  assert.match(canary, /set statement_timeout = '\$\{LEASE_COMPLETION_STATEMENT_TIMEOUT_MS\}ms';/);
+  const statement = /LEASE_COMPLETION_STATEMENT_TIMEOUT_MS = ([0-9_]+)/.exec(canary)?.[1];
+  const request = /LEASE_COMPLETION_REQUEST_TIMEOUT_MS = ([0-9_]+)/.exec(canary)?.[1];
+  assert.ok(statement && request, "os dois tetos precisam ser explicitos");
+  // O teto do statement tem de caber dentro do teto da requisicao, senao o abort corta antes e a
+  // causa do banco se perde.
+  assert.ok(Number(statement.replaceAll("_", "")) < Number(request.replaceAll("_", "")));
+
+  // Fallback so para este encerramento, e so para este SQLSTATE: nada mais muda de transporte.
+  assert.match(
+    canary,
+    /if \(name !== "cms_complete_qa_actor_lease" \|\| !statementTimedOut\(error\)\) throw error;/,
+  );
+  assert.match(canary, /completeQaActorLease\(\(name, body\) => durableLeaseRpc\(ctx, name, body\)/);
+
+  // A identidade e validada antes de qualquer interpolacao em SQL.
+  assert.match(canary, /G11_STAGING_LEASE_IDENTITY_UNSAFE/);
+  assert.match(canary, /\^QA-CMS-FINAL-\[0-9\]\{8\}-\[0-9a-f\]\{8\}\$/);
+
+  // E a falha de gestao passa a dizer a causa do banco, em vez de codigo nu.
+  assert.match(canary, /G11_STAGING_MANAGEMENT_QUERY_FAILED:\$\{response\.status\}:\$\{code\}/);
+});

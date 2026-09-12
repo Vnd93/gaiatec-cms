@@ -1,3 +1,4 @@
+import { EV2_DELIVERABLE_FEATURES } from "@/shared/contracts/ev2-foundation";
 import type {
   Ev2CapabilityManifest,
   Ev2Environment,
@@ -35,5 +36,17 @@ export function isEv2FeatureEnabled(
   )
     return false;
   const capability = manifest.capabilities[feature];
-  return capability?.key === feature && capability.enabled === true && capability.source === "override";
+  if (capability?.key !== feature || capability.enabled !== true) return false;
+  if (capability.source === "override") return true;
+  // "default" com enabled=true só existe quando a funcionalidade foi declarada entregue no livro
+  // de entregas (migration 0093): a coluna default_enabled tem check (default_enabled is false)
+  // desde a 0037, então este par era impossível antes dela.
+  //
+  // Aceito apenas para as entregáveis. Para as outras dez o par continua sendo recusado aqui, e
+  // essa recusa é o que mantém de pé a garantia anterior — cada uma delas é o portão único de algo
+  // que a revisão de segurança mandou manter fechado, ou um adiamento declarado.
+  return (
+    capability.source === "default" &&
+    (EV2_DELIVERABLE_FEATURES as readonly string[]).includes(feature)
+  );
 }

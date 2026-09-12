@@ -18,6 +18,23 @@ export const Ev2FeatureFlagKeySchema = z.enum([
   "ev2.system_assurance",
 ]);
 
+/**
+ * Funcionalidades que podem ser declaradas entregues — isto é, valer em produção sem habilitação
+ * nominal por pessoa.
+ *
+ * A autoridade sobre esta lista é a restrição `cms_ev2_delivery_ledger_flag_elegivel`, na migration
+ * 0093. Esta constante é a cópia que o cliente enxerga, e
+ * `tests/contracts/ev2-delivery-ledger.test.ts` exige que as duas sejam idênticas nos dois sentidos
+ * — se divergirem, a suíte reprova.
+ *
+ * As demais dez continuam exigindo habilitação nominal. Não é preferência: cada uma das que ficou
+ * de fora é o portão único de algo que a revisão de segurança mandou manter fechado, ou um
+ * adiamento declarado. Ampliar esta lista exige migration nova, que é um ato visível e governado.
+ */
+export const EV2_DELIVERABLE_FEATURES = ["ev2.draft_v2", "ev2.master_data", "ev2.pim_v2"] as const;
+
+export type Ev2DeliverableFeature = (typeof EV2_DELIVERABLE_FEATURES)[number];
+
 export const Ev2CommandActorContextSchema = z
   .object({
     environment: Ev2EnvironmentSchema,

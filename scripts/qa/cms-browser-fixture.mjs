@@ -944,7 +944,13 @@ export function capabilityManifestReady(manifest, environment) {
         capabilities[flagKey]?.schemaVersion === 1 &&
         capabilities[flagKey]?.key === flagKey &&
         capabilities[flagKey]?.enabled === true &&
-        capabilities[flagKey]?.source === "override" &&
+        // "override" e a habilitacao nominal do ator sintetico, que e o caminho normal da fixture.
+        // "default" com enabled=true so existe quando a funcionalidade foi declarada entregue no
+        // livro de entregas (migration 0093) — a coluna default_enabled tem
+        // check (default_enabled is false) desde a 0037, entao este par era impossivel antes.
+        // Sem esta linha, a primeira entrega reprova a fixture com QA_CMS_FIXTURE_SESSION_NOT_READY,
+        // que nao aponta para a causa.
+        ["override", "default"].includes(capabilities[flagKey]?.source) &&
         Number.isFinite(Date.parse(capabilities[flagKey]?.evaluatedAt ?? "")),
     ),
   );

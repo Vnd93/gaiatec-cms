@@ -53,7 +53,13 @@ for select to authenticated using (
   )
 );
 
-revoke insert, update, delete on public.cms_content_draft_snapshots from public, anon, authenticated;
+-- Padrao de privilegio da casa: nega tudo, devolve só a leitura ao autenticado — que a politica de
+-- RLS acima ainda filtra — e dá o resto ao service_role. Uma versao anterior revogava escrita e
+-- NAO concedia leitura: a politica ficava decorativa, porque sem grant de SELECT ninguem chega a
+-- ser filtrado por ela, e a tela de versoes anteriores apareceria sempre vazia.
+revoke all on table public.cms_content_draft_snapshots from public, anon, authenticated;
+grant select on table public.cms_content_draft_snapshots to authenticated;
+grant all on table public.cms_content_draft_snapshots to service_role;
 
 -- Quantos instantaneos por item. Limite baixo de proposito: isto e desfazer de curto prazo, nao
 -- historico editorial. Historico e revisao, e revisao nasce no submit.
@@ -71,9 +77,26 @@ security definer
 set search_path = pg_catalog, public, private, pg_temp
 as $$
 declare
-  v_retention constant integer := private.cms_draft_snapshot_retention();
+  v_retention integer;
 begin
+  -- A restauracao compensatoria da QA (0064) reescreve o rascunho para desfazer o que um ator
+  -- sintetico fez. Sem esta guarda, o gatilho captura ESSA reescrita e deixa no livro de
+  -- instantaneos um payload sintetico legivel — residuo, que e exatamente o que a compensacao
+  -- existe para nao deixar. Este era o unico gatilho de cms_content_drafts que nao honrava o
+  -- sinal; o irmao instalado pela 0086:144-147 usa a mesma forma.
+  if current_setting('cms.qa_compensating', true) = 'on'
+     and current_setting('cms.qa_restore_item', true) = old.item_id::text then
+    return new;
+  end if;
+
   begin
+    -- A inicializacao fica DENTRO do bloco protegido, nao na declaracao. Inicializador de DECLARE
+    -- roda ao entrar na funcao, fora do alcance do `exception when others` — e qualquer erro ali
+    -- subiria para o gatilho e derrubaria o UPDATE. Hoje a funcao e `select 20` immutable e nao
+    -- pode falhar; no dia em que a retencao virar parametro lido de tabela, poderia. O cabecalho
+    -- promete que perder instantaneo nunca custa um salvamento, e a promessa vale para 100% do
+    -- caminho, inclusive a parte que parece trivial.
+    v_retention := private.cms_draft_snapshot_retention();
     insert into public.cms_content_draft_snapshots (
       item_id, lock_version, schema_version, payload, seo, provenance, displaced_by
     ) values (

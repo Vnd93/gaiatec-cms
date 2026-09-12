@@ -71,7 +71,14 @@ describe("instantâneo de rascunho", () => {
     // Restaurar reusa o `save` que já existe, herdando validação, permissão, trava de concorrência
     // e auditoria. Uma RPC de restauração própria seria superfície nova sem nenhuma dessas.
     expect(MIGRACAO).not.toMatch(/function public\.cms_restore_draft_snapshot/);
-    expect(MIGRACAO).toContain("revoke insert, update, delete on public.cms_content_draft_snapshots");
+    // O autenticado recebe SÓ leitura, que a política de RLS ainda filtra. Escrita é do gatilho e
+    // do service_role. Conceder mais que select aqui abriria o caminho paralelo que esta migration
+    // existe para não abrir.
+    expect(MIGRACAO).toContain("revoke all on table public.cms_content_draft_snapshots");
+    expect(MIGRACAO).toContain("grant select on table public.cms_content_draft_snapshots to authenticated");
+    expect(MIGRACAO).not.toMatch(
+      /grant[^;]*\b(insert|update|delete|all)\b[^;]*cms_content_draft_snapshots[^;]*to authenticated/i,
+    );
   });
 
   it("a tela restaura para o editor, sem escrever no servidor", () => {

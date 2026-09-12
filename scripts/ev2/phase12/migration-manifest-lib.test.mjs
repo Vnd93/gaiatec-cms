@@ -88,7 +88,7 @@ test("the repository migration history is contiguous", () => {
   assert.deepEqual(G12_PINNED_MIGRATION_TAIL.at(-1), {
     version: "0094",
     file: "0094_cms_content_draft_snapshots.sql",
-    sha256: "33844e545506d2818e34e9d33a2d9859633a38e77d4811ca582992f522e0ebf5",
+    sha256: "7a9dfb27305e8de81764f276f634dfa493a4a59b4df8457cb959515755db0359",
   });
   assert.deepEqual(manifest.slice(-G12_PINNED_MIGRATION_TAIL.length), G12_PINNED_MIGRATION_TAIL);
   for (const migration of manifest.slice(-G12_PINNED_MIGRATION_TAIL.length)) {

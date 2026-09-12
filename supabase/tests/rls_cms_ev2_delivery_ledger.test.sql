@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(30);
+select plan(40);
 
 -- Este teste le a definicao VIVA das funcoes, nao o texto das migrations. A distincao nao e
 -- preciosismo: a 0055, linhas 50-92, tem um bloco DO que varre pg_proc e reescreve o corpo de toda
@@ -128,6 +128,78 @@ select is((select private.cms_ev2_delivery_active(null,'local','main','aal1')),f
   'a null flag key is refused as false, never as null');
 select is((select private.cms_ev2_delivery_active('ev2.dam','local','main','aal2')),false,
   'a flag that can never be delivered still answers false, not null');
+
+-- ------------------------------------------------- as travas DECIDEM, e nao apenas aparecem
+-- Tudo acima roda com o livro VAZIO, onde a resposta e false por AUSENCIA DE LINHA, qualquer que
+-- seja a trava. E as tres asserticoes de "o predicado carrega as travas" sao strpos sobre o texto
+-- do corpo: provam que os nomes aparecem, nao que decidem. Um predicado em que a conjuncao de
+-- aal2 virasse disjuncao, ou o veto amplo virasse `and exists`, mantem todos os nomes e passa.
+--
+-- Concluir por presenca de nome e exatamente o que a regra de metodo deste projeto proibe. As
+-- asserticoes abaixo semeiam o livro e exercitam cada trava contra um estado em que a resposta
+-- SO pode ser false se a trava funcionar.
+
+insert into private.cms_ev2_delivery_ledger (
+  flag_key, environment, state, reason, candidate_sha, workflow_run_id,
+  approval_record_sha256, idempotency_key, correlation_id, review_due_at
+) values (
+  'ev2.draft_v2', 'production', 'delivered', 'Entrega sintetica exclusiva deste teste.',
+  repeat('a', 40), '1', repeat('b', 64),
+  '00000000-0000-4000-8000-0000000000f1', '00000000-0000-4000-8000-0000000000f2',
+  statement_timestamp() + interval '90 days'
+);
+
+select is((select private.cms_ev2_delivery_active('ev2.draft_v2','production','main','aal2')),true,
+  'with a delivered row and strong authentication the predicate says yes');
+select is((select private.cms_ev2_delivery_active('ev2.draft_v2','production','main','aal1')),false,
+  'single factor is refused even with the row present -- the AAL lock decides');
+select is((select private.cms_ev2_delivery_active('ev2.draft_v2','production','outro','aal2')),false,
+  'another site is refused even with the row present -- the site lock decides');
+select is((select private.cms_ev2_delivery_active('ev2.draft_v2','staging','main','aal2')),false,
+  'the row belongs to production only -- the environment is part of the key');
+
+-- Interruptor de emergencia: soberano mesmo sobre uma entrega declarada.
+update public.cms_feature_flags set kill_switch = true where flag_key = 'ev2.draft_v2';
+select is((select private.cms_ev2_delivery_active('ev2.draft_v2','production','main','aal2')),false,
+  'the emergency switch overrides a declared delivery');
+update public.cms_feature_flags set kill_switch = false where flag_key = 'ev2.draft_v2';
+
+-- Habilitacao de escopo amplo continua sendo VETO, inclusive contra uma entrega.
+insert into public.cms_feature_flag_overrides (
+  flag_key, environment, scope_type, scope_key, enabled, reason, starts_at, expires_at, created_by
+) values (
+  'ev2.draft_v2', 'production', 'site', 'main', true, 'Override amplo sintetico deste teste.',
+  statement_timestamp() - interval '1 minute', statement_timestamp() + interval '1 hour',
+  (select id from auth.users limit 1)
+);
+select is((select private.cms_ev2_delivery_active('ev2.draft_v2','production','main','aal2')),false,
+  'a broad override still vetoes, even against a declared delivery');
+delete from public.cms_feature_flag_overrides
+where flag_key = 'ev2.draft_v2' and scope_type = 'site';
+
+-- A ultima palavra manda: suspender depois de entregar desliga.
+insert into private.cms_ev2_delivery_ledger (
+  flag_key, environment, state, reason, candidate_sha, workflow_run_id,
+  approval_record_sha256, idempotency_key, correlation_id, review_due_at
+) values (
+  'ev2.draft_v2', 'production', 'suspended', 'Suspensao sintetica exclusiva deste teste.',
+  repeat('a', 40), '2', repeat('b', 64),
+  '00000000-0000-4000-8000-0000000000f3', '00000000-0000-4000-8000-0000000000f4', null
+);
+select is((select private.cms_ev2_delivery_active('ev2.draft_v2','production','main','aal2')),false,
+  'the last word wins: a suspension after a delivery turns it off');
+
+-- As duas escritas governadas precisam ser ALCANCAVEIS pelo service_role. Sem grant, revogar uma
+-- entrega seria impossivel — o oposto de "revogar leva segundos e nao exige deploy".
+select is(has_function_privilege('service_role',
+  'public.cms_ev2_suspend_delivery(text,text,text,text,text,text,uuid,uuid)','EXECUTE'),true,
+  'the service role can actually suspend a delivery');
+select is(has_function_privilege('service_role',
+  'public.cms_ev2_declare_delivery(text,text,text,text,text,text,uuid,uuid,timestamptz)','EXECUTE'),true,
+  'the service role can actually declare a delivery');
+select isnt(has_function_privilege('authenticated',
+  'public.cms_ev2_suspend_delivery(text,text,text,text,text,text,uuid,uuid)','EXECUTE'),true,
+  'an authenticated caller cannot suspend a delivery');
 
 select * from finish();
 rollback;

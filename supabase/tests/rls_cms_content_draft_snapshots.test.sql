@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(14);
+select plan(19);
 
 -- Estrutura e alcance do instantaneo de rascunho (0094), lidos do banco migrado.
 --
@@ -45,6 +45,21 @@ select ok(exists(
 select ok(strpos(pg_get_functiondef(
   'private.cms_capture_draft_snapshot()'::regprocedure
 ),'exception') > 0,'the capture swallows its own failure so a save is never blocked');
+
+-- O gatilho precisa honrar o sinal de compensacao da QA, como o irmao instalado pela 0086. Sem
+-- isso ele captura a propria reescrita compensatoria e deixa payload sintetico legivel no livro —
+-- residuo, que e o que a compensacao existe para nao deixar.
+select ok(strpos(pg_get_functiondef(
+  'private.cms_capture_draft_snapshot()'::regprocedure
+),'cms.qa_compensating') > 0,'the capture honours the QA compensation signal like its sibling');
+
+-- A retencao e lida DENTRO do bloco protegido. Inicializador de DECLARE roda fora do alcance do
+-- handler, e um erro ali derrubaria todo salvamento de todo tipo de conteudo.
+select is(strpos(
+  substring(pg_get_functiondef('private.cms_capture_draft_snapshot()'::regprocedure)
+            from 'declare(.*?)begin'),
+  'cms_draft_snapshot_retention'),0,
+  'the retention lookup is not in the declare section, where the handler cannot reach it');
 select ok(strpos(pg_get_functiondef(
   'private.cms_capture_draft_snapshot()'::regprocedure
 ),'CMS_DRAFT_SNAPSHOT_CAPTURE_FAILED') > 0,'a swallowed failure is still recorded, not silent');
@@ -62,13 +77,29 @@ select ok(strpos(pg_get_functiondef(
 select ok((select relrowsecurity from pg_catalog.pg_class where oid='public.cms_content_draft_snapshots'::regclass),
   'row level security is enabled on the snapshot table');
 
+-- Conferir a PRESENCA dos dois nomes nao prova o espelhamento: uma politica que ligasse as duas
+-- condicoes por OR conteria os mesmos dois nomes e passaria — e um OR seria mais permissivo que a
+-- politica do rascunho, vazando por caminho novo o conteudo que ela protege. O que importa e a
+-- CONJUNCAO, e a ausencia de disjuncao no nivel de cima.
 select ok(exists(
   select 1 from pg_catalog.pg_policies p
   where p.schemaname='public' and p.tablename='cms_content_draft_snapshots'
     and p.policyname='cms_content_draft_snapshots_authorized_read'
     and p.qual like '%cms_content_item_session_read_allowed%'
     and p.qual like '%cms_can_read_content%'
-),'the read policy mirrors both conditions of the draft policy');
+),'the read policy names both conditions of the draft policy');
+
+select is((select strpos(upper(p.qual), ' OR ') from pg_catalog.pg_policies p
+  where p.schemaname='public' and p.tablename='cms_content_draft_snapshots'
+    and p.policyname='cms_content_draft_snapshots_authorized_read'),0,
+  'the two conditions are conjoined, never disjoined -- an OR would be wider than the draft policy');
+
+-- A politica so filtra quem ja pode SELECIONAR. Sem o grant ela e decorativa, e a tela de versoes
+-- anteriores apareceria sempre vazia.
+select is(has_table_privilege('authenticated','public.cms_content_draft_snapshots','SELECT'),true,
+  'an authenticated caller can reach the table for the policy to filter');
+select is(has_table_privilege('service_role','public.cms_content_draft_snapshots','INSERT'),true,
+  'the service role can still write the table');
 
 select isnt(has_table_privilege('authenticated','public.cms_content_draft_snapshots','INSERT'),true,
   'an authenticated caller cannot write a snapshot directly');

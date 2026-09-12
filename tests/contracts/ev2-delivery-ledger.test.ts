@@ -41,9 +41,29 @@ const PROIBIDAS = new Map([
   ["ev2.release_skeleton", "fora do escopo da primeira leva"],
 ]);
 
+/**
+ * O corpo inteiro da restrição, lido por balanceamento de parênteses.
+ *
+ * Uma versão anterior capturava com `check \(([^)]*)\)`, e a classe `[^)]` para no PRIMEIRO
+ * fecha-parêntese. Na forma atual da restrição isso coincide com o fim da lista, e os testes
+ * passavam — por coincidência de formato. Bastaria a restrição ganhar um segundo termo para a
+ * captura devolver um pedaço, e o guarda das flags proibidas passar a olhar para o lugar errado
+ * sem reprovar nada.
+ */
 function restricaoDeElegibilidade(): string {
-  const match = MIGRACAO.match(/constraint cms_ev2_delivery_ledger_flag_elegivel\s*\n?\s*check \(([^)]*)\)/);
-  return match?.[1] ?? "";
+  const ancora = MIGRACAO.indexOf("constraint cms_ev2_delivery_ledger_flag_elegivel");
+  if (ancora < 0) return "";
+  const abre = MIGRACAO.indexOf("(", ancora);
+  if (abre < 0) return "";
+  let profundidade = 0;
+  for (let i = abre; i < MIGRACAO.length; i += 1) {
+    if (MIGRACAO[i] === "(") profundidade += 1;
+    else if (MIGRACAO[i] === ")") {
+      profundidade -= 1;
+      if (profundidade === 0) return MIGRACAO.slice(abre + 1, i);
+    }
+  }
+  return "";
 }
 
 describe("livro de entregas EV2 — o que ele pode alcançar", () => {

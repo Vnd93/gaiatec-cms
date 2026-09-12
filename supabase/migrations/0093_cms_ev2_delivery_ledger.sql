@@ -427,13 +427,24 @@ as $$
 declare
   v_id uuid;
   v_desde timestamptz;
+  v_estado_staging text;
+  v_linha private.cms_ev2_delivery_ledger%rowtype;
 begin
   if coalesce(auth.role()::text, '') <> 'service_role' then
     raise exception 'CMS_EV2_DELIVERY_SERVICE_ROLE_REQUIRED' using errcode = '42501';
   end if;
 
   if p_environment = 'production' then
-    select ledger.created_at into v_desde
+    -- A ULTIMA PALAVRA de staging, estado e data lidos da MESMA linha.
+    --
+    -- Uma versao anterior fazia duas leituras: a data pela linha mais recente, e o estado por um
+    -- `not exists (... order by ... limit 1)`. ORDER BY e LIMIT dentro de EXISTS nao decidem nada —
+    -- EXISTS so pergunta se o conjunto e vazio. A condicao real virava "JA EXISTIU alguma entrega
+    -- em staging", e nao "a ultima palavra e entregue". Entao staging entregue, quebrado e
+    -- SUSPENSO satisfazia as duas condicoes 25 horas depois, e a entrega em producao era aceita.
+    -- Este soak e o unico anteparo automatico contra erro de ordem de publicacao; le igual, decide
+    -- diferente era o pior jeito de ele falhar.
+    select ledger.state, ledger.created_at into v_estado_staging, v_desde
     from private.cms_ev2_delivery_ledger ledger
     where ledger.flag_key = p_flag_key
       and ledger.environment = 'staging'
@@ -446,15 +457,10 @@ begin
               hint = 'Declare a entrega em staging e espere 24 horas antes de declarar em producao.';
     end if;
 
-    if not exists (
-      select 1 from private.cms_ev2_delivery_ledger ledger
-      where ledger.flag_key = p_flag_key
-        and ledger.environment = 'staging'
-        and ledger.state = 'delivered'
-      order by ledger.created_at desc
-      limit 1
-    ) then
-      raise exception 'CMS_EV2_DELIVERY_STAGING_NOT_DELIVERED' using errcode = '22023';
+    if coalesce(v_estado_staging, '') <> 'delivered' then
+      raise exception 'CMS_EV2_DELIVERY_STAGING_NOT_DELIVERED'
+        using errcode = '22023',
+              hint = 'A ultima palavra do livro em staging precisa ser entregue, nao suspensa.';
     end if;
   end if;
 
@@ -497,6 +503,8 @@ set search_path = pg_catalog, public, private, pg_temp
 as $$
 declare
   v_id uuid;
+  v_estado text;
+  v_linha private.cms_ev2_delivery_ledger%rowtype;
 begin
   if coalesce(auth.role()::text, '') <> 'service_role' then
     raise exception 'CMS_EV2_DELIVERY_SERVICE_ROLE_REQUIRED' using errcode = '42501';
@@ -512,13 +520,38 @@ begin
   on conflict (idempotency_key) do nothing
   returning id into v_id;
 
+  -- Idempotencia NAO pode virar silencio.
+  --
+  -- idempotency_key e unica na TABELA inteira, nao por (flag, ambiente, estado). Uma versao
+  -- anterior tratava o RETURNING vazio como "ja fiz isso", buscava o id da linha preexistente e
+  -- devolvia o literal 'suspended' sem olhar o que a linha dizia. Com uma chave reaproveitada, a
+  -- revogacao era reportada como feita, a ultima palavra do livro continuava 'delivered', e a
+  -- funcionalidade seguia no ar em producao com o workflow acreditando que desligou.
+  --
+  -- Chave reaproveitada com intencao diferente e erro do chamador, nao idempotencia. O padrao ja
+  -- existe na casa: 0040:429-431 compara e levanta CMS_MASTER_DATA_IDEMPOTENCY_CONFLICT.
   if v_id is null then
-    select ledger.id into v_id from private.cms_ev2_delivery_ledger ledger
+    select * into v_linha from private.cms_ev2_delivery_ledger ledger
     where ledger.idempotency_key = p_idempotency_key;
+
+    if v_linha.flag_key is distinct from p_flag_key
+       or v_linha.environment is distinct from p_environment
+       or v_linha.state is distinct from 'suspended' then
+      raise exception
+        'CMS_EV2_DELIVERY_IDEMPOTENCY_CONFLICT: chave ja usada para %/%/%, pedido %/%/suspended',
+        v_linha.flag_key, v_linha.environment, v_linha.state, p_flag_key, p_environment
+        using errcode = '23505',
+              hint = 'Use uma chave de idempotencia nova. Reaproveitar com intencao diferente nao e repeticao.';
+    end if;
+    v_id := v_linha.id;
   end if;
 
+  -- O estado devolvido descreve o LIVRO, nunca a intencao de quem chamou.
+  select ledger.state into v_estado from private.cms_ev2_delivery_ledger ledger
+  where ledger.id = v_id;
+
   return jsonb_build_object('schemaVersion', 1, 'id', v_id, 'flagKey', p_flag_key,
-                            'environment', p_environment, 'state', 'suspended');
+                            'environment', p_environment, 'state', v_estado);
 end;
 $$;
 
@@ -526,6 +559,14 @@ revoke all on function public.cms_ev2_declare_delivery(text,text,text,text,text,
   from public, anon, authenticated;
 revoke all on function public.cms_ev2_suspend_delivery(text,text,text,text,text,text,uuid,uuid)
   from public, anon, authenticated;
+
+-- Sem estes grants NINGUEM alimenta nem suspende o livro: as duas funcoes recusam quem nao e
+-- service_role, e sem grant nem o service_role as alcanca. Revogar seria impossivel, que e o
+-- oposto da promessa de "revogar leva segundos e nao exige deploy".
+grant execute on function public.cms_ev2_declare_delivery(text,text,text,text,text,text,uuid,uuid,timestamptz)
+  to service_role;
+grant execute on function public.cms_ev2_suspend_delivery(text,text,text,text,text,text,uuid,uuid)
+  to service_role;
 
 comment on table private.cms_ev2_delivery_ledger is
   'Livro somente-acrescimo das entregas EV2. Revogar e acrescentar linha com state=suspended.';

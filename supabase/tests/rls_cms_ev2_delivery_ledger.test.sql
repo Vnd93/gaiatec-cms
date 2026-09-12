@@ -165,12 +165,24 @@ select is((select private.cms_ev2_delivery_active('ev2.draft_v2','production','m
 update public.cms_feature_flags set kill_switch = false where flag_key = 'ev2.draft_v2';
 
 -- Habilitacao de escopo amplo continua sendo VETO, inclusive contra uma entrega.
+-- created_by e not null e referencia auth.users, e o banco de teste nasce sem usuario nenhum:
+-- `(select id from auth.users limit 1)` devolvia NULL e a insercao morria. Ator sintetico proprio,
+-- no mesmo formato que as outras suites usam, e tudo volta no rollback.
+insert into auth.users (
+  id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
+  raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+) values (
+  '00000000-0000-4000-8000-0000000000e1', '00000000-0000-0000-0000-000000000000',
+  'authenticated', 'authenticated', 'ev2.delivery.ledger@example.test', '', now(),
+  '{}', '{}', now(), now()
+);
+
 insert into public.cms_feature_flag_overrides (
   flag_key, environment, scope_type, scope_key, enabled, reason, starts_at, expires_at, created_by
 ) values (
   'ev2.draft_v2', 'production', 'site', 'main', true, 'Override amplo sintetico deste teste.',
   statement_timestamp() - interval '1 minute', statement_timestamp() + interval '1 hour',
-  (select id from auth.users limit 1)
+  '00000000-0000-4000-8000-0000000000e1'
 );
 select is((select private.cms_ev2_delivery_active('ev2.draft_v2','production','main','aal2')),false,
   'a broad override still vetoes, even against a declared delivery');

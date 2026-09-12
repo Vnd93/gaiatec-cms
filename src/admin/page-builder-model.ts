@@ -1,7 +1,69 @@
-import type { CmsPageBlock, CmsPageContent } from "@/shared/contracts/cms-content";
+import {
+  CmsHomepageContentSchema,
+  CmsManagedPageContentSchema,
+  type CmsPageBlock,
+  type CmsPageContent,
+} from "@/shared/contracts/cms-content";
 
 export type ManagedPageType = "page" | "homepage";
 export type ManagedPageTemplate = "standard" | "institutional" | "landing" | "sector" | "application";
+
+export const PAGE_BUILDER_TABS = [
+  ["structure", "Estrutura"],
+  ["content", "Blocos"],
+  ["relations", "Relações"],
+  ["seo", "SEO e URL"],
+  ["governance", "Governança"],
+  ["workflow", "Publicação"],
+] as const;
+
+export type PageBuilderTab = (typeof PAGE_BUILDER_TABS)[number][0];
+
+const STRUCTURE_ROOTS = [
+  "schemaVersion",
+  "consumerId",
+  "contentType",
+  "title",
+  "summary",
+  "pageKind",
+  "templateKey",
+];
+const SEO_ROOTS = ["seo", "retirement"];
+const GOVERNANCE_ROOTS = ["provenance", "approval", "governanceState"];
+
+/**
+ * Em que aba o operador conserta o campo que reprovou a validação.
+ *
+ * Decide pelo caminho inteiro, não só pela primeira chave: `route` está partido entre duas abas —
+ * `route.path` é editado na aba SEO e URL, enquanto os rótulos de navegação ficam em Estrutura.
+ * Mandar o operador para a aba errada é pior do que não oferecer o atalho.
+ */
+/**
+ * O esquema do ramo que corresponde ao tipo de página.
+ *
+ * `CmsPageContentSchema` é um `z.union` simples. Quando os dois ramos falham, o Zod devolve UMA
+ * pendência de caminho vazio e prende os erros de campo dentro dela — o painel do operador ficava
+ * com uma linha só, "Cadastro: revise o valor informado", sem nomear campo nenhum. Escolher o ramo
+ * pelo `contentType` devolve os caminhos reais, que é o que o painel precisa para oferecer atalho.
+ */
+export function pageSchemaForContentType(contentType: ManagedPageType) {
+  return contentType === "homepage" ? CmsHomepageContentSchema : CmsManagedPageContentSchema;
+}
+
+export function pageBuilderTabLabel(tab: PageBuilderTab): string {
+  return PAGE_BUILDER_TABS.find(([key]) => key === tab)?.[1] ?? "Estrutura";
+}
+
+export function tabForPagePath(path: readonly PropertyKey[]): PageBuilderTab {
+  const root = String(path[0] ?? "");
+  if (root === "route") return String(path[1] ?? "") === "path" ? "seo" : "structure";
+  if (root === "blocks") return "content";
+  if (root === "relations") return "relations";
+  if (SEO_ROOTS.includes(root)) return "seo";
+  if (GOVERNANCE_ROOTS.includes(root)) return "governance";
+  if (STRUCTURE_ROOTS.includes(root)) return "structure";
+  return "structure";
+}
 
 export const PAGE_BLOCK_LABELS = {
   hero: "Hero",

@@ -15,6 +15,7 @@ import {
   MANAGED_PAGE_TEMPLATES,
   PAGE_BLOCK_LABELS,
   PAGE_BUILDER_BLOCK_TYPES,
+  PAGE_BUILDER_TABS,
   createEmptyPageBlock,
   createInitialPagePayload,
   duplicateManagedPagePayload,
@@ -22,8 +23,13 @@ import {
   governedFormBindingIssue,
   movePageBlock,
   pageBlockReferenceRequirement,
+  pageBuilderTabLabel,
+  pageSchemaForContentType,
   pageTypeMeta,
+  publishedFormForBlock,
+  tabForPagePath,
   type ManagedPageType,
+  type PageBuilderTab,
   type PublishedFormOption,
 } from "../page-builder-model";
 import type { ManagedPageTemplate } from "../page-builder-model";
@@ -51,15 +57,8 @@ type Loaded = {
   }[];
 };
 
-const tabs = [
-  ["structure", "Estrutura"],
-  ["content", "Blocos"],
-  ["relations", "Relações"],
-  ["seo", "SEO e URL"],
-  ["governance", "Governança"],
-  ["workflow", "Publicação"],
-] as const;
-type Tab = (typeof tabs)[number][0];
+const tabs = PAGE_BUILDER_TABS;
+type Tab = PageBuilderTab;
 
 type DuplicateDraftLocationState = {
   duplicateDraft?: {
@@ -245,11 +244,25 @@ export default function AdminPageBuilderPage() {
     };
   }, [id, refreshToken]);
 
-  const validation = useMemo(() => CmsPageContentSchema.safeParse(payload), [payload]);
+  // Valida contra o ramo do próprio tipo de página. Ver pageSchemaForContentType: o union simples
+  // colapsa as pendências de campo em uma só, de caminho vazio.
+  const validation = useMemo(
+    () => pageSchemaForContentType(payload.contentType).safeParse(payload),
+    [payload],
+  );
   const formBindingIssue = useMemo(
     () => governedFormBindingIssue(payload.blocks, forms),
     [forms, payload.blocks],
   );
+  // Índice absoluto do bloco que causou a pendência de formulário. `governedFormBindingIssue`
+  // numera entre os blocos de formulário, não entre todos — seguir aquele número selecionaria
+  // o bloco errado.
+  const formBindingBlockIndex = useMemo(() => {
+    const unbound = payload.blocks.findIndex(
+      (block) => block.type === "form" && !publishedFormForBlock(block, forms),
+    );
+    return unbound >= 0 ? unbound : payload.blocks.findIndex((block) => block.type === "form");
+  }, [forms, payload.blocks]);
   const latestRevision = loaded?.cms_content_revisions
     .slice()
     .sort((a, b) => b.revision_number - a.revision_number)[0];
@@ -274,6 +287,16 @@ export default function AdminPageBuilderPage() {
   const selectedBlockIndex = selectedBlock
     ? payload.blocks.findIndex((block) => block.id === selectedBlock.id)
     : -1;
+  const goToIssue = (path: readonly PropertyKey[]) => {
+    const tab = tabForPagePath(path);
+    setActiveTab(tab);
+    if (String(path[0] ?? "") === "blocks") {
+      const index = Number(path[1]);
+      const block = Number.isInteger(index) ? payload.blocks[index] : undefined;
+      if (block) setSelectedBlockId(block.id);
+    }
+    window.setTimeout(() => document.getElementById(`page-tab-${tab}`)?.focus(), 0);
+  };
   const nextAction = dirty
     ? "Salvar o rascunho antes de avançar no workflow"
     : state === "draft"
@@ -1225,14 +1248,33 @@ export default function AdminPageBuilderPage() {
       {(!validation.success || formBindingIssue) && (
         <aside className="admin-contract-issues" aria-live="polite">
           <h2>Pendências antes de salvar</h2>
+          <p className="admin-help">
+            Cada pendência abaixo leva à aba onde o campo é preenchido.
+          </p>
           <ul>
             {!validation.success &&
-              validation.error.issues
-                .slice(0, 12)
-                .map((issue) => (
-                  <li key={`${issue.path.join(".")}-${issue.message}`}>{humanValidationIssue(issue)}</li>
-                ))}
-            {formBindingIssue && <li>Bloco de formulário — {formBindingIssue}</li>}
+              validation.error.issues.slice(0, 12).map((issue) => (
+                <li key={`${issue.path.join(".")}-${issue.message}`}>
+                  <button
+                    type="button"
+                    className="admin-issue-link"
+                    onClick={() => goToIssue(issue.path)}
+                  >
+                    {humanValidationIssue(issue)} (abrir {pageBuilderTabLabel(tabForPagePath(issue.path))})
+                  </button>
+                </li>
+              ))}
+            {formBindingIssue && (
+              <li>
+                <button
+                  type="button"
+                  className="admin-issue-link"
+                  onClick={() => goToIssue(["blocks", formBindingBlockIndex])}
+                >
+                  Bloco de formulário — {formBindingIssue} (abrir Blocos)
+                </button>
+              </li>
+            )}
           </ul>
         </aside>
       )}

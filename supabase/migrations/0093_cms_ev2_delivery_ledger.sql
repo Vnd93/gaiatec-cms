@@ -363,14 +363,28 @@ begin
   if position('cms_ev2_delivery_active' in v_definicao) = 0 then
     raise exception 'CMS_EV2_DELIVERY_MANIFEST_NOT_APPLIED' using errcode = 'P0001';
   end if;
-  if position('kill_switch' in v_definicao) = 0 then
-    raise exception 'CMS_EV2_DELIVERY_MANIFEST_KILL_SWITCH_LOST' using errcode = 'P0001';
-  end if;
   if position('v_broad_override_count' in v_definicao) = 0 then
     raise exception 'CMS_EV2_DELIVERY_MANIFEST_BROAD_VETO_LOST' using errcode = 'P0001';
   end if;
   if position('aal2' in v_definicao) = 0 then
     raise exception 'CMS_EV2_DELIVERY_MANIFEST_AAL_LOST' using errcode = 'P0001';
+  end if;
+
+  -- O interruptor de emergencia NAO mora no manifesto: ele delega a
+  -- cms_evaluate_feature_flag, que e quem le kill_switch. Uma versao anterior desta migration
+  -- procurava o interruptor no manifesto e abortou a migracao inteira no CI, com
+  -- CMS_EV2_DELIVERY_MANIFEST_KILL_SWITCH_LOST. A sentinela pegou a suposicao errada, que e para
+  -- isso que ela existe. A conferencia certa e sobre o AVALIADOR, cujo corpo esta migration
+  -- substitui por inteiro — perde-lo ali seria regressao de verdade.
+  select pg_get_functiondef(
+    'public.cms_evaluate_feature_flag(uuid,text,text,text,text,text,timestamptz)'::regprocedure
+  ) into v_definicao;
+
+  if position('kill_switch' in v_definicao) = 0 then
+    raise exception 'CMS_EV2_DELIVERY_EVALUATOR_KILL_SWITCH_LOST' using errcode = 'P0001';
+  end if;
+  if position('cms_ev2_delivery_active' in v_definicao) = 0 then
+    raise exception 'CMS_EV2_DELIVERY_EVALUATOR_NOT_APPLIED' using errcode = 'P0001';
   end if;
 end;
 $$;

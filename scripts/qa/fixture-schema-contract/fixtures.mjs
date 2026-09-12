@@ -37,6 +37,9 @@ const FUTURE_TIMESTAMP = "2026-09-11T21:00:00.000Z";
 
 const G11_CANARY = "scripts/ev2/phase11/staging-canary.mjs";
 const PUBLIC_BRIDGE = "scripts/qa/cms-public-bridge-fixture.mjs";
+// A fonte da fixture de entrega e a propria migration que define a forma da linha. Nao ha canario
+// escrevendo no livro ainda; quando houver, a fonte passa a ser ele e as ancoras acompanham.
+const EV2_DELIVERY_MIGRATION = "supabase/migrations/0093_cms_ev2_delivery_ledger.sql";
 
 const G11_ORIGIN_PATH = `/qa-cms-final/${SAMPLE_RUN_TAG.toLowerCase()}`;
 
@@ -302,6 +305,45 @@ export const FIXTURES = [
           {
             pattern: "'Autorizo exclusivamente o processamento desta submissão sintética\\.'",
             describes: "consent_text",
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "ev2-delivery-ledger-row",
+    description:
+      "Linha de entrega EV2: a forma que uma declaracao de entrega precisa ter para satisfazer as " +
+      "restricoes da 0093. Nenhum canario escreve nesta tabela ainda — a fixture existe para que a " +
+      "restricao seja reproduzivel sem banco, que e o motivo de o contrato existir.",
+    source: EV2_DELIVERY_MIGRATION,
+    environment: "staging",
+    rows: [
+      {
+        role: "delivery",
+        table: "private.cms_ev2_delivery_ledger",
+        values: {
+          id: UUID.correlation,
+          flag_key: "ev2.draft_v2",
+          environment: "staging",
+          state: "delivered",
+          reason: "Entrega declarada em homologacao antes da janela de 24 horas exigida em producao.",
+          candidate_sha: SAMPLE_CANDIDATE_SHA,
+          workflow_run_id: "34668856304",
+          approval_record_sha256: SAMPLE_SHA256,
+          idempotency_key: UUID.idempotency,
+          correlation_id: UUID.correlation,
+          review_due_at: FUTURE_TIMESTAMP,
+        },
+        anchors: [
+          {
+            pattern: "check \\(flag_key in \\('ev2\\.draft_v2', 'ev2\\.master_data', 'ev2\\.pim_v2'\\)\\)",
+            describes: "flag_key",
+          },
+          { pattern: "check \\(state in \\('delivered', 'suspended'\\)\\)", describes: "state" },
+          {
+            pattern: "cms_ev2_delivery_ledger_revisao_em_producao",
+            describes: "review_due_at",
           },
         ],
       },

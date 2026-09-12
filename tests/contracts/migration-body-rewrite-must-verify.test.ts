@@ -108,9 +108,7 @@ describe("migration que reescreve corpo de função precisa conferir onde está 
     // corrigida — a entrada correspondente tem que sair do catálogo junto. Catálogo com item
     // morto vira ruído e some da revisão.
     for (const [chave, motivo] of DIVIDA_HISTORICA) {
-      expect(semConferencia.has(chave), `${chave} não é mais uma violação; remova do catálogo`).toBe(
-        true,
-      );
+      expect(semConferencia.has(chave), `${chave} não é mais uma violação; remova do catálogo`).toBe(true);
       expect(motivo.length).toBeGreaterThan(80);
     }
   });

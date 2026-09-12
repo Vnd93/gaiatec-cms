@@ -42,9 +42,7 @@ const PROIBIDAS = new Map([
 ]);
 
 function restricaoDeElegibilidade(): string {
-  const match = MIGRACAO.match(
-    /constraint cms_ev2_delivery_ledger_flag_elegivel\s*\n?\s*check \(([^)]*)\)/,
-  );
+  const match = MIGRACAO.match(/constraint cms_ev2_delivery_ledger_flag_elegivel\s*\n?\s*check \(([^)]*)\)/);
   return match?.[1] ?? "";
 }
 
@@ -81,7 +79,9 @@ describe("livro de entregas EV2 — o que ele pode alcançar", () => {
     expect(predicado, "autenticação forte em produção").toContain("p_aal = 'aal2'");
     expect(predicado, "site principal").toContain("p_site_key = 'main'");
     expect(predicado, "interruptor de emergência").toContain("kill_switch");
-    expect(predicado, "veto de habilitação ampla").toContain("scope_type in ('site', 'environment', 'global')");
+    expect(predicado, "veto de habilitação ampla").toContain(
+      "scope_type in ('site', 'environment', 'global')",
+    );
   });
 
   it("o livro é somente-acréscimo, inclusive para service_role", () => {
@@ -126,11 +126,7 @@ describe("livro de entregas EV2 — o que ele pode alcançar", () => {
   });
 });
 
-const manifesto = (
-  source: string,
-  enabled: boolean,
-  flag = "ev2.draft_v2",
-): Ev2CapabilityManifest =>
+const manifesto = (source: string, enabled: boolean, flag = "ev2.draft_v2"): Ev2CapabilityManifest =>
   ({
     schemaVersion: 1,
     status: "ready",
@@ -152,21 +148,21 @@ describe("o painel aceita a funcionalidade entregue", () => {
   const agora = 1_700_000_010_000;
 
   it("aceita a habilitação nominal, como sempre aceitou", () => {
-    expect(
-      isEv2FeatureEnabled({ ev2Capabilities: manifesto("override", true) }, "ev2.draft_v2", agora),
-    ).toBe(true);
+    expect(isEv2FeatureEnabled({ ev2Capabilities: manifesto("override", true) }, "ev2.draft_v2", agora)).toBe(
+      true,
+    );
   });
 
   it("aceita a entrega, que chega como 'default' com enabled true", () => {
-    expect(
-      isEv2FeatureEnabled({ ev2Capabilities: manifesto("default", true) }, "ev2.draft_v2", agora),
-    ).toBe(true);
+    expect(isEv2FeatureEnabled({ ev2Capabilities: manifesto("default", true) }, "ev2.draft_v2", agora)).toBe(
+      true,
+    );
   });
 
   it("continua recusando 'default' desligado, que é o estado de toda flag não entregue", () => {
-    expect(
-      isEv2FeatureEnabled({ ev2Capabilities: manifesto("default", false) }, "ev2.draft_v2", agora),
-    ).toBe(false);
+    expect(isEv2FeatureEnabled({ ev2Capabilities: manifesto("default", false) }, "ev2.draft_v2", agora)).toBe(
+      false,
+    );
   });
 
   it("recusa a entrega para funcionalidade que não é entregável", () => {
@@ -186,9 +182,9 @@ describe("o painel aceita a funcionalidade entregue", () => {
 
   it("continua recusando o interruptor de emergência e o indisponível", () => {
     for (const origem of ["kill_switch", "unavailable"]) {
-      expect(
-        isEv2FeatureEnabled({ ev2Capabilities: manifesto(origem, true) }, "ev2.draft_v2", agora),
-      ).toBe(false);
+      expect(isEv2FeatureEnabled({ ev2Capabilities: manifesto(origem, true) }, "ev2.draft_v2", agora)).toBe(
+        false,
+      );
     }
   });
 });

@@ -52,9 +52,7 @@ describe("motivo da recusa chega ao operador", () => {
   it("descarta sufixo que não é forma fechada, inclusive identificador", () => {
     // CMS_PAGE_ORPHAN_RELATION carrega o identificador do conteúdo órfão. Mostrá-lo seria vazar
     // dado interno, e o crivo de mensagem segura recusaria a frase inteira.
-    const comId = operatorMessageForCode(
-      "CMS_PAGE_ORPHAN_RELATION:3f2504e0-4f89-11d3-9a0c-0305e82c3301",
-    );
+    const comId = operatorMessageForCode("CMS_PAGE_ORPHAN_RELATION:3f2504e0-4f89-11d3-9a0c-0305e82c3301");
     expect(comId).toBe(operatorMessageForCode("CMS_PAGE_ORPHAN_RELATION"));
     expect(isOperatorSafeMessage(comId)).toBe(true);
 

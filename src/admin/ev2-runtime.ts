@@ -45,8 +45,5 @@ export function isEv2FeatureEnabled(
   // Aceito apenas para as entregáveis. Para as outras dez o par continua sendo recusado aqui, e
   // essa recusa é o que mantém de pé a garantia anterior — cada uma delas é o portão único de algo
   // que a revisão de segurança mandou manter fechado, ou um adiamento declarado.
-  return (
-    capability.source === "default" &&
-    (EV2_DELIVERABLE_FEATURES as readonly string[]).includes(feature)
-  );
+  return capability.source === "default" && (EV2_DELIVERABLE_FEATURES as readonly string[]).includes(feature);
 }

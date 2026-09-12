@@ -9,6 +9,29 @@ import path from "node:path";
 
 const MIGRATIONS_DIRECTORY = "supabase/migrations";
 
+/**
+ * Remove comentarios de linha do INICIO de um statement.
+ *
+ * O divisor entrega o comentario grudado no statement que ele explica, e o despacho compara com
+ * `startsWith("create table")`. Resultado: uma tabela com comentario em cima ficava INVISIVEL ao
+ * contrato — sem erro, sem aviso, apenas ausente do modelo. Eram QUINZE tabelas, entre elas
+ * public.cms_content_drafts_v2 e private.cms_production_operator_provision_receipts, que e
+ * justamente a tabela de recibos do provisionamento governado.
+ *
+ * Tabela ausente do modelo nao reprova nada: aprova tudo por omissao. E o mesmo defeito que este
+ * contrato existe para impedir, dentro do proprio contrato.
+ */
+export function withoutLeadingComments(statement) {
+  let text = statement;
+  for (;;) {
+    const trimmed = text.replace(/^\s+/, "");
+    if (!trimmed.startsWith("--")) return trimmed;
+    const newline = trimmed.indexOf("\n");
+    if (newline < 0) return "";
+    text = trimmed.slice(newline + 1);
+  }
+}
+
 /** Divide um arquivo em statements respeitando string, identificador, comentario e corpo $$. */
 export function splitStatements(sql) {
   const statements = [];
@@ -429,10 +452,11 @@ export function buildSchemaModel({ repositoryRoot = process.cwd() } = {}) {
     const statements = splitStatements(sql);
     model.statementsByMigration.set(file, statements);
     for (const statement of statements) {
-      const lowered = statement.toLowerCase();
-      if (lowered.startsWith("create table")) applyCreateTable(model, statement, file);
-      else if (lowered.startsWith("alter table")) applyAlterTable(model, statement, file);
-      else if (lowered.startsWith("create type")) applyCreateType(model, statement, file);
+      const declaration = withoutLeadingComments(statement);
+      const lowered = declaration.toLowerCase();
+      if (lowered.startsWith("create table")) applyCreateTable(model, declaration, file);
+      else if (lowered.startsWith("alter table")) applyAlterTable(model, declaration, file);
+      else if (lowered.startsWith("create type")) applyCreateType(model, declaration, file);
     }
   }
   return model;

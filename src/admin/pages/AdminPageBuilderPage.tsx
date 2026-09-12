@@ -1248,18 +1248,12 @@ export default function AdminPageBuilderPage() {
       {(!validation.success || formBindingIssue) && (
         <aside className="admin-contract-issues" aria-live="polite">
           <h2>Pendências antes de salvar</h2>
-          <p className="admin-help">
-            Cada pendência abaixo leva à aba onde o campo é preenchido.
-          </p>
+          <p className="admin-help">Cada pendência abaixo leva à aba onde o campo é preenchido.</p>
           <ul>
             {!validation.success &&
               validation.error.issues.slice(0, 12).map((issue) => (
                 <li key={`${issue.path.join(".")}-${issue.message}`}>
-                  <button
-                    type="button"
-                    className="admin-issue-link"
-                    onClick={() => goToIssue(issue.path)}
-                  >
+                  <button type="button" className="admin-issue-link" onClick={() => goToIssue(issue.path)}>
                     {humanValidationIssue(issue)} (abrir {pageBuilderTabLabel(tabForPagePath(issue.path))})
                   </button>
                 </li>

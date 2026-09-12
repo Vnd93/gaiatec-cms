@@ -17,6 +17,22 @@
 -- lista por z.enum, e um deploy fora de ordem faria o manifesto inteiro ser recusado — apagando as
 -- treze capacidades de uma vez, inclusive as que funcionam.
 
+-- Sobre a restricao cms_ev2_delivery_ledger_flag_elegivel, abaixo:
+-- a lista de funcionalidades entregaveis e uma RESTRICAO, nao uma convencao a lembrar.
+-- Entregar ev2.dam abriria curadoria de midia. ev2.search_quality abriria governanca de busca,
+-- porque a mesma flag serve o Centro de Qualidade e as regras de busca, em
+-- supabase/functions/cms-search-admin/index.ts linhas 182 a 184. ev2.collaboration_bulk abriria
+-- publicacao direta de pacote editorial, na 0045 linhas 582 a 607. Os tres estao na lista que a
+-- revisao de seguranca mandou manter fechada, e ev2.multisite e ev2.ai_execute sao adiamentos
+-- declarados. Ampliar esta lista exige migration nova, que e um ato visivel e governado.
+--
+-- Sobre cms_ev2_delivery_ledger_revisao_em_producao: entrega em producao exige revisao datada.
+-- Ela nao desliga nada quando vence; alimenta relatorio. Expiracao automatica seria pior, porque
+-- criaria queda de producao silenciosa, que e o defeito que este mecanismo existe para consertar.
+--
+-- Os comentarios ficam FORA do corpo do create table de proposito: o modelo de schema do contrato
+-- fixture x schema le o corpo por balanceamento de parenteses, e comentario com pontuacao dentro
+-- faz a tabela ser lida sem coluna nenhuma. Descoberto no CI, nao em revisao.
 create table private.cms_ev2_delivery_ledger (
   id uuid primary key default gen_random_uuid(),
   flag_key text not null references public.cms_feature_flags (flag_key) on delete restrict,
@@ -30,20 +46,8 @@ create table private.cms_ev2_delivery_ledger (
   correlation_id uuid not null,
   review_due_at timestamptz,
   created_at timestamptz not null default statement_timestamp(),
-
-  -- A lista de funcionalidades entregaveis e uma RESTRICAO, nao uma convencao a lembrar.
-  -- Entregar ev2.dam abriria curadoria de midia; ev2.search_quality abriria governanca de busca
-  -- (a mesma flag serve o Centro de Qualidade e as regras de busca, em
-  -- supabase/functions/cms-search-admin/index.ts:182-184); ev2.collaboration_bulk abriria
-  -- publicacao direta de pacote editorial (0045:582-607). Os tres estao na lista que a revisao de
-  -- seguranca mandou manter fechada. E ev2.multisite e ev2.ai_execute sao adiamentos declarados.
-  -- Ampliar esta lista exige migration nova, que e um ato visivel e governado.
   constraint cms_ev2_delivery_ledger_flag_elegivel
     check (flag_key in ('ev2.draft_v2', 'ev2.master_data', 'ev2.pim_v2')),
-
-  -- Entrega em producao exige revisao datada. Nao desliga nada quando vence; alimenta relatorio.
-  -- Expiracao automatica seria pior: criaria queda de producao silenciosa, que e o defeito que
-  -- este mecanismo existe para consertar.
   constraint cms_ev2_delivery_ledger_revisao_em_producao
     check (environment <> 'production' or state <> 'delivered' or review_due_at is not null),
   constraint cms_ev2_delivery_ledger_revisao_futura

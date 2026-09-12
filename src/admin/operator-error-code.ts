@@ -22,8 +22,7 @@ const MESSAGES: Record<string, string> = {
   // --- publicação de página, migration 0026 ---
   CMS_PAGE_HOMOLOGATION_REQUIRED:
     "Para permitir indexação, a página precisa estar com o estado de governança em Homologado.",
-  CMS_PAGE_APPROVAL_REQUIRED:
-    "Página homologada exige a data de aprovação preenchida na aba Governança.",
+  CMS_PAGE_APPROVAL_REQUIRED: "Página homologada exige a data de aprovação preenchida na aba Governança.",
   CMS_PAGE_PROVENANCE_INVALID:
     "Conteúdo de fonte externa exige o hash de verificação e o endereço de origem na aba Governança.",
   CMS_PAGE_RETIREMENT_INVALID:
@@ -32,8 +31,7 @@ const MESSAGES: Record<string, string> = {
     "Uma das relações aponta para um conteúdo que ainda não está publicado. Publique o conteúdo relacionado ou remova a relação.",
   CMS_PAGE_BLOCK_INVALID: "Um bloco da página está incompleto.",
   CMS_PAGE_SCHEMA_INVALID: "A estrutura da página não corresponde ao formato esperado.",
-  CMS_ROUTE_CANONICAL_MISMATCH:
-    "O endereço oficial precisa ser idêntico ao endereço público da página.",
+  CMS_ROUTE_CANONICAL_MISMATCH: "O endereço oficial precisa ser idêntico ao endereço público da página.",
   CMS_ROUTE_KIND_MISMATCH: "O endereço não corresponde ao tipo de página selecionado.",
 
   // --- navegação, migration 0026 ---
@@ -50,8 +48,7 @@ const MESSAGES: Record<string, string> = {
   CMS_CONTENT_SCHEMA_INVALID: "O cadastro não corresponde ao formato esperado.",
   CMS_CONTENT_PROVENANCE_INVALID: "A proveniência do conteúdo está incompleta.",
   CMS_TRANSITION_INVALID: "Esta transição não é permitida a partir do estado atual da página.",
-  CMS_BLOCK_WITHOUT_RENDERER:
-    "A página usa um bloco que ainda não tem apresentação no site público.",
+  CMS_BLOCK_WITHOUT_RENDERER: "A página usa um bloco que ainda não tem apresentação no site público.",
   CMS_CONSUMER_UNAVAILABLE: "Este tipo de cadastro não está disponível nesta versão.",
   CMS_REVISION_NOT_FOUND: "A revisão solicitada não existe mais.",
 };

@@ -188,6 +188,10 @@ const compatibilityTests = {
     "supabase/tests/rls_cms_ev2_delivery_ledger.test.sql",
     "tests/contracts/ev2-delivery-ledger.test.ts",
   ],
+  "0094": [
+    "supabase/tests/rls_cms_content_draft_snapshots.test.sql",
+    "tests/contracts/cms-content-draft-snapshots.test.ts",
+  ],
 };
 for (const migration of additions) {
   const version = migration.version;

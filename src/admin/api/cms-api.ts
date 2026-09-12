@@ -2,6 +2,7 @@ import type { Session } from "@supabase/supabase-js";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabase";
 import { cmsEnvironment } from "../ev2-runtime";
 import { operatorErrorMessage } from "../operator-error-message";
+import { operatorMessageForCode } from "../operator-error-code";
 
 export class CmsApiError extends Error {
   readonly status: number;
@@ -24,6 +25,11 @@ export class CmsApiError extends Error {
   ) {
     super(operatorErrorMessage(message, { source: "remote", status }));
     this.name = "CmsApiError";
+    // O texto remoto continua descartado. O CÓDIGO, que é metadado tipado de um conjunto fechado,
+    // escolhe uma frase escrita no cliente — que diz o que revisar, em vez de só mandar revisar.
+    // Código desconhecido não vira texto: a frase por status permanece.
+    const written = operatorMessageForCode(details.code);
+    if (written) this.message = written;
     this.status = status;
     this.code = details.code;
     this.correlationId = details.correlationId;

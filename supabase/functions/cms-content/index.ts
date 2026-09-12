@@ -342,20 +342,37 @@ Deno.serve(async (req) => {
     p_idempotency_key: idempotencyKey, p_correlation_id: correlationId,
   });
   if (error) {
+    // Esta lista decide quais motivos de recusa CHEGAM ao operador como codigo. Um codigo fora
+    // dela vira o numero do SQLSTATE, e o painel so consegue dizer "revise os dados informados".
+    // Os codigos CMS_PAGE_* e CMS_NAVIGATION_* estavam todos de fora: publicar pagina falhava sem
+    // nunca dizer por que. O cliente traduz cada um em src/admin/operator-error-code.ts; o texto
+    // desta fronteira continua descartado.
     const knownCode = ["CMS_COMMAND_FORBIDDEN", "CMS_CONTENT_CONFLICT", "CMS_CONTENT_NOT_FOUND",
       "CMS_CONTENT_SCHEMA_INVALID", "CMS_CONTENT_PROVENANCE_INVALID", "CMS_CONSUMER_UNAVAILABLE",
       "CMS_BLOCK_WITHOUT_RENDERER", "CMS_TRANSITION_INVALID", "CMS_REVISION_NOT_FOUND",
       "CMS_PIM_CANONICAL_SKU_REQUIRED", "CMS_PIM_CANONICAL_IDENTITY_CONFLICT",
       "CMS_PIM_CANONICAL_ATTRIBUTE_INVALID", "CMS_PIM_CANONICAL_SKU_CONFLICT",
       "CMS_PIM_CANONICAL_IDENTIFIER_CONFLICT",
-      "CMS_PIM_RECONCILIATION_REQUIRED", "CMS_PIM_PUBLIC_DATA_REQUIRED"]
+      "CMS_PIM_RECONCILIATION_REQUIRED", "CMS_PIM_PUBLIC_DATA_REQUIRED",
+      "CMS_PAGE_HOMOLOGATION_REQUIRED", "CMS_PAGE_APPROVAL_REQUIRED",
+      "CMS_PAGE_PROVENANCE_INVALID", "CMS_PAGE_RETIREMENT_INVALID",
+      "CMS_PAGE_ORPHAN_RELATION", "CMS_PAGE_BLOCK_INVALID", "CMS_PAGE_SCHEMA_INVALID",
+      "CMS_ROUTE_CANONICAL_MISMATCH", "CMS_ROUTE_KIND_MISMATCH",
+      "CMS_NAVIGATION_CYCLE", "CMS_NAVIGATION_DEPTH_EXCEEDED", "CMS_NAVIGATION_DUPLICATE_ID",
+      "CMS_NAVIGATION_PARENT_NOT_FOUND", "CMS_NAVIGATION_LOCATION_MISMATCH",
+      "CMS_NAVIGATION_ITEM_INVALID", "CMS_NAVIGATION_INVALID", "CMS_SITE_SETTINGS_INVALID"]
       .find((candidate) => error.message.includes(candidate));
+    // O sufixo de CMS_PAGE_BLOCK_INVALID e um tipo de bloco, de lista fechada, e vale a pena
+    // preservar: diz QUAL bloco. O de CMS_PAGE_ORPHAN_RELATION e um identificador e nao passa.
+    const blockSuffix = knownCode === "CMS_PAGE_BLOCK_INVALID"
+      ? error.message.match(/CMS_PAGE_BLOCK_INVALID:([a-z_]{3,32})\b/)?.[1]
+      : undefined;
     const constraint = error.message.match(/constraint [\"']([^\"']+)[\"']/i)?.[1];
     const code = error.message.includes("FORBIDDEN") ? 403 : error.message.includes("CONFLICT") || error.code === "40001" ? 409 :
       error.message.includes("NOT_FOUND") ? 404 : error.code === "23514" || error.code === "22023" ? 422 : 500;
     return json(req, { error: code === 403 ? "Permissão insuficiente." : code === 409 ? "O conteúdo foi alterado em outra sessão." :
       code === 404 ? "Conteúdo não encontrado." : code === 422 ? "Transição ou conteúdo inválido." : "Falha editorial.",
-      correlationId, code: knownCode ?? error.code, constraint }, code);
+      correlationId, code: blockSuffix ? `${knownCode}:${blockSuffix}` : (knownCode ?? error.code), constraint }, code);
   }
   let searchIndex: "not_requested" | "synced" | "removed" | "pending" = "not_requested";
   if (searchQualityEnabled && editorial.itemId && ["publish", "restore"].includes(editorial.action)) {

@@ -30,7 +30,12 @@ vi.mock("@/lib/supabase", () => ({
         select: () => query,
         eq: () => query,
         in: () => query,
-        order: () => Promise.resolve({ data: [], error: null }),
+        // Aguardável e encadeável: o editor faz `.order(...).limit(...)` para ler as versões
+        // anteriores do rascunho.
+        order: () =>
+          Object.assign(Promise.resolve({ data: [], error: null }), {
+            limit: () => Promise.resolve({ data: [], error: null }),
+          }),
         single: () =>
           Promise.resolve({
             data: table === "cms_content_items" ? mocks.loaded : null,

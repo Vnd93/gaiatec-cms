@@ -60,6 +60,14 @@ type Loaded = {
 const tabs = PAGE_BUILDER_TABS;
 type Tab = PageBuilderTab;
 
+/** O payload do rascunho como estava imediatamente antes do salvamento que o substituiu (0094). */
+type DraftSnapshot = {
+  id: string;
+  captured_at: string;
+  lock_version: number;
+  payload: Record<string, unknown>;
+};
+
 type DuplicateDraftLocationState = {
   duplicateDraft?: {
     sourceItemId: string;
@@ -118,6 +126,8 @@ export default function AdminPageBuilderPage() {
   const [refreshToken, setRefreshToken] = useState(0);
   const [savedSnapshot, setSavedSnapshot] = useState(() => JSON.stringify({ payload, slug }));
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(payload.blocks[0]?.id ?? null);
+  const [snapshots, setSnapshots] = useState<DraftSnapshot[]>([]);
+  const [snapshotError, setSnapshotError] = useState("");
   const [reason, setReason] = useState("Atualização pelo site builder");
   const [publishAt, setPublishAt] = useState("");
   const [customAddress, setCustomAddress] = useState(false);
@@ -239,6 +249,21 @@ export default function AdminPageBuilderPage() {
         }
         setLoading(false);
       });
+
+    // Consulta SEPARADA, e tolerante a falha de propósito. Se o painel subir antes da migration
+    // 0094 — ordem de publicação é o modo de falha recorrente aqui —, a tabela não existe, o
+    // supabase-js devolve erro em vez de lançar, e a tela degrada para "sem versões anteriores".
+    // Juntar isto ao select do item faria a ausência da tabela quebrar o editor inteiro.
+    void supabase
+      .from("cms_content_draft_snapshots")
+      .select("id,captured_at,lock_version,payload")
+      .eq("item_id", id)
+      .order("captured_at", { ascending: false })
+      .limit(20)
+      .then(({ data }) => {
+        if (active) setSnapshots((data ?? []) as DraftSnapshot[]);
+      });
+
     return () => {
       active = false;
     };
@@ -287,6 +312,27 @@ export default function AdminPageBuilderPage() {
   const selectedBlockIndex = selectedBlock
     ? payload.blocks.findIndex((block) => block.id === selectedBlock.id)
     : -1;
+  /**
+   * Traz uma versão anterior do rascunho para o editor. NÃO escreve no servidor: o operador revisa
+   * e salva, e é esse salvamento que percorre validação, permissão, trava de concorrência e
+   * auditoria — e que captura a versão atual como um instantâneo novo, antes de substituí-la.
+   * Um caminho de escrita próprio aqui seria superfície nova sem nenhuma dessas garantias.
+   */
+  const restoreSnapshot = (snapshot: DraftSnapshot) => {
+    const parsed = pageSchemaForContentType(contentType).safeParse(snapshot.payload);
+    if (!parsed.success) {
+      setSnapshotError(`Esta versão não pode ser carregada: ${humanValidationIssue(parsed.error.issues[0])}`);
+      return;
+    }
+    setSnapshotError("");
+    setPayload(parsed.data);
+    setSelectedBlockId(parsed.data.blocks[0]?.id ?? null);
+    setActiveTab("structure");
+    setSuccess(
+      "Versão anterior carregada no editor. Confira e salve — o conteúdo atual vira uma versão anterior no momento do salvamento.",
+    );
+  };
+
   const goToIssue = (path: readonly PropertyKey[]) => {
     const tab = tabForPagePath(path);
     setActiveTab(tab);
@@ -1230,6 +1276,31 @@ export default function AdminPageBuilderPage() {
                   ))
               ) : (
                 <p>Nenhuma revisão congelada.</p>
+              )}
+            </div>
+            <div className="admin-history">
+              <h2>Versões anteriores do rascunho</h2>
+              <p className="admin-help">
+                O que havia antes de cada salvamento que alterou o conteúdo. É rede de segurança de curto
+                prazo — histórico definitivo continua sendo a revisão congelada acima.
+              </p>
+              {snapshotError && <p className="admin-error">{snapshotError}</p>}
+              {snapshots.length ? (
+                snapshots.map((snapshot) => (
+                  <details key={snapshot.id}>
+                    <summary>
+                      Antes do salvamento {snapshot.lock_version} —{" "}
+                      {new Date(snapshot.captured_at).toLocaleString("pt-BR")}
+                    </summary>
+                    {can("edit") && (
+                      <button type="button" onClick={() => restoreSnapshot(snapshot)} disabled={busy}>
+                        Carregar esta versão no editor
+                      </button>
+                    )}
+                  </details>
+                ))
+              ) : (
+                <p>Nenhuma versão anterior registrada para este rascunho.</p>
               )}
             </div>
           </fieldset>

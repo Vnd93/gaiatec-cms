@@ -91,7 +91,9 @@ vi.mock("@/lib/supabase", () => ({
         in: () => query,
         neq: () => query,
         not: () => query,
-        order: () => Promise.resolve(listResult),
+        // `order` precisa ser aguardável E encadeável: o editor faz `.order(...).limit(...)` para
+        // ler as versões anteriores do rascunho. Devolver só a promessa quebrava a tela inteira.
+        order: () => Object.assign(Promise.resolve(listResult), { limit: () => Promise.resolve(listResult) }),
         single: () =>
           Promise.resolve({
             data: table === "cms_content_items" ? loadedItem : null,

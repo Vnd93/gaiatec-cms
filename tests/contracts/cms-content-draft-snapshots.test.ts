@@ -20,6 +20,11 @@ const MIGRACAO = readFileSync(
 
 const MIGRATIONS_DIR = path.resolve(__dirname, "../../supabase/migrations");
 
+const BUILDER = readFileSync(
+  path.resolve(__dirname, "../../src/admin/pages/AdminPageBuilderPage.tsx"),
+  "utf8",
+);
+
 describe("instantâneo de rascunho", () => {
   it("captura por gatilho, não por remendo numa função de comando", () => {
     // Gatilho pega todo caminho que escreve no rascunho. Remendo pegaria um caminho só — e esta
@@ -67,6 +72,39 @@ describe("instantâneo de rascunho", () => {
     // e auditoria. Uma RPC de restauração própria seria superfície nova sem nenhuma dessas.
     expect(MIGRACAO).not.toMatch(/function public\.cms_restore_draft_snapshot/);
     expect(MIGRACAO).toContain("revoke insert, update, delete on public.cms_content_draft_snapshots");
+  });
+
+  it("a tela restaura para o editor, sem escrever no servidor", () => {
+    // Carregar no editor e deixar o operador salvar é o que herda validação, permissão, trava de
+    // concorrência e auditoria — e é o próprio salvamento que captura a versão atual antes de
+    // substituí-la. Uma escrita direta daqui pularia tudo isso.
+    const bloco = BUILDER.slice(
+      BUILDER.indexOf("const restoreSnapshot ="),
+      BUILDER.indexOf("const goToIssue ="),
+    );
+    expect(bloco).not.toBe("");
+    expect(bloco).toContain("setPayload(");
+    expect(bloco, "restaurar não pode chamar o comando editorial direto").not.toContain("run(");
+    expect(bloco, "restaurar não pode escrever pelo cliente").not.toContain("supabase.from");
+    // Versão anterior que não valida não entra no editor às cegas.
+    expect(bloco).toContain("pageSchemaForContentType");
+  });
+
+  it("busca os instantâneos numa consulta separada e tolerante", () => {
+    // Ordem de publicação é o modo de falha recorrente aqui. Se o painel subir antes da migration,
+    // a tabela não existe; numa consulta separada isso vira "sem versões", e não um editor quebrado.
+    // Ancorado no select do item, que é único no arquivo — não na primeira ocorrência da tabela,
+    // que aparece antes, noutro efeito.
+    const inicioDoSelect = BUILDER.indexOf(
+      '"id,slug,content_type,workflow_status,scheduled_for,cms_content_drafts(payload,lock_version)',
+    );
+    expect(inicioDoSelect).toBeGreaterThan(0);
+    const carga = BUILDER.slice(inicioDoSelect, BUILDER.indexOf("}, [id, refreshToken]);"));
+    expect(carga).toContain('.from("cms_content_draft_snapshots")');
+    // A consulta do item NÃO pode embutir a tabela nova no select dela: se a tabela faltar, o
+    // editor inteiro deixaria de carregar em vez de apenas ficar sem versões anteriores.
+    const selectDoItem = carga.slice(0, carga.indexOf('.from("cms_content_draft_snapshots")'));
+    expect(selectDoItem).not.toContain("cms_content_draft_snapshots(");
   });
 
   it("retém uma janela curta, porque histórico editorial é revisão", () => {

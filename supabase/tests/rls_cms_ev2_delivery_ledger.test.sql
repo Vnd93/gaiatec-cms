@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(25);
+select plan(30);
 
 -- Este teste le a definicao VIVA das funcoes, nao o texto das migrations. A distincao nao e
 -- preciosismo: a 0055, linhas 50-92, tem um bloco DO que varre pg_proc e reescreve o corpo de toda
@@ -110,6 +110,24 @@ select ok(strpos(pg_get_functiondef(
 select ok(strpos(pg_get_functiondef(
   'public.cms_draft_v2_assert_available(uuid,text,text,text,text,timestamptz)'::regprocedure
 ),'cms_ev2_delivery_active') > 0,'the progressive draft guard consults the ledger');
+
+-- ------------------------------------------------------- o predicado NUNCA pode devolver NULL
+-- Com o livro vazio, a subconsulta da ultima palavra devolve NULL e `NULL = 'delivered'` e NULL.
+-- Sem coalesce o predicado inteiro vira NULL, e a logica de tres valores do SQL faz o estrago:
+-- `false or NULL` e NULL, `and not NULL` e NULL. Foi assim que uma versao anterior desta migration
+-- tornou ELEGIVEL uma habilitacao individual de mais de 30 minutos — o oposto do que ela protege.
+-- Estas cinco asserticoes existem para que isso nao volte em silencio.
+
+select ok((select private.cms_ev2_delivery_active('ev2.draft_v2','local','main','aal1')) is not null,
+  'the predicate never returns null with an empty ledger');
+select is((select private.cms_ev2_delivery_active('ev2.draft_v2','local','main','aal1')),false,
+  'an empty ledger means not delivered, not unknown');
+select is((select private.cms_ev2_delivery_active('ev2.draft_v2','production','main','aal1')),false,
+  'single factor in production is refused as false, never as null');
+select is((select private.cms_ev2_delivery_active(null,'local','main','aal1')),false,
+  'a null flag key is refused as false, never as null');
+select is((select private.cms_ev2_delivery_active('ev2.dam','local','main','aal2')),false,
+  'a flag that can never be delivered still answers false, not null');
 
 select * from finish();
 rollback;

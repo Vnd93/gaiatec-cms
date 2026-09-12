@@ -96,7 +96,13 @@ stable
 security definer
 set search_path = pg_catalog, public, private, pg_temp
 as $$
-  select
+  -- coalesce NAO e decoracao. Sem ele este predicado devolve NULL quando o livro esta vazio, e a
+  -- logica de tres valores do SQL faz o resto: `false or NULL` e NULL, e `and not NULL` e NULL.
+  -- Uma versao anterior desta migration omitiu o coalesce e cinco testes de fase reprovaram — um
+  -- deles porque uma habilitacao individual de mais de 30 minutos passou a ser ELEGIVEL, que e
+  -- exatamente o invariante que este trabalho existe para proteger. Afrouxamento por NULL nao
+  -- aparece lendo o codigo; aparece quando alguem exercita.
+  select coalesce(
     p_flag_key is not null
     and p_environment in ('local', 'staging', 'production')
     and p_site_key = 'main'
@@ -126,7 +132,9 @@ as $$
         and ledger.environment = p_environment
       order by ledger.created_at desc, ledger.id desc
       limit 1
-    ) = 'delivered';
+    ) = 'delivered',
+    false
+  );
 $$;
 
 revoke all on function private.cms_ev2_delivery_active(text, text, text, text)
@@ -233,7 +241,7 @@ begin
     'schemaVersion', 1,
     'key', p_flag_key,
     'enabled', v_flag.default_enabled
-      or private.cms_ev2_delivery_active(p_flag_key, p_environment, p_site_key, p_aal),
+      or coalesce(private.cms_ev2_delivery_active(p_flag_key, p_environment, p_site_key, p_aal), false),
     'source', 'default',
     'evaluatedAt', now()
   );
@@ -308,8 +316,9 @@ begin
      or (
        p_environment = 'production'
        and (v_individual_override_count <> 1 or v_broad_override_count <> 0)
-       and not private.cms_ev2_delivery_active(
-         'ev2.draft_v2', p_environment, p_site_key, p_aal
+       and not coalesce(
+         private.cms_ev2_delivery_active('ev2.draft_v2', p_environment, p_site_key, p_aal),
+         false
        )
      ) then
     raise exception 'CMS_DRAFT_V2_FEATURE_DISABLED' using errcode = '42501';
@@ -336,7 +345,9 @@ declare
     'and (v_individual_override_count <> 1 or v_broad_override_count <> 0) then';
   v_novo constant text :=
     'and (v_individual_override_count <> 1 or v_broad_override_count <> 0)' || E'\n' ||
-    '         and not private.cms_ev2_delivery_active(v_key, p_environment, p_site_key, p_aal) then';
+    '         and not coalesce(' || E'\n' ||
+    '           private.cms_ev2_delivery_active(v_key, p_environment, p_site_key, p_aal), false' || E'\n' ||
+    '         ) then';
   v_ocorrencias integer;
 begin
   select pg_get_functiondef(

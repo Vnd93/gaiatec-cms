@@ -82,10 +82,13 @@ test("the repository migration history is contiguous", () => {
   const manifest = sourceMigrationManifest(process.cwd());
   assert.equal(manifest[0].version, "0001");
   assert.equal(manifest.at(-1)?.version, String(manifest.length).padStart(4, "0"));
+  // A ultima entrada da cauda fixada e re-selada deliberadamente a cada migration nova, com o
+  // digest dos bytes. E o que impede que alguem acrescente migration sem revisao: nao basta criar
+  // o arquivo, e preciso declarar o conteudo dele aqui.
   assert.deepEqual(G12_PINNED_MIGRATION_TAIL.at(-1), {
-    version: "0092",
-    file: "0092_cms_qa_override_window.sql",
-    sha256: "1ea5459fdfb945a9686a8049d1b7727f296d91f8f03c7a80f5d36abf808f12d8",
+    version: "0093",
+    file: "0093_cms_ev2_delivery_ledger.sql",
+    sha256: "00fec5c935887dbebfc06a300284b7f865efc98bb2da198f109e6a916b567c14",
   });
   assert.deepEqual(manifest.slice(-G12_PINNED_MIGRATION_TAIL.length), G12_PINNED_MIGRATION_TAIL);
   for (const migration of manifest.slice(-G12_PINNED_MIGRATION_TAIL.length)) {

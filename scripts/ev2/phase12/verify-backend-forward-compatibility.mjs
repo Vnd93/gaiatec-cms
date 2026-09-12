@@ -184,6 +184,10 @@ const compatibilityTests = {
     "supabase/tests/rls_cms_qa_override_window.test.sql",
     "tests/contracts/cms-qa-override-window.test.ts",
   ],
+  "0093": [
+    "supabase/tests/rls_cms_ev2_delivery_ledger.test.sql",
+    "tests/contracts/ev2-delivery-ledger.test.ts",
+  ],
 };
 for (const migration of additions) {
   const version = migration.version;

@@ -105,7 +105,25 @@ describe("livro de entregas EV2 — o que ele pode alcançar", () => {
   });
 
   it("o livro é somente-acréscimo, inclusive para service_role", () => {
-    expect(MIGRACAO).toContain("before update or delete or truncate on private.cms_ev2_delivery_ledger");
+    expect(MIGRACAO).toContain("before update or delete on private.cms_ev2_delivery_ledger");
+    // O esvaziamento de tabela NÃO é barrado pelo gatilho, e isso é deliberado: a palavra que ele
+    // precisaria conter faz o portão antidestrutivo do deploy reprovar a migration inteira
+    // (verify-backend-forward-compatibility.mjs:44). Ele não distingue menção protetiva de
+    // destrutiva — e não deveria tentar. A proteção real é ausência de privilégio, afirmada no
+    // arquivo pgTAP; aqui o que se prende é que a migration não volte a conter o padrão destrutivo.
+    for (const destrutivo of [
+      /\bdrop\s+(?:table|schema|column)\b/i,
+      /\bdrop\s+(?:extension|type)\b/i,
+      /\btruncate\b/i,
+      /\brename\s+(?:table|column)\b/i,
+      /\balter\s+column\b[^;]*\btype\b/i,
+    ]) {
+      expect(
+        destrutivo.test(MIGRACAO),
+        `esta migration casa ${destrutivo} e seria recusada pelo portão antidestrutivo do deploy ` +
+          "de produção, abortando a travessia inteira antes de qualquer mutação",
+      ).toBe(false);
+    }
     expect(MIGRACAO).toContain("CMS_EV2_DELIVERY_LEDGER_IMMUTABLE");
   });
 

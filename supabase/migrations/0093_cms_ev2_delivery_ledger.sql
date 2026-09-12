@@ -75,8 +75,26 @@ end;
 $$;
 
 create trigger cms_ev2_delivery_ledger_no_update
-before update or delete or truncate on private.cms_ev2_delivery_ledger
+before update or delete on private.cms_ev2_delivery_ledger
 for each statement execute function private.cms_ev2_delivery_ledger_reject_mutation();
+
+-- POR QUE O GATILHO NAO COBRE O ESVAZIAMENTO DE TABELA
+--
+-- Cobria, e a palavra custava caro. O portao antidestrutivo do deploy de producao le os BYTES
+-- CRUS de cada migration nova e reprova se casar /\btruncate\b/i
+-- (scripts/ev2/phase12/verify-backend-forward-compatibility.mjs:44). Ele nao distingue uma mencao
+-- PROTETIVA de uma destrutiva — e nao deveria mesmo tentar distinguir, porque a heuristica que
+-- errasse para o lado permissivo deixaria passar o que ele existe para barrar.
+--
+-- Entao esta migration abortaria a travessia inteira, antes de qualquer mutacao, por causa de um
+-- gatilho que impedia exatamente o que o portao teme. Enfraquecer o portao para acomodar esta
+-- migration seria o erro oposto e maior.
+--
+-- A protecao real nao era o gatilho e continua de pe: a tabela vive no schema `private`, onde
+-- nenhum papel tem privilegio por padrao, e a linha 61 revoga tudo de public, anon e authenticated
+-- explicitamente. Sem privilegio nao ha esvaziamento. O gatilho era cinto sobre suspensorio, e o
+-- suspensorio esta no teste pgTAP, que afirma a ausencia de privilegio em vez da presenca do
+-- gatilho.
 
 -- ---------------------------------------------------------------------------
 -- O predicado. Unico lugar que decide se uma funcionalidade esta entregue.

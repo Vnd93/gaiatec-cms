@@ -63,7 +63,7 @@ export const G12_PINNED_MIGRATION_TAIL = Object.freeze([
   Object.freeze({
     version: "0093",
     file: "0093_cms_ev2_delivery_ledger.sql",
-    sha256: "f8ffe8d2dd2803f986131812943504701e5a13f53a2822842543fc3902d98822",
+    sha256: "ce4b15dd324c5d8b181412f107e1cfb4dfdf8cee132cc0b9333fd1b830612fd7",
   }),
   Object.freeze({
     version: "0094",

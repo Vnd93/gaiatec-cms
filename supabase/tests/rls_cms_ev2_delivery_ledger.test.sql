@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(40);
+select plan(43);
 
 -- Este teste le a definicao VIVA das funcoes, nao o texto das migrations. A distincao nao e
 -- preciosismo: a 0055, linhas 50-92, tem um bloco DO que varre pg_proc e reescreve o corpo de toda
@@ -19,6 +19,17 @@ select ok(exists(
     and t.tgname = 'cms_ev2_delivery_ledger_no_update'
     and not t.tgisinternal
 ),'the append-only trigger is installed');
+
+-- O esvaziamento de tabela e barrado por AUSENCIA DE PRIVILEGIO, nao por gatilho: a palavra que o
+-- gatilho precisaria conter faz o portao antidestrutivo do deploy reprovar a migration inteira
+-- (verify-backend-forward-compatibility.mjs:44), e enfraquecer esse portao seria pior. Estas
+-- asserticoes afirmam a protecao que de fato existe.
+select isnt(has_table_privilege('authenticated','private.cms_ev2_delivery_ledger','TRUNCATE'),true,
+  'an authenticated caller cannot empty the ledger');
+select isnt(has_table_privilege('anon','private.cms_ev2_delivery_ledger','TRUNCATE'),true,
+  'anon cannot empty the ledger');
+select isnt(has_table_privilege('service_role','private.cms_ev2_delivery_ledger','TRUNCATE'),true,
+  'not even the service role can empty the ledger -- it writes through the governed functions');
 
 select isnt(has_table_privilege('authenticated','private.cms_ev2_delivery_ledger','SELECT'),true,
   'an authenticated caller cannot read the ledger');

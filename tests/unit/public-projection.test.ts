@@ -6,6 +6,7 @@ import {
   sanitizePublicPayload as sanitizeValidatedPublicPayload,
   sanitizePublicSeo,
 } from "../../supabase/functions/_shared/cms-public-projection";
+import { industryPayload } from "../fixtures/discovery-payloads";
 import { comprehensiveProductPayload } from "../fixtures/product-payload";
 
 describe("public CMS projection", () => {
@@ -590,6 +591,61 @@ describe("public CMS projection", () => {
     expect(result.documents).toEqual([]);
     expect(JSON.stringify(result)).not.toContain("manufacturer.example.test/manual.pdf");
     expect(sanitizeValidatedPublicPayload({ ...product, models: { malformed: true } })).toEqual({});
+  });
+
+  it("normalizes only the known visible F9 discovery block envelope", () => {
+    const legacy = {
+      ...structuredClone(industryPayload),
+      blocks: [
+        {
+          ...structuredClone(industryPayload.blocks[0]),
+          hidden: false,
+          width: "content",
+          tone: "light",
+        },
+      ],
+    };
+
+    const result = sanitizeValidatedPublicPayload(legacy);
+
+    expect(result.title).toBe(industryPayload.title);
+    expect(result.blocks).toEqual(industryPayload.blocks);
+    expect(legacy.blocks[0]).toMatchObject({ hidden: false, width: "content", tone: "light" });
+  });
+
+  it("keeps malformed or hidden legacy discovery blocks fail-closed", () => {
+    const legacyBlock = {
+      ...structuredClone(industryPayload.blocks[0]),
+      hidden: false,
+      width: "content",
+      tone: "light",
+    };
+
+    expect(
+      sanitizeValidatedPublicPayload({
+        ...structuredClone(industryPayload),
+        blocks: [{ ...legacyBlock, hidden: true }],
+      }),
+    ).toEqual({});
+    expect(
+      sanitizeValidatedPublicPayload({
+        ...structuredClone(industryPayload),
+        blocks: [{ ...legacyBlock, unexpected: "must-not-be-silently-removed" }],
+      }),
+    ).toEqual({});
+    for (const invalidEnvelope of [
+      { hidden: "false" },
+      { width: "oversized" },
+      { width: ["content"] },
+      { tone: "transparent" },
+      { tone: ["light"] },
+    ])
+      expect(
+        sanitizeValidatedPublicPayload({
+          ...structuredClone(industryPayload),
+          blocks: [{ ...legacyBlock, ...invalidEnvelope }],
+        }),
+      ).toEqual({});
   });
 });
 

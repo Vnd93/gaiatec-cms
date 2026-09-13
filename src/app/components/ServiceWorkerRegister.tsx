@@ -1,5 +1,28 @@
 import { useEffect } from 'react'
 
+export function shouldReloadForServiceWorkerTakeover(
+  hadPreviousController: boolean,
+  refreshing: boolean,
+): boolean {
+  return hadPreviousController && !refreshing
+}
+
+export function createServiceWorkerControllerChangeHandler(
+  controlledInitially: boolean,
+  hasController: () => boolean,
+  reload: () => void,
+): () => void {
+  let controlled = controlledInitially
+  let refreshing = false
+  return () => {
+    const hadPreviousController = controlled
+    controlled = hasController()
+    if (!shouldReloadForServiceWorkerTakeover(hadPreviousController, refreshing)) return
+    refreshing = true
+    reload()
+  }
+}
+
 /**
  * Registra o Service Worker em produção.
  *
@@ -12,37 +35,49 @@ export function ServiceWorkerRegister() {
     if (!import.meta.env.PROD) return
     if (!('serviceWorker' in navigator)) return
 
+    let disposed = false
+    let activeRegistration: ServiceWorkerRegistration | undefined
+    let updateInterval: ReturnType<typeof setInterval> | undefined
+    let onUpdateFound: (() => void) | undefined
+
+    // O primeiro install também dispara `controllerchange` por causa de
+    // clients.claim(). Nesse caso a página já carregou os bytes atuais e
+    // não deve ser interrompida. Reload só é necessário em uma atualização.
+    const handleControllerChange = createServiceWorkerControllerChangeHandler(
+      Boolean(navigator.serviceWorker.controller),
+      () => Boolean(navigator.serviceWorker.controller),
+      () => window.location.reload(),
+    )
+    const onControllerChange = () => {
+      if (!disposed) handleControllerChange()
+    }
+    navigator.serviceWorker.addEventListener('controllerchange', onControllerChange)
+
     const register = async () => {
       try {
         const registration = await navigator.serviceWorker.register('/sw.js', {
           scope: '/',
           updateViaCache: 'none', // Sempre busca a versão mais recente do sw.js
         })
+        if (disposed) return
+        activeRegistration = registration
 
         // Quando há um novo SW esperando para ativar, pula a fila
-        registration.addEventListener('updatefound', () => {
+        onUpdateFound = () => {
           const newWorker = registration.installing
           if (!newWorker) return
 
           newWorker.addEventListener('statechange', () => {
-            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            if (!disposed && newWorker.state === 'installed' && navigator.serviceWorker.controller) {
               // Há um novo SW disponível — manda ele assumir imediatamente
               newWorker.postMessage({ type: 'SKIP_WAITING' })
             }
           })
-        })
-
-        // Recarrega a página quando o novo SW assume controle
-        // (garante que o usuário vê a versão mais nova após deploy)
-        let refreshing = false
-        navigator.serviceWorker.addEventListener('controllerchange', () => {
-          if (refreshing) return
-          refreshing = true
-          window.location.reload()
-        })
+        }
+        registration.addEventListener('updatefound', onUpdateFound)
 
         // Verifica updates a cada 60 minutos enquanto a aba está aberta
-        setInterval(() => {
+        updateInterval = setInterval(() => {
           registration.update().catch(() => {})
         }, 60 * 60 * 1000)
       } catch (err) {
@@ -52,9 +87,18 @@ export function ServiceWorkerRegister() {
 
     // Registra após o load para não competir com recursos críticos
     if (document.readyState === 'complete') {
-      register()
+      void register()
     } else {
       window.addEventListener('load', register, { once: true })
+    }
+
+    return () => {
+      disposed = true
+      window.removeEventListener('load', register)
+      navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange)
+      if (activeRegistration && onUpdateFound)
+        activeRegistration.removeEventListener('updatefound', onUpdateFound)
+      if (updateInterval) clearInterval(updateInterval)
     }
   }, [])
 

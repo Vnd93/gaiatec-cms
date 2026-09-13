@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
+import { CmsIndustryContentSchema } from "../../src/shared/contracts/cms-content.ts";
 
 const supabaseUrl = process.env.GAIATEC_SUPABASE_URL;
 const anonKey = process.env.GAIATEC_SUPABASE_ANON_KEY;
@@ -66,6 +67,12 @@ const blockBase = (type, tone = "light", width = "content") => ({
   hidden: false,
   width,
   tone,
+});
+
+const discoveryRichTextBlock = (text) => ({
+  id: uid(),
+  type: "rich_text",
+  data: { text },
 });
 
 const hero = (title, text, eyebrow = "GAIATEC SISTEMAS", secondaryCta) => ({
@@ -201,7 +208,7 @@ function industry({ title, slug, summary, challenges, processAreas, keywords }) 
           : "Escopo editorial clean-room autorizado para validação em staging.",
       ],
       processAreas,
-      blocks: [{ ...blockBase("rich_text"), data: { text: summary } }],
+      blocks: [discoveryRichTextBlock(summary)],
       seo: {
         title: `${title} | GAIATEC SISTEMAS`,
         description: summary,
@@ -790,6 +797,13 @@ const industries = [
     keywords: ["telemetria", "monitoramento remoto", "dados operacionais"],
   }),
 ];
+for (const item of industries) {
+  const validated = CmsIndustryContentSchema.safeParse(item.payload);
+  if (!validated.success)
+    throw new Error(
+      `Conteúdo clean-room inválido em industry/${item.slug}: ${validated.error.issues[0]?.path.join(".") ?? "payload"}.`,
+    );
+}
 
 function decodeJwt(token) {
   return JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString("utf8"));

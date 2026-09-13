@@ -1103,7 +1103,7 @@ const handleRequest = async (req: Request) => {
     const searchable = normalize(flattenPublicSearchValues([p.title,p.summary,p.commercial?.shortDescription,p.brand?.name,p.manufacturer?.name,p.productLine?.name,p.models?.map((m:any)=>[m.model,m.manufacturerReference,m.sku,m.variants?.map((variant:any)=>[variant.name,variant.code,variant.sku])]),p.classification,p.controlledClassification,p.function,p.technology,p.serviceKind,p.serviceKindRef,p.marketName,p.process,p.problem,p.approach,p.benefits,p.deliverables,p.challenges,p.points,p.components,publicBlockSearchValues(p.blocks),p.route?.navigationLabel,p.route?.breadcrumbLabel,p.search?.synonyms,p.search?.keywords,p.specifications]).join(" "));
     if (query && !query.split(" ").every((token) => searchable.includes(token) || [...expanded].some((term) => searchable.includes(term)))) return null;
     const score = !query ? 0 : exact.includes(query) ? 100 : [...expanded].reduce((sum,term)=>sum+(exact.includes(term)?20:searchable.includes(term)?5:0),0);
-    return { row: { ...row, payload: p }, score, matchedBy: exact.includes(query) ? "nome ou modelo público" : "conteúdo técnico ou sinônimo" };
+    return { row, payload: p, score, matchedBy: exact.includes(query) ? "nome ou modelo público" : "conteúdo técnico ou sinônimo" };
   }).filter(Boolean).sort((a:any,b:any)=>comparePublicCollectionEntries(a,b,Boolean(query)));
   const resultOffset = requiresBoundedScan ? offset : 0;
   const selected = scored.slice(resultOffset,resultOffset+limit) as any[];
@@ -1115,9 +1115,9 @@ const handleRequest = async (req: Request) => {
       : [];
   });
   if ((type === "search" || type === "autocomplete") && query && service) await client.from("cms_search_events").insert({ normalized_query:query,result_count:enriched.length,content_types:[...new Set(enriched.map((row)=>row.content_type))],refinements:{domain:domain??null},correlation_id:crypto.randomUUID() });
-  const productRows = selected.filter((entry)=>entry.row.content_type === "product").map((entry)=>entry.row);
+  const productRows = selected.filter((entry)=>entry.row.content_type === "product").map((entry)=>entry.payload);
   const facetKeys=["productCategory","applicationMagnitude","technology","installationOperation","monitoredElement"];
-  const facets=facetKeys.reduce((all,key)=>{all[key]=[...new Set(productRows.map((row)=>row.payload?.controlledClassification?.[key]?.label).filter(Boolean))].sort();return all;},{} as Record<string,unknown[]>);
+  const facets=facetKeys.reduce((all,key)=>{all[key]=[...new Set(productRows.map((payload)=>payload.controlledClassification?.[key]?.label).filter(Boolean))].sort();return all;},{} as Record<string,unknown[]>);
   const groups = searchableTypes.reduce((all,key)=>{all[key]=enriched.filter((row)=>row.content_type===key).length;return all;},{} as Record<string,number>);
   const total = requiresBoundedScan ? scored.length : collectionCount ?? enriched.length;
   const truncated = requiresBoundedScan && (collectionCount ?? 0) > SEARCH_SCAN_LIMIT;

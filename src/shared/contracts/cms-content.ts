@@ -1870,6 +1870,52 @@ export const CmsContentPayloadSchema = z.discriminatedUnion("contentType", [
 
 export type CmsContentPayload = z.infer<typeof CmsContentPayloadSchema>;
 
+const legacyDiscoveryContentTypes = new Set(["service", "industry", "application", "solution"]);
+const legacyDiscoveryBlockKeys = new Set(["id", "type", "data", "hidden", "width", "tone"]);
+const legacyDiscoveryWidths = new Set(["content", "wide", "full"]);
+const legacyDiscoveryTones = new Set(["light", "muted", "dark", "brand"]);
+
+/**
+ * Converte somente o envelope de bloco de página que foi gravado por engano
+ * em conteúdos de descoberta da Fase 9. Qualquer campo desconhecido ou bloco
+ * oculto continua inválido para que a projeção pública permaneça fail-closed.
+ */
+export function normalizeLegacyDiscoveryPayload(payload: unknown): unknown {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
+  const record = payload as Record<string, unknown>;
+  if (
+    typeof record.contentType !== "string" ||
+    !legacyDiscoveryContentTypes.has(record.contentType) ||
+    !Array.isArray(record.blocks)
+  )
+    return payload;
+
+  let changed = false;
+  const blocks = record.blocks.map((block) => {
+    if (!block || typeof block !== "object" || Array.isArray(block)) return block;
+    const candidate = block as Record<string, unknown>;
+    if (candidate.type !== "rich_text") return block;
+    const keys = Object.keys(candidate);
+    const hasLegacyEnvelope = keys.some((key) => ["hidden", "width", "tone"].includes(key));
+    if (!hasLegacyEnvelope || keys.some((key) => !legacyDiscoveryBlockKeys.has(key))) return block;
+    if (Object.hasOwn(candidate, "hidden") && candidate.hidden !== false) return block;
+    if (
+      Object.hasOwn(candidate, "width") &&
+      (typeof candidate.width !== "string" || !legacyDiscoveryWidths.has(candidate.width))
+    )
+      return block;
+    if (
+      Object.hasOwn(candidate, "tone") &&
+      (typeof candidate.tone !== "string" || !legacyDiscoveryTones.has(candidate.tone))
+    )
+      return block;
+    changed = true;
+    return { id: candidate.id, type: candidate.type, data: candidate.data };
+  });
+
+  return changed ? { ...record, blocks } : payload;
+}
+
 export function omitLegacyExternalProductDocuments(payload: unknown): unknown {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
   const record = payload as Record<string, unknown>;

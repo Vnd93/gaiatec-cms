@@ -1,5 +1,6 @@
 import {
   CmsContentPayloadSchema,
+  normalizeLegacyDiscoveryPayload,
   omitLegacyExternalProductDocuments,
 } from "../../../src/shared/contracts/cms-content.ts";
 
@@ -496,7 +497,7 @@ export function sanitizePublicPayload(
 ): JsonRecord {
   try {
     const validated = CmsContentPayloadSchema.safeParse(
-      omitLegacyExternalProductDocuments(payload),
+      normalizeLegacyDiscoveryPayload(omitLegacyExternalProductDocuments(payload)),
     );
     return validated.success ? projectPublicPayloadFields(validated.data, options) : {};
   } catch {

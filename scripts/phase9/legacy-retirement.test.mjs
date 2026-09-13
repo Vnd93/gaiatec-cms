@@ -135,6 +135,14 @@ test("managed pages are clean-room, searchable and production publication is fai
     publisher,
     /app\/data|site-content|deteccaoGas|dgGaleria|dgImagens|servicesList|searchIndex/,
   );
+  assert.match(
+    publisher,
+    /const discoveryRichTextBlock = \(text\) => \(\{\s+id: uid\(\),\s+type: "rich_text",\s+data: \{ text \},\s+\}\)/,
+  );
+  assert.match(publisher, /blocks: \[discoveryRichTextBlock\(summary\)\]/);
+  assert.doesNotMatch(publisher, /blocks: \[\{ \.\.\.blockBase\("rich_text"\)/);
+  assert.match(publisher, /CmsIndustryContentSchema\.safeParse\(item\.payload\)/);
+  assert.match(publisher, /Conteúdo clean-room inválido em industry\/\$\{item\.slug\}/);
   assert.match(publicApi, /"page", "homepage"/);
   assert.match(publicApi, /p\.blocks/);
 });

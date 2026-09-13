@@ -1,13 +1,13 @@
 type PublicCollectionEntry = {
   score?: number;
+  payload?: { displayOrder?: number; title?: string };
   row: {
     slug?: string;
-    payload?: { displayOrder?: number; title?: string };
   };
 };
 
 function normalizedDisplayOrder(entry: PublicCollectionEntry) {
-  const order = entry.row.payload?.displayOrder;
+  const order = entry.payload?.displayOrder;
   return Number.isInteger(order) && Number(order) >= 0 && Number(order) <= 999
     ? Number(order)
     : 999;
@@ -29,7 +29,7 @@ export function comparePublicCollectionEntries(
   }
   const displayOrder = normalizedDisplayOrder(left) - normalizedDisplayOrder(right);
   if (displayOrder) return displayOrder;
-  const leftLabel = left.row.payload?.title ?? left.row.slug ?? "";
-  const rightLabel = right.row.payload?.title ?? right.row.slug ?? "";
+  const leftLabel = left.payload?.title ?? left.row.slug ?? "";
+  const rightLabel = right.payload?.title ?? right.row.slug ?? "";
   return leftLabel.localeCompare(rightLabel, "pt-BR");
 }

@@ -83,4 +83,14 @@ describe("cms-public availability contract", () => {
     expect(publicApi).toContain("error: synonymError");
     expect(publicApi).toContain("if (synonymError)");
   });
+
+  it("keeps the raw collection row until its single media-enrichment sanitization", () => {
+    const collection = section("const scored = published.filter", "const total = requiresBoundedScan");
+
+    expect(collection).toContain("return { row, payload: p, score");
+    expect(collection).not.toContain("row: { ...row, payload: p }");
+    expect(collection).toContain("enrichMediaRows(selected.map((entry) => entry.row)");
+    expect(collection).toContain("map((entry)=>entry.payload)");
+    expect(collection).toContain("payload.controlledClassification");
+  });
 });

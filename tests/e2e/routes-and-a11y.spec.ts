@@ -84,6 +84,11 @@ test("staging exposes the clean-room launch projection", async ({ page, baseURL 
     ["/deteccao-de-gas", "A tecnologia depende do cenário de risco"],
     ["/servicos/instalacao-de-medidores", "Instalação de Medidores"],
     ["/industrias/saneamento", "Saneamento"],
+    ["/industrias/biogas-biometano", "Biogás e Biometano"],
+    ["/industrias/protecao-catodica", "Integridade e Proteção Catódica"],
+    ["/industrias/controle-ambiental", "Controle Ambiental"],
+    ["/industrias/seguranca-operacional", "Segurança Operacional"],
+    ["/industrias/instrumentacao", "Instrumentação Industrial"],
     ["/industrias/telemetria", "Telemetria e Operações Remotas"],
     ["/aplicacoes/medicao-estacoes-agua-esgoto", "Medição em Estações de Água e Esgoto"],
     ["/solucoes/instrumentacao-monitoramento-remoto", "Instrumentação e Monitoramento Remoto"],
@@ -94,6 +99,22 @@ test("staging exposes the clean-room launch projection", async ({ page, baseURL 
     expect(await page.locator("body").evaluate((body) => body.scrollWidth <= body.clientWidth + 1)).toBe(
       true,
     );
+  }
+});
+
+test("staging exposes populated public catalog collections", async ({ page, baseURL }) => {
+  test.skip(!baseURL?.includes("pages.dev"), "published collections are verified against staging");
+  for (const [path, cardSelector] of [
+    ["/produtos", ".catalog-product-card"],
+    ["/servicos", ".discovery-card"],
+    ["/industrias", ".discovery-card"],
+    ["/aplicacoes", ".discovery-card"],
+    ["/solucoes", ".discovery-card"],
+  ] as const) {
+    const response = await page.goto(path, { waitUntil: "load" });
+    expect(response?.status()).toBe(200);
+    await expect(page.locator(cardSelector).first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: /nenhum (?:item|produto)/i })).toHaveCount(0);
   }
 });
 

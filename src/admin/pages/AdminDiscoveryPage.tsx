@@ -6,6 +6,7 @@ import {
   CmsIndustryContentSchema,
   CmsServiceContentSchema,
   CmsSolutionContentSchema,
+  normalizeLegacyDiscoveryPayload,
 } from "@/shared/contracts/cms-content";
 import { useAdminAuth } from "../auth/AdminAuthContext";
 import {
@@ -251,9 +252,10 @@ export default function AdminDiscoveryPage() {
       if (e) setError("Conteúdo indisponível ou sem permissão.");
       else {
         const row = data as any;
-        setPayload(row.cms_content_drafts.payload);
+        const normalizedPayload = normalizeLegacyDiscoveryPayload(row.cms_content_drafts.payload);
+        setPayload(normalizedPayload);
         setSlug(row.slug);
-        setSavedSnapshot(JSON.stringify({ payload: row.cms_content_drafts.payload, slug: row.slug }));
+        setSavedSnapshot(JSON.stringify({ payload: normalizedPayload, slug: row.slug }));
         setLock(row.cms_content_drafts.lock_version);
         setWorkflowStatus(row.workflow_status);
         setRevisions(row.cms_content_revisions ?? []);
@@ -454,7 +456,7 @@ export default function AdminDiscoveryPage() {
     dirty,
     enabled: !loading,
     onRestore: (stored) => {
-      setPayload(stored.payload);
+      setPayload(normalizeLegacyDiscoveryPayload(stored.payload));
       setSlug(stored.slug);
     },
   });

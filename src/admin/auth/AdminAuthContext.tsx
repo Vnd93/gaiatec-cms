@@ -33,6 +33,7 @@ export type SessionSnapshot = {
 
 type Enrollment = { factorId: string; qrCode: string; secret: string };
 type Result = { error: string | null };
+type PasswordUpdatePreparation = { requiresMfa: boolean; error: string | null };
 
 type AdminAuthValue = {
   session: Session | null;
@@ -43,6 +44,7 @@ type AdminAuthValue = {
   signIn(email: string, password: string): Promise<Result>;
   signOut(): Promise<void>;
   requestRecovery(email: string): Promise<Result>;
+  preparePasswordUpdate(): Promise<PasswordUpdatePreparation>;
   updatePassword(password: string): Promise<Result>;
   beginMfaEnrollment(): Promise<{ enrollment: Enrollment | null; error: string | null }>;
   verifyMfa(code: string, factorId?: string): Promise<Result>;
@@ -261,6 +263,38 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     [resolveSession, updateSession, updateStatus],
   );
 
+  const preparePasswordUpdate = useCallback(async (): Promise<PasswordUpdatePreparation> => {
+    if (!sessionRef.current)
+      return { requiresMfa: false, error: "A sessão do convite expirou. Solicite um novo link." };
+    try {
+      const [factorResult, assuranceResult] = await Promise.all([
+        supabase.auth.mfa.listFactors(),
+        supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+      ]);
+      const assurance = assuranceResult.data;
+      if (
+        factorResult.error ||
+        assuranceResult.error ||
+        !assurance ||
+        !["aal1", "aal2"].includes(String(assurance.currentLevel))
+      ) {
+        return { requiresMfa: false, error: "Não foi possível validar a proteção da conta." };
+      }
+      if (assurance.currentLevel === "aal2") return { requiresMfa: false, error: null };
+
+      const hasVerifiedTotp =
+        factorResult.data?.totp?.some((factor) => factor.status === "verified") ?? false;
+      const hasUnsupportedVerifiedFactor =
+        (factorResult.data?.all?.some((factor) => factor.status === "verified") ?? false) && !hasVerifiedTotp;
+      if ((assurance.nextLevel === "aal2" && !hasVerifiedTotp) || hasUnsupportedVerifiedFactor) {
+        return { requiresMfa: false, error: "Não foi possível validar o autenticador desta conta." };
+      }
+      return { requiresMfa: hasVerifiedTotp, error: null };
+    } catch {
+      return { requiresMfa: false, error: "Não foi possível validar a proteção da conta." };
+    }
+  }, []);
+
   useEffect(() => {
     let active = true;
     const applySession = (event: string, nextSession: Session | null) => {
@@ -377,6 +411,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
           return { error: "Não foi possível concluir a operação. Tente novamente." };
         }
       },
+      preparePasswordUpdate,
       async updatePassword(password) {
         try {
           const { error } = await supabase.auth.updateUser({ password });
@@ -443,7 +478,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         }
       },
     }),
-    [profile, resolveSession, session, status, updateSession, updateStatus],
+    [preparePasswordUpdate, profile, resolveSession, session, status, updateSession, updateStatus],
   );
 
   return <AdminAuthContext.Provider value={value}>{children}</AdminAuthContext.Provider>;

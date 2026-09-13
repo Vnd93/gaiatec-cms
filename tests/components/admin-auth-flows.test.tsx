@@ -10,6 +10,7 @@ const auth = vi.hoisted(() => ({
     user: null as { email?: string } | null,
     signIn: vi.fn(async () => ({ error: null as string | null })),
     requestRecovery: vi.fn(async () => ({ error: null as string | null })),
+    preparePasswordUpdate: vi.fn(async () => ({ requiresMfa: false, error: null as string | null })),
     updatePassword: vi.fn(async () => ({ error: null as string | null })),
     beginMfaEnrollment: vi.fn(),
     verifyMfa: vi.fn(async () => ({ error: null as string | null })),
@@ -35,6 +36,7 @@ describe("fluxos de autenticação administrativa", () => {
     auth.value.user = null;
     auth.value.signIn.mockReset().mockResolvedValue({ error: null });
     auth.value.requestRecovery.mockReset().mockResolvedValue({ error: null });
+    auth.value.preparePasswordUpdate.mockReset().mockResolvedValue({ requiresMfa: false, error: null });
     auth.value.updatePassword.mockReset().mockResolvedValue({ error: null });
     auth.value.beginMfaEnrollment.mockReset();
     auth.value.verifyMfa.mockReset().mockResolvedValue({ error: null });
@@ -197,8 +199,8 @@ describe("fluxos de autenticação administrativa", () => {
       </MemoryRouter>,
     );
 
-    const password = screen.getByLabelText("Nova senha");
-    const confirmation = screen.getByLabelText("Confirmar senha");
+    const password = await screen.findByLabelText("Nova senha");
+    const confirmation = await screen.findByLabelText("Confirmar senha");
     await user.type(password, "Curta!1");
     await user.type(confirmation, "Curta!1");
     expect(password).toHaveAttribute("minlength", "12");
@@ -221,6 +223,109 @@ describe("fluxos de autenticação administrativa", () => {
     expect(await screen.findByText("Painel protegido")).toBeInTheDocument();
   });
 
+  it("eleva a sessão com MFA antes de permitir a troca de senha protegida", async () => {
+    auth.value.status = "password_update";
+    auth.value.session = { user: { id: "recuperacao-com-mfa" } };
+    auth.value.preparePasswordUpdate.mockResolvedValueOnce({ requiresMfa: true, error: null });
+    render(
+      <MemoryRouter initialEntries={["/admin/definir-senha"]}>
+        <Routes>
+          <Route path="/admin/definir-senha" element={<AdminSetPasswordPage />} />
+          <Route path="/admin/mfa" element={<AdminMfaPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Confirmar sua identidade" })).toBeInTheDocument();
+    expect(auth.value.preparePasswordUpdate).toHaveBeenCalledTimes(1);
+    expect(auth.value.updatePassword).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("Nova senha")).not.toBeInTheDocument();
+  });
+
+  it("retorna do desafio MFA ao formulário de senha quando a elevação era para recuperação", () => {
+    auth.value.status = "password_update";
+    auth.value.session = { user: { id: "recuperacao-com-mfa" } };
+    const tree = () => (
+      <MemoryRouter
+        initialEntries={[
+          {
+            pathname: "/admin/mfa",
+            state: { from: "/admin/definir-senha", purpose: "password_update" },
+          },
+        ]}
+      >
+        <Routes>
+          <Route path="/admin/mfa" element={<AdminMfaPage />} />
+          <Route path="/admin/definir-senha" element={<p>Troca de senha protegida</p>} />
+        </Routes>
+      </MemoryRouter>
+    );
+    const view = render(tree());
+    expect(screen.getByRole("heading", { name: "Confirmar sua identidade" })).toBeInTheDocument();
+
+    auth.value.status = "ready";
+    view.rerender(tree());
+
+    expect(screen.getByText("Troca de senha protegida")).toBeInTheDocument();
+  });
+
+  it("preserva a recuperação no retry quando a validação de sessão falha temporariamente", async () => {
+    const user = userEvent.setup();
+    auth.value.status = "temporarily_unavailable";
+    auth.value.session = { user: { id: "recuperacao-indisponivel" } };
+    const tree = () => (
+      <MemoryRouter
+        initialEntries={[
+          {
+            pathname: "/admin/mfa",
+            state: { from: "/admin/definir-senha", purpose: "password_update" },
+          },
+        ]}
+      >
+        <Routes>
+          <Route path="/admin/mfa" element={<AdminMfaPage />} />
+          <Route path="/admin" element={<p>Fluxo de recuperação abandonado</p>} />
+          <Route path="/admin/definir-senha" element={<p>Troca de senha protegida</p>} />
+        </Routes>
+      </MemoryRouter>
+    );
+    const view = render(tree());
+
+    expect(
+      screen.getByRole("heading", { name: "Validação da recuperação temporariamente indisponível" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Fluxo de recuperação abandonado")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    expect(auth.value.retryAccess).toHaveBeenCalledTimes(1);
+
+    auth.value.status = "ready";
+    view.rerender(tree());
+
+    expect(screen.getByText("Troca de senha protegida")).toBeInTheDocument();
+  });
+
+  it("mantém o formulário fechado quando a proteção MFA não pode ser comprovada", async () => {
+    const user = userEvent.setup();
+    auth.value.status = "password_update";
+    auth.value.session = { user: { id: "recuperacao-indisponivel" } };
+    auth.value.preparePasswordUpdate.mockResolvedValue({
+      requiresMfa: false,
+      error: "Não foi possível validar a proteção da conta.",
+    });
+    render(
+      <MemoryRouter initialEntries={["/admin/definir-senha"]}>
+        <AdminSetPasswordPage />
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Não foi possível validar a proteção da conta" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Nova senha")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    expect(auth.value.preparePasswordUpdate).toHaveBeenCalledTimes(2);
+  });
+
   it("recupera a tela de nova senha após falha inesperada sem expor detalhes técnicos", async () => {
     const user = userEvent.setup();
     auth.value.status = "password_update";
@@ -234,8 +339,8 @@ describe("fluxos de autenticação administrativa", () => {
       </MemoryRouter>,
     );
 
-    await user.type(screen.getByLabelText("Nova senha"), "FraseSegura!123");
-    await user.type(screen.getByLabelText("Confirmar senha"), "FraseSegura!123");
+    await user.type(await screen.findByLabelText("Nova senha"), "FraseSegura!123");
+    await user.type(await screen.findByLabelText("Confirmar senha"), "FraseSegura!123");
     await user.click(screen.getByRole("button", { name: "Salvar senha" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(

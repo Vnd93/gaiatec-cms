@@ -1,4 +1,5 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -36,7 +37,10 @@ const authMock = vi.hoisted(() => {
             error: null as Error | null,
           })),
           getAuthenticatorAssuranceLevel: vi.fn(async () => ({
-            data: { currentLevel: "aal2" },
+            data: { currentLevel: "aal2", nextLevel: "aal2" } as {
+              currentLevel: string;
+              nextLevel?: string;
+            },
             error: null as Error | null,
           })),
         },
@@ -74,6 +78,25 @@ function EditorHarness() {
           Classificação
         </button>
       </div>
+    </div>
+  );
+}
+
+function PasswordPreparationHarness() {
+  const { preparePasswordUpdate } = useAdminAuth();
+  const [result, setResult] = useState("pending");
+  return (
+    <div>
+      <button
+        onClick={() =>
+          void preparePasswordUpdate().then((preparation) =>
+            setResult(preparation.error ? "failed" : preparation.requiresMfa ? "mfa" : "ready"),
+          )
+        }
+      >
+        Preparar troca
+      </button>
+      <output>{result}</output>
     </div>
   );
 }
@@ -168,6 +191,31 @@ describe("continuidade segura da sessão administrativa", () => {
     expect(screen.getByTestId("route")).toHaveTextContent("/admin/produtos/produto-a");
     expect(screen.getByRole("tab", { name: "Classificação" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("textbox", { name: "Nome" })).toHaveValue("Rascunho em preenchimento");
+  });
+
+  it("detecta o AAL2 obrigatório antes de trocar a senha de uma conta com TOTP verificado", async () => {
+    const user = userEvent.setup();
+    authMock.supabase.auth.mfa.listFactors.mockResolvedValueOnce({
+      data: {
+        totp: [{ id: "factor-a", status: "verified" }],
+        all: [{ id: "factor-a", status: "verified", factor_type: "totp" }],
+      },
+      error: null,
+    });
+    authMock.supabase.auth.mfa.getAuthenticatorAssuranceLevel.mockResolvedValueOnce({
+      data: { currentLevel: "aal1", nextLevel: "aal2" },
+      error: null,
+    });
+    render(
+      <MemoryRouter>
+        <AdminAuthProvider>
+          <PasswordPreparationHarness />
+        </AdminAuthProvider>
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Preparar troca" }));
+    expect(await screen.findByText("mfa")).toBeInTheDocument();
   });
 
   it("continua fail-closed quando a sessão expira ou sai", async () => {

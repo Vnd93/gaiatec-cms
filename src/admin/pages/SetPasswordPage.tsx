@@ -1,24 +1,94 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router";
 import { useAdminAuth } from "../auth/AdminAuthContext";
 import { AdminError, AdminFrame } from "../components/AdminFrame";
 import { operatorErrorMessage } from "../operator-error-message";
 
 export default function AdminSetPasswordPage() {
-  const { session, status, updatePassword } = useAdminAuth();
+  const { session, status, preparePasswordUpdate, updatePassword } = useAdminAuth();
   const navigate = useNavigate();
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [preparation, setPreparation] = useState<"checking" | "ready" | "failed">("checking");
+  const [preparationAttempt, setPreparationAttempt] = useState(0);
+  const submitting = useRef(false);
+
+  useEffect(() => {
+    if (!session || status === "loading" || submitting.current) return;
+    let active = true;
+    setPreparation("checking");
+    setError(null);
+    void preparePasswordUpdate()
+      .then((result) => {
+        if (!active) return;
+        if (result.error) {
+          setError(
+            operatorErrorMessage(result.error, {
+              fallback: "Não foi possível validar a proteção da conta. Tente novamente.",
+            }),
+          );
+          setPreparation("failed");
+          return;
+        }
+        if (result.requiresMfa) {
+          navigate("/admin/mfa", {
+            replace: true,
+            state: { from: "/admin/definir-senha", purpose: "password_update" },
+          });
+          return;
+        }
+        setPreparation("ready");
+      })
+      .catch((caught) => {
+        if (!active) return;
+        setError(
+          operatorErrorMessage(caught, {
+            fallback: "Não foi possível validar a proteção da conta. Tente novamente.",
+          }),
+        );
+        setPreparation("failed");
+      });
+    return () => {
+      active = false;
+    };
+  }, [navigate, preparationAttempt, preparePasswordUpdate, session, status]);
 
   if (status !== "loading" && !session) return <Navigate to="/admin/login" replace />;
+
+  if (status === "loading" || preparation === "checking")
+    return (
+      <AdminFrame
+        title="Validando proteção adicional"
+        description="Confirmando os requisitos de segurança antes da troca de senha."
+        loading
+      />
+    );
+
+  if (preparation === "failed")
+    return (
+      <AdminFrame
+        title="Não foi possível validar a proteção da conta"
+        description="A nova senha só pode ser definida depois desta verificação."
+      >
+        {error && <AdminError>{error}</AdminError>}
+        <button
+          className="admin-button"
+          type="button"
+          onClick={() => setPreparationAttempt((attempt) => attempt + 1)}
+        >
+          Tentar novamente
+        </button>
+      </AdminFrame>
+    );
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
     if (password.length < 12) return setError("Use pelo menos 12 caracteres.");
     if (password !== confirmation) return setError("As senhas não coincidem.");
+    submitting.current = true;
     setBusy(true);
     try {
       const result = await updatePassword(password);
@@ -36,6 +106,7 @@ export default function AdminSetPasswordPage() {
         }),
       );
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   }

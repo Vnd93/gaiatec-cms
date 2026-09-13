@@ -1165,6 +1165,20 @@ function waitForEdgeAction(page: Page, functionName: string, action: string) {
   );
 }
 
+function waitForPasswordUpdate(page: Page, supabaseOrigin: string) {
+  return page.waitForResponse(
+    (response) => {
+      const url = new URL(response.url());
+      return (
+        response.request().method() === "PUT" &&
+        url.origin === supabaseOrigin &&
+        url.pathname === "/auth/v1/user"
+      );
+    },
+    { timeout: 30_000 },
+  );
+}
+
 async function responseJson(response: Response) {
   const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
   if (response.status() >= 300 || !payload) throw new Error("QA_CMS_AUTH_BACKEND_RESPONSE_INVALID");
@@ -1198,7 +1212,10 @@ async function sanitizeActionAddress(page: Page, expectedOrigin: string) {
     .evaluate((origin) => {
       const sameOrigin = window.location.origin === origin;
       const hasSession = Object.keys(window.localStorage).some((key) => key.endsWith("-auth-token"));
-      if (sameOrigin) window.history.replaceState(null, "", "/admin/definir-senha");
+      if (sameOrigin) {
+        const pathname = window.location.pathname === "/admin/mfa" ? "/admin/mfa" : "/admin/definir-senha";
+        window.history.replaceState(window.history.state, "", pathname);
+      }
       return { sameOrigin, hasSession };
     }, expectedOrigin)
     .catch(() => ({ sameOrigin: false, hasSession: false }));
@@ -1221,7 +1238,6 @@ async function openActionSession(page: Page, actionLink: string, baseURL: string
   }
   const state = await sanitizeActionAddress(page, expectedOrigin);
   if (!state.sameOrigin || !state.hasSession) throw new Error("QA_CMS_AUTH_ACTION_LINK_SESSION_FAILED");
-  await expect(page.getByRole("heading", { name: "Definir nova senha" })).toBeVisible();
 }
 
 async function expectConsumedLinkRejected(page: Page, actionLink: string, baseURL: string) {
@@ -1242,7 +1258,12 @@ async function expectConsumedLinkRejected(page: Page, actionLink: string, baseUR
   await expect(page.getByRole("heading", { name: "Entrar no painel" })).toBeVisible();
 }
 
-async function setPassword(page: Page, password: string, expectedActivated: boolean) {
+async function setPassword(
+  page: Page,
+  password: string,
+  supabaseOrigin: string,
+  expected: { activated: boolean; mfaVerified: boolean; accessGranted: boolean },
+) {
   const passwordField = page.getByLabel("Nova senha", { exact: true });
   const confirmation = page.getByLabel("Confirmar senha", { exact: true });
   await passwordField.fill("");
@@ -1269,15 +1290,22 @@ async function setPassword(page: Page, password: string, expectedActivated: bool
 
   await passwordField.fill(password);
   await confirmation.fill(password);
-  const recoveryResolution = waitForEdgeAction(page, "cms-session", "recovery");
+  const passwordUpdate = waitForPasswordUpdate(page, supabaseOrigin).catch(() => null);
+  const recoveryResolution = waitForEdgeAction(page, "cms-session", "recovery").catch(() => null);
   await page.getByRole("button", { name: "Salvar senha" }).click();
+  const passwordResponse = await passwordUpdate;
+  if (!passwordResponse) throw new Error("QA_CMS_AUTH_PASSWORD_UPDATE_RESPONSE_MISSING");
+  if (passwordResponse.status() < 200 || passwordResponse.status() >= 300)
+    throw new Error(`QA_CMS_AUTH_PASSWORD_UPDATE_HTTP_${passwordResponse.status()}`);
   const response = await recoveryResolution;
+  if (!response) throw new Error("QA_CMS_AUTH_RECOVERY_SESSION_RESPONSE_MISSING");
   const resolved = await responseJson(response);
   expect(resolved.status).toBe("active");
-  expect(resolved.activated).toBe(expectedActivated);
+  expect(resolved.activated).toBe(expected.activated);
   expect(resolved.mfaRequired).toBe(true);
-  expect(resolved.accessGranted).toBe(false);
-  await expect(page).toHaveURL(/\/admin\/mfa$/);
+  expect(resolved.mfaVerified).toBe(expected.mfaVerified);
+  expect(resolved.accessGranted).toBe(expected.accessGranted);
+  await expect(page).toHaveURL(expected.accessGranted ? /\/admin\/?$/ : /\/admin\/mfa$/);
   return { response, resolved };
 }
 
@@ -2033,57 +2061,7 @@ test.describe("CMS Auth invite and recovery lifecycle", () => {
       contexts.push(recoveryContext);
       const recoveryPage = await recoveryContext.newPage();
       await openActionSession(recoveryPage, config.recovery.actionLink, baseURL);
-      await captureAuthSurface(recoveryPage, authSurfaceCoverage, {
-        surfaceId: "auth-set-password",
-        variant: "recovery-session",
-        route: "/admin/definir-senha",
-        heading: "Definir nova senha",
-        controls: [
-          {
-            id: "set-password-form",
-            kind: "form",
-            name: "",
-            locator: (page) => page.locator("form"),
-          },
-          {
-            id: "new-password",
-            kind: "field",
-            name: "Nova senha",
-            locator: (page) => page.getByLabel("Nova senha", { exact: true }),
-            probeValue: "QA-Responsive!123",
-          },
-          {
-            id: "confirm-password",
-            kind: "field",
-            name: "Confirmar senha",
-            locator: (page) => page.getByLabel("Confirmar senha", { exact: true }),
-            probeValue: "QA-Responsive!123",
-          },
-          {
-            id: "save-password",
-            kind: "action",
-            name: "Salvar senha",
-            locator: (page) => page.getByRole("button", { name: "Salvar senha" }),
-          },
-        ],
-      });
-      const recoveryPassword = await setPassword(recoveryPage, config.recovery.password, false);
-      recordAuthBackendAction(semanticActions, {
-        surfaceId: "auth-set-password",
-        controlName: "Salvar senha",
-        action: "recovery",
-        scenarioId: "real_recovery_link_password_and_mfa",
-        response: recoveryPassword.response,
-        backendStatus: String(recoveryPassword.resolved.status),
-      });
-      recordSemanticExecution({
-        id: "auth-set-password.save-password",
-        surfaceId: "auth-set-password",
-        controlId: "save-password",
-        scenarioId: "real_recovery_link_password_and_mfa",
-        result: "passed",
-        proof: "real-browser-real-backend",
-      });
+      await expect(recoveryPage).toHaveURL(/\/admin\/mfa$/);
       await expect(recoveryPage.getByRole("heading", { name: "Confirmar sua identidade" })).toBeVisible();
       await captureAuthSurface(recoveryPage, authSurfaceCoverage, {
         surfaceId: "auth-mfa",
@@ -2137,11 +2115,69 @@ test.describe("CMS Auth invite and recovery lifecycle", () => {
         result: "passed",
         proof: "real-browser-real-backend",
       });
+      await expect(recoveryPage).toHaveURL(/\/admin\/definir-senha$/);
+      await expect(recoveryPage.getByRole("heading", { name: "Definir nova senha" })).toBeVisible();
+      await captureAuthSurface(recoveryPage, authSurfaceCoverage, {
+        surfaceId: "auth-set-password",
+        variant: "recovery-session-aal2",
+        route: "/admin/definir-senha",
+        heading: "Definir nova senha",
+        controls: [
+          {
+            id: "set-password-form",
+            kind: "form",
+            name: "",
+            locator: (page) => page.locator("form"),
+          },
+          {
+            id: "new-password",
+            kind: "field",
+            name: "Nova senha",
+            locator: (page) => page.getByLabel("Nova senha", { exact: true }),
+            probeValue: "QA-Responsive!123",
+          },
+          {
+            id: "confirm-password",
+            kind: "field",
+            name: "Confirmar senha",
+            locator: (page) => page.getByLabel("Confirmar senha", { exact: true }),
+            probeValue: "QA-Responsive!123",
+          },
+          {
+            id: "save-password",
+            kind: "action",
+            name: "Salvar senha",
+            locator: (page) => page.getByRole("button", { name: "Salvar senha" }),
+          },
+        ],
+      });
+      const recoveryPassword = await setPassword(
+        recoveryPage,
+        config.recovery.password,
+        config.supabaseOrigin,
+        { activated: false, mfaVerified: true, accessGranted: true },
+      );
+      recordAuthBackendAction(semanticActions, {
+        surfaceId: "auth-set-password",
+        controlName: "Salvar senha",
+        action: "recovery",
+        scenarioId: "real_recovery_link_password_and_mfa",
+        response: recoveryPassword.response,
+        backendStatus: String(recoveryPassword.resolved.status),
+      });
+      recordSemanticExecution({
+        id: "auth-set-password.save-password",
+        surfaceId: "auth-set-password",
+        controlId: "save-password",
+        scenarioId: "real_recovery_link_password_and_mfa",
+        result: "passed",
+        proof: "real-browser-real-backend",
+      });
       scenarios.push({
         id: "real_recovery_link_password_and_mfa",
         status: "passed",
-        interface: "link real -> PASSWORD_RECOVERY -> nova senha -> desafio MFA",
-        backend: "cms-session recovery e mfa confirmados no Supabase do alvo",
+        interface: "link real -> PASSWORD_RECOVERY -> desafio MFA -> nova senha",
+        backend: "sessão elevada a AAL2 antes do update e cms-session recovery confirmado no alvo",
         negative: "senha curta, divergência e código TOTP incorreto recusados",
       });
 
@@ -2194,7 +2230,12 @@ test.describe("CMS Auth invite and recovery lifecycle", () => {
       contexts.push(inviteContext);
       const invitePage = await inviteContext.newPage();
       await openActionSession(invitePage, config.invitee.actionLink, baseURL);
-      const invitePassword = await setPassword(invitePage, config.invitee.password, true);
+      await expect(invitePage.getByRole("heading", { name: "Definir nova senha" })).toBeVisible();
+      const invitePassword = await setPassword(invitePage, config.invitee.password, config.supabaseOrigin, {
+        activated: true,
+        mfaVerified: false,
+        accessGranted: false,
+      });
       recordAuthBackendAction(semanticActions, {
         surfaceId: "auth-set-password",
         controlName: "Salvar senha",

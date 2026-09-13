@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 const fixture = readFileSync("scripts/qa/cms-browser-fixture.mjs", "utf8");
 const spec = readFileSync("tests/e2e/cms-auth-lifecycle.spec.ts", "utf8");
+const authContext = readFileSync("src/admin/auth/AdminAuthContext.tsx", "utf8");
 const adminOpsSpec = readFileSync("tests/e2e/cms-admin-ops-cycles.spec.ts", "utf8");
 const staging = readFileSync(".github/workflows/deploy-staging.yml", "utf8");
 const production = readFileSync(".github/workflows/deploy-production.yml", "utf8");
@@ -83,6 +84,21 @@ describe("real invite and password-recovery browser lifecycle", () => {
     expect(spec).toContain("validity.typeMismatch");
     expect(spec).toContain('await codeField.fill("12345")');
     expect(spec).toContain('await codeField.fill("1234567")');
+  });
+
+  it("elevates enrolled recovery sessions before the password mutation and keeps failures diagnosable", () => {
+    expect(authContext).toContain("preparePasswordUpdate");
+    expect(authContext).toContain('assurance.nextLevel === "aal2"');
+    expect(authContext).toContain('factor.status === "verified"');
+    expect(spec).toContain('response.request().method() === "PUT"');
+    expect(spec).toContain('url.pathname === "/auth/v1/user"');
+    expect(spec).toContain("url.origin === supabaseOrigin");
+    expect(spec).toContain("QA_CMS_AUTH_PASSWORD_UPDATE_RESPONSE_MISSING");
+    expect(spec).toContain("QA_CMS_AUTH_PASSWORD_UPDATE_HTTP_");
+    expect(spec).toContain("QA_CMS_AUTH_RECOVERY_SESSION_RESPONSE_MISSING");
+    expect(spec.indexOf("const recoveryMfa = await completeMfaChallenge")).toBeLessThan(
+      spec.indexOf("const recoveryPassword = await setPassword"),
+    );
   });
 
   it("runs before all dependent mutating suites in staging and production", () => {

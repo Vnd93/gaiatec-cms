@@ -443,16 +443,23 @@ security definer
 set search_path = pg_catalog, public, private, pg_temp
 as $$
 declare
-  v_id uuid;
   v_desde timestamptz;
   v_estado_staging text;
   v_linha private.cms_ev2_delivery_ledger%rowtype;
+  v_replay boolean;
 begin
   if coalesce(auth.role()::text, '') <> 'service_role' then
     raise exception 'CMS_EV2_DELIVERY_SERVICE_ROLE_REQUIRED' using errcode = '42501';
   end if;
 
-  if p_environment = 'production' then
+  -- Uma repeticao legitima e reconhecida ANTES das pre-condicoes externas. Se staging for suspenso
+  -- depois de uma entrega de producao, repetir a requisicao que ja venceu o soak continua sendo
+  -- idempotente; ela nao tenta realizar uma entrega nova.
+  select * into v_linha from private.cms_ev2_delivery_ledger ledger
+  where ledger.idempotency_key = p_idempotency_key;
+  v_replay := found;
+
+  if not v_replay and p_environment = 'production' then
     -- A ULTIMA PALAVRA de staging, estado e data lidos da MESMA linha.
     --
     -- Uma versao anterior fazia duas leituras: a data pela linha mais recente, e o estado por um
@@ -482,24 +489,42 @@ begin
     end if;
   end if;
 
-  insert into private.cms_ev2_delivery_ledger (
-    flag_key, environment, state, reason, candidate_sha, workflow_run_id,
-    approval_record_sha256, idempotency_key, correlation_id, review_due_at
-  ) values (
-    p_flag_key, p_environment, 'delivered', p_reason, p_candidate_sha, p_workflow_run_id,
-    p_approval_record_sha256, p_idempotency_key, p_correlation_id,
-    coalesce(p_review_due_at, statement_timestamp() + interval '90 days')
-  )
-  on conflict (idempotency_key) do nothing
-  returning id into v_id;
+  if not v_replay then
+    insert into private.cms_ev2_delivery_ledger (
+      flag_key, environment, state, reason, candidate_sha, workflow_run_id,
+      approval_record_sha256, idempotency_key, correlation_id, review_due_at
+    ) values (
+      p_flag_key, p_environment, 'delivered', p_reason, p_candidate_sha, p_workflow_run_id,
+      p_approval_record_sha256, p_idempotency_key, p_correlation_id,
+      coalesce(p_review_due_at, statement_timestamp() + interval '90 days')
+    )
+    on conflict (idempotency_key) do nothing;
 
-  if v_id is null then
-    select ledger.id into v_id from private.cms_ev2_delivery_ledger ledger
+    -- Rele a autoridade tanto no insert proprio quanto numa corrida concorrente pela mesma chave.
+    select * into v_linha from private.cms_ev2_delivery_ledger ledger
     where ledger.idempotency_key = p_idempotency_key;
   end if;
 
-  return jsonb_build_object('schemaVersion', 1, 'id', v_id, 'flagKey', p_flag_key,
-                            'environment', p_environment, 'state', 'delivered');
+  -- A chave e global no livro. Repetir a MESMA declaracao e idempotente; reaproveita-la para outro
+  -- estado ou para evidencia de outro candidato e uma intencao diferente e precisa falhar. Sem
+  -- conferir os campos de evidencia, o mesmo trio flag/ambiente/estado poderia relatar como entregue
+  -- um SHA que nunca foi escrito.
+  if v_linha.flag_key is distinct from p_flag_key
+     or v_linha.environment is distinct from p_environment
+     or v_linha.state is distinct from 'delivered'
+     or v_linha.reason is distinct from p_reason
+     or v_linha.candidate_sha is distinct from p_candidate_sha
+     or v_linha.workflow_run_id is distinct from p_workflow_run_id
+     or v_linha.approval_record_sha256 is distinct from p_approval_record_sha256
+     or (p_review_due_at is not null and v_linha.review_due_at is distinct from p_review_due_at) then
+    raise exception 'CMS_EV2_DELIVERY_IDEMPOTENCY_CONFLICT'
+      using errcode = '23505',
+            detail = 'A chave existente pertence a outra funcionalidade, ambiente, estado ou evidencia.',
+            hint = 'Use uma chave de idempotencia nova. Reaproveitar com intencao diferente nao e repeticao.';
+  end if;
+
+  return jsonb_build_object('schemaVersion', 1, 'id', v_linha.id, 'flagKey', v_linha.flag_key,
+                            'environment', v_linha.environment, 'state', v_linha.state);
 end;
 $$;
 
@@ -520,23 +545,28 @@ security definer
 set search_path = pg_catalog, public, private, pg_temp
 as $$
 declare
-  v_id uuid;
-  v_estado text;
   v_linha private.cms_ev2_delivery_ledger%rowtype;
 begin
   if coalesce(auth.role()::text, '') <> 'service_role' then
     raise exception 'CMS_EV2_DELIVERY_SERVICE_ROLE_REQUIRED' using errcode = '42501';
   end if;
 
-  insert into private.cms_ev2_delivery_ledger (
-    flag_key, environment, state, reason, candidate_sha, workflow_run_id,
-    approval_record_sha256, idempotency_key, correlation_id, review_due_at
-  ) values (
-    p_flag_key, p_environment, 'suspended', p_reason, p_candidate_sha, p_workflow_run_id,
-    p_approval_record_sha256, p_idempotency_key, p_correlation_id, null
-  )
-  on conflict (idempotency_key) do nothing
-  returning id into v_id;
+  select * into v_linha from private.cms_ev2_delivery_ledger ledger
+  where ledger.idempotency_key = p_idempotency_key;
+
+  if not found then
+    insert into private.cms_ev2_delivery_ledger (
+      flag_key, environment, state, reason, candidate_sha, workflow_run_id,
+      approval_record_sha256, idempotency_key, correlation_id, review_due_at
+    ) values (
+      p_flag_key, p_environment, 'suspended', p_reason, p_candidate_sha, p_workflow_run_id,
+      p_approval_record_sha256, p_idempotency_key, p_correlation_id, null
+    )
+    on conflict (idempotency_key) do nothing;
+
+    select * into v_linha from private.cms_ev2_delivery_ledger ledger
+    where ledger.idempotency_key = p_idempotency_key;
+  end if;
 
   -- Idempotencia NAO pode virar silencio.
   --
@@ -548,28 +578,21 @@ begin
   --
   -- Chave reaproveitada com intencao diferente e erro do chamador, nao idempotencia. O padrao ja
   -- existe na casa: 0040:429-431 compara e levanta CMS_MASTER_DATA_IDEMPOTENCY_CONFLICT.
-  if v_id is null then
-    select * into v_linha from private.cms_ev2_delivery_ledger ledger
-    where ledger.idempotency_key = p_idempotency_key;
-
-    if v_linha.flag_key is distinct from p_flag_key
-       or v_linha.environment is distinct from p_environment
-       or v_linha.state is distinct from 'suspended' then
-      raise exception
-        'CMS_EV2_DELIVERY_IDEMPOTENCY_CONFLICT: chave ja usada para %/%/%, pedido %/%/suspended',
-        v_linha.flag_key, v_linha.environment, v_linha.state, p_flag_key, p_environment
-        using errcode = '23505',
-              hint = 'Use uma chave de idempotencia nova. Reaproveitar com intencao diferente nao e repeticao.';
-    end if;
-    v_id := v_linha.id;
+  if v_linha.flag_key is distinct from p_flag_key
+     or v_linha.environment is distinct from p_environment
+     or v_linha.state is distinct from 'suspended'
+     or v_linha.reason is distinct from p_reason
+     or v_linha.candidate_sha is distinct from p_candidate_sha
+     or v_linha.workflow_run_id is distinct from p_workflow_run_id
+     or v_linha.approval_record_sha256 is distinct from p_approval_record_sha256 then
+    raise exception 'CMS_EV2_DELIVERY_IDEMPOTENCY_CONFLICT'
+      using errcode = '23505',
+            detail = 'A chave existente pertence a outra funcionalidade, ambiente, estado ou evidencia.',
+            hint = 'Use uma chave de idempotencia nova. Reaproveitar com intencao diferente nao e repeticao.';
   end if;
 
-  -- O estado devolvido descreve o LIVRO, nunca a intencao de quem chamou.
-  select ledger.state into v_estado from private.cms_ev2_delivery_ledger ledger
-  where ledger.id = v_id;
-
-  return jsonb_build_object('schemaVersion', 1, 'id', v_id, 'flagKey', p_flag_key,
-                            'environment', p_environment, 'state', v_estado);
+  return jsonb_build_object('schemaVersion', 1, 'id', v_linha.id, 'flagKey', v_linha.flag_key,
+                            'environment', v_linha.environment, 'state', v_linha.state);
 end;
 $$;
 

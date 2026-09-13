@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(43);
+select plan(50);
 
 -- Este teste le a definicao VIVA das funcoes, nao o texto das migrations. A distincao nao e
 -- preciosismo: a 0055, linhas 50-92, tem um bloco DO que varre pg_proc e reescreve o corpo de toda
@@ -223,6 +223,59 @@ select is(has_function_privilege('service_role',
 select isnt(has_function_privilege('authenticated',
   'public.cms_ev2_suspend_delivery(text,text,text,text,text,text,uuid,uuid)','EXECUTE'),true,
   'an authenticated caller cannot suspend a delivery');
+
+-- ------------------------------------------------ idempotencia nunca pode relatar estado falso
+-- A chave e unica no livro inteiro. Repetir a mesma intencao devolve o estado persistido; usar a
+-- chave para a intencao oposta falha. As duas direcoes importam: uma versao anterior verificava
+-- apenas suspend -> declare e deixava declare -> suspend relatar sucesso sem escrever, ou vice-versa.
+select set_config('request.jwt.claim.role','service_role',true);
+
+select is((public.cms_ev2_declare_delivery(
+  'ev2.draft_v2','local','Entrega idempotente sintetica.',repeat('d',40),'9001',repeat('e',64),
+  '00000000-0000-4000-8000-0000000000c1','00000000-0000-4000-8000-0000000000d1',null
+)->>'state'),'delivered','a new declaration reports the state it actually persisted');
+select is((public.cms_ev2_declare_delivery(
+  'ev2.draft_v2','local','Entrega idempotente sintetica.',repeat('d',40),'9001',repeat('e',64),
+  '00000000-0000-4000-8000-0000000000c1','00000000-0000-4000-8000-0000000000d1',null
+)->>'state'),'delivered','replaying the same declaration is idempotent');
+select throws_ok(
+  $$select public.cms_ev2_suspend_delivery(
+    'ev2.draft_v2','local','Intencao oposta sintetica.',repeat('d',40),'9002',repeat('e',64),
+    '00000000-0000-4000-8000-0000000000c1','00000000-0000-4000-8000-0000000000d2'
+  )$$,
+  '23505',
+  'CMS_EV2_DELIVERY_IDEMPOTENCY_CONFLICT',
+  'a declaration key cannot be reused to report a suspension that was not written'
+);
+select throws_ok(
+  $$select public.cms_ev2_declare_delivery(
+    'ev2.draft_v2','local','Entrega idempotente sintetica.',repeat('f',40),'9001',repeat('e',64),
+    '00000000-0000-4000-8000-0000000000c1','00000000-0000-4000-8000-0000000000d1',null
+  )$$,
+  '23505','CMS_EV2_DELIVERY_IDEMPOTENCY_CONFLICT',
+  'a declaration key cannot be rebound to another candidate SHA'
+);
+select is((public.cms_ev2_suspend_delivery(
+  'ev2.draft_v2','local','Suspensao idempotente sintetica.',repeat('d',40),'9003',repeat('e',64),
+  '00000000-0000-4000-8000-0000000000c2','00000000-0000-4000-8000-0000000000d3'
+)->>'state'),'suspended','a new suspension reports the state it actually persisted');
+select throws_ok(
+  $$select public.cms_ev2_declare_delivery(
+    'ev2.draft_v2','local','Intencao oposta sintetica.',repeat('d',40),'9004',repeat('e',64),
+    '00000000-0000-4000-8000-0000000000c2','00000000-0000-4000-8000-0000000000d4',null
+  )$$,
+  '23505',
+  'CMS_EV2_DELIVERY_IDEMPOTENCY_CONFLICT',
+  'a suspension key cannot be reused to report a declaration that was not written'
+);
+select throws_ok(
+  $$select public.cms_ev2_suspend_delivery(
+    'ev2.draft_v2','local','Suspensao idempotente sintetica.',repeat('f',40),'9003',repeat('e',64),
+    '00000000-0000-4000-8000-0000000000c2','00000000-0000-4000-8000-0000000000d3'
+  )$$,
+  '23505','CMS_EV2_DELIVERY_IDEMPOTENCY_CONFLICT',
+  'a suspension key cannot be rebound to another candidate SHA'
+);
 
 select * from finish();
 rollback;

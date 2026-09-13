@@ -140,6 +140,13 @@ describe("livro de entregas EV2 — o que ele pode alcançar", () => {
     expect(escritas.length).toBe(2);
   });
 
+  it("as duas escritas recusam chave de idempotência reaproveitada para outra intenção", () => {
+    // A chave é única na tabela inteira. Cobrir só a suspensão deixa a declaração livre para
+    // devolver `delivered` sobre uma linha que continua `suspended`, sem ter escrito nada.
+    const conflitos = MIGRACAO.match(/raise exception 'CMS_EV2_DELIVERY_IDEMPOTENCY_CONFLICT'/g) ?? [];
+    expect(conflitos.length).toBe(2);
+  });
+
   it("a cópia que o cliente enxerga é idêntica à restrição do banco, nos dois sentidos", () => {
     // A autoridade é a restrição da migration. Se as duas divergirem, o painel acenderia algo que
     // o banco recusa — ou recusaria algo que o banco entrega. As duas direções importam.

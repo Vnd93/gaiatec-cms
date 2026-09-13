@@ -151,7 +151,11 @@ select ok(exists(select 1
     and index_record.indpred is null and index_record.indexprs is null
     and index_record.indnkeyatts=1 and index_record.indnatts=1
     and access_method.amname='btree'
-    and pg_get_indexdef(index_record.indexrelid,1,true)='occurred_at DESC'),
+    and index_record.indkey[0]=(select attribute.attnum from pg_attribute attribute
+      where attribute.attrelid='public.cms_audit_log'::regclass
+        and attribute.attname='occurred_at' and not attribute.attisdropped)
+    and pg_index_column_has_property(index_record.indexrelid,1,'desc') is true
+    and pg_index_column_has_property(index_record.indexrelid,1,'nulls_first') is true),
   'global audit recency is indexed for the admin home limit');
 select is(has_table_privilege('anon','public.cms_audit_log','SELECT'),false,
   'audit records remain unreadable to anonymous callers before RLS');

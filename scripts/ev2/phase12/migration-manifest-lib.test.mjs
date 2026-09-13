@@ -89,7 +89,7 @@ test("the repository migration history is contiguous", () => {
   assert.deepEqual(G12_PINNED_MIGRATION_TAIL.at(-1), {
     version: "0098",
     file: "0098_cms_audit_log_read_scale.sql",
-    sha256: "abeca0f5f62729e37e091789512594dca3bbecaa8d0231ab6f863fc53e42b3da",
+    sha256: "539613f03cd5e06d2be67dad2a14ce20b793085c437c23e108e1ae7c7a714529",
   });
   assert.deepEqual(manifest.slice(-G12_PINNED_MIGRATION_TAIL.length), G12_PINNED_MIGRATION_TAIL);
   for (const migration of manifest.slice(-G12_PINNED_MIGRATION_TAIL.length)) {
@@ -621,8 +621,11 @@ test("0098 semantic preflight proves audit recency scale without widening visibi
     "cms_user_actor_environment",
     "cms_audit_log_recent_idx",
     "index_record.indisvalid",
-    "pg_catalog.pg_get_indexdef",
-    "occurred_at DESC",
+    "index_record.indkey[0]",
+    "attribute.attname = 'occurred_at'",
+    "pg_catalog.pg_index_column_has_property",
+    "'desc'",
+    "'nulls_first'",
   ])
     assert.ok(contract.includes(marker), marker);
 

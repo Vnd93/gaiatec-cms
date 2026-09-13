@@ -124,7 +124,15 @@ begin
       and index_record.indnkeyatts = 1
       and index_record.indnatts = 1
       and access_method.amname = 'btree'
-      and pg_get_indexdef(index_record.indexrelid, 1, true) = 'occurred_at DESC'
+      and index_record.indkey[0] = (
+        select attribute.attnum
+        from pg_attribute attribute
+        where attribute.attrelid = 'public.cms_audit_log'::regclass
+          and attribute.attname = 'occurred_at'
+          and not attribute.attisdropped
+      )
+      and pg_index_column_has_property(index_record.indexrelid, 1, 'desc') is true
+      and pg_index_column_has_property(index_record.indexrelid, 1, 'nulls_first') is true
   ) then
     raise exception 'CMS_AUDIT_LOG_RECENT_INDEX_MISSING' using errcode = '55000';
   end if;

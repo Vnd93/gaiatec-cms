@@ -88,7 +88,7 @@ export const G12_PINNED_MIGRATION_TAIL = Object.freeze([
   Object.freeze({
     version: "0098",
     file: "0098_cms_audit_log_read_scale.sql",
-    sha256: "abeca0f5f62729e37e091789512594dca3bbecaa8d0231ab6f863fc53e42b3da",
+    sha256: "539613f03cd5e06d2be67dad2a14ce20b793085c437c23e108e1ae7c7a714529",
   }),
 ]);
 
@@ -1019,7 +1019,15 @@ export function auditLogReadScaleSemanticSql(alias) {
           and index_record.indnkeyatts = 1
           and index_record.indnatts = 1
           and access_method.amname = 'btree'
-          and pg_catalog.pg_get_indexdef(index_record.indexrelid, 1, true) = 'occurred_at DESC'
+          and index_record.indkey[0] = (
+            select attribute.attnum
+            from pg_catalog.pg_attribute attribute
+            where attribute.attrelid = 'public.cms_audit_log'::regclass
+              and attribute.attname = 'occurred_at'
+              and not attribute.attisdropped
+          )
+          and pg_catalog.pg_index_column_has_property(index_record.indexrelid, 1, 'desc') is true
+          and pg_catalog.pg_index_column_has_property(index_record.indexrelid, 1, 'nulls_first') is true
       )`;
   return `coalesce(
       to_regprocedure('${session}') is not null

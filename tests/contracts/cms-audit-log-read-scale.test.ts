@@ -52,6 +52,12 @@ describe("CMS audit-log read scale", () => {
     );
     expect(migration).toContain("CMS_AUDIT_LOG_POLICY_NOT_SPLIT");
     expect(migration).toContain("CMS_AUDIT_LOG_RECENT_INDEX_MISSING");
+    expect(migration).toContain("index_record.indkey[0]");
+    expect(migration).toContain("attribute.attname = 'occurred_at'");
+    expect(migration).toContain("pg_index_column_has_property(index_record.indexrelid, 1, 'desc') is true");
+    expect(migration).toContain(
+      "pg_index_column_has_property(index_record.indexrelid, 1, 'nulls_first') is true",
+    );
     expect(migration.startsWith("begin;")).toBe(true);
     expect(migration.trimEnd().endsWith("commit;")).toBe(true);
   });

@@ -1243,8 +1243,8 @@ async function expectConsumedLinkRejected(page: Page, actionLink: string, baseUR
 }
 
 async function setPassword(page: Page, password: string, expectedActivated: boolean) {
-  const passwordField = page.getByLabel("Nova senha");
-  const confirmation = page.getByLabel("Confirmar senha");
+  const passwordField = page.getByLabel("Nova senha", { exact: true });
+  const confirmation = page.getByLabel("Confirmar senha", { exact: true });
   await passwordField.fill("");
   await confirmation.fill("");
   await page.getByRole("button", { name: "Salvar senha" }).click();
@@ -2049,14 +2049,14 @@ test.describe("CMS Auth invite and recovery lifecycle", () => {
             id: "new-password",
             kind: "field",
             name: "Nova senha",
-            locator: (page) => page.getByLabel("Nova senha"),
+            locator: (page) => page.getByLabel("Nova senha", { exact: true }),
             probeValue: "QA-Responsive!123",
           },
           {
             id: "confirm-password",
             kind: "field",
             name: "Confirmar senha",
-            locator: (page) => page.getByLabel("Confirmar senha"),
+            locator: (page) => page.getByLabel("Confirmar senha", { exact: true }),
             probeValue: "QA-Responsive!123",
           },
           {

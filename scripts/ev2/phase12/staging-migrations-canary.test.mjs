@@ -602,10 +602,10 @@ test("synthetic super-admins are SHA-bound to the watchdog before privilege and 
   assert.ok(actorRecorded >= 0 && actorRecorded < leaseValidated);
   assert.ok(leaseValidated < roleGranted, "the exact active lease must precede super-admin grant");
 
-  assert.match(source, /await rest\("cms_user_roles", \{\s*method: "DELETE"/);
+  assert.match(source, /rest\("cms_user_roles", \{\s*method: "DELETE"/);
   assert.match(
     source,
-    /await rest\("cms_scoped_role_assignments", \{\s*method: "PATCH",\s*query: `user_id=eq\.\$\{actor\.id\}&revoked_at=is\.null`/,
+    /rest\("cms_scoped_role_assignments", \{\s*method: "PATCH",\s*query: `user_id=eq\.\$\{actor\.id\}&revoked_at=is\.null`/,
   );
   assert.match(source, /delete from auth\.sessions where user_id = '\$\{actor\.id\}'::uuid/);
   for (const cleanupContract of [
@@ -630,6 +630,71 @@ test("synthetic super-admins are SHA-bound to the watchdog before privilege and 
     "completion must be followed by exact cleaned-status validation",
   );
   assert.match(source, /await assertActorLease\(actorId, "cleaned"\)/);
+});
+
+test("actor teardown inventories exact content and reconciles only ambiguous PATCH outcomes", async () => {
+  const source = await read("scripts/ev2/phase12/staging-migrations-canary.mjs");
+  const helpers = source.slice(
+    source.indexOf("const ACTOR_CONTENT_INVENTORY_LIMIT"),
+    source.indexOf("function decodeBase32"),
+  );
+  const closeActors = source.slice(
+    source.indexOf("async function closeActors()"),
+    source.indexOf("async function closeFixtures()"),
+  );
+
+  assert.match(
+    closeActors,
+    /created_by=in\.\(\$\{ids\.join\(","\)\}\)&select=id,created_by,workflow_status&limit=\$\{ACTOR_CONTENT_INVENTORY_LIMIT \+ 1\}/,
+  );
+  assert.ok(
+    closeActors.indexOf("actorContentInventory(actors, ownedContent.json)") <
+      closeActors.indexOf("archiveActorContent(actor, activeIds, now)"),
+    "the bounded ownership inventory must precede every content mutation",
+  );
+  assert.doesNotMatch(closeActors, /method: "PATCH",\s*query: `created_by=/);
+  assert.match(helpers, /query: `id=in\.\(\$\{remainingIds\.join\(","\)\}\)&workflow_status=neq\.archived`/);
+  assert.match(helpers, /G12_STAGING_HTTP_FAILED:PATCH:\/rest\/v1\/cms_content_items:504/);
+  assert.match(helpers, /G12_STAGING_HTTP_TIMEOUT:PATCH:\\?\/rest\\?\/v1\\?\/cms_content_items/);
+  assert.match(helpers, /for \(let attempt = 0; attempt < 2; attempt \+= 1\)/);
+  const reconciliation = helpers.indexOf("remainingIds = await activeActorContentIds(remainingIds)");
+  const retryFence = helpers.indexOf("if (attempt === 1) throw error", reconciliation);
+  assert.ok(reconciliation >= 0 && reconciliation < retryFence);
+});
+
+test("actor teardown aggregates internal failures and still attempts independent terminal cleanup", async () => {
+  const source = await read("scripts/ev2/phase12/staging-migrations-canary.mjs");
+  const closeActors = source.slice(
+    source.indexOf("async function closeActors()"),
+    source.indexOf("async function closeFixtures()"),
+  );
+
+  for (const step of [
+    "single_override",
+    "content_inventory",
+    "content_archive",
+    "publications",
+    "projections",
+    "route_rules",
+    "user_overrides",
+    "scoped_roles",
+    "legacy_roles",
+    "rdo_access",
+    "profiles",
+    "sessions",
+    "auth_identity",
+  ])
+    assert.ok(closeActors.includes(`runCleanupStep("${step}"`), `missing cleanup step ${step}`);
+
+  const archive = closeActors.indexOf('runCleanupStep("content_archive"');
+  const sessions = closeActors.indexOf('runCleanupStep("sessions"', archive);
+  const authIdentity = closeActors.indexOf('runCleanupStep("auth_identity"', sessions);
+  const aggregate = closeActors.indexOf("actorCleanupFailures.push(...failures)", authIdentity);
+  const terminalThrow = closeActors.indexOf("if (failures.length) throw new Error", aggregate);
+  assert.ok(archive >= 0 && archive < sessions && sessions < authIdentity);
+  assert.ok(authIdentity < aggregate && aggregate < terminalThrow);
+  assert.match(closeActors, /failure: canaryFailureIdentity\(error\)/);
+  assert.match(source, /^\s*actorCleanupFailures,$/m);
 });
 
 test("canary report is sanitized, synthetic-only and verifies zero active residue with retained audit", async () => {

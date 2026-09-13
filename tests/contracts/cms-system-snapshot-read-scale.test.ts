@@ -53,11 +53,11 @@ describe("CMS system snapshot read scale", () => {
     expect(edge).not.toContain('rpc("cms_get_system_snapshot_limited"');
   });
 
-  it("is registered as the sealed migration tail", () => {
+  it("remains registered in the sealed migration history", () => {
     const files = readdirSync(path.join(root, "supabase/migrations"))
       .filter((name) => name.endsWith(".sql"))
       .sort();
-    expect(files.at(-1)).toBe("0095_cms_system_snapshot_read_scale.sql");
+    expect(files).toContain("0095_cms_system_snapshot_read_scale.sql");
     const digest = createHash("sha256").update(readFileSync(migrationPath)).digest("hex");
     const manifest = readFileSync(path.join(root, "scripts/ev2/phase12/migration-manifest-lib.mjs"), "utf8");
     expect(manifest).toContain("0095_cms_system_snapshot_read_scale.sql");

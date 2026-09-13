@@ -123,6 +123,7 @@ let overrideId;
 let projectionCreated = false;
 let operationError;
 const fixtureCloseFailures = [];
+const actorCleanupFailures = [];
 let documentNeutralizationMs = null;
 let cleanupError;
 let finalResidue;
@@ -257,6 +258,80 @@ async function rest(table, { method = "GET", query = "", body, prefer, allowed }
     body,
     allowed: accepted,
   });
+}
+
+const ACTOR_CONTENT_INVENTORY_LIMIT = 64;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function actorContentInventory(actorsToClose, rows) {
+  if (!Array.isArray(rows) || rows.length > ACTOR_CONTENT_INVENTORY_LIMIT)
+    throw new Error("G12_STAGING_ACTOR_CONTENT_INVENTORY_INVALID");
+  const actorIds = new Set(actorsToClose.map(({ id }) => id));
+  const seenItemIds = new Set();
+  const activeIdsByActor = new Map(actorsToClose.map(({ id }) => [id, []]));
+  for (const row of rows) {
+    if (
+      !UUID_PATTERN.test(row?.id ?? "") ||
+      !actorIds.has(row?.created_by) ||
+      seenItemIds.has(row.id) ||
+      typeof row?.workflow_status !== "string"
+    )
+      throw new Error("G12_STAGING_ACTOR_CONTENT_INVENTORY_INVALID");
+    seenItemIds.add(row.id);
+    if (row.workflow_status !== "archived") activeIdsByActor.get(row.created_by).push(row.id);
+  }
+  return { itemIds: [...seenItemIds], activeIdsByActor };
+}
+
+function isAmbiguousActorContentPatchFailure(error) {
+  const message = typeof error?.message === "string" ? error.message : "";
+  return (
+    message === "G12_STAGING_HTTP_FAILED:PATCH:/rest/v1/cms_content_items:504" ||
+    /^G12_STAGING_HTTP_TIMEOUT:PATCH:\/rest\/v1\/cms_content_items:\d+$/.test(message)
+  );
+}
+
+async function activeActorContentIds(itemIds) {
+  const expectedIds = new Set(itemIds);
+  const current = await rest("cms_content_items", {
+    query: `id=in.(${itemIds.join(",")})&workflow_status=neq.archived&select=id&limit=${ACTOR_CONTENT_INVENTORY_LIMIT + 1}`,
+  });
+  if (
+    !Array.isArray(current.json) ||
+    current.json.length > itemIds.length ||
+    current.json.some(({ id }) => !UUID_PATTERN.test(id ?? "") || !expectedIds.has(id)) ||
+    new Set(current.json.map(({ id }) => id)).size !== current.json.length
+  )
+    throw new Error("G12_STAGING_ACTOR_CONTENT_RECONCILIATION_INVALID");
+  return current.json.map(({ id }) => id);
+}
+
+async function archiveActorContent(actor, itemIds, now) {
+  let remainingIds = [...itemIds];
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await rest("cms_content_items", {
+        method: "PATCH",
+        query: `id=in.(${remainingIds.join(",")})&workflow_status=neq.archived`,
+        body: {
+          workflow_status: "archived",
+          archived_at: now,
+          scheduled_for: null,
+          deleted_at: null,
+          deleted_by: null,
+          updated_by: actor.id,
+        },
+      });
+      return;
+    } catch (error) {
+      if (!isAmbiguousActorContentPatchFailure(error)) throw error;
+      remainingIds = await activeActorContentIds(remainingIds);
+      if (!remainingIds.length) return;
+      // The mutation is idempotent and now targets only rows authoritatively observed as active.
+      // Exactly one retry is allowed; another ambiguous result must remain a cleanup failure.
+      if (attempt === 1) throw error;
+    }
+  }
 }
 
 function decodeBase32(value) {
@@ -1985,91 +2060,125 @@ async function closePimFixture() {
 }
 
 async function closeActors() {
-  if (overrideId)
-    await rest("cms_feature_flag_overrides", { method: "DELETE", query: `id=eq.${overrideId}` });
-  if (!actors.length) return;
+  const failures = [];
+  const runCleanupStep = async (step, operation) => {
+    try {
+      await operation();
+    } catch (error) {
+      failures.push({ step, failure: canaryFailureIdentity(error) });
+    }
+  };
+  await runCleanupStep("single_override", async () => {
+    if (overrideId)
+      await rest("cms_feature_flag_overrides", { method: "DELETE", query: `id=eq.${overrideId}` });
+  });
+  if (!actors.length) {
+    actorCleanupFailures.push(...failures);
+    if (failures.length) throw new Error(`G12_STAGING_ACTOR_CLEANUP_FAILED:${failures[0].step}`);
+    return;
+  }
   const now = new Date().toISOString();
   const ids = actors.map((actor) => actor.id);
-  for (const actor of actors)
-    await rest("cms_content_items", {
-      method: "PATCH",
-      query: `created_by=eq.${actor.id}&workflow_status=neq.archived`,
-      body: {
-        workflow_status: "archived",
-        archived_at: now,
-        scheduled_for: null,
-        deleted_at: null,
-        deleted_by: null,
-        updated_by: actor.id,
-      },
+  let contentInventory;
+  await runCleanupStep("content_inventory", async () => {
+    const ownedContent = await rest("cms_content_items", {
+      query: `created_by=in.(${ids.join(",")})&select=id,created_by,workflow_status&limit=${ACTOR_CONTENT_INVENTORY_LIMIT + 1}`,
     });
-  const ownedContent = await rest("cms_content_items", {
-    query: `created_by=in.(${ids.join(",")})&select=id`,
+    contentInventory = actorContentInventory(actors, ownedContent.json);
   });
-  const itemIds = [...new Set((ownedContent.json ?? []).map(({ id }) => id))];
+  const itemIds = contentInventory?.itemIds ?? [];
+  if (contentInventory) {
+    for (const actor of actors) {
+      const activeIds = contentInventory.activeIdsByActor.get(actor.id);
+      if (activeIds.length)
+        await runCleanupStep("content_archive", () => archiveActorContent(actor, activeIds, now));
+    }
+  }
   if (itemIds.length) {
-    await rest("cms_publications", {
-      method: "DELETE",
-      query: `item_id=in.(${itemIds.join(",")})`,
-    });
-    await rest("cms_published_projection", {
-      method: "DELETE",
-      query: `item_id=in.(${itemIds.join(",")})`,
-    });
-    await rest("cms_route_rules", {
-      method: "PATCH",
-      query: `item_id=in.(${itemIds.join(",")})&active=eq.true`,
-      body: { active: false },
-    });
+    await runCleanupStep("publications", () =>
+      rest("cms_publications", {
+        method: "DELETE",
+        query: `item_id=in.(${itemIds.join(",")})`,
+      }),
+    );
+    await runCleanupStep("projections", () =>
+      rest("cms_published_projection", {
+        method: "DELETE",
+        query: `item_id=in.(${itemIds.join(",")})`,
+      }),
+    );
+    await runCleanupStep("route_rules", () =>
+      rest("cms_route_rules", {
+        method: "PATCH",
+        query: `item_id=in.(${itemIds.join(",")})&active=eq.true`,
+        body: { active: false },
+      }),
+    );
   }
-  await rest("cms_feature_flag_overrides", {
-    method: "DELETE",
-    query: `scope_type=eq.user&scope_key=in.(${ids.join(",")})`,
-  });
+  await runCleanupStep("user_overrides", () =>
+    rest("cms_feature_flag_overrides", {
+      method: "DELETE",
+      query: `scope_type=eq.user&scope_key=in.(${ids.join(",")})`,
+    }),
+  );
   for (const actor of actors)
-    await rest("cms_scoped_role_assignments", {
+    await runCleanupStep("scoped_roles", () =>
+      rest("cms_scoped_role_assignments", {
+        method: "PATCH",
+        query: `user_id=eq.${actor.id}&revoked_at=is.null`,
+        body: {
+          revoked_at: now,
+          revoked_by: actor.id,
+          revocation_reason: "QA synthetic migration canary cleanup",
+          updated_at: now,
+        },
+      }),
+    );
+  await runCleanupStep("legacy_roles", () =>
+    rest("cms_user_roles", {
+      method: "DELETE",
+      query: `user_id=in.(${ids.join(",")})`,
+    }),
+  );
+  await runCleanupStep("rdo_access", () =>
+    rest("rdo_user_access", {
       method: "PATCH",
-      query: `user_id=eq.${actor.id}&revoked_at=is.null`,
+      query: `user_id=in.(${ids.join(",")})`,
       body: {
-        revoked_at: now,
-        revoked_by: actor.id,
-        revocation_reason: "QA synthetic migration canary cleanup",
-        updated_at: now,
+        active: false,
+        suspended_at: now,
+        suspended_by: operator?.id ?? actors[0].id,
       },
-    });
-  await rest("cms_user_roles", {
-    method: "DELETE",
-    query: `user_id=in.(${ids.join(",")})`,
-  });
-  await rest("rdo_user_access", {
-    method: "PATCH",
-    query: `user_id=in.(${ids.join(",")})`,
-    body: {
-      active: false,
-      suspended_at: now,
-      suspended_by: operator?.id ?? actors[0].id,
-    },
-  });
-  await rest("cms_profiles", {
-    method: "PATCH",
-    query: `user_id=in.(${ids.join(",")})&status=eq.active`,
-    body: {
-      status: "suspended",
-      suspended_at: now,
-      suspended_by: operator?.id ?? actors[0].id,
-    },
-  });
+    }),
+  );
+  await runCleanupStep("profiles", () =>
+    rest("cms_profiles", {
+      method: "PATCH",
+      query: `user_id=in.(${ids.join(",")})&status=eq.active`,
+      body: {
+        status: "suspended",
+        suspended_at: now,
+        suspended_by: operator?.id ?? actors[0].id,
+      },
+    }),
+  );
   for (const actor of actors) {
-    await managementQuery(`delete from auth.sessions where user_id = '${actor.id}'::uuid`);
-    await request(`${context.url}/auth/v1/admin/users/${actor.id}`, {
-      method: "PUT",
-      headers: context.serviceHeaders,
-      body: {
-        password: `Revoked!${randomBytes(32).toString("base64url")}9Z`,
-        ban_duration: "876000h",
-      },
-    });
+    await runCleanupStep("sessions", () =>
+      managementQuery(`delete from auth.sessions where user_id = '${actor.id}'::uuid`),
+    );
+    await runCleanupStep("auth_identity", () =>
+      request(`${context.url}/auth/v1/admin/users/${actor.id}`, {
+        method: "PUT",
+        headers: context.serviceHeaders,
+        body: {
+          password: `Revoked!${randomBytes(32).toString("base64url")}9Z`,
+          ban_duration: "876000h",
+        },
+      }),
+    );
   }
+  actorCleanupFailures.push(...failures);
+  if (failures.length) throw new Error(`G12_STAGING_ACTOR_CLEANUP_FAILED:${failures[0].step}`);
 }
 
 async function closeFixtures() {
@@ -2338,6 +2447,7 @@ const report = {
   residue: finalResidue ?? null,
   failureStage: canaryFailureStage({ operationError, cleanupError }),
   fixtureCloseFailures,
+  actorCleanupFailures,
   documentNeutralizationMs,
   operationFailure: canaryFailureIdentity(operationError),
   cleanupFailure: canaryFailureIdentity(cleanupError),

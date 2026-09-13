@@ -196,6 +196,10 @@ const compatibilityTests = {
     "supabase/tests/rls_cms_system_snapshot_read_scale.test.sql",
     "tests/contracts/cms-system-snapshot-read-scale.test.ts",
   ],
+  "0096": [
+    "supabase/tests/rls_cms_qa_content_cleanup_scale.test.sql",
+    "tests/contracts/cms-qa-content-cleanup-scale.test.ts",
+  ],
 };
 for (const migration of additions) {
   const version = migration.version;

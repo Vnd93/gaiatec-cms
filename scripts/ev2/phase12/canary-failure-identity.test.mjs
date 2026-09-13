@@ -28,11 +28,13 @@ test("never echoes a message that is not a code", () => {
     "request to https://x.supabase.co/rest/v1/t?apikey=sbp_secret failed",
     "duplicate key value violates unique constraint on user pedro@example.com",
     "invalid input syntax for uuid: 3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+    "G12_STAGING_HTTP_FAILED:GET:/auth/v1/admin/users/3f2504e0-4f89-41d3-9a0c-0305e82c3301:504",
+    "G12_STAGING_HTTP_FAILED:GET:/auth/v1/admin/users/01890f47-6562-7c0c-9d5b-8bdad0e7b4e7:504",
   ];
   for (const message of leaks) {
     const identity = canaryFailureIdentity(new Error(message));
     assert.equal(identity, "UNCODED_FAILURE:Error");
-    assert.doesNotMatch(identity, /@|apikey|sbp_|\d+\.\d+\.\d+\.\d+/);
+    assert.doesNotMatch(identity, /@|apikey|sbp_|\d+\.\d+\.\d+\.\d+|[0-9a-f]{8}(?:-[0-9a-f]{4}){2}/i);
   }
 
   const named = new TypeError("fetch failed for https://x/y?token=abc");
@@ -130,11 +132,13 @@ test("a failed teardown names the closer and keeps attempting the rest", async (
 test("a timed out call says how long it was given, and the neutralization gets a measured budget", async () => {
   const { readFile } = await import("node:fs/promises");
   const canary = await readFile("scripts/ev2/phase12/staging-migrations-canary.mjs", "utf8");
+  const http = await readFile("scripts/ev2/phase12/staging-canary-http.mjs", "utf8");
 
   // A bare TimeoutError cannot tell a slow operation from a stuck one; the elapsed budget can.
-  assert.match(canary, /G12_STAGING_HTTP_TIMEOUT:\$\{method\}/);
-  assert.match(canary, /signal: AbortSignal\.timeout\(timeoutMs\)/);
-  assert.match(canary, /elapsedMs: Date\.now\(\) - startedAt/);
+  assert.match(http, /G12_STAGING_HTTP_TIMEOUT:\$\{method\}/);
+  assert.match(http, /signal: AbortSignal\.timeout\(timeoutMs\)/);
+  assert.match(http, /elapsedMs: clock\(\) - startedAt/);
+  assert.match(canary, /fetchStagingCanaryText\(url/);
 
   // The longer budget is deliberate, bounded and applies only to the neutralization teardown.
   assert.match(canary, /timeoutMs = 45_000/);

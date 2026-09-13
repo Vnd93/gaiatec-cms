@@ -10,6 +10,7 @@ import {
   canaryFailureStage,
 } from "./canary-failure-identity.mjs";
 import { mfaSessionTokens } from "./mfa-session.mjs";
+import { failurePath, fetchStagingCanaryText, retryAuthUserResidueRead } from "./staging-canary-http.mjs";
 import {
   CMS_LEAD_ORIGIN_BINDING_0084_OWNER_ONLY_HELPERS,
   CMS_PUBLIC_RELATION_LIMIT_0085_OWNER_ONLY_HELPERS,
@@ -173,26 +174,13 @@ async function request(
   url,
   { method = "GET", headers = {}, body, allowed = [200], timeoutMs = 45_000 } = {},
 ) {
-  const startedAt = Date.now();
-  let response;
-  try {
-    response = await fetch(url, {
-      method,
-      headers: { ...headers, ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-  } catch (error) {
-    // A bare TimeoutError does not say how long the call was given, which is exactly what a slow
-    // operation has to be told apart from a stuck one.
-    if (error?.name === "TimeoutError" || error?.name === "AbortError")
-      throw new Error(
-        `G12_STAGING_HTTP_TIMEOUT:${method}:${new URL(url).pathname}:${Date.now() - startedAt}`,
-        { cause: error },
-      );
-    throw error;
-  }
-  const text = await response.text();
+  const safePath = failurePath(url);
+  const { response, text, elapsedMs } = await fetchStagingCanaryText(url, {
+    method,
+    headers: { ...headers, ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+    timeoutMs,
+  });
   let payload;
   try {
     payload = text ? JSON.parse(text) : null;
@@ -206,13 +194,13 @@ async function request(
       typeof payload?.code === "string" && /^CMS_[A-Z0-9_]{3,60}$/.test(payload.code)
         ? `:${payload.code}`
         : "";
-    throw new Error(`G12_STAGING_HTTP_FAILED:${method}:${new URL(url).pathname}:${response.status}${code}`);
+    throw new Error(`G12_STAGING_HTTP_FAILED:${method}:${safePath}:${response.status}${code}`);
   }
   return {
     status: response.status,
     json: payload,
     headers: response.headers,
-    elapsedMs: Date.now() - startedAt,
+    elapsedMs,
   };
 }
 
@@ -262,6 +250,16 @@ async function rest(table, { method = "GET", query = "", body, prefer, allowed }
 
 const ACTOR_CONTENT_INVENTORY_LIMIT = 64;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+async function readAuthUserResidue(actorId) {
+  if (!UUID_PATTERN.test(actorId)) throw new Error("G12_STAGING_AUTH_USER_RESIDUE_ID_INVALID");
+  return retryAuthUserResidueRead(() =>
+    request(`${context.url}/auth/v1/admin/users/${actorId}`, {
+      headers: context.serviceHeaders,
+      allowed: [200, 404],
+    }),
+  );
+}
 
 function actorContentInventory(actorsToClose, rows) {
   if (!Array.isArray(rows) || rows.length > ACTOR_CONTENT_INVENTORY_LIMIT)
@@ -2291,14 +2289,7 @@ async function residue() {
     : [{ count: 0 }];
   const activeSessions = Number(sessionRows[0]?.count);
   if (!Number.isInteger(activeSessions)) throw new Error("G12_STAGING_SYNTHETIC_SESSION_RESIDUE_UNAVAILABLE");
-  const authUsers = await Promise.all(
-    ids.map((id) =>
-      request(`${context.url}/auth/v1/admin/users/${id}`, {
-        headers: context.serviceHeaders,
-        allowed: [200, 404],
-      }),
-    ),
-  );
+  const authUsers = await Promise.all(ids.map((id) => readAuthUserResidue(id)));
   const activeCredentials = authUsers.filter((response) => {
     if (response.status !== 200) return false;
     const bannedUntil = Date.parse(response.json?.banned_until ?? "");

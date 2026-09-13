@@ -5,11 +5,12 @@
 // like one of those codes is reduced to the error class name rather than echoed.
 const CODED_FAILURE = /^[A-Z][A-Z0-9_]*(?::[A-Za-z0-9_./-]{1,120}){0,4}$/;
 const SAFE_NAME = /^[A-Za-z][A-Za-z0-9_]{0,59}$/;
+const UUID_LIKE = /[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}/i;
 
 export function canaryFailureIdentity(error) {
   if (error === undefined || error === null) return null;
   const message = typeof error?.message === "string" ? error.message : "";
-  if (CODED_FAILURE.test(message)) return message;
+  if (CODED_FAILURE.test(message) && !UUID_LIKE.test(message)) return message;
   const name = typeof error?.name === "string" && SAFE_NAME.test(error.name) ? error.name : "Error";
   return `UNCODED_FAILURE:${name}`;
 }

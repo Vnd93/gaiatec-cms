@@ -662,6 +662,30 @@ test("actor teardown inventories exact content and reconciles only ambiguous PAT
   assert.ok(reconciliation >= 0 && reconciliation < retryFence);
 });
 
+test("auth residue reads redact actor ids and retry only a bounded transient GET", async () => {
+  const source = await read("scripts/ev2/phase12/staging-migrations-canary.mjs");
+  const request = source.slice(
+    source.indexOf("async function request("),
+    source.indexOf("async function managementQuery"),
+  );
+  const retry = source.slice(
+    source.indexOf("async function readAuthUserResidue"),
+    source.indexOf("function actorContentInventory"),
+  );
+  const residue = source.slice(
+    source.indexOf("async function residue()"),
+    source.indexOf("async function terminalPimResidue"),
+  );
+
+  assert.match(source, /from "\.\/staging-canary-http\.mjs"/);
+  assert.match(request, /fetchStagingCanaryText\(url/);
+  assert.equal((request.match(/\$\{safePath\}/g) ?? []).length, 1);
+  assert.match(retry, /return retryAuthUserResidueRead\(\(\) =>/);
+  assert.match(retry, /allowed: \[200, 404\]/);
+  assert.match(residue, /ids\.map\(\(id\) => readAuthUserResidue\(id\)\)/);
+  assert.doesNotMatch(residue, /request\(`\$\{context\.url\}\/auth\/v1\/admin\/users\/\$\{id\}`/);
+});
+
 test("actor teardown aggregates internal failures and still attempts independent terminal cleanup", async () => {
   const source = await read("scripts/ev2/phase12/staging-migrations-canary.mjs");
   const closeActors = source.slice(

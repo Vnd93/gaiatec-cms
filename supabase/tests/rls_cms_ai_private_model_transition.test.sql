@@ -33,43 +33,43 @@ select is((select configuration->>'model' from public.cms_ai_policy_versions whe
 select is((select configuration->>'previousModel' from public.cms_ai_policy_versions where version=1),
   'nvidia/nemotron-3.5-lightning:free','the active policy state records its predecessor');
 
-select like((select pg_get_constraintdef(oid) from pg_constraint
+select alike((select pg_get_constraintdef(oid) from pg_constraint
   where conrelid='public.cms_ai_provider_calls'::regclass
     and conname='cms_ai_provider_calls_model_key_check'),
   '%nvidia/nemotron-3.5-lightning:free%',
   'provider evidence accepts the immutable historical model');
-select like((select pg_get_constraintdef(oid) from pg_constraint
+select alike((select pg_get_constraintdef(oid) from pg_constraint
   where conrelid='public.cms_ai_provider_calls'::regclass
     and conname='cms_ai_provider_calls_model_key_check'),
   '%inclusionai/ling-3.0-flash-vl:free%',
   'provider evidence accepts the active model');
-select like((select pg_get_constraintdef(oid) from pg_constraint
+select alike((select pg_get_constraintdef(oid) from pg_constraint
   where conrelid='public.cms_ai_eval_runs'::regclass
     and conname='cms_ai_eval_runs_model_key_check'),
   '%nvidia/nemotron-3.5-lightning:free%',
   'evaluation evidence accepts the immutable historical model');
-select like((select pg_get_constraintdef(oid) from pg_constraint
+select alike((select pg_get_constraintdef(oid) from pg_constraint
   where conrelid='public.cms_ai_eval_runs'::regclass
     and conname='cms_ai_eval_runs_model_key_check'),
   '%inclusionai/ling-3.0-flash-vl:free%',
   'evaluation evidence accepts the active model');
 
-select like(pg_get_functiondef('public.cms_ai_eval_provider_enforce()'::regprocedure),
+select alike(pg_get_functiondef('public.cms_ai_eval_provider_enforce()'::regprocedure),
   '%inclusionai/ling-3.0-flash-vl:free%',
   'new evaluation evidence is pinned to the active model');
-select like(pg_get_functiondef(
+select alike(pg_get_functiondef(
   'public.cms_record_ai_provider_call_scoped(uuid,uuid,text,text,text,text,timestamptz,text,text,integer,integer,text,text,uuid)'::regprocedure
 ), '%inclusionai/ling-3.0-flash-vl:free%',
   'new provider evidence is pinned to the active model');
-select like(pg_get_functiondef(
+select alike(pg_get_functiondef(
   'public.cms_record_ai_provider_call_scoped(uuid,uuid,text,text,text,text,timestamptz,text,text,integer,integer,text,text,uuid)'::regprocedure
 ), '%f015-openrouter-v2%',
   'the scoped writer selects only the active provider policy');
-select like(pg_get_functiondef(
+select alike(pg_get_functiondef(
   'public.cms_record_ai_provider_call_scoped(uuid,uuid,text,text,text,text,timestamptz,text,text,integer,integer,text,text,uuid)'::regprocedure
 ), '%policy.training_opt_out%',
   'the scoped writer requires training opt-out');
-select unlike(pg_get_functiondef(
+select unalike(pg_get_functiondef(
   'public.cms_record_ai_provider_call_scoped(uuid,uuid,text,text,text,text,timestamptz,text,text,integer,integer,text,text,uuid)'::regprocedure
 ), '%nvidia/nemotron-3.5-lightning:free%',
   'the scoped writer rejects new calls for the historical model');
@@ -78,7 +78,7 @@ select has_function('public','cms_ai_provider_call_model_enforce',array[]::text[
   'a write-time provider model fence exists');
 select has_trigger('public','cms_ai_provider_calls','cms_ai_provider_call_model_enforce',
   'every direct provider evidence insert crosses the active-model fence');
-select unlike(pg_get_functiondef(
+select unalike(pg_get_functiondef(
   'public.cms_ai_provider_call_model_enforce()'::regprocedure
 ), '%nvidia/nemotron-3.5-lightning:free%',
   'the write-time provider fence never authorizes the historical model');
@@ -92,19 +92,19 @@ select throws_ok(
   '42501','CMS_AI_PROVIDER_MODEL_FORBIDDEN',
   'direct inserts cannot create new evidence for the historical model');
 
-select like(pg_get_functiondef(
+select alike(pg_get_functiondef(
   'public.cms_get_ai_workspace(uuid,text,text,text,text,timestamptz,uuid)'::regprocedure
 ), '%historical_call.model_key%',
   'the workspace reports the exact model used by historical sessions');
-select like(pg_get_functiondef(
+select alike(pg_get_functiondef(
   'public.cms_get_ai_workspace(uuid,text,text,text,text,timestamptz,uuid)'::regprocedure
 ), '%inclusionai/ling-3.0-flash-vl:free%',
   'sessions without evidence use the active model');
-select like(pg_get_functiondef(
+select alike(pg_get_functiondef(
   'public.cms_execute_ai_command(uuid,text,jsonb,text,text,text,text,timestamptz,uuid,uuid,text,text)'::regprocedure
 ), '%CMS_AI_MFA_REQUIRED%',
   'the post-0088 MFA wrapper is preserved');
-select like(pg_get_functiondef(
+select alike(pg_get_functiondef(
   'public.cms_execute_ai_command(uuid,text,jsonb,text,text,text,text,timestamptz,uuid,uuid,text,text)'::regprocedure
 ), '%inclusionai/ling-3.0-flash-vl:free%',
   'the command wrapper requires the active model');

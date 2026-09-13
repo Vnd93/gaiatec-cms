@@ -222,6 +222,10 @@ export default function AdminPageBuilderPage() {
     if (!id || id === "novo") return;
     let active = true;
     setLoading(true);
+    // O componente e reutilizado quando a rota troca de item. Limpar antes da consulta impede que
+    // as versoes do item anterior continuem clicaveis durante a carga do proximo.
+    setSnapshots([]);
+    setSnapshotError("");
     void supabase
       .from("cms_content_items")
       .select(
@@ -260,8 +264,13 @@ export default function AdminPageBuilderPage() {
       .eq("item_id", id)
       .order("captured_at", { ascending: false })
       .limit(20)
-      .then(({ data }) => {
-        if (active) setSnapshots((data ?? []) as DraftSnapshot[]);
+      .then(({ data, error: snapshotLoadError }) => {
+        if (!active) return;
+        setSnapshots((data ?? []) as DraftSnapshot[]);
+        if (snapshotLoadError)
+          setSnapshotError(
+            "Versões anteriores temporariamente indisponíveis. O restante do editor continua ativo.",
+          );
       });
 
     return () => {
@@ -1322,7 +1331,7 @@ export default function AdminPageBuilderPage() {
           <p className="admin-help">Cada pendência abaixo leva à aba onde o campo é preenchido.</p>
           <ul>
             {!validation.success &&
-              validation.error.issues.slice(0, 12).map((issue) => (
+              validation.error.issues.map((issue) => (
                 <li key={`${issue.path.join(".")}-${issue.message}`}>
                   <button type="button" className="admin-issue-link" onClick={() => goToIssue(issue.path)}>
                     {humanValidationIssue(issue)} (abrir {pageBuilderTabLabel(tabForPagePath(issue.path))})

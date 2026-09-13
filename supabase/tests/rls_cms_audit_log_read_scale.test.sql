@@ -115,7 +115,7 @@ select ok((select pg_get_expr(polqual,polrelid) from pg_policy
   'the audit policy requires row scope for QA actors');
 select is((select (
     length(upper(pg_get_expr(polqual,polrelid)))
-    - length(replace(upper(pg_get_expr(polqual,polrelid))),'SELECT',''))
+    - length(replace(upper(pg_get_expr(polqual,polrelid)),'SELECT',''))
   ) / length('SELECT') from pg_policy
   where polname='cms_audit_authorized_read'
     and polrelid='public.cms_audit_log'::regclass),2,

@@ -1,4 +1,5 @@
 import type { BrowserContext, ConsoleMessage, Page, Request, Response } from "@playwright/test";
+import { isAllowedThirdPartyConsoleOrigin } from "./console-origins";
 
 type PathMatcher = string | RegExp;
 
@@ -33,6 +34,57 @@ type MutableAllowance = ExpectedHttpFailure & { occurrences: number };
 const relevantWarning =
   /content security policy|\bcsp\b|mixed content|deprecated|hydration|uncaught|security|blocked|refused/i;
 const resourceFailure = /failed to load resource.*status(?: code)?(?: of)?\s*(\d{3})/i;
+// The observed contexts deliberately use `serviceWorkers: "block"`. Chromium reports this exact
+// Playwright-owned diagnostic when the production bootstrap attempts registration; it confirms the
+// harness contract rather than an application failure. Any variation remains observable.
+const playwrightServiceWorkerBlock = "Service Worker registration blocked by Playwright";
+// Cloudflare documents both signals as normal Turnstile challenge processing: an unavailable
+// Private Access Token returns 401 at the apex, and DNS probes on challenge subdomains can fail
+// without blocking the visitor. Keep the tuples narrower than the vendor's own recommendation so
+// every other status, request kind, transport error and apex failure remains fail-closed.
+const turnstileOrigin = "https://challenges.cloudflare.com";
+const turnstilePatPath = /^\/cdn-cgi\/challenge-platform\/(?:[^/]+\/)*pat(?:\/|$)/;
+
+export function isExpectedTurnstilePatResponse(input: {
+  method: string;
+  resourceType: string;
+  status: number;
+  url: string;
+}) {
+  if (input.method !== "GET" || input.resourceType !== "fetch" || input.status !== 401) return false;
+  try {
+    const url = new URL(input.url);
+    return url.origin === turnstileOrigin && turnstilePatPath.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
+export function isExpectedTurnstileDnsFailure(input: {
+  errorText: string | undefined;
+  method: string;
+  resourceType: string;
+  url: string;
+}) {
+  if (
+    input.method !== "GET" ||
+    input.resourceType !== "fetch" ||
+    input.errorText !== "net::ERR_NAME_NOT_RESOLVED"
+  ) {
+    return false;
+  }
+  try {
+    const url = new URL(input.url);
+    return (
+      url.protocol === "https:" &&
+      url.port === "" &&
+      url.hostname !== "challenges.cloudflare.com" &&
+      url.hostname.endsWith(".challenges.cloudflare.com")
+    );
+  } catch {
+    return false;
+  }
+}
 
 function matchesPath(matcher: PathMatcher, pathname: string) {
   if (typeof matcher === "string") return matcher === pathname;
@@ -121,6 +173,16 @@ export function createCmsBrowserObserver(configuration: ObserverConfiguration) {
     const status = response.status();
     if (status < 400) return;
     const request = response.request();
+    if (
+      isExpectedTurnstilePatResponse({
+        method: request.method(),
+        resourceType: request.resourceType(),
+        status,
+        url: response.url(),
+      })
+    ) {
+      return;
+    }
     const input = {
       method: request.method(),
       pathname: safePath(response.url()),
@@ -139,8 +201,11 @@ export function createCmsBrowserObserver(configuration: ObserverConfiguration) {
 
   function onConsole(message: ConsoleMessage) {
     const type = message.type();
-    if (type !== "error" && !(type === "warning" && relevantWarning.test(message.text()))) return;
-    const mirror = message.text().match(resourceFailure);
+    const text = message.text();
+    if (type === "warning" && text === playwrightServiceWorkerBlock && message.location().url === "") return;
+    if (type !== "error" && !(type === "warning" && relevantWarning.test(text))) return;
+    if (isAllowedThirdPartyConsoleOrigin(message.location().url)) return;
+    const mirror = text.match(resourceFailure);
     if (mirror) {
       const status = Number(mirror[1]);
       const pathname = safePath(message.location().url);
@@ -153,11 +218,21 @@ export function createCmsBrowserObserver(configuration: ObserverConfiguration) {
       });
       return;
     }
-    unexpectedConsole.push(sanitize(message.text()));
+    unexpectedConsole.push(sanitize(text));
   }
 
   function onRequestFailed(request: Request) {
     const failure = request.failure();
+    if (
+      isExpectedTurnstileDnsFailure({
+        errorText: failure?.errorText,
+        method: request.method(),
+        resourceType: request.resourceType(),
+        url: request.url(),
+      })
+    ) {
+      return;
+    }
     requestFailures.push(
       sanitize(`${request.method()} ${safePath(request.url())}: ${failure?.errorText ?? "request failed"}`),
     );

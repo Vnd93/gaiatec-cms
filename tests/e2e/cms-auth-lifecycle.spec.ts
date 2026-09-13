@@ -1919,17 +1919,18 @@ test.describe("CMS Auth invite and recovery lifecycle", () => {
           maxOccurrences: 2,
         },
         {
-          // Tres rejeicoes, todas feitas pelo proprio spec: a consulta direta logo apos a revogacao,
-          // a re-resolucao que o painel dispara no reload, e a negativa provada em
-          // `refreshAndProveCmsDenied`. A aba sai do painel em seguida, de proposito, para que a
-          // reconsulta periodica de 30 s nao acrescente ocorrencias que dependem do relogio em vez
-          // do teste. O teto mede comportamento, nao duracao de suite.
+          // Quatro rejeicoes, todas feitas pelo proprio spec: a consulta direta logo apos a
+          // revogacao, a re-resolucao que o painel dispara no reload e as duas negativas provadas
+          // por `refreshAndProveCmsDenied` (revogacao sem observacao e replay depois do logout). A
+          // aba sai do painel em seguida, de proposito, para que a reconsulta periodica de 30 s nao
+          // acrescente ocorrencias que dependem do relogio em vez do teste. O teto mede
+          // comportamento, nao duracao de suite.
           id: "revoked-cms-session",
           method: "POST",
           path: "/functions/v1/cms-session",
-          statuses: [401, 403],
-          minOccurrences: 2,
-          maxOccurrences: 3,
+          statuses: [403],
+          minOccurrences: 4,
+          maxOccurrences: 4,
         },
         {
           id: "expired-refresh-token",

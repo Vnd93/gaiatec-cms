@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   createCmsBrowserObserver,
   expectedHttpFailureMatches,
+  isExpectedTurnstileDnsFailure,
+  isExpectedTurnstilePatResponse,
   sanitizeBrowserDiagnostic,
 } from "../e2e/cms-browser-observer";
 
@@ -25,7 +27,7 @@ function fakeResponse(path: string, status: number, method = "POST") {
   return {
     status: () => status,
     url: () => `https://backend.invalid${path}?sensitive=discarded`,
-    request: () => ({ method: () => method }),
+    request: () => ({ method: () => method, resourceType: () => "fetch" }),
   };
 }
 
@@ -120,6 +122,7 @@ describe("CMS real-browser observer", () => {
     page.emit("pageerror", new Error("unexpected browser exception"));
     page.emit("requestfailed", {
       method: () => "GET",
+      resourceType: () => "script",
       url: () => "https://site.invalid/assets/app.js?credential=discarded",
       failure: () => ({ errorText: "net::ERR_FAILED" }),
     });
@@ -137,6 +140,231 @@ describe("CMS real-browser observer", () => {
       unexpectedHttp: 1,
       requestFailures: 1,
     });
+  });
+
+  it("ignores only the exact Playwright service-worker isolation diagnostic", () => {
+    const page = new FakePage();
+    const observer = createCmsBrowserObserver({ suite: "observer-harness", expectedSha: sha });
+    const exactMessage = "Service Worker registration blocked by Playwright";
+    observer.observePage(page as unknown as Page);
+    page.emit("console", {
+      type: () => "warning",
+      text: () => exactMessage,
+      location: () => ({ url: "" }),
+    });
+    expect(() => observer.assertClean()).not.toThrow();
+    expect(observer.snapshot().unexpectedConsole).toBe(0);
+
+    for (const [type, text, url] of [
+      ["warning", exactMessage, "https://site.invalid/sw.js"],
+      ["error", exactMessage, ""],
+      ["warning", `${exactMessage} for an unexpected reason`, ""],
+    ]) {
+      const failingPage = new FakePage();
+      const failingObserver = createCmsBrowserObserver({
+        suite: "observer-harness-negative",
+        expectedSha: sha,
+      });
+      failingObserver.observePage(failingPage as unknown as Page);
+      failingPage.emit("console", {
+        type: () => type,
+        text: () => text,
+        location: () => ({ url }),
+      });
+      expect(() => failingObserver.assertClean()).toThrow(/blocked by Playwright/);
+      expect(failingObserver.snapshot().unexpectedConsole).toBe(1);
+    }
+  });
+
+  it("accepts only the documented non-fatal Turnstile browser signals", () => {
+    expect(
+      isExpectedTurnstilePatResponse({
+        method: "GET",
+        resourceType: "fetch",
+        status: 401,
+        url: "https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/g/pat/example",
+      }),
+    ).toBe(true);
+    expect(
+      isExpectedTurnstileDnsFailure({
+        errorText: "net::ERR_NAME_NOT_RESOLVED",
+        method: "GET",
+        resourceType: "fetch",
+        url: "https://probe.challenges.cloudflare.com/cdn-cgi/challenge-platform/probe",
+      }),
+    ).toBe(true);
+
+    for (const input of [
+      {
+        method: "POST",
+        resourceType: "fetch",
+        status: 401,
+        url: "https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/g/pat/example",
+      },
+      {
+        method: "GET",
+        resourceType: "fetch",
+        status: 403,
+        url: "https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/g/pat/example",
+      },
+      {
+        method: "GET",
+        resourceType: "fetch",
+        status: 401,
+        url: "https://challenges.cloudflare.com/turnstile/v0/api.js",
+      },
+      {
+        method: "GET",
+        resourceType: "fetch",
+        status: 401,
+        url: "https://challenges.cloudflare.com.example.invalid/cdn-cgi/challenge-platform/h/g/pat/example",
+      },
+      {
+        method: "GET",
+        resourceType: "fetch",
+        status: 401,
+        url: "http://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/g/pat/example",
+      },
+      {
+        method: "GET",
+        resourceType: "fetch",
+        status: 401,
+        url: "https://challenges.cloudflare.com:444/cdn-cgi/challenge-platform/h/g/pat/example",
+      },
+      {
+        method: "GET",
+        resourceType: "fetch",
+        status: 401,
+        url: "https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/g/notpat/example?segment=pat",
+      },
+      {
+        method: "GET",
+        resourceType: "fetch",
+        status: 401,
+        url: "https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/g/%70at/example",
+      },
+    ]) {
+      expect(isExpectedTurnstilePatResponse(input), JSON.stringify(input)).toBe(false);
+    }
+
+    for (const input of [
+      {
+        errorText: "net::ERR_FAILED",
+        method: "GET",
+        resourceType: "fetch",
+        url: "https://probe.challenges.cloudflare.com/example",
+      },
+      {
+        errorText: "net::ERR_NAME_NOT_RESOLVED",
+        method: "GET",
+        resourceType: "fetch",
+        url: "https://challenges.cloudflare.com/example",
+      },
+      {
+        errorText: "net::ERR_NAME_NOT_RESOLVED",
+        method: "GET",
+        resourceType: "fetch",
+        url: "http://probe.challenges.cloudflare.com/example",
+      },
+      {
+        errorText: "net::ERR_NAME_NOT_RESOLVED",
+        method: "GET",
+        resourceType: "fetch",
+        url: "https://probe.challenges.cloudflare.com.example.invalid/example",
+      },
+      {
+        errorText: "net::ERR_NAME_NOT_RESOLVED",
+        method: "POST",
+        resourceType: "fetch",
+        url: "https://probe.challenges.cloudflare.com/example",
+      },
+      {
+        errorText: "net::ERR_NAME_NOT_RESOLVED",
+        method: "GET",
+        resourceType: "fetch",
+        url: "https://probe.challenges.cloudflare.com:444/example",
+      },
+      {
+        errorText: "net::ERR_ABORTED",
+        method: "GET",
+        resourceType: "fetch",
+        url: "https://probe.challenges.cloudflare.com/example",
+      },
+      {
+        errorText: "net::ERR_NAME_NOT_RESOLVED",
+        method: "GET",
+        resourceType: "fetch",
+        url: "https://evilchallenges.cloudflare.com/example",
+      },
+    ]) {
+      expect(isExpectedTurnstileDnsFailure(input), JSON.stringify(input)).toBe(false);
+    }
+
+    const page = new FakePage();
+    const observer = createCmsBrowserObserver({ suite: "observer-turnstile", expectedSha: sha });
+    observer.observePage(page as unknown as Page);
+    page.emit("console", {
+      type: () => "error",
+      text: () => "vendor diagnostic",
+      location: () => ({ url: "https://challenges.cloudflare.com/turnstile/v0/api.js" }),
+    });
+    page.emit("response", {
+      status: () => 401,
+      url: () => "https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/g/pat/example",
+      request: () => ({ method: () => "GET", resourceType: () => "fetch" }),
+    });
+    page.emit("requestfailed", {
+      method: () => "GET",
+      resourceType: () => "fetch",
+      url: () => "https://probe.challenges.cloudflare.com/cdn-cgi/challenge-platform/probe",
+      failure: () => ({ errorText: "net::ERR_NAME_NOT_RESOLVED" }),
+    });
+    expect(() => observer.assertClean()).not.toThrow();
+    expect(observer.snapshot()).toMatchObject({
+      unexpectedConsole: 0,
+      unexpectedHttp: 0,
+      requestFailures: 0,
+    });
+
+    for (const url of [
+      "https://site.invalid/assets/app.js",
+      "https://probe.challenges.cloudflare.com/turnstile.js",
+      "https://challenges.cloudflare.com.example.invalid/turnstile.js",
+    ]) {
+      const failingPage = new FakePage();
+      const failingObserver = createCmsBrowserObserver({
+        suite: "observer-turnstile-console-negative",
+        expectedSha: sha,
+      });
+      failingObserver.observePage(failingPage as unknown as Page);
+      failingPage.emit("console", {
+        type: () => "error",
+        text: () => "same vendor diagnostic",
+        location: () => ({ url }),
+      });
+      expect(() => failingObserver.assertClean()).toThrow(/same vendor diagnostic/);
+      expect(failingObserver.snapshot().unexpectedConsole).toBe(1);
+    }
+
+    const failingPage = new FakePage();
+    const failingObserver = createCmsBrowserObserver({
+      suite: "observer-turnstile-network-negative",
+      expectedSha: sha,
+    });
+    failingObserver.observePage(failingPage as unknown as Page);
+    failingPage.emit("response", {
+      status: () => 403,
+      url: () => "https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/g/pat/example",
+      request: () => ({ method: () => "GET", resourceType: () => "fetch" }),
+    });
+    failingPage.emit("requestfailed", {
+      method: () => "GET",
+      resourceType: () => "fetch",
+      url: () => "https://probe.challenges.cloudflare.com/cdn-cgi/challenge-platform/probe",
+      failure: () => ({ errorText: "net::ERR_ABORTED" }),
+    });
+    expect(() => failingObserver.assertClean()).toThrow(/QA_CMS_BROWSER_OBSERVABILITY_FAILED/);
+    expect(failingObserver.snapshot()).toMatchObject({ unexpectedHttp: 1, requestFailures: 1 });
   });
 
   it("does not let console mirrors or malformed allowances broaden a negative scenario", () => {

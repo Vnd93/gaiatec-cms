@@ -2289,6 +2289,10 @@ test("release workflows and reduced canary are immutable, staged and production 
     backendCompatibility,
     /"0092": \[\s*"supabase\/tests\/rls_cms_qa_override_window\.test\.sql",\s*"tests\/contracts\/cms-qa-override-window\.test\.ts"/,
   );
+  assert.match(
+    backendCompatibility,
+    /"0098": \[\s*"supabase\/tests\/rls_cms_audit_log_read_scale\.test\.sql",\s*"supabase\/tests\/rls_cms_users_auth_scope\.test\.sql",\s*"tests\/contracts\/cms-audit-log-read-scale\.test\.ts"/,
+  );
   // A travessia autenticada do frontend de rollback le o handoff das entidades nascidas na UI, que so
   // existem entre a criacao e a revogacao do ator mutante. Ela roda, portanto, depois do ciclo do
   // candidato e antes da revogacao, e nada dentro do bloco de rollback pode mutar, porque o ciclo
@@ -2337,6 +2341,8 @@ test("release workflows and reduced canary are immutable, staged and production 
   assert.match(stagingDatabaseVerify, /runtime_integrity_followup_0088_rpcs_privileges_exact/);
   assert.match(stagingDatabaseVerify, /runtime_integrity_followup_0088_functions_locked/);
   assert.match(stagingDatabaseVerify, /runtime_integrity_followup_0088_semantics_exact/);
+  assert.match(stagingDatabaseVerify, /audit_log_read_scale_0098_semantics_exact/);
+  assert.match(stagingDatabaseVerify, /auditLogReadScaleSemanticSql/);
   assert.match(backendCompatibility, /compatibilityEvidenceExecutionVerified: true/);
   assert.match(production, /probe-supabase-boundary\.mjs/);
   assert.match(deployStaging, /probe-supabase-boundary\.mjs/);
@@ -2420,6 +2426,8 @@ test("release workflows and reduced canary are immutable, staged and production 
   assert.match(databaseVerify, /runtime_integrity_followup_0088_rpcs_privileges_exact/);
   assert.match(databaseVerify, /runtime_integrity_followup_0088_functions_locked/);
   assert.match(databaseVerify, /runtime_integrity_followup_0088_semantics_exact/);
+  assert.match(databaseVerify, /audit_log_read_scale_0098_semantics_exact/);
+  assert.match(databaseVerify, /auditLogReadScaleSemanticSql/);
   assert.match(authConfig, /disable_signup: true/);
   assert.match(vaultConfig, /cms_outbox_worker_secret/);
   const approvalTemplate = JSON.parse(template);

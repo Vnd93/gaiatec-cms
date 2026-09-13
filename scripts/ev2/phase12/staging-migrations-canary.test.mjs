@@ -183,6 +183,8 @@ test("database preflights require every 0082-0088 contract, exact ACL and semant
     assert.match(verifier, /runtime_integrity_followup_0088_functions_locked/);
     assert.match(verifier, /runtime_integrity_followup_0088_semantics_exact/);
     assert.match(verifier, /runtimeIntegrityFollowupSemanticSql/);
+    assert.match(verifier, /audit_log_read_scale_0098_semantics_exact/);
+    assert.match(verifier, /auditLogReadScaleSemanticSql/);
   }
   assert.match(contracts, /has_function_privilege\('service_role'/);
   assert.match(contracts, /has_function_privilege\('authenticated'/);

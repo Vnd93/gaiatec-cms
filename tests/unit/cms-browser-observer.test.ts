@@ -23,19 +23,60 @@ class FakePage {
   }
 }
 
-function fakeResponse(path: string, status: number, method = "POST") {
+function fakeResponse(path: string, status: number, method = "POST", origin = "https://backend.invalid") {
   return {
     status: () => status,
-    url: () => `https://backend.invalid${path}?sensitive=discarded`,
+    url: () => `${origin}${path}?sensitive=discarded`,
     request: () => ({ method: () => method, resourceType: () => "fetch" }),
   };
 }
 
+function fakeConsoleMessage(text: string, type = "error", url = "https://site.invalid/assets/app.js") {
+  return {
+    type: () => type,
+    text: () => text,
+    location: () => ({ url }),
+  };
+}
+
+function fakeRequest(url: string, method = "GET", errorText = "net::ERR_FAILED") {
+  return {
+    method: () => method,
+    resourceType: () => "fetch",
+    url: () => url,
+    failure: () => ({ errorText }),
+  };
+}
+
 describe("CMS real-browser observer", () => {
+  it("refuses to seal while a first-party request is pending and preserves a terminal failure", () => {
+    const page = new FakePage();
+    const observer = createCmsBrowserObserver({
+      suite: "observer-pending-first-party",
+      expectedSha: sha,
+      trackedRequestOrigins: ["https://site.invalid", "https://backend.invalid"],
+    });
+    observer.observePage(page as unknown as Page);
+
+    const completed = fakeRequest("https://backend.invalid/rest/v1/cms_audit_log?select=id");
+    page.emit("request", completed);
+    expect(observer.snapshot()).toMatchObject({ status: "failed", requestFailures: 1 });
+    expect(() => observer.assertClean()).toThrow(/pending first-party request GET \/rest\/v1\/cms_audit_log/);
+    page.emit("requestfinished", completed);
+    expect(() => observer.assertClean()).not.toThrow();
+
+    const failed = fakeRequest("https://site.invalid/admin/data");
+    page.emit("request", failed);
+    page.emit("requestfailed", failed);
+    expect(observer.snapshot()).toMatchObject({ status: "failed", requestFailures: 1 });
+    expect(() => observer.assertClean()).toThrow(/GET \/admin\/data: net::ERR_FAILED/);
+  });
+
   it("matches only the explicit method, path and status tuple", () => {
     const allowance = {
       id: "tampered-payload",
       method: "POST",
+      origin: "https://backend.invalid",
       path: "/functions/v1/cms-content",
       statuses: [422],
       maxOccurrences: 1,
@@ -43,6 +84,7 @@ describe("CMS real-browser observer", () => {
     expect(
       expectedHttpFailureMatches(allowance, {
         method: "POST",
+        origin: "https://backend.invalid",
         pathname: "/functions/v1/cms-content",
         status: 422,
       }),
@@ -50,6 +92,7 @@ describe("CMS real-browser observer", () => {
     expect(
       expectedHttpFailureMatches(allowance, {
         method: "GET",
+        origin: "https://backend.invalid",
         pathname: "/functions/v1/cms-content",
         status: 422,
       }),
@@ -57,7 +100,16 @@ describe("CMS real-browser observer", () => {
     expect(
       expectedHttpFailureMatches(allowance, {
         method: "POST",
+        origin: "https://backend.invalid",
         pathname: "/functions/v1/cms-content-other",
+        status: 422,
+      }),
+    ).toBe(false);
+    expect(
+      expectedHttpFailureMatches(allowance, {
+        method: "POST",
+        origin: "https://other.invalid",
+        pathname: "/functions/v1/cms-content",
         status: 422,
       }),
     ).toBe(false);
@@ -111,6 +163,156 @@ describe("CMS real-browser observer", () => {
       expectedHttp: [{ id: "tampered-payload", occurrences: 1 }],
       secretsPersisted: false,
     });
+  });
+
+  it("accepts an exact SDK console error only after its bounded HTTP failure", () => {
+    const page = new FakePage();
+    const firstLine = "AuthApiError: Invalid Refresh Token: Refresh Token Not Found";
+    const observer = createCmsBrowserObserver({
+      suite: "observer-sdk-mirror",
+      expectedSha: sha,
+      expectedHttpFailures: [
+        {
+          id: "expired-refresh-token",
+          method: "POST",
+          path: "/auth/v1/token",
+          statuses: [400],
+          minOccurrences: 1,
+          maxOccurrences: 1,
+          consoleErrorMirrorFirstLine: firstLine,
+          consoleErrorMirrorOrigin: "https://site.invalid",
+        },
+      ],
+    });
+    observer.observePage(page as unknown as Page);
+    page.emit("response", fakeResponse("/auth/v1/token", 400));
+    page.emit(
+      "console",
+      fakeConsoleMessage(`${firstLine}\n    at sdk (https://site.invalid/assets/app.js:1:2)`),
+    );
+    expect(() => observer.assertClean()).not.toThrow();
+    expect(observer.snapshot()).toMatchObject({
+      status: "passed",
+      unexpectedConsole: 0,
+      unexpectedHttp: 0,
+      expectedHttp: [{ id: "expired-refresh-token", occurrences: 1 }],
+    });
+  });
+
+  it("rejects reordered, retyped, changed, duplicated or page-error SDK mirrors", () => {
+    const firstLine = "AuthApiError: Invalid Refresh Token: Refresh Token Not Found";
+    const validMirror = `${firstLine}\n    at sdk (https://site.invalid/assets/app.js:1:2)`;
+    const cases: Array<{ name: string; emit: (page: FakePage) => void }> = [
+      {
+        name: "before-response",
+        emit: (page) => {
+          page.emit("console", fakeConsoleMessage(validMirror));
+          page.emit("response", fakeResponse("/auth/v1/token", 400));
+        },
+      },
+      {
+        name: "warning",
+        emit: (page) => {
+          page.emit("response", fakeResponse("/auth/v1/token", 400));
+          page.emit("console", fakeConsoleMessage(validMirror, "warning"));
+        },
+      },
+      {
+        name: "changed-first-line",
+        emit: (page) => {
+          page.emit("response", fakeResponse("/auth/v1/token", 400));
+          page.emit(
+            "console",
+            fakeConsoleMessage(
+              `${firstLine} unexpected\n    at sdk (https://site.invalid/assets/app.js:1:2)`,
+            ),
+          );
+        },
+      },
+      {
+        name: "non-stack-suffix",
+        emit: (page) => {
+          page.emit("response", fakeResponse("/auth/v1/token", 400));
+          page.emit("console", fakeConsoleMessage(`${firstLine}\nunrelated failure`));
+        },
+      },
+      {
+        name: "duplicate",
+        emit: (page) => {
+          page.emit("response", fakeResponse("/auth/v1/token", 400));
+          page.emit("console", fakeConsoleMessage(validMirror));
+          page.emit("console", fakeConsoleMessage(validMirror));
+        },
+      },
+      {
+        name: "wrong-console-origin",
+        emit: (page) => {
+          page.emit("response", fakeResponse("/auth/v1/token", 400));
+          page.emit(
+            "console",
+            fakeConsoleMessage(validMirror, "error", "https://other.invalid/assets/app.js"),
+          );
+        },
+      },
+      {
+        name: "page-error",
+        emit: (page) => {
+          page.emit("response", fakeResponse("/auth/v1/token", 400));
+          page.emit("pageerror", new Error(firstLine));
+        },
+      },
+    ];
+
+    for (const scenario of cases) {
+      const page = new FakePage();
+      const observer = createCmsBrowserObserver({
+        suite: `observer-sdk-mirror-${scenario.name}`,
+        expectedSha: sha,
+        expectedHttpFailures: [
+          {
+            id: "expired-refresh-token",
+            method: "POST",
+            path: "/auth/v1/token",
+            statuses: [400],
+            minOccurrences: 1,
+            maxOccurrences: 1,
+            consoleErrorMirrorFirstLine: firstLine,
+            consoleErrorMirrorOrigin: "https://site.invalid",
+          },
+        ],
+      });
+      observer.observePage(page as unknown as Page);
+      scenario.emit(page);
+      expect(() => observer.assertClean(), scenario.name).toThrow(/QA_CMS_BROWSER_OBSERVABILITY_FAILED/);
+      expect(observer.snapshot().unexpectedConsole, scenario.name).toBe(1);
+    }
+  });
+
+  it("does not consume an HTTP allowance from a different origin", () => {
+    const page = new FakePage();
+    const observer = createCmsBrowserObserver({
+      suite: "observer-http-origin",
+      expectedSha: sha,
+      expectedHttpFailures: [
+        {
+          id: "expired-refresh-token",
+          method: "POST",
+          origin: "https://backend.invalid",
+          path: "/auth/v1/token",
+          statuses: [400],
+          minOccurrences: 1,
+          maxOccurrences: 1,
+        },
+      ],
+    });
+    observer.observePage(page as unknown as Page);
+    page.emit("response", fakeResponse("/auth/v1/token", 400, "POST", "https://other.invalid"));
+    expect(observer.snapshot()).toMatchObject({
+      status: "failed",
+      unexpectedHttp: 1,
+      expectedHttp: [{ id: "expired-refresh-token", occurrences: 0 }],
+    });
+    expect(() => observer.assertClean()).toThrow(/POST \/auth\/v1\/token -> 400/);
   });
 
   it("fails closed on an unclassified response, page error or failed request", () => {
@@ -406,6 +608,24 @@ describe("CMS real-browser observer", () => {
             path: "/functions/v1/cms-public?type=search",
             statuses: [],
             maxOccurrences: 1,
+          },
+        ],
+      }),
+    ).toThrow(/QA_CMS_BROWSER_OBSERVER_ALLOWANCE_INVALID/);
+
+    expect(() =>
+      createCmsBrowserObserver({
+        suite: "observer-invalid-sdk-mirror",
+        expectedSha: sha,
+        expectedHttpFailures: [
+          {
+            id: "invalid-mirror",
+            method: "POST",
+            path: "/auth/v1/token",
+            statuses: [400],
+            maxOccurrences: 1,
+            consoleErrorMirrorFirstLine: "first line\nsecond line",
+            consoleErrorMirrorOrigin: "https://site.invalid",
           },
         ],
       }),

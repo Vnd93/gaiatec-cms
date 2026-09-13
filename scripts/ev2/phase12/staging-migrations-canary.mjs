@@ -22,6 +22,7 @@ import {
   CMS_MEDIA_UPLOAD_ABORT_0082_RPCS,
   CMS_MEDIA_UPLOAD_ABORT_0082_OWNER_ONLY_HELPERS,
   CMS_SESSION_REFRESH_REVOCATION_0083_RPCS,
+  auditLogReadScaleSemanticSql,
   exactMigrationHistorySql,
   leadOriginBindingSemanticSql,
   mediaUploadAbortSchemaContractSql,
@@ -743,6 +744,7 @@ async function preflightMigrations() {
       CMS_RUNTIME_INTEGRITY_FOLLOWUP_0088_OWNER_ONLY_FUNCTIONS,
     )},
     ${runtimeIntegrityFollowupSemanticSql("runtime_integrity_followup_0088_semantics_exact")},
+    ${auditLogReadScaleSemanticSql("audit_log_read_scale_0098_semantics_exact")},
     has_function_privilege('service_role', 'public.cms_qa_rate_limit_proof(uuid,text,text,text,text,text)', 'EXECUTE')
       and not has_function_privilege('authenticated', 'public.cms_qa_rate_limit_proof(uuid,text,text,text,text,text)', 'EXECUTE')
       and not has_function_privilege('anon', 'public.cms_qa_rate_limit_proof(uuid,text,text,text,text,text)', 'EXECUTE')
@@ -943,6 +945,7 @@ async function preflightMigrations() {
     "runtime_integrity_followup_0088_semantics_exact",
     row?.runtime_integrity_followup_0088_semantics_exact === true,
   );
+  check("audit_log_read_scale_0098_semantics_exact", row?.audit_log_read_scale_0098_semantics_exact === true);
   check("qa_actor_auth_triggers_0061_present", row?.qa_actor_auth_triggers === true);
   check("qa_actor_watchdog_cron_0061_active", row?.qa_actor_watchdog_cron === true);
 }

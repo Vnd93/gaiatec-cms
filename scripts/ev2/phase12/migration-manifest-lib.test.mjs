@@ -17,6 +17,7 @@ import {
   CMS_MEDIA_UPLOAD_ABORT_0082_OWNER_ONLY_HELPERS,
   CMS_SESSION_REFRESH_REVOCATION_0083_RPCS,
   G12_PINNED_MIGRATION_TAIL,
+  auditLogReadScaleSemanticSql,
   exactMigrationHistorySql,
   leadOriginBindingSemanticSql,
   mediaUploadAbortSchemaContractSql,
@@ -86,9 +87,9 @@ test("the repository migration history is contiguous", () => {
   // digest dos bytes. E o que impede que alguem acrescente migration sem revisao: nao basta criar
   // o arquivo, e preciso declarar o conteudo dele aqui.
   assert.deepEqual(G12_PINNED_MIGRATION_TAIL.at(-1), {
-    version: "0097",
-    file: "0097_cms_ai_private_model_transition.sql",
-    sha256: "bf1eb4634c25d72ad1041ec9682370bf7d70b3d947be9536299dcf980d39b336",
+    version: "0098",
+    file: "0098_cms_audit_log_read_scale.sql",
+    sha256: "abeca0f5f62729e37e091789512594dca3bbecaa8d0231ab6f863fc53e42b3da",
   });
   assert.deepEqual(manifest.slice(-G12_PINNED_MIGRATION_TAIL.length), G12_PINNED_MIGRATION_TAIL);
   for (const migration of manifest.slice(-G12_PINNED_MIGRATION_TAIL.length)) {
@@ -588,6 +589,50 @@ test("0089 semantic preflight proves the diagnostics predicate was split without
   assert.match(contract, /^coalesce\(/);
   assert.match(contract, /, false\) as operational_events_read_scale_0089_semantics_exact$/);
   assert.throws(() => operationalEventsReadScaleSemanticSql("Bad Alias"));
+});
+
+test("0098 semantic preflight proves audit recency scale without widening visibility", () => {
+  const contract = auditLogReadScaleSemanticSql("audit_log_read_scale_0098_semantics_exact");
+
+  for (const marker of [
+    "cms_audit_session_scope_allowed",
+    "cms_audit_corporate_session_allowed",
+    "cms_audit_event_row_allowed",
+    "and p.prosecdef",
+    "and p.provolatile = 's'",
+    "p.proowner = 'postgres'::regrole",
+    "language_row.lanname = 'sql'",
+    "search_path=pg_catalog, private, auth, pg_temp",
+    "extensions.digest",
+    "fd3421d2fbf30dc9a3d43553b389b0e6a11f097f2b23767edaddb5815ac87d71",
+    "fede1da9331eca631d0d3a7d57bf32b2333e1a571d7e5cbf23703079a68dd7c2",
+    "e3aa5ec8c4fa074e3f3df282911b500728c7ee742d8a61dce6db80a848efeb0a",
+    "pg_catalog.aclexplode",
+    "cms_audit_authorized_read",
+    "p.polroles",
+    "p.polcmd in ('r', '*')",
+    "selectcms_audit_session_scope_allowed",
+    "cms_audit_log.actor_id",
+    "auth.users",
+    "cms_has_permission",
+    "cms:audit.read",
+    "cms_qa_actor_leases",
+    "cms_user_actor_target_scope_allowed",
+    "cms_user_actor_environment",
+    "cms_audit_log_recent_idx",
+    "index_record.indisvalid",
+    "pg_catalog.pg_get_indexdef",
+    "occurred_at DESC",
+  ])
+    assert.ok(contract.includes(marker), marker);
+
+  assert.match(contract, /not has_function_privilege\('anon'/);
+  assert.match(contract, /not has_function_privilege\('service_role'/);
+  assert.match(contract, /has_function_privilege\('authenticated'/);
+  assert.match(contract, /not has_table_privilege\('anon'/);
+  assert.match(contract, /^coalesce\(/);
+  assert.match(contract, /, false\) as audit_log_read_scale_0098_semantics_exact$/);
+  assert.throws(() => auditLogReadScaleSemanticSql("Bad Alias"));
 });
 
 test("0090 semantic preflight proves the lease accepts only the state the fence imposes", () => {

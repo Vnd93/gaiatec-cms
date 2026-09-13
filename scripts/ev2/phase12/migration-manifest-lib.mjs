@@ -85,6 +85,11 @@ export const G12_PINNED_MIGRATION_TAIL = Object.freeze([
     file: "0097_cms_ai_private_model_transition.sql",
     sha256: "bf1eb4634c25d72ad1041ec9682370bf7d70b3d947be9536299dcf980d39b336",
   }),
+  Object.freeze({
+    version: "0098",
+    file: "0098_cms_audit_log_read_scale.sql",
+    sha256: "abeca0f5f62729e37e091789512594dca3bbecaa8d0231ab6f863fc53e42b3da",
+  }),
 ]);
 
 export const CMS_MEDIA_UPLOAD_ABORT_0082_RPCS = Object.freeze([
@@ -939,5 +944,123 @@ export function qaOverrideWindowSemanticSql(alias) {
       and ${definition} like '%p_expires_at > p_starts_at%'
       and not has_function_privilege('anon', '${validator}', 'EXECUTE')
       and not has_function_privilege('authenticated', '${validator}', 'EXECUTE')
+    , false) as ${alias}`;
+}
+
+// A 0098 separa as verificacoes invariaveis da sessao da restricao por ator do evento e indexa a
+// ordenacao global usada pelo dashboard. O contrato remoto prova que a otimizacao preserva tanto a
+// visibilidade corporativa completa quanto o isolamento do ator QA ao run exato.
+export function auditLogReadScaleSemanticSql(alias) {
+  if (!/^[a-z][a-z0-9_]*$/.test(alias)) fail("audit-log-read-scale-alias");
+  const session = "public.cms_audit_session_scope_allowed()";
+  const corporate = "public.cms_audit_corporate_session_allowed()";
+  const row = "public.cms_audit_event_row_allowed(uuid)";
+  const definition = (signature) =>
+    `regexp_replace(pg_get_functiondef(to_regprocedure('${signature}')), '[[:space:]]+', ' ', 'g')`;
+  const policy = `(select pg_catalog.pg_get_expr(p.polqual, p.polrelid) from pg_catalog.pg_policy p
+        where p.polname = 'cms_audit_authorized_read'
+          and p.polrelid = 'public.cms_audit_log'::regclass)`;
+  const canonicalPolicy = `replace(replace(replace(replace(
+        lower(regexp_replace(${policy}, '[[:space:]]+', '', 'g')),
+        'public.', ''),
+        'ascms_audit_session_scope_allowed', ''),
+        'ascms_audit_corporate_session_allowed', ''),
+        'cms_audit_log.actor_id', 'actor_id')`;
+  const routineExact = (signature, prosrcSha256) => `exists (
+        select 1
+        from pg_catalog.pg_proc p
+        join pg_catalog.pg_language language_row on language_row.oid = p.prolang
+        where p.oid = to_regprocedure('${signature}')
+          and p.prokind = 'f'
+          and p.prorettype = 'boolean'::regtype
+          and p.prosecdef
+          and p.provolatile = 's'
+          and not p.proisstrict
+          and not p.proleakproof
+          and p.proparallel = 'u'
+          and p.proowner = 'postgres'::regrole
+          and language_row.lanname = 'sql'
+          and p.proconfig = array['search_path=pg_catalog, private, auth, pg_temp']::text[]
+          and encode(extensions.digest(convert_to(replace(replace(
+            p.prosrc, E'\\r\\n', E'\\n'
+          ), E'\\r', E'\\n'), 'UTF8'), 'sha256'), 'hex') = '${prosrcSha256}'
+      )`;
+  const aclExact = (signature) => `not exists (
+        select 1
+        from pg_catalog.pg_proc p
+        cross join lateral pg_catalog.aclexplode(
+          coalesce(p.proacl, pg_catalog.acldefault('f', p.proowner))
+        ) acl
+        where p.oid = to_regprocedure('${signature}')
+          and not (
+            acl.grantee = p.proowner
+            or (
+              acl.grantee = (select r.oid from pg_catalog.pg_roles r where r.rolname = 'authenticated')
+              and acl.grantor = p.proowner
+              and acl.privilege_type = 'EXECUTE'
+              and not acl.is_grantable
+            )
+          )
+      )`;
+  const indexExact = `exists (
+        select 1
+        from pg_catalog.pg_class index_class
+        join pg_catalog.pg_namespace index_namespace on index_namespace.oid = index_class.relnamespace
+        join pg_catalog.pg_index index_record on index_record.indexrelid = index_class.oid
+        join pg_catalog.pg_am access_method on access_method.oid = index_class.relam
+        where index_namespace.nspname = 'public'
+          and index_class.relname = 'cms_audit_log_recent_idx'
+          and index_record.indrelid = 'public.cms_audit_log'::regclass
+          and index_record.indisvalid
+          and index_record.indisready
+          and not index_record.indisunique
+          and index_record.indpred is null
+          and index_record.indexprs is null
+          and index_record.indnkeyatts = 1
+          and index_record.indnatts = 1
+          and access_method.amname = 'btree'
+          and pg_catalog.pg_get_indexdef(index_record.indexrelid, 1, true) = 'occurred_at DESC'
+      )`;
+  return `coalesce(
+      to_regprocedure('${session}') is not null
+      and to_regprocedure('${corporate}') is not null
+      and to_regprocedure('${row}') is not null
+      and ${routineExact(session, "fd3421d2fbf30dc9a3d43553b389b0e6a11f097f2b23767edaddb5815ac87d71")}
+      and ${routineExact(corporate, "fede1da9331eca631d0d3a7d57bf32b2333e1a571d7e5cbf23703079a68dd7c2")}
+      and ${routineExact(row, "e3aa5ec8c4fa074e3f3df282911b500728c7ee742d8a61dce6db80a848efeb0a")}
+      and ${aclExact(session)}
+      and ${aclExact(corporate)}
+      and ${aclExact(row)}
+      and not has_function_privilege('anon', '${session}', 'EXECUTE')
+      and not has_function_privilege('anon', '${corporate}', 'EXECUTE')
+      and not has_function_privilege('anon', '${row}', 'EXECUTE')
+      and not has_function_privilege('service_role', '${session}', 'EXECUTE')
+      and not has_function_privilege('service_role', '${corporate}', 'EXECUTE')
+      and not has_function_privilege('service_role', '${row}', 'EXECUTE')
+      and has_function_privilege('authenticated', '${session}', 'EXECUTE')
+      and has_function_privilege('authenticated', '${corporate}', 'EXECUTE')
+      and has_function_privilege('authenticated', '${row}', 'EXECUTE')
+      and (select count(*) = 1 from pg_catalog.pg_policy p
+             where p.polrelid = 'public.cms_audit_log'::regclass and p.polcmd in ('r', '*'))
+      and (select p.polpermissive
+                    and p.polroles = array[(select r.oid from pg_catalog.pg_roles r
+                                             where r.rolname = 'authenticated')]
+             from pg_catalog.pg_policy p
+             where p.polname = 'cms_audit_authorized_read'
+               and p.polrelid = 'public.cms_audit_log'::regclass
+               and p.polcmd = 'r')
+      and ${canonicalPolicy} =
+        '((selectcms_audit_session_scope_allowed())and((selectcms_audit_corporate_session_allowed())orcms_audit_event_row_allowed(actor_id)))'
+      and lower(${definition(session)}) like '%auth.uid() is not null%'
+      and lower(${definition(session)}) like '%auth.users%'
+      and lower(${definition(session)}) like '%cms_has_permission%'
+      and lower(${definition(session)}) like '%cms:audit.read%'
+      and lower(${definition(corporate)}) like '%auth.uid() is not null%'
+      and lower(${definition(corporate)}) like '%cms_qa_actor_leases%'
+      and lower(${definition(row)}) like '%p_event_actor_id is not null%'
+      and lower(${definition(row)}) like '%cms_user_actor_target_scope_allowed%'
+      and lower(${definition(row)}) like '%cms_user_actor_environment%'
+      and ${indexExact}
+      and not has_table_privilege('anon', 'public.cms_audit_log', 'SELECT')
     , false) as ${alias}`;
 }

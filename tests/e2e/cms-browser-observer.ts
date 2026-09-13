@@ -6,11 +6,14 @@ type PathMatcher = string | RegExp;
 export type ExpectedHttpFailure = {
   id: string;
   method: string;
+  origin?: string;
   path: PathMatcher;
   statuses: readonly number[];
   maxOccurrences: number;
   minOccurrences?: number;
   allowConsoleMirror?: boolean;
+  consoleErrorMirrorFirstLine?: string;
+  consoleErrorMirrorOrigin?: string;
 };
 
 export type BrowserObserverSnapshot = {
@@ -27,13 +30,19 @@ type ObserverConfiguration = {
   expectedSha: string;
   sensitiveValues?: readonly string[];
   expectedHttpFailures?: readonly ExpectedHttpFailure[];
+  trackedRequestOrigins?: readonly string[];
 };
 
-type MutableAllowance = ExpectedHttpFailure & { occurrences: number };
+type MutableAllowance = ExpectedHttpFailure & {
+  occurrences: number;
+  consoleErrorMirrorOccurrences: number;
+};
 
 const relevantWarning =
   /content security policy|\bcsp\b|mixed content|deprecated|hydration|uncaught|security|blocked|refused/i;
 const resourceFailure = /failed to load resource.*status(?: code)?(?: of)?\s*(\d{3})/i;
+const javascriptStackFrame =
+  /^ {4}at (?:async )?(?:(?:[A-Za-z_$][\w$.[\]<>]* )?\()?https:\/\/[^\s()]+:\d+:\d+\)?$/;
 // The observed contexts deliberately use `serviceWorkers: "block"`. Chromium reports this exact
 // Playwright-owned diagnostic when the production bootstrap attempts registration; it confirms the
 // harness contract rather than an application failure. Any variation remains observable.
@@ -92,6 +101,40 @@ function matchesPath(matcher: PathMatcher, pathname: string) {
   return matcher.test(pathname);
 }
 
+function isCanonicalHttpOrigin(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  try {
+    const parsed = new URL(value);
+    return (
+      (parsed.protocol === "https:" || parsed.protocol === "http:") &&
+      parsed.origin === value &&
+      parsed.username === "" &&
+      parsed.password === ""
+    );
+  } catch {
+    return false;
+  }
+}
+
+function safeOrigin(url: string) {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return "[invalid-origin]";
+  }
+}
+
+function matchesConsoleErrorMirror(text: string, expectedFirstLine: string) {
+  if (text.length > 2_048) return false;
+  const lines = text.split(/\r?\n/);
+  return (
+    lines.length >= 2 &&
+    lines.length <= 12 &&
+    lines[0] === expectedFirstLine &&
+    lines.slice(1).every((line) => javascriptStackFrame.test(line))
+  );
+}
+
 export function sanitizeBrowserDiagnostic(value: unknown, sensitiveValues: readonly string[] = []) {
   let sanitized = value instanceof Error ? value.message : String(value ?? "");
   for (const sensitive of sensitiveValues) {
@@ -111,10 +154,11 @@ export function sanitizeBrowserDiagnostic(value: unknown, sensitiveValues: reado
 
 export function expectedHttpFailureMatches(
   allowance: ExpectedHttpFailure,
-  input: { method: string; pathname: string; status: number },
+  input: { method: string; origin: string; pathname: string; status: number },
 ) {
   return (
     allowance.method.toUpperCase() === input.method.toUpperCase() &&
+    (allowance.origin === undefined || allowance.origin === input.origin) &&
     allowance.statuses.includes(input.status) &&
     matchesPath(allowance.path, input.pathname)
   );
@@ -135,8 +179,18 @@ export function createCmsBrowserObserver(configuration: ObserverConfiguration) {
   if (!/^[a-z0-9][a-z0-9_-]{2,80}$/i.test(configuration.suite)) {
     throw new Error("QA_CMS_BROWSER_OBSERVER_SUITE_INVALID");
   }
+  const trackedRequestOrigins = new Set<string>();
+  for (const origin of configuration.trackedRequestOrigins ?? []) {
+    if (!isCanonicalHttpOrigin(origin) || trackedRequestOrigins.has(origin)) {
+      throw new Error("QA_CMS_BROWSER_OBSERVER_ORIGIN_INVALID");
+    }
+    trackedRequestOrigins.add(origin);
+  }
   const ids = new Set<string>();
+  const consoleErrorMirrorFirstLines = new Set<string>();
   const allowances: MutableAllowance[] = (configuration.expectedHttpFailures ?? []).map((entry) => {
+    const consoleErrorMirrorFirstLine = entry.consoleErrorMirrorFirstLine;
+    const consoleErrorMirrorOrigin = entry.consoleErrorMirrorOrigin;
     if (
       ids.has(entry.id) ||
       !/^[a-z0-9][a-z0-9_.-]{2,100}$/i.test(entry.id) ||
@@ -148,23 +202,35 @@ export function createCmsBrowserObserver(configuration: ObserverConfiguration) {
       entry.statuses.length === 0 ||
       new Set(entry.statuses).size !== entry.statuses.length ||
       !/^[A-Z]+$/.test(entry.method) ||
+      (entry.origin !== undefined && !isCanonicalHttpOrigin(entry.origin)) ||
       (typeof entry.path === "string" &&
         (!entry.path.startsWith("/") || entry.path.includes("?") || entry.path.includes("#"))) ||
-      entry.statuses.some((status) => !Number.isInteger(status) || status < 400 || status > 599)
+      entry.statuses.some((status) => !Number.isInteger(status) || status < 400 || status > 599) ||
+      (consoleErrorMirrorFirstLine !== undefined &&
+        (typeof consoleErrorMirrorFirstLine !== "string" ||
+          consoleErrorMirrorFirstLine.length < 1 ||
+          consoleErrorMirrorFirstLine.length > 320 ||
+          consoleErrorMirrorFirstLine.trim() !== consoleErrorMirrorFirstLine ||
+          /[\r\n]/.test(consoleErrorMirrorFirstLine) ||
+          consoleErrorMirrorFirstLines.has(consoleErrorMirrorFirstLine))) ||
+      (consoleErrorMirrorFirstLine === undefined) !== (consoleErrorMirrorOrigin === undefined) ||
+      (consoleErrorMirrorOrigin !== undefined && !isCanonicalHttpOrigin(consoleErrorMirrorOrigin))
     ) {
       throw new Error("QA_CMS_BROWSER_OBSERVER_ALLOWANCE_INVALID");
     }
     ids.add(entry.id);
-    return { ...entry, occurrences: 0 };
+    if (consoleErrorMirrorFirstLine) consoleErrorMirrorFirstLines.add(consoleErrorMirrorFirstLine);
+    return { ...entry, occurrences: 0, consoleErrorMirrorOccurrences: 0 };
   });
   const observedPages = new WeakSet<Page>();
   const observedContexts = new WeakSet<BrowserContext>();
   const unexpectedConsole: string[] = [];
   const unexpectedHttp: string[] = [];
   const requestFailures: string[] = [];
+  const pendingTrackedRequests = new Map<Request, string>();
   const consoleResourceFailures = new Map<
     string,
-    { status: number; pathname: string; occurrences: number }
+    { status: number; origin: string; pathname: string; occurrences: number }
   >();
 
   const sanitize = (value: unknown) => sanitizeBrowserDiagnostic(value, configuration.sensitiveValues ?? []);
@@ -185,6 +251,7 @@ export function createCmsBrowserObserver(configuration: ObserverConfiguration) {
     }
     const input = {
       method: request.method(),
+      origin: safeOrigin(response.url()),
       pathname: safePath(response.url()),
       status,
     };
@@ -202,17 +269,36 @@ export function createCmsBrowserObserver(configuration: ObserverConfiguration) {
   function onConsole(message: ConsoleMessage) {
     const type = message.type();
     const text = message.text();
+    const firstLine = text.split(/\r?\n/, 1)[0];
     if (type === "warning" && text === playwrightServiceWorkerBlock && message.location().url === "") return;
+    const configuredMirror = allowances.find(
+      (candidate) => candidate.consoleErrorMirrorFirstLine === firstLine,
+    );
+    if (configuredMirror) {
+      if (
+        type === "error" &&
+        matchesConsoleErrorMirror(text, configuredMirror.consoleErrorMirrorFirstLine ?? "") &&
+        safeOrigin(message.location().url) === configuredMirror.consoleErrorMirrorOrigin &&
+        configuredMirror.consoleErrorMirrorOccurrences < configuredMirror.occurrences
+      ) {
+        configuredMirror.consoleErrorMirrorOccurrences += 1;
+        return;
+      }
+      unexpectedConsole.push(sanitize(text));
+      return;
+    }
     if (type !== "error" && !(type === "warning" && relevantWarning.test(text))) return;
     if (isAllowedThirdPartyConsoleOrigin(message.location().url)) return;
     const mirror = text.match(resourceFailure);
     if (mirror) {
       const status = Number(mirror[1]);
+      const origin = safeOrigin(message.location().url);
       const pathname = safePath(message.location().url);
-      const key = `${status}:${pathname}`;
+      const key = `${status}:${origin}:${pathname}`;
       const current = consoleResourceFailures.get(key);
       consoleResourceFailures.set(key, {
         status,
+        origin,
         pathname,
         occurrences: (current?.occurrences ?? 0) + 1,
       });
@@ -222,6 +308,7 @@ export function createCmsBrowserObserver(configuration: ObserverConfiguration) {
   }
 
   function onRequestFailed(request: Request) {
+    pendingTrackedRequests.delete(request);
     const failure = request.failure();
     if (
       isExpectedTurnstileDnsFailure({
@@ -238,12 +325,30 @@ export function createCmsBrowserObserver(configuration: ObserverConfiguration) {
     );
   }
 
+  function onRequest(request: Request) {
+    try {
+      const url = new URL(request.url());
+      if (trackedRequestOrigins.has(url.origin)) {
+        pendingTrackedRequests.set(request, sanitize(`${request.method()} ${url.pathname}`));
+      }
+    } catch {
+      // Invalid URLs are still surfaced by response/request-failure diagnostics; they cannot match
+      // a configured first-party origin and therefore cannot be considered settled first-party work.
+    }
+  }
+
+  function onRequestFinished(request: Request) {
+    pendingTrackedRequests.delete(request);
+  }
+
   function observePage(page: Page) {
     if (observedPages.has(page)) return;
     observedPages.add(page);
+    page.on("request", onRequest);
     page.on("console", onConsole);
     page.on("pageerror", (error) => unexpectedConsole.push(sanitize(error)));
     page.on("requestfailed", onRequestFailed);
+    page.on("requestfinished", onRequestFinished);
     page.on("response", onResponse);
   }
 
@@ -259,12 +364,13 @@ export function createCmsBrowserObserver(configuration: ObserverConfiguration) {
       .filter((entry) => entry.occurrences < (entry.minOccurrences ?? 0))
       .map((entry) => `expected ${entry.id} ${entry.minOccurrences ?? 0}, observed ${entry.occurrences}`);
     const unmatchedConsoleMirrors = [...consoleResourceFailures.values()].flatMap(
-      ({ status, pathname, occurrences }) => {
+      ({ status, origin, pathname, occurrences }) => {
         const permitted = allowances
           .filter(
             (entry) =>
               entry.allowConsoleMirror !== false &&
               entry.statuses.includes(status) &&
+              (entry.origin === undefined || entry.origin === origin) &&
               matchesPath(entry.path, pathname),
           )
           .reduce((total, entry) => total + entry.occurrences, 0);
@@ -281,6 +387,7 @@ export function createCmsBrowserObserver(configuration: ObserverConfiguration) {
       ...unexpectedConsole,
       ...unexpectedHttp,
       ...requestFailures,
+      ...[...pendingTrackedRequests.values()].map((request) => `pending first-party request ${request}`),
       ...unmatchedConsoleMirrors,
       ...missing,
     ];
@@ -288,12 +395,13 @@ export function createCmsBrowserObserver(configuration: ObserverConfiguration) {
 
   function snapshot(): BrowserObserverSnapshot {
     const unmatchedMirrorCount = [...consoleResourceFailures.values()].reduce(
-      (total, { status, pathname, occurrences }) => {
+      (total, { status, origin, pathname, occurrences }) => {
         const permitted = allowances
           .filter(
             (entry) =>
               entry.allowConsoleMirror !== false &&
               entry.statuses.includes(status) &&
+              (entry.origin === undefined || entry.origin === origin) &&
               matchesPath(entry.path, pathname),
           )
           .reduce((sum, entry) => sum + entry.occurrences, 0);
@@ -305,7 +413,7 @@ export function createCmsBrowserObserver(configuration: ObserverConfiguration) {
       status: violations().length === 0 ? "passed" : "failed",
       unexpectedConsole: unexpectedConsole.length + unmatchedMirrorCount,
       unexpectedHttp: unexpectedHttp.length,
-      requestFailures: requestFailures.length,
+      requestFailures: requestFailures.length + pendingTrackedRequests.size,
       expectedHttp: allowances.map(({ id, occurrences }) => ({ id, occurrences })),
       secretsPersisted: false,
     };

@@ -205,6 +205,11 @@ const compatibilityTests = {
     "supabase/tests/rls_ev2_phase10_ai.test.sql",
     "tests/contracts/cms-ai-private-model-transition.test.ts",
   ],
+  "0098": [
+    "supabase/tests/rls_cms_audit_log_read_scale.test.sql",
+    "supabase/tests/rls_cms_users_auth_scope.test.sql",
+    "tests/contracts/cms-audit-log-read-scale.test.ts",
+  ],
 };
 for (const migration of additions) {
   const version = migration.version;

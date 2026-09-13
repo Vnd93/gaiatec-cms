@@ -101,6 +101,28 @@ describe("real invite and password-recovery browser lifecycle", () => {
     );
   });
 
+  it("binds critical auth and audit observations to the exact Supabase origin", () => {
+    expect(spec).toContain("url.origin === canonicalExpectedOrigin");
+    expect(spec).toContain("url.pathname === `/functions/v1/${functionName}`");
+    expect(spec).toContain('waitForEdgeAction(page, "cms-session", "logout", supabaseOrigin)');
+    expect(spec).toContain("expect(authStartedAfterCmsFinished).toBe(true)");
+    expect(spec).toContain("expect(cmsRequests.size).toBe(1)");
+    expect(spec).toContain("expect(cmsResponses.size).toBe(1)");
+    expect(spec).toContain("expect(cmsFinished.size).toBe(1)");
+    expect(spec).toContain("expect(authRequests.size).toBe(1)");
+    expect(spec).toContain("expect(authResponses.size).toBe(1)");
+    expect(spec).toContain("expect(authFinished.size).toBe(1)");
+    expect(spec).toContain("url.origin === expectedSupabaseOrigin");
+    expect(spec).toContain('url.pathname === "/rest/v1/cms_audit_log"');
+    expect(spec).toContain('url.searchParams.get("order") === "occurred_at.desc"');
+    expect(spec).toContain('url.pathname === "/rest/v1/cms_profiles"');
+    expect(spec).toContain('url.searchParams.get("select") === "user_id,display_name"');
+    expect(spec).toContain("browserObservability = observer.snapshot()");
+    expect(spec).toContain("browserObservability ??= observer.snapshot()");
+    expect(spec).toContain("browserObservability,");
+    expect(spec).toContain("trackedRequestOrigins: [new URL(baseURL).origin, config.supabaseOrigin]");
+  });
+
   it("runs before all dependent mutating suites in staging and production", () => {
     for (const workflow of [staging, production]) {
       const auth = workflow.indexOf("cms-auth-lifecycle.spec.ts");

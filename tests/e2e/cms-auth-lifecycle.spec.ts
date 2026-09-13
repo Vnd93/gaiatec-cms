@@ -5,6 +5,7 @@ import {
   type BrowserContext,
   type Locator,
   type Page,
+  type Request,
   type Response,
 } from "@playwright/test";
 import { execFileSync } from "node:child_process";
@@ -1146,7 +1147,8 @@ async function waitForStableTotpWindow() {
   if (position > 26_000) await new Promise((resolve) => setTimeout(resolve, 31_000 - position));
 }
 
-function waitForEdgeAction(page: Page, functionName: string, action: string) {
+function waitForEdgeAction(page: Page, functionName: string, action: string, expectedOrigin?: string) {
+  const canonicalExpectedOrigin = expectedOrigin ? new URL(expectedOrigin).origin : null;
   return page.waitForResponse(
     (response) => {
       let body: unknown;
@@ -1155,11 +1157,13 @@ function waitForEdgeAction(page: Page, functionName: string, action: string) {
       } catch {
         return false;
       }
-      return (
+      const url = new URL(response.url());
+      const matches =
         response.request().method() === "POST" &&
-        new URL(response.url()).pathname.endsWith(`/functions/v1/${functionName}`) &&
-        Boolean(body && typeof body === "object" && (body as Record<string, unknown>).action === action)
-      );
+        (!canonicalExpectedOrigin || url.origin === canonicalExpectedOrigin) &&
+        url.pathname === `/functions/v1/${functionName}` &&
+        Boolean(body && typeof body === "object" && (body as Record<string, unknown>).action === action);
+      return matches;
     },
     { timeout: 30_000 },
   );
@@ -1333,6 +1337,109 @@ async function completeMfaChallenge(page: Page, secret: string) {
   return { response, resolved };
 }
 
+async function waitForAdminDataToSettle(page: Page, heading: string, label: string) {
+  await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("status", { name: label, exact: true })).toBeHidden({ timeout: 30_000 });
+}
+
+async function signOutThroughUi(page: Page, buttonName: "Sair" | "Cancelar e sair", supabaseOrigin: string) {
+  const expectedOrigin = new URL(supabaseOrigin).origin;
+  const isCmsLogout = (request: Request) => {
+    let body: unknown;
+    try {
+      body = request.postDataJSON();
+    } catch {
+      return false;
+    }
+    const url = new URL(request.url());
+    return (
+      request.method() === "POST" &&
+      url.origin === expectedOrigin &&
+      url.pathname === "/functions/v1/cms-session" &&
+      Boolean(body && typeof body === "object" && (body as Record<string, unknown>).action === "logout")
+    );
+  };
+  const isLocalAuthLogout = (request: Request) => {
+    const url = new URL(request.url());
+    return (
+      request.method() === "POST" &&
+      url.origin === expectedOrigin &&
+      url.pathname === "/auth/v1/logout" &&
+      url.searchParams.get("scope") === "local"
+    );
+  };
+  const cmsRequests = new Set<Request>();
+  const cmsResponses = new Set<Response>();
+  const cmsFinished = new Set<Request>();
+  const authRequests = new Set<Request>();
+  const authResponses = new Set<Response>();
+  const authFinished = new Set<Request>();
+  let cmsFinishedObserved = false;
+  let authStartedAfterCmsFinished = false;
+  const onRequest = (request: Request) => {
+    if (isCmsLogout(request)) cmsRequests.add(request);
+    if (isLocalAuthLogout(request)) {
+      authStartedAfterCmsFinished = cmsFinishedObserved;
+      authRequests.add(request);
+    }
+  };
+  const onResponse = (response: Response) => {
+    if (isCmsLogout(response.request())) cmsResponses.add(response);
+    if (isLocalAuthLogout(response.request())) authResponses.add(response);
+  };
+  const onRequestFinished = (request: Request) => {
+    if (isCmsLogout(request)) {
+      cmsFinished.add(request);
+      cmsFinishedObserved = true;
+    }
+    if (isLocalAuthLogout(request)) authFinished.add(request);
+  };
+  page.on("request", onRequest);
+  page.on("response", onResponse);
+  page.on("requestfinished", onRequestFinished);
+  const cmsLogout = waitForEdgeAction(page, "cms-session", "logout", supabaseOrigin);
+  const cmsLogoutFinished = page.waitForEvent("requestfinished", {
+    predicate: isCmsLogout,
+    timeout: 30_000,
+  });
+  const authLogoutStarted = page.waitForEvent("request", {
+    predicate: isLocalAuthLogout,
+    timeout: 30_000,
+  });
+  const authLogoutFinished = page.waitForEvent("requestfinished", {
+    predicate: isLocalAuthLogout,
+    timeout: 30_000,
+  });
+  try {
+    await page.getByRole("button", { name: buttonName, exact: true }).click();
+    const [cmsResponse, cmsFinishedRequest, startedRequest, finishedRequest] = await Promise.all([
+      cmsLogout,
+      cmsLogoutFinished,
+      authLogoutStarted,
+      authLogoutFinished,
+    ]);
+    await expect(page).toHaveURL(/\/admin\/login$/);
+    expect(cmsResponse.status()).toBe(200);
+    expect(cmsFinishedRequest).toBe(cmsResponse.request());
+    expect(authStartedAfterCmsFinished).toBe(true);
+    expect(finishedRequest).toBe(startedRequest);
+    const authResponse = await finishedRequest.response();
+    expect(authResponse?.status()).toBeGreaterThanOrEqual(200);
+    expect(authResponse?.status()).toBeLessThan(300);
+    expect(cmsRequests.size).toBe(1);
+    expect(cmsResponses.size).toBe(1);
+    expect(cmsFinished.size).toBe(1);
+    expect(authRequests.size).toBe(1);
+    expect(authResponses.size).toBe(1);
+    expect(authFinished.size).toBe(1);
+    return { cmsResponse, authResponse };
+  } finally {
+    page.off("request", onRequest);
+    page.off("response", onResponse);
+    page.off("requestfinished", onRequestFinished);
+  }
+}
+
 async function completeMfaEnrollment(page: Page) {
   await expect(page.getByRole("heading", { name: "Ativar verificação em duas etapas" })).toBeVisible();
   const enrollmentRequest = page.waitForResponse(
@@ -1378,6 +1485,8 @@ async function loginWithMfa(page: Page, actor: LifecycleActor, totpSecret: strin
   const resolved = await responseJson(mfaResponse);
   expect(resolved).toMatchObject({ status: "active", mfaVerified: true, accessGranted: true });
   await expect(page.locator("[data-admin-surface]")).toBeVisible({ timeout: 20_000 });
+  await expect(page).toHaveURL(/\/admin\/?$/);
+  await waitForAdminDataToSettle(page, "Visão geral", "Carregando indicadores");
   return { signInResponse, mfaResponse, resolved };
 }
 
@@ -1779,6 +1888,7 @@ async function expireSessionWithServerRejectedRefresh(page: Page, config: Config
         headers: { apikey: anonKey, Authorization: `Bearer ${token}` },
       });
       if (!response.ok) throw new Error(`server-session-revocation-failed:${response.status}`);
+      await response.arrayBuffer();
       stored.expires_at = Math.floor(Date.now() / 1000) - 60;
       stored.expires_in = 0;
       localStorage.setItem(key, JSON.stringify(stored));
@@ -1881,6 +1991,7 @@ test.describe("CMS Auth invite and recovery lifecycle", () => {
     };
     let status: "passed" | "failed" = "failed";
     let failure: string | null = null;
+    let browserObservability: ReturnType<CmsBrowserObserver["snapshot"]> | null = null;
     const sensitive = [
       config.recovery.email,
       config.recovery.password,
@@ -1894,10 +2005,12 @@ test.describe("CMS Auth invite and recovery lifecycle", () => {
       suite: "cms-auth-lifecycle",
       expectedSha: config.expectedSha,
       sensitiveValues: sensitive,
+      trackedRequestOrigins: [new URL(baseURL).origin, config.supabaseOrigin],
       expectedHttpFailures: [
         {
           id: "invalid-mfa-code",
           method: "POST",
+          origin: config.supabaseOrigin,
           path: /\/auth\/v1\/factors\/[^/]+\/verify$/,
           statuses: [400, 401, 403, 422],
           minOccurrences: 2,
@@ -1906,6 +2019,7 @@ test.describe("CMS Auth invite and recovery lifecycle", () => {
         {
           id: "incorrect-password",
           method: "POST",
+          origin: config.supabaseOrigin,
           path: "/auth/v1/token",
           statuses: [400],
           minOccurrences: 1,
@@ -1914,6 +2028,7 @@ test.describe("CMS Auth invite and recovery lifecycle", () => {
         {
           id: "consumed-single-use-action-link",
           method: "GET",
+          origin: config.supabaseOrigin,
           path: "/auth/v1/verify",
           statuses: [400, 401, 403, 404, 410, 422],
           maxOccurrences: 2,
@@ -1927,6 +2042,7 @@ test.describe("CMS Auth invite and recovery lifecycle", () => {
           // comportamento, nao duracao de suite.
           id: "revoked-cms-session",
           method: "POST",
+          origin: config.supabaseOrigin,
           path: "/functions/v1/cms-session",
           statuses: [403],
           minOccurrences: 4,
@@ -1935,10 +2051,13 @@ test.describe("CMS Auth invite and recovery lifecycle", () => {
         {
           id: "expired-refresh-token",
           method: "POST",
+          origin: config.supabaseOrigin,
           path: "/auth/v1/token",
-          statuses: [400, 401, 403],
-          maxOccurrences: 3,
+          statuses: [400],
+          maxOccurrences: 1,
           minOccurrences: 1,
+          consoleErrorMirrorFirstLine: "AuthApiError: Invalid Refresh Token: Refresh Token Not Found",
+          consoleErrorMirrorOrigin: new URL(baseURL).origin,
         },
       ],
     });
@@ -2268,15 +2387,44 @@ test.describe("CMS Auth invite and recovery lifecycle", () => {
       const enrollment = await completeMfaEnrollment(invitePage);
       expect(enrollment.challenge.resolved.roles).toContain("admin");
       expect(enrollment.challenge.resolved.permissions).toContain("cms:audit.read");
+      await expect(invitePage).toHaveURL(/\/admin\/?$/);
+      await waitForAdminDataToSettle(invitePage, "Visão geral", "Carregando indicadores");
+      const expectedSupabaseOrigin = new URL(config.supabaseOrigin).origin;
       const criticalAuditRead = invitePage.waitForResponse(
-        (response) =>
-          response.request().method() === "GET" &&
-          new URL(response.url()).pathname.endsWith("/rest/v1/cms_audit_log"),
+        (response) => {
+          const url = new URL(response.url());
+          return (
+            response.request().method() === "GET" &&
+            url.origin === expectedSupabaseOrigin &&
+            url.pathname === "/rest/v1/cms_audit_log" &&
+            url.searchParams.get("select") ===
+              "id,actor_id,action,target_type,target_id,correlation_id,event_data,occurred_at" &&
+            url.searchParams.get("order") === "occurred_at.desc" &&
+            (url.searchParams.get("occurred_at") ?? "").startsWith("gte.")
+          );
+        },
+        { timeout: 30_000 },
+      );
+      const criticalProfileRead = invitePage.waitForResponse(
+        (response) => {
+          const url = new URL(response.url());
+          return (
+            response.request().method() === "GET" &&
+            url.origin === expectedSupabaseOrigin &&
+            url.pathname === "/rest/v1/cms_profiles" &&
+            url.searchParams.get("select") === "user_id,display_name"
+          );
+        },
         { timeout: 30_000 },
       );
       await invitePage.goto("/admin/auditoria", { waitUntil: "domcontentloaded" });
-      expect((await criticalAuditRead).status()).toBe(200);
-      await expect(invitePage.getByRole("heading", { name: "Auditoria" })).toBeVisible();
+      const [criticalAuditResponse, criticalProfileResponse] = await Promise.all([
+        criticalAuditRead,
+        criticalProfileRead,
+      ]);
+      expect([200, 206]).toContain(criticalAuditResponse.status());
+      expect(criticalProfileResponse.status()).toBe(200);
+      await waitForAdminDataToSettle(invitePage, "Auditoria", "Carregando auditoria");
       scenarios.push({
         id: "admin_aal1_mfa_aal2_critical_permission",
         status: "passed",
@@ -2310,7 +2458,7 @@ test.describe("CMS Auth invite and recovery lifecycle", () => {
       });
       const inviteeTotpSecret = enrollment.secret;
       sensitive.push(inviteeTotpSecret);
-      await invitePage.getByRole("button", { name: "Sair", exact: true }).click();
+      await signOutThroughUi(invitePage, "Sair", config.supabaseOrigin);
       await expect(invitePage).toHaveURL(/\/admin\/login$/);
       const inviteeLogin = await loginWithMfa(
         invitePage,
@@ -2519,9 +2667,11 @@ test.describe("CMS Auth invite and recovery lifecycle", () => {
       await cancelPage.getByLabel("Senha").fill(config.recovery.password);
       await cancelPage.getByRole("button", { name: "Entrar", exact: true }).click();
       await expect(cancelPage).toHaveURL(/\/admin\/mfa$/);
-      const cancelLogout = waitForEdgeAction(cancelPage, "cms-session", "logout");
-      await cancelPage.getByRole("button", { name: "Cancelar e sair" }).click();
-      const cancelLogoutResponse = await cancelLogout;
+      const { cmsResponse: cancelLogoutResponse } = await signOutThroughUi(
+        cancelPage,
+        "Cancelar e sair",
+        config.supabaseOrigin,
+      );
       const cancelLogoutPayload = await responseJson(cancelLogoutResponse);
       await expect(cancelPage).toHaveURL(/\/admin\/login$/);
       await expect(cancelPage.getByRole("heading", { name: "Entrar no painel" })).toBeVisible();
@@ -2550,10 +2700,12 @@ test.describe("CMS Auth invite and recovery lifecycle", () => {
       });
 
       observer.assertClean();
+      browserObservability = observer.snapshot();
       status = "passed";
     } catch (error) {
       failure = sanitizeFailure(error, sensitive);
     } finally {
+      browserObservability ??= observer.snapshot();
       for (const context of contexts) {
         if (status === "passed") {
           try {
@@ -2611,7 +2763,7 @@ test.describe("CMS Auth invite and recovery lifecycle", () => {
         noIdentifiersPersisted: true,
         actionLinksPersisted: false,
         rawBrowserArtifacts: "disabled",
-        browserObservability: observer.snapshot(),
+        browserObservability,
         semanticActions: semanticActions.snapshot(),
         semanticFields,
         semanticStructures,

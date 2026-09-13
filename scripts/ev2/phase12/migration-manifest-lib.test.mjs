@@ -86,9 +86,9 @@ test("the repository migration history is contiguous", () => {
   // digest dos bytes. E o que impede que alguem acrescente migration sem revisao: nao basta criar
   // o arquivo, e preciso declarar o conteudo dele aqui.
   assert.deepEqual(G12_PINNED_MIGRATION_TAIL.at(-1), {
-    version: "0094",
-    file: "0094_cms_content_draft_snapshots.sql",
-    sha256: "7a9dfb27305e8de81764f276f634dfa493a4a59b4df8457cb959515755db0359",
+    version: "0095",
+    file: "0095_cms_system_snapshot_read_scale.sql",
+    sha256: "8b3d62eb40d5fc952043b123f8c73497607275946827bf6825929bc82ed91028",
   });
   assert.deepEqual(manifest.slice(-G12_PINNED_MIGRATION_TAIL.length), G12_PINNED_MIGRATION_TAIL);
   for (const migration of manifest.slice(-G12_PINNED_MIGRATION_TAIL.length)) {

@@ -146,13 +146,13 @@ describe("instantâneo de rascunho", () => {
     expect(manifesto).toContain("0094_cms_content_draft_snapshots.sql");
   });
 
-  it("é a última migration, e o selo confere com os bytes do arquivo", async () => {
+  it("continua selada no manifesto após migrations posteriores", async () => {
     const { createHash } = await import("node:crypto");
     const { readdirSync } = await import("node:fs");
     const arquivos = readdirSync(MIGRATIONS_DIR)
       .filter((nome) => nome.endsWith(".sql"))
       .sort();
-    expect(arquivos.at(-1)).toBe("0094_cms_content_draft_snapshots.sql");
+    expect(arquivos).toContain("0094_cms_content_draft_snapshots.sql");
 
     const digest = createHash("sha256")
       .update(readFileSync(path.join(MIGRATIONS_DIR, "0094_cms_content_draft_snapshots.sql")))

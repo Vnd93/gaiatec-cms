@@ -115,7 +115,7 @@ describe("authoritative system assurance and scoped RBAC boundary", () => {
   it("fails closed when the Edge deployment environment is absent", () => {
     expect(systemEdge).toContain("isConfiguredCmsEnvironment(deploymentEnvironment)");
     expect(systemEdge).not.toContain('CMS_ENVIRONMENT") ?? "production"');
-    expect(systemEdge).toContain('rpc("cms_get_system_snapshot_limited"');
+    expect(systemEdge).toContain('rpc("cms_get_system_snapshot_authenticated"');
     expect(systemEdge).toContain('rpc("cms_execute_system_command_limited"');
     expect(scopesEdge).toContain("isConfiguredCmsEnvironment(configuredEnvironment)");
     expect(scopesEdge).toContain('rpc("cms_get_scoped_assignments"');

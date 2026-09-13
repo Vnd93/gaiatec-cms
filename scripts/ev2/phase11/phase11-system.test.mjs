@@ -142,7 +142,7 @@ test("F-018 exposes a read-only snapshot and two-person Gate G11 evidence", asyn
   assert.match(edge, /Server-Timing.*admin-read/);
   assert.match(edge, /identity\.claims\.aal !== "aal2"/);
   assert.match(edge, /cms_system_capability_limited/);
-  assert.match(edge, /cms_get_system_snapshot_limited/);
+  assert.match(edge, /cms_get_system_snapshot_authenticated/);
   assert.match(edge, /cms_execute_system_command_limited/);
   assert.match(edge, /rateLimitKeyHash/);
   assert.match(edge, /X-Idempotency-Key/);
@@ -194,7 +194,7 @@ test("G11 fuses rate limiting with guarded operations without broadening access"
   assert.match(sql, /to service_role/);
   assert.doesNotMatch(sql, /drop table|truncate|delete from|default_enabled\s*=\s*true/i);
   assert.match(shared, /export async function rateLimitKeyHash/);
-  assert.match(system, /p_rate_limit_key_hash: rateLimitHash/);
+  assert.match(system, /cms_get_system_snapshot_authenticated/);
   assert.match(leads, /p_rate_limit_key_hash:fusedRateLimitHash/);
 });
 

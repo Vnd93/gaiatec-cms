@@ -1,6 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "jsr:@supabase/supabase-js@2";
 import { z } from "npm:zod@4.4.3";
 import { authenticateCms } from "../_shared/cms-auth.ts";
+import { boundedFetch } from "../_shared/cms-edge-fetch.ts";
 import {
   isConfiguredCmsEnvironment,
   isProductionOperationEnabled,
@@ -107,15 +109,45 @@ function canonicalize(value: unknown): unknown {
   return value;
 }
 
+function authenticatedSystemClient(req: Request) {
+  const url = Deno.env.get("SUPABASE_URL");
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+  const authHeader = req.headers.get("Authorization") ?? "";
+  if (!url || !anonKey || !/^Bearer\s+[^\s]+$/i.test(authHeader)) return null;
+  return createClient(url, anonKey, {
+    global: { fetch: boundedFetch(), headers: { Authorization: authHeader } },
+    auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
+  });
+}
+
 function errorResponse(req: Request, error: { message?: string; code?: string }, correlationId: string) {
-  const marker = error.message?.match(/CMS_[A-Z0-9_]+/)?.[0] ?? "CMS_SYSTEM_FAILURE";
+  const databaseMarker = error.message?.match(/CMS_[A-Z0-9_]+/)?.[0];
+  const unauthorized =
+    databaseMarker === "CMS_SYSTEM_AUTH_INVALID" ||
+    error.code === "PGRST301" ||
+    /(?:invalid|expired).*jwt|jwt.*(?:invalid|expired)/i.test(error.message ?? "");
+  const marker = unauthorized ? "CMS_SYSTEM_AUTH_INVALID" : (databaseMarker ?? "CMS_SYSTEM_FAILURE");
   const notFound = marker.endsWith("NOT_FOUND") || error.code === "PT404";
   const conflict = marker.includes("CONFLICT") || marker.includes("NOT_REVIEWABLE") || error.code === "PT409";
   const rateLimited = marker === "CMS_RATE_LIMIT_EXCEEDED" || error.code === "PT429";
   const forbidden = marker.includes("FORBIDDEN") || marker.includes("FEATURE_DISABLED") || error.code === "42501";
   const invalid = marker.includes("INVALID") || error.code === "22023" || error.code === "23514";
-  const status = notFound ? 404 : conflict ? 409 : rateLimited ? 429 : forbidden ? 403 : invalid ? 422 : 500;
-  const message = notFound
+  const status = unauthorized
+    ? 401
+    : notFound
+      ? 404
+      : conflict
+        ? 409
+        : rateLimited
+          ? 429
+          : forbidden
+            ? 403
+            : invalid
+              ? 422
+              : 500;
+  const message = unauthorized
+    ? "Sessão inválida."
+    : notFound
     ? "Registro de garantia não encontrado."
     : conflict
       ? "A operação conflita com o estado atual ou exige outro revisor."
@@ -134,9 +166,6 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders(req) });
   if (!isAllowedOrigin(req)) return json(req, { error: "Origem não autorizada." }, 403);
   if (req.method !== "POST") return json(req, { error: "Método não permitido." }, 405);
-
-  const identity = await authenticateCms(req);
-  if (!identity) return json(req, { error: "Sessão inválida." }, 401);
 
   let command: SystemCommand;
   try {
@@ -165,6 +194,23 @@ Deno.serve(async (req) => {
   if (Math.abs(Date.now() - Date.parse(command.envelope.occurredAt)) > 5 * 60 * 1000)
     return json(req, { error: "Envelope expirado.", code: "CMS_SYSTEM_ENVELOPE_EXPIRED", correlationId }, 409);
 
+  if (command.action === "snapshot") {
+    const caller = authenticatedSystemClient(req);
+    if (!caller) return json(req, { error: "Sessão inválida." }, 401);
+    const { data, error } = await caller.rpc("cms_get_system_snapshot_authenticated", {
+      p_environment: environment,
+      p_site_key: siteKey,
+      p_correlation_id: correlationId,
+    });
+    if (error) return errorResponse(req, error, correlationId);
+    return json(req, data, 200, {
+      "Server-Timing": `admin-read;dur=${Math.round(performance.now() - requestStartedAt)}`,
+    });
+  }
+
+  const identity = await authenticateCms(req);
+  if (!identity) return json(req, { error: "Sessão inválida." }, 401);
+
   let rateLimitHash: string;
   try {
     rateLimitHash = await rateLimitKeyHash(
@@ -192,17 +238,6 @@ Deno.serve(async (req) => {
       "Server-Timing": `admin-read;dur=${Math.round(performance.now() - requestStartedAt)}`,
     });
   }
-  if (command.action === "snapshot") {
-    const { data, error } = await identity.admin.rpc("cms_get_system_snapshot_limited", {
-      ...common,
-      p_correlation_id: correlationId,
-    });
-    if (error) return errorResponse(req, error, correlationId);
-    return json(req, data, 200, {
-      "Server-Timing": `admin-read;dur=${Math.round(performance.now() - requestStartedAt)}`,
-    });
-  }
-
   if (identity.claims.aal !== "aal2")
     return json(req, { error: "Confirme o MFA para continuar.", code: "CMS_SYSTEM_MFA_REQUIRED", correlationId }, 403);
   const idempotencyKey = req.headers.get("X-Idempotency-Key") ?? "";

@@ -40,11 +40,14 @@ describe("CMS QA content cleanup scale", () => {
     expect(pgTap).toContain("cleanup does not rewrite an already archived tombstone");
   });
 
-  it("is registered as the sealed migration tail with executable compatibility tests", () => {
+  it("remains sealed after later append-only migrations", () => {
     const files = readdirSync(path.join(root, "supabase/migrations"))
       .filter((name) => name.endsWith(".sql"))
       .sort();
-    expect(files.at(-1)).toBe("0096_cms_qa_content_cleanup_scale.sql");
+    expect(files).toContain("0096_cms_qa_content_cleanup_scale.sql");
+    expect(files.indexOf("0096_cms_qa_content_cleanup_scale.sql")).toBeLessThan(
+      files.indexOf("0097_cms_ai_private_model_transition.sql"),
+    );
     const digest = createHash("sha256").update(readFileSync(migrationPath)).digest("hex");
     const manifest = readFileSync(path.join(root, "scripts/ev2/phase12/migration-manifest-lib.mjs"), "utf8");
     expect(manifest).toContain("0096_cms_qa_content_cleanup_scale.sql");

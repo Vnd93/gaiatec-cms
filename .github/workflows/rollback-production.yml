@@ -214,6 +214,7 @@ jobs:
           CMS_BACKEND_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
           CMS_BACKEND_ORIGIN: https://gaiatecsistemas.com.br
       - name: Validate target chronology and persist immutable pre-mutation state
+        id: prepared_state
         timeout-minutes: 5
         working-directory: control
         env:
@@ -236,7 +237,7 @@ jobs:
           git merge-base --is-ancestor "$TARGET_RELEASE" "$ORIGINAL_RELEASE"
           git merge-base --is-ancestor "$ORIGINAL_RELEASE" "$FORWARD_BACKEND_RELEASE"
           timeout 4m node <<'NODE'
-          const { readFileSync, writeFileSync } = require("node:fs");
+          const { appendFileSync, readFileSync, writeFileSync } = require("node:fs");
 
           const required = (name) => {
             const value = process.env[name] || "";
@@ -288,6 +289,13 @@ jobs:
               !commitMatches(target, targetRelease)
             )
               throw new Error("G12_ROLLBACK_TARGET_IDENTITY_INVALID");
+            const targetOrigin = new URL(target.url || "");
+            if (
+              targetOrigin.protocol !== "https:" ||
+              !/^[a-z0-9-]+\.gaiatec-website\.pages\.dev$/.test(targetOrigin.hostname) ||
+              targetOrigin.pathname !== "/" || targetOrigin.search || targetOrigin.hash
+            )
+              throw new Error("G12_ROLLBACK_TARGET_ORIGIN_INVALID");
             const originalCreated = Date.parse(original.created_on);
             const targetCreated = Date.parse(target.created_on);
             if (
@@ -334,11 +342,19 @@ jobs:
             writeFileSync("../rollback-production-state.json", JSON.stringify(state, null, 2) + "\n", {
               mode: 0o600,
             });
+            appendFileSync(process.env.GITHUB_OUTPUT, `target_origin=${targetOrigin.href}\n`);
           })().catch((error) => {
             console.error(error.message);
             process.exitCode = 1;
           });
           NODE
+      - name: Prove the immutable rollback deployment accepts the retained AI model
+        timeout-minutes: 5
+        working-directory: control
+        run: >-
+          timeout 4m node scripts/ev2/phase12/verify-ai-model-rollback-compatibility.mjs
+          --source ../baseline --origin "${{ steps.prepared_state.outputs.target_origin }}"
+          --report ../g12-production-rollback-ai-model-compatibility.json
       - name: Persist redundant HMAC production rollback state before mutation
         timeout-minutes: 5
         working-directory: control
@@ -365,6 +381,7 @@ jobs:
             g12-production-rollback-preflight-backend-evidence.json
             g12-production-rollback-preflight-database.json
             g12-production-rollback-preflight-functions.json
+            g12-production-rollback-ai-model-compatibility.json
           if-no-files-found: error
           retention-days: 90
 

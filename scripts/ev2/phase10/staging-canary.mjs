@@ -396,7 +396,7 @@ try {
   check(
     "approved_provider_ready",
     operatorCapability.json.providerMode === "openrouter" &&
-      operatorCapability.json.providerModel === "nvidia/nemotron-3.5-lightning:free" &&
+      operatorCapability.json.providerModel === "inclusionai/ling-3.0-flash-vl:free" &&
       operatorCapability.json.externalProviderEnabled === true &&
       operatorCapability.json.externalProviderReady === true &&
       operatorCapability.json.aiExecute === false &&

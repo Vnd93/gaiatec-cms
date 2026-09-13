@@ -8,7 +8,7 @@ export const TURNSTILE_TEST_SECRET_KEYS = new Set([
   "2x0000000000000000000000000000000AA",
   "3x0000000000000000000000000000000AA",
 ]);
-export const PRODUCTION_OPENROUTER_MODEL = "nvidia/nemotron-3.5-lightning:free";
+export const PRODUCTION_OPENROUTER_MODEL = "inclusionai/ling-3.0-flash-vl:free";
 export const PRODUCTION_REDIRECT_ALLOW_LIST = [
   "https://gaiatecsistemas.com.br/**",
   "https://www.gaiatecsistemas.com.br/**",

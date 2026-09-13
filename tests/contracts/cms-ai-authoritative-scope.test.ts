@@ -12,17 +12,18 @@ const executePage = readFileSync("src/admin/pages/AdminAiExecutionPage.tsx", "ut
 const fixture = readFileSync("scripts/qa/cms-browser-fixture.mjs", "utf8");
 const pgTap = readFileSync("supabase/tests/rls_cms_ai_authoritative_scope.test.sql", "utf8");
 
-const approvedModel = "nvidia/nemotron-3.5-lightning:free";
+const legacyModel = "nvidia/nemotron-3.5-lightning:free";
+const approvedModel = "inclusionai/ling-3.0-flash-vl:free";
 
 describe("authoritative AI scope for F-015 and F-016", () => {
   it("pins the sole provider/model and forbids autonomous or direct data access", () => {
     expect(migration).toContain("provider text not null check (provider = 'openrouter')");
-    expect(migration).toContain(`model_key text not null check (model_key = '${approvedModel}')`);
+    expect(migration).toContain(`model_key text not null check (model_key = '${legacyModel}')`);
     expect(migration).toContain("check (not automatic_publish_allowed)");
     expect(migration).toContain("check (not direct_database_access_allowed)");
     expect(migration).toContain("check (training_opt_out)");
     expect(openRouter).toContain(`APPROVED_OPENROUTER_MODEL = "${approvedModel}"`);
-    expect(openRouter).toContain('provider: { data_collection: "deny" }');
+    expect(openRouter).toContain('provider: { data_collection: "deny", zdr: true }');
     expect(assistContract).toContain('z.literal("openrouter")');
     expect(executeContract).toContain('z.literal("openrouter")');
     expect(executeContract).toContain("externalProviderReady: z.boolean()");

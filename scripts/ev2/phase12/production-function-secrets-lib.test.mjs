@@ -27,7 +27,7 @@ function validEnvironment() {
     LEAD_NOTIFICATION_TO: "leads@gaiatecsistemas.com",
     OUTBOX_WORKER_SECRET: "4".repeat(64),
     OPENROUTER_API_KEY: `sk-or-${"o".repeat(24)}`,
-    OPENROUTER_MODEL: "nvidia/nemotron-3.5-lightning:free",
+    OPENROUTER_MODEL: "inclusionai/ling-3.0-flash-vl:free",
     CMS_EV2_PRODUCTION_ENABLED: "true",
     CMS_AI_EXTERNAL_PROVIDER_ENABLED: "true",
     CLOUDFLARE_ACCOUNT_ID: "6".repeat(32),

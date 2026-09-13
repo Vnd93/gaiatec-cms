@@ -260,7 +260,7 @@ from (
         'inputTokens', 20,
         'outputTokens', 15,
         'providerMode', 'openrouter',
-        'providerModel', 'nvidia/nemotron-3.5-lightning:free',
+        'providerModel', 'inclusionai/ling-3.0-flash-vl:free',
         'externalProviderEnabled', true,
         'policyVersion', 'f015-v1'
       ),

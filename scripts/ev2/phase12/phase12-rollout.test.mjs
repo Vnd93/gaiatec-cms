@@ -653,6 +653,63 @@ test("staging watchdog compensates cancelled, timed-out and ambiguous deploys wi
   assert.match(watchdog, /staging-recovery-\$\{\{ github\.event\.workflow_run\.id \}\}/);
   assert.match(watchdog, /staging-pages-state\.mjs compensate/);
   assert.match(watchdog, /staging-pages-state\.mjs assert-original/);
+  for (const [source, prefix] of [
+    [workflow, "finalizer"],
+    [watchdog, "watchdog"],
+  ]) {
+    const decision = source.indexOf(`id: ${prefix}_decision`);
+    const checkout = source.indexOf(`id: ${prefix}_backend_checkout`, decision);
+    const database = source.indexOf(`id: ${prefix}_recovery_database`, checkout);
+    const configuration = source.indexOf(`id: ${prefix}_recovery_configuration`, database);
+    const functions = source.indexOf(`id: ${prefix}_recovery_functions`, configuration);
+    const pages = source.indexOf("staging-pages-state.mjs compensate", functions);
+    assert.ok(decision >= 0 && decision < checkout);
+    assert.ok(checkout < database && database < configuration && configuration < functions);
+    assert.ok(functions < pages, `${prefix} must converge the forward backend before Pages recovery`);
+    const recovery = source.slice(checkout, pages);
+    assert.match(
+      recovery,
+      /ref: \$\{\{ steps\.(?:finalizer|watchdog)_state\.outputs\.candidate_release \}\}/,
+    );
+    assert.match(recovery, /version: 2\.116\.0/);
+    assert.match(recovery, /supabase db push --linked --include-all --dry-run/);
+    assert.match(recovery, /configure-staging-ai-provider-secrets\.mjs/);
+    assert.match(recovery, /--source \. --rollback-source \./);
+    assert.ok((recovery.match(/continue-on-error: true/g) ?? []).length >= 5);
+    assert.match(source, new RegExp(`steps\\.${prefix}_recovery_functions\\.outcome == 'success'`));
+    for (const suffix of ["compensation", "compensation_retry"]) {
+      const start = source.indexOf(`id: ${prefix}_${suffix}`, functions);
+      const end = source.indexOf("\n      - name:", start);
+      assert.ok(start >= 0 && end > start);
+      assert.match(
+        source.slice(start, end),
+        new RegExp(`steps\\.${prefix}_recovery_functions\\.outcome == 'success'`),
+      );
+    }
+  }
+  assert.match(workflow, /id: finalizer_terminal_owned/);
+  assert.match(workflow, /id: finalizer_terminal_original/);
+  assert.match(
+    workflowJob(workflow, "finalize"),
+    /needs\.deploy\.result != 'success'[\s\S]*steps\.finalizer_recovery_functions\.outcome == 'success'[\s\S]*steps\.finalizer_terminal_original\.outcome == 'success'[\s\S]*steps\.clear_recovery_state\.outcome != 'success'/,
+  );
+  assert.match(watchdog, /id: watchdog_terminal_canonical/);
+  const watchdogClear = watchdog.slice(
+    watchdog.indexOf("id: clear_recovery_state"),
+    watchdog.indexOf("- name: Fail closed", watchdog.indexOf("id: clear_recovery_state")),
+  );
+  for (const required of [
+    "watchdog_backend_checkout",
+    "watchdog_supabase_cli",
+    "watchdog_recovery_database",
+    "watchdog_recovery_configuration",
+    "watchdog_recovery_functions",
+    "watchdog_terminal_canonical",
+  ])
+    assert.match(watchdogClear, new RegExp(`steps\\.${required}\\.outcome == 'success'`));
+  assert.match(watchdog, /g12-staging-database-watchdog-recovery\.json/);
+  assert.match(watchdog, /g12-staging-ai-provider-watchdog-recovery\.json/);
+  assert.match(watchdog, /g12-staging-functions-watchdog-recovery\.json/);
   assert.match(pagesState, /G12_STAGING_EXTERNAL_DEPLOYMENT_PRESERVED/);
   assert.match(pagesState, /current\.commitMessage === state\.runMarker/);
   assert.match(pagesState, /AbortSignal\.timeout\(30_000\)/);
@@ -664,7 +721,7 @@ test("staging watchdog compensates cancelled, timed-out and ambiguous deploys wi
   );
 });
 
-test("the staging watchdog stays quiet for a run that never reached its mutating job", async () => {
+test("the staging watchdog skips only an unstarted deploy or a terminally recovered parent", async () => {
   const watchdog = await read(".github/workflows/deploy-staging-watchdog.yml");
   const classify = workflowJob(watchdog, "classify-parent-run");
   const compensate = workflowJob(watchdog, "compensate-incomplete-staging-deploy");
@@ -673,18 +730,20 @@ test("the staging watchdog stays quiet for a run that never reached its mutating
   // watchdog acordava, nao encontrava estado pre-mutacao e reprovava: falha esperada acumulada que
   // torna indistinguivel a falha real de uma compensacao que nao aconteceu.
   assert.match(classify, /attempts\/\$PARENT_RUN_ATTEMPT\/jobs/);
-  assert.match(classify, /select\(\.name == "deploy"\) \| \.conclusion/);
-  assert.match(classify, /\^skipped\$/);
-  assert.match(classify, /deploy_executed: \$\{\{ steps\.parent\.outputs\.deploy_executed \}\}/);
+  assert.match(classify, /select\(\.name == "deploy"\)/);
+  assert.match(classify, /select\(\.name == "finalize"\)/);
+  assert.match(classify, /\[ "\$deploy_count" = 1 \] && \[ "\$deploy_conclusion" = skipped \]/);
+  assert.match(classify, /\[ "\$finalize_count" = 1 \] && \[ "\$finalize_conclusion" = success \]/);
+  assert.match(classify, /recovery_required: \$\{\{ steps\.parent\.outputs\.recovery_required \}\}/);
 
   // A decisao nao pode se basear no input do pai: o que importa e se o job mutante executou.
   assert.doesNotMatch(classify, /diagnostic_run/);
 
   // Nao saber classificar nunca pode virar "nao compensar".
-  assert.match(classify, /parent-classification-failed[^\n]*"deployExecuted":true/);
+  assert.match(classify, /parent-classification-failed[^\n]*"recoveryRequired":true/);
 
   assert.match(compensate, /needs: classify-parent-run/);
-  assert.match(compensate, /needs\.classify-parent-run\.outputs\.deploy_executed == 'true'/);
+  assert.match(compensate, /needs\.classify-parent-run\.outputs\.recovery_required == 'true'/);
 
   // O gatilho original continua intacto: a mudanca acrescenta uma condicao, nao afrouxa nenhuma.
   for (const condition of [
@@ -759,6 +818,12 @@ test("staging deploy and rollback serialize mutations against the same environme
     /ROLLBACK-STAGING:\$FRONTEND_REF:\$BACKEND_REF:\$SOURCE_RUN_ID:\$SOURCE_RUN_ATTEMPT:\$CANDIDATE_ARTIFACT_ID/,
   );
   assert.equal((rollback.match(/\^\[a-f0-9\]\{40\}\$/g) ?? []).length >= 2, true);
+  const sealedTarget = rollback.indexOf("Verify the downloaded target archive and seal before any mutation");
+  const modelGuard = rollback.indexOf("Prove the sealed rollback frontend accepts the retained AI model");
+  const backendMutation = rollback.indexOf("Converge the retained staging schema and Edge Functions");
+  assert.ok(sealedTarget >= 0 && sealedTarget < modelGuard && modelGuard < backendMutation);
+  assert.match(rollback, /verify-ai-model-rollback-compatibility\.mjs/);
+  assert.match(rollback, /--source \.\.\/frontend --dist \.\.\/target-artifact\/dist/);
 });
 
 test("rollout probe waits for a stable boundary before starting its strict measurement window", async () => {
@@ -1754,7 +1819,7 @@ test("production backend configuration is exact, complete and fail-closed", () =
     CMS_EV2_PRODUCTION_ENABLED: "true",
     CMS_AI_EXTERNAL_PROVIDER_ENABLED: "true",
     OPENROUTER_API_KEY: "sk-or-example-production-key-long-enough",
-    OPENROUTER_MODEL: "nvidia/nemotron-3.5-lightning:free",
+    OPENROUTER_MODEL: "inclusionai/ling-3.0-flash-vl:free",
     CONTACT_CAPTCHA_ALWAYS: "true",
   };
   assert.equal(validateProductionBackendConfig(backendEnv).valid, true);
@@ -2098,6 +2163,9 @@ test("release workflows and reduced canary are immutable, staged and production 
   assert.match(rollback, /forward_backend_run_id/);
   assert.match(rollback, /actions\/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c/);
   assert.match(rollback, /verify-backend-forward-compatibility\.mjs/);
+  assert.match(rollback, /verify-ai-model-rollback-compatibility\.mjs/);
+  assert.match(rollback, /--source \.\.\/baseline --origin/);
+  assert.match(rollback, /g12-production-rollback-ai-model-compatibility\.json/);
   assert.match(rollback, /verify-production-backend-evidence\.mjs/);
   assert.match(rollback, /g12-production-rollback-preflight-backend-evidence\.json/);
   assert.match(rollback, /g12-production-rollback-target-backend-evidence\.json/);
@@ -2113,6 +2181,13 @@ test("release workflows and reduced canary are immutable, staged and production 
     rollback.indexOf("verify-production-backend-evidence.mjs") <
       rollback.indexOf("cloudflare-pages.mjs rollback"),
     "the retained backend identity and live schema must pass before Pages mutates",
+  );
+  assert.ok(
+    rollback.indexOf("Prove the immutable rollback deployment accepts the retained AI model") <
+      rollback.indexOf("Persist redundant HMAC production rollback state before mutation") &&
+      rollback.indexOf("Persist redundant HMAC production rollback state before mutation") <
+        rollback.indexOf("cloudflare-pages.mjs rollback"),
+    "the exact deployed frontend must accept the forward AI response before rollback state is armed",
   );
   assert.match(deployStaging, /supabase db push --linked --include-all --yes/);
   assert.match(deployStaging, /deploy-staging-functions\.mjs[\s\S]*--rollback-source \.\.\/baseline/);

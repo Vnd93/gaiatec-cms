@@ -161,6 +161,12 @@ jobs:
             --dist ../target-artifact/dist \
             --seal ../target-artifact/outputs/staging-candidate-dist-seal.json \
             --candidate "${{ steps.candidate.outputs.sha }}"
+      - name: Prove the sealed rollback frontend accepts the retained AI model
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/verify-ai-model-rollback-compatibility.mjs
+          --source ../frontend --dist ../target-artifact/dist
+          --report ../g12-staging-rollback-ai-model-compatibility.json
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: control/.nvmrc
@@ -330,7 +336,11 @@ jobs:
         run: |
           test "$STAGING_SUPABASE_PROJECT_REF" = "glcqsosxwgmlhzgcsnzv"
           supabase link --project-ref "$STAGING_SUPABASE_PROJECT_REF" --yes
+          supabase db push --linked --include-all --dry-run
           supabase db push --linked --include-all --yes
+          if test -f scripts/ev2/phase12/configure-staging-ai-provider-secrets.mjs; then
+            node scripts/ev2/phase12/configure-staging-ai-provider-secrets.mjs
+          fi
           node scripts/ev2/phase12/deploy-staging-functions.mjs \
             --source . --rollback-source . --candidate "$BACKEND_REF" \
             --report ../g12-staging-rollback-function-deployment.json
@@ -448,6 +458,7 @@ jobs:
           path: |
             rollback-staging-state.json
             backend/g12-backend-compatibility.json
+            g12-staging-rollback-ai-model-compatibility.json
             g12-staging-rollback-database.json
             g12-staging-rollback-boundary.json
             g12-staging-rollback-function-deployment.json

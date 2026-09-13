@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { Ev2AiCompatibleResponseModelSchema } from "./ev2-ai";
 
-const ApprovedAiModel = z.literal("nvidia/nemotron-3.5-lightning:free");
+const CompatibleResponseModel = Ev2AiCompatibleResponseModelSchema;
 
 export const Ev2AiExecutionEnvironmentSchema = z.enum(["local", "staging"]);
 export const Ev2AiExecutionRiskSchema = z.enum(["draft", "workflow", "critical"]);
@@ -30,9 +31,9 @@ export const Ev2AiExecutionCapabilitySchema = z
     environment: z.enum(["local", "staging", "production"]),
     siteKey: z.literal("main"),
     providerMode: z.literal("openrouter"),
-    providerModel: ApprovedAiModel,
+    providerModel: CompatibleResponseModel,
     allowedProvider: z.literal("openrouter").optional(),
-    allowedModel: ApprovedAiModel.optional(),
+    allowedModel: CompatibleResponseModel.optional(),
     externalProviderEnabled: z.literal(true),
     externalProviderReady: z.boolean(),
     realDataAllowed: z.literal(false),
@@ -53,6 +54,12 @@ export const Ev2AiExecutionCapabilitySchema = z
         code: "custom",
         path: ["enabled"],
         message: "Produção não pode habilitar a execução G14.",
+      });
+    if (capability.allowedModel && capability.providerModel !== capability.allowedModel)
+      context.addIssue({
+        code: "custom",
+        path: ["allowedModel"],
+        message: "O modelo permitido deve corresponder ao modelo retornado pelo servidor.",
       });
   });
 
@@ -156,7 +163,7 @@ export const Ev2AiExecutionWorkspaceSchema = z
         dataClass: z.literal("synthetic"),
         productionAllowed: z.literal(false),
         providerMode: z.literal("openrouter"),
-        providerModel: ApprovedAiModel,
+        providerModel: CompatibleResponseModel,
         externalProviderEnabled: z.literal(true),
         externalProviderReady: z.boolean(),
         maxPlanSteps: z.literal(20),
@@ -207,7 +214,7 @@ export const Ev2AiExecutionMutationResultSchema = z
     published: z.boolean(),
     syntheticOnly: z.literal(true),
     providerMode: z.literal("openrouter"),
-    providerModel: ApprovedAiModel,
+    providerModel: CompatibleResponseModel,
     realDataAllowed: z.literal(false),
     correlationId: z.uuid(),
   })

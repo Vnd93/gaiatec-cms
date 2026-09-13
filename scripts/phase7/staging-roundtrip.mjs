@@ -73,6 +73,12 @@ const createdItems = [];
 const createdForms = [];
 const evidence = [];
 let controlledProductClassification = null;
+const leaseActorPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const leaseRunTagPattern = /^QA-CMS-FINAL-[0-9]{8}-[0-9a-f]{8}$/;
+const LEASE_COMPLETION_STATEMENT_TIMEOUT_MS = 60_000;
+const LEASE_COMPLETION_REQUEST_TIMEOUT_MS = 90_000;
+const LEASE_COMPLETION_ATTEMPTS = 6;
+const LEASE_COMPLETION_RETRY_INTERVAL_MS = 2_000;
 
 function assert(condition, message, details) {
   if (!condition) throw new Error(`${message}${details ? `: ${JSON.stringify(details)}` : ""}`);
@@ -101,7 +107,7 @@ function decodeJwt(token) {
   return JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString("utf8"));
 }
 
-async function managementQuery(query) {
+async function managementQuery(query, timeoutMs = 30_000) {
   const response = await fetch(`https://api.supabase.com/v1/projects/${stagingProjectRef}/database/query`, {
     method: "POST",
     headers: {
@@ -109,19 +115,98 @@ async function managementQuery(query) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ query }),
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
-  if (!response.ok) throw new Error("Consulta segura de gestão do staging falhou.");
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    const code = /"code"\s*:\s*"([0-9A-Z]{5})"/.exec(detail)?.[1] ?? "unknown";
+    const slug = /CMS_[A-Z0-9_]{3,60}/.exec(detail)?.[0] ?? "unknown";
+    throw new Error(`G7_STAGING_MANAGEMENT_QUERY_FAILED:${response.status}:${code}:${slug}`);
+  }
   const payload = await response.json().catch(() => null);
   if (!Array.isArray(payload)) throw new Error("Resposta de gestão do staging inválida.");
   return payload;
 }
 
+function databaseFailureIdentity(error) {
+  const candidates = [error, error?.cause];
+  const code =
+    candidates.map((candidate) => candidate?.code).find((value) => /^[0-9A-Z]{5}$/.test(value ?? "")) ??
+    /(?:^|:)([0-9A-Z]{5})(?::|$)/.exec(String(error?.message ?? ""))?.[1] ??
+    "unknown";
+  const slug =
+    candidates
+      .map((candidate) => /CMS_[A-Z0-9_]{3,60}/.exec(String(candidate?.message ?? ""))?.[0])
+      .find(Boolean) ?? "unknown";
+  return `${code}:${slug}`;
+}
+
+function leaseStatementTimedOut(error) {
+  return databaseFailureIdentity(error).startsWith("57014:");
+}
+
+function leaseCleanupIncomplete(error) {
+  return databaseFailureIdentity(error) === "55000:CMS_QA_ACTOR_CLEANUP_INCOMPLETE";
+}
+
+function assertSafeLeaseCompletionIdentity(body, cause) {
+  if (
+    !leaseActorPattern.test(body.p_actor_id ?? "") ||
+    !leaseRunTagPattern.test(body.p_run_tag ?? "") ||
+    !/^[0-9a-f]{40}$/.test(body.p_candidate_sha ?? "") ||
+    body.p_run_tag.slice(-8) !== body.p_candidate_sha.slice(0, 8) ||
+    !/^(staging|production)$/.test(body.p_environment ?? "")
+  )
+    throw new Error("G7_STAGING_LEASE_IDENTITY_UNSAFE", { cause });
+}
+
 async function leaseRpc(name, body) {
   const result = await admin.rpc(name, body);
-  if (result.error || !result.data || typeof result.data !== "object")
-    throw new Error(`RPC de lease indisponível: ${name}`);
+  if (result.error)
+    throw new Error(`G7_STAGING_LEASE_RPC_FAILED:${databaseFailureIdentity(result.error)}`, {
+      cause: result.error,
+    });
+  if (!result.data || typeof result.data !== "object")
+    throw new Error(`G7_STAGING_LEASE_RPC_PAYLOAD_INVALID:${name}`);
   return result.data;
+}
+
+async function durableLeaseRpc(name, body) {
+  if (name !== "cms_complete_qa_actor_lease") return leaseRpc(name, body);
+  let lastError;
+  for (let attempt = 0; attempt < LEASE_COMPLETION_ATTEMPTS; attempt += 1) {
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, LEASE_COMPLETION_RETRY_INTERVAL_MS));
+    try {
+      return await leaseRpc(name, body);
+    } catch (error) {
+      lastError = error;
+      if (leaseStatementTimedOut(error)) {
+        assertSafeLeaseCompletionIdentity(body, error);
+        try {
+          const rows = await managementQuery(
+            [
+              `set statement_timeout = '${LEASE_COMPLETION_STATEMENT_TIMEOUT_MS}ms';`,
+              "select public.cms_complete_qa_actor_lease(",
+              `'${body.p_actor_id}'::uuid, '${body.p_run_tag}',`,
+              `'${body.p_candidate_sha}', '${body.p_environment}') as result;`,
+            ].join("\n"),
+            LEASE_COMPLETION_REQUEST_TIMEOUT_MS,
+          );
+          const result = rows.at(-1)?.result;
+          if (!result) throw new Error("G7_STAGING_LEASE_DURABLE_COMPLETION_EMPTY", { cause: error });
+          return result;
+        } catch (durableError) {
+          lastError = durableError;
+          if (leaseCleanupIncomplete(durableError)) continue;
+          throw durableError;
+        }
+      }
+      if (!leaseCleanupIncomplete(error)) throw error;
+    }
+  }
+  throw new Error(`G7_STAGING_LEASE_COMPLETION_RETRIES_EXHAUSTED:${databaseFailureIdentity(lastError)}`, {
+    cause: lastError,
+  });
 }
 
 async function createActor(role) {
@@ -1492,7 +1577,7 @@ async function cleanup() {
       });
       if (revoked.error) throw revoked.error;
     });
-    await attempt(`lease:${actor.id}`, () => completeQaActorLease(leaseRpc, actor.identity));
+    await attempt(`lease:${actor.id}`, () => completeQaActorLease(durableLeaseRpc, actor.identity));
   }
   if (cleanupErrors.length)
     throw new AggregateError(

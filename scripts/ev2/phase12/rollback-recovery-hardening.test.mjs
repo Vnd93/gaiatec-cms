@@ -165,6 +165,38 @@ test("staging rollback watchdog handles every interrupted conclusion and preserv
   assert.match(workflow, /verify-staging-recovery-seal\.mjs/);
   assert.match(workflow, /Rebuild only the original fallback and require its signed seal identity/);
   assert.match(workflow, /Compare and clear HMAC state after terminal recovery evidence/);
+  const decision = workflow.indexOf("id: watchdog_decision");
+  const checkout = workflow.indexOf("id: watchdog_backend_checkout", decision);
+  const database = workflow.indexOf("id: watchdog_recovery_database", checkout);
+  const configuration = workflow.indexOf("id: watchdog_recovery_configuration", database);
+  const functions = workflow.indexOf("id: watchdog_recovery_functions", configuration);
+  const compensation = workflow.indexOf("id: watchdog_compensation", functions);
+  assert.ok(decision >= 0 && decision < checkout);
+  assert.ok(checkout < database && database < configuration && configuration < functions);
+  assert.ok(functions < compensation, "retained backend must converge before Pages recovery");
+  const recovery = workflow.slice(checkout, compensation);
+  assert.match(recovery, /ref: \$\{\{ steps\.watchdog_state\.outputs\.backend_release \}\}/);
+  assert.match(recovery, /version: 2\.116\.0/);
+  assert.match(recovery, /supabase db push --linked --include-all --dry-run/);
+  assert.match(recovery, /configure-staging-ai-provider-secrets\.mjs/);
+  assert.match(recovery, /verify-production-functions\.mjs/);
+  assert.match(recovery, /verify-staging-database\.mjs/);
+  assert.match(workflow, /id: watchdog_terminal_canonical/);
+  assert.match(workflow, /retainedBackend: state\.retainedBackend/);
+  assert.match(workflow, /g12-staging-rollback-function-watchdog-recovery\.json/);
+  const clear = workflow.slice(
+    workflow.indexOf("id: clear_recovery_state"),
+    workflow.indexOf("- name: Enforce interrupted rollback", workflow.indexOf("id: clear_recovery_state")),
+  );
+  for (const required of [
+    "watchdog_backend_checkout",
+    "watchdog_supabase_cli",
+    "watchdog_recovery_database",
+    "watchdog_recovery_configuration",
+    "watchdog_recovery_functions",
+    "watchdog_terminal_canonical",
+  ])
+    assert.match(clear, new RegExp(`steps\\.${required}\\.outcome == 'success'`));
   assert.match(pagesState, /G12_STAGING_EXTERNAL_DEPLOYMENT_PRESERVED/);
   assert.match(pagesState, /sameStagingDeployment\(current, original\)/);
   assert.match(pagesState, /current\.commitMessage === state\.compensationMarker/);

@@ -64,13 +64,17 @@ select isnt(has_table_privilege('authenticated','public.cms_ai_sessions','SELECT
   'clients cannot bypass scoped readers with direct session queries');
 select isnt(has_table_privilege('authenticated','public.cms_ai_synthetic_targets','SELECT'),true,
   'clients cannot bypass scoped readers with direct target queries');
-select is((select provider from public.cms_ai_provider_policy),'openrouter',
+select is((select provider from public.cms_ai_provider_policy
+  where policy_key='f015-openrouter-v2'),'openrouter',
   'OpenRouter is the sole configured provider');
-select is((select model_key from public.cms_ai_provider_policy),
-  'nvidia/nemotron-3.5-lightning:free','the canonical free Nemotron model is pinned');
-select is((select automatic_publish_allowed from public.cms_ai_provider_policy),false,
+select is((select model_key from public.cms_ai_provider_policy
+  where policy_key='f015-openrouter-v2'),
+  'inclusionai/ling-3.0-flash-vl:free','the canonical privacy-safe free model is pinned');
+select is((select automatic_publish_allowed from public.cms_ai_provider_policy
+  where policy_key='f015-openrouter-v2'),false,
   'AI policy never permits automatic publication');
-select is((select direct_database_access_allowed from public.cms_ai_provider_policy),false,
+select is((select direct_database_access_allowed from public.cms_ai_provider_policy
+  where policy_key='f015-openrouter-v2'),false,
   'AI policy never permits direct database access');
 
 insert into auth.users(

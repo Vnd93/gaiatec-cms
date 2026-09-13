@@ -2,7 +2,12 @@ import { z } from "zod";
 
 export const Ev2AiEnvironmentSchema = z.enum(["local", "staging", "production"]);
 export const Ev2AiProviderModeSchema = z.literal("openrouter");
-export const Ev2AiApprovedModelSchema = z.literal("nvidia/nemotron-3.5-lightning:free");
+export const EV2_AI_ACTIVE_OPENROUTER_MODEL = "inclusionai/ling-3.0-flash-vl:free" as const;
+export const EV2_AI_COMPATIBLE_RESPONSE_MODELS = [
+  "nvidia/nemotron-3.5-lightning:free",
+  EV2_AI_ACTIVE_OPENROUTER_MODEL,
+] as const;
+export const Ev2AiCompatibleResponseModelSchema = z.enum(EV2_AI_COMPATIBLE_RESPONSE_MODELS);
 export const Ev2AiModeSchema = z.enum(["read", "draft"]);
 export const Ev2AiProposalKindSchema = z.enum(["locate", "explain", "extract", "draft_patch"]);
 export const Ev2AiProposalStatusSchema = z.enum(["proposed", "accepted", "rejected", "edited"]);
@@ -15,9 +20,9 @@ export const Ev2AiCapabilitySchema = z
     environment: z.enum(["local", "staging", "production"]),
     siteKey: z.literal("main"),
     providerMode: Ev2AiProviderModeSchema,
-    providerModel: Ev2AiApprovedModelSchema,
+    providerModel: Ev2AiCompatibleResponseModelSchema,
     allowedProvider: z.literal("openrouter").optional(),
-    allowedModel: Ev2AiApprovedModelSchema,
+    allowedModel: Ev2AiCompatibleResponseModelSchema,
     externalProviderEnabled: z.boolean(),
     externalProviderReady: z.boolean(),
     aiExecute: z.literal(false),
@@ -32,7 +37,15 @@ export const Ev2AiCapabilitySchema = z
     manualFallback: z.literal(true),
     correlationId: z.uuid(),
   })
-  .strict();
+  .strict()
+  .superRefine((capability, context) => {
+    if (capability.providerModel !== capability.allowedModel)
+      context.addIssue({
+        code: "custom",
+        path: ["allowedModel"],
+        message: "O modelo permitido deve corresponder ao modelo retornado pelo servidor.",
+      });
+  });
 
 export const Ev2AiToolSchema = z
   .object({
@@ -113,7 +126,7 @@ export const Ev2AiSessionSchema = z
     mode: Ev2AiModeSchema,
     status: z.enum(["active", "closed", "canceled", "expired"]),
     providerMode: Ev2AiProviderModeSchema,
-    providerModel: Ev2AiApprovedModelSchema,
+    providerModel: Ev2AiCompatibleResponseModelSchema,
     providerStatus: z.enum(["succeeded", "failed"]).nullable(),
     tokensUsed: z.number().int().nonnegative(),
     tokenBudget: z.number().int().positive().max(8000),
@@ -133,7 +146,7 @@ export const Ev2AiWorkspaceSchema = z
         decisionKey: z.literal("EV2-D04"),
         status: z.enum(["technical_draft", "approved"]),
         providerMode: Ev2AiProviderModeSchema,
-        providerModel: Ev2AiApprovedModelSchema,
+        providerModel: Ev2AiCompatibleResponseModelSchema,
         externalProviderEnabled: z.boolean(),
         externalProviderReady: z.boolean(),
         allowedDataClasses: z.array(z.enum(["synthetic", "business_content"])).min(1),
@@ -155,7 +168,7 @@ export const Ev2AiSessionCreatedSchema = z
     sessionId: z.uuid(),
     status: z.literal("active"),
     providerMode: Ev2AiProviderModeSchema,
-    providerModel: Ev2AiApprovedModelSchema,
+    providerModel: Ev2AiCompatibleResponseModelSchema,
     externalProviderEnabled: z.literal(true),
     expiresAt: z.iso.datetime(),
     correlationId: z.uuid(),
@@ -184,7 +197,7 @@ export const Ev2AiProposalCreatedSchema = z
     published: z.literal(false),
     costMicros: z.literal(0),
     providerMode: Ev2AiProviderModeSchema,
-    providerModel: Ev2AiApprovedModelSchema,
+    providerModel: Ev2AiCompatibleResponseModelSchema,
     externalProviderEnabled: z.literal(true),
     correlationId: z.uuid(),
   })

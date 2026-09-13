@@ -12,6 +12,7 @@ import {
 const PROJECT_REF = "glcqsosxwgmlhzgcsnzv";
 const PROJECT_NAME = "GAIATEC CMS Staging";
 const ORIGIN = "https://ev2-g17-canary.gaiatec-cms-staging.pages.dev";
+const EXPECTED_MODEL = "inclusionai/ling-3.0-flash-vl:free";
 const EXPECTED_SHA = process.env.EV2_G17_EXPECTED_SHA ?? "";
 if (!/^[a-f0-9]{40}$/.test(EXPECTED_SHA)) throw new Error("EV2_G17_EXPECTED_SHA inválido.");
 const QA_RUN_TAG = createQaRunTag(EXPECTED_SHA);
@@ -416,8 +417,11 @@ try {
   const capability = await edge("cms-ai", "capability");
   check(
     "openrouter_ready",
-    capability.json.providerMode === "openrouter" && capability.json.externalProviderReady === true,
-    capability.json.providerMode,
+    capability.json.providerMode === "openrouter" &&
+      capability.json.providerModel === EXPECTED_MODEL &&
+      capability.json.allowedModel === EXPECTED_MODEL &&
+      capability.json.externalProviderReady === true,
+    capability.json.providerModel,
   );
   const opened = await edge(
     "cms-ai",
@@ -425,6 +429,8 @@ try {
     { mode: "draft", title: "Cadastro sintético G17" },
     { idempotent: true },
   );
+  const sourceExcerpt =
+    "O instrumento sintético mede pressão de zero a dez bar e possui saída de quatro a vinte miliampères.";
   const generated = await edge(
     "cms-ai",
     "generate_proposal",
@@ -440,26 +446,55 @@ try {
         version: "v1",
         locator: "seção 1",
         page: 1,
-        excerpt:
-          "O instrumento sintético mede pressão de zero a dez bar e possui saída de quatro a vinte miliampères.",
+        excerpt: sourceExcerpt,
       },
     },
     { idempotent: true },
   );
   check(
-    "nemotron_proposal",
+    "ling_proposal",
     Boolean(generated.json.proposalId) &&
+      generated.json.providerMode === "openrouter" &&
+      generated.json.providerModel === EXPECTED_MODEL &&
       generated.json.applied === false &&
       generated.json.published === false,
-    generated.json.proposalId,
+    generated.json.providerModel,
   );
   const workspace = await edge("cms-ai", "workspace");
   const sessionItem = workspace.json.sessions.find((item) => item.id === opened.json.sessionId);
-  const proposal = sessionItem.proposals.find((item) => item.id === generated.json.proposalId);
+  check(
+    "ling_workspace_model",
+    workspace.json.policy?.providerModel === EXPECTED_MODEL && sessionItem?.providerModel === EXPECTED_MODEL,
+    sessionItem?.providerModel ?? "missing-session",
+  );
+  const proposal = sessionItem?.proposals.find((item) => item.id === generated.json.proposalId);
   check(
     "human_review_ready",
-    sessionItem.providerMode === "openrouter" && sessionItem.reviewable === true,
-    sessionItem.providerMode,
+    sessionItem?.providerMode === "openrouter" && sessionItem.reviewable === true,
+    sessionItem?.providerMode ?? "missing-session",
+  );
+  check(
+    "proposal_source_binding",
+    proposal?.sourceIds.includes(generated.json.sourceId) === true &&
+      proposal.fields.some(
+        (field) => field.sourceId === generated.json.sourceId && field.excerpt === sourceExcerpt,
+      ),
+    proposal?.id ?? "missing-proposal",
+  );
+  const groundedText = `${proposal?.summary ?? ""} ${
+    proposal?.fields.map((field) => field.value).join(" ") ?? ""
+  }`
+    .normalize("NFD")
+    .replaceAll(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9]+/g, " ");
+  check(
+    "proposal_source_grounding",
+    groundedText.includes("press") &&
+      (groundedText.includes("bar") ||
+        groundedText.includes("miliamp") ||
+        /\b4\s+(?:a\s+)?20\b/.test(groundedText)),
+    "synthetic-source-facts",
   );
   const decision = await edge(
     "cms-ai",
@@ -504,7 +539,7 @@ console.log(
     candidateSha: EXPECTED_SHA,
     checks: checks.length,
     provider: "openrouter",
-    model: "nvidia/nemotron-3.5-lightning:free",
+    model: "inclusionai/ling-3.0-flash-vl:free",
     syntheticUsers: 1,
     productionMutations: 0,
     realDataUsed: false,

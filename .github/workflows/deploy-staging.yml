@@ -325,6 +325,12 @@ jobs:
         # `-eo pipefail`, entao a falha do comando da esquerda volta a reprovar o passo.
         shell: bash
         run: node scripts/ev2/phase12/configure-staging-auth.mjs | tee ../g12-staging-auth.json
+      - name: Configure and verify the exact privacy-safe staging AI provider policy
+        working-directory: candidate
+        env:
+          STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/ev2/phase12/configure-staging-ai-provider-secrets.mjs
       - name: Deploy the complete exact-candidate Edge Function inventory to staging
         working-directory: candidate
         env:
@@ -1195,6 +1201,7 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
+          mkdir -p outputs
           test "$STAGING_SUPABASE_PROJECT_REF" = "glcqsosxwgmlhzgcsnzv"
           # `link` e local: escreve supabase/.temp no workspace e nao muta o projeto remoto. Os
           # canarios recusam o alvo quando o CLI nao esta vinculado, e sem isso nenhum check roda.
@@ -1446,7 +1453,7 @@ jobs:
     needs: deploy
     if: always() && !inputs.diagnostic_run
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 180
     environment: staging
     steps:
       - name: Checkout the trusted staging control revision
@@ -1592,6 +1599,106 @@ jobs:
         run: >-
           node scripts/ev2/phase12/staging-pages-state.mjs
           ${{ needs.deploy.result == 'success' && 'assert-owned' || 'decide' }}
+      - name: Checkout the exact candidate for forward-backend recovery
+        id: finalizer_backend_checkout
+        if: >-
+          always() && needs.deploy.result != 'success' &&
+          steps.finalizer_state.outcome == 'success' &&
+          steps.finalizer_decision.outcome == 'success' &&
+          (steps.finalizer_decision.outputs.action == 'already-original' ||
+          steps.finalizer_decision.outputs.action == 'restore-original')
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ steps.finalizer_state.outputs.candidate_release }}
+          fetch-depth: 0
+          path: candidate-recovery
+      - name: Install pinned Supabase CLI for forward-backend recovery
+        id: finalizer_supabase_cli
+        if: always() && steps.finalizer_backend_checkout.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3
+        with:
+          version: 2.116.0
+      - name: Converge exact candidate staging migrations after deploy failure
+        id: finalizer_recovery_database
+        if: always() && steps.finalizer_supabase_cli.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 15
+        working-directory: candidate-recovery
+        env:
+          STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test "$STAGING_SUPABASE_PROJECT_REF" = "glcqsosxwgmlhzgcsnzv"
+          test "$(git rev-parse HEAD)" = "${{ steps.finalizer_state.outputs.candidate_release }}"
+          supabase link --project-ref "$STAGING_SUPABASE_PROJECT_REF" --yes
+          supabase db push --linked --include-all --dry-run
+          supabase db push --linked --include-all --yes
+          node scripts/ev2/phase12/verify-staging-database.mjs --source . |
+            tee outputs/g12-staging-database-finalizer-recovery.json
+      - name: Converge exact candidate staging configuration after deploy failure
+        id: finalizer_recovery_configuration
+        if: always() && steps.finalizer_recovery_database.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 10
+        working-directory: candidate-recovery
+        env:
+          STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          STAGING_ALLOWED_ORIGINS: >-
+            https://gaiatec-cms-staging.pages.dev,
+            https://ev2-g17-canary.gaiatec-cms-staging.pages.dev,
+            https://ev2-g12-canary.gaiatec-cms-staging.pages.dev,
+            https://ev2-g16-csp-canary.gaiatec-cms-staging.pages.dev,
+            https://ev2-g12-rollback-compat.gaiatec-cms-staging.pages.dev
+          STAGING_ALLOWED_HOSTNAMES: >-
+            gaiatec-cms-staging.pages.dev,
+            ev2-g17-canary.gaiatec-cms-staging.pages.dev,
+            ev2-g12-canary.gaiatec-cms-staging.pages.dev,
+            ev2-g16-csp-canary.gaiatec-cms-staging.pages.dev,
+            ev2-g12-rollback-compat.gaiatec-cms-staging.pages.dev
+        run: |
+          set -euo pipefail
+          supabase secrets set --project-ref "$STAGING_SUPABASE_PROJECT_REF" \
+            ALLOWED_ORIGINS="$STAGING_ALLOWED_ORIGINS" \
+            TURNSTILE_ALLOWED_HOSTNAMES="$STAGING_ALLOWED_HOSTNAMES" \
+            PUBLIC_SITE_ORIGIN=https://ev2-g17-canary.gaiatec-cms-staging.pages.dev \
+            CMS_ENVIRONMENT=staging \
+            CMS_RELEASE_SHA="${{ steps.finalizer_state.outputs.candidate_release }}" \
+            CMS_ADMIN_ORIGIN=https://ev2-g17-canary.gaiatec-cms-staging.pages.dev \
+            CMS_ADMIN_URL=https://ev2-g17-canary.gaiatec-cms-staging.pages.dev/admin \
+            CONTACT_CAPTCHA_ALWAYS=true \
+            TURNSTILE_EXPECTED_ACTION=lead_capture
+          node scripts/ev2/phase12/configure-staging-auth.mjs
+          node scripts/ev2/phase12/configure-staging-ai-provider-secrets.mjs |
+            tee outputs/g12-staging-ai-provider-finalizer-recovery.json
+      - name: Converge exact candidate Edge Functions after deploy failure
+        id: finalizer_recovery_functions
+        if: always() && steps.finalizer_recovery_configuration.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 90
+        working-directory: candidate-recovery
+        env:
+          STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p outputs
+          node scripts/ev2/phase12/deploy-staging-functions.mjs \
+            --source . --rollback-source . \
+            --candidate "${{ steps.finalizer_state.outputs.candidate_release }}" \
+            --report outputs/g12-staging-function-finalizer-recovery.json
+          supabase functions list --project-ref "$STAGING_SUPABASE_PROJECT_REF" --output json > \
+            outputs/g12-staging-functions-finalizer-recovery.json
+          node scripts/ev2/phase12/verify-production-functions.mjs \
+            --file outputs/g12-staging-functions-finalizer-recovery.json \
+            --receipt outputs/g12-staging-function-finalizer-recovery.json \
+            --source . --candidate "${{ steps.finalizer_state.outputs.candidate_release }}" \
+            --environment staging --project-ref "$STAGING_SUPABASE_PROJECT_REF"
       - name: Download the exact sealed recovery artifact only when compensation is required
         id: recovery_artifact_download
         if: >-
@@ -1617,7 +1724,8 @@ jobs:
         id: finalizer_compensation
         if: >-
           always() && needs.deploy.result != 'success' &&
-          steps.finalizer_decision.outputs.action == 'restore-original'
+          steps.finalizer_decision.outputs.action == 'restore-original' &&
+          steps.finalizer_recovery_functions.outcome == 'success'
         timeout-minutes: 15
         continue-on-error: true
         working-directory: control
@@ -1631,6 +1739,7 @@ jobs:
         if: >-
           always() && needs.deploy.result != 'success' &&
           steps.finalizer_decision.outputs.action == 'restore-original' &&
+          steps.finalizer_recovery_functions.outcome == 'success' &&
           steps.recovery_artifact_download.outcome == 'success' &&
           steps.finalizer_compensation.outcome != 'success'
         timeout-minutes: 15
@@ -1642,17 +1751,22 @@ jobs:
           --dist ../recovery/dist
           --seal ../recovery/outputs/staging-baseline-dist-seal.json
       - name: Terminal canonical recheck for successful staging deployment
+        id: finalizer_terminal_owned
         if: always() && needs.deploy.result == 'success'
+        continue-on-error: true
         timeout-minutes: 3
         working-directory: control
         env: *staging_reconcile_environment
         run: node scripts/ev2/phase12/staging-pages-state.mjs assert-owned
       - name: Terminal canonical recheck after staging compensation
+        id: finalizer_terminal_original
         if: >-
           always() && needs.deploy.result != 'success' &&
+          steps.finalizer_recovery_functions.outcome == 'success' &&
           (steps.finalizer_decision.outputs.action == 'already-original' ||
           steps.finalizer_compensation.outcome == 'success' ||
           steps.finalizer_compensation_retry.outcome == 'success')
+        continue-on-error: true
         timeout-minutes: 3
         working-directory: control
         env: *staging_reconcile_environment
@@ -1661,9 +1775,12 @@ jobs:
         id: finalizer_probe
         if: >-
           always() && steps.finalizer_state.outcome == 'success' &&
-          (steps.finalizer_decision.outcome == 'success' ||
-          steps.finalizer_compensation.outcome == 'success' ||
-          steps.finalizer_compensation_retry.outcome == 'success')
+          steps.finalizer_decision.outcome == 'success' &&
+          ((needs.deploy.result == 'success' &&
+          steps.finalizer_terminal_owned.outcome == 'success') ||
+          (needs.deploy.result != 'success' &&
+          steps.finalizer_recovery_functions.outcome == 'success' &&
+          steps.finalizer_terminal_original.outcome == 'success'))
         timeout-minutes: 10
         working-directory: control
         env:
@@ -1685,16 +1802,34 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: staging-terminal-${{ github.run_id }}-${{ github.run_attempt }}
-          path: g12-staging-terminal-probe.json
+          path: |
+            g12-staging-terminal-probe.json
+            candidate-recovery/outputs/g12-staging-database-finalizer-recovery.json
+            candidate-recovery/outputs/g12-staging-ai-provider-finalizer-recovery.json
+            candidate-recovery/outputs/g12-staging-function-finalizer-recovery.json
+            candidate-recovery/outputs/g12-staging-functions-finalizer-recovery.json
           if-no-files-found: error
           retention-days: 30
       - name: Compare and clear redundant staging state after terminal success
         id: clear_recovery_state
         if: >-
-          always() && needs.deploy.result == 'success' &&
+          always() && steps.finalizer_state.outcome == 'success' &&
           steps.finalizer_decision.outcome == 'success' &&
+          steps.real_browser_rendezvous_cleanup.outcome != 'failure' &&
           steps.finalizer_probe.outcome == 'success' &&
-          steps.terminal_evidence_upload.outcome == 'success'
+          steps.terminal_evidence_upload.outcome == 'success' &&
+          ((needs.deploy.result == 'success' &&
+          steps.finalizer_terminal_owned.outcome == 'success') ||
+          (needs.deploy.result != 'success' &&
+          steps.finalizer_backend_checkout.outcome == 'success' &&
+          steps.finalizer_supabase_cli.outcome == 'success' &&
+          steps.finalizer_recovery_database.outcome == 'success' &&
+          steps.finalizer_recovery_configuration.outcome == 'success' &&
+          steps.finalizer_recovery_functions.outcome == 'success' &&
+          steps.finalizer_terminal_original.outcome == 'success' &&
+          (steps.finalizer_decision.outputs.action == 'already-original' ||
+          steps.finalizer_compensation.outcome == 'success' ||
+          steps.finalizer_compensation_retry.outcome == 'success')))
         timeout-minutes: 5
         working-directory: control
         env:
@@ -1713,7 +1848,16 @@ jobs:
           steps.finalizer_decision.outcome != 'success' ||
           steps.finalizer_probe.outcome != 'success' ||
           steps.terminal_evidence_upload.outcome != 'success' ||
-          (needs.deploy.result == 'success' && steps.clear_recovery_state.outcome != 'success') ||
+          steps.clear_recovery_state.outcome != 'success' ||
+          (needs.deploy.result == 'success' &&
+          steps.finalizer_terminal_owned.outcome != 'success') ||
+          (needs.deploy.result != 'success' &&
+          (steps.finalizer_backend_checkout.outcome != 'success' ||
+          steps.finalizer_supabase_cli.outcome != 'success' ||
+          steps.finalizer_recovery_database.outcome != 'success' ||
+          steps.finalizer_recovery_configuration.outcome != 'success' ||
+          steps.finalizer_recovery_functions.outcome != 'success' ||
+          steps.finalizer_terminal_original.outcome != 'success')) ||
           (needs.deploy.result != 'success' &&
           steps.finalizer_decision.outputs.action == 'restore-original' &&
           steps.finalizer_compensation.outcome != 'success' &&

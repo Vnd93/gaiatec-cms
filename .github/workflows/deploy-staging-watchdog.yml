@@ -20,7 +20,7 @@ jobs:
   # G12_STAGING_WATCHDOG_STATE_UNAVAILABLE, deixando um run vermelho por passada de diagnostico.
   # Falha esperada que se acumula esconde a falha real: uma compensacao que nao aconteceu ficaria
   # indistinguivel do ruido. A discriminacao nao olha o input do pai, olha o fato que importa —
-  # se o job mutante chegou a executar.
+  # se o job mutante chegou a executar e se o finalizador ja encerrou a recuperacao.
   classify-parent-run:
     if: >-
       (github.event.workflow_run.conclusion == 'cancelled' ||
@@ -33,9 +33,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      deploy_executed: ${{ steps.parent.outputs.deploy_executed }}
+      recovery_required: ${{ steps.parent.outputs.recovery_required }}
     steps:
-      - name: Decide whether the incomplete run reached its mutating deploy job
+      - name: Decide whether the incomplete run still requires recovery
         id: parent
         env:
           GH_TOKEN: ${{ github.token }}
@@ -45,30 +45,29 @@ jobs:
           set -euo pipefail
           # Se a classificacao nao puder ser feita, o watchdog segue como antes: nao compensar por
           # nao saber seria o unico erro irrecuperavel desta decisao.
-          if ! conclusions="$(gh api --paginate \
-            "repos/$GITHUB_REPOSITORY/actions/runs/$PARENT_RUN_ID/attempts/$PARENT_RUN_ATTEMPT/jobs" \
-            --jq '.jobs[] | select(.name == "deploy") | .conclusion')"; then
-            printf '{"event":"g12.staging.watchdog.parent-classification-failed","runId":"%s","runAttempt":"%s","deployExecuted":true}\n' \
+          if ! summary="$(gh api \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$PARENT_RUN_ID/attempts/$PARENT_RUN_ATTEMPT/jobs?per_page=100" \
+            --jq '[([.jobs[] | select(.name == "deploy")] | length), ([.jobs[] | select(.name == "deploy")][0].conclusion // ""), ([.jobs[] | select(.name == "finalize")] | length), ([.jobs[] | select(.name == "finalize")][0].conclusion // "")] | @tsv')"; then
+            printf '{"event":"g12.staging.watchdog.parent-classification-failed","runId":"%s","runAttempt":"%s","recoveryRequired":true}\n' \
               "$PARENT_RUN_ID" "$PARENT_RUN_ATTEMPT"
-            echo "deploy_executed=true" >> "$GITHUB_OUTPUT"
+            echo "recovery_required=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # Ausente ou skipped: nenhuma mutacao comecou, logo nao ha o que compensar. Qualquer
-          # outra conclusao (failure, cancelled, success) significa que o job mutante rodou, e ai
-          # a ausencia de estado pre-mutacao continua sendo falha dura no job seguinte.
-          if [ -z "$conclusions" ] || ! printf '%s\n' "$conclusions" | grep -qv '^skipped$'; then
-            executed=false
-          else
-            executed=true
+          IFS=$'\t' read -r deploy_count deploy_conclusion finalize_count finalize_conclusion <<< "$summary"
+          required=true
+          if [ "$deploy_count" = 1 ] && [ "$deploy_conclusion" = skipped ]; then
+            required=false
+          elif [ "$deploy_count" = 1 ] && [ "$finalize_count" = 1 ] && [ "$finalize_conclusion" = success ]; then
+            required=false
           fi
-          printf '{"event":"g12.staging.watchdog.parent-classified","runId":"%s","runAttempt":"%s","deployExecuted":%s}\n' \
-            "$PARENT_RUN_ID" "$PARENT_RUN_ATTEMPT" "$executed"
-          echo "deploy_executed=$executed" >> "$GITHUB_OUTPUT"
+          printf '{"event":"g12.staging.watchdog.parent-classified","runId":"%s","runAttempt":"%s","recoveryRequired":%s}\n' \
+            "$PARENT_RUN_ID" "$PARENT_RUN_ATTEMPT" "$required"
+          echo "recovery_required=$required" >> "$GITHUB_OUTPUT"
 
   compensate-incomplete-staging-deploy:
     needs: classify-parent-run
     if: >-
-      needs.classify-parent-run.outputs.deploy_executed == 'true' &&
+      needs.classify-parent-run.outputs.recovery_required == 'true' &&
       (github.event.workflow_run.conclusion == 'cancelled' ||
       github.event.workflow_run.conclusion == 'failure' ||
       github.event.workflow_run.conclusion == 'timed_out') &&
@@ -77,7 +76,7 @@ jobs:
       github.event.workflow_run.path == '.github/workflows/deploy-staging.yml' &&
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 180
     environment: staging
     steps:
       - name: Checkout the exact trusted staging control revision
@@ -193,10 +192,111 @@ jobs:
           STAGING_RUN_MARKER: ${{ steps.watchdog_state.outputs.run_marker }}
           STAGING_COMPENSATION_MARKER: ${{ steps.watchdog_state.outputs.compensation_marker }}
         run: node scripts/ev2/phase12/staging-pages-state.mjs decide
+      - name: Checkout the exact candidate for watchdog forward-backend recovery
+        id: watchdog_backend_checkout
+        if: >-
+          always() && steps.watchdog_state.outcome == 'success' &&
+          steps.watchdog_decision.outcome == 'success' &&
+          (steps.watchdog_decision.outputs.action == 'already-original' ||
+          steps.watchdog_decision.outputs.action == 'restore-original')
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ steps.watchdog_state.outputs.candidate_release }}
+          fetch-depth: 0
+          path: candidate-recovery
+      - name: Install pinned Supabase CLI for watchdog forward-backend recovery
+        id: watchdog_supabase_cli
+        if: always() && steps.watchdog_backend_checkout.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3
+        with:
+          version: 2.116.0
+      - name: Converge exact candidate staging migrations in the watchdog
+        id: watchdog_recovery_database
+        if: always() && steps.watchdog_supabase_cli.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 15
+        working-directory: candidate-recovery
+        env:
+          STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p outputs
+          test "$STAGING_SUPABASE_PROJECT_REF" = "glcqsosxwgmlhzgcsnzv"
+          test "$(git rev-parse HEAD)" = "${{ steps.watchdog_state.outputs.candidate_release }}"
+          supabase link --project-ref "$STAGING_SUPABASE_PROJECT_REF" --yes
+          supabase db push --linked --include-all --dry-run
+          supabase db push --linked --include-all --yes
+          node scripts/ev2/phase12/verify-staging-database.mjs --source . |
+            tee outputs/g12-staging-database-watchdog-recovery.json
+      - name: Converge exact candidate staging configuration in the watchdog
+        id: watchdog_recovery_configuration
+        if: always() && steps.watchdog_recovery_database.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 10
+        working-directory: candidate-recovery
+        env:
+          STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          STAGING_ALLOWED_ORIGINS: >-
+            https://gaiatec-cms-staging.pages.dev,
+            https://ev2-g17-canary.gaiatec-cms-staging.pages.dev,
+            https://ev2-g12-canary.gaiatec-cms-staging.pages.dev,
+            https://ev2-g16-csp-canary.gaiatec-cms-staging.pages.dev,
+            https://ev2-g12-rollback-compat.gaiatec-cms-staging.pages.dev
+          STAGING_ALLOWED_HOSTNAMES: >-
+            gaiatec-cms-staging.pages.dev,
+            ev2-g17-canary.gaiatec-cms-staging.pages.dev,
+            ev2-g12-canary.gaiatec-cms-staging.pages.dev,
+            ev2-g16-csp-canary.gaiatec-cms-staging.pages.dev,
+            ev2-g12-rollback-compat.gaiatec-cms-staging.pages.dev
+        run: |
+          set -euo pipefail
+          supabase secrets set --project-ref "$STAGING_SUPABASE_PROJECT_REF" \
+            ALLOWED_ORIGINS="$STAGING_ALLOWED_ORIGINS" \
+            TURNSTILE_ALLOWED_HOSTNAMES="$STAGING_ALLOWED_HOSTNAMES" \
+            PUBLIC_SITE_ORIGIN=https://ev2-g17-canary.gaiatec-cms-staging.pages.dev \
+            CMS_ENVIRONMENT=staging \
+            CMS_RELEASE_SHA="${{ steps.watchdog_state.outputs.candidate_release }}" \
+            CMS_ADMIN_ORIGIN=https://ev2-g17-canary.gaiatec-cms-staging.pages.dev \
+            CMS_ADMIN_URL=https://ev2-g17-canary.gaiatec-cms-staging.pages.dev/admin \
+            CONTACT_CAPTCHA_ALWAYS=true \
+            TURNSTILE_EXPECTED_ACTION=lead_capture
+          node scripts/ev2/phase12/configure-staging-auth.mjs
+          node scripts/ev2/phase12/configure-staging-ai-provider-secrets.mjs |
+            tee outputs/g12-staging-ai-provider-watchdog-recovery.json
+      - name: Converge exact candidate Edge Functions in the watchdog
+        id: watchdog_recovery_functions
+        if: always() && steps.watchdog_recovery_configuration.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 90
+        working-directory: candidate-recovery
+        env:
+          STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p outputs
+          node scripts/ev2/phase12/deploy-staging-functions.mjs \
+            --source . --rollback-source . \
+            --candidate "${{ steps.watchdog_state.outputs.candidate_release }}" \
+            --report outputs/g12-staging-function-watchdog-recovery.json
+          supabase functions list --project-ref "$STAGING_SUPABASE_PROJECT_REF" --output json > \
+            outputs/g12-staging-functions-watchdog-recovery.json
+          node scripts/ev2/phase12/verify-production-functions.mjs \
+            --file outputs/g12-staging-functions-watchdog-recovery.json \
+            --receipt outputs/g12-staging-function-watchdog-recovery.json \
+            --source . --candidate "${{ steps.watchdog_state.outputs.candidate_release }}" \
+            --environment staging --project-ref "$STAGING_SUPABASE_PROJECT_REF"
       - name: Download the exact sealed recovery artifact when the owned candidate remains active
         id: recovery_artifact
         if: >-
-          always() && steps.watchdog_decision.outputs.action == 'restore-original'
+          always() && steps.watchdog_decision.outputs.action == 'restore-original' &&
+          steps.watchdog_recovery_functions.outcome == 'success'
         continue-on-error: true
         timeout-minutes: 10
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -217,7 +317,8 @@ jobs:
       - name: Compensate only the still-canonical candidate owned by the incomplete run
         id: watchdog_compensation
         if: >-
-          always() && steps.watchdog_decision.outputs.action == 'restore-original'
+          always() && steps.watchdog_decision.outputs.action == 'restore-original' &&
+          steps.watchdog_recovery_functions.outcome == 'success'
         timeout-minutes: 15
         continue-on-error: true
         working-directory: control
@@ -230,6 +331,7 @@ jobs:
         id: watchdog_compensation_retry
         if: >-
           always() && steps.watchdog_decision.outputs.action == 'restore-original' &&
+          steps.watchdog_recovery_functions.outcome == 'success' &&
           steps.recovery_artifact.outcome == 'success' &&
           steps.watchdog_compensation.outcome != 'success'
         timeout-minutes: 15
@@ -241,11 +343,14 @@ jobs:
           --dist ../recovery/dist
           --seal ../recovery/outputs/staging-baseline-dist-seal.json
       - name: Terminal canonical recheck after watchdog reconciliation
+        id: watchdog_terminal_canonical
         if: >-
           always() &&
+          steps.watchdog_recovery_functions.outcome == 'success' &&
           (steps.watchdog_decision.outputs.action == 'already-original' ||
           steps.watchdog_compensation.outcome == 'success' ||
           steps.watchdog_compensation_retry.outcome == 'success')
+        continue-on-error: true
         timeout-minutes: 3
         working-directory: control
         env: *staging_watchdog_environment
@@ -254,6 +359,12 @@ jobs:
         id: watchdog_probe
         if: >-
           always() &&
+          steps.watchdog_backend_checkout.outcome == 'success' &&
+          steps.watchdog_supabase_cli.outcome == 'success' &&
+          steps.watchdog_recovery_database.outcome == 'success' &&
+          steps.watchdog_recovery_configuration.outcome == 'success' &&
+          steps.watchdog_recovery_functions.outcome == 'success' &&
+          steps.watchdog_terminal_canonical.outcome == 'success' &&
           (steps.watchdog_decision.outputs.action == 'already-original' ||
           steps.watchdog_compensation.outcome == 'success' ||
           steps.watchdog_compensation_retry.outcome == 'success')
@@ -283,12 +394,27 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: staging-watchdog-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
-          path: g12-staging-watchdog-probe.json
+          path: |
+            g12-staging-watchdog-probe.json
+            candidate-recovery/outputs/g12-staging-database-watchdog-recovery.json
+            candidate-recovery/outputs/g12-staging-ai-provider-watchdog-recovery.json
+            candidate-recovery/outputs/g12-staging-function-watchdog-recovery.json
+            candidate-recovery/outputs/g12-staging-functions-watchdog-recovery.json
           if-no-files-found: error
           retention-days: 30
       - name: Compare and clear redundant deploy state after watchdog evidence
         id: clear_recovery_state
-        if: always() && steps.watchdog_probe.outcome == 'success' && steps.watchdog_evidence_upload.outcome == 'success'
+        if: >-
+          always() && steps.watchdog_state.outcome == 'success' &&
+          steps.watchdog_decision.outcome == 'success' &&
+          steps.watchdog_backend_checkout.outcome == 'success' &&
+          steps.watchdog_supabase_cli.outcome == 'success' &&
+          steps.watchdog_recovery_database.outcome == 'success' &&
+          steps.watchdog_recovery_configuration.outcome == 'success' &&
+          steps.watchdog_recovery_functions.outcome == 'success' &&
+          steps.watchdog_terminal_canonical.outcome == 'success' &&
+          steps.watchdog_probe.outcome == 'success' &&
+          steps.watchdog_evidence_upload.outcome == 'success'
         timeout-minutes: 5
         working-directory: control
         env:
@@ -308,6 +434,12 @@ jobs:
           steps.watchdog_probe.outcome != 'success' ||
           steps.watchdog_evidence_upload.outcome != 'success' ||
           steps.clear_recovery_state.outcome != 'success' ||
+          steps.watchdog_backend_checkout.outcome != 'success' ||
+          steps.watchdog_supabase_cli.outcome != 'success' ||
+          steps.watchdog_recovery_database.outcome != 'success' ||
+          steps.watchdog_recovery_configuration.outcome != 'success' ||
+          steps.watchdog_recovery_functions.outcome != 'success' ||
+          steps.watchdog_terminal_canonical.outcome != 'success' ||
           (steps.watchdog_decision.outputs.action == 'restore-original' &&
           steps.watchdog_compensation.outcome != 'success' &&
           steps.watchdog_compensation_retry.outcome != 'success'))

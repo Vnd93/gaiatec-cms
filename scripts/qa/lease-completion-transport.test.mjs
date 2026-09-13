@@ -16,6 +16,7 @@ import test from "node:test";
 const FIXTURE = "scripts/qa/cms-browser-fixture.mjs";
 const PUBLIC_BRIDGE_FIXTURE = "scripts/qa/cms-public-bridge-fixture.mjs";
 const MIGRATION_CANARY = "scripts/ev2/phase12/staging-migrations-canary.mjs";
+const PHASE7_ROUNDTRIP = "scripts/phase7/staging-roundtrip.mjs";
 // A guarda lia UM arquivo enquanto o passo 48 roda DOIS specs, nos dois projetos do Playwright.
 // Proibir `networkidle` em um e deixar o vizinho livre e a forma mais barata de a regra existir
 // sem valer: products-catalog.spec.ts mantinha tres navegacoes contra o mesmo alias publicado.
@@ -132,6 +133,57 @@ test("toda limpeza pesada de staging cai para o transporte duravel somente em 57
     assert.match(body, /LEASE_COMPLETION_REQUEST_TIMEOUT_MS,/);
     assert.equal((source.match(/set statement_timeout = /g) ?? []).length, 1, path);
   }
+});
+
+test("o ciclo editorial usa encerramento duravel sem esconder a causa do banco", async () => {
+  const source = await read(PHASE7_ROUNDTRIP);
+  const body = source.slice(
+    source.indexOf("async function durableLeaseRpc"),
+    source.indexOf("async function createActor"),
+  );
+  assert.ok(body.length > 0, "durableLeaseRpc do ciclo editorial nao encontrada");
+
+  assert.match(source, /completeQaActorLease\(durableLeaseRpc, actor\.identity\)/);
+  assert.match(body, /return await leaseRpc\(name, body\)/);
+  assert.match(body, /name !== "cms_complete_qa_actor_lease"/);
+  assert.match(body, /leaseStatementTimedOut\(error\)/);
+  assert.match(body, /select public\.cms_complete_qa_actor_lease\(/);
+  assert.match(body, /LEASE_COMPLETION_REQUEST_TIMEOUT_MS,/);
+  assert.equal((source.match(/set statement_timeout = /g) ?? []).length, 1);
+
+  assert.match(source, /G7_STAGING_LEASE_RPC_FAILED:\$\{databaseFailureIdentity\(result\.error\)\}/);
+  assert.match(source, /G7_STAGING_MANAGEMENT_QUERY_FAILED:\$\{response\.status\}:\$\{code\}:\$\{slug\}/);
+  assert.match(source, /G7_STAGING_LEASE_RPC_PAYLOAD_INVALID/);
+  assert.doesNotMatch(source, /RPC de lease indisponível/);
+});
+
+test("o fallback editorial e fechado para timeout e convergencia exatos", async () => {
+  const source = await read(PHASE7_ROUNDTRIP);
+  const body = source.slice(
+    source.indexOf("async function durableLeaseRpc"),
+    source.indexOf("async function createActor"),
+  );
+  const guard = body.indexOf("assertSafeLeaseCompletionIdentity(body, error)");
+  const interpolation = body.indexOf("set statement_timeout = ");
+  assert.ok(guard >= 0 && guard < interpolation, "a identidade precisa ser validada antes do SQL");
+
+  assert.match(source, /LEASE_COMPLETION_STATEMENT_TIMEOUT_MS = 60_000/);
+  assert.match(source, /LEASE_COMPLETION_REQUEST_TIMEOUT_MS = 90_000/);
+  assert.match(source, /LEASE_COMPLETION_ATTEMPTS = 6/);
+  assert.match(source, /LEASE_COMPLETION_RETRY_INTERVAL_MS = 2_000/);
+  assert.match(source, /databaseFailureIdentity\(error\)\.startsWith\("57014:"\)/);
+  assert.match(source, /databaseFailureIdentity\(error\) === "55000:CMS_QA_ACTOR_CLEANUP_INCOMPLETE"/);
+  assert.match(body, /if \(!leaseCleanupIncomplete\(error\)\) throw error/);
+  assert.match(body, /if \(leaseCleanupIncomplete\(durableError\)\) continue/);
+
+  for (const pattern of [
+    /leaseActorPattern\.test\(body\.p_actor_id/,
+    /leaseRunTagPattern\.test\(body\.p_run_tag/,
+    /\^\[0-9a-f\]\{40\}\$\/\.test\(body\.p_candidate_sha/,
+    /body\.p_run_tag\.slice\(-8\) !== body\.p_candidate_sha\.slice\(0, 8\)/,
+    /\^\(staging\|production\)\$\/\.test\(body\.p_environment/,
+  ])
+    assert.match(source, pattern);
 });
 
 test("a ponte publica valida toda identidade antes de interpolar o fallback", async () => {

@@ -1,4 +1,4 @@
-export const APPROVED_OPENROUTER_MODEL = "nvidia/nemotron-3.5-lightning:free";
+export const APPROVED_OPENROUTER_MODEL = "inclusionai/ling-3.0-flash-vl:free";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 export type OpenRouterProposal = {
@@ -19,10 +19,33 @@ function parseJsonContent(content: string): Record<string, unknown> {
     .trim()
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/\s*```$/, "");
-  const parsed = JSON.parse(normalized) as unknown;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(normalized) as unknown;
+  } catch {
+    throw new Error("OPENROUTER_OUTPUT_INVALID");
+  }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
     throw new Error("OPENROUTER_OUTPUT_INVALID");
   return parsed as Record<string, unknown>;
+}
+
+async function optionalResponseJson(response: Response): Promise<Record<string, unknown> | null> {
+  const payload = (await response.json().catch(() => null)) as unknown;
+  return payload && typeof payload === "object" && !Array.isArray(payload)
+    ? (payload as Record<string, unknown>)
+    : null;
+}
+
+function noAllowedProviderConfirmed(payload: Record<string, unknown> | null): boolean {
+  const metadata = payload?.openrouter_metadata;
+  return (
+    metadata !== null &&
+    typeof metadata === "object" &&
+    !Array.isArray(metadata) &&
+    (metadata as Record<string, unknown>).attempt === 0 &&
+    (metadata as Record<string, unknown>).requested === APPROVED_OPENROUTER_MODEL
+  );
 }
 
 export function openRouterConfigured(): boolean {
@@ -46,7 +69,7 @@ export async function generateOpenRouterProposal(input: {
   if (!apiKey || configuredModel !== APPROVED_OPENROUTER_MODEL) throw new Error("OPENROUTER_NOT_CONFIGURED");
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 25_000);
+  const timeout = setTimeout(() => controller.abort(), 30_000);
   try {
     const response = await fetch(OPENROUTER_URL, {
       method: "POST",
@@ -56,10 +79,11 @@ export async function generateOpenRouterProposal(input: {
         "Content-Type": "application/json",
         "HTTP-Referer": "https://gaiatecsistemas.com.br/admin",
         "X-Title": "GAIATEC CMS",
+        "X-OpenRouter-Metadata": "enabled",
       },
       body: JSON.stringify({
         model: APPROVED_OPENROUTER_MODEL,
-        provider: { data_collection: "deny" },
+        provider: { data_collection: "deny", zdr: true },
         temperature: 0.2,
         max_tokens: 900,
         reasoning: { effort: "none", exclude: true },
@@ -85,8 +109,16 @@ export async function generateOpenRouterProposal(input: {
         ],
       }),
     });
-    if (!response.ok) throw new Error(`OPENROUTER_HTTP_${response.status}`);
-    const body = (await response.json()) as Record<string, unknown>;
+    if (!response.ok) {
+      const errorPayload = response.status === 404 ? await optionalResponseJson(response) : null;
+      throw new Error(
+        response.status === 404 && noAllowedProviderConfirmed(errorPayload)
+          ? "OPENROUTER_NO_ALLOWED_PROVIDER"
+          : `OPENROUTER_HTTP_${response.status}`,
+      );
+    }
+    const body = await optionalResponseJson(response);
+    if (!body) throw new Error("OPENROUTER_OUTPUT_INVALID");
     const choices = Array.isArray(body.choices) ? body.choices : [];
     const first = choices[0] as Record<string, unknown> | undefined;
     const message = first?.message as Record<string, unknown> | undefined;
@@ -95,8 +127,10 @@ export async function generateOpenRouterProposal(input: {
     const proposal = parseJsonContent(content);
     const summary = cleanModelText(proposal.summary, 1000);
     const value = cleanModelText(proposal.value, 3000);
-    const confidence = Math.min(0.95, Math.max(0, Number(proposal.confidence)));
-    if (summary.length < 3 || value.length < 1 || !Number.isFinite(confidence))
+    if (typeof proposal.confidence !== "number" || !Number.isFinite(proposal.confidence))
+      throw new Error("OPENROUTER_OUTPUT_INVALID");
+    const confidence = Math.min(0.95, Math.max(0, proposal.confidence));
+    if (summary.length < 3 || value.length < 1)
       throw new Error("OPENROUTER_OUTPUT_INVALID");
     const usage = body.usage as Record<string, unknown> | undefined;
     return {
@@ -107,6 +141,9 @@ export async function generateOpenRouterProposal(input: {
       outputTokens: Math.max(1, Number(usage?.completion_tokens) || 1),
       model: APPROVED_OPENROUTER_MODEL,
     };
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error("OPENROUTER_TIMEOUT");
+    throw error;
   } finally {
     clearTimeout(timeout);
   }

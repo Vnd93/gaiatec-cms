@@ -25,7 +25,7 @@ jobs:
       github.event.workflow_run.path == '.github/workflows/rollback-staging.yml' &&
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
     environment: staging
     steps:
       - name: Checkout exact trusted rollback control revision
@@ -149,6 +149,105 @@ jobs:
           STAGING_RUN_MARKER: ${{ steps.watchdog_state.outputs.run_marker }}
           STAGING_COMPENSATION_MARKER: ${{ steps.watchdog_state.outputs.compensation_marker }}
         run: node scripts/ev2/phase12/staging-pages-state.mjs decide
+      - name: Checkout the exact retained backend for watchdog recovery
+        id: watchdog_backend_checkout
+        if: >-
+          always() && steps.watchdog_state.outcome == 'success' &&
+          steps.watchdog_decision.outcome == 'success' &&
+          (steps.watchdog_decision.outputs.action == 'already-original' ||
+          steps.watchdog_decision.outputs.action == 'restore-original')
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ steps.watchdog_state.outputs.backend_release }}
+          fetch-depth: 0
+          path: backend-recovery
+      - name: Install pinned Supabase CLI for retained-backend recovery
+        id: watchdog_supabase_cli
+        if: always() && steps.watchdog_backend_checkout.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3
+        with:
+          version: 2.116.0
+      - name: Converge retained staging migrations in the rollback watchdog
+        id: watchdog_recovery_database
+        if: always() && steps.watchdog_supabase_cli.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 15
+        working-directory: backend-recovery
+        env:
+          STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p outputs
+          test "$STAGING_SUPABASE_PROJECT_REF" = "glcqsosxwgmlhzgcsnzv"
+          test "$(git rev-parse HEAD)" = "${{ steps.watchdog_state.outputs.backend_release }}"
+          supabase link --project-ref "$STAGING_SUPABASE_PROJECT_REF" --yes
+          supabase db push --linked --include-all --dry-run
+          supabase db push --linked --include-all --yes
+          node scripts/ev2/phase12/verify-staging-database.mjs --source . |
+            tee outputs/g12-staging-rollback-database-watchdog-recovery.json
+      - name: Converge retained staging configuration in the rollback watchdog
+        id: watchdog_recovery_configuration
+        if: always() && steps.watchdog_recovery_database.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 10
+        working-directory: backend-recovery
+        env:
+          STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          STAGING_ALLOWED_ORIGINS: >-
+            https://gaiatec-cms-staging.pages.dev,
+            https://ev2-g17-canary.gaiatec-cms-staging.pages.dev,
+            https://ev2-g12-canary.gaiatec-cms-staging.pages.dev,
+            https://ev2-g16-csp-canary.gaiatec-cms-staging.pages.dev,
+            https://ev2-g12-rollback-compat.gaiatec-cms-staging.pages.dev
+          STAGING_ALLOWED_HOSTNAMES: >-
+            gaiatec-cms-staging.pages.dev,
+            ev2-g17-canary.gaiatec-cms-staging.pages.dev,
+            ev2-g12-canary.gaiatec-cms-staging.pages.dev,
+            ev2-g16-csp-canary.gaiatec-cms-staging.pages.dev,
+            ev2-g12-rollback-compat.gaiatec-cms-staging.pages.dev
+        run: |
+          set -euo pipefail
+          supabase secrets set --project-ref "$STAGING_SUPABASE_PROJECT_REF" \
+            ALLOWED_ORIGINS="$STAGING_ALLOWED_ORIGINS" \
+            TURNSTILE_ALLOWED_HOSTNAMES="$STAGING_ALLOWED_HOSTNAMES" \
+            PUBLIC_SITE_ORIGIN=https://ev2-g17-canary.gaiatec-cms-staging.pages.dev \
+            CMS_ENVIRONMENT=staging \
+            CMS_RELEASE_SHA="${{ steps.watchdog_state.outputs.backend_release }}" \
+            CMS_ADMIN_ORIGIN=https://ev2-g17-canary.gaiatec-cms-staging.pages.dev \
+            CMS_ADMIN_URL=https://ev2-g17-canary.gaiatec-cms-staging.pages.dev/admin \
+            CONTACT_CAPTCHA_ALWAYS=true \
+            TURNSTILE_EXPECTED_ACTION=lead_capture
+          node scripts/ev2/phase12/configure-staging-auth.mjs
+          node scripts/ev2/phase12/configure-staging-ai-provider-secrets.mjs |
+            tee outputs/g12-staging-rollback-ai-provider-watchdog-recovery.json
+      - name: Converge retained Edge Functions in the rollback watchdog
+        id: watchdog_recovery_functions
+        if: always() && steps.watchdog_recovery_configuration.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 90
+        working-directory: backend-recovery
+        env:
+          STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          node scripts/ev2/phase12/deploy-staging-functions.mjs \
+            --source . --rollback-source . \
+            --candidate "${{ steps.watchdog_state.outputs.backend_release }}" \
+            --report outputs/g12-staging-rollback-function-watchdog-recovery.json
+          supabase functions list --project-ref "$STAGING_SUPABASE_PROJECT_REF" --output json > \
+            outputs/g12-staging-rollback-functions-watchdog-recovery.json
+          node scripts/ev2/phase12/verify-production-functions.mjs \
+            --file outputs/g12-staging-rollback-functions-watchdog-recovery.json \
+            --receipt outputs/g12-staging-rollback-function-watchdog-recovery.json \
+            --source . --candidate "${{ steps.watchdog_state.outputs.backend_release }}" \
+            --environment staging --project-ref "$STAGING_SUPABASE_PROJECT_REF"
       - name: Download sealed original recovery bytes when available
         id: recovery_artifact
         if: always() && steps.watchdog_decision.outputs.action == 'restore-original'
@@ -215,6 +314,7 @@ jobs:
         id: watchdog_compensation
         if: >-
           always() && steps.watchdog_decision.outputs.action == 'restore-original' &&
+          steps.watchdog_recovery_functions.outcome == 'success' &&
           ((steps.recovery_artifact.outcome == 'success' &&
           steps.recovery_artifact_seal.outcome == 'success') ||
           steps.recovery_rebuild.outcome == 'success')
@@ -228,7 +328,10 @@ jobs:
           --seal ${{ steps.recovery_artifact.outcome == 'success' && steps.recovery_artifact_seal.outcome == 'success' && '../recovery-artifact/outputs/staging-rollback-recovery-dist-seal.json' || '../recovery-source/outputs/staging-rollback-recovery-dist-seal.json' }}
       - name: Retry ambiguous watchdog compensation safely
         id: watchdog_compensation_retry
-        if: always() && steps.watchdog_decision.outputs.action == 'restore-original' && steps.watchdog_compensation.outcome != 'success'
+        if: >-
+          always() && steps.watchdog_decision.outputs.action == 'restore-original' &&
+          steps.watchdog_recovery_functions.outcome == 'success' &&
+          steps.watchdog_compensation.outcome != 'success'
         timeout-minutes: 20
         continue-on-error: true
         working-directory: control
@@ -237,10 +340,28 @@ jobs:
           node scripts/ev2/phase12/staging-pages-state.mjs compensate
           --dist ${{ steps.recovery_artifact.outcome == 'success' && steps.recovery_artifact_seal.outcome == 'success' && '../recovery-artifact/dist' || '../recovery-source/dist' }}
           --seal ${{ steps.recovery_artifact.outcome == 'success' && steps.recovery_artifact_seal.outcome == 'success' && '../recovery-artifact/outputs/staging-rollback-recovery-dist-seal.json' || '../recovery-source/outputs/staging-rollback-recovery-dist-seal.json' }}
+      - name: Terminal canonical recheck after rollback watchdog reconciliation
+        id: watchdog_terminal_canonical
+        if: >-
+          always() && steps.watchdog_recovery_functions.outcome == 'success' &&
+          (steps.watchdog_decision.outputs.action == 'already-original' ||
+          steps.watchdog_compensation.outcome == 'success' ||
+          steps.watchdog_compensation_retry.outcome == 'success')
+        timeout-minutes: 3
+        continue-on-error: true
+        working-directory: control
+        env: *staging_rollback_watchdog_environment
+        run: node scripts/ev2/phase12/staging-pages-state.mjs assert-original
       - name: Prove original staging after watchdog reconciliation
         id: watchdog_probe
         if: >-
           always() && steps.watchdog_decision.outcome == 'success' &&
+          steps.watchdog_backend_checkout.outcome == 'success' &&
+          steps.watchdog_supabase_cli.outcome == 'success' &&
+          steps.watchdog_recovery_database.outcome == 'success' &&
+          steps.watchdog_recovery_configuration.outcome == 'success' &&
+          steps.watchdog_recovery_functions.outcome == 'success' &&
+          steps.watchdog_terminal_canonical.outcome == 'success' &&
           (steps.watchdog_decision.outputs.action == 'already-original' ||
           steps.watchdog_compensation.outcome == 'success' ||
           steps.watchdog_compensation_retry.outcome == 'success')
@@ -263,8 +384,14 @@ jobs:
         env:
           DECISION_OUTCOME: ${{ steps.watchdog_decision.outcome }}
           DECISION_ACTION: ${{ steps.watchdog_decision.outputs.action }}
+          BACKEND_CHECKOUT_OUTCOME: ${{ steps.watchdog_backend_checkout.outcome }}
+          SUPABASE_CLI_OUTCOME: ${{ steps.watchdog_supabase_cli.outcome }}
+          DATABASE_OUTCOME: ${{ steps.watchdog_recovery_database.outcome }}
+          CONFIGURATION_OUTCOME: ${{ steps.watchdog_recovery_configuration.outcome }}
+          FUNCTIONS_OUTCOME: ${{ steps.watchdog_recovery_functions.outcome }}
           COMPENSATION_OUTCOME: ${{ steps.watchdog_compensation.outcome }}
           COMPENSATION_RETRY_OUTCOME: ${{ steps.watchdog_compensation_retry.outcome }}
+          TERMINAL_CANONICAL_OUTCOME: ${{ steps.watchdog_terminal_canonical.outcome }}
           PROBE_OUTCOME: ${{ steps.watchdog_probe.outcome }}
         run: |
           node <<'NODE'
@@ -273,8 +400,15 @@ jobs:
           writeFileSync("../g12-staging-rollback-watchdog-evidence.json", JSON.stringify({
             schemaVersion: 1, event: "g12.staging.rollback.incomplete.reconciled",
             workflow: state.workflow, original: state.original, target: state.target,
+            retainedBackend: state.retainedBackend,
             outcomes: { decision: process.env.DECISION_OUTCOME, action: process.env.DECISION_ACTION || null,
+              backendCheckout: process.env.BACKEND_CHECKOUT_OUTCOME,
+              supabaseCli: process.env.SUPABASE_CLI_OUTCOME,
+              database: process.env.DATABASE_OUTCOME,
+              configuration: process.env.CONFIGURATION_OUTCOME,
+              functions: process.env.FUNCTIONS_OUTCOME,
               compensation: process.env.COMPENSATION_OUTCOME, compensationRetry: process.env.COMPENSATION_RETRY_OUTCOME,
+              terminalCanonical: process.env.TERMINAL_CANONICAL_OUTCOME,
               probe: process.env.PROBE_OUTCOME }, recordedAt: new Date().toISOString(), sensitiveValuesLogged: false,
           }, null, 2) + "\n", { mode: 0o600 });
           NODE
@@ -289,11 +423,26 @@ jobs:
           path: |
             g12-staging-rollback-watchdog-evidence.json
             g12-staging-rollback-watchdog-probe.json
+            backend-recovery/outputs/g12-staging-rollback-database-watchdog-recovery.json
+            backend-recovery/outputs/g12-staging-rollback-ai-provider-watchdog-recovery.json
+            backend-recovery/outputs/g12-staging-rollback-function-watchdog-recovery.json
+            backend-recovery/outputs/g12-staging-rollback-functions-watchdog-recovery.json
           if-no-files-found: error
           retention-days: 30
       - name: Compare and clear HMAC state after terminal recovery evidence
         id: clear_recovery_state
-        if: always() && steps.watchdog_probe.outcome == 'success' && steps.watchdog_evidence_upload.outcome == 'success'
+        if: >-
+          always() && steps.watchdog_state.outcome == 'success' &&
+          steps.watchdog_decision.outcome == 'success' &&
+          steps.watchdog_backend_checkout.outcome == 'success' &&
+          steps.watchdog_supabase_cli.outcome == 'success' &&
+          steps.watchdog_recovery_database.outcome == 'success' &&
+          steps.watchdog_recovery_configuration.outcome == 'success' &&
+          steps.watchdog_recovery_functions.outcome == 'success' &&
+          steps.watchdog_terminal_canonical.outcome == 'success' &&
+          steps.watchdog_probe.outcome == 'success' &&
+          steps.watchdog_evidence.outcome == 'success' &&
+          steps.watchdog_evidence_upload.outcome == 'success'
         timeout-minutes: 5
         working-directory: control
         env:
@@ -310,8 +459,14 @@ jobs:
         env:
           DECISION_OUTCOME: ${{ steps.watchdog_decision.outcome }}
           DECISION_ACTION: ${{ steps.watchdog_decision.outputs.action }}
+          BACKEND_CHECKOUT_OUTCOME: ${{ steps.watchdog_backend_checkout.outcome }}
+          SUPABASE_CLI_OUTCOME: ${{ steps.watchdog_supabase_cli.outcome }}
+          DATABASE_OUTCOME: ${{ steps.watchdog_recovery_database.outcome }}
+          CONFIGURATION_OUTCOME: ${{ steps.watchdog_recovery_configuration.outcome }}
+          FUNCTIONS_OUTCOME: ${{ steps.watchdog_recovery_functions.outcome }}
           COMPENSATION_OUTCOME: ${{ steps.watchdog_compensation.outcome }}
           COMPENSATION_RETRY_OUTCOME: ${{ steps.watchdog_compensation_retry.outcome }}
+          TERMINAL_CANONICAL_OUTCOME: ${{ steps.watchdog_terminal_canonical.outcome }}
           PROBE_OUTCOME: ${{ steps.watchdog_probe.outcome }}
           EVIDENCE_OUTCOME: ${{ steps.watchdog_evidence.outcome }}
           EVIDENCE_UPLOAD_OUTCOME: ${{ steps.watchdog_evidence_upload.outcome }}
@@ -320,9 +475,15 @@ jobs:
           set -euo pipefail
           test "$DECISION_OUTCOME" = success
           test "$DECISION_ACTION" = already-original -o "$DECISION_ACTION" = restore-original
+          test "$BACKEND_CHECKOUT_OUTCOME" = success
+          test "$SUPABASE_CLI_OUTCOME" = success
+          test "$DATABASE_OUTCOME" = success
+          test "$CONFIGURATION_OUTCOME" = success
+          test "$FUNCTIONS_OUTCOME" = success
           if [ "$DECISION_ACTION" = restore-original ]; then
             test "$COMPENSATION_OUTCOME" = success -o "$COMPENSATION_RETRY_OUTCOME" = success
           fi
+          test "$TERMINAL_CANONICAL_OUTCOME" = success
           test "$PROBE_OUTCOME" = success
           test "$EVIDENCE_OUTCOME" = success
           test "$EVIDENCE_UPLOAD_OUTCOME" = success

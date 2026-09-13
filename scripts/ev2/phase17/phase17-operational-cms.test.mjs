@@ -49,19 +49,20 @@ test("every EV2 mutation endpoint keeps the production switch fail-closed", asyn
   }
 });
 
-test("OpenRouter adapter is locked to Nemotron free with no paid fallback", async () => {
+test("OpenRouter adapter is locked to the privacy-safe Ling free endpoint", async () => {
   const [adapter, edge, contract, page] = await Promise.all([
     read("supabase/functions/_shared/openrouter.ts"),
     read("supabase/functions/cms-ai/index.ts"),
     read("src/shared/contracts/ev2-ai.ts"),
     read("src/admin/pages/AdminAiAssistantPage.tsx"),
   ]);
-  assert.match(adapter, /nvidia\/nemotron-3\.5-lightning:free/);
+  assert.match(adapter, /inclusionai\/ling-3\.0-flash-vl:free/);
   assert.match(adapter, /OPENROUTER_MODEL/);
   assert.match(adapter, /AbortController/);
   assert.doesNotMatch(adapter, /response_format/);
   assert.match(adapter, /reasoning: \{ effort: "none", exclude: true \}/);
-  assert.match(adapter, /provider: \{ data_collection: "deny" \}/);
+  assert.match(adapter, /provider: \{ data_collection: "deny", zdr: true \}/);
+  assert.match(adapter, /OPENROUTER_NO_ALLOWED_PROVIDER/);
   assert.doesNotMatch(adapter, /fallback|models:/i);
   assert.doesNotMatch(adapter, /console\.(?:log|debug|info)/);
   assert.match(edge, /CMS_AI_PROVIDER_UNAVAILABLE/);
@@ -153,6 +154,14 @@ test("staging operational canary invokes the pinned Supabase CLI on Windows and 
   assert.match(canary, /: binary/);
   assert.match(canary, /: pinned/);
   assert.match(canary, /result\.error \|\| result\.status !== 0/);
+  assert.match(canary, /capability\.json\.providerModel === EXPECTED_MODEL/);
+  assert.match(canary, /capability\.json\.allowedModel === EXPECTED_MODEL/);
+  assert.match(canary, /generated\.json\.providerModel === EXPECTED_MODEL/);
+  assert.match(canary, /workspace\.json\.policy\?\.providerModel === EXPECTED_MODEL/);
+  assert.match(canary, /sessionItem\?\.providerModel === EXPECTED_MODEL/);
+  assert.match(canary, /proposal\?\.sourceIds\.includes\(generated\.json\.sourceId\)/);
+  assert.match(canary, /field\.excerpt === sourceExcerpt/);
+  assert.match(canary, /groundedText\.includes\("press"\)/);
 });
 
 test("staging operational commands bind idempotency to the exact envelope", async () => {

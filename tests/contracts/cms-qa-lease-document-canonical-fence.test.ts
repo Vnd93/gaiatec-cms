@@ -7,6 +7,7 @@ const lease = readFileSync("supabase/migrations/0061_cms_qa_actor_lease_watchdog
 const fence = readFileSync("supabase/migrations/0063_cms_document_security_attestation.sql", "utf8");
 const database = readFileSync("supabase/tests/rls_cms_qa_lease_document_canonical_fence.test.sql", "utf8");
 const handler = readFileSync("supabase/functions/cms-documents/index.ts", "utf8");
+const edgeFetch = readFileSync("supabase/functions/_shared/cms-edge-fetch.ts", "utf8");
 const canary = readFileSync("scripts/ev2/phase12/staging-migrations-canary.mjs", "utf8");
 
 describe("qa lease document canonical fence", () => {
@@ -96,6 +97,8 @@ describe("qa lease document canonical fence", () => {
     const neutralize = handler.slice(handler.indexOf("async function neutralizeSynthetic"));
     const retries = neutralize.match(/await confirmRemoval\(\)/g)?.length ?? 0;
     expect(retries).toBe(2);
+    expect(edgeFetch).toContain("response.status === 504");
+    expect(edgeFetch).toContain("throw timeout()");
   });
 
   it("treats an unanswered confirmation as scheduled, not as a refusal", () => {

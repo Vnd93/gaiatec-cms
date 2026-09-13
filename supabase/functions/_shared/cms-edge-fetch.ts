@@ -64,7 +64,14 @@ export function boundedFetch(
     // O abort tardio do transporte perdedor nao pode virar rejeicao sem dono.
     attempt.catch(() => {});
     try {
-      return await Promise.race([attempt, deadline]);
+      const response = await Promise.race([attempt, deadline]);
+      // The platform timeout manager can answer with a bare 504 just before our local deadline.
+      // PostgREST then turns the non-JSON gateway body into an unstructured error and callers lose
+      // the only fact that matters: the upstream did not answer. Normalize that terminal response
+      // here, while the method and sanitized path are still available. Structured database errors
+      // use their own status and remain untouched.
+      if (response.status === 504) throw timeout();
+      return response;
     } catch (error) {
       if (isEdgeFetchTimeout(error)) throw error;
       if ((controller.signal.reason as DOMException | undefined)?.name === "TimeoutError")

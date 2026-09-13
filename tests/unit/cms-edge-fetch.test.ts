@@ -61,6 +61,35 @@ describe("bounded edge fetch", () => {
     }
   });
 
+  it("normalizes the platform timeout manager's bare 504 response", async () => {
+    vi.useFakeTimers();
+    try {
+      const transport = vi.fn(
+        async () => new Response("Gateway Timeout", { status: 504 }),
+      ) as unknown as typeof fetch;
+      await expect(
+        boundedFetch(30_000, transport)(
+          "https://project.supabase.co/rest/v1/rpc/cms_confirm_synthetic_document_removal?apikey=secret",
+          { method: "POST" },
+        ),
+      ).rejects.toThrow(
+        "CMS_EDGE_FETCH_TIMEOUT:POST:/rest/v1/rpc/cms_confirm_synthetic_document_removal:30000",
+      );
+      expect(vi.getTimerCount()).toBe(0);
+
+      // A structured upstream refusal is not a transport deadline and must keep its response.
+      const refused = new Response('{"code":"57014"}', { status: 500 });
+      const refusalTransport = vi.fn(async () => refused) as unknown as typeof fetch;
+      await expect(
+        boundedFetch(30_000, refusalTransport)("https://project.supabase.co/rest/v1/rpc/refused", {
+          method: "POST",
+        }),
+      ).resolves.toBe(refused);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps a caller's own cancellation authoritative", async () => {
     const controller = new AbortController();
     const transport = ((_input: RequestInfo | URL, init?: RequestInit) =>

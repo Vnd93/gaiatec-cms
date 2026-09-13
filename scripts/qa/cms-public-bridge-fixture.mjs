@@ -80,6 +80,16 @@ function databaseFailureIdentity(error) {
   return `${code}:${message}`;
 }
 
+// O PostgREST do service_role herda um teto de oito segundos. Fechar a lease varre todo o grafo
+// sintetico e precisa de um statement maior, mas somente quando a RPC comprova SQLSTATE 57014.
+// O timeout do request permanece maior que o do banco para a causa nunca ser perdida no transporte.
+const LEASE_COMPLETION_STATEMENT_TIMEOUT_MS = 60_000;
+const LEASE_COMPLETION_REQUEST_TIMEOUT_MS = 90_000;
+
+function leaseStatementTimedOut(error) {
+  return error?.code === "57014" || /:57014(?:$|:)/.test(databaseFailureIdentity(error));
+}
+
 function assertContained(pathname) {
   const fromRoot = relative(root, resolve(pathname));
   if (!fromRoot || fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
@@ -152,14 +162,18 @@ async function loadContext() {
   };
 }
 
-async function managementQuery(query) {
+async function managementQuery(query, timeoutMs = 30_000) {
   const response = await fetch(`https://api.supabase.com/v1/projects/${target.ref}/database/query`, {
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
     body: JSON.stringify({ query }),
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
-  if (!response.ok) refuse("MANAGEMENT_QUERY_FAILED");
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    const code = /"code"\s*:\s*"([0-9A-Z]{5})"/.exec(detail)?.[1] ?? "unknown";
+    refuse(`MANAGEMENT_QUERY_FAILED:${response.status}:${code}`);
+  }
   const payload = await response.json().catch(() => null);
   if (!Array.isArray(payload)) refuse("MANAGEMENT_RESPONSE_INVALID");
   return payload;
@@ -1374,8 +1388,34 @@ async function cleanupState(context, state) {
         p_environment: environment,
       });
       if (!completed.error && completed.data?.status === "cleaned") break;
+      if (completed.error && leaseStatementTimedOut(completed.error)) {
+        if (
+          !UUID.test(state.actorId) ||
+          !isPublicBridgeRunTagForCandidate(state.runTag, candidateSha) ||
+          !FULL_SHA.test(candidateSha) ||
+          !/^(staging|production)$/.test(environment)
+        )
+          refuse("ACTOR_LEASE_IDENTITY_UNSAFE");
+        const rows = await managementQuery(
+          [
+            `set statement_timeout = '${LEASE_COMPLETION_STATEMENT_TIMEOUT_MS}ms';`,
+            "select public.cms_complete_qa_actor_lease(",
+            `'${state.actorId}'::uuid, '${state.runTag}',`,
+            `'${candidateSha}', '${environment}') as result;`,
+          ].join("\n"),
+          LEASE_COMPLETION_REQUEST_TIMEOUT_MS,
+        );
+        completed = { data: rows.at(-1)?.result, error: null };
+        if (!completed.data) refuse("ACTOR_LEASE_DURABLE_COMPLETION_EMPTY");
+        break;
+      }
     }
-    if (completed.error || completed.data?.status !== "cleaned")
+    if (
+      completed.error ||
+      completed.data?.schemaVersion !== 1 ||
+      completed.data?.status !== "cleaned" ||
+      typeof completed.data?.replayed !== "boolean"
+    )
       refuse(
         `ACTOR_LEASE_COMPLETION_FAILED:${
           completed.error

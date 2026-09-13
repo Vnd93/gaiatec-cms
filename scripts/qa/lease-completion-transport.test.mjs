@@ -14,6 +14,8 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const FIXTURE = "scripts/qa/cms-browser-fixture.mjs";
+const PUBLIC_BRIDGE_FIXTURE = "scripts/qa/cms-public-bridge-fixture.mjs";
+const MIGRATION_CANARY = "scripts/ev2/phase12/staging-migrations-canary.mjs";
 // A guarda lia UM arquivo enquanto o passo 48 roda DOIS specs, nos dois projetos do Playwright.
 // Proibir `networkidle` em um e deixar o vizinho livre e a forma mais barata de a regra existir
 // sem valer: products-catalog.spec.ts mantinha tres navegacoes contra o mesmo alias publicado.
@@ -111,6 +113,40 @@ test("managementQuery propaga status e SQLSTATE em vez de uma mensagem generica"
   // O corpo da resposta nunca viaja na falha: so o identificador fechado de cinco caracteres.
   assert.match(fixture, /\/"code"\\s\*:\\s\*"\(\[0-9A-Z\]\{5\}\)"\//);
   assert.doesNotMatch(fixture, /QA_CMS_FIXTURE_MANAGEMENT_QUERY_FAILED[^\n]*\$\{detail\}/);
+});
+
+test("toda limpeza pesada de staging cai para o transporte duravel somente em 57014", async () => {
+  for (const path of [PUBLIC_BRIDGE_FIXTURE, MIGRATION_CANARY]) {
+    const source = await read(path);
+    const start =
+      path === PUBLIC_BRIDGE_FIXTURE ? "async function cleanupState" : "async function completeActorLease";
+    const end = path === PUBLIC_BRIDGE_FIXTURE ? "async function setup" : "async function createActor";
+    const body = source.slice(source.indexOf(start), source.indexOf(end));
+    assert.ok(body.length > 0, `encerramento de lease ausente em ${path}`);
+    assert.match(body, /context\.admin\.rpc\("cms_complete_qa_actor_lease"/);
+    if (path === PUBLIC_BRIDGE_FIXTURE)
+      assert.match(body, /completed\.error && leaseStatementTimedOut\(completed\.error\)/);
+    else assert.match(body, /result\.error\?\.code === "57014"/);
+    assert.match(body, /set statement_timeout = '\$\{LEASE_COMPLETION_STATEMENT_TIMEOUT_MS\}ms'/);
+    assert.match(body, /select public\.cms_complete_qa_actor_lease\(/);
+    assert.match(body, /LEASE_COMPLETION_REQUEST_TIMEOUT_MS,/);
+    assert.equal((source.match(/set statement_timeout = /g) ?? []).length, 1, path);
+  }
+});
+
+test("a ponte publica valida toda identidade antes de interpolar o fallback", async () => {
+  const source = await read(PUBLIC_BRIDGE_FIXTURE);
+  const body = source.slice(
+    source.indexOf("async function cleanupState"),
+    source.indexOf("async function setup"),
+  );
+  const guard = body.indexOf('refuse("ACTOR_LEASE_IDENTITY_UNSAFE")');
+  const interpolation = body.indexOf("set statement_timeout = ");
+  assert.ok(guard >= 0 && guard < interpolation);
+  assert.match(body, /UUID\.test\(state\.actorId\)/);
+  assert.match(body, /isPublicBridgeRunTagForCandidate\(state\.runTag, candidateSha\)/);
+  assert.match(body, /FULL_SHA\.test\(candidateSha\)/);
+  assert.match(body, /\^\(staging\|production\)\$\/\.test\(environment\)/);
 });
 
 test("nenhuma navegacao das suites contra o alias publicado usa networkidle", async () => {

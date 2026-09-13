@@ -109,6 +109,8 @@ if (!/^[a-f0-9]{40}$/.test(expectedSha)) throw new Error("G12_STAGING_MIGRATION_
 
 const qaDate = new Date().toISOString().slice(0, 10).replaceAll("-", "");
 const qaTag = `QA-CMS-FINAL-${qaDate}-${expectedSha.slice(0, 8)}`;
+const LEASE_COMPLETION_STATEMENT_TIMEOUT_MS = 60_000;
+const LEASE_COMPLETION_REQUEST_TIMEOUT_MS = 90_000;
 const checks = [];
 const actors = [];
 let context;
@@ -213,12 +215,13 @@ async function request(
   };
 }
 
-async function managementQuery(query) {
+async function managementQuery(query, timeoutMs = 45_000) {
   const response = await request(`https://api.supabase.com/v1/projects/${TARGET.ref}/database/query`, {
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}` },
     body: { query },
     allowed: [200, 201],
+    timeoutMs,
   });
   return response.json;
 }
@@ -351,6 +354,25 @@ async function completeActorLease(actorId) {
       typeof result.data?.replayed === "boolean"
     )
       break;
+    if (result.error?.code === "57014") {
+      if (
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(actorId) ||
+        !/^QA-CMS-FINAL-[0-9]{8}-[0-9a-f]{8}$/.test(qaTag) ||
+        !/^[0-9a-f]{40}$/.test(expectedSha)
+      )
+        throw new Error("G12_STAGING_SYNTHETIC_LEASE_IDENTITY_UNSAFE", { cause: result.error });
+      const rows = await managementQuery(
+        [
+          `set statement_timeout = '${LEASE_COMPLETION_STATEMENT_TIMEOUT_MS}ms';`,
+          "select public.cms_complete_qa_actor_lease(",
+          `'${actorId}'::uuid, '${qaTag}', '${expectedSha}', 'staging') as result;`,
+        ].join("\n"),
+        LEASE_COMPLETION_REQUEST_TIMEOUT_MS,
+      );
+      result = { data: rows.at(-1)?.result, error: null };
+      if (!result.data) throw new Error("G12_STAGING_SYNTHETIC_LEASE_DURABLE_COMPLETION_EMPTY");
+      break;
+    }
   }
   if (
     result.error ||

@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 const fixture = readFileSync("scripts/qa/cms-browser-fixture.mjs", "utf8");
 const spec = readFileSync("tests/e2e/cms-auth-lifecycle.spec.ts", "utf8");
 const authContext = readFileSync("src/admin/auth/AdminAuthContext.tsx", "utf8");
+const supabaseClient = readFileSync("src/lib/supabase.ts", "utf8");
+const supabaseFetch = readFileSync("src/lib/supabase-fetch.ts", "utf8");
 const adminOpsSpec = readFileSync("tests/e2e/cms-admin-ops-cycles.spec.ts", "utf8");
 const staging = readFileSync(".github/workflows/deploy-staging.yml", "utf8");
 const production = readFileSync(".github/workflows/deploy-production.yml", "utf8");
@@ -121,6 +123,10 @@ describe("real invite and password-recovery browser lifecycle", () => {
     expect(spec).toContain("browserObservability ??= observer.snapshot()");
     expect(spec).toContain("browserObservability,");
     expect(spec).toContain("trackedRequestOrigins: [new URL(baseURL).origin, config.supabaseOrigin]");
+    expect(supabaseClient).toContain("global: { fetch: createDurableSupabaseFetch(SUPABASE_URL) }");
+    expect(supabaseFetch).toContain('url.pathname === "/auth/v1/logout"');
+    expect(supabaseFetch).toContain('url.search === "?scope=local"');
+    expect(supabaseFetch).toContain("await response.clone().arrayBuffer()");
   });
 
   it("runs before all dependent mutating suites in staging and production", () => {

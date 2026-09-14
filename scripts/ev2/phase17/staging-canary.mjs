@@ -19,8 +19,11 @@ const QA_RUN_TAG = createQaRunTag(EXPECTED_SHA);
 const SUPABASE_ACCESS_TOKEN = process.env.SUPABASE_ACCESS_TOKEN ?? "";
 
 const checks = [];
+const actors = [];
 let context;
-let actor;
+let operator;
+let reviewer;
+let providerEvidenceExpected = false;
 
 function quoteWindowsArgument(value) {
   if (/^[A-Za-z0-9_@./:\\=-]+$/.test(value)) return value;
@@ -156,7 +159,7 @@ async function authenticationClock() {
   return Number.isFinite(serverDate) ? serverDate : Date.now();
 }
 
-async function createActor() {
+async function createActor(displayName, factorName) {
   const email = `ev2-g17-${randomUUID()}@example.invalid`;
   const password = `Ev2!${randomBytes(24).toString("base64url")}`;
   const created = await request(`${context.url}/auth/v1/admin/users`, {
@@ -169,7 +172,8 @@ async function createActor() {
       user_metadata: qaActorMetadata(QA_RUN_TAG, EXPECTED_SHA, "staging"),
     },
   });
-  actor = { id: created.json.id };
+  const pendingActor = { id: created.json.id };
+  actors.push(pendingActor);
   const identity = {
     actorId: created.json.id,
     runTag: QA_RUN_TAG,
@@ -182,7 +186,7 @@ async function createActor() {
     prefer: "return=minimal",
     body: {
       user_id: created.json.id,
-      display_name: "Operador G17 sintético",
+      display_name: displayName,
       display_email: email,
       status: "active",
     },
@@ -200,7 +204,7 @@ async function createActor() {
   });
   const signedIn = await client.auth.signInWithPassword({ email, password });
   if (!signedIn.data.session) throw signedIn.error;
-  const enrolled = await client.auth.mfa.enroll({ factorType: "totp", friendlyName: "EV2 G17" });
+  const enrolled = await client.auth.mfa.enroll({ factorType: "totp", friendlyName: factorName });
   if (!enrolled.data?.totp?.secret) throw enrolled.error;
   let lastError;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -212,7 +216,10 @@ async function createActor() {
       code: totp(enrolled.data.totp.secret, await authenticationClock()),
     });
     const token = verified.data?.session?.access_token ?? verified.data?.access_token;
-    if (!verified.error && token) return { id: created.json.id, token, identity, lease };
+    if (!verified.error && token) {
+      Object.assign(pendingActor, { token, identity, lease });
+      return pendingActor;
+    }
     lastError = verified.error ?? new Error("AAL2 ausente.");
     await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
   }
@@ -230,6 +237,7 @@ function envelope(environment = "staging") {
 }
 
 async function edge(
+  authenticatedActor,
   functionName,
   action,
   values = {},
@@ -240,7 +248,7 @@ async function edge(
     method: "POST",
     headers: {
       apikey: context.anonKey,
-      Authorization: `Bearer ${actor.token}`,
+      Authorization: `Bearer ${authenticatedActor.token}`,
       Origin: ORIGIN,
       ...(idempotent ? { "X-Idempotency-Key": commandEnvelope.commandId } : {}),
     },
@@ -250,6 +258,7 @@ async function edge(
 }
 
 async function cleanupActor(actorId) {
+  const now = new Date().toISOString();
   const owned = await rest("cms_content_items", { query: `created_by=eq.${actorId}&select=id` });
   const ownedItemIds = owned.json.map((item) => item.id);
   if (ownedItemIds.length) {
@@ -290,31 +299,25 @@ async function cleanupActor(actorId) {
       },
     });
   }
-  const sessions = await rest("cms_ai_sessions", { query: `actor_id=eq.${actorId}&select=id` });
-  const sessionIds = sessions.json.map((item) => item.id);
-  const proposals = sessionIds.length
-    ? await rest("cms_ai_proposals", { query: `session_id=in.(${sessionIds.join(",")})&select=id` })
-    : { json: [] };
-  const proposalIds = proposals.json.map((item) => item.id);
-  if (proposalIds.length)
-    await rest("cms_ai_approvals", { method: "DELETE", query: `proposal_id=in.(${proposalIds.join(",")})` });
-  for (const table of [
-    "cms_ai_provider_calls",
-    "cms_ai_events",
-    "cms_ai_eval_runs",
-    "cms_ai_messages",
-    "cms_ai_proposals",
-    "cms_ai_sources",
-    "cms_ai_tool_calls",
-  ])
-    await rest(table, { method: "DELETE", query: `actor_id=eq.${actorId}` });
-  await rest("cms_ai_command_receipts", { method: "DELETE", query: `actor_id=eq.${actorId}` });
-  await rest("cms_ai_sessions", { method: "DELETE", query: `actor_id=eq.${actorId}` });
+  // cms_complete_qa_actor_lease changes the lease status and thereby invokes
+  // zzzz_cms_ai_terminal_cleanup.  That governed trigger removes synthetic
+  // business material and detaches immutable provider/event evidence.  Only
+  // close active sessions here so the completion preflight can reach it;
+  // direct DELETEs would correctly fail with CMS_AI_EVIDENCE_IMMUTABLE.
+  await rest("cms_ai_sessions", {
+    method: "PATCH",
+    query: `actor_id=eq.${actorId}&status=eq.active`,
+    prefer: "return=minimal",
+    body: { status: "closed", closed_at: now, updated_at: now },
+  });
+  await rest("cms_ai_command_receipts", {
+    method: "DELETE",
+    query: `actor_id=eq.${actorId}`,
+  });
   await rest("cms_feature_flag_overrides", {
     method: "DELETE",
     query: `scope_type=eq.user&scope_key=eq.${actorId}`,
   });
-  const now = new Date().toISOString();
   await rest("cms_scoped_role_assignments", {
     method: "PATCH",
     query: `user_id=eq.${actorId}&revoked_at=is.null`,
@@ -371,9 +374,119 @@ async function cleanupActor(actorId) {
   return { status: lease.status, retainedAuditEvents: audit.json.length };
 }
 
+async function verifyAiTerminalCleanup(actorIds) {
+  const actorFilter = actorIds.join(",");
+  const [
+    sessions,
+    sources,
+    messages,
+    proposals,
+    approvals,
+    toolCalls,
+    evalRuns,
+    commandReceipts,
+    activeTargets,
+    activePlans,
+    activeExecutionApprovals,
+    providerEvidence,
+    eventEvidence,
+    aiCleanupAudit,
+    leaseCleanupAudit,
+  ] = await Promise.all([
+    rest("cms_ai_sessions", { query: `actor_id=in.(${actorFilter})&select=id` }),
+    rest("cms_ai_sources", { query: `actor_id=in.(${actorFilter})&select=id` }),
+    rest("cms_ai_messages", { query: `actor_id=in.(${actorFilter})&select=id` }),
+    rest("cms_ai_proposals", { query: `actor_id=in.(${actorFilter})&select=id` }),
+    rest("cms_ai_approvals", { query: `decided_by=in.(${actorFilter})&select=id` }),
+    rest("cms_ai_tool_calls", { query: `actor_id=in.(${actorFilter})&select=id` }),
+    rest("cms_ai_eval_runs", { query: `actor_id=in.(${actorFilter})&select=id` }),
+    rest("cms_ai_command_receipts", { query: `actor_id=in.(${actorFilter})&select=id` }),
+    rest("cms_ai_synthetic_targets", {
+      query: `created_by=in.(${actorFilter})&lifecycle=neq.retired&select=target_ref`,
+    }),
+    rest("cms_ai_execution_plans", {
+      query: `created_by=in.(${actorFilter})&status=in.(ready,approved,executing)&select=id`,
+    }),
+    rest("cms_ai_execution_approvals", {
+      query: `approved_by=in.(${actorFilter})&status=eq.active&select=id`,
+    }),
+    rest("cms_ai_provider_calls", {
+      query: `actor_id=in.(${actorFilter})&select=id,session_id`,
+    }),
+    rest("cms_ai_events", {
+      query: `actor_id=in.(${actorFilter})&select=actor_id,event_type,session_id,proposal_id`,
+    }),
+    rest("cms_audit_log", {
+      query: `actor_id=in.(${actorFilter})&action=eq.cms:qa.ai.cleanup&target_type=eq.qa_actor_lease&select=actor_id`,
+    }),
+    rest("cms_audit_log", {
+      query: `actor_id=in.(${actorFilter})&action=eq.cms:qa.fixture_lease_cleaned&target_type=eq.qa_fixture&target_id=eq.${QA_RUN_TAG}&select=actor_id`,
+    }),
+  ]);
+  const activeBusinessRows = [
+    sessions,
+    sources,
+    messages,
+    proposals,
+    approvals,
+    toolCalls,
+    evalRuns,
+    commandReceipts,
+    activeTargets,
+    activePlans,
+    activeExecutionApprovals,
+  ].reduce((total, result) => total + result.json.length, 0);
+  if (activeBusinessRows !== 0) throw new Error("G17_AI_TERMINAL_BUSINESS_RESIDUE");
+  if (providerEvidence.json.some((row) => row.session_id !== null))
+    throw new Error("G17_AI_PROVIDER_EVIDENCE_NOT_DETACHED");
+  if (providerEvidenceExpected && providerEvidence.json.length < 1)
+    throw new Error("G17_AI_PROVIDER_EVIDENCE_MISSING");
+  if (eventEvidence.json.some((row) => row.session_id !== null || row.proposal_id !== null))
+    throw new Error("G17_AI_EVENT_EVIDENCE_NOT_DETACHED");
+  const terminalEventActors = new Set(
+    eventEvidence.json.filter((row) => row.event_type === "ai_qa_scope_terminal").map((row) => row.actor_id),
+  );
+  if (terminalEventActors.size !== actorIds.length) throw new Error("G17_AI_TERMINAL_EVIDENCE_MISSING");
+  if (new Set(aiCleanupAudit.json.map((row) => row.actor_id)).size !== actorIds.length)
+    throw new Error("G17_AI_TERMINAL_AUDIT_MISSING");
+  if (new Set(leaseCleanupAudit.json.map((row) => row.actor_id)).size !== actorIds.length)
+    throw new Error("G17_LEASE_CLEANUP_AUDIT_MISSING");
+  return {
+    activeBusinessRows,
+    retainedProviderEvidence: providerEvidence.json.length,
+    retainedEventEvidence: eventEvidence.json.length,
+    aiCleanupAuditEvents: aiCleanupAudit.json.length,
+    leaseCleanupAuditEvents: leaseCleanupAudit.json.length,
+  };
+}
+
 async function cleanup() {
-  if (!actor?.id) return { status: "not-created", retainedAuditEvents: 0 };
-  return cleanupActor(actor.id);
+  if (!actors.length) return { status: "not-created", actors: 0, retainedAuditEvents: 0 };
+  const results = [];
+  const failures = [];
+  // The operator owns the proposal graph that references the reviewer.  Clean
+  // it first so its terminal trigger detaches the reviewer's immutable event
+  // evidence before the reviewer lease is completed.
+  for (const current of actors) {
+    try {
+      results.push(await cleanupActor(current.id));
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  let aiEvidence;
+  try {
+    aiEvidence = await verifyAiTerminalCleanup(actors.map((current) => current.id));
+  } catch (error) {
+    failures.push(error);
+  }
+  if (failures.length) throw new AggregateError(failures, "A limpeza dos atores sintéticos G17 falhou.");
+  return {
+    status: results.every((result) => result.status === "cleaned") ? "cleaned" : "invalid",
+    actors: results.length,
+    retainedAuditEvents: results.reduce((total, result) => total + result.retainedAuditEvents, 0),
+    ...aiEvidence,
+  };
 }
 
 let operationError;
@@ -382,39 +495,52 @@ try {
   context = await loadContext();
   const health = await request(`${ORIGIN}/healthz`);
   check("immutable_candidate", health.json.release === EXPECTED_SHA, health.json.release);
-  actor = await createActor();
+  operator = await createActor("Operador G17 sintético", "EV2 G17 operador");
+  reviewer = await createActor("Revisor G17 sintético", "EV2 G17 revisor");
   check(
-    "qa_actor_watchdog_lease_active",
-    actor.lease.status === "active" && actor.lease.ttlSeconds === QA_ACTOR_LEASE_TTL_MINUTES * 60,
-    actor.lease.status,
+    "qa_actor_watchdog_leases_active",
+    [operator, reviewer].every(
+      (current) =>
+        current.lease.status === "active" && current.lease.ttlSeconds === QA_ACTOR_LEASE_TTL_MINUTES * 60,
+    ),
+    JSON.stringify([operator.lease.status, reviewer.lease.status]),
   );
   const now = Date.now();
   await rest("cms_feature_flag_overrides", {
     method: "POST",
     prefer: "return=minimal",
-    body: {
+    body: [operator, reviewer].map((current) => ({
       flag_key: "ev2.ai_assist",
       environment: "staging",
       scope_type: "user",
-      scope_key: actor.id,
+      scope_key: current.id,
       enabled: true,
       reason: "Canary sintético G17",
       starts_at: new Date(now - 1000).toISOString(),
       expires_at: new Date(now + QA_ACTOR_LEASE_TTL_MINUTES * 60_000).toISOString(),
-      created_by: actor.id,
-    },
+      created_by: current.id,
+    })),
   });
-  const session = await request(`${context.url}/functions/v1/cms-session`, {
-    method: "POST",
-    headers: { apikey: context.anonKey, Authorization: `Bearer ${actor.token}`, Origin: ORIGIN },
-    body: { action: "resolve" },
-  });
-  check(
-    "runtime_individual_override",
-    session.json.ev2Capabilities?.capabilities?.["ev2.ai_assist"]?.enabled === true,
-    "manifest",
+  const [operatorRuntime, reviewerRuntime] = await Promise.all(
+    [operator, reviewer].map((current) =>
+      request(`${context.url}/functions/v1/cms-session`, {
+        method: "POST",
+        headers: { apikey: context.anonKey, Authorization: `Bearer ${current.token}`, Origin: ORIGIN },
+        body: { action: "resolve" },
+      }),
+    ),
   );
-  const capability = await edge("cms-ai", "capability");
+  check(
+    "runtime_individual_overrides",
+    [operatorRuntime, reviewerRuntime].every(
+      (session) => session.json.ev2Capabilities?.capabilities?.["ev2.ai_assist"]?.enabled === true,
+    ),
+    JSON.stringify([
+      operatorRuntime.json.ev2Capabilities?.capabilities?.["ev2.ai_assist"]?.enabled ?? false,
+      reviewerRuntime.json.ev2Capabilities?.capabilities?.["ev2.ai_assist"]?.enabled ?? false,
+    ]),
+  );
+  const capability = await edge(operator, "cms-ai", "capability");
   check(
     "openrouter_ready",
     capability.json.providerMode === "openrouter" &&
@@ -424,6 +550,7 @@ try {
     capability.json.providerModel,
   );
   const opened = await edge(
+    operator,
     "cms-ai",
     "start_session",
     { mode: "draft", title: "Cadastro sintético G17" },
@@ -432,6 +559,7 @@ try {
   const sourceExcerpt =
     "O instrumento sintético mede pressão de zero a dez bar e possui saída de quatro a vinte miliampères.";
   const generated = await edge(
+    operator,
     "cms-ai",
     "generate_proposal",
     {
@@ -451,6 +579,7 @@ try {
     },
     { idempotent: true },
   );
+  providerEvidenceExpected = true;
   check(
     "ling_proposal",
     Boolean(generated.json.proposalId) &&
@@ -460,7 +589,14 @@ try {
       generated.json.published === false,
     generated.json.providerModel,
   );
-  const workspace = await edge("cms-ai", "workspace");
+  const ownerWorkspace = await edge(operator, "cms-ai", "workspace");
+  const ownerSession = ownerWorkspace.json.sessions.find((item) => item.id === opened.json.sessionId);
+  check(
+    "proposal_owner_cannot_self_review",
+    ownerSession?.owned === true && ownerSession.reviewable === false,
+    JSON.stringify({ owned: ownerSession?.owned, reviewable: ownerSession?.reviewable }),
+  );
+  const workspace = await edge(reviewer, "cms-ai", "workspace");
   const sessionItem = workspace.json.sessions.find((item) => item.id === opened.json.sessionId);
   check(
     "ling_workspace_model",
@@ -470,8 +606,14 @@ try {
   const proposal = sessionItem?.proposals.find((item) => item.id === generated.json.proposalId);
   check(
     "human_review_ready",
-    sessionItem?.providerMode === "openrouter" && sessionItem.reviewable === true,
-    sessionItem?.providerMode ?? "missing-session",
+    sessionItem?.providerMode === "openrouter" &&
+      sessionItem.owned === false &&
+      sessionItem.reviewable === true,
+    JSON.stringify({
+      providerMode: sessionItem?.providerMode ?? "missing-session",
+      owned: sessionItem?.owned,
+      reviewable: sessionItem?.reviewable,
+    }),
   );
   check(
     "proposal_source_binding",
@@ -497,6 +639,7 @@ try {
     "synthetic-source-facts",
   );
   const decision = await edge(
+    reviewer,
     "cms-ai",
     "decide_proposal",
     {
@@ -516,6 +659,7 @@ try {
     decision.json.decision,
   );
   const productionAttempt = await edge(
+    reviewer,
     "cms-ai",
     "capability",
     {},
@@ -528,7 +672,9 @@ try {
   try {
     cleanupEvidence = await cleanup();
   } catch (cleanupError) {
-    operationError ??= cleanupError;
+    operationError = operationError
+      ? new AggregateError([operationError, cleanupError], "G17_CANARY_OPERATION_AND_CLEANUP_FAILED")
+      : cleanupError;
   }
 }
 
@@ -540,7 +686,7 @@ console.log(
     checks: checks.length,
     provider: "openrouter",
     model: "inclusionai/ling-3.0-flash-vl:free",
-    syntheticUsers: 1,
+    syntheticUsers: 2,
     productionMutations: 0,
     realDataUsed: false,
     watchdogLease: cleanupEvidence,

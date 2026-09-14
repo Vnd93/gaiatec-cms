@@ -34,6 +34,7 @@ import {
   sessionRefreshRevocationSemanticSql,
   serviceOnlyRpcContractSql,
   sourceMigrationManifest,
+  systemSnapshotLeadReadScaleSemanticSql,
   systemSnapshotOpenCriticalScaleSemanticSql,
 } from "./migration-manifest-lib.mjs";
 
@@ -88,9 +89,9 @@ test("the repository migration history is contiguous", () => {
   // digest dos bytes. E o que impede que alguem acrescente migration sem revisao: nao basta criar
   // o arquivo, e preciso declarar o conteudo dele aqui.
   assert.deepEqual(G12_PINNED_MIGRATION_TAIL.at(-1), {
-    version: "0099",
-    file: "0099_cms_system_snapshot_open_critical_scale.sql",
-    sha256: "dfb271cf9e9efb2f05fd91ec73afbb2c588d35e151886f61d0f967c6ccde9715",
+    version: "0100",
+    file: "0100_cms_system_snapshot_lead_read_scale.sql",
+    sha256: "fbb1b318b48c6d63f61a09732728f4c4a89350d635eb77b75c6d2ccd52aa2a72",
   });
   assert.deepEqual(manifest.slice(-G12_PINNED_MIGRATION_TAIL.length), G12_PINNED_MIGRATION_TAIL);
   for (const migration of manifest.slice(-G12_PINNED_MIGRATION_TAIL.length)) {
@@ -666,6 +667,37 @@ test("0099 semantic preflight proves the exact open-critical index without widen
   assert.match(contract, /^coalesce\(/);
   assert.match(contract, /, false\) as system_snapshot_open_critical_scale_0099_semantics_exact$/);
   assert.throws(() => systemSnapshotOpenCriticalScaleSemanticSql("Bad Alias"));
+});
+
+test("0100 semantic preflight proves exact lead indexes without widening access", () => {
+  const contract = systemSnapshotLeadReadScaleSemanticSql(
+    "system_snapshot_lead_read_scale_0100_semantics_exact",
+  );
+
+  for (const marker of [
+    "cms_lead_consents_lead_id_idx",
+    "cms_lead_status_history_lead_id_idx",
+    "cms_lead_outbox_lead_id_idx",
+    "cms_lead_outbox_replays_lead_id_idx",
+    "index_record.indisvalid",
+    "index_record.indisready",
+    "index_record.indnkeyatts = 1",
+    "attribute.attname = 'lead_id'",
+    "private.cms_lead_scope_allowed",
+    "consent.lead_id = lead.id",
+    "history.lead_id = lead.id",
+    "outbox.lead_id = lead.id",
+    "replay.lead_id = lead.id",
+    "has_function_privilege",
+    "'service_role'",
+    "'authenticated'",
+    "not has_table_privilege('anon'",
+  ])
+    assert.ok(contract.includes(marker), marker);
+
+  assert.match(contract, /^coalesce\(/);
+  assert.match(contract, /, false\) as system_snapshot_lead_read_scale_0100_semantics_exact$/);
+  assert.throws(() => systemSnapshotLeadReadScaleSemanticSql("Bad Alias"));
 });
 
 test("0090 semantic preflight proves the lease accepts only the state the fence imposes", () => {

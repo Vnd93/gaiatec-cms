@@ -159,6 +159,31 @@ test("staging operational canary invokes the pinned Supabase CLI on Windows and 
   assert.match(canary, /generated\.json\.providerModel === EXPECTED_MODEL/);
   assert.match(canary, /workspace\.json\.policy\?\.providerModel === EXPECTED_MODEL/);
   assert.match(canary, /sessionItem\?\.providerModel === EXPECTED_MODEL/);
+  assert.match(canary, /ownerSession\?\.owned === true && ownerSession\.reviewable === false/);
+  assert.match(
+    canary,
+    /sessionItem\?\.providerMode === "openrouter"\s*&&\s*sessionItem\.owned === false\s*&&\s*sessionItem\.reviewable === true/,
+  );
+  assert.match(canary, /const decision = await edge\(\s*reviewer,/);
+  assert.match(canary, /syntheticUsers: 2/);
+  assert.match(canary, /result\.status === "cleaned"\) \? "cleaned" : "invalid"/);
+  assert.match(canary, /zzzz_cms_ai_terminal_cleanup/);
+  assert.match(canary, /G17_AI_TERMINAL_BUSINESS_RESIDUE/);
+  assert.match(canary, /retainedProviderEvidence/);
+  assert.match(canary, /retainedEventEvidence/);
+  assert.match(canary, /G17_AI_PROVIDER_EVIDENCE_MISSING/);
+  assert.match(canary, /G17_AI_TERMINAL_AUDIT_MISSING/);
+  assert.match(canary, /G17_LEASE_CLEANUP_AUDIT_MISSING/);
+  assert.match(
+    canary,
+    /rest\("cms_ai_command_receipts", \{\s*method: "DELETE",\s*query: `actor_id=eq\.\$\{actorId\}`/,
+  );
+  assert.doesNotMatch(
+    canary,
+    /rest\("cms_ai_(?:provider_calls|events|sessions|sources|messages|proposals|approvals|tool_calls|eval_runs)"[\s\S]{0,160}method: "DELETE"/,
+  );
+  assert.match(canary, /new AggregateError\(\s*\[operationError, cleanupError\]/);
+  assert.match(canary, /G17_CANARY_OPERATION_AND_CLEANUP_FAILED/);
   assert.match(canary, /proposal\?\.sourceIds\.includes\(generated\.json\.sourceId\)/);
   assert.match(canary, /field\.excerpt === sourceExcerpt/);
   assert.match(canary, /groundedText\.includes\("press"\)/);

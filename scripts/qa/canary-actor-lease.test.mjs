@@ -113,7 +113,18 @@ test("all final staging canaries lease before privilege and revoke every active 
   );
   assert.match(
     g17,
-    /actor = \{ id: created\.json\.id \};[\s\S]*assertQaActorLease\([\s\S]*await rest\("cms_profiles"/,
+    /const pendingActor = \{ id: created\.json\.id \};\s*actors\.push\(pendingActor\);[\s\S]*assertQaActorLease\([\s\S]*await rest\("cms_profiles"/,
+  );
+  assert.match(g17, /operator = await createActor\([\s\S]*reviewer = await createActor\(/);
+  assert.match(g17, /for \(const current of actors\)/);
+  assert.match(g17, /zzzz_cms_ai_terminal_cleanup/);
+  assert.match(
+    g17,
+    /rest\("cms_ai_command_receipts", \{\s*method: "DELETE",\s*query: `actor_id=eq\.\$\{actorId\}`/,
+  );
+  assert.doesNotMatch(
+    g17,
+    /rest\("cms_ai_(?:provider_calls|events|sessions|sources|messages|proposals|approvals|tool_calls|eval_runs)"[\s\S]{0,160}method: "DELETE"/,
   );
   assert.match(
     phase7,

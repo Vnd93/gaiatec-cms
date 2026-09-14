@@ -95,6 +95,11 @@ export const G12_PINNED_MIGRATION_TAIL = Object.freeze([
     file: "0099_cms_system_snapshot_open_critical_scale.sql",
     sha256: "dfb271cf9e9efb2f05fd91ec73afbb2c588d35e151886f61d0f967c6ccde9715",
   }),
+  Object.freeze({
+    version: "0100",
+    file: "0100_cms_system_snapshot_lead_read_scale.sql",
+    sha256: "fbb1b318b48c6d63f61a09732728f4c4a89350d635eb77b75c6d2ccd52aa2a72",
+  }),
 ]);
 
 export const CMS_MEDIA_UPLOAD_ABORT_0082_RPCS = Object.freeze([
@@ -1120,5 +1125,82 @@ export function systemSnapshotOpenCriticalScaleSemanticSql(alias) {
       and ${definition} like '%event.resolved_at is null%'
       and ${definition} like '%private.cms_system_operational_event_scope_allowed(%'
       and not has_table_privilege('anon', 'public.cms_operational_events', 'SELECT')
+    , false) as ${alias}`;
+}
+
+// A 0100 bounds the lead child-table lookups that both the authoritative
+// lead scope and the snapshot divergence checks execute for every scoped
+// lead.  The remote contract requires the four exact indexes while proving
+// that neither the predicates nor the anonymous boundary were widened.
+export function systemSnapshotLeadReadScaleSemanticSql(alias) {
+  if (!/^[a-z][a-z0-9_]*$/.test(alias)) fail("system-snapshot-lead-read-scale-alias");
+  const snapshotSignature =
+    "public.cms_get_system_snapshot(uuid,text,text,text,text,timestamp with time zone,uuid)";
+  const scopeSignature = "private.cms_lead_scope_allowed(uuid,uuid,text)";
+  const definition = (signature) =>
+    `lower(regexp_replace(pg_get_functiondef(to_regprocedure('${signature}')), '[[:space:]]+', ' ', 'g'))`;
+  return `coalesce(
+      (
+        with expected(table_name, index_name) as (
+          values
+            ('cms_lead_consents', 'cms_lead_consents_lead_id_idx'),
+            ('cms_lead_status_history', 'cms_lead_status_history_lead_id_idx'),
+            ('cms_lead_outbox', 'cms_lead_outbox_lead_id_idx'),
+            ('cms_lead_outbox_replays', 'cms_lead_outbox_replays_lead_id_idx')
+        )
+        select count(*) = 4
+        from expected
+        join pg_catalog.pg_class index_class on index_class.relname = expected.index_name
+        join pg_catalog.pg_namespace index_namespace on index_namespace.oid = index_class.relnamespace
+        join pg_catalog.pg_index index_record on index_record.indexrelid = index_class.oid
+        join pg_catalog.pg_am access_method on access_method.oid = index_class.relam
+        where index_namespace.nspname = 'public'
+          and index_record.indrelid = to_regclass('public.' || expected.table_name)
+          and index_record.indisvalid
+          and index_record.indisready
+          and not index_record.indisunique
+          and index_record.indpred is null
+          and index_record.indexprs is null
+          and index_record.indnkeyatts = 1
+          and index_record.indnatts = 1
+          and access_method.amname = 'btree'
+          and index_record.indkey[0] = (
+            select attribute.attnum
+            from pg_catalog.pg_attribute attribute
+            where attribute.attrelid = index_record.indrelid
+              and attribute.attname = 'lead_id'
+              and not attribute.attisdropped
+          )
+      )
+      and ${definition(snapshotSignature)} like '%private.cms_lead_scope_allowed(%'
+      and ${definition(snapshotSignature)} like '%consent.lead_id = lead.id%'
+      and ${definition(snapshotSignature)} like '%history.lead_id = lead.id%'
+      and ${definition(snapshotSignature)} like '%outbox.lead_id = lead.id%'
+      and ${definition(scopeSignature)} like '%history.lead_id = lead.id%'
+      and ${definition(scopeSignature)} like '%replay.lead_id = lead.id%'
+      and has_function_privilege(
+        'authenticated',
+        'public.cms_get_system_snapshot_authenticated(text,text,uuid)',
+        'EXECUTE'
+      )
+      and not has_function_privilege(
+        'anon',
+        'public.cms_get_system_snapshot_authenticated(text,text,uuid)',
+        'EXECUTE'
+      )
+      and not has_function_privilege(
+        'service_role',
+        'public.cms_get_system_snapshot_authenticated(text,text,uuid)',
+        'EXECUTE'
+      )
+      and not has_function_privilege(
+        'authenticated',
+        '${snapshotSignature}',
+        'EXECUTE'
+      )
+      and not has_table_privilege('anon', 'public.cms_lead_consents', 'SELECT')
+      and not has_table_privilege('anon', 'public.cms_lead_status_history', 'SELECT')
+      and not has_table_privilege('anon', 'public.cms_lead_outbox', 'SELECT')
+      and not has_table_privilege('anon', 'public.cms_lead_outbox_replays', 'SELECT')
     , false) as ${alias}`;
 }

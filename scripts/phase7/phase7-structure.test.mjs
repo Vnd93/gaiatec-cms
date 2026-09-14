@@ -213,5 +213,13 @@ test("final staging roundtrip is SHA-bound, uses the canonical synthetic tag and
   assert.match(canary, /productionTouched: false/);
   assert.match(canary, /workflow_status: "archived"/);
   assert.match(canary, /status: "suspended"/);
+  assert.equal(
+    [
+      ...canary.matchAll(
+        /action: "publish_form"[\s\S]{0,180}expectedLockVersion: savedForm\.data\.lockVersion/g,
+      ),
+    ].length,
+    2,
+  );
   assert.doesNotMatch(canary, /pending_owner|not_executed_missing_resend_api_key/);
 });

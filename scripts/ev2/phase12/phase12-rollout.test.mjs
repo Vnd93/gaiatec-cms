@@ -2511,6 +2511,10 @@ test("release workflows and reduced canary are immutable, staged and production 
     backendCompatibility,
     /"0099": \[\s*"supabase\/tests\/rls_cms_system_snapshot_open_critical_scale\.test\.sql",\s*"supabase\/tests\/rls_ev2_phase11_system\.test\.sql",\s*"tests\/contracts\/cms-system-snapshot-open-critical-scale\.test\.ts"/,
   );
+  assert.match(
+    backendCompatibility,
+    /"0100": \[\s*"supabase\/tests\/rls_cms_system_snapshot_lead_read_scale\.test\.sql",\s*"supabase\/tests\/rls_ev2_phase11_system\.test\.sql",\s*"tests\/contracts\/cms-system-snapshot-lead-read-scale\.test\.ts"/,
+  );
   // A travessia autenticada do frontend de rollback le o handoff das entidades nascidas na UI, que so
   // existem entre a criacao e a revogacao do ator mutante. Ela roda, portanto, depois do ciclo do
   // candidato e antes da revogacao, e nada dentro do bloco de rollback pode mutar, porque o ciclo
@@ -2563,6 +2567,8 @@ test("release workflows and reduced canary are immutable, staged and production 
   assert.match(stagingDatabaseVerify, /auditLogReadScaleSemanticSql/);
   assert.match(stagingDatabaseVerify, /system_snapshot_open_critical_scale_0099_semantics_exact/);
   assert.match(stagingDatabaseVerify, /systemSnapshotOpenCriticalScaleSemanticSql/);
+  assert.match(stagingDatabaseVerify, /system_snapshot_lead_read_scale_0100_semantics_exact/);
+  assert.match(stagingDatabaseVerify, /systemSnapshotLeadReadScaleSemanticSql/);
   assert.match(backendCompatibility, /compatibilityEvidenceExecutionVerified: true/);
   assert.match(production, /probe-supabase-boundary\.mjs/);
   assert.match(deployStaging, /probe-supabase-boundary\.mjs/);
@@ -2650,6 +2656,8 @@ test("release workflows and reduced canary are immutable, staged and production 
   assert.match(databaseVerify, /auditLogReadScaleSemanticSql/);
   assert.match(databaseVerify, /system_snapshot_open_critical_scale_0099_semantics_exact/);
   assert.match(databaseVerify, /systemSnapshotOpenCriticalScaleSemanticSql/);
+  assert.match(databaseVerify, /system_snapshot_lead_read_scale_0100_semantics_exact/);
+  assert.match(databaseVerify, /systemSnapshotLeadReadScaleSemanticSql/);
   assert.match(authConfig, /disable_signup: true/);
   assert.match(vaultConfig, /cms_outbox_worker_secret/);
   const approvalTemplate = JSON.parse(template);

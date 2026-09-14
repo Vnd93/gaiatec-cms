@@ -34,6 +34,7 @@ import {
   sessionRefreshRevocationSemanticSql,
   serviceOnlyRpcContractSql,
   sourceMigrationManifest,
+  systemSnapshotLeadReadScaleSemanticSql,
   systemSnapshotOpenCriticalScaleSemanticSql,
 } from "./migration-manifest-lib.mjs";
 
@@ -748,6 +749,7 @@ async function preflightMigrations() {
     ${runtimeIntegrityFollowupSemanticSql("runtime_integrity_followup_0088_semantics_exact")},
     ${auditLogReadScaleSemanticSql("audit_log_read_scale_0098_semantics_exact")},
     ${systemSnapshotOpenCriticalScaleSemanticSql("system_snapshot_open_critical_scale_0099_semantics_exact")},
+    ${systemSnapshotLeadReadScaleSemanticSql("system_snapshot_lead_read_scale_0100_semantics_exact")},
     has_function_privilege('service_role', 'public.cms_qa_rate_limit_proof(uuid,text,text,text,text,text)', 'EXECUTE')
       and not has_function_privilege('authenticated', 'public.cms_qa_rate_limit_proof(uuid,text,text,text,text,text)', 'EXECUTE')
       and not has_function_privilege('anon', 'public.cms_qa_rate_limit_proof(uuid,text,text,text,text,text)', 'EXECUTE')
@@ -952,6 +954,10 @@ async function preflightMigrations() {
   check(
     "system_snapshot_open_critical_scale_0099_semantics_exact",
     row?.system_snapshot_open_critical_scale_0099_semantics_exact === true,
+  );
+  check(
+    "system_snapshot_lead_read_scale_0100_semantics_exact",
+    row?.system_snapshot_lead_read_scale_0100_semantics_exact === true,
   );
   check("qa_actor_auth_triggers_0061_present", row?.qa_actor_auth_triggers === true);
   check("qa_actor_watchdog_cron_0061_active", row?.qa_actor_watchdog_cron === true);

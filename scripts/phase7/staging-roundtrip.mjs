@@ -728,7 +728,12 @@ async function run() {
   createdForms.push(savedForm.data.formId);
   await leadCommand(
     adminActor,
-    { action: "publish_form", formId: savedForm.data.formId, versionId: savedForm.data.versionId },
+    {
+      action: "publish_form",
+      formId: savedForm.data.formId,
+      versionId: savedForm.data.versionId,
+      expectedLockVersion: savedForm.data.lockVersion,
+    },
     403,
   );
   await elevate(adminActor);
@@ -736,6 +741,7 @@ async function run() {
     action: "publish_form",
     formId: savedForm.data.formId,
     versionId: savedForm.data.versionId,
+    expectedLockVersion: savedForm.data.lockVersion,
   });
   const publishedForm = await publicApi({ type: "form", key: formKey });
   assert(

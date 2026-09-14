@@ -1458,8 +1458,16 @@ async function completeMfaEnrollment(page: Page) {
   return { secret, enrollmentResponse, challenge };
 }
 
-async function loginWithMfa(page: Page, actor: LifecycleActor, totpSecret: string, expectedSha: string) {
-  const response = await page.goto("/admin/login", { waitUntil: "domcontentloaded" });
+async function loginWithMfa(
+  page: Page,
+  actor: LifecycleActor,
+  totpSecret: string,
+  expectedSha: string,
+  expectedDestination: { route: string; heading: string; loadingLabel: string },
+) {
+  await expect(page).toHaveURL(/\/admin\/login$/);
+  // Recarrega a entrada atual para validar o release sem apagar o `location.state.from` protegido.
+  const response = await page.reload({ waitUntil: "domcontentloaded" });
   expect(response?.headers()["x-release"]).toBe(expectedSha);
   await page.getByLabel("E-mail corporativo").fill(actor.email);
   await page.getByLabel("Senha").fill(actor.password);
@@ -1485,8 +1493,10 @@ async function loginWithMfa(page: Page, actor: LifecycleActor, totpSecret: strin
   const resolved = await responseJson(mfaResponse);
   expect(resolved).toMatchObject({ status: "active", mfaVerified: true, accessGranted: true });
   await expect(page.locator("[data-admin-surface]")).toBeVisible({ timeout: 20_000 });
-  await expect(page).toHaveURL(/\/admin\/?$/);
-  await waitForAdminDataToSettle(page, "Visão geral", "Carregando indicadores");
+  await expect(page).toHaveURL(
+    new RegExp(`${expectedDestination.route.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`),
+  );
+  await waitForAdminDataToSettle(page, expectedDestination.heading, expectedDestination.loadingLabel);
   return { signInResponse, mfaResponse, resolved };
 }
 
@@ -2465,6 +2475,11 @@ test.describe("CMS Auth invite and recovery lifecycle", () => {
         config.invitee,
         inviteeTotpSecret,
         config.expectedSha,
+        {
+          route: "/admin/auditoria",
+          heading: "Auditoria",
+          loadingLabel: "Carregando auditoria",
+        },
       );
       recordAuthBackendAction(semanticActions, {
         surfaceId: "auth-login",

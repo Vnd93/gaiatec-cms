@@ -56,6 +56,9 @@ describe("real invite and password-recovery browser lifecycle", () => {
     expect(spec).toContain("guaranteedInvalidTotp(validCode)");
     expect(spec).toContain("completeMfaEnrollment(invitePage)");
     expect(spec).toMatch(/loginWithMfa\(\s*invitePage/);
+    expect(spec).toContain('route: "/admin/auditoria"');
+    expect(spec).toContain("const response = await page.reload");
+    expect(spec).toContain("expectedDestination.route.replace");
     expect(spec.match(/expectConsumedLinkRejected\(/g)?.length).toBeGreaterThanOrEqual(3);
     expect(spec).toContain("cms:auth.recovery_requested");
     expect(spec).toContain("cms:auth.recovery_delivery_failed");

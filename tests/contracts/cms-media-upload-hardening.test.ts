@@ -86,11 +86,12 @@ describe("CMS media upload hardening", () => {
   });
 
   it("makes compensation, retention, usage impact and physical cleanup server-authoritative", async () => {
-    const [migration, edge, outbox, removal, contract] = await Promise.all([
+    const [migration, edge, outbox, removal, retry, contract] = await Promise.all([
       read("supabase/migrations/0082_cms_media_upload_abort.sql"),
       read("supabase/functions/cms-media/index.ts"),
       read("supabase/functions/cms-outbox-worker/index.ts"),
       read("supabase/functions/_shared/cms-storage-removal.ts"),
+      read("supabase/functions/_shared/cms-idempotent-retry.ts"),
       read("src/shared/contracts/ev2-dam.ts"),
     ]);
 
@@ -151,6 +152,10 @@ describe("CMS media upload hardening", () => {
     expect(edge).toContain("hiddenUsageCount");
     expect(edge).toContain("const claimId = context?.commandId ?? assetId");
     expect(edge).toContain('reconciled.data?.status === "ready"');
+    expect(edge).toContain("retryIdempotentSupabaseOperation");
+    expect(edge).toContain("CMS_DAM_UPLOAD_EXPIRY_PERSIST_FAILED");
+    expect(retry).toContain("isTransientSupabaseOperationError");
+    expect(retry).toContain("attempt < 2");
 
     expect(outbox).toContain('rpc("cms_claim_incomplete_media_gc"');
     expect(outbox).toContain("removeAndVerifyMediaStorageObject");

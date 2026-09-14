@@ -129,6 +129,7 @@ const actorCleanupFailures = [];
 let documentNeutralizationMs = null;
 let cleanupError;
 let finalResidue;
+let retainedAuditEvidence = { retainedCmsAuditEvents: 0, retainedRdoAuditEvents: 0 };
 let revocationLatencyMs;
 let sessionRevocationLatencyMs;
 
@@ -584,10 +585,10 @@ async function createFreshMfaSession(actor) {
   actor.lastTotpCounter = Math.floor(clock / 30_000);
 }
 
-function envelope(expectedVersion) {
+function envelope(expectedVersion, commandId = randomUUID()) {
   return {
     schemaVersion: 1,
-    commandId: randomUUID(),
+    commandId,
     correlationId: randomUUID(),
     occurredAt: new Date().toISOString(),
     actorContext: { environment: "staging", siteKey: "main" },
@@ -600,9 +601,9 @@ async function edgeCommand(
   functionName,
   action,
   values = {},
-  { allowed = [200], idempotent = false, expectedVersion, timeoutMs } = {},
+  { allowed = [200], idempotent = false, expectedVersion, timeoutMs, commandId } = {},
 ) {
-  const commandEnvelope = envelope(expectedVersion);
+  const commandEnvelope = envelope(expectedVersion, commandId);
   return request(`${context.url}/functions/v1/${functionName}`, {
     method: "POST",
     headers: {
@@ -1207,6 +1208,10 @@ async function exerciseMediaUploadAbort() {
   });
   check("media_upload_abort_0082_override_created", Boolean(damOverride.json?.[0]?.id));
 
+  // The function uses commandId as the asset id and inserts before signing. Claim that exact id
+  // before the request so teardown can compensate an inserted row even if the response is lost.
+  const mediaFixtureId = randomUUID();
+  mediaFixture = { id: mediaFixtureId, archived: false };
   const reserved = await edgeCommand(
     operator,
     "cms-media",
@@ -1228,11 +1233,10 @@ async function exerciseMediaUploadAbort() {
         focalY: 0.5,
       },
     },
-    { allowed: [201], idempotent: true },
+    { allowed: [201], idempotent: true, commandId: mediaFixtureId },
   );
-  if (!/^[0-9a-f-]{36}$/i.test(reserved.json?.assetId ?? ""))
+  if (!/^[0-9a-f-]{36}$/i.test(reserved.json?.assetId ?? "") || reserved.json?.assetId !== mediaFixture.id)
     throw new Error("G12_STAGING_MEDIA_RESERVATION_INVALID");
-  mediaFixture = { id: reserved.json.assetId, archived: false };
   check(
     "media_upload_abort_0082_reservation_created",
     reserved.json?.status === "awaiting_upload" && reserved.json?.uploads?.length === 7,
@@ -2197,6 +2201,21 @@ async function closeFixtures() {
     throw new Error(`G12_STAGING_MIGRATION_CANARY_FIXTURE_CLOSE_FAILED:${fixtureCloseFailures[0].closer}`);
 }
 
+async function readRetainedAuditEvidence() {
+  const [cmsAudit, rdoAudit] = await Promise.all([
+    operator
+      ? rest("cms_audit_log", { query: `actor_id=eq.${operator.id}&select=action` })
+      : Promise.resolve({ json: [] }),
+    operator
+      ? rest("rdo_audit_events", { query: `actor_id=eq.${operator.id}&select=action` })
+      : Promise.resolve({ json: [] }),
+  ]);
+  return {
+    retainedCmsAuditEvents: cmsAudit.json.length,
+    retainedRdoAuditEvents: rdoAudit.json.length,
+  };
+}
+
 async function residue() {
   const ids = actors.map((actor) => actor.id);
   const ownedContent = ids.length
@@ -2221,8 +2240,6 @@ async function residue() {
     publications,
     projections,
     routeRules,
-    cmsAudit,
-    rdoAudit,
   ] = await Promise.all([
     documentFixture
       ? rest("cms_document_assets", {
@@ -2276,12 +2293,6 @@ async function residue() {
           query: `item_id=in.(${itemIds.join(",")})&active=eq.true&select=id`,
         })
       : Promise.resolve({ json: [] }),
-    operator
-      ? rest("cms_audit_log", { query: `actor_id=eq.${operator.id}&select=action` })
-      : Promise.resolve({ json: [] }),
-    operator
-      ? rest("rdo_audit_events", { query: `actor_id=eq.${operator.id}&select=action` })
-      : Promise.resolve({ json: [] }),
   ]);
   const sessionRows = ids.length
     ? await managementQuery(
@@ -2329,8 +2340,6 @@ async function residue() {
     activeRouteRules: routeRules.json.length,
     activeSessions,
     activeCredentials,
-    retainedCmsAuditEvents: cmsAudit.json.length,
-    retainedRdoAuditEvents: rdoAudit.json.length,
     retainedSyntheticActors: ids.length,
     semantics: ids.length
       ? "zero-active-residue; archived fixtures and immutable audit retained"
@@ -2398,24 +2407,41 @@ try {
       cleanupError = error;
     }
     try {
-      finalResidue = await residue();
-      check("synthetic_active_residue_zero", finalResidue.activeFixtures === 0);
+      // Capture operation audit before lease completion writes its own cleanup events. Keeping this
+      // read independent ensures an unavailable audit surface never prevents the terminal fence.
+      retainedAuditEvidence = await readRetainedAuditEvidence();
+    } catch (error) {
+      cleanupError ??= error;
+    }
+    try {
+      // Terminalizing the lease is the authoritative mutation fence. Its FOR UPDATE either waits
+      // for a late fixture INSERT and compensates it, or makes that INSERT fail after the lease is
+      // cleaned. Measure residue only after every actor has crossed that barrier.
       let cleanedActorLeases = 0;
       for (const actor of actors) {
         await completeActorLease(actor.id);
         cleanedActorLeases += 1;
       }
+      finalResidue = await residue();
+      Object.assign(finalResidue, retainedAuditEvidence);
       finalResidue.cleanedActorLeases = cleanedActorLeases;
+      check("synthetic_active_residue_zero", finalResidue.activeFixtures === 0);
       check("synthetic_actor_leases_cleaned", cleanedActorLeases === actors.length);
       finalResidue.terminalPim = await terminalPimResidue();
       check(
         "synthetic_pim_business_residue_zero_after_terminal",
         Object.values(finalResidue.terminalPim).every((value) => value === 0),
       );
+      // A run that stops before the RDO scenario must retain CMS audit, but cannot be expected to
+      // have created RDO audit. Once the RDO scenario passes, both domains remain mandatory.
+      const rdoAuditExercised = checks.some(
+        ({ name, result }) => name === "rdo_audit_preserved" && result === "PASS",
+      );
       if (actors.length > 0)
         check(
           "immutable_audit_retained",
-          finalResidue.retainedCmsAuditEvents > 0 && finalResidue.retainedRdoAuditEvents > 0,
+          finalResidue.retainedCmsAuditEvents > 0 &&
+            (!rdoAuditExercised || finalResidue.retainedRdoAuditEvents > 0),
         );
     } catch (error) {
       cleanupError ??= error;

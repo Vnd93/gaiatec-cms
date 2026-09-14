@@ -13,6 +13,7 @@ import {
   isDamResolvedAssetPublishable,
 } from "../../../src/shared/dam-media-policy.ts";
 import { removeAndVerifyMediaStorageObject } from "../_shared/cms-storage-removal.ts";
+import { retryIdempotentSupabaseOperation } from "../_shared/cms-idempotent-retry.ts";
 import {
   clientAddress,
   consumeRateLimit,
@@ -240,22 +241,28 @@ function uploadPaths(assetId: string, declaredMime: string) {
 async function signedUploads(identity: Identity, assetId: string, declaredMime: string) {
   const storage = identity.admin.storage.from("cms-media-private"), uploads = [];
   for (const item of uploadPaths(assetId, declaredMime)) {
-    const signed = await storage.createSignedUploadUrl(item.path);
-    if (signed.error) throw new Error("CMS_DAM_UPLOAD_SIGNING_FAILED");
+    // Creating another token for the same still-empty path has no additional business effect.
+    // Retry only a transient refusal; deterministic Storage errors remain terminal.
+    const signed = await retryIdempotentSupabaseOperation(() =>
+      storage.createSignedUploadUrl(item.path)
+    );
+    if (signed.error || !signed.data) throw new Error("CMS_DAM_UPLOAD_SIGNING_FAILED");
     uploads.push({ ...item, token: signed.data.token, signedUrl: signed.data.signedUrl });
   }
   // Supabase signed-upload tokens currently remain usable for roughly two
   // hours. Persist a conservative server-side horizon so compensation never
   // terminalizes a path while a response-lost client can still PUT to it.
   const uploadTokenExpiresAt = new Date(Date.now() + 135 * 60_000).toISOString();
-  const { data: extended, error: extensionError } = await identity.admin
-    .from("cms_media_assets")
-    .update({ upload_token_expires_at: uploadTokenExpiresAt })
-    .eq("id", assetId)
-    .is("archived_at", null)
-    .select("id")
-    .maybeSingle();
-  if (extensionError || !extended) throw new Error("CMS_DAM_UPLOAD_SIGNING_FAILED");
+  const { data: extended, error: extensionError } = await retryIdempotentSupabaseOperation(() =>
+    identity.admin
+      .from("cms_media_assets")
+      .update({ upload_token_expires_at: uploadTokenExpiresAt })
+      .eq("id", assetId)
+      .is("archived_at", null)
+      .select("id")
+      .maybeSingle()
+  );
+  if (extensionError || !extended) throw new Error("CMS_DAM_UPLOAD_EXPIRY_PERSIST_FAILED");
   return uploads;
 }
 

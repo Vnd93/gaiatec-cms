@@ -9,7 +9,7 @@ test("staging Edge commands bind idempotency to the exact command envelope", asy
 
   assert.match(
     source,
-    /const commandEnvelope = envelope\(expectedVersion\);[\s\S]*"X-Idempotency-Key": commandEnvelope\.commandId[\s\S]*envelope: commandEnvelope/,
+    /const commandEnvelope = envelope\(expectedVersion, commandId\);[\s\S]*"X-Idempotency-Key": commandEnvelope\.commandId[\s\S]*envelope: commandEnvelope/,
   );
   assert.doesNotMatch(source, /idempotent \? \{ "X-Idempotency-Key": randomUUID\(\) \}/);
 });
@@ -281,6 +281,10 @@ test("canary proves refresh-resistant session revocation without banning Auth", 
 
 test("canary proves governed 0082 upload compensation and server-derived cleanup scope", async () => {
   const source = await read("scripts/ev2/phase12/staging-migrations-canary.mjs");
+  const exercise = source.slice(
+    source.indexOf("async function exerciseMediaUploadAbort"),
+    source.indexOf("async function exerciseDocuments"),
+  );
 
   assert.match(source, /async function exerciseMediaUploadAbort/);
   for (const check of [
@@ -302,6 +306,12 @@ test("canary proves governed 0082 upload compensation and server-derived cleanup
   assert.match(source, /Date\.parse\(job\?\.execute_after/);
   assert.match(source, /Date\.parse\(asset\?\.upload_token_expires_at/);
   assert.match(source, /async function closeMediaFixture/);
+  const fixtureClaim = exercise.indexOf("const mediaFixtureId = randomUUID()");
+  const fixtureBinding = exercise.indexOf("mediaFixture = { id: mediaFixtureId, archived: false }");
+  const reservation = exercise.indexOf("const reserved = await edgeCommand", fixtureBinding);
+  assert.ok(fixtureClaim >= 0 && fixtureClaim < fixtureBinding && fixtureBinding < reservation);
+  assert.match(exercise, /commandId: mediaFixtureId/);
+  assert.match(exercise, /reserved\.json\?\.assetId !== mediaFixture\.id/);
   assert.match(source, /await exerciseMediaUploadAbort\(\)/);
   assert.match(source, /activeMedia: activeMedia\.json\.length/);
   assert.match(source, /retainedSyntheticMediaAssets/);
@@ -620,16 +630,23 @@ test("synthetic super-admins are SHA-bound to the watchdog before privilege and 
   ])
     assert.ok(source.includes(cleanupContract), `missing actor cleanup contract ${cleanupContract}`);
 
-  const residueVerified = source.indexOf('check("synthetic_active_residue_zero"');
-  const leaseCompleted = source.indexOf("await completeActorLease(actor.id);", residueVerified);
+  const leaseCompleted = source.indexOf("await completeActorLease(actor.id);");
+  const auditMeasured = source.indexOf("retainedAuditEvidence = await readRetainedAuditEvidence()");
+  const residueMeasured = source.indexOf("finalResidue = await residue();", leaseCompleted);
+  const residueVerified = source.indexOf('check("synthetic_active_residue_zero"', residueMeasured);
   const cleanedVerified = source.indexOf(
     'check("synthetic_actor_leases_cleaned", cleanedActorLeases === actors.length);',
-    leaseCompleted,
+    residueVerified,
   );
-  assert.ok(residueVerified >= 0 && residueVerified < leaseCompleted);
   assert.ok(
-    leaseCompleted < cleanedVerified,
-    "completion must be followed by exact cleaned-status validation",
+    auditMeasured >= 0 &&
+      auditMeasured < leaseCompleted &&
+      leaseCompleted < residueMeasured &&
+      residueMeasured < residueVerified,
+  );
+  assert.ok(
+    residueVerified < cleanedVerified,
+    "the terminal lease fence must precede residue and cleaned-status validation",
   );
   assert.match(source, /await assertActorLease\(actorId, "cleaned"\)/);
 });
@@ -725,6 +742,7 @@ test("actor teardown aggregates internal failures and still attempts independent
 
 test("canary report is sanitized, synthetic-only and verifies zero active residue with retained audit", async () => {
   const source = await read("scripts/ev2/phase12/staging-migrations-canary.mjs");
+  const terminal = source.slice(source.indexOf("} finally {"), source.indexOf("const passed ="));
 
   assert.match(source, /QA-CMS-FINAL-\$\{qaDate\}-\$\{expectedSha\.slice\(0, 8\)\}/);
   assert.match(source, /"synthetic_active_residue_zero"/);
@@ -736,6 +754,17 @@ test("canary report is sanitized, synthetic-only and verifies zero active residu
   assert.match(source, /secretsPersisted: false/);
   assert.match(source, /writeFileSync\(reportPath/);
   assert.doesNotMatch(source, /console\.(?:log|error)\([^)]*(?:accessToken|anonKey|serviceKey)/);
+  const leaseFence = terminal.indexOf("await completeActorLease(actor.id)");
+  const auditMeasurement = terminal.indexOf("retainedAuditEvidence = await readRetainedAuditEvidence()");
+  const residueMeasurement = terminal.indexOf("finalResidue = await residue()", leaseFence);
+  const residueCheck = terminal.indexOf('check("synthetic_active_residue_zero"', residueMeasurement);
+  assert.ok(
+    auditMeasurement >= 0 &&
+      auditMeasurement < leaseFence &&
+      leaseFence < residueMeasurement &&
+      residueMeasurement < residueCheck,
+  );
+  assert.match(terminal, /Object\.assign\(finalResidue, retainedAuditEvidence\)/);
 });
 
 test("pre-actor preflight failures preserve the operation error without inventing missing audit", async () => {
@@ -744,7 +773,11 @@ test("pre-actor preflight failures preserve the operation error without inventin
 
   assert.match(
     terminal,
-    /if \(actors\.length > 0\)\s+check\(\s*"immutable_audit_retained",\s*finalResidue\.retainedCmsAuditEvents > 0 && finalResidue\.retainedRdoAuditEvents > 0,\s*\);/,
+    /const rdoAuditExercised = checks\.some\([\s\S]+name === "rdo_audit_preserved" && result === "PASS"/,
+  );
+  assert.match(
+    terminal,
+    /finalResidue\.retainedCmsAuditEvents > 0 &&\s*\(!rdoAuditExercised \|\| finalResidue\.retainedRdoAuditEvents > 0\)/,
   );
   assert.match(source, /: "zero-active-residue; no synthetic actor or operation created"/);
   assert.match(

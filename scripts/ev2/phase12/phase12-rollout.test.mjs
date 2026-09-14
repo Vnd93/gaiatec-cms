@@ -519,6 +519,22 @@ test("staging workflow exercises the exact-SHA governed lifecycle with disposabl
   // recusa caminho fora do proprio cwd, e o step roda em `candidate`. `../g12-canary.json` seria
   // recusado com G12_REPORT_PATH_REFUSED ao fim do canario, com staging ja mutado.
   assert.match(workflow, /^\s+candidate\/outputs\/g12-canary\.json$/m);
+  assert.match(workflow, /EV2_G11_TIMING_REPORT_PATH: outputs\/g11-timing-samples\.json/);
+  assert.equal(
+    (workflow.match(/EV2_G11_SOURCE_SHA: \$\{\{ steps\.candidate\.outputs\.sha \}\}/g) ?? []).length,
+    2,
+  );
+  assert.equal((workflow.match(/^\s+candidate\/outputs\/g11-timing-samples\.json$/gm) ?? []).length, 2);
+  const canonicalUpload = workflow.slice(
+    workflow.indexOf("      - uses: actions/upload-artifact@", workflow.indexOf("          evidence_json=(")),
+    workflow.indexOf("\n  diagnostic:"),
+  );
+  assert.match(canonicalUpload, /if: always\(\)[\s\S]*candidate\/outputs\/g11-timing-samples\.json/);
+  const interpretedEvidence = workflow.slice(
+    workflow.indexOf("          evidence_json=("),
+    workflow.indexOf("          node candidate/scripts/ev2/phase12/verify-staging-evidence.mjs"),
+  );
+  assert.doesNotMatch(interpretedEvidence, /g11-timing-samples/);
   // Apenas o canario phase12 tem essa guarda; rollout-probe.mjs escreve onde mandarem, e por isso os
   // demais relatorios podem continuar na raiz do workspace.
   assert.doesNotMatch(workflow, /EV2_G12_REPORT_PATH: \.\.\/g12-canary\.json/);
@@ -2491,6 +2507,10 @@ test("release workflows and reduced canary are immutable, staged and production 
     backendCompatibility,
     /"0098": \[\s*"supabase\/tests\/rls_cms_audit_log_read_scale\.test\.sql",\s*"supabase\/tests\/rls_cms_users_auth_scope\.test\.sql",\s*"tests\/contracts\/cms-audit-log-read-scale\.test\.ts"/,
   );
+  assert.match(
+    backendCompatibility,
+    /"0099": \[\s*"supabase\/tests\/rls_cms_system_snapshot_open_critical_scale\.test\.sql",\s*"supabase\/tests\/rls_ev2_phase11_system\.test\.sql",\s*"tests\/contracts\/cms-system-snapshot-open-critical-scale\.test\.ts"/,
+  );
   // A travessia autenticada do frontend de rollback le o handoff das entidades nascidas na UI, que so
   // existem entre a criacao e a revogacao do ator mutante. Ela roda, portanto, depois do ciclo do
   // candidato e antes da revogacao, e nada dentro do bloco de rollback pode mutar, porque o ciclo
@@ -2541,6 +2561,8 @@ test("release workflows and reduced canary are immutable, staged and production 
   assert.match(stagingDatabaseVerify, /runtime_integrity_followup_0088_semantics_exact/);
   assert.match(stagingDatabaseVerify, /audit_log_read_scale_0098_semantics_exact/);
   assert.match(stagingDatabaseVerify, /auditLogReadScaleSemanticSql/);
+  assert.match(stagingDatabaseVerify, /system_snapshot_open_critical_scale_0099_semantics_exact/);
+  assert.match(stagingDatabaseVerify, /systemSnapshotOpenCriticalScaleSemanticSql/);
   assert.match(backendCompatibility, /compatibilityEvidenceExecutionVerified: true/);
   assert.match(production, /probe-supabase-boundary\.mjs/);
   assert.match(deployStaging, /probe-supabase-boundary\.mjs/);
@@ -2626,6 +2648,8 @@ test("release workflows and reduced canary are immutable, staged and production 
   assert.match(databaseVerify, /runtime_integrity_followup_0088_semantics_exact/);
   assert.match(databaseVerify, /audit_log_read_scale_0098_semantics_exact/);
   assert.match(databaseVerify, /auditLogReadScaleSemanticSql/);
+  assert.match(databaseVerify, /system_snapshot_open_critical_scale_0099_semantics_exact/);
+  assert.match(databaseVerify, /systemSnapshotOpenCriticalScaleSemanticSql/);
   assert.match(authConfig, /disable_signup: true/);
   assert.match(vaultConfig, /cms_outbox_worker_secret/);
   const approvalTemplate = JSON.parse(template);

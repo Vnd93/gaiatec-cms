@@ -34,6 +34,7 @@ import {
   sessionRefreshRevocationSemanticSql,
   serviceOnlyRpcContractSql,
   sourceMigrationManifest,
+  systemSnapshotOpenCriticalScaleSemanticSql,
 } from "./migration-manifest-lib.mjs";
 
 function fixture(files) {
@@ -87,9 +88,9 @@ test("the repository migration history is contiguous", () => {
   // digest dos bytes. E o que impede que alguem acrescente migration sem revisao: nao basta criar
   // o arquivo, e preciso declarar o conteudo dele aqui.
   assert.deepEqual(G12_PINNED_MIGRATION_TAIL.at(-1), {
-    version: "0098",
-    file: "0098_cms_audit_log_read_scale.sql",
-    sha256: "539613f03cd5e06d2be67dad2a14ce20b793085c437c23e108e1ae7c7a714529",
+    version: "0099",
+    file: "0099_cms_system_snapshot_open_critical_scale.sql",
+    sha256: "dfb271cf9e9efb2f05fd91ec73afbb2c588d35e151886f61d0f967c6ccde9715",
   });
   assert.deepEqual(manifest.slice(-G12_PINNED_MIGRATION_TAIL.length), G12_PINNED_MIGRATION_TAIL);
   for (const migration of manifest.slice(-G12_PINNED_MIGRATION_TAIL.length)) {
@@ -636,6 +637,35 @@ test("0098 semantic preflight proves audit recency scale without widening visibi
   assert.match(contract, /^coalesce\(/);
   assert.match(contract, /, false\) as audit_log_read_scale_0098_semantics_exact$/);
   assert.throws(() => auditLogReadScaleSemanticSql("Bad Alias"));
+});
+
+test("0099 semantic preflight proves the exact open-critical index without widening access", () => {
+  const contract = systemSnapshotOpenCriticalScaleSemanticSql(
+    "system_snapshot_open_critical_scale_0099_semantics_exact",
+  );
+
+  for (const marker of [
+    "cms_get_system_snapshot",
+    "timestamp with time zone",
+    "cms_operational_events_open_critical_id_idx",
+    "public.cms_operational_events",
+    "index_record.indisvalid",
+    "index_record.indisready",
+    "index_record.indpred is not null",
+    "index_record.indnkeyatts = 1",
+    "index_record.indkey[0]",
+    "attribute.attname = 'id'",
+    "severity=''critical''::textandresolved_atisnull",
+    "event.severity = ''critical''",
+    "event.resolved_at is null",
+    "private.cms_system_operational_event_scope_allowed",
+    "not has_table_privilege('anon'",
+  ])
+    assert.ok(contract.includes(marker), marker);
+
+  assert.match(contract, /^coalesce\(/);
+  assert.match(contract, /, false\) as system_snapshot_open_critical_scale_0099_semantics_exact$/);
+  assert.throws(() => systemSnapshotOpenCriticalScaleSemanticSql("Bad Alias"));
 });
 
 test("0090 semantic preflight proves the lease accepts only the state the fence imposes", () => {

@@ -633,6 +633,8 @@ jobs:
           # fica depois do `finally`, de modo que a recusa so chegaria ao fim do canario, ja com
           # staging mutado e o alias publicado. `outputs/` e ignorado pelo git, como os demais.
           EV2_G12_REPORT_PATH: outputs/g12-canary.json
+          EV2_G11_SOURCE_SHA: ${{ steps.candidate.outputs.sha }}
+          EV2_G11_TIMING_REPORT_PATH: outputs/g11-timing-samples.json
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       - name: Revalidate immutable bytes before the enforced-CSP canary
         working-directory: candidate
@@ -1058,6 +1060,7 @@ jobs:
             candidate/outputs/g12-backend-compatibility.json
             baseline/outputs/cms-coverage-rollback.json
             candidate/outputs/g12-canary.json
+            candidate/outputs/g11-timing-samples.json
             g16-csp-browser.json
             g12-staging-database.json
             g12-staging-auth.json
@@ -1142,6 +1145,7 @@ jobs:
             candidate/outputs/g12-backend-compatibility.json
             baseline/outputs/cms-coverage-rollback.json
             candidate/outputs/g12-canary.json
+            candidate/outputs/g11-timing-samples.json
             g16-csp-browser.json
             g12-staging-database.json
             g12-staging-auth.json
@@ -1304,10 +1308,12 @@ jobs:
           # de defeito de fixture contra schema que consumiu seis candidatos.
           EV2_G11_CANDIDATE_ORIGIN: https://ev2-g12-canary.gaiatec-cms-staging.pages.dev
           EV2_G11_EXPECTED_SHA: ${{ steps.live.outputs.g12_sha }}
+          EV2_G11_SOURCE_SHA: ${{ steps.candidate.outputs.sha }}
           # O alias so serve o candidato depois que um run canonico o publica. Enquanto isso, medir a
           # pagina publicada e medir o build anterior, e o numero obtido nao e do candidato.
           EV2_G11_FRONTEND_UNDER_TEST: ${{ steps.live.outputs.g12_sha == steps.candidate.outputs.sha }}
           EV2_G11_REPORT_PATH: ../diagnostic-g11-canary.json
+          EV2_G11_TIMING_REPORT_PATH: ../diagnostic-g11-timing-samples.json
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       - name: DIAGNOSTIC public route probe and latency budget
         id: gate_live_probe
@@ -1465,6 +1471,7 @@ jobs:
             diagnostic-staging-database.json
             diagnostic-staging-migrations-canary.json
             diagnostic-g11-canary.json
+            diagnostic-g11-timing-samples.json
             diagnostic-staging-probe.json
             diagnostic-staging-boundary.json
             diagnostic-staging-lifecycle.json

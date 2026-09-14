@@ -90,6 +90,11 @@ export const G12_PINNED_MIGRATION_TAIL = Object.freeze([
     file: "0098_cms_audit_log_read_scale.sql",
     sha256: "539613f03cd5e06d2be67dad2a14ce20b793085c437c23e108e1ae7c7a714529",
   }),
+  Object.freeze({
+    version: "0099",
+    file: "0099_cms_system_snapshot_open_critical_scale.sql",
+    sha256: "dfb271cf9e9efb2f05fd91ec73afbb2c588d35e151886f61d0f967c6ccde9715",
+  }),
 ]);
 
 export const CMS_MEDIA_UPLOAD_ABORT_0082_RPCS = Object.freeze([
@@ -1070,5 +1075,50 @@ export function auditLogReadScaleSemanticSql(alias) {
       and lower(${definition(row)}) like '%cms_user_actor_environment%'
       and ${indexExact}
       and not has_table_privilege('anon', 'public.cms_audit_log', 'SELECT')
+    , false) as ${alias}`;
+}
+
+// A 0099 gives the snapshot's critical-alert aggregate the exact partial index
+// its predicate needs.  The remote contract proves both the structural index
+// shape and that the authoritative row-scope call remains in the snapshot.
+export function systemSnapshotOpenCriticalScaleSemanticSql(alias) {
+  if (!/^[a-z][a-z0-9_]*$/.test(alias)) fail("system-snapshot-open-critical-scale-alias");
+  const signature = "public.cms_get_system_snapshot(uuid,text,text,text,text,timestamp with time zone,uuid)";
+  const definition = `lower(regexp_replace(pg_get_functiondef(to_regprocedure('${signature}')), '[[:space:]]+', ' ', 'g'))`;
+  const predicate = `regexp_replace(
+        lower(pg_catalog.pg_get_expr(index_record.indpred, index_record.indrelid)),
+        '[[:space:]()]', '', 'g'
+      )`;
+  return `coalesce(
+      exists (
+        select 1
+        from pg_catalog.pg_class index_class
+        join pg_catalog.pg_namespace index_namespace on index_namespace.oid = index_class.relnamespace
+        join pg_catalog.pg_index index_record on index_record.indexrelid = index_class.oid
+        join pg_catalog.pg_am access_method on access_method.oid = index_class.relam
+        where index_namespace.nspname = 'public'
+          and index_class.relname = 'cms_operational_events_open_critical_id_idx'
+          and index_record.indrelid = 'public.cms_operational_events'::regclass
+          and index_record.indisvalid
+          and index_record.indisready
+          and not index_record.indisunique
+          and index_record.indpred is not null
+          and index_record.indexprs is null
+          and index_record.indnkeyatts = 1
+          and index_record.indnatts = 1
+          and access_method.amname = 'btree'
+          and index_record.indkey[0] = (
+            select attribute.attnum
+            from pg_catalog.pg_attribute attribute
+            where attribute.attrelid = 'public.cms_operational_events'::regclass
+              and attribute.attname = 'id'
+              and not attribute.attisdropped
+          )
+          and ${predicate} = 'severity=''critical''::textandresolved_atisnull'
+      )
+      and ${definition} like '%event.severity = ''critical''%'
+      and ${definition} like '%event.resolved_at is null%'
+      and ${definition} like '%private.cms_system_operational_event_scope_allowed(%'
+      and not has_table_privilege('anon', 'public.cms_operational_events', 'SELECT')
     , false) as ${alias}`;
 }

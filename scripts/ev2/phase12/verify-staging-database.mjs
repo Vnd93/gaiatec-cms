@@ -26,6 +26,7 @@ import {
   sessionRefreshRevocationSemanticSql,
   serviceOnlyRpcContractSql,
   sourceMigrationManifest,
+  systemSnapshotOpenCriticalScaleSemanticSql,
 } from "./migration-manifest-lib.mjs";
 
 const STAGING_PROJECT_REF = "glcqsosxwgmlhzgcsnzv";
@@ -159,6 +160,7 @@ const [result] = await managementRequest(`/v1/projects/${STAGING_PROJECT_REF}/da
       ${qaActorLeaseWindowSemanticSql("qa_actor_lease_window_0091_semantics_exact")},
       ${qaOverrideWindowSemanticSql("qa_override_window_0092_semantics_exact")},
       ${auditLogReadScaleSemanticSql("audit_log_read_scale_0098_semantics_exact")},
+      ${systemSnapshotOpenCriticalScaleSemanticSql("system_snapshot_open_critical_scale_0099_semantics_exact")},
       exists(
         select 1 from pg_catalog.pg_trigger t
         where t.tgrelid = 'private.cms_qa_actor_leases'::regclass
@@ -245,6 +247,7 @@ const checks = [
   "qa_actor_lease_window_0091_semantics_exact",
   "qa_override_window_0092_semantics_exact",
   "audit_log_read_scale_0098_semantics_exact",
+  "system_snapshot_open_critical_scale_0099_semantics_exact",
   "qa_rate_limit_proof_cleanup_present",
   "qa_actor_auth_trigger_present",
   "qa_actor_marker_trigger_present",

@@ -6,6 +6,7 @@ import {
   budgetsMissed,
   evaluateSystemEvidence,
   percentile,
+  sanitizeTimingVector,
   serverTimingDuration,
   summarizeDurations,
 } from "./system-assurance-lib.mjs";
@@ -214,6 +215,23 @@ test("G11 boundary rules fail closed without redundant scenario tests", () => {
 
 test("load statistics use nearest-rank percentiles and strict evidence evaluation", () => {
   assert.equal(percentile([10, 20, 30, 40, 50], 95), 50);
+  assert.equal(percentile([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 95), 10);
+  assert.equal(
+    percentile(
+      Array.from({ length: 20 }, (_, index) => index + 1),
+      95,
+    ),
+    19,
+  );
+  assert.deepEqual(sanitizeTimingVector([1.234, -1, Number.NaN, Infinity, "3", null]), [
+    1.23,
+    null,
+    null,
+    null,
+    null,
+    null,
+  ]);
+  assert.equal(sanitizeTimingVector(Array.from({ length: 101 }, () => 1)).length, 100);
   assert.deepEqual(summarizeDurations([1, 2, 3, 4]), {
     samples: 4,
     minMs: 1,
@@ -274,6 +292,24 @@ test("G11 executable controls remain reproducible and fail-closed", async () => 
   assert.match(canary, /lead_preserved_after_delivery_failure/);
   assert.match(canary, /backend_server_timing_available/);
   assert.match(canary, /for \(let warmup = 0; warmup < 5; warmup \+= 1\)/);
+  assert.match(canary, /EV2_G11_TIMING_REPORT_PATH/);
+  assert.match(canary, /g11\.timing\.samples/);
+  assert.match(canary, /sourceSha/);
+  assert.match(canary, /servedReleaseSha/);
+  assert.match(canary, /adminReadWarmupServerMs/);
+  assert.match(canary, /commandMutationSamples: 1/);
+  assert.match(canary, /commandReplaySamples: 9/);
+  assert.match(canary, /commandMeasuredWallMs/);
+  assert.doesNotMatch(
+    canary.slice(
+      canary.indexOf("const timingSamples = {"),
+      canary.indexOf("console.log(JSON.stringify(timingSamples))"),
+    ),
+    /email|token|secret|correlation|idempotency|payload|headers|actor/i,
+  );
+  const timingWrite = canary.indexOf("writeFileSync(process.env.EV2_G11_TIMING_REPORT_PATH");
+  const firstPostSamplingCheck = canary.indexOf('check(\n    "backend_server_timing_available"');
+  assert.ok(timingWrite > 0 && firstPostSamplingCheck > timingWrite);
   assert.match(canary, /adminReadWallP95Ms/);
   assert.match(canary, /commandWallP95Ms/);
   assert.match(canary, /async function rpc[\s\S]*?allowed: \[200, 204\]/);

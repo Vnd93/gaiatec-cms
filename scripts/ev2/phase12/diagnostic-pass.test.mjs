@@ -93,6 +93,24 @@ test("gates that compare the served release expect what staging actually serves"
   assert.match(diagnostic, /npx playwright install --with-deps chromium/);
 });
 
+test("G11 latency samples stay sanitized and diagnostic-only", () => {
+  const diagnostic = jobBody("diagnostic");
+  assert.match(diagnostic, /EV2_G11_TIMING_REPORT_PATH: \.\.\/diagnostic-g11-timing-samples\.json/);
+  assert.match(diagnostic, /^ {12}diagnostic-g11-timing-samples\.json$/m);
+
+  const canary = readFileSync("scripts/ev2/phase11/staging-canary.mjs", "utf8");
+  const reportShape = canary.slice(
+    canary.indexOf("const timingSamples = {"),
+    canary.indexOf("console.log(JSON.stringify(timingSamples))"),
+  );
+  assert.match(reportShape, /containsPersonalData: false/);
+  assert.match(reportShape, /syntheticOnly: true/);
+  assert.doesNotMatch(
+    reportShape,
+    /email|token|secret|cookie|totp|correlation|idempotency|payload|headers|actor/i,
+  );
+});
+
 test("the authenticated browser cycle runs only when the alias already serves the candidate", () => {
   const diagnostic = jobBody("diagnostic");
   // A fixture exige o mesmo SHA em `git rev-parse HEAD` e em `/healthz`. Num passe que nao publica as

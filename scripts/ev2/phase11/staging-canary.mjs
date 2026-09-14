@@ -7,6 +7,7 @@ import {
   budgetsMissed,
   percentile,
   runHttpLoadProbe,
+  sanitizeTimingVector,
   serverTimingDuration,
 } from "./system-assurance-lib.mjs";
 import { resolveStableBaseline } from "./stable-baseline-lib.mjs";
@@ -32,6 +33,8 @@ if (!/^https:\/\/ev2-g(?:11|12)-canary\.gaiatec-cms-staging\.pages\.dev$/.test(T
 const expectedSha = process.env.EV2_G11_EXPECTED_SHA;
 if (!/^[0-9a-f]{40}$/.test(expectedSha ?? ""))
   throw new Error("Defina EV2_G11_EXPECTED_SHA com o SHA completo explicitamente autorizado.");
+const sourceSha = process.env.EV2_G11_SOURCE_SHA ?? expectedSha;
+if (!/^[0-9a-f]{40}$/.test(sourceSha)) throw new Error("EV2_G11_SOURCE_SHA_INVALID");
 const qaRunTag = createQaRunTag(expectedSha);
 // Falso por padrao seria perigoso ao contrario: um run canonico que esquecesse de declarar deixaria
 // de verificar acessibilidade em silencio. O padrao e verificar; so o passe de diagnostico desliga.
@@ -1098,7 +1101,13 @@ try {
   await rest(context, "cms_feature_flag_overrides", { method: "DELETE", query: "id=eq." + broadOverrideId });
   broadOverrideId = undefined;
 
-  for (let warmup = 0; warmup < 5; warmup += 1) await system(context, operator, "snapshot");
+  const snapshotWarmupDurations = [];
+  const snapshotWarmupWallDurations = [];
+  for (let warmup = 0; warmup < 5; warmup += 1) {
+    const response = await system(context, operator, "snapshot");
+    snapshotWarmupDurations.push(serverTimingDuration(response.headers, "admin-read"));
+    snapshotWarmupWallDurations.push(response.durationMs);
+  }
 
   const snapshotDurations = [];
   const snapshotWallDurations = [];
@@ -1109,6 +1118,40 @@ try {
     snapshotWallDurations.push(response.durationMs);
     latestSnapshot = response.json;
   }
+  const timingSamples = {
+    schemaVersion: 1,
+    event: "g11.timing.samples",
+    sourceSha,
+    servedReleaseSha: expectedSha,
+    environment: "staging",
+    syntheticOnly: true,
+    containsPersonalData: false,
+    protocol: {
+      estimator: "nearest-rank",
+      percentile: 95,
+      sequence: "serial",
+      adminReadWarmups: 5,
+      adminReadSamples: 20,
+      commandSamples: 10,
+      commandMutationSamples: 1,
+      commandReplaySamples: 9,
+      commandSampleKinds: ["mutation", "idempotent_replay"],
+    },
+    vectors: {
+      adminReadWarmupServerMs: sanitizeTimingVector(snapshotWarmupDurations),
+      adminReadWarmupWallMs: sanitizeTimingVector(snapshotWarmupWallDurations),
+      adminReadMeasuredServerMs: sanitizeTimingVector(snapshotDurations),
+      adminReadMeasuredWallMs: sanitizeTimingVector(snapshotWallDurations),
+      commandMeasuredServerMs: sanitizeTimingVector(commandDurations),
+      commandMeasuredWallMs: sanitizeTimingVector(commandWallDurations),
+    },
+  };
+  if (process.env.EV2_G11_TIMING_REPORT_PATH)
+    writeFileSync(process.env.EV2_G11_TIMING_REPORT_PATH, `${JSON.stringify(timingSamples, null, 2)}\n`, {
+      encoding: "utf8",
+      mode: 0o600,
+    });
+  console.log(JSON.stringify(timingSamples));
   check(
     "backend_server_timing_available",
     commandDurations.every(Number.isFinite) && snapshotDurations.every(Number.isFinite),

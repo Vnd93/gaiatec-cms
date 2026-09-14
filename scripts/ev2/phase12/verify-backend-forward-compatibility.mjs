@@ -210,6 +210,11 @@ const compatibilityTests = {
     "supabase/tests/rls_cms_users_auth_scope.test.sql",
     "tests/contracts/cms-audit-log-read-scale.test.ts",
   ],
+  "0099": [
+    "supabase/tests/rls_cms_system_snapshot_open_critical_scale.test.sql",
+    "supabase/tests/rls_ev2_phase11_system.test.sql",
+    "tests/contracts/cms-system-snapshot-open-critical-scale.test.ts",
+  ],
 };
 for (const migration of additions) {
   const version = migration.version;

@@ -67,6 +67,15 @@ export function percentile(values, percentileValue) {
   return sorted[Math.max(0, Math.ceil((percentileValue / 100) * sorted.length) - 1)];
 }
 
+export function sanitizeTimingVector(values, maximumSamples = 100) {
+  if (!Array.isArray(values)) throw new Error("Vetor de latência inválido.");
+  if (!Number.isInteger(maximumSamples) || maximumSamples < 1 || maximumSamples > 1000)
+    throw new Error("Limite de amostras inválido.");
+  return values
+    .slice(0, maximumSamples)
+    .map((value) => (finite(value) && value >= 0 ? Math.round(value * 100) / 100 : null));
+}
+
 export function summarizeDurations(durations) {
   return {
     samples: durations.length,

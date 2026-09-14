@@ -1419,11 +1419,55 @@ function offsetIsInsideDeclaration(file, offset, symbol) {
   );
 }
 
+function offsetIsInsideRequiredSourceRange(relativePath, offset, startMarker, endMarker, label) {
+  const source = sourceText(relativePath);
+  const start = source.indexOf(startMarker);
+  const end = start < 0 ? -1 : source.indexOf(endMarker, start + startMarker.length);
+  if (start < 0 || end <= start) {
+    throw new Error(`Ramo condicional ${label} não encontrado para classificação fail-closed.`);
+  }
+  return offset >= start && offset < end;
+}
+
 function sourceControlRuntimeApplicability(relativePath, offset, ownerRouteIds) {
   const applicability = Object.fromEntries(
     ownerRouteIds.map((ownerRouteId) => [ownerRouteId, { applicability: "required" }]),
   );
   if (historicalRepositoryRoot) return applicability;
+  const conditionalAuthFailure =
+    relativePath === "src/admin/pages/SetPasswordPage.tsx" && ownerRouteIds.includes("auth-set-password")
+      ? {
+          surfaceId: "auth-set-password",
+          startMarker: 'if (preparation === "failed")',
+          endMarker: "async function submit(event",
+          label: "auth-set-password/preparation-failed",
+        }
+      : relativePath === "src/admin/pages/MfaPage.tsx" && ownerRouteIds.includes("auth-mfa")
+        ? {
+            surfaceId: "auth-mfa",
+            startMarker: 'if (status === "temporarily_unavailable" && passwordUpdate)',
+            endMarker: "title={enrolling ?",
+            label: "auth-mfa/temporarily-unavailable",
+          }
+        : null;
+  if (
+    conditionalAuthFailure &&
+    offsetIsInsideRequiredSourceRange(
+      relativePath,
+      offset,
+      conditionalAuthFailure.startMarker,
+      conditionalAuthFailure.endMarker,
+      conditionalAuthFailure.label,
+    )
+  ) {
+    applicability[conditionalAuthFailure.surfaceId] = {
+      applicability: "not-applicable",
+      basisCode: "conditional-failure-state-component-tested",
+      justification:
+        "O controle só renderiza após falha real de dependência; o canário não injeta indisponibilidade e o handler é exercitado no contrato de componente.",
+      documentationReference: "tests/components/admin-auth-flows.test.tsx#conditional-auth-failure-controls",
+    };
+  }
   const legacyMediaBranch =
     (relativePath === "src/admin/pages/AdminMediaPage.tsx" &&
       offsetIsInsideDeclaration(relativePath, offset, "LegacyMediaPage")) ||

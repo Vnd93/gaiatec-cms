@@ -269,6 +269,7 @@ describe("fluxos de autenticação administrativa", () => {
     expect(screen.getByText("Troca de senha protegida")).toBeInTheDocument();
   });
 
+  // Source-control applicability evidence: conditional-auth-failure-controls.
   it("preserva a recuperação no retry quando a validação de sessão falha temporariamente", async () => {
     const user = userEvent.setup();
     auth.value.status = "temporarily_unavailable";
@@ -297,6 +298,8 @@ describe("fluxos de autenticação administrativa", () => {
     expect(screen.queryByText("Fluxo de recuperação abandonado")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
     expect(auth.value.retryAccess).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "Cancelar e sair" }));
+    expect(auth.value.signOut).toHaveBeenCalledTimes(1);
 
     auth.value.status = "ready";
     view.rerender(tree());

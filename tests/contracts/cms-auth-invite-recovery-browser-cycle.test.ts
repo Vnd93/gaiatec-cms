@@ -159,6 +159,15 @@ describe("real invite and password-recovery browser lifecycle", () => {
     }
     expect(spec).toContain("fieldsSeen: fields.length");
     expect(spec).toContain("fieldsExercised: fields.length");
+    expect(spec).toContain("cases: structuredClone(cases)");
+    expect(spec).toContain("persistence: structuredClone(persistence)");
+    expect(spec).toContain("backend: structuredClone(backend)");
+    expect(spec).toContain("audit: structuredClone(audit)");
+    expect(spec).toContain("QA_CMS_AUTH_SEMANTIC_FIELD_REFERENCE_DRIFT");
+    expect(spec).toContain("First pass: bind every cloned disposition");
+    expect(spec).toContain("Second pass: a later field must not have rebound");
+    expect(spec).toContain("invalidCaseReference");
+    expect(spec).toContain("invalidProofReference");
     expect(spec).toContain("actionsSeen: actions.length");
     expect(spec).toContain("actionsExecutionReferenced: actions.length");
     expect(spec).toContain('evidenceKind: "scenario-contract"');
@@ -188,6 +197,8 @@ describe("real invite and password-recovery browser lifecycle", () => {
       expect(stagingVerifier).toContain(`uniqueFile(root, "${artifact}")`);
     }
     expect(stagingVerifier).toContain("assertCmsTerminalCoverage(");
+    expect(stagingVerifier).toContain("evaluateStagingAuthSourceControlCoverage");
+    expect(stagingVerifier).toContain("authSurfaceCoveragePassed(auth, inventory, terminalCoverage)");
     expect(stagingVerifier).toContain('auth?.rawBrowserArtifacts !== "disabled"');
     expect(stagingVerifier).toContain("auth?.noIdentifiersPersisted !== true");
     expect(production).toContain("candidate/outputs/cms-auth-lifecycle-production.json");

@@ -9,6 +9,7 @@ import {
 import { STAGING_AUTH_REDIRECT_ALLOW_LIST, STAGING_AUTH_SITE_ORIGIN } from "./staging-auth-config-lib.mjs";
 import { assertCmsTerminalCoverage } from "../../qa/materialize-cms-terminal-coverage.mjs";
 import { assertConsumedRealBrowserEvidence } from "./real-browser-release-evidence-lib.mjs";
+import { evaluateStagingAuthSourceControlCoverage } from "./staging-auth-source-control-contract-lib.mjs";
 
 function argument(name) {
   const index = process.argv.indexOf(`--${name}`);
@@ -346,14 +347,21 @@ const authSemanticStructurePassed = (entry, report) =>
   (entry.effectKind === "state-transition" ||
     (Number.isInteger(entry.httpStatus) && entry.httpStatus >= 200 && entry.httpStatus < 400)) &&
   validSemanticReference(entry.restoredOrClosedEvidenceReference);
-const authSurfaceCoveragePassed = (report) => {
+const authSurfaceCoveragePassed = (report, inventory, terminalCoverage) => {
   const coverage = report?.authSurfaceCoverage;
   const entries = coverage?.entries;
   const semanticExecutions = coverage?.semanticExecutions;
   const semanticActions = report?.semanticActions;
   const semanticFields = report?.semanticFields;
   const semanticStructures = report?.semanticStructures;
+  const sourceControlCoverage = evaluateStagingAuthSourceControlCoverage({
+    inventory,
+    entries,
+    requiredViewports: requiredAuthViewports,
+    terminalCoverage,
+  });
   if (
+    !sourceControlCoverage.valid ||
     coverage?.status !== "passed" ||
     JSON.stringify(coverage?.viewports) !== JSON.stringify(requiredAuthViewports) ||
     !Array.isArray(entries) ||
@@ -692,7 +700,7 @@ if (
   auth?.actionLinksPersisted !== false ||
   auth?.rawBrowserArtifacts !== "disabled" ||
   !browserObserverPassed(auth) ||
-  !authSurfaceCoveragePassed(auth) ||
+  !authSurfaceCoveragePassed(auth, inventory, terminalCoverage) ||
   !Array.isArray(auth?.scenarios) ||
   auth.scenarios.some((scenario) => scenario?.status !== "passed") ||
   requiredAuthLifecycleScenarios.some(

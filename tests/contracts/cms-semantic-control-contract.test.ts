@@ -380,6 +380,94 @@ describe("contrato semântico versionado dos controles CMS", () => {
       notApplicable: [],
       failures: [expect.stringContaining("CMS_SOURCE_CONTROL_NOT_APPLICABLE_INVALID")],
     });
+
+    const conditionalFailureControl = {
+      id: "src/admin/pages/MfaPage.tsx:84:button:1",
+      classification: "action" as const,
+      element: "button",
+      accessibleNameHint: "Tentar novamente",
+      ownerRouteIds: ["auth-mfa"],
+      runtimeApplicabilityBySurface: {
+        "auth-mfa": {
+          applicability: "not-applicable" as const,
+          basisCode: "conditional-failure-state-component-tested" as const,
+          justification:
+            "O controle só renderiza após falha real de dependência; o canário não injeta indisponibilidade e o handler é exercitado no contrato de componente.",
+          documentationReference:
+            "tests/components/admin-auth-flows.test.tsx#conditional-auth-failure-controls",
+        },
+      },
+    };
+    const conditionalResult = mapCmsSourceControlsToRuntime({
+      surfaceId: "auth-mfa",
+      viewport: "390x844",
+      sourceControls: [conditionalFailureControl],
+      executions: [],
+    });
+    expect(conditionalResult).toMatchObject({ status: "passed", failures: [], mappings: [] });
+    expect(conditionalResult.notApplicable).toEqual([
+      expect.objectContaining({
+        sourceControlId: conditionalFailureControl.id,
+        basisCode: "conditional-failure-state-component-tested",
+        documentationReference:
+          "tests/components/admin-auth-flows.test.tsx#conditional-auth-failure-controls",
+      }),
+    ]);
+
+    const invalidConditional = structuredClone(conditionalFailureControl);
+    invalidConditional.runtimeApplicabilityBySurface["auth-mfa"].documentationReference =
+      "tests/components/admin-auth-flows.test.tsx#unrelated";
+    expect(
+      mapCmsSourceControlsToRuntime({
+        surfaceId: "auth-mfa",
+        viewport: "390x844",
+        sourceControls: [invalidConditional],
+        executions: [],
+      }),
+    ).toMatchObject({
+      status: "failed",
+      notApplicable: [],
+      failures: [expect.stringContaining("CMS_SOURCE_CONTROL_NOT_APPLICABLE_INVALID")],
+    });
+
+    const invalidConditionalBranch = {
+      ...conditionalFailureControl,
+      id: "src/admin/pages/MfaPage.tsx:99:button:4",
+      accessibleNameHint: "void signOut()}> Cancelar e sair",
+    };
+    expect(
+      mapCmsSourceControlsToRuntime({
+        surfaceId: "auth-mfa",
+        viewport: "390x844",
+        sourceControls: [invalidConditionalBranch],
+        executions: [],
+      }),
+    ).toMatchObject({
+      status: "failed",
+      notApplicable: [],
+      failures: [expect.stringContaining("CMS_SOURCE_CONTROL_NOT_APPLICABLE_INVALID")],
+    });
+
+    const invalidConditionalScope = {
+      ...conditionalFailureControl,
+      id: "src/admin/pages/AdminPimPage.tsx:84:button:1",
+      ownerRouteIds: ["pim"],
+      runtimeApplicabilityBySurface: {
+        pim: conditionalFailureControl.runtimeApplicabilityBySurface["auth-mfa"],
+      },
+    };
+    expect(
+      mapCmsSourceControlsToRuntime({
+        surfaceId: "pim",
+        viewport: "390x844",
+        sourceControls: [invalidConditionalScope],
+        executions: [],
+      }),
+    ).toMatchObject({
+      status: "failed",
+      notApplicable: [],
+      failures: [expect.stringContaining("CMS_SOURCE_CONTROL_NOT_APPLICABLE_INVALID")],
+    });
   });
 
   it("mapeia uma expressão JSX repetida a uma ocorrência canônica sem ignorar execuções dinâmicas", () => {

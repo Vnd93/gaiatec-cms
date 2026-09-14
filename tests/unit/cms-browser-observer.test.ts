@@ -39,12 +39,20 @@ function fakeConsoleMessage(text: string, type = "error", url = "https://site.in
   };
 }
 
-function fakeRequest(url: string, method = "GET", errorText = "net::ERR_FAILED") {
+function fakeRequest(url: string, method = "GET", errorText = "net::ERR_FAILED", resourceType = "fetch") {
   return {
     method: () => method,
-    resourceType: () => "fetch",
+    resourceType: () => resourceType,
     url: () => url,
     failure: () => ({ errorText }),
+  };
+}
+
+function fakeResponseForRequest(request: ReturnType<typeof fakeRequest>, status: number) {
+  return {
+    status: () => status,
+    url: request.url,
+    request: () => request,
   };
 }
 
@@ -70,6 +78,99 @@ describe("CMS real-browser observer", () => {
     page.emit("requestfailed", failed);
     expect(observer.snapshot()).toMatchObject({ status: "failed", requestFailures: 1 });
     expect(() => observer.assertClean()).toThrow(/GET \/admin\/data: net::ERR_FAILED/);
+  });
+
+  it("settles only a tracked fetch HEAD with prior 2xx proof before Chromium aborts it", () => {
+    const page = new FakePage();
+    const observer = createCmsBrowserObserver({
+      suite: "observer-successful-head",
+      expectedSha: sha,
+      trackedRequestOrigins: ["https://backend.invalid"],
+    });
+    observer.observePage(page as unknown as Page);
+
+    const request = fakeRequest(
+      "https://backend.invalid/rest/v1/cms_content_items?select=id",
+      "HEAD",
+      "net::ERR_ABORTED",
+    );
+    page.emit("request", request);
+    expect(() => observer.assertClean()).toThrow(/pending first-party request HEAD/);
+
+    page.emit("response", fakeResponseForRequest(request, 200));
+    expect(() => observer.assertClean()).not.toThrow();
+    page.emit("requestfailed", request);
+    expect(() => observer.assertClean()).not.toThrow();
+    expect(observer.snapshot()).toMatchObject({
+      status: "passed",
+      unexpectedHttp: 0,
+      requestFailures: 0,
+    });
+  });
+
+  it("keeps every HEAD cancellation without matching first-party 2xx proof fail-closed", () => {
+    const scenarios = [
+      {
+        name: "no-response",
+        request: fakeRequest("https://backend.invalid/rest/v1/cms_content_items", "HEAD", "net::ERR_ABORTED"),
+      },
+      {
+        name: "http-error",
+        request: fakeRequest("https://backend.invalid/rest/v1/cms_content_items", "HEAD", "net::ERR_ABORTED"),
+        status: 500,
+      },
+      {
+        name: "get",
+        request: fakeRequest("https://backend.invalid/rest/v1/cms_content_items", "GET", "net::ERR_ABORTED"),
+        status: 200,
+      },
+      {
+        name: "post",
+        request: fakeRequest("https://backend.invalid/rest/v1/cms_content_items", "POST", "net::ERR_ABORTED"),
+        status: 200,
+      },
+      {
+        name: "xhr",
+        request: fakeRequest(
+          "https://backend.invalid/rest/v1/cms_content_items",
+          "HEAD",
+          "net::ERR_ABORTED",
+          "xhr",
+        ),
+        status: 200,
+      },
+      {
+        name: "other-origin",
+        request: fakeRequest("https://other.invalid/rest/v1/cms_content_items", "HEAD", "net::ERR_ABORTED"),
+        status: 200,
+      },
+      {
+        name: "redirect",
+        request: fakeRequest("https://backend.invalid/rest/v1/cms_content_items", "HEAD", "net::ERR_ABORTED"),
+        status: 302,
+      },
+      {
+        name: "other-error",
+        request: fakeRequest("https://backend.invalid/rest/v1/cms_content_items", "HEAD", "net::ERR_FAILED"),
+        status: 200,
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      const page = new FakePage();
+      const observer = createCmsBrowserObserver({
+        suite: `observer-head-negative-${scenario.name}`,
+        expectedSha: sha,
+        trackedRequestOrigins: ["https://backend.invalid"],
+      });
+      observer.observePage(page as unknown as Page);
+      page.emit("request", scenario.request);
+      if (scenario.status) page.emit("response", fakeResponseForRequest(scenario.request, scenario.status));
+      page.emit("requestfailed", scenario.request);
+
+      expect(() => observer.assertClean(), scenario.name).toThrow(/QA_CMS_BROWSER_OBSERVABILITY_FAILED/);
+      expect(observer.snapshot().status, scenario.name).toBe("failed");
+    }
   });
 
   it("matches only the explicit method, path and status tuple", () => {

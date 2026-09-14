@@ -73,13 +73,17 @@ type Inventory = {
   sourceControls: Array<{
     id: string;
     classification: string;
+    accessibleNameHint: string;
     ownerRouteIds: string[];
     runtimeApplicabilityBySurface: Record<
       string,
       | { applicability: "required" }
       | {
           applicability: "not-applicable";
-          basisCode: "feature-branch-disabled" | "legacy-state-unavailable-by-read-only-cutover";
+          basisCode:
+            | "feature-branch-disabled"
+            | "legacy-state-unavailable-by-read-only-cutover"
+            | "conditional-failure-state-component-tested";
           justification: string;
           documentationReference: string;
         }
@@ -320,17 +324,23 @@ describe("matriz final de cobertura do CMS", () => {
     }
   });
 
-  it("preserva cardinalidade e classifica somente os dois ramos canônicos inalcançáveis", () => {
+  it("preserva cardinalidade e classifica somente ramos sem execução segura no canário", () => {
     const report = generate();
     const dispositions = report.sourceControls.flatMap((control) =>
       Object.entries(control.runtimeApplicabilityBySurface).flatMap(([surfaceId, disposition]) =>
         disposition.applicability === "not-applicable" ? [{ control, surfaceId, disposition }] : [],
       ),
     );
-    expect(dispositions).toHaveLength(34);
-    expect(new Set(dispositions.map(({ surfaceId }) => surfaceId))).toEqual(new Set(["media", "pim"]));
+    expect(dispositions).toHaveLength(37);
+    expect(new Set(dispositions.map(({ surfaceId }) => surfaceId))).toEqual(
+      new Set(["media", "pim", "auth-mfa", "auth-set-password"]),
+    );
     expect(new Set(dispositions.map(({ disposition }) => disposition.basisCode))).toEqual(
-      new Set(["feature-branch-disabled", "legacy-state-unavailable-by-read-only-cutover"]),
+      new Set([
+        "feature-branch-disabled",
+        "legacy-state-unavailable-by-read-only-cutover",
+        "conditional-failure-state-component-tested",
+      ]),
     );
 
     const legacyMedia = dispositions.filter(({ surfaceId }) => surfaceId === "media");
@@ -362,6 +372,69 @@ describe("matriz final de cobertura do CMS", () => {
           control.evidence.startsWith("src/admin/pages/AdminPimPage.tsx:"),
       ),
     ).toBe(true);
+
+    const conditionalAuthFailures = dispositions.filter(
+      ({ disposition }) => disposition.basisCode === "conditional-failure-state-component-tested",
+    );
+    expect(conditionalAuthFailures).toHaveLength(3);
+    expect(conditionalAuthFailures.filter(({ surfaceId }) => surfaceId === "auth-mfa")).toHaveLength(2);
+    expect(conditionalAuthFailures.filter(({ surfaceId }) => surfaceId === "auth-set-password")).toHaveLength(
+      1,
+    );
+    expect(
+      new Set(conditionalAuthFailures.map(({ control, surfaceId }) => `${surfaceId}|${control.id}`)),
+    ).toEqual(
+      new Set([
+        "auth-mfa|src/admin/pages/MfaPage.tsx:84:button:1001",
+        "auth-mfa|src/admin/pages/MfaPage.tsx:87:button:1002",
+        "auth-set-password|src/admin/pages/SetPasswordPage.tsx:76:button:1012",
+      ]),
+    );
+    expect(
+      conditionalAuthFailures.every(
+        ({ control, surfaceId, disposition }) =>
+          disposition.applicability === "not-applicable" &&
+          disposition.documentationReference ===
+            "tests/components/admin-auth-flows.test.tsx#conditional-auth-failure-controls" &&
+          disposition.justification.length >= 32 &&
+          control.classification === "action" &&
+          ((surfaceId === "auth-mfa" &&
+            control.id.startsWith("src/admin/pages/MfaPage.tsx:84:button:") &&
+            control.accessibleNameHint.endsWith("Tentar novamente")) ||
+            (surfaceId === "auth-mfa" &&
+              control.id.startsWith("src/admin/pages/MfaPage.tsx:87:button:") &&
+              control.accessibleNameHint.endsWith("Cancelar e sair")) ||
+            (surfaceId === "auth-set-password" &&
+              control.id.startsWith("src/admin/pages/SetPasswordPage.tsx:76:button:") &&
+              control.accessibleNameHint.endsWith("Tentar novamente"))),
+      ),
+    ).toBe(true);
+
+    const componentEvidence = readFileSync(
+      resolve(repositoryRoot, "tests/components/admin-auth-flows.test.tsx"),
+      "utf8",
+    );
+    const componentAnchor = "Source-control applicability evidence: conditional-auth-failure-controls.";
+    expect(componentEvidence.split(componentAnchor)).toHaveLength(2);
+    const componentEvidenceStart = componentEvidence.indexOf(componentAnchor);
+    const componentEvidenceEnd = componentEvidence.indexOf(
+      'it("recupera a tela de nova senha após falha inesperada',
+      componentEvidenceStart,
+    );
+    expect(componentEvidenceStart).toBeGreaterThanOrEqual(0);
+    expect(componentEvidenceEnd).toBeGreaterThan(componentEvidenceStart);
+    const componentEvidenceBlock = componentEvidence.slice(componentEvidenceStart, componentEvidenceEnd);
+    expect(componentEvidenceBlock).toContain(
+      'it("preserva a recuperação no retry quando a validação de sessão falha temporariamente"',
+    );
+    expect(componentEvidenceBlock).toContain("expect(auth.value.retryAccess).toHaveBeenCalledTimes(1);");
+    expect(componentEvidenceBlock).toContain("expect(auth.value.signOut).toHaveBeenCalledTimes(1);");
+    expect(componentEvidenceBlock).toContain(
+      'it("mantém o formulário fechado quando a proteção MFA não pode ser comprovada"',
+    );
+    expect(componentEvidenceBlock).toContain(
+      "expect(auth.value.preparePasswordUpdate).toHaveBeenCalledTimes(2);",
+    );
 
     expect(
       report.sourceControls.every((control) =>

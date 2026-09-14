@@ -239,7 +239,7 @@ function boundReport(extra = {}) {
   };
 }
 
-function fixture() {
+function fixture(authSurfaces = ["auth-login"]) {
   const authenticatedSurfaces = [
     "work-overview",
     "products-list",
@@ -248,11 +248,12 @@ function fixture() {
     "products-import",
     "pim",
   ];
-  const authSurface = "auth-login";
   const authenticatedProofs = authenticatedSurfaces.flatMap((surfaceId) =>
     CMS_TERMINAL_VIEWPORTS.map((viewport) => proof(surfaceId, viewport)),
   );
-  const authProofs = CMS_TERMINAL_VIEWPORTS.map((viewport) => proof(authSurface, viewport));
+  const authProofs = authSurfaces.flatMap((surfaceId) =>
+    CMS_TERMINAL_VIEWPORTS.map((viewport) => proof(surfaceId, viewport)),
+  );
   const inventory = {
     schemaVersion: 1,
     sourceSha: sha,
@@ -293,10 +294,13 @@ function fixture() {
       canonicalPayload: "CmsProductContentSchema via cms-content",
       legacyCompatibility: "leitura e reconciliação somente",
     },
-    counts: { surfaces: authenticatedSurfaces.length + 1, sourceControls: authenticatedSurfaces.length + 2 },
+    counts: {
+      surfaces: authenticatedSurfaces.length + authSurfaces.length,
+      sourceControls: authenticatedSurfaces.length + authSurfaces.length + 1,
+    },
     matrix: [
       ...authenticatedSurfaces.map((surfaceId) => sourceSurface(surfaceId, "authenticated")),
-      sourceSurface(authSurface, "auth-journey"),
+      ...authSurfaces.map((surfaceId) => sourceSurface(surfaceId, "auth-journey")),
     ],
     sourceControls: [
       ...authenticatedSurfaces.map((surfaceId) => ({
@@ -307,14 +311,14 @@ function fixture() {
         evidence: `src/${surfaceId}.tsx:1`,
         correction: null,
       })),
-      {
-        id: `src/${authSurface}.tsx:1:input:1`,
+      ...authSurfaces.map((surfaceId) => ({
+        id: `src/${surfaceId}.tsx:1:input:1`,
         classification: "field",
-        ownerRouteIds: [authSurface],
+        ownerRouteIds: [surfaceId],
         accessibleNameHint: "E-mail corporativo",
-        evidence: `src/${authSurface}.tsx:1`,
+        evidence: `src/${surfaceId}.tsx:1`,
         correction: null,
-      },
+      })),
       {
         id: "src/products-import.tsx:2:form:2",
         classification: "form",
@@ -330,7 +334,7 @@ function fixture() {
     generatedAt: "2026-09-07T12:00:00.000Z",
     sourceSha: sha,
     runTag,
-    semanticFields: [...authenticatedSurfaces, authSurface]
+    semanticFields: [...authenticatedSurfaces, ...authSurfaces]
       .filter((surfaceId) => !["work-overview", "products-import"].includes(surfaceId))
       .map((surfaceId) => fieldEvidence(surfaceId)),
     staticInventory: { status: "passed" },
@@ -538,7 +542,7 @@ function scenarioOnceFixture() {
   return input;
 }
 
-function sourceNotApplicableFixture() {
+function sourceNotApplicableFixture(overrides = {}) {
   const input = fixture();
   const surfaceId = "pim";
   const sourceControl = input.inventory.sourceControls.find((entry) =>
@@ -551,6 +555,7 @@ function sourceNotApplicableFixture() {
       "A migration 0078 tornou o grafo legado somente leitura; o ator sintético não pode criar este estado pela interface.",
     documentationReference:
       "supabase/migrations/0078_cms_product_pim_consolidation.sql#legacy-writers-read-only",
+    ...overrides,
   };
   sourceControl.runtimeApplicabilityBySurface = { [surfaceId]: applicability };
   input.runtime.semanticFields = input.runtime.semanticFields.filter(
@@ -585,6 +590,96 @@ function sourceNotApplicableFixture() {
         status: "not-applicable",
       },
     ];
+  }
+  return input;
+}
+
+function conditionalAuthSourceNotApplicableFixture() {
+  const input = fixture(["auth-mfa", "auth-set-password"]);
+  const applicability = {
+    applicability: "not-applicable",
+    basisCode: "conditional-failure-state-component-tested",
+    justification:
+      "O controle só renderiza após falha real de dependência; o canário não injeta indisponibilidade e o handler é exercitado no contrato de componente.",
+    documentationReference: "tests/components/admin-auth-flows.test.tsx#conditional-auth-failure-controls",
+  };
+  const controlsBySurface = {
+    "auth-mfa": [
+      {
+        id: "src/admin/pages/MfaPage.tsx:84:button:1001",
+        accessibleNameHint: "void retryAccess()}> Tentar novamente",
+        evidence: "src/admin/pages/MfaPage.tsx:84",
+      },
+      {
+        id: "src/admin/pages/MfaPage.tsx:87:button:1002",
+        accessibleNameHint: "void signOut()}> Cancelar e sair",
+        evidence: "src/admin/pages/MfaPage.tsx:87",
+      },
+    ],
+    "auth-set-password": [
+      {
+        id: "src/admin/pages/SetPasswordPage.tsx:76:button:1012",
+        accessibleNameHint: "setPreparationAttempt((attempt) => attempt + 1)} > Tentar novamente",
+        evidence: "src/admin/pages/SetPasswordPage.tsx:76",
+      },
+    ],
+  };
+  for (const [surfaceId, controls] of Object.entries(controlsBySurface)) {
+    const existingControl = input.inventory.sourceControls.find((entry) =>
+      entry.ownerRouteIds.includes(surfaceId),
+    );
+    const canonicalControls = controls.map((control) => ({
+      ...existingControl,
+      ...control,
+      classification: "action",
+      runtimeApplicabilityBySurface: { [surfaceId]: applicability },
+    }));
+    input.inventory.sourceControls.splice(
+      input.inventory.sourceControls.indexOf(existingControl),
+      1,
+      ...canonicalControls,
+    );
+    const surface = input.inventory.matrix.find((entry) => entry.id === surfaceId);
+    surface.fieldContracts = [];
+    surface.actionContracts = canonicalControls.map((control) => ({
+      id: control.id,
+      resultState: "pendente de evidência runtime",
+    }));
+  }
+  input.inventory.counts.sourceControls += 1;
+  input.runtime.semanticFields = input.runtime.semanticFields.filter(
+    (entry) => !Object.hasOwn(controlsBySurface, entry.surfaceId),
+  );
+  for (const item of input.reports.auth.viewportEvidence) {
+    const controls = controlsBySurface[item.surfaceId];
+    Object.assign(item.controlInteraction, {
+      fieldsSeen: 0,
+      fieldsExercised: 0,
+      actionsSeen: 0,
+      actionsExecuted: 0,
+      semanticExecutions: [],
+      handlerEvidence:
+        "conditional source action covered by component contract without live outage injection",
+    });
+    item.sourceControlContract.mappings = [];
+    item.sourceControlContract.notApplicable = controls.map((control) => ({
+      schemaVersion: 1,
+      surfaceId: item.surfaceId,
+      sourceControlId: control.id,
+      sourceClassification: "action",
+      sourceAccessibleNameHint: control.accessibleNameHint,
+      viewport: item.viewport,
+      applicability: "not-applicable",
+      basisCode: applicability.basisCode,
+      justification: applicability.justification,
+      documentationReference: applicability.documentationReference,
+      executionScope: "not-applicable",
+      semanticExecutionRef: null,
+      handlerExecuted: false,
+      evidenceKind: null,
+      evidenceReference: `${applicability.documentationReference}|${control.id}`,
+      status: "not-applicable",
+    }));
   }
   return input;
 }
@@ -688,6 +783,65 @@ test("preserva sourceControl N/A canônico sem contar execução ou backend", ()
   assert.equal(pim.backendResult.controlEvidence.length, 0);
   assert.equal(pim.fieldContracts[0].resultState, "not-applicable");
   assert.doesNotThrow(() => assertCmsTerminalCoverage(result));
+
+  assert.throws(
+    () =>
+      materializeCmsTerminalCoverage(
+        sourceNotApplicableFixture({
+          basisCode: "conditional-failure-state-component-tested",
+          justification:
+            "O controle só renderiza após falha real de dependência; o canário não injeta indisponibilidade e o handler é exercitado no contrato de componente.",
+          documentationReference:
+            "tests/components/admin-auth-flows.test.tsx#conditional-auth-failure-controls",
+        }),
+      ),
+    /CMS_TERMINAL_SOURCE_NOT_APPLICABLE_INVALID/,
+  );
+
+  const conditionalResult = materializeCmsTerminalCoverage(conditionalAuthSourceNotApplicableFixture());
+  const authMfa = conditionalResult.matrix.find((surface) => surface.id === "auth-mfa");
+  assert.equal(conditionalResult.counts.terminalSourceControlNotApplicable, 3);
+  assert.equal(authMfa.sourceControlResults.length, 2);
+  assert.equal(authMfa.sourceControlResults[0].testState, "not-applicable");
+  assert.doesNotThrow(() => assertCmsTerminalCoverage(conditionalResult));
+
+  const wrongConditionalClass = conditionalAuthSourceNotApplicableFixture();
+  wrongConditionalClass.inventory.sourceControls.find((entry) =>
+    entry.ownerRouteIds.includes("auth-mfa"),
+  ).classification = "field";
+  for (const item of wrongConditionalClass.reports.auth.viewportEvidence.filter(
+    (entry) => entry.surfaceId === "auth-mfa",
+  )) {
+    item.sourceControlContract.notApplicable[0].sourceClassification = "field";
+  }
+  assert.throws(
+    () => materializeCmsTerminalCoverage(wrongConditionalClass),
+    /CMS_TERMINAL_SOURCE_NOT_APPLICABLE_INVALID/,
+  );
+
+  const wrongConditionalSource = conditionalAuthSourceNotApplicableFixture();
+  const wrongSourceControl = wrongConditionalSource.inventory.sourceControls.find((entry) =>
+    entry.ownerRouteIds.includes("auth-mfa"),
+  );
+  const previousSourceControlId = wrongSourceControl.id;
+  wrongSourceControl.id = "src/admin/pages/AdminPimPage.tsx:84:button:1";
+  wrongSourceControl.evidence = "src/admin/pages/AdminPimPage.tsx:84";
+  const wrongSourceSurface = wrongConditionalSource.inventory.matrix.find((entry) => entry.id === "auth-mfa");
+  wrongSourceSurface.actionContracts[0].id = wrongSourceControl.id;
+  for (const item of wrongConditionalSource.reports.auth.viewportEvidence.filter(
+    (entry) => entry.surfaceId === "auth-mfa",
+  )) {
+    const disposition = item.sourceControlContract.notApplicable[0];
+    disposition.sourceControlId = wrongSourceControl.id;
+    disposition.evidenceReference = disposition.evidenceReference.replace(
+      previousSourceControlId,
+      wrongSourceControl.id,
+    );
+  }
+  assert.throws(
+    () => materializeCmsTerminalCoverage(wrongConditionalSource),
+    /CMS_TERMINAL_SOURCE_NOT_APPLICABLE_INVALID/,
+  );
 
   const falseExecution = sourceNotApplicableFixture();
   falseExecution.runtime.authenticated.observations.find(

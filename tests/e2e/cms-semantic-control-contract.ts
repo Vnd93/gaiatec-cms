@@ -74,7 +74,10 @@ export type CmsSourceControlApplicability =
   | { applicability: "required" }
   | {
       applicability: "not-applicable";
-      basisCode: "feature-branch-disabled" | "legacy-state-unavailable-by-read-only-cutover";
+      basisCode:
+        | "feature-branch-disabled"
+        | "legacy-state-unavailable-by-read-only-cutover"
+        | "conditional-failure-state-component-tested";
       justification: string;
       documentationReference: string;
     };
@@ -845,12 +848,29 @@ function sourceControlApplicability(
   };
   if (disposition.applicability === "required") return disposition;
   const validDocumentation =
-    disposition.basisCode === "feature-branch-disabled"
-      ? disposition.documentationReference === "src/admin/ev2-runtime.ts#ev2.dam"
-      : disposition.documentationReference ===
-        "supabase/migrations/0078_cms_product_pim_consolidation.sql#legacy-writers-read-only";
+    (disposition.basisCode === "feature-branch-disabled" &&
+      disposition.documentationReference === "src/admin/ev2-runtime.ts#ev2.dam") ||
+    (disposition.basisCode === "legacy-state-unavailable-by-read-only-cutover" &&
+      disposition.documentationReference ===
+        "supabase/migrations/0078_cms_product_pim_consolidation.sql#legacy-writers-read-only") ||
+    (disposition.basisCode === "conditional-failure-state-component-tested" &&
+      disposition.documentationReference ===
+        "tests/components/admin-auth-flows.test.tsx#conditional-auth-failure-controls");
+  const validConditionalFailureScope =
+    disposition.basisCode !== "conditional-failure-state-component-tested" ||
+    (source.classification === "action" &&
+      ((surfaceId === "auth-mfa" &&
+        source.id.startsWith("src/admin/pages/MfaPage.tsx:84:button:") &&
+        source.accessibleNameHint.trim().endsWith("Tentar novamente")) ||
+        (surfaceId === "auth-mfa" &&
+          source.id.startsWith("src/admin/pages/MfaPage.tsx:87:button:") &&
+          source.accessibleNameHint.trim().endsWith("Cancelar e sair")) ||
+        (surfaceId === "auth-set-password" &&
+          source.id.startsWith("src/admin/pages/SetPasswordPage.tsx:76:button:") &&
+          source.accessibleNameHint.trim().endsWith("Tentar novamente"))));
   if (
     !validDocumentation ||
+    !validConditionalFailureScope ||
     typeof disposition.justification !== "string" ||
     disposition.justification.trim().length < 32
   ) {

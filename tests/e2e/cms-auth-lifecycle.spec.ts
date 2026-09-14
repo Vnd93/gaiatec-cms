@@ -37,6 +37,7 @@ import {
   type CmsSemanticViewport,
   type CmsSourceControl,
   type CmsSourceControlExecution,
+  type CmsSourceControlNotApplicable,
 } from "./cms-semantic-control-contract";
 import { createCmsSemanticActionLedger, type CmsSemanticActionLedger } from "./cms-semantic-action-ledger";
 
@@ -107,6 +108,7 @@ type AuthSurfaceEvidence = {
   sourceControlContract: {
     status: "passed" | "failed";
     mappings: CmsSourceControlExecution[];
+    notApplicable: CmsSourceControlNotApplicable[];
     failures: string[];
   };
   horizontalOverflow: false;
@@ -337,10 +339,13 @@ function buildAuthSemanticScenarioEvidence(surfaceEvidence: AuthSurfaceEvidence[
     fieldContractKey: cmsSemanticFieldContractKey(surfaceId, fieldName, fieldOccurrence),
     mode: "editable",
     schemaReference,
-    cases,
-    persistence,
-    backend,
-    audit,
+    // References are bound to a specific field below. Clone every disposition so reusable
+    // templates (for example the login result shared by e-mail and password) cannot be rebound
+    // when the next field is processed.
+    cases: structuredClone(cases),
+    persistence: structuredClone(persistence),
+    backend: structuredClone(backend),
+    audit: structuredClone(audit),
     status: "passed",
   });
 
@@ -683,10 +688,12 @@ function buildAuthSemanticScenarioEvidence(surfaceEvidence: AuthSurfaceEvidence[
       "navigated-to-protected-admin",
     ),
   ];
+  const evidenceFile = relative(repositoryRoot, evidencePath).replaceAll("\\", "/");
+  // First pass: bind every cloned disposition before checking for cross-field alias drift.
   for (const entry of fields) {
     for (const [caseId, disposition] of Object.entries(entry.cases)) {
       if (disposition.applicability === "exercised") {
-        disposition.evidenceReference = `${relative(repositoryRoot, evidencePath).replaceAll("\\", "/")}#scenarios/${disposition.scenarioId}/${entry.fieldContractKey}/case-${caseId}`;
+        disposition.evidenceReference = `${evidenceFile}#scenarios/${disposition.scenarioId}/${entry.fieldContractKey}/case-${caseId}`;
       }
     }
     for (const [proofId, disposition] of [
@@ -695,8 +702,32 @@ function buildAuthSemanticScenarioEvidence(surfaceEvidence: AuthSurfaceEvidence[
       ["audit", entry.audit],
     ] as const) {
       if (disposition.applicability === "exercised") {
-        disposition.evidenceReference = `${relative(repositoryRoot, evidencePath).replaceAll("\\", "/")}#scenarios/${disposition.scenarioId}/${entry.fieldContractKey}/${proofId}`;
+        disposition.evidenceReference = `${evidenceFile}#scenarios/${disposition.scenarioId}/${entry.fieldContractKey}/${proofId}`;
       }
+    }
+  }
+  // Second pass: a later field must not have rebound a disposition owned by an earlier field.
+  for (const entry of fields) {
+    const invalidCaseReference = Object.entries(entry.cases).find(
+      ([caseId, disposition]) =>
+        disposition.applicability === "exercised" &&
+        disposition.evidenceReference !==
+          `${evidenceFile}#scenarios/${disposition.scenarioId}/${entry.fieldContractKey}/case-${caseId}`,
+    );
+    const invalidProofReference = (
+      [
+        ["persistence", entry.persistence],
+        ["backend", entry.backend],
+        ["audit", entry.audit],
+      ] as const
+    ).find(
+      ([proofId, disposition]) =>
+        disposition.applicability === "exercised" &&
+        disposition.evidenceReference !==
+          `${evidenceFile}#scenarios/${disposition.scenarioId}/${entry.fieldContractKey}/${proofId}`,
+    );
+    if (invalidCaseReference || invalidProofReference) {
+      throw new Error(`QA_CMS_AUTH_SEMANTIC_FIELD_REFERENCE_DRIFT:${entry.fieldContractKey}`);
     }
   }
   for (const entry of structures) {
@@ -889,6 +920,7 @@ async function captureAuthSurface(
       sourceControlContract: {
         status: "failed",
         mappings: [],
+        notApplicable: [],
         failures: ["source-control-contract-not-finalized"],
       },
       horizontalOverflow: false,

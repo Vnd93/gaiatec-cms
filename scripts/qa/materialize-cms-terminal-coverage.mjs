@@ -756,6 +756,38 @@ function semanticExecutionsFrom(proof) {
   return Array.isArray(executions) ? executions : [];
 }
 
+function conditionalFailureSourceKey(
+  surfaceId,
+  sourceControlId,
+  sourceClassification,
+  sourceAccessibleNameHint,
+) {
+  if (sourceClassification !== "action" || typeof sourceAccessibleNameHint !== "string") return null;
+  const accessibleNameHint = sourceAccessibleNameHint.trim();
+  if (
+    surfaceId === "auth-mfa" &&
+    sourceControlId.startsWith("src/admin/pages/MfaPage.tsx:84:button:") &&
+    accessibleNameHint.endsWith("Tentar novamente")
+  ) {
+    return "auth-mfa|retry";
+  }
+  if (
+    surfaceId === "auth-mfa" &&
+    sourceControlId.startsWith("src/admin/pages/MfaPage.tsx:87:button:") &&
+    accessibleNameHint.endsWith("Cancelar e sair")
+  ) {
+    return "auth-mfa|cancel-and-sign-out";
+  }
+  if (
+    surfaceId === "auth-set-password" &&
+    sourceControlId.startsWith("src/admin/pages/SetPasswordPage.tsx:76:button:") &&
+    accessibleNameHint.endsWith("Tentar novamente")
+  ) {
+    return "auth-set-password|retry";
+  }
+  return null;
+}
+
 function sourceControlExecutionsFrom(
   proof,
   surfaceId,
@@ -899,6 +931,10 @@ function sourceControlExecutionsFrom(
       "legacy-state-unavailable-by-read-only-cutover",
       "supabase/migrations/0078_cms_product_pim_consolidation.sql#legacy-writers-read-only",
     ],
+    [
+      "conditional-failure-state-component-tested",
+      "tests/components/admin-auth-flows.test.tsx#conditional-auth-failure-controls",
+    ],
   ]);
   for (const value of notApplicable) {
     const disposition = record(value, "CMS_TERMINAL_SOURCE_NOT_APPLICABLE_INVALID");
@@ -921,6 +957,13 @@ function sourceControlExecutionsFrom(
       typeof disposition.justification !== "string" ||
       disposition.justification.trim().length < 32 ||
       documentationReference !== disposition.documentationReference ||
+      (disposition.basisCode === "conditional-failure-state-component-tested" &&
+        conditionalFailureSourceKey(
+          surfaceId,
+          sourceControlId,
+          disposition.sourceClassification,
+          disposition.sourceAccessibleNameHint,
+        ) === null) ||
       disposition.evidenceReference !== `${documentationReference}|${sourceControlId}` ||
       sourceIds.has(sourceControlId)
     ) {
@@ -1493,7 +1536,7 @@ function materializeSurface(
           ...evidence,
           semanticProof:
             evidence.resultState === "not-applicable"
-              ? "source-backed conditional branch classified by canonical feature/cutover evidence; no handler execution claimed"
+              ? "source-backed conditional branch classified by its canonical applicability evidence; no handler execution claimed"
               : "runtime handler executed with UI, navigation, state, or backend evidence",
         };
       },
@@ -1851,6 +1894,10 @@ export function assertCmsTerminalCoverage(value) {
             "legacy-state-unavailable-by-read-only-cutover",
             "supabase/migrations/0078_cms_product_pim_consolidation.sql#legacy-writers-read-only",
           ],
+          [
+            "conditional-failure-state-component-tested",
+            "tests/components/admin-auth-flows.test.tsx#conditional-auth-failure-controls",
+          ],
         ]);
         const documentationReference = allowedDocumentation.get(control.basisCode);
         if (
@@ -1859,6 +1906,13 @@ export function assertCmsTerminalCoverage(value) {
           typeof control.justification !== "string" ||
           control.justification.trim().length < 32 ||
           documentationReference !== control.documentationReference ||
+          (control.basisCode === "conditional-failure-state-component-tested" &&
+            conditionalFailureSourceKey(
+              surface.id,
+              control.sourceControlId,
+              control.classification,
+              control.accessibleNameHint,
+            ) === null) ||
           evidenceByViewport.some(
             (evidence) =>
               evidence.status !== "not-applicable" ||

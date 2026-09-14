@@ -228,6 +228,7 @@ export function createCmsBrowserObserver(configuration: ObserverConfiguration) {
   const unexpectedHttp: string[] = [];
   const requestFailures: string[] = [];
   const pendingTrackedRequests = new Map<Request, string>();
+  const successfulTrackedHeadFetches = new WeakSet<Request>();
   const consoleResourceFailures = new Map<
     string,
     { status: number; origin: string; pathname: string; occurrences: number }
@@ -235,10 +236,26 @@ export function createCmsBrowserObserver(configuration: ObserverConfiguration) {
 
   const sanitize = (value: unknown) => sanitizeBrowserDiagnostic(value, configuration.sensitiveValues ?? []);
 
+  function isTrackedHeadFetch(request: Request) {
+    if (request.method() !== "HEAD" || request.resourceType() !== "fetch") return false;
+    try {
+      return trackedRequestOrigins.has(new URL(request.url()).origin);
+    } catch {
+      return false;
+    }
+  }
+
   function onResponse(response: Response) {
     const status = response.status();
-    if (status < 400) return;
     const request = response.request();
+    // Chromium can emit requestfailed(net::ERR_ABORTED), without requestfinished, after a fetch
+    // HEAD has already returned 2xx to JavaScript. HEAD has no response body, so that response is
+    // terminal proof; requests without this exact prior proof remain fail-closed.
+    if (status >= 200 && status < 300 && isTrackedHeadFetch(request)) {
+      successfulTrackedHeadFetches.add(request);
+      pendingTrackedRequests.delete(request);
+    }
+    if (status < 400) return;
     if (
       isExpectedTurnstilePatResponse({
         method: request.method(),
@@ -310,6 +327,14 @@ export function createCmsBrowserObserver(configuration: ObserverConfiguration) {
   function onRequestFailed(request: Request) {
     pendingTrackedRequests.delete(request);
     const failure = request.failure();
+    if (
+      failure?.errorText === "net::ERR_ABORTED" &&
+      successfulTrackedHeadFetches.has(request) &&
+      isTrackedHeadFetch(request)
+    ) {
+      successfulTrackedHeadFetches.delete(request);
+      return;
+    }
     if (
       isExpectedTurnstileDnsFailure({
         errorText: failure?.errorText,

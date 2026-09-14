@@ -76,6 +76,9 @@ test("@a11y critical public journeys have no serious automated violations", asyn
 
 test("staging exposes the clean-room launch projection", async ({ page, baseURL }) => {
   test.skip(!baseURL?.includes("pages.dev"), "published projection is verified against staging");
+  // Fifteen complete remote documents can legitimately exceed Playwright's
+  // default 30 s budget even when every route and assertion is healthy.
+  test.setTimeout(60_000);
   for (const [path, heading] of [
     ["/", "Tecnologia aplicada a processos e operações"],
     ["/sobre", "Engenharia orientada ao contexto da operação"],
@@ -93,12 +96,14 @@ test("staging exposes the clean-room launch projection", async ({ page, baseURL 
     ["/aplicacoes/medicao-estacoes-agua-esgoto", "Medição em Estações de Água e Esgoto"],
     ["/solucoes/instrumentacao-monitoramento-remoto", "Instrumentação e Monitoramento Remoto"],
   ] as const) {
-    const response = await page.goto(path, { waitUntil: "load" });
-    expect(response?.status()).toBe(200);
-    await expect(page.getByRole("heading", { name: heading, level: 1 })).toBeVisible();
-    expect(await page.locator("body").evaluate((body) => body.scrollWidth <= body.clientWidth + 1)).toBe(
-      true,
-    );
+    await test.step(`${path} renders the expected launch projection`, async () => {
+      const response = await page.goto(path, { waitUntil: "load" });
+      expect(response?.status()).toBe(200);
+      await expect(page.getByRole("heading", { name: heading, level: 1 })).toBeVisible();
+      expect(await page.locator("body").evaluate((body) => body.scrollWidth <= body.clientWidth + 1)).toBe(
+        true,
+      );
+    });
   }
 });
 

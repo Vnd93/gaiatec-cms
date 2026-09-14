@@ -33,41 +33,64 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      recovery_required: ${{ steps.parent.outputs.recovery_required }}
+      recovery_required: >-
+        ${{ steps.parent.outcome == 'success' && steps.parent.outputs.recovery_required ||
+        steps.parent_fallback.outputs.recovery_required }}
+      mutation_mode: >-
+        ${{ steps.parent.outcome == 'success' && steps.parent.outputs.mutation_mode ||
+        steps.parent_fallback.outputs.mutation_mode }}
     steps:
+      - name: Checkout the exact parent control revision for classification
+        id: parent_control_checkout
+        continue-on-error: true
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          path: control
+      - name: Use the parent repository-pinned Node runtime for classification
+        id: parent_control_node
+        continue-on-error: true
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: control/.nvmrc
       - name: Decide whether the incomplete run still requires recovery
         id: parent
+        if: >-
+          steps.parent_control_checkout.outcome == 'success' &&
+          steps.parent_control_node.outcome == 'success'
+        continue-on-error: true
+        working-directory: control
         env:
           GH_TOKEN: ${{ github.token }}
           PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
           PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          MUTATION_BOUNDARY_JOBS_FILE: ${{ runner.temp }}/g12-staging-parent-jobs.json
         run: |
           set -euo pipefail
-          # Se a classificacao nao puder ser feita, o watchdog segue como antes: nao compensar por
-          # nao saber seria o unico erro irrecuperavel desta decisao.
-          if ! summary="$(gh api \
+          gh api \
             "repos/$GITHUB_REPOSITORY/actions/runs/$PARENT_RUN_ID/attempts/$PARENT_RUN_ATTEMPT/jobs?per_page=100" \
-            --jq '[([.jobs[] | select(.name == "deploy")] | length), ([.jobs[] | select(.name == "deploy")][0].conclusion // ""), ([.jobs[] | select(.name == "finalize")] | length), ([.jobs[] | select(.name == "finalize")][0].conclusion // "")] | @tsv')"; then
-            printf '{"event":"g12.staging.watchdog.parent-classification-failed","runId":"%s","runAttempt":"%s","recoveryRequired":true}\n' \
-              "$PARENT_RUN_ID" "$PARENT_RUN_ATTEMPT"
-            echo "recovery_required=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          IFS=$'\t' read -r deploy_count deploy_conclusion finalize_count finalize_conclusion <<< "$summary"
-          required=true
-          if [ "$deploy_count" = 1 ] && [ "$deploy_conclusion" = skipped ]; then
-            required=false
-          elif [ "$deploy_count" = 1 ] && [ "$finalize_count" = 1 ] && [ "$finalize_conclusion" = success ]; then
-            required=false
-          fi
-          printf '{"event":"g12.staging.watchdog.parent-classified","runId":"%s","runAttempt":"%s","recoveryRequired":%s}\n' \
-            "$PARENT_RUN_ID" "$PARENT_RUN_ATTEMPT" "$required"
-          echo "recovery_required=$required" >> "$GITHUB_OUTPUT"
+            > "$MUTATION_BOUNDARY_JOBS_FILE"
+          node scripts/ev2/phase12/staging-mutation-boundary.mjs watchdog-jobs
+      - name: Fail closed when the parent classifier itself does not complete
+        id: parent_fallback
+        if: >-
+          always() && (steps.parent.outcome != 'success' ||
+          steps.parent.outputs.recovery_required == '' ||
+          steps.parent.outputs.mutation_mode == '')
+        env:
+          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+        run: |
+          printf '{"event":"g12.staging.watchdog.parent-classification-failed","runId":"%s","runAttempt":"%s","recoveryRequired":true,"mutationMode":"ambiguous"}\n' \
+            "$PARENT_RUN_ID" "$PARENT_RUN_ATTEMPT"
+          echo "recovery_required=true" >> "$GITHUB_OUTPUT"
+          echo "mutation_mode=ambiguous" >> "$GITHUB_OUTPUT"
 
   compensate-incomplete-staging-deploy:
     needs: classify-parent-run
     if: >-
-      needs.classify-parent-run.outputs.recovery_required == 'true' &&
+      always() && needs.classify-parent-run.outputs.recovery_required != 'false' &&
       (github.event.workflow_run.conclusion == 'cancelled' ||
       github.event.workflow_run.conclusion == 'failure' ||
       github.event.workflow_run.conclusion == 'timed_out') &&
@@ -86,6 +109,10 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
           path: control
+      - name: Use the parent repository-pinned Node runtime for watchdog recovery
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: control/.nvmrc
       - name: Recover HMAC staging state independently of artifacts
         id: variable_state
         continue-on-error: true
@@ -96,13 +123,17 @@ jobs:
           RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
         run: >-
           node scripts/ev2/phase12/recovery-state-store.mjs get
+          --allow-missing
           --kind staging-deploy --file ../state-variable/staging-deploy-state.json
           --run-id "${{ github.event.workflow_run.id }}"
           --run-attempt "${{ github.event.workflow_run.run_attempt }}"
           --control-sha "${{ github.event.workflow_run.head_sha }}"
       - name: Download mandatory pre-mutation state from the incomplete run
         id: artifact_state
-        if: always() && steps.variable_state.outcome != 'success'
+        if: >-
+          always() && needs.classify-parent-run.outputs.mutation_mode != 'pre-mutation' &&
+          (steps.variable_state.outcome != 'success' ||
+          steps.variable_state.outputs.state_present != 'true')
         continue-on-error: true
         timeout-minutes: 5
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -115,9 +146,13 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
       - name: Validate incomplete-run state and immutable ancestry
         id: watchdog_state
+        if: >-
+          always() && (needs.classify-parent-run.outputs.mutation_mode != 'pre-mutation' ||
+          steps.variable_state.outputs.state_present == 'true')
         working-directory: control
         env:
           VARIABLE_STATE_OUTCOME: ${{ steps.variable_state.outcome }}
+          VARIABLE_STATE_PRESENT: ${{ steps.variable_state.outputs.state_present }}
           ARTIFACT_STATE_OUTCOME: ${{ steps.artifact_state.outcome }}
           TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
           TRIGGER_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
@@ -127,10 +162,10 @@ jobs:
           set -euo pipefail
           node <<'NODE'
           const { appendFileSync, readFileSync } = require("node:fs");
-          const statePath = process.env.VARIABLE_STATE_OUTCOME === "success"
+          const statePath = process.env.VARIABLE_STATE_PRESENT === "true"
             ? "../state-variable/staging-deploy-state.json"
             : "../state/staging-deploy-state.json";
-          if (process.env.VARIABLE_STATE_OUTCOME !== "success" && process.env.ARTIFACT_STATE_OUTCOME !== "success")
+          if (process.env.VARIABLE_STATE_PRESENT !== "true" && process.env.ARTIFACT_STATE_OUTCOME !== "success")
             throw new Error("G12_STAGING_WATCHDOG_STATE_UNAVAILABLE");
           const state = JSON.parse(readFileSync(statePath, "utf8"));
           const sha = /^[a-f0-9]{40}$/;
@@ -163,7 +198,7 @@ jobs:
           ].join("\n") + "\n");
           NODE
           git cat-file -e "${{ github.event.workflow_run.head_sha }}^{commit}"
-          if [ "$VARIABLE_STATE_OUTCOME" = success ]; then
+          if [ "$VARIABLE_STATE_PRESENT" = true ]; then
             state_file=../state-variable/staging-deploy-state.json
           else
             state_file=../state/staging-deploy-state.json
@@ -174,8 +209,91 @@ jobs:
           git cat-file -e "$candidate_release^{commit}"
           git merge-base --is-ancestor "$original_release" "$candidate_release"
           git merge-base --is-ancestor "$candidate_release" "${{ github.event.workflow_run.head_sha }}"
+      - name: Retry both single-use staging browser rendezvous cleanups in the watchdog
+        id: watchdog_real_browser_rendezvous_cleanup
+        if: always() && steps.watchdog_state.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 5
+        working-directory: control
+        env:
+          GITHUB_REPOSITORY: Vnd93/gaiatec-cms
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          EVIDENCE_SALT: ${{ secrets.EVIDENCE_SALT }}
+        run: |
+          set -euo pipefail
+          cleanup_status=0
+          node scripts/ev2/phase12/run-real-browser-attestation-consumer.mjs clear-challenge \
+            --environment staging \
+            --run-id "${{ github.event.workflow_run.id }}" \
+            --run-attempt "${{ github.event.workflow_run.run_attempt }}" \
+            --allow-missing || cleanup_status=1
+          node scripts/ev2/phase12/real-browser-attestation-store.mjs clear \
+            --environment staging \
+            --candidate-sha "${{ steps.watchdog_state.outputs.candidate_release }}" \
+            --run-id "${{ github.event.workflow_run.id }}" \
+            --run-attempt "${{ github.event.workflow_run.run_attempt }}" \
+            --control-sha "${{ github.event.workflow_run.head_sha }}" \
+            --allow-missing || cleanup_status=1
+          exit "$cleanup_status"
+      - name: Prove a pre-mutation parent is safe before clearing its recovery state
+        id: pre_mutation_ready
+        if: always() && needs.classify-parent-run.outputs.mutation_mode == 'pre-mutation'
+        env:
+          VARIABLE_STATE_OUTCOME: ${{ steps.variable_state.outcome }}
+          VARIABLE_STATE_PRESENT: ${{ steps.variable_state.outputs.state_present }}
+          ARTIFACT_STATE_OUTCOME: ${{ steps.artifact_state.outcome }}
+          STATE_VALIDATION_OUTCOME: ${{ steps.watchdog_state.outcome }}
+          BROWSER_CLEANUP_OUTCOME: ${{ steps.watchdog_real_browser_rendezvous_cleanup.outcome }}
+        run: |
+          set -euo pipefail
+          test "$VARIABLE_STATE_OUTCOME" = success
+          test "$ARTIFACT_STATE_OUTCOME" = skipped
+          if [ "$VARIABLE_STATE_PRESENT" = true ]; then
+            test "$STATE_VALIDATION_OUTCOME" = success
+            test "$BROWSER_CLEANUP_OUTCOME" = success
+          else
+            test "$VARIABLE_STATE_PRESENT" = false
+            test "$STATE_VALIDATION_OUTCOME" = skipped
+            test "$BROWSER_CLEANUP_OUTCOME" = skipped
+          fi
+      - name: Clear redundant state after proving a pre-mutation parent is safe
+        id: clear_pre_mutation_recovery_state
+        if: >-
+          always() && needs.classify-parent-run.outputs.mutation_mode == 'pre-mutation' &&
+          steps.pre_mutation_ready.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 5
+        working-directory: control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          STATE_PRESENT: ${{ steps.variable_state.outputs.state_present }}
+        run: |
+          set -euo pipefail
+          state_argument=()
+          if [ "$STATE_PRESENT" = true ]; then
+            state_argument=(--file "${{ steps.watchdog_state.outputs.state_path }}")
+          fi
+          node scripts/ev2/phase12/recovery-state-store.mjs clear \
+            --kind staging-deploy "${state_argument[@]}" \
+            --run-id "${{ github.event.workflow_run.id }}" \
+            --run-attempt "${{ github.event.workflow_run.run_attempt }}" \
+            --control-sha "${{ github.event.workflow_run.head_sha }}"
+      - name: Finalize the watchdog without staging mutation for a pre-mutation parent
+        id: pre_mutation_finalize
+        if: always() && needs.classify-parent-run.outputs.mutation_mode == 'pre-mutation'
+        env:
+          PRE_MUTATION_READY_OUTCOME: ${{ steps.pre_mutation_ready.outcome }}
+          STATE_CLEAR_OUTCOME: ${{ steps.clear_pre_mutation_recovery_state.outcome }}
+        run: |
+          set -euo pipefail
+          test "$PRE_MUTATION_READY_OUTCOME" = success
+          test "$STATE_CLEAR_OUTCOME" = success
       - name: Recheck the canonical alias before any watchdog compensation
         id: watchdog_decision
+        if: >-
+          always() && needs.classify-parent-run.outputs.mutation_mode != 'pre-mutation' &&
+          steps.watchdog_state.outcome == 'success'
         timeout-minutes: 3
         continue-on-error: true
         working-directory: control
@@ -412,6 +530,7 @@ jobs:
           steps.watchdog_recovery_database.outcome == 'success' &&
           steps.watchdog_recovery_configuration.outcome == 'success' &&
           steps.watchdog_recovery_functions.outcome == 'success' &&
+          steps.watchdog_real_browser_rendezvous_cleanup.outcome == 'success' &&
           steps.watchdog_terminal_canonical.outcome == 'success' &&
           steps.watchdog_probe.outcome == 'success' &&
           steps.watchdog_evidence_upload.outcome == 'success'
@@ -426,11 +545,19 @@ jobs:
           --run-id "${{ github.event.workflow_run.id }}"
           --run-attempt "${{ github.event.workflow_run.run_attempt }}"
           --control-sha "${{ github.event.workflow_run.head_sha }}"
+      - name: Fail closed if pre-mutation watchdog cleanup was not terminal
+        if: >-
+          always() && needs.classify-parent-run.outputs.mutation_mode == 'pre-mutation' &&
+          steps.pre_mutation_finalize.outcome != 'success'
+        run: exit 1
       - name: Fail closed if the watchdog could not prove the original staging release
         if: >-
-          always() &&
-          (steps.watchdog_state.outcome != 'success' ||
+          always() && needs.classify-parent-run.outputs.mutation_mode != 'pre-mutation' &&
+          ((needs.classify-parent-run.outputs.mutation_mode != 'armed' &&
+          needs.classify-parent-run.outputs.mutation_mode != 'ambiguous') ||
+          steps.watchdog_state.outcome != 'success' ||
           steps.watchdog_decision.outcome != 'success' ||
+          steps.watchdog_real_browser_rendezvous_cleanup.outcome != 'success' ||
           steps.watchdog_probe.outcome != 'success' ||
           steps.watchdog_evidence_upload.outcome != 'success' ||
           steps.clear_recovery_state.outcome != 'success' ||

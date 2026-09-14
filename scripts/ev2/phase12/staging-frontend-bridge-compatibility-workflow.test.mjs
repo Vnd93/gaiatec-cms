@@ -69,7 +69,7 @@ function compatibilityScope() {
 
 function evidence() {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     event: "g12.staging.frontend_bridge.promoted",
     repository: "Vnd93/gaiatec-cms",
     workflow: {
@@ -80,6 +80,7 @@ function evidence() {
       controlSha,
     },
     candidateSha,
+    promotionMode: "forward",
     baseline: identity(1, baselineSha, "previous-release"),
     preview: identity(2, candidateSha, "g12-staging-bridge-preview-run-7654321-2"),
     canonical: identity(3, candidateSha, "g12-staging-bridge-run-7654321-2"),
@@ -122,7 +123,7 @@ test("staging bridge evidence proves compatibility only and preserves the later 
   assert.ok(
     validateStagingFrontendBridgeEvidence(falseMutationClaim).violations.includes("backend_mutation_invalid"),
   );
-  const supersededSchema = { ...evidence(), schemaVersion: 2 };
+  const supersededSchema = { ...evidence(), schemaVersion: 3 };
   assert.ok(validateStagingFrontendBridgeEvidence(supersededSchema).violations.includes("schema_invalid"));
   const falseApproval = evidence();
   falseApproval.positiveBrowserRequiredAfterFullCandidateDeploy = false;
@@ -139,6 +140,30 @@ test("staging bridge evidence proves compatibility only and preserves the later 
   const mutatingHeadless = evidence();
   mutatingHeadless.headlessCanaries.canonical.backendMutationRequests = 1;
   assert.ok(validateStagingFrontendBridgeEvidence(mutatingHeadless).violations.includes("headless_invalid"));
+});
+
+test("same-release bridge rebind is explicit and cannot be confused with a forward promotion", () => {
+  const rebound = evidence();
+  rebound.promotionMode = "same-release-rebind";
+  rebound.baseline = identity(1, candidateSha, "g12-staging-deploy-compensation-7000000-1");
+  assert.deepEqual(validateStagingFrontendBridgeEvidence(rebound), { valid: true, violations: [] });
+
+  const hiddenRebind = { ...rebound, promotionMode: "forward" };
+  assert.ok(
+    validateStagingFrontendBridgeEvidence(hiddenRebind).violations.includes("promotion_mode_invalid"),
+  );
+  const falseRebind = evidence();
+  falseRebind.promotionMode = "same-release-rebind";
+  assert.ok(validateStagingFrontendBridgeEvidence(falseRebind).violations.includes("promotion_mode_invalid"));
+  const externalSameRelease = {
+    ...rebound,
+    baseline: { ...rebound.baseline, commitMessage: "external" },
+  };
+  assert.ok(
+    validateStagingFrontendBridgeEvidence(externalSameRelease).violations.includes(
+      "baseline_provenance_invalid",
+    ),
+  );
 });
 
 test("staging bridge rejects cross-substituted preview and canonical headless summaries", () => {
@@ -236,8 +261,15 @@ test("promotion requires headless fail-closed cleanup while full staging owns po
     const parsed = spawnSync(process.execPath, ["--check"], { input: program, encoding: "utf8" });
     assert.equal(parsed.status, 0, `watchdog inline Node ${index + 1}: ${parsed.stderr}`);
   }
+  const bridgePrograms = nodeHeredocs(workflow);
+  assert.ok(bridgePrograms.length >= 2);
+  for (const [index, program] of bridgePrograms.entries()) {
+    const parsed = spawnSync(process.execPath, ["--check"], { input: program, encoding: "utf8" });
+    assert.equal(parsed.status, 0, `bridge inline Node ${index + 1}: ${parsed.stderr}`);
+  }
 
-  assert.match(stagingWriter, /schemaVersion: 3/);
+  assert.match(stagingWriter, /schemaVersion: 4/);
+  assert.match(stagingWriter, /promotionMode,/);
   assert.match(stagingWriter, /const headlessCanaries = \{\}/);
   assert.match(stagingWriter, /process\.env\.PREVIEW_DEPLOYMENT_ORIGIN/);
   assert.match(stagingWriter, /process\.env\.CANONICAL_DEPLOYMENT_ORIGIN/);
@@ -250,11 +282,25 @@ test("promotion requires headless fail-closed cleanup while full staging owns po
   assert.match(stagingWriter, /backendMutation: "fixture-only-cleaned"/);
   assert.doesNotMatch(stagingWriter, /leadPersisted|consentPersisted|historyPersisted|outboxPersisted/);
   assert.match(stagingVerifier, /compatibility_only=true/);
+  assert.match(stagingVerifier, /promotion_mode=\$\{evidence\.promotionMode\}/);
   assert.match(stagingVerifier, /positive_browser_required_after_full_candidate_deploy=true/);
   assert.match(stagingVerifier, /runAttempt: process\.env\.EXPECTED_RUN_ATTEMPT/);
   assert.match(
     deployStaging,
     /EXPECTED_RUN_ATTEMPT: \$\{\{ steps\.frontend_bridge_run\.outputs\.run_attempt \}\}/,
+  );
+  assert.match(workflow, /same_release_rebind:/);
+  assert.match(workflow, /true\) test "\$CANDIDATE_SHA" = "\$BASELINE_SHA"/);
+  assert.match(workflow, /false\) test "\$CANDIDATE_SHA" != "\$BASELINE_SHA"/);
+  assert.match(workflow, /PROMOTION_MODE: \$\{\{ inputs\.same_release_rebind/);
+  assert.match(workflow, /G12_STAGING_BRIDGE_REBIND_PROVENANCE_REFUSED/);
+  assert.match(
+    workflow,
+    /CANDIDATE_SHA="\$CONTROL_SHA" node scripts\/ev2\/phase12\/check-github-controls\.mjs/,
+  );
+  assert.match(
+    watchdog,
+    /state\.candidateRelease === state\.original\.release &&[\s\S]*!compensationMarker\.test/,
   );
   assert.match(
     promoteProduction,
@@ -318,7 +364,7 @@ test("promotion requires headless fail-closed cleanup while full staging owns po
   assert.match(cleanupBlock, /exit "\$cleanup_status"/);
   assert.match(
     deployStaging.slice(terminalFailure),
-    /steps\.real_browser_rendezvous_cleanup\.outcome == 'failure'/,
+    /steps\.real_browser_rendezvous_cleanup\.outcome != 'success'/,
   );
 
   assert.match(productionWriter, /schemaVersion: 5/);
@@ -347,12 +393,20 @@ test("the legacy public backend is swapped in under an exclusive lease and alway
   const canonicalHeadless = workflow.indexOf(
     "Headless-prove canonical render and fail-closed Turnstile boundary",
   );
+  const baselineCapture = workflow.indexOf(
+    "Capture canonical staging state before any deployment or fixture",
+  );
+  const rebindProvenance = workflow.indexOf(
+    "Authorize same-release rebind only from a compensation deployment",
+  );
+  const recoveryArm = workflow.indexOf("Arm durable staging bridge recovery state");
   const restore = workflow.indexOf("Restore the candidate public backend in every outcome");
   const canonicalCleanup = workflow.indexOf("Cleanup canonical fixture");
   const release = workflow.indexOf("Release the legacy backend lease only after a proven restore");
 
   // Nothing mutates before the lease is held, and no fixture runs before the swap is proven.
   assert.ok(prepare >= 0 && prepare < lease && lease < engage && engage < previewFixture);
+  assert.ok(baselineCapture >= 0 && baselineCapture < rebindProvenance && rebindProvenance < recoveryArm);
   // The restore has to happen while the canonical fixture form still exists, so public-v2 can be proven.
   assert.ok(canonicalHeadless < restore && restore < canonicalCleanup && canonicalCleanup < release);
 

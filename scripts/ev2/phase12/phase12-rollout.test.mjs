@@ -548,10 +548,35 @@ test("staging workflow exercises the exact-SHA governed lifecycle with disposabl
     workflow,
     /name: staging-deploy-state-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/,
   );
-  assert.ok(
-    workflow.indexOf("Upload mandatory pre-mutation staging state") <
-      workflow.indexOf("Apply the exact candidate migrations to staging"),
+  const stateUpload = workflow.indexOf("Upload mandatory pre-mutation staging state");
+  const mutationBoundary = workflow.indexOf(
+    "Arm staging mutation only after both durable recovery copies exist",
   );
+  const firstStagingMutation = workflow.indexOf("Apply the exact candidate migrations to staging");
+  assert.ok(stateUpload < mutationBoundary && mutationBoundary < firstStagingMutation);
+  assert.match(workflow, /mutation_armed: \$\{\{ steps\.staging_mutation_boundary\.outputs\.armed \}\}/);
+  assert.match(workflow, /mutation_boundary_outcome: \$\{\{ steps\.staging_mutation_boundary\.outcome \}\}/);
+  const mutationBoundaryBlock = workflow.slice(mutationBoundary, firstStagingMutation);
+  assert.match(mutationBoundaryBlock, /STATE_VARIABLE_SOURCE/);
+  assert.match(mutationBoundaryBlock, /STATE_ARTIFACT_ID/);
+  assert.match(mutationBoundaryBlock, /STATE_ARTIFACT_DIGEST/);
+  assert.match(mutationBoundaryBlock, /printf 'armed=true\\n' >> "\$GITHUB_OUTPUT"/);
+  assert.doesNotMatch(mutationBoundaryBlock, /continue-on-error/);
+  const beforeMutationBoundary = workflowJob(workflow, "deploy").slice(
+    0,
+    workflowJob(workflow, "deploy").indexOf(
+      "Arm staging mutation only after both durable recovery copies exist",
+    ),
+  );
+  for (const stagingMutation of [
+    /supabase db push/,
+    /supabase secrets set/,
+    /deploy-staging-functions\.mjs/,
+    /cms-browser-fixture\.mjs setup/,
+    /deploy-sealed-staging-dist\.mjs/,
+    /wrangler pages deploy/,
+  ])
+    assert.doesNotMatch(beforeMutationBoundary, stagingMutation);
   assert.match(workflow, /Upload mandatory sealed staging recovery artifact/);
   assert.match(workflow, /Upload mandatory immutable staging candidate artifact/);
   const candidateUploadStart = workflow.indexOf("Upload mandatory immutable staging candidate artifact");
@@ -581,6 +606,27 @@ test("staging workflow exercises the exact-SHA governed lifecycle with disposabl
   assert.doesNotMatch(workflow, /if: failure\(\) && steps\.deploy\.outcome == 'success'/);
   assert.match(workflow, /--branch ev2-g17-canary/);
   assert.match(workflow, /staging-candidate-dist-seal\.json/);
+  assert.match(workflow, /Checkout the trusted staging control revision/);
+  const controlNodeSetup = workflow.indexOf("Use the repository-pinned Node runtime for staging controls");
+  assert.ok(controlNodeSetup >= 0);
+  assert.match(
+    workflow.slice(controlNodeSetup, workflow.indexOf("Resolve and verify the exact staging candidate")),
+    /node-version-file: control\/\.nvmrc/,
+  );
+  for (const controlVerifier of [
+    "Resolve exact successful staging frontend bridge run",
+    "Verify protected CI for the trusted staging control revision",
+    "Verify compatibility-only staging bridge evidence for this exact SHA",
+  ])
+    assert.ok(controlNodeSetup < workflow.indexOf(controlVerifier));
+  assert.match(
+    workflow,
+    /Resolve exact successful staging frontend bridge run[\s\S]*?working-directory: control/,
+  );
+  assert.match(
+    workflow,
+    /Verify compatibility-only staging bridge evidence for this exact SHA[\s\S]*?working-directory: control/,
+  );
   assert.ok((workflow.match(/verify-production-dist-seal\.mjs/g) ?? []).length >= 5);
   assert.match(workflow, /STATE_ARTIFACT_DIGEST/);
   assert.match(workflow, /CANDIDATE_ARTIFACT_DIGEST/);
@@ -637,11 +683,12 @@ test("staging workflow exercises the exact-SHA governed lifecycle with disposabl
 });
 
 test("staging watchdog compensates cancelled, timed-out and ambiguous deploys without external overwrite", async () => {
-  const [workflow, watchdog, pagesState, fixture] = await Promise.all([
+  const [workflow, watchdog, pagesState, fixture, mutationBoundaryClassifier] = await Promise.all([
     read(".github/workflows/deploy-staging.yml"),
     read(".github/workflows/deploy-staging-watchdog.yml"),
     read("scripts/ev2/phase12/staging-pages-state.mjs"),
     read("scripts/qa/cms-browser-fixture.mjs"),
+    read("scripts/ev2/phase12/staging-mutation-boundary.mjs"),
   ]);
   assert.match(watchdog, /workflow_run:\s+workflows: \["Deploy staging"\]\s+types: \[completed\]/);
   assert.match(watchdog, /github\.event\.workflow_run\.conclusion == 'cancelled'/);
@@ -689,8 +736,57 @@ test("staging watchdog compensates cancelled, timed-out and ambiguous deploys wi
   }
   assert.match(workflow, /id: finalizer_terminal_owned/);
   assert.match(workflow, /id: finalizer_terminal_original/);
+  const finalizer = workflowJob(workflow, "finalize");
+  assert.match(finalizer, /recovery-state-store\.mjs get\s+--allow-missing\s+--kind staging-deploy/);
+  assert.match(finalizer, /id: pre_mutation_ready/);
+  assert.match(finalizer, /id: clear_pre_mutation_recovery_state/);
+  assert.match(finalizer, /id: pre_mutation_finalize/);
+  const preMutationReady = finalizer.indexOf("id: pre_mutation_ready");
+  const preMutationClear = finalizer.indexOf("id: clear_pre_mutation_recovery_state");
+  const preMutationTerminal = finalizer.indexOf("id: pre_mutation_finalize");
+  assert.ok(preMutationReady < preMutationClear && preMutationClear < preMutationTerminal);
   assert.match(
-    workflowJob(workflow, "finalize"),
+    finalizer.slice(preMutationClear, preMutationTerminal),
+    /steps\.pre_mutation_ready\.outcome == 'success'/,
+  );
+  assert.match(
+    finalizer,
+    /id: state_artifact_download[\s\S]*if: always\(\) && needs\.deploy\.outputs\.state_artifact_id != ''/,
+  );
+  assert.match(finalizer, /staging-mutation-boundary\.mjs/);
+  assert.match(mutationBoundaryClassifier, /armed === "true" && boundaryOutcome === "success"/);
+  assert.match(mutationBoundaryClassifier, /PRE_MUTATION_OUTCOMES\.has\(boundaryOutcome\)/);
+  assert.match(mutationBoundaryClassifier, /G12_STAGING_MUTATION_BOUNDARY_AMBIGUOUS/);
+  assert.match(mutationBoundaryClassifier, /G12_STAGING_MUTATION_BOUNDARY_CONTRADICTS_SUCCESS/);
+  const finalizerFailure = finalizer.slice(finalizer.indexOf("Fail closed when staging did not finish"));
+  assert.match(
+    finalizerFailure,
+    /steps\.mutation_boundary\.outputs\.mode != 'armed'[\s\S]*steps\.mutation_boundary\.outputs\.mode != 'pre-mutation'/,
+  );
+  assert.match(
+    finalizer,
+    /steps\.mutation_boundary\.outputs\.mode == 'pre-mutation'[\s\S]*steps\.pre_mutation_finalize\.outcome != 'success'/,
+  );
+  assert.match(
+    finalizer,
+    /steps\.mutation_boundary\.outputs\.mode == 'armed'[\s\S]*steps\.finalizer_state\.outcome != 'success'/,
+  );
+  const finalizerArmedClear = finalizer.slice(
+    finalizer.indexOf("id: clear_recovery_state"),
+    finalizer.indexOf(
+      "Fail closed when staging did not finish",
+      finalizer.indexOf("id: clear_recovery_state"),
+    ),
+  );
+  assert.match(finalizerArmedClear, /steps\.real_browser_rendezvous_cleanup\.outcome == 'success'/);
+  assert.match(finalizer, /steps\.real_browser_rendezvous_cleanup\.outcome != 'success'/);
+  assert.match(finalizer, /G12_STAGING_FINALIZER_STATE_UNAVAILABLE/);
+  assert.match(
+    finalizer,
+    /if \[ "\$STATE_ARTIFACT_OUTCOME" = success \]; then[\s\S]*test "\$STATE_VARIABLE_OUTCOME" = skipped[\s\S]*else[\s\S]*test "\$STATE_VARIABLE_OUTCOME" = success/,
+  );
+  assert.match(
+    finalizer,
     /needs\.deploy\.result != 'success'[\s\S]*steps\.finalizer_recovery_functions\.outcome == 'success'[\s\S]*steps\.finalizer_terminal_original\.outcome == 'success'[\s\S]*steps\.clear_recovery_state\.outcome != 'success'/,
   );
   assert.match(watchdog, /id: watchdog_terminal_canonical/);
@@ -704,6 +800,7 @@ test("staging watchdog compensates cancelled, timed-out and ambiguous deploys wi
     "watchdog_recovery_database",
     "watchdog_recovery_configuration",
     "watchdog_recovery_functions",
+    "watchdog_real_browser_rendezvous_cleanup",
     "watchdog_terminal_canonical",
   ])
     assert.match(watchdogClear, new RegExp(`steps\\.${required}\\.outcome == 'success'`));
@@ -721,8 +818,11 @@ test("staging watchdog compensates cancelled, timed-out and ambiguous deploys wi
   );
 });
 
-test("the staging watchdog skips only an unstarted deploy or a terminally recovered parent", async () => {
-  const watchdog = await read(".github/workflows/deploy-staging-watchdog.yml");
+test("the staging watchdog distinguishes unstarted, pre-mutation and recovery-required parents", async () => {
+  const [watchdog, mutationBoundaryClassifier] = await Promise.all([
+    read(".github/workflows/deploy-staging-watchdog.yml"),
+    read("scripts/ev2/phase12/staging-mutation-boundary.mjs"),
+  ]);
   const classify = workflowJob(watchdog, "classify-parent-run");
   const compensate = workflowJob(watchdog, "compensate-incomplete-staging-deploy");
 
@@ -730,20 +830,80 @@ test("the staging watchdog skips only an unstarted deploy or a terminally recove
   // watchdog acordava, nao encontrava estado pre-mutacao e reprovava: falha esperada acumulada que
   // torna indistinguivel a falha real de uma compensacao que nao aconteceu.
   assert.match(classify, /attempts\/\$PARENT_RUN_ATTEMPT\/jobs/);
-  assert.match(classify, /select\(\.name == "deploy"\)/);
-  assert.match(classify, /select\(\.name == "finalize"\)/);
-  assert.match(classify, /\[ "\$deploy_count" = 1 \] && \[ "\$deploy_conclusion" = skipped \]/);
-  assert.match(classify, /\[ "\$finalize_count" = 1 \] && \[ "\$finalize_conclusion" = success \]/);
-  assert.match(classify, /recovery_required: \$\{\{ steps\.parent\.outputs\.recovery_required \}\}/);
+  assert.match(classify, /> "\$MUTATION_BOUNDARY_JOBS_FILE"/);
+  assert.match(classify, /staging-mutation-boundary\.mjs watchdog-jobs/);
+  assert.match(classify, /PARENT_RUN_ID: \$\{\{ github\.event\.workflow_run\.id \}\}/);
+  assert.match(classify, /PARENT_RUN_ATTEMPT: \$\{\{ github\.event\.workflow_run\.run_attempt \}\}/);
+  assert.match(
+    mutationBoundaryClassifier,
+    /g12\.staging\.watchdog\.parent-classified[\s\S]*runId,[\s\S]*runAttempt,/,
+  );
+  assert.match(classify, /Checkout the exact parent control revision for classification/);
+  assert.match(classify, /node-version-file: control\/\.nvmrc/);
+  assert.match(
+    classify,
+    /steps\.parent_control_checkout\.outcome == 'success'[\s\S]*steps\.parent_control_node\.outcome == 'success'/,
+  );
+  assert.match(classify, /steps\.parent\.outcome == 'success' && steps\.parent\.outputs\.recovery_required/);
+  assert.match(classify, /steps\.parent_fallback\.outputs\.recovery_required/);
+  assert.match(classify, /steps\.parent\.outcome == 'success' && steps\.parent\.outputs\.mutation_mode/);
+  assert.match(classify, /steps\.parent_fallback\.outputs\.mutation_mode/);
+  assert.match(classify, /mutation_mode=ambiguous/);
 
   // A decisao nao pode se basear no input do pai: o que importa e se o job mutante executou.
   assert.doesNotMatch(classify, /diagnostic_run/);
 
   // Nao saber classificar nunca pode virar "nao compensar".
-  assert.match(classify, /parent-classification-failed[^\n]*"recoveryRequired":true/);
+  assert.match(
+    classify,
+    /parent-classification-failed[^\n]*"recoveryRequired":true[^\n]*"mutationMode":"ambiguous"/,
+  );
+  assert.match(classify, /id: parent[\s\S]*continue-on-error: true/);
+  assert.match(classify, /id: parent_fallback/);
+  assert.match(
+    classify,
+    /steps\.parent\.outcome != 'success'[\s\S]*steps\.parent\.outputs\.recovery_required == ''[\s\S]*steps\.parent\.outputs\.mutation_mode == ''/,
+  );
 
   assert.match(compensate, /needs: classify-parent-run/);
-  assert.match(compensate, /needs\.classify-parent-run\.outputs\.recovery_required == 'true'/);
+  assert.match(compensate, /if: >-\s+always\(\)/);
+  assert.match(compensate, /needs\.classify-parent-run\.outputs\.recovery_required != 'false'/);
+  assert.match(compensate, /recovery-state-store\.mjs get\s+--allow-missing/);
+  assert.match(compensate, /id: watchdog_real_browser_rendezvous_cleanup/);
+  assert.match(compensate, /clear-challenge[\s\S]*real-browser-attestation-store\.mjs clear/);
+  assert.match(compensate, /id: pre_mutation_ready/);
+  assert.match(compensate, /id: clear_pre_mutation_recovery_state/);
+  assert.match(compensate, /id: pre_mutation_finalize/);
+  assert.match(
+    compensate,
+    /id: watchdog_decision[\s\S]*needs\.classify-parent-run\.outputs\.mutation_mode != 'pre-mutation'/,
+  );
+  const watchdogPreReady = compensate.indexOf("id: pre_mutation_ready");
+  const watchdogPreClear = compensate.indexOf("id: clear_pre_mutation_recovery_state");
+  const watchdogPreTerminal = compensate.indexOf("id: pre_mutation_finalize");
+  const watchdogDecision = compensate.indexOf("id: watchdog_decision");
+  assert.ok(
+    watchdogPreReady < watchdogPreClear &&
+      watchdogPreClear < watchdogPreTerminal &&
+      watchdogPreTerminal < watchdogDecision,
+  );
+  assert.match(
+    compensate.slice(watchdogPreReady, watchdogPreClear),
+    /test "\$VARIABLE_STATE_OUTCOME" = success/,
+  );
+  assert.match(
+    compensate.slice(watchdogPreClear, watchdogPreTerminal),
+    /steps\.pre_mutation_ready\.outcome == 'success'/,
+  );
+  assert.match(compensate, /test "\$VARIABLE_STATE_PRESENT" = false/);
+  assert.match(
+    compensate,
+    /mutation_mode == 'pre-mutation'[\s\S]*steps\.pre_mutation_finalize\.outcome != 'success'/,
+  );
+  assert.match(
+    compensate,
+    /mutation_mode != 'pre-mutation'[\s\S]*mutation_mode != 'armed'[\s\S]*mutation_mode != 'ambiguous'/,
+  );
 
   // O gatilho original continua intacto: a mudanca acrescenta uma condicao, nao afrouxa nenhuma.
   for (const condition of [
@@ -796,6 +956,44 @@ test("staging reconciliation is idempotent and refuses a concurrent external dep
     { ...original, commitMessage: "external same-SHA deploy" },
   ])
     assert.equal(stagingReconcileDecision(replacement, state), "external-conflict");
+});
+
+test("same-release rebind reconciliation uses deployment identity and owned markers", () => {
+  const release = "a".repeat(40);
+  const state = {
+    originalRelease: release,
+    originalDeployment: "00000000-0000-4000-8000-000000000011",
+    originalCreatedOn: "2026-09-13T20:00:00.000Z",
+    originalCommitMessage: "g12-staging-deploy-compensation-111111-1",
+    candidateRelease: release,
+    runMarker: "g12-staging-bridge-run-222222-1",
+    compensationMarker: "g12-staging-bridge-compensation-222222-1",
+  };
+  const original = {
+    deploymentId: state.originalDeployment,
+    release,
+    createdOn: state.originalCreatedOn,
+    commitMessage: state.originalCommitMessage,
+  };
+  const rebound = {
+    deploymentId: "00000000-0000-4000-8000-000000000012",
+    release,
+    createdOn: "2026-09-13T20:05:00.000Z",
+    commitMessage: state.runMarker,
+  };
+  const compensated = {
+    deploymentId: "00000000-0000-4000-8000-000000000013",
+    release,
+    createdOn: "2026-09-13T20:10:00.000Z",
+    commitMessage: state.compensationMarker,
+  };
+  assert.equal(stagingReconcileDecision(original, state), "already-original");
+  assert.equal(stagingReconcileDecision(rebound, state), "restore-original");
+  assert.equal(stagingReconcileDecision(compensated, state), "already-original");
+  assert.equal(
+    stagingReconcileDecision({ ...rebound, commitMessage: "external same-SHA deployment" }, state),
+    "external-conflict",
+  );
 });
 
 test("staging deploy and rollback serialize mutations against the same environment", async () => {

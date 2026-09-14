@@ -162,6 +162,7 @@ jobs:
           const state = JSON.parse(readFileSync(statePath, "utf8"));
           const sha = /^[a-f0-9]{40}$/;
           const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+          const compensationMarker = /^g12-staging-(?:deploy|rollback|bridge)-compensation-[1-9]\d*-[1-9]\d*$/;
           const exact = (value, keys) => value && typeof value === "object" && !Array.isArray(value) &&
             JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...keys].sort());
           if (
@@ -175,7 +176,9 @@ jobs:
             state.workflow.controlSha !== process.env.TRIGGER_HEAD_SHA ||
             state.project !== "gaiatec-cms-staging" || state.branch !== "ev2-g17-canary" ||
             !sha.test(state.candidateRelease || "") || !sha.test(state.original.release || "") ||
-            state.candidateRelease === state.original.release || !uuid.test(state.original.deploymentId || "") ||
+            (state.candidateRelease === state.original.release &&
+              !compensationMarker.test(state.original.commitMessage || "")) ||
+            !uuid.test(state.original.deploymentId || "") ||
             !Number.isFinite(Date.parse(state.original.createdOn || "")) ||
             typeof state.original.commitMessage !== "string" || state.original.commitMessage.includes("\0") ||
             Buffer.byteLength(state.original.commitMessage, "utf8") > 4096 ||

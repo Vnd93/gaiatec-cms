@@ -9,6 +9,13 @@ on:
       expected_baseline_sha:
         description: SHA exato atualmente servido pelo alias staging antes do bootstrap
         required: true
+      same_release_rebind:
+        description: >-
+          Reemitir a identidade canonica para o mesmo SHA apos uma compensacao. Deve permanecer
+          falso em uma promocao normal e nunca dispensa as provas completas da ponte.
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   actions: read
@@ -36,6 +43,7 @@ jobs:
           TRIGGERING_ACTOR: ${{ github.triggering_actor }}
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
           BASELINE_SHA: ${{ inputs.expected_baseline_sha }}
+          SAME_RELEASE_REBIND: ${{ inputs.same_release_rebind }}
         run: |
           set -euo pipefail
           test "$DISPATCH_REF" = refs/heads/main
@@ -43,7 +51,11 @@ jobs:
           test "${TRIGGERING_ACTOR,,}" = vnd93
           test "$(printf '%s' "$CANDIDATE_SHA" | grep -E '^[a-f0-9]{40}$')" = "$CANDIDATE_SHA"
           test "$(printf '%s' "$BASELINE_SHA" | grep -E '^[a-f0-9]{40}$')" = "$BASELINE_SHA"
-          test "$CANDIDATE_SHA" != "$BASELINE_SHA"
+          case "$SAME_RELEASE_REBIND" in
+            true) test "$CANDIDATE_SHA" = "$BASELINE_SHA" ;;
+            false) test "$CANDIDATE_SHA" != "$BASELINE_SHA" ;;
+            *) exit 1 ;;
+          esac
       - name: Checkout current control
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with: { fetch-depth: 0, path: control }
@@ -72,6 +84,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CONTROL_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
@@ -83,6 +96,9 @@ jobs:
           git merge-base --is-ancestor "$LEGACY_PUBLIC_BACKEND_SHA" "${{ inputs.expected_baseline_sha }}"
           git merge-base --is-ancestor "${{ inputs.candidate_sha }}" origin/main
           node scripts/ev2/phase12/check-github-controls.mjs
+          if [ "$CANDIDATE_SHA" != "$CONTROL_SHA" ]; then
+            CANDIDATE_SHA="$CONTROL_SHA" node scripts/ev2/phase12/check-github-controls.mjs
+          fi
       - name: Install and prove bridge contracts
         working-directory: candidate
         run: |
@@ -171,6 +187,30 @@ jobs:
           CLOUDFLARE_PAGES_PROJECT: gaiatec-cms-staging
           CLOUDFLARE_PAGES_BRANCH: ev2-g17-canary
           STAGING_EXPECTED_RELEASE: ${{ inputs.expected_baseline_sha }}
+      - name: Authorize same-release rebind only from a compensation deployment
+        working-directory: control
+        env:
+          PROMOTION_MODE: ${{ inputs.same_release_rebind && 'same-release-rebind' || 'forward' }}
+          BASELINE_COMMIT_MESSAGE_B64: ${{ steps.baseline_state.outputs.commit_message_b64 }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const encoded = process.env.BASELINE_COMMIT_MESSAGE_B64 ?? "";
+          const message = Buffer.from(encoded, "base64").toString("utf8");
+          if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded) ||
+              Buffer.from(message, "utf8").toString("base64") !== encoded || message.includes("\0") ||
+              Buffer.byteLength(message, "utf8") > 4096)
+            throw new Error("G12_STAGING_BRIDGE_BASELINE_MARKER_REFUSED");
+          if (process.env.PROMOTION_MODE === "same-release-rebind" &&
+              !/^g12-staging-(?:deploy|rollback|bridge)-compensation-[1-9]\d*-[1-9]\d*$/.test(message))
+            throw new Error("G12_STAGING_BRIDGE_REBIND_PROVENANCE_REFUSED");
+          if (!["forward", "same-release-rebind"].includes(process.env.PROMOTION_MODE))
+            throw new Error("G12_STAGING_BRIDGE_PROMOTION_MODE_REFUSED");
+          console.log(JSON.stringify({
+            event: "g12.staging.frontend_bridge.rebind_provenance_verified",
+            promotionMode: process.env.PROMOTION_MODE,
+          }));
+          NODE
       - name: Arm durable staging bridge recovery state
         working-directory: control
         run: |
@@ -495,6 +535,7 @@ jobs:
         env:
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
           CONTROL_SHA: ${{ github.sha }}
+          PROMOTION_MODE: ${{ inputs.same_release_rebind && 'same-release-rebind' || 'forward' }}
           PREVIEW_ORIGIN: https://ev2-g12-canary.gaiatec-cms-staging.pages.dev
           CANONICAL_ORIGIN: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
           PREVIEW_DEPLOYMENT_ORIGIN: ${{ steps.preview.outputs.deployment-url }}

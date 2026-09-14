@@ -33,6 +33,7 @@ if (process.env.GITHUB_OUTPUT)
     process.env.GITHUB_OUTPUT,
     [
       `candidate_sha=${evidence.candidateSha}`,
+      `promotion_mode=${evidence.promotionMode}`,
       `canonical_deployment_id=${evidence.canonical.deploymentId}`,
       `canonical_release=${evidence.canonical.release}`,
       `canonical_created_on=${new Date(evidence.canonical.createdOn).toISOString()}`,
@@ -50,6 +51,7 @@ console.log(
   JSON.stringify({
     event: "g12.staging.frontend_bridge.evidence.verified",
     candidateSha: evidence.candidateSha,
+    promotionMode: evidence.promotionMode,
     compatibilityOnly: true,
     positiveBrowserRequiredAfterFullCandidateDeploy: true,
   }),

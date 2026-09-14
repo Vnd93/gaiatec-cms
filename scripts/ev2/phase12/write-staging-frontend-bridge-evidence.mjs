@@ -39,6 +39,7 @@ const bytes = Object.fromEntries(
   ),
 );
 const candidateSha = process.env.CANDIDATE_SHA ?? "";
+const promotionMode = process.env.PROMOTION_MODE ?? "";
 const headlessCanaries = {};
 for (const label of ["preview", "canonical"]) {
   const headlessBytes = bytes[`${label}-headless`];
@@ -99,7 +100,7 @@ const identity = (prefix) => ({
   commitMessage: decodeDeploymentCommitMessage(process.env[`${prefix}_COMMIT_MESSAGE_B64`] ?? ""),
 });
 const evidence = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   event: "g12.staging.frontend_bridge.promoted",
   repository: "Vnd93/gaiatec-cms",
   workflow: {
@@ -110,6 +111,7 @@ const evidence = {
     controlSha: process.env.CONTROL_SHA,
   },
   candidateSha,
+  promotionMode,
   baseline: identity("BASELINE"),
   preview: identity("PREVIEW"),
   canonical: identity("CANONICAL"),
@@ -151,6 +153,7 @@ console.log(
   JSON.stringify({
     event: evidence.event,
     candidateSha,
+    promotionMode,
     backendMutation: evidence.backendMutation,
     compatibilityOnly: true,
     positiveBrowserRequiredAfterFullCandidateDeploy: true,

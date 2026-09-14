@@ -317,6 +317,18 @@ test("every deploy-staging inline Node program parses and the finalizer validate
       output.includes(`original_commit_message_b64=${encodeDeploymentCommitMessage(originalCommitMessage)}`),
     );
     assert.doesNotMatch(output, /Release body com Unicode/);
+    const unavailable = spawnSync(process.execPath, ["-e", finalizer], {
+      cwd: controlDir,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        STATE_ARTIFACT_OUTCOME: "failure",
+        STATE_VARIABLE_OUTCOME: "success",
+        STATE_VARIABLE_PRESENT: "false",
+      },
+    });
+    assert.notEqual(unavailable.status, 0);
+    assert.match(unavailable.stderr, /G12_STAGING_FINALIZER_STATE_UNAVAILABLE/);
   } finally {
     await rm(fixtureRoot, { recursive: true, force: true });
   }

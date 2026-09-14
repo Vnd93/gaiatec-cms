@@ -10,6 +10,7 @@ const SHA256 = /^(?:sha256:)?[a-f0-9]{64}$/;
 const POSITIVE = /^[1-9]\d*$/;
 const PREVIEW_ORIGIN = "https://ev2-g12-canary.gaiatec-cms-staging.pages.dev";
 const CANONICAL_ORIGIN = "https://ev2-g17-canary.gaiatec-cms-staging.pages.dev";
+const COMPENSATION_MARKER = /^g12-staging-(?:deploy|rollback|bridge)-compensation-[1-9]\d*-[1-9]\d*$/;
 const COMPATIBILITY_TESTED = Object.freeze([
   "legacy-content-read",
   "page-campaign-form-render",
@@ -117,6 +118,7 @@ export function validateStagingFrontendBridgeEvidence(value, expected = {}) {
       "repository",
       "workflow",
       "candidateSha",
+      "promotionMode",
       "baseline",
       "preview",
       "canonical",
@@ -128,7 +130,7 @@ export function validateStagingFrontendBridgeEvidence(value, expected = {}) {
       "backendMutation",
       "rollbackReady",
     ]) ||
-    value?.schemaVersion !== 3 ||
+    value?.schemaVersion !== 4 ||
     value?.event !== "g12.staging.frontend_bridge.promoted" ||
     value?.repository !== STAGING_FRONTEND_BRIDGE_REPOSITORY
   )
@@ -138,6 +140,12 @@ export function validateStagingFrontendBridgeEvidence(value, expected = {}) {
     (expected.candidateSha && value?.candidateSha !== expected.candidateSha)
   )
     violations.push("candidate_invalid");
+  if (
+    !["forward", "same-release-rebind"].includes(value?.promotionMode) ||
+    (value?.promotionMode === "forward" && value?.baseline?.release === value?.candidateSha) ||
+    (value?.promotionMode === "same-release-rebind" && value?.baseline?.release !== value?.candidateSha)
+  )
+    violations.push("promotion_mode_invalid");
   if (
     !exactKeys(value?.workflow, ["name", "path", "runId", "runAttempt", "controlSha"]) ||
     value?.workflow?.name !== STAGING_FRONTEND_BRIDGE_WORKFLOW_NAME ||
@@ -151,8 +159,12 @@ export function validateStagingFrontendBridgeEvidence(value, expected = {}) {
     (expected.controlSha && value.workflow.controlSha !== expected.controlSha)
   )
     violations.push("workflow_invalid");
-  if (!identity(value?.baseline) || value?.baseline?.release === value?.candidateSha)
-    violations.push("baseline_invalid");
+  if (!identity(value?.baseline)) violations.push("baseline_invalid");
+  if (
+    value?.promotionMode === "same-release-rebind" &&
+    !COMPENSATION_MARKER.test(value?.baseline?.commitMessage ?? "")
+  )
+    violations.push("baseline_provenance_invalid");
   if (!identity(value?.preview) || value?.preview?.release !== value?.candidateSha)
     violations.push("preview_invalid");
   const marker = `g12-staging-bridge-run-${value?.workflow?.runId}-${value?.workflow?.runAttempt}`;

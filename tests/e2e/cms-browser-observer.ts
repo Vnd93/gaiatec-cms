@@ -33,6 +33,11 @@ type ObserverConfiguration = {
   trackedRequestOrigins?: readonly string[];
 };
 
+type SettleOptions = {
+  timeoutMs?: number;
+  quietPeriodMs?: number;
+};
+
 type MutableAllowance = ExpectedHttpFailure & {
   occurrences: number;
   consoleErrorMirrorOccurrences: number;
@@ -228,6 +233,7 @@ export function createCmsBrowserObserver(configuration: ObserverConfiguration) {
   const unexpectedHttp: string[] = [];
   const requestFailures: string[] = [];
   const pendingTrackedRequests = new Map<Request, string>();
+  let trackedRequestRevision = 0;
   const successfulTrackedHeadFetches = new WeakSet<Request>();
   const consoleResourceFailures = new Map<
     string,
@@ -235,6 +241,10 @@ export function createCmsBrowserObserver(configuration: ObserverConfiguration) {
   >();
 
   const sanitize = (value: unknown) => sanitizeBrowserDiagnostic(value, configuration.sensitiveValues ?? []);
+
+  function settleTrackedRequest(request: Request) {
+    if (pendingTrackedRequests.delete(request)) trackedRequestRevision += 1;
+  }
 
   function isTrackedHeadFetch(request: Request) {
     if (request.method() !== "HEAD" || request.resourceType() !== "fetch") return false;
@@ -253,7 +263,7 @@ export function createCmsBrowserObserver(configuration: ObserverConfiguration) {
     // terminal proof; requests without this exact prior proof remain fail-closed.
     if (status >= 200 && status < 300 && isTrackedHeadFetch(request)) {
       successfulTrackedHeadFetches.add(request);
-      pendingTrackedRequests.delete(request);
+      settleTrackedRequest(request);
     }
     if (status < 400) return;
     if (
@@ -325,7 +335,7 @@ export function createCmsBrowserObserver(configuration: ObserverConfiguration) {
   }
 
   function onRequestFailed(request: Request) {
-    pendingTrackedRequests.delete(request);
+    settleTrackedRequest(request);
     const failure = request.failure();
     if (
       failure?.errorText === "net::ERR_ABORTED" &&
@@ -355,6 +365,7 @@ export function createCmsBrowserObserver(configuration: ObserverConfiguration) {
       const url = new URL(request.url());
       if (trackedRequestOrigins.has(url.origin)) {
         pendingTrackedRequests.set(request, sanitize(`${request.method()} ${url.pathname}`));
+        trackedRequestRevision += 1;
       }
     } catch {
       // Invalid URLs are still surfaced by response/request-failure diagnostics; they cannot match
@@ -363,7 +374,7 @@ export function createCmsBrowserObserver(configuration: ObserverConfiguration) {
   }
 
   function onRequestFinished(request: Request) {
-    pendingTrackedRequests.delete(request);
+    settleTrackedRequest(request);
   }
 
   function observePage(page: Page) {
@@ -444,6 +455,51 @@ export function createCmsBrowserObserver(configuration: ObserverConfiguration) {
     };
   }
 
+  async function waitForTrackedRequestsToSettle(options: SettleOptions = {}) {
+    const timeoutMs = options.timeoutMs ?? 30_000;
+    const quietPeriodMs = options.quietPeriodMs ?? 500;
+    if (
+      !Number.isInteger(timeoutMs) ||
+      timeoutMs < 1 ||
+      timeoutMs > 30_000 ||
+      !Number.isInteger(quietPeriodMs) ||
+      quietPeriodMs < 1 ||
+      quietPeriodMs >= timeoutMs
+    ) {
+      throw new Error("QA_CMS_BROWSER_OBSERVER_SETTLE_OPTIONS_INVALID");
+    }
+
+    const deadline = Date.now() + timeoutMs;
+    let observedRevision = trackedRequestRevision;
+    let quietSince = pendingTrackedRequests.size === 0 ? Date.now() : null;
+    while (true) {
+      const now = Date.now();
+      if (observedRevision !== trackedRequestRevision) {
+        observedRevision = trackedRequestRevision;
+        quietSince = pendingTrackedRequests.size === 0 ? now : null;
+      } else if (pendingTrackedRequests.size === 0) {
+        quietSince ??= now;
+        if (now - quietSince >= quietPeriodMs) return;
+      } else {
+        quietSince = null;
+      }
+
+      if (now >= deadline) {
+        const pending = [...pendingTrackedRequests.values()]
+          .slice(0, 12)
+          .map((request) => `pending first-party request ${request}`)
+          .join(" | ");
+        throw new Error(
+          `QA_CMS_BROWSER_OBSERVABILITY_SETTLE_TIMEOUT:${configuration.suite}:${pending || "pending-state-did-not-quiesce"}`,
+        );
+      }
+
+      const untilDeadline = Math.max(1, deadline - now);
+      const untilQuiet = quietSince === null ? 25 : Math.max(1, quietPeriodMs - (now - quietSince));
+      await new Promise((resolve) => setTimeout(resolve, Math.min(25, untilDeadline, untilQuiet)));
+    }
+  }
+
   function assertClean() {
     const failures = violations();
     if (failures.length) {
@@ -453,7 +509,7 @@ export function createCmsBrowserObserver(configuration: ObserverConfiguration) {
     }
   }
 
-  return { observePage, observeContext, snapshot, assertClean };
+  return { observePage, observeContext, snapshot, waitForTrackedRequestsToSettle, assertClean };
 }
 
 export type CmsBrowserObserver = ReturnType<typeof createCmsBrowserObserver>;

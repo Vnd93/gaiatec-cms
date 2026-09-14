@@ -126,6 +126,17 @@ describe("real invite and password-recovery browser lifecycle", () => {
     expect(spec).toContain("browserObservability ??= observer.snapshot()");
     expect(spec).toContain("browserObservability,");
     expect(spec).toContain("trackedRequestOrigins: [new URL(baseURL).origin, config.supabaseOrigin]");
+    expect(spec).toContain('destinationHeading: "Recuperar acesso"');
+    expect(spec).toContain('destinationHeading: "Entrar no painel"');
+    expect(spec).toContain("if (!link.destinationHeading)");
+    const destinationHeadingAssertion = spec.indexOf(
+      'page.getByRole("heading", { name: link.destinationHeading, exact: true })',
+    );
+    const returnNavigation = spec.indexOf('await page.goto(input.route, { waitUntil: "domcontentloaded" })');
+    expect(destinationHeadingAssertion).toBeGreaterThanOrEqual(0);
+    expect(returnNavigation).toBeGreaterThanOrEqual(0);
+    expect(destinationHeadingAssertion).toBeLessThan(returnNavigation);
+    expect(spec).toContain("await observer.waitForTrackedRequestsToSettle()");
     expect(supabaseClient).toContain("global: { fetch: createDurableSupabaseFetch(SUPABASE_URL) }");
     expect(supabaseFetch).toContain('url.pathname === "/auth/v1/logout"');
     expect(supabaseFetch).toContain('url.search === "?scope=local"');

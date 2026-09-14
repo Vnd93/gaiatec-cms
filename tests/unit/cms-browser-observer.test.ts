@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createCmsBrowserObserver,
   expectedHttpFailureMatches,
@@ -78,6 +78,78 @@ describe("CMS real-browser observer", () => {
     page.emit("requestfailed", failed);
     expect(observer.snapshot()).toMatchObject({ status: "failed", requestFailures: 1 });
     expect(() => observer.assertClean()).toThrow(/GET \/admin\/data: net::ERR_FAILED/);
+  });
+
+  it("waits for tracked requests to finish and requires a quiet period before sealing", async () => {
+    vi.useFakeTimers();
+    try {
+      const page = new FakePage();
+      const observer = createCmsBrowserObserver({
+        suite: "observer-bounded-settlement",
+        expectedSha: sha,
+        trackedRequestOrigins: ["https://site.invalid"],
+      });
+      observer.observePage(page as unknown as Page);
+
+      const first = fakeRequest("https://site.invalid/assets/LoginPage.js", "GET", "", "script");
+      const second = fakeRequest("https://site.invalid/assets/admin-auth-route.js", "GET", "", "script");
+      page.emit("request", first);
+      const settlement = observer.waitForTrackedRequestsToSettle({ timeoutMs: 1_000, quietPeriodMs: 100 });
+      let settled = false;
+      void settlement.then(() => {
+        settled = true;
+      });
+
+      await vi.advanceTimersByTimeAsync(50);
+      page.emit("requestfinished", first);
+      await vi.advanceTimersByTimeAsync(50);
+      page.emit("request", second);
+      page.emit("requestfinished", second);
+      await vi.advanceTimersByTimeAsync(99);
+      expect(observer.snapshot().status).toBe("passed");
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(26);
+
+      await expect(settlement).resolves.toBeUndefined();
+      expect(() => observer.assertClean()).not.toThrow();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("fails closed when a tracked request does not settle within the bounded timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const page = new FakePage();
+      const observer = createCmsBrowserObserver({
+        suite: "observer-settlement-timeout",
+        expectedSha: sha,
+        trackedRequestOrigins: ["https://site.invalid"],
+      });
+      observer.observePage(page as unknown as Page);
+      page.emit("request", fakeRequest("https://site.invalid/assets/stuck.js", "GET", "", "script"));
+
+      const settlement = expect(
+        observer.waitForTrackedRequestsToSettle({ timeoutMs: 100, quietPeriodMs: 25 }),
+      ).rejects.toThrow(
+        /QA_CMS_BROWSER_OBSERVABILITY_SETTLE_TIMEOUT:observer-settlement-timeout:pending first-party request GET \/assets\/stuck\.js/,
+      );
+      await vi.advanceTimersByTimeAsync(100);
+      await settlement;
+      expect(() => observer.assertClean()).toThrow(/pending first-party request GET \/assets\/stuck\.js/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("refuses invalid settlement timing instead of disabling the fail-closed window", async () => {
+    const observer = createCmsBrowserObserver({ suite: "observer-settlement-options", expectedSha: sha });
+    await expect(
+      observer.waitForTrackedRequestsToSettle({ timeoutMs: 100, quietPeriodMs: 100 }),
+    ).rejects.toThrow(/QA_CMS_BROWSER_OBSERVER_SETTLE_OPTIONS_INVALID/);
+    await expect(observer.waitForTrackedRequestsToSettle({ timeoutMs: 30_001 })).rejects.toThrow(
+      /QA_CMS_BROWSER_OBSERVER_SETTLE_OPTIONS_INVALID/,
+    );
   });
 
   it("settles only a tracked fetch HEAD with prior 2xx proof before Chromium aborts it", () => {

@@ -122,6 +122,7 @@ type AuthSurfaceControl = {
   name: string;
   locator: (page: Page) => Locator;
   probeValue?: string;
+  destinationHeading?: string;
   // Estado inicial esperado da acao. O padrao e habilitada, que vale para quase todo botao; onde o
   // produto nasce desabilitado ate a entrada ficar valida, a superficie declara `false` e a captura
   // afirma o oposto. Sem isto, a captura exigia `toBeEnabled()` de toda acao e reprovava justamente
@@ -871,6 +872,12 @@ async function captureAuthSurface(
         await expect(page).toHaveURL(
           new RegExp(`${runtime.destination.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`),
         );
+        if (!link.destinationHeading) {
+          throw new Error(`Link auth sem heading de destino: ${link.name}.`);
+        }
+        await expect(page.getByRole("heading", { name: link.destinationHeading, exact: true })).toBeVisible({
+          timeout: 20_000,
+        });
         executions.push({
           ...binding,
           viewport: viewport.name,
@@ -1451,6 +1458,9 @@ async function signOutThroughUi(page: Page, buttonName: "Sair" | "Cancelar e sai
       authLogoutFinished,
     ]);
     await expect(page).toHaveURL(/\/admin\/login$/);
+    await expect(page.getByRole("heading", { name: "Entrar no painel", exact: true })).toBeVisible({
+      timeout: 20_000,
+    });
     expect(cmsResponse.status()).toBe(200);
     expect(cmsFinishedRequest).toBe(cmsResponse.request());
     expect(authStartedAfterCmsFinished).toBe(true);
@@ -2146,6 +2156,7 @@ test.describe("CMS Auth invite and recovery lifecycle", () => {
             kind: "link",
             name: "Esqueci minha senha",
             locator: (page) => page.getByRole("link", { name: "Esqueci minha senha" }),
+            destinationHeading: "Recuperar acesso",
           },
         ],
       });
@@ -2190,12 +2201,16 @@ test.describe("CMS Auth invite and recovery lifecycle", () => {
             kind: "link",
             name: "Voltar ao login",
             locator: (page) => page.getByRole("link", { name: "Voltar ao login" }),
+            destinationHeading: "Entrar no painel",
           },
         ],
       });
       await proveRecoveryClientValidation(publicAuthPage);
       await publicAuthPage.getByRole("link", { name: "Voltar ao login" }).click();
       await expect(publicAuthPage).toHaveURL(/\/admin\/login$/);
+      await expect(
+        publicAuthPage.getByRole("heading", { name: "Entrar no painel", exact: true }),
+      ).toBeVisible({ timeout: 20_000 });
       recordSemanticExecution({
         id: "auth-recovery.back-to-login",
         surfaceId: "auth-recovery",
@@ -2746,6 +2761,7 @@ test.describe("CMS Auth invite and recovery lifecycle", () => {
         negative: "cancelamento não manteve acesso à área administrativa",
       });
 
+      await observer.waitForTrackedRequestsToSettle();
       observer.assertClean();
       browserObservability = observer.snapshot();
       status = "passed";

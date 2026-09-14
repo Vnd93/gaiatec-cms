@@ -399,6 +399,9 @@ test("the legacy public backend is swapped in under an exclusive lease and alway
   const previewProbe = workflow.indexOf("Probe isolated A against the engaged legacy public backend");
   const previewFixture = workflow.indexOf("Setup isolated public bridge render fixture on old backend");
   const promote = workflow.indexOf("Promote exact A to canonical staging alias with CAS");
+  const canonicalConvergence = workflow.indexOf("Bound convergence of canonical staging A on old backend");
+  const canonicalProbe = workflow.indexOf("Probe canonical staging A on old backend");
+  const canonicalFixture = workflow.indexOf("Setup canonical public bridge fixture");
   const canonicalHeadless = workflow.indexOf(
     "Headless-prove canonical render and fail-closed Turnstile boundary",
   );
@@ -424,7 +427,10 @@ test("the legacy public backend is swapped in under an exclusive lease and alway
       engage < previewConvergence &&
       previewConvergence < previewProbe &&
       previewProbe < previewFixture &&
-      previewFixture < promote,
+      previewFixture < promote &&
+      promote < canonicalConvergence &&
+      canonicalConvergence < canonicalProbe &&
+      canonicalProbe < canonicalFixture,
   );
   const currentBackendProbeBlock = workflow.slice(currentBackendProbe, prepare);
   assert.doesNotMatch(currentBackendProbeBlock, /continue-on-error/);
@@ -449,6 +455,22 @@ test("the legacy public backend is swapped in under an exclusive lease and alway
   assert.match(previewProbeBlock, /EV2_G12_REPORT_PATH: \.\.\/staging-bridge-preview-probe\.json/);
   assert.doesNotMatch(previewProbeBlock, /for attempt/);
   assert.match(workflow.slice(previewFixture, promote), /if: steps\.preview_probe\.outcome == 'success'/);
+  const canonicalConvergenceBlock = workflow.slice(canonicalConvergence, canonicalProbe);
+  assert.match(canonicalConvergenceBlock, /id: canonical_convergence/);
+  assert.match(canonicalConvergenceBlock, /if: steps\.promote\.outcome == 'success'/);
+  assert.match(canonicalConvergenceBlock, /continue-on-error: true/);
+  assert.match(canonicalConvergenceBlock, /timeout-minutes: 20/);
+  assert.match(canonicalConvergenceBlock, /for attempt in 1 2; do/);
+  assert.match(canonicalConvergenceBlock, /if \[ "\$attempt" -lt 2 \]; then sleep 10; fi/);
+  assert.match(canonicalConvergenceBlock, /staging-bridge-canonical-convergence-\$\{attempt\}\.json/);
+  const canonicalProbeBlock = workflow.slice(canonicalProbe, canonicalFixture);
+  assert.match(canonicalProbeBlock, /id: canonical_probe/);
+  assert.match(canonicalProbeBlock, /if: steps\.canonical_convergence\.outcome == 'success'/);
+  assert.match(canonicalProbeBlock, /continue-on-error: true/);
+  assert.match(canonicalProbeBlock, /EV2_G12_SAMPLE_COUNT: "20"/);
+  assert.match(canonicalProbeBlock, /EV2_G12_WARMUP_SAMPLES_PER_ROUTE: "20"/);
+  assert.match(canonicalProbeBlock, /EV2_G12_REPORT_PATH: \.\.\/staging-bridge-canonical-probe\.json/);
+  assert.doesNotMatch(canonicalProbeBlock, /for attempt/);
   assert.ok(baselineCapture >= 0 && baselineCapture < rebindProvenance && rebindProvenance < recoveryArm);
   // The restore has to happen while the canonical fixture form still exists, so public-v2 can be proven.
   assert.ok(canonicalHeadless < restore && restore < canonicalCleanup && canonicalCleanup < release);
@@ -471,6 +493,7 @@ test("the legacy public backend is swapped in under an exclusive lease and alway
   assert.match(workflow, /^\s+staging-bridge-preview-current-backend-probe\.json$/m);
   assert.match(workflow, /^\s+staging-bridge-preview-convergence-\*\.json$/m);
   assert.match(workflow, /^\s+staging-bridge-preview-probe\.json$/m);
+  assert.match(workflow, /^\s+staging-bridge-canonical-convergence-\*\.json$/m);
   assert.match(workflow, /^\s+staging-bridge-canonical-probe\.json$/m);
 
   // A run that engaged the legacy backend and did not restore it must fail, and the lease is only
@@ -512,7 +535,7 @@ test("only probes aimed at a freshly deployed frontend or backend wait for conve
   // earlier, so they may wait for convergence. The long-lived baseline keeps the default window and
   // still fails fast when it is genuinely unavailable.
   const readiness = [...workflow.matchAll(/EV2_G12_READINESS_ATTEMPTS: "(\d+)"/g)];
-  assert.equal(readiness.length, 4);
+  assert.equal(readiness.length, 5);
   for (const [, attempts] of readiness) assert.ok(Number(attempts) <= 20);
   const baseline = workflow.indexOf("Prove live alias is the expected old-backend baseline");
   const previewDeploy = workflow.indexOf("Deploy sealed A to isolated staging preview branch");

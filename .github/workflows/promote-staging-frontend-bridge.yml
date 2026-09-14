@@ -457,9 +457,34 @@ jobs:
           STAGING_ORIGINAL_RELEASE: ${{ inputs.expected_baseline_sha }}
           STAGING_ORIGINAL_CREATED_ON: ${{ steps.baseline_state.outputs.created_on }}
           STAGING_ORIGINAL_COMMIT_MESSAGE_B64: ${{ steps.baseline_state.outputs.commit_message_b64 }}
+      - name: Bound convergence of canonical staging A on old backend
+        id: canonical_convergence
+        if: steps.promote.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 20
+        working-directory: control
+        shell: bash
+        run: |
+          set -uo pipefail
+          for attempt in 1 2; do
+            if EV2_G12_REPORT_PATH="../staging-bridge-canonical-convergence-${attempt}.json" \
+              node scripts/ev2/phase12/rollout-probe.mjs; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 2 ]; then sleep 10; fi
+          done
+          exit 1
+        env:
+          EV2_G12_ORIGIN: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
+          EV2_G12_EXPECTED_SHA: ${{ inputs.candidate_sha }}
+          EV2_G12_ENVIRONMENT: staging
+          EV2_G12_SAMPLE_COUNT: "20"
+          EV2_G12_WARMUP_SAMPLES_PER_ROUTE: "20"
+          EV2_G12_READINESS_ATTEMPTS: "20"
+          EV2_G12_READINESS_INTERVAL_MS: "4000"
       - name: Probe canonical staging A on old backend
         id: canonical_probe
-        if: steps.promote.outcome == 'success'
+        if: steps.canonical_convergence.outcome == 'success'
         continue-on-error: true
         working-directory: control
         run: node scripts/ev2/phase12/rollout-probe.mjs
@@ -659,6 +684,7 @@ jobs:
             staging-bridge-preview-current-backend-probe.json
             staging-bridge-preview-convergence-*.json
             staging-bridge-preview-probe.json
+            staging-bridge-canonical-convergence-*.json
             staging-bridge-canonical-probe.json
           if-no-files-found: warn
           retention-days: 90

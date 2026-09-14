@@ -89,6 +89,27 @@ describe("real invite and password-recovery browser lifecycle", () => {
     expect(spec).toContain("validity.typeMismatch");
     expect(spec).toContain('await codeField.fill("12345")');
     expect(spec).toContain('await codeField.fill("1234567")');
+
+    const sanitizeActionHelper = spec.slice(
+      spec.indexOf("async function sanitizeActionAddress"),
+      spec.indexOf("async function openActionSession"),
+    );
+    const consumedLinkHelper = spec.slice(
+      spec.indexOf("async function expectConsumedLinkRejected"),
+      spec.indexOf("async function setPassword"),
+    );
+    expect(sanitizeActionHelper).toContain('window.location.pathname === "/admin/login"');
+    expect(consumedLinkHelper).toMatch(
+      /if \(!state\.sameOrigin\) \{\s*await page\.goto\("\/admin\/definir-senha", \{ waitUntil: "domcontentloaded" \}\);\s*\}/,
+    );
+    expect(
+      consumedLinkHelper.match(
+        /await page\.goto\("\/admin\/definir-senha", \{ waitUntil: "domcontentloaded" \}\);/g,
+      ),
+    ).toHaveLength(1);
+    expect(consumedLinkHelper.indexOf("if (!state.sameOrigin)")).toBeLessThan(
+      consumedLinkHelper.indexOf("await expect(page).toHaveURL"),
+    );
   });
 
   it("elevates enrolled recovery sessions before the password mutation and keeps failures diagnosable", () => {

@@ -1256,7 +1256,10 @@ async function sanitizeActionAddress(page: Page, expectedOrigin: string) {
       const sameOrigin = window.location.origin === origin;
       const hasSession = Object.keys(window.localStorage).some((key) => key.endsWith("-auth-token"));
       if (sameOrigin) {
-        const pathname = window.location.pathname === "/admin/mfa" ? "/admin/mfa" : "/admin/definir-senha";
+        const pathname =
+          window.location.pathname === "/admin/mfa" || window.location.pathname === "/admin/login"
+            ? window.location.pathname
+            : "/admin/definir-senha";
         window.history.replaceState(window.history.state, "", pathname);
       }
       return { sameOrigin, hasSession };
@@ -1296,7 +1299,11 @@ async function expectConsumedLinkRejected(page: Page, actionLink: string, baseUR
   if (state.hasSession || (!state.sameOrigin && !providerRejected)) {
     throw new Error("QA_CMS_AUTH_CONSUMED_LINK_ACCEPTED");
   }
-  await page.goto("/admin/definir-senha", { waitUntil: "domcontentloaded" });
+  // A consumed link can already return to this application. Let that document finish its
+  // session guard instead of interrupting its lazy auth imports with a redundant navigation.
+  if (!state.sameOrigin) {
+    await page.goto("/admin/definir-senha", { waitUntil: "domcontentloaded" });
+  }
   await expect(page).toHaveURL(/\/admin\/login$/);
   await expect(page.getByRole("heading", { name: "Entrar no painel" })).toBeVisible();
 }

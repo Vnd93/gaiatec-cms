@@ -177,6 +177,8 @@ jobs:
           # Redeploying the function inventory leaves every public route cold, which inflates the
           # tail while the p50 stays healthy. Warmup exists to keep that out of the measurement.
           EV2_G12_WARMUP_SAMPLES_PER_ROUTE: "20"
+          EV2_G12_REPORT_PATH: ../staging-bridge-baseline-probe.json
+          EV2_G12_DIAGNOSTICS_PATH: ../staging-bridge-baseline-diagnostics.json
       - name: Capture canonical staging state before any deployment or fixture
         id: baseline_state
         working-directory: control
@@ -681,6 +683,8 @@ jobs:
             candidate/outputs/staging-cms-public-legacy-prepare.json
             candidate/outputs/staging-cms-public-legacy-engage.json
             candidate/outputs/staging-cms-public-legacy-restore.json
+            staging-bridge-baseline-probe.json
+            staging-bridge-baseline-diagnostics.json
             staging-bridge-preview-current-backend-probe.json
             staging-bridge-preview-convergence-*.json
             staging-bridge-preview-probe.json

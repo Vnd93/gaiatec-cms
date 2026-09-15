@@ -8,6 +8,7 @@ import {
   validateHealthContract,
   validateReleaseManifest,
 } from "./release-guard-lib.mjs";
+import { buildFailureProbeDiagnostics, observeProbeRequest } from "./rollout-probe-diagnostics-lib.mjs";
 
 const origin = (process.env.EV2_G12_ORIGIN ?? "").replace(/\/$/, "");
 const expectedSha = process.env.EV2_G12_EXPECTED_SHA ?? "";
@@ -27,6 +28,7 @@ const readinessIntervalMs = Number(process.env.EV2_G12_READINESS_INTERVAL_MS ?? 
 const warmupSamplesPerRoute = Number(process.env.EV2_G12_WARMUP_SAMPLES_PER_ROUTE ?? sampleCount);
 const warmupAttempts = Number(process.env.EV2_G12_WARMUP_ATTEMPTS ?? readinessAttempts);
 const reportPath = process.env.EV2_G12_REPORT_PATH;
+const diagnosticsPath = process.env.EV2_G12_DIAGNOSTICS_PATH;
 const expectedCspMode =
   process.env.EV2_G12_CSP_MODE ??
   (environment === "production" || environment === "production-preview" ? "enforce" : "report-only");
@@ -126,7 +128,9 @@ async function previewReady() {
           redirect: "manual",
           signal: AbortSignal.timeout(requestTimeoutMs),
         });
-        return response.status === status && boundaryHeadersValid(response);
+        const boundaryValid = response.status === status && boundaryHeadersValid(response);
+        await response.arrayBuffer();
+        return boundaryValid;
       } catch {
         return false;
       }
@@ -164,46 +168,58 @@ await retryStrictBoundaryWindow({
   wait: () => new Promise((resolve) => setTimeout(resolve, readinessIntervalMs)),
 });
 
+const diagnostics = [];
+const requestOrdinals = new Map();
+
 async function request(path, expectedStatus, category = "route") {
-  const startedAt = performance.now();
+  const ordinalKey = `${category}:${path}`;
+  const ordinal = (requestOrdinals.get(ordinalKey) ?? 0) + 1;
+  requestOrdinals.set(ordinalKey, ordinal);
+  const measurement = await observeProbeRequest({
+    route: path,
+    category,
+    ordinal,
+    expectedStatus,
+    fetchResponse: () =>
+      fetch(`${origin}${path}`, {
+        redirect: "manual",
+        cache: "no-store",
+        signal: AbortSignal.timeout(requestTimeoutMs),
+      }),
+  });
+  const response = measurement.response;
+  diagnostics.push(measurement.diagnostic);
+  observations.push({
+    path,
+    category,
+    durationMs: measurement.durationMs,
+    status: response?.status ?? 0,
+    expectedStatus,
+    release: response?.headers.get("x-release") ?? null,
+    robots: response?.headers.get("x-robots-tag") ?? "",
+    contentType: response?.headers.get("content-type") ?? "",
+    contentSecurityPolicy: response?.headers.get("content-security-policy") ?? "",
+    contentSecurityPolicyReportOnly: response?.headers.get("content-security-policy-report-only") ?? "",
+    ...(response ? {} : { error: measurement.diagnostic.errorClass }),
+  });
+  return measurement;
+}
+
+function parseJsonBody(body) {
+  if (!(body instanceof Uint8Array)) return null;
   try {
-    const response = await fetch(`${origin}${path}`, {
-      redirect: "manual",
-      cache: "no-store",
-      signal: AbortSignal.timeout(requestTimeoutMs),
-    });
-    observations.push({
-      path,
-      category,
-      durationMs: performance.now() - startedAt,
-      status: response.status,
-      expectedStatus,
-      release: response.headers.get("x-release"),
-      robots: response.headers.get("x-robots-tag") ?? "",
-      contentType: response.headers.get("content-type") ?? "",
-      contentSecurityPolicy: response.headers.get("content-security-policy") ?? "",
-      contentSecurityPolicyReportOnly: response.headers.get("content-security-policy-report-only") ?? "",
-    });
-    return response;
-  } catch (error) {
-    observations.push({
-      path,
-      category,
-      durationMs: performance.now() - startedAt,
-      status: 0,
-      expectedStatus,
-      release: null,
-      robots: "",
-      error: error instanceof Error ? error.name : "RequestError",
-    });
+    return JSON.parse(new TextDecoder().decode(body));
+  } catch {
     return null;
   }
 }
 
-const healthResponse = await request("/healthz", 200, "contract");
-const health = healthResponse ? await healthResponse.json().catch(() => null) : null;
-const manifestResponse = await request("/release-manifest.json", 200, "contract");
-const manifest = manifestResponse ? await manifestResponse.json().catch(() => null) : null;
+const healthMeasurement = await request("/healthz", 200, "contract");
+const healthResponse = healthMeasurement.response;
+const health = parseJsonBody(healthMeasurement.body);
+const manifestMeasurement = await request("/release-manifest.json", 200, "contract");
+const manifestResponse = manifestMeasurement.response;
+const manifest = parseJsonBody(manifestMeasurement.body);
 
 for (let sample = 0; sample < sampleCount; sample += 1)
   for (const route of routes) await request(route.path, route.status);
@@ -299,5 +315,14 @@ const report = {
 };
 
 if (reportPath) await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+const diagnosticReport = buildFailureProbeDiagnostics({
+  violations,
+  candidateSha: expectedSha,
+  environment,
+  probeProfile,
+  diagnostics,
+});
+if (diagnosticsPath && diagnosticReport)
+  await writeFile(diagnosticsPath, `${JSON.stringify(diagnosticReport, null, 2)}\n`, "utf8");
 console.log(JSON.stringify(report));
 if (violations.length > 0) process.exitCode = 1;

@@ -299,6 +299,34 @@ export async function retryStrictBoundaryWindow({ attempts, verify, wait }) {
   throw failure;
 }
 
+const PROBE_ROUTE_PATHS = Object.freeze(["/", "/produtos", "/contato", "/admin/login"]);
+
+function routeBudgetViolations(evidence) {
+  if (evidence?.routeBudgetsValid === true) return [];
+  if (!evidence?.routeMetrics || typeof evidence.routeMetrics !== "object")
+    return ["route_latency_budget_exceeded"];
+
+  const violations = [];
+  let recognizedRoutes = 0;
+  for (const path of PROBE_ROUTE_PATHS) {
+    if (!Object.hasOwn(evidence.routeMetrics, path)) continue;
+    recognizedRoutes += 1;
+    const metric = evidence.routeMetrics[path];
+    if (!metric || typeof metric !== "object") {
+      violations.push(`route_sample_count_invalid:${path}`);
+      continue;
+    }
+    if (!Number.isInteger(metric.samples) || metric.samples !== evidence.sampleCount)
+      violations.push(`route_sample_count_invalid:${path}`);
+    if (!isFiniteNumber(metric.availabilityPercent)) violations.push(`route_availability_missing:${path}`);
+    else if (metric.availabilityPercent < G12_BUDGETS.availabilityPercent)
+      violations.push(`route_availability_budget_exceeded:${path}`);
+    if (!isFiniteNumber(metric.p95Ms)) violations.push(`route_p95_missing:${path}`);
+    else if (metric.p95Ms > G12_BUDGETS.publicP95Ms) violations.push(`route_latency_budget_exceeded:${path}`);
+  }
+  return recognizedRoutes > 0 && violations.length > 0 ? violations : ["route_latency_budget_exceeded"];
+}
+
 export function evaluateProbeWindow(evidence) {
   const violations = [];
   if (!isFullSha(evidence?.candidateSha)) violations.push("candidate_sha_invalid");
@@ -317,7 +345,7 @@ export function evaluateProbeWindow(evidence) {
   if (evidence?.releaseHeadersExact !== true) violations.push("release_header_mismatch");
   if (evidence?.healthContractValid !== true) violations.push("health_contract_invalid");
   if (evidence?.manifestReleaseExact !== true) violations.push("manifest_release_mismatch");
-  if (evidence?.routeBudgetsValid !== true) violations.push("route_latency_budget_exceeded");
+  violations.push(...routeBudgetViolations(evidence));
   if (evidence?.nonProductionNoindexValid !== true) violations.push("noindex_boundary_invalid");
   return { healthy: violations.length === 0, violations };
 }

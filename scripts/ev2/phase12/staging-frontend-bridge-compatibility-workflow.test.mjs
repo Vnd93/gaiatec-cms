@@ -405,6 +405,7 @@ test("the legacy public backend is swapped in under an exclusive lease and alway
   const canonicalHeadless = workflow.indexOf(
     "Headless-prove canonical render and fail-closed Turnstile boundary",
   );
+  const baselineProbe = workflow.indexOf("Prove live alias is the expected old-backend baseline");
   const baselineCapture = workflow.indexOf(
     "Capture canonical staging state before any deployment or fixture",
   );
@@ -415,6 +416,15 @@ test("the legacy public backend is swapped in under an exclusive lease and alway
   const restore = workflow.indexOf("Restore the candidate public backend in every outcome");
   const canonicalCleanup = workflow.indexOf("Cleanup canonical fixture");
   const release = workflow.indexOf("Release the legacy backend lease only after a proven restore");
+
+  const baselineProbeBlock = workflow.slice(baselineProbe, baselineCapture);
+  assert.match(baselineProbeBlock, /EV2_G12_SAMPLE_COUNT: "20"/);
+  assert.match(baselineProbeBlock, /EV2_G12_WARMUP_SAMPLES_PER_ROUTE: "20"/);
+  assert.match(baselineProbeBlock, /EV2_G12_REPORT_PATH: \.\.\/staging-bridge-baseline-probe\.json/);
+  assert.match(
+    baselineProbeBlock,
+    /EV2_G12_DIAGNOSTICS_PATH: \.\.\/staging-bridge-baseline-diagnostics\.json/,
+  );
 
   // Nothing mutates before the lease is held. The first full window against the newly deployed
   // legacy backend must pass on the isolated alias before a fixture or canonical publish can run.
@@ -490,6 +500,8 @@ test("the legacy public backend is swapped in under an exclusive lease and alway
   assert.match(workflow, /--probe-state outputs\/staging-bridge-canonical-state\.json/);
   assert.match(workflow, /--preview-probe \.\.\/staging-bridge-preview-probe\.json --canonical-probe/);
   assert.match(workflow, /- name: Upload legacy public backend bridge reports\s+if: always\(\)/);
+  assert.match(workflow, /^\s+staging-bridge-baseline-probe\.json$/m);
+  assert.match(workflow, /^\s+staging-bridge-baseline-diagnostics\.json$/m);
   assert.match(workflow, /^\s+staging-bridge-preview-current-backend-probe\.json$/m);
   assert.match(workflow, /^\s+staging-bridge-preview-convergence-\*\.json$/m);
   assert.match(workflow, /^\s+staging-bridge-preview-probe\.json$/m);

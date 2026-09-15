@@ -1411,6 +1411,51 @@ test("probe and full rollout budgets fail closed", () => {
   assert.equal(evaluateProbeWindow({ ...healthy, routeBudgetsValid: false }).healthy, false);
 });
 
+test("probe identifies the exact failing route budget and preserves the legacy fallback", () => {
+  const healthy = rolloutWindow();
+  const metric = {
+    samples: 20,
+    availabilityPercent: 100,
+    p50Ms: 400,
+    p95Ms: 700,
+    maxMs: 900,
+  };
+  const routeMetrics = {
+    "/": metric,
+    "/produtos": metric,
+    "/contato": { ...metric, availabilityPercent: 95, p95Ms: 1_800 },
+    "/admin/login": metric,
+  };
+  const precise = evaluateProbeWindow({ ...healthy, routeBudgetsValid: false, routeMetrics });
+  assert.ok(precise.violations.includes("route_availability_budget_exceeded:/contato"));
+  assert.ok(precise.violations.includes("route_latency_budget_exceeded:/contato"));
+  assert.equal(precise.violations.includes("route_latency_budget_exceeded"), false);
+
+  const incomplete = evaluateProbeWindow({
+    ...healthy,
+    routeBudgetsValid: false,
+    routeMetrics: {
+      "/contato": { ...metric, samples: 19, availabilityPercent: Number.NaN, p95Ms: Number.NaN },
+    },
+  });
+  assert.ok(incomplete.violations.includes("route_sample_count_invalid:/contato"));
+  assert.ok(incomplete.violations.includes("route_availability_missing:/contato"));
+  assert.ok(incomplete.violations.includes("route_p95_missing:/contato"));
+
+  assert.ok(
+    evaluateProbeWindow({ ...healthy, routeBudgetsValid: false }).violations.includes(
+      "route_latency_budget_exceeded",
+    ),
+  );
+  assert.ok(
+    evaluateProbeWindow({
+      ...healthy,
+      routeBudgetsValid: false,
+      routeMetrics: { "/untrusted": { ...metric, p95Ms: 9_999 } },
+    }).violations.includes("route_latency_budget_exceeded"),
+  );
+});
+
 test("health and release manifests reject HTML, incomplete entries and mismatched releases", () => {
   const manifest = {
     schemaVersion: 1,

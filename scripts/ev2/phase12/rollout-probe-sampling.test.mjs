@@ -69,3 +69,12 @@ test("raising the sampling did not relax any budget", async () => {
   assert.match(guard, /http5xxRatePercent: 0\.1/);
   assert.match(guard, /publicP95Ms: 1500/);
 });
+
+test("the optional diagnostics stay separate from the canonical probe report", async () => {
+  const probe = await readFile("scripts/ev2/phase12/rollout-probe.mjs", "utf8");
+  assert.match(probe, /EV2_G12_DIAGNOSTICS_PATH/);
+  assert.match(probe, /buildFailureProbeDiagnostics/);
+  assert.match(probe, /if \(diagnosticsPath && diagnosticReport\)/);
+  assert.match(probe, /if \(reportPath\) await writeFile\(reportPath/);
+  assert.doesNotMatch(probe, /\.\.\.diagnosticReport/);
+});

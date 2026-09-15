@@ -3,6 +3,7 @@ import {
   CMS_LEAD_ORIGIN_BINDING_0084_OWNER_ONLY_HELPERS,
   CMS_PUBLIC_RELATION_LIMIT_0085_OWNER_ONLY_HELPERS,
   CMS_QA_ACTOR_RUNTIME_REPAIRS_0086_OWNER_ONLY_FUNCTIONS,
+  CMS_RELEASE_STABILITY_FOLLOWUP_0101_OWNER_ONLY_FUNCTIONS,
   CMS_RUNTIME_INTEGRITY_REPAIRS_0087_OWNER_ONLY_FUNCTIONS,
   CMS_RUNTIME_INTEGRITY_REPAIRS_0087_SERVICE_ONLY_RPCS,
   CMS_RUNTIME_INTEGRITY_FOLLOWUP_0088_OWNER_ONLY_FUNCTIONS,
@@ -17,6 +18,7 @@ import {
   ownerOnlyFunctionContractSql,
   publicRelationLimitSemanticSql,
   qaActorRuntimeRepairsSemanticSql,
+  releaseStabilityFollowupSemanticSql,
   runtimeIntegrityRepairsSemanticSql,
   operationalEventsReadScaleSemanticSql,
   qaActorLeaseWindowSemanticSql,
@@ -162,6 +164,11 @@ const [result] = await managementRequest(`/v1/projects/${PRODUCTION_PROJECT_REF}
       ${auditLogReadScaleSemanticSql("audit_log_read_scale_0098_semantics_exact")},
       ${systemSnapshotOpenCriticalScaleSemanticSql("system_snapshot_open_critical_scale_0099_semantics_exact")},
       ${systemSnapshotLeadReadScaleSemanticSql("system_snapshot_lead_read_scale_0100_semantics_exact")},
+      ${releaseStabilityFollowupSemanticSql("release_stability_followup_0101_semantics_exact")},
+      ${ownerOnlyFunctionContractSql(
+        "release_stability_followup_0101_functions_locked",
+        CMS_RELEASE_STABILITY_FOLLOWUP_0101_OWNER_ONLY_FUNCTIONS,
+      )},
       exists(
         select 1 from pg_catalog.pg_trigger t
         where t.tgrelid = 'private.cms_qa_actor_leases'::regclass
@@ -259,6 +266,8 @@ const checks = [
   "audit_log_read_scale_0098_semantics_exact",
   "system_snapshot_open_critical_scale_0099_semantics_exact",
   "system_snapshot_lead_read_scale_0100_semantics_exact",
+  "release_stability_followup_0101_semantics_exact",
+  "release_stability_followup_0101_functions_locked",
   "qa_rate_limit_proof_cleanup_present",
   "qa_actor_auth_trigger_present",
   "qa_actor_marker_trigger_present",

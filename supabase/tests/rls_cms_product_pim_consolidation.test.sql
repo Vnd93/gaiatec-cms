@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(55);
+select plan(60);
 
 select has_table(
   'public',
@@ -1410,6 +1410,164 @@ select isnt(
   'an option in a QA-owned container cannot impersonate product.category'
 );
 
+do $$
+begin
+  perform pg_temp.upsert_shared_option_0078(
+    '78000000-0000-4000-8000-000000000002',
+    '78000000-0000-4000-8000-000000000201',
+    '78abcdef-0000-4000-8000-000000000901',
+    'qa-cms-final-20260907-bbbbbbbb-uppercase',
+    'QA-CMS-FINAL-20260907-bbbbbbbb Uppercase',
+    '78abcdef-0000-4000-8000-000000000931'
+  );
+end;
+$$;
+
+update private.cms_qa_actor_leases
+set created_at = transaction_timestamp() - interval '10 minutes',
+    expires_at = transaction_timestamp() + interval '220 minutes'
+where actor_id = '78000000-0000-4000-8000-000000000002';
+
+insert into public.cms_content_items (
+  id, content_type, slug, workflow_status, created_by, updated_by, created_at, updated_at
+)
+select
+  '78abcdef-0000-4000-8000-000000000501',
+  'product',
+  'qa-0101-uppercase-history',
+  'draft',
+  lease.actor_id,
+  lease.actor_id,
+  lease.created_at + interval '1 second',
+  lease.created_at + interval '1 second'
+from private.cms_qa_actor_leases lease
+where lease.actor_id = '78000000-0000-4000-8000-000000000002';
+
+insert into public.cms_content_drafts (
+  item_id, schema_version, payload, seo, provenance, lock_version, updated_by, updated_at
+)
+select
+  '78abcdef-0000-4000-8000-000000000501',
+  1,
+  jsonb_build_object(
+    'qaOptionRef', upper('78abcdef-0000-4000-8000-000000000901'::uuid::text)
+  ),
+  '{}'::jsonb,
+  '[{"rightsConfirmed":true}]'::jsonb,
+  1,
+  lease.actor_id,
+  lease.created_at + interval '2 seconds'
+from private.cms_qa_actor_leases lease
+where lease.actor_id = '78000000-0000-4000-8000-000000000002';
+
+insert into public.cms_content_revisions (
+  id, item_id, revision_number, schema_version, payload, seo, provenance,
+  source_draft_version, reason, created_by, created_at
+)
+select
+  '78abcdef-0000-4000-8000-000000000601',
+  '78abcdef-0000-4000-8000-000000000501',
+  1,
+  1,
+  jsonb_build_object(
+    'qaOptionRef', upper('78abcdef-0000-4000-8000-000000000901'::uuid::text)
+  ),
+  '{}'::jsonb,
+  '[{"rightsConfirmed":true}]'::jsonb,
+  1,
+  'QA historical reference',
+  lease.actor_id,
+  lease.created_at + interval '2 seconds'
+from private.cms_qa_actor_leases lease
+where lease.actor_id = '78000000-0000-4000-8000-000000000002';
+
+select throws_ok(
+  $$
+    update private.cms_qa_actor_leases
+    set status = 'cleaned', cleaned_at = now()
+    where actor_id = '78000000-0000-4000-8000-000000000002'
+  $$,
+  '40001',
+  'CMS_QA_PRODUCT_OPTION_REFERENCE_ACTIVE',
+  'an active product reference blocks terminal shared-option cleanup'
+);
+
+update public.cms_content_items
+set workflow_status = 'archived',
+    archived_at = (
+      select created_at + interval '3 seconds'
+      from private.cms_qa_actor_leases
+      where actor_id = '78000000-0000-4000-8000-000000000002'
+    ),
+    updated_by = '78000000-0000-4000-8000-000000000002'
+where id = '78abcdef-0000-4000-8000-000000000501';
+update public.cms_content_drafts
+set updated_by = '78000000-0000-4000-8000-000000000003',
+    updated_at = (
+      select created_at + interval '2 seconds'
+      from private.cms_qa_actor_leases
+      where actor_id = '78000000-0000-4000-8000-000000000002'
+    )
+where item_id = '78abcdef-0000-4000-8000-000000000501';
+select throws_ok(
+  $$
+    update private.cms_qa_actor_leases
+    set status = 'cleaned', cleaned_at = now()
+    where actor_id = '78000000-0000-4000-8000-000000000002'
+  $$,
+  '40001',
+  'CMS_QA_PRODUCT_OPTION_REFERENCE_ACTIVE',
+  'a cross-actor archived reference blocks terminal shared-option cleanup'
+);
+
+update public.cms_content_drafts
+set updated_by = '78000000-0000-4000-8000-000000000002',
+    updated_at = (
+      select expires_at + interval '1 second'
+      from private.cms_qa_actor_leases
+      where actor_id = '78000000-0000-4000-8000-000000000002'
+    )
+where item_id = '78abcdef-0000-4000-8000-000000000501';
+select throws_ok(
+  $$
+    update private.cms_qa_actor_leases
+    set status = 'cleaned', cleaned_at = now()
+    where actor_id = '78000000-0000-4000-8000-000000000002'
+  $$,
+  '40001',
+  'CMS_QA_PRODUCT_OPTION_REFERENCE_ACTIVE',
+  'an out-of-window archived reference blocks terminal shared-option cleanup'
+);
+
+update public.cms_content_drafts
+set updated_at = (
+  select created_at + interval '2 seconds'
+  from private.cms_qa_actor_leases
+  where actor_id = '78000000-0000-4000-8000-000000000002'
+)
+where item_id = '78abcdef-0000-4000-8000-000000000501';
+update public.cms_published_projection
+set payload = jsonb_set(
+  payload,
+  '{qaCleanupProbe}',
+  to_jsonb(upper('78abcdef-0000-4000-8000-000000000901'::uuid::text)),
+  true
+)
+where item_id = '78000000-0000-4000-8000-000000000501';
+select throws_ok(
+  $$
+    update private.cms_qa_actor_leases
+    set status = 'cleaned', cleaned_at = now()
+    where actor_id = '78000000-0000-4000-8000-000000000002'
+  $$,
+  '40001',
+  'CMS_QA_PRODUCT_OPTION_REFERENCE_ACTIVE',
+  'a live projection blocks terminal shared-option cleanup'
+);
+update public.cms_published_projection
+set payload = payload - 'qaCleanupProbe'
+where item_id = '78000000-0000-4000-8000-000000000501';
+
 insert into public.cms_product_canonical_sku_registry (
   scope_key,
   normalized_sku,
@@ -1458,8 +1616,16 @@ insert into public.cms_product_canonical_identifier_registry (
 );
 
 update private.cms_qa_actor_leases
-set status = 'cleaned', cleaned_at = now()
+set expires_at = transaction_timestamp() - interval '1 minute'
 where actor_id = '78000000-0000-4000-8000-000000000002';
+select lives_ok(
+  $$
+    update private.cms_qa_actor_leases
+    set status = 'cleaned', cleaned_at = now()
+    where actor_id = '78000000-0000-4000-8000-000000000002'
+  $$,
+  'expired exact-run archived product history permits terminal shared-option cleanup'
+);
 
 select is(
   (

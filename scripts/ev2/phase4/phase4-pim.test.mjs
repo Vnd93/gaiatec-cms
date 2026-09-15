@@ -148,7 +148,7 @@ test("G4 executable database checks enforce the canonical 0078 cutover", async (
     assert.match(databaseTest, new RegExp(`${action}[\\s\\S]*CMS_PIM_LEGACY_READ_ONLY`));
   assert.match(databaseTest, /service role cannot insert legacy products directly/);
   assert.match(databaseTest, /canonical identifiers are claimed atomically at publication/);
-  assert.match(consolidationTest, /select plan\(55\)/);
+  assert.match(consolidationTest, /select plan\(60\)/);
   assert.match(consolidationTest, /a second product cannot publish the same normalized SKU/);
   assert.match(consolidationTest, /required metadata cannot be forged false/);
   assert.match(consolidationTest, /terminal QA transition cleans shared-container product options/);

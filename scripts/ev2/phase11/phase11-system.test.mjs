@@ -90,7 +90,7 @@ test("EV2.11 migration is additive, default-off, RLS protected and production ga
   assert.doesNotMatch(sql, /drop table|truncate|default_enabled\s*=\s*true/i);
   assert.match(sql, /create trigger cms_assurance_runs_guard/);
   assert.match(sql, /create trigger cms_system_command_receipts_guard/);
-  assert.match(rls, /select plan\(52\)/);
+  assert.match(rls, /select plan\(54\)/);
 });
 
 test("F-017 exposes delivery state and a controlled, durable replay path", async () => {
@@ -444,6 +444,26 @@ test("a measurement reproval names the budget it missed", async () => {
   assert.match(canary, /\.filter\(\(\[metric\]\) => metric in metrics\)/);
   assert.match(canary, /"event": "g11\.metrics"|event: "g11\.metrics"/);
   assert.match(canary, /JSON\.stringify\(\{ \.\.\.record\.json, missedBudgets \}\)/);
+  assert.match(canary, /const measurementReviewable =/);
+  assert.match(canary, /if \(measurementReviewable\) \{/);
+  assert.match(canary, /measurement_not_reviewable:/);
+  const reviewBranch = canary.slice(
+    canary.indexOf("if (measurementReviewable) {"),
+    canary.indexOf("} else {", canary.indexOf("if (measurementReviewable) {")),
+  );
+  assert.match(reviewBranch, /"review_run"/);
+  const failedReviewBranch = canary.slice(
+    canary.indexOf("} else {", canary.indexOf("if (measurementReviewable) {")),
+    canary.indexOf(
+      "  } else {",
+      canary.indexOf("} else {", canary.indexOf("if (measurementReviewable) {")) + 1,
+    ),
+  );
+  assert.ok(
+    failedReviewBranch.indexOf('skip("segregated_review_accepted"') <
+      failedReviewBranch.indexOf('check("measurement_requires_independent_review", false'),
+    "os checks de revisão não exercitados precisam ser registrados antes do FAIL terminal",
+  );
 
   // Os limites vem do backend, nao de copia local: uma copia divergiria em silencio do que o banco
   // aplica ao decidir `measured`.

@@ -254,7 +254,7 @@ async function configureForm(configuration) {
     { headers: { apikey: anonKey } },
   );
   const publicForm = await response.json().catch(() => ({}));
-  if (!response.ok || publicForm.versionId !== saved.versionId)
+  if (!response.ok || publicForm.key !== configuration.key || publicForm.version !== saved.version)
     throw new Error(`O formulário ${configuration.key} não chegou à API pública.`);
   return {
     key: configuration.key,

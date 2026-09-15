@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
-select plan(52);
+select plan(54);
 
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -292,23 +292,104 @@ select ok(
    from public.cms_lead_outbox where id = '51100000-0000-4000-8000-000000000205'),
   'manual replay resets only delivery state and preserves the lead'
 );
-select is((select count(*)::integer from public.cms_lead_outbox_replays), 1, 'one immutable replay record is stored');
 select is(
-  (select count(*)::integer from public.cms_audit_log where action = 'cms:leads.retry_delivery'),
+  (
+    select count(*)::integer
+    from public.cms_lead_outbox_replays
+    where requested_by = '51100000-0000-4000-8000-000000000101'
+      and event_id = '51100000-0000-4000-8000-000000000205'
+  ),
+  1,
+  'one immutable replay record is stored'
+);
+select is(
+  (
+    select count(*)::integer
+    from public.cms_audit_log
+    where actor_id = '51100000-0000-4000-8000-000000000101'
+      and action = 'cms:leads.retry_delivery'
+      and target_type = 'lead_outbox'
+      and target_id = '51100000-0000-4000-8000-000000000205'
+  ),
   1,
   'lead replay is audited as a critical action'
 );
+create temporary view g11_exact_replay_state as
+select jsonb_build_object(
+  'outbox', to_jsonb(outbox),
+  'receipt', to_jsonb(receipt),
+  'auditCount', (
+    select count(*)::integer
+    from public.cms_audit_log audit
+    where audit.action = 'cms:leads.retry_delivery'
+      and audit.target_type = 'lead_outbox'
+      and audit.target_id = outbox.id::text
+  ),
+  'operationalCount', (
+    select count(*)::integer
+    from public.cms_operational_events operational
+    where operational.event_type = 'cms.leads.delivery_requeued'
+      and operational.correlation_id = '51100000-0000-4000-8000-000000000208'
+  )
+) as state
+from public.cms_lead_outbox outbox
+join public.cms_lead_outbox_replays receipt
+  on receipt.event_id = outbox.id
+ and receipt.idempotency_key = '51100000-0000-4000-8000-000000000209'
+where outbox.id = '51100000-0000-4000-8000-000000000205';
+
+create temporary table g11_exact_replay_baseline as
+select state from g11_exact_replay_state;
+
 select is(
-  (public.cms_retry_lead_delivery(
+  (
+    public.cms_retry_lead_delivery_scoped(
+      '51100000-0000-4000-8000-000000000101',
+      '51100000-0000-4000-8000-000000000205',
+      'Dependência sintética recuperada',
+      'local', 'main', 'aal2', 'g11-operator-session',
+      now() - interval '1 minute', gen_random_uuid(),
+      '51100000-0000-4000-8000-000000000209', repeat('d', 64)
+    ) ->> 'duplicate'
+  )::boolean,
+  true,
+  'an exact replay receipt returns the stored duplicate result'
+);
+select is(
+  (select state from g11_exact_replay_state),
+  (select state from g11_exact_replay_baseline),
+  'an exact replay does not mutate outbox or receipt and creates no audit or operational event'
+);
+update public.cms_leads
+set assigned_to = '51100000-0000-4000-8000-000000000102'
+where id = '51100000-0000-4000-8000-000000000203';
+update public.cms_profiles
+set status = 'suspended',
+    suspended_at = now(),
+    suspended_by = '51100000-0000-4000-8000-000000000101'
+where user_id = '51100000-0000-4000-8000-000000000102';
+select throws_ok(
+  $$select public.cms_retry_lead_delivery_scoped(
     '51100000-0000-4000-8000-000000000101', '51100000-0000-4000-8000-000000000205',
-    'Dependência sintética recuperada', 'local', 'main', 'aal2', 'g11-operator-session',
+    'Escopo sintético revogado', 'local', 'main', 'aal2', 'g11-operator-session',
     now() - interval '1 minute', gen_random_uuid(),
     '51100000-0000-4000-8000-000000000209', repeat('d', 64)
-  ) ->> 'duplicate')::boolean,
-  true,
-  'idempotent replay returns the original result'
+  )$$,
+  'PT404',
+  'CMS_LEAD_DELIVERY_NOT_FOUND',
+  'an exact replay receipt cannot bypass a currently revoked target scope'
 );
-select is((select count(*)::integer from public.cms_lead_outbox_replays), 1, 'idempotent replay creates no duplicate record');
+select is(
+  (select state from g11_exact_replay_state),
+  (select state from g11_exact_replay_baseline),
+  'a scope-rejected exact replay leaves outbox, receipt, audit and operational evidence unchanged'
+);
+update public.cms_profiles
+set status = 'active', suspended_at = null, suspended_by = null
+where user_id = '51100000-0000-4000-8000-000000000102';
+update public.cms_leads
+set assigned_to = null
+where id = '51100000-0000-4000-8000-000000000203';
 select throws_ok(
   $$select public.cms_retry_lead_delivery(
     '51100000-0000-4000-8000-000000000101', gen_random_uuid(),
@@ -358,7 +439,9 @@ select is(
 );
 select is(
   (select count(*)::integer from public.cms_operational_events
-   where event_type = 'cms.leads.delivery_dead_letter' and severity = 'critical'),
+   where event_type = 'cms.leads.delivery_dead_letter'
+     and severity = 'critical'
+     and correlation_id = '51100000-0000-4000-8000-000000000208'),
   1,
   'dead-letter transition raises one critical operational alert'
 );
@@ -375,7 +458,9 @@ select is(
 );
 select is(
   (select count(*)::integer from public.cms_operational_events
-   where event_type = 'cms.leads.delivery_dead_letter' and resolved_at is null),
+   where event_type = 'cms.leads.delivery_dead_letter'
+     and correlation_id = '51100000-0000-4000-8000-000000000208'
+     and resolved_at is null),
   0,
   'requeue resolves the matching dead-letter alert'
 );
@@ -444,7 +529,7 @@ select is(
   public.cms_execute_system_command(
     '51100000-0000-4000-8000-000000000102', 'review_run',
     jsonb_build_object('runId', (select id from g11_run), 'accept', true, 'rationale', 'Evidência sintética G11 conferida'),
-    'local', 'main', 'aal2', 'g11-reviewer-session', now() - interval '1 minute',
+    'local', 'main', 'aal2', 'g11-reviewer-session', clock_timestamp(),
     '51100000-0000-4000-8000-000000000304', '51100000-0000-4000-8000-000000000305',
     '51100000-0000-4000-8000-000000000306', repeat('3', 64)
   ) ->> 'status',
@@ -462,7 +547,19 @@ select is(
   'measurement and acceptance form an immutable event trail'
 );
 select is(
-  (select count(*)::integer from public.cms_system_command_receipts where completed_at is not null),
+  (
+    select count(*)::integer
+    from public.cms_system_command_receipts
+    where actor_id in (
+      '51100000-0000-4000-8000-000000000101',
+      '51100000-0000-4000-8000-000000000102'
+    )
+      and idempotency_key in (
+        '51100000-0000-4000-8000-000000000303',
+        '51100000-0000-4000-8000-000000000306'
+      )
+      and completed_at is not null
+  ),
   2,
   'successful record and review commands reconcile receipts'
 );
@@ -483,7 +580,15 @@ select throws_ok(
   'completed command receipts cannot be rewritten'
 );
 select is(
-  (select count(*)::integer from public.cms_audit_log where action in ('cms:leads.retry_delivery', 'cms:diagnostics.assure')),
+  (
+    select count(*)::integer
+    from public.cms_audit_log
+    where actor_id in (
+      '51100000-0000-4000-8000-000000000101',
+      '51100000-0000-4000-8000-000000000102'
+    )
+      and action in ('cms:leads.retry_delivery', 'cms:diagnostics.assure')
+  ),
   4,
   'all successful EV2.11 critical actions carry audit evidence'
 );
@@ -500,7 +605,7 @@ select throws_ok(
   $$select public.cms_execute_system_command(
     '51100000-0000-4000-8000-000000000102', 'review_run',
     jsonb_build_object('runId', (select id from g11_failed_run), 'accept', true, 'rationale', 'Tentativa indevida'),
-    'local', 'main', 'aal2', 'g11-reviewer-session', now() - interval '1 minute',
+    'local', 'main', 'aal2', 'g11-reviewer-session', clock_timestamp(),
     gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), repeat('5', 64)
   )$$,
   'PT409',

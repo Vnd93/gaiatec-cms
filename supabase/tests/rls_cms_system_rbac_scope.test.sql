@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(47);
+select plan(51);
 
 select has_function('public','cms_rbac_scope_capability',
   array['uuid','text','text','text','text','timestamp with time zone'],
@@ -181,10 +181,19 @@ select throws_ok($call$
   )
 $call$,'42501','CMS_SCOPE_TARGET_FORBIDDEN',
   'QA cannot enumerate a corporate assignment target by UUID');
-select is(jsonb_array_length(public.cms_get_scoped_assignments(
-  '76000000-0000-4000-8000-000000000001','staging','main','aal2',
-  'corp-system-session',clock_timestamp(),null
-)->'items'),1,'corporate assignment list excludes all ever-QA assignments');
+select is((
+  select
+    count(*) filter (
+      where item ->> 'id' = '76000000-0000-4000-8000-000000000101'
+    ) = 1
+    and count(*) filter (
+      where private.cms_system_actor_ever_qa((item ->> 'userId')::uuid)
+    ) = 0
+  from jsonb_array_elements(public.cms_get_scoped_assignments(
+    '76000000-0000-4000-8000-000000000001','staging','main','aal2',
+    'corp-system-session',clock_timestamp(),null
+  )->'items') item
+),true,'corporate assignment list preserves the fixture and excludes every ever-QA actor');
 
 insert into public.cms_policy_decisions(
   id,actor_id,permission_key,site_key,environment,decision,reason_code,
@@ -298,6 +307,47 @@ select is((select count(*)::integer from public.cms_operational_events
   where event_type like 'cms.system_scope_test.%'),1,
   'corporate diagnostics exclude operational events from ever-QA actors');
 reset role;
+
+select set_config(
+  'cms.qa_system_cleanup_actor',
+  '76000000-0000-4000-8000-000000000001',
+  true
+);
+select lives_ok(
+  $$
+    update private.cms_qa_actor_leases
+    set status = 'cleaned', cleaned_at = statement_timestamp()
+    where actor_id = '76000000-0000-4000-8000-000000000002'
+  $$,
+  'terminal RBAC cleanup succeeds for an active exact-run actor'
+);
+select is(
+  (
+    select count(*)::integer
+    from public.cms_operational_events
+    where id = '76000000-0000-4000-8000-000000000512'
+  ),
+  0,
+  'candidate-first cleanup removes the actor-owned operational event'
+);
+select is(
+  (
+    select count(*)::integer
+    from public.cms_operational_events
+    where id in (
+      '76000000-0000-4000-8000-000000000511',
+      '76000000-0000-4000-8000-000000000513'
+    )
+  ),
+  2,
+  'candidate-first cleanup preserves the corporate and active-peer events'
+);
+select is(
+  current_setting('cms.qa_system_cleanup_actor', true),
+  '76000000-0000-4000-8000-000000000001',
+  'terminal cleanup restores the prior cleanup-actor GUC'
+);
+select set_config('cms.qa_system_cleanup_actor', '', true);
 
 select * from finish();
 rollback;

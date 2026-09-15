@@ -221,5 +221,24 @@ test("final staging roundtrip is SHA-bound, uses the canonical synthetic tag and
     ].length,
     2,
   );
+  assert.equal(
+    [
+      ...canary.matchAll(
+        /\.data\.(?:key|form\?\.key)\s*===\s*formKey[\s\S]{0,100}\.data\.(?:version|form\?\.version)\s*===\s*savedForm\.data\.version/g,
+      ),
+    ].length,
+    3,
+  );
+  assert.doesNotMatch(
+    canary,
+    /(?:publishedForm|campaignApi|restoredPublicForm)\.data(?:\.form\?)?\.versionId/,
+  );
   assert.doesNotMatch(canary, /pending_owner|not_executed_missing_resend_api_key/);
+});
+
+test("staging form setup validates the identifier-free public form contract", async () => {
+  const setup = await read("scripts/phase7/configure-staging-forms.mjs");
+  assert.match(setup, /publicForm\.key !== configuration\.key/);
+  assert.match(setup, /publicForm\.version !== saved\.version/);
+  assert.doesNotMatch(setup, /publicForm\.versionId/);
 });

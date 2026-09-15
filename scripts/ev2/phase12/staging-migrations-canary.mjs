@@ -15,6 +15,7 @@ import {
   CMS_LEAD_ORIGIN_BINDING_0084_OWNER_ONLY_HELPERS,
   CMS_PUBLIC_RELATION_LIMIT_0085_OWNER_ONLY_HELPERS,
   CMS_QA_ACTOR_RUNTIME_REPAIRS_0086_OWNER_ONLY_FUNCTIONS,
+  CMS_RELEASE_STABILITY_FOLLOWUP_0101_OWNER_ONLY_FUNCTIONS,
   CMS_RUNTIME_INTEGRITY_REPAIRS_0087_OWNER_ONLY_FUNCTIONS,
   CMS_RUNTIME_INTEGRITY_REPAIRS_0087_SERVICE_ONLY_RPCS,
   CMS_RUNTIME_INTEGRITY_FOLLOWUP_0088_OWNER_ONLY_FUNCTIONS,
@@ -29,6 +30,7 @@ import {
   ownerOnlyFunctionContractSql,
   publicRelationLimitSemanticSql,
   qaActorRuntimeRepairsSemanticSql,
+  releaseStabilityFollowupSemanticSql,
   runtimeIntegrityRepairsSemanticSql,
   runtimeIntegrityFollowupSemanticSql,
   sessionRefreshRevocationSemanticSql,
@@ -101,6 +103,7 @@ const scenarioCoverage = [
   "0090",
   "0091",
   "0092",
+  "0101",
 ];
 const accessToken = process.env.SUPABASE_ACCESS_TOKEN ?? "";
 const expectedSha = process.env.G12_MIGRATION_CANARY_EXPECTED_SHA ?? "";
@@ -750,6 +753,11 @@ async function preflightMigrations() {
     ${auditLogReadScaleSemanticSql("audit_log_read_scale_0098_semantics_exact")},
     ${systemSnapshotOpenCriticalScaleSemanticSql("system_snapshot_open_critical_scale_0099_semantics_exact")},
     ${systemSnapshotLeadReadScaleSemanticSql("system_snapshot_lead_read_scale_0100_semantics_exact")},
+    ${releaseStabilityFollowupSemanticSql("release_stability_followup_0101_semantics_exact")},
+    ${ownerOnlyFunctionContractSql(
+      "release_stability_followup_0101_functions_locked",
+      CMS_RELEASE_STABILITY_FOLLOWUP_0101_OWNER_ONLY_FUNCTIONS,
+    )},
     has_function_privilege('service_role', 'public.cms_qa_rate_limit_proof(uuid,text,text,text,text,text)', 'EXECUTE')
       and not has_function_privilege('authenticated', 'public.cms_qa_rate_limit_proof(uuid,text,text,text,text,text)', 'EXECUTE')
       and not has_function_privilege('anon', 'public.cms_qa_rate_limit_proof(uuid,text,text,text,text,text)', 'EXECUTE')
@@ -958,6 +966,14 @@ async function preflightMigrations() {
   check(
     "system_snapshot_lead_read_scale_0100_semantics_exact",
     row?.system_snapshot_lead_read_scale_0100_semantics_exact === true,
+  );
+  check(
+    "release_stability_followup_0101_semantics_exact",
+    row?.release_stability_followup_0101_semantics_exact === true,
+  );
+  check(
+    "release_stability_followup_0101_functions_locked",
+    row?.release_stability_followup_0101_functions_locked === true,
   );
   check("qa_actor_auth_triggers_0061_present", row?.qa_actor_auth_triggers === true);
   check("qa_actor_watchdog_cron_0061_active", row?.qa_actor_watchdog_cron === true);

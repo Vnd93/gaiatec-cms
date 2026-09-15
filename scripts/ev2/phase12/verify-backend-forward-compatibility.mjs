@@ -220,6 +220,14 @@ const compatibilityTests = {
     "supabase/tests/rls_ev2_phase11_system.test.sql",
     "tests/contracts/cms-system-snapshot-lead-read-scale.test.ts",
   ],
+  "0101": [
+    "supabase/tests/rls_cms_release_stability_followup.test.sql",
+    "supabase/tests/rls_ev2_phase11_system.test.sql",
+    "supabase/tests/rls_cms_product_pim_consolidation.test.sql",
+    "supabase/tests/rls_qa_actor_lease.test.sql",
+    "supabase/tests/rls_cms_system_rbac_scope.test.sql",
+    "tests/contracts/cms-release-stability-followup.test.ts",
+  ],
 };
 for (const migration of additions) {
   const version = migration.version;

@@ -100,6 +100,11 @@ export const G12_PINNED_MIGRATION_TAIL = Object.freeze([
     file: "0100_cms_system_snapshot_lead_read_scale.sql",
     sha256: "fbb1b318b48c6d63f61a09732728f4c4a89350d635eb77b75c6d2ccd52aa2a72",
   }),
+  Object.freeze({
+    version: "0101",
+    file: "0101_cms_release_stability_followup.sql",
+    sha256: "19f38be0b861b50dca33dd97c9e4efd0cd825c7b906e9a6b76a7a5210fbbbe54",
+  }),
 ]);
 
 export const CMS_MEDIA_UPLOAD_ABORT_0082_RPCS = Object.freeze([
@@ -171,6 +176,12 @@ export const CMS_RUNTIME_INTEGRITY_FOLLOWUP_0088_OWNER_ONLY_FUNCTIONS = Object.f
   "public.cms_execute_dam_command_core_0088(uuid,text,text,text,text,timestamptz,text,jsonb,uuid,uuid,text,uuid)",
   "private.cms_guard_dam_asset_gc_fence()",
   "private.cms_assert_dam_actor_context(uuid,text,text,text,timestamptz)",
+]);
+
+export const CMS_RELEASE_STABILITY_FOLLOWUP_0101_OWNER_ONLY_FUNCTIONS = Object.freeze([
+  "private.cms_qa_archived_product_reference_exact_0101(uuid,text,text,text,uuid,uuid,timestamptz)",
+  "private.cms_cleanup_terminal_product_shared_options_0078()",
+  "private.cms_system_rbac_terminal_cleanup()",
 ]);
 
 export const CMS_MEDIA_UPLOAD_ABORT_0082_OWNER_ONLY_HELPERS = Object.freeze([
@@ -1202,5 +1213,122 @@ export function systemSnapshotLeadReadScaleSemanticSql(alias) {
       and not has_table_privilege('anon', 'public.cms_lead_status_history', 'SELECT')
       and not has_table_privilege('anon', 'public.cms_lead_outbox', 'SELECT')
       and not has_table_privilege('anon', 'public.cms_lead_outbox_replays', 'SELECT')
+    , false) as ${alias}`;
+}
+
+// The 0101 follow-up removes redundant replay mutation locks and bounds two
+// terminal cleanup paths. The remote preflight proves that every original
+// security gate remains in front of the optimized work and that trigger/ACL
+// dependencies still point at the hardened definitions.
+export function releaseStabilityFollowupSemanticSql(alias) {
+  if (!/^[a-z][a-z0-9_]*$/.test(alias)) fail("release-stability-followup-alias");
+  const retry =
+    "public.cms_retry_lead_delivery_scoped(uuid,uuid,text,text,text,text,text,timestamp with time zone,uuid,uuid,text)";
+  const retryCore =
+    "public.cms_retry_lead_delivery_scoped_core_0088(uuid,uuid,text,text,text,text,text,timestamp with time zone,uuid,uuid,text)";
+  const reference =
+    "private.cms_qa_archived_product_reference_exact_0101(uuid,text,text,text,uuid,uuid,timestamp with time zone)";
+  const productCleanup = "private.cms_cleanup_terminal_product_shared_options_0078()";
+  const rbacCleanup = "private.cms_system_rbac_terminal_cleanup()";
+  const definition = (signature) =>
+    `regexp_replace(lower(pg_get_functiondef(to_regprocedure('${signature}'))), '[[:space:]]+', '', 'g')`;
+  const exactAcl = (signature, serviceOnly = false) => `not exists (
+        select 1
+        from pg_catalog.pg_proc procedure
+        cross join lateral pg_catalog.aclexplode(
+          coalesce(procedure.proacl, pg_catalog.acldefault('f', procedure.proowner))
+        ) acl
+        where procedure.oid=to_regprocedure('${signature}')
+          and not (
+            acl.grantee=procedure.proowner
+            ${
+              serviceOnly
+                ? `or (
+              acl.grantee=(select role.oid from pg_catalog.pg_roles role where role.rolname='service_role')
+              and acl.grantor=procedure.proowner
+              and acl.privilege_type='EXECUTE'
+              and not acl.is_grantable
+            )`
+                : ""
+            }
+          )
+      )`;
+  const retryDefinition = definition(retry);
+  const referenceDefinition = definition(reference);
+  const productDefinition = definition(productCleanup);
+  const rbacDefinition = definition(rbacCleanup);
+  return `coalesce(
+      to_regprocedure('${retry}') is not null
+      and to_regprocedure('${retryCore}') is not null
+      and to_regprocedure('${reference}') is not null
+      and to_regprocedure('${productCleanup}') is not null
+      and to_regprocedure('${rbacCleanup}') is not null
+      and position('cms_system_assert_available' in ${retryDefinition}) > 0
+      and position('cms_system_assert_available' in ${retryDefinition})
+        < position('cms_lock_active_qa_actor_leases' in ${retryDefinition})
+      and position('cms_lock_active_qa_actor_leases' in ${retryDefinition})
+        < position('pg_advisory_xact_lock' in ${retryDefinition})
+      and position('pg_advisory_xact_lock' in ${retryDefinition})
+        < position('forupdate' in ${retryDefinition})
+      and position('forupdate' in ${retryDefinition})
+        < position('cms_lead_scope_allowed' in ${retryDefinition})
+      and position('cms_lead_scope_allowed' in ${retryDefinition})
+        < position('''duplicate'',true' in ${retryDefinition})
+      and position('''duplicate'',true' in ${retryDefinition})
+        < position('cms_retry_lead_delivery_scoped_core_0088' in ${retryDefinition})
+      and ${retryDefinition} like '%event.id=v_replay.event_id%'
+      and ${retryDefinition} like '%event.lead_id=v_replay.lead_id%'
+      and ${referenceDefinition} like '%cms_qa_actor_marker_is_exact%'
+      and ${referenceDefinition} like '%item.content_type=''product''%'
+      and ${referenceDefinition} like '%item.workflow_status=''archived''%'
+      and ${referenceDefinition} like '%item.created_by=p_actor_id%'
+      and ${referenceDefinition} like '%item.created_atbetweenlease.created_atandlease.expires_at%'
+      and ${referenceDefinition} like '%p_reference_actor_id=p_actor_id%'
+      and ${referenceDefinition} like '%p_reference_atbetweenlease.created_atandlease.expires_at%'
+      and ${referenceDefinition} not like '%lease.status=''active''%'
+      and ${referenceDefinition} not like '%lease.expires_at>%'
+      and ${productDefinition} like '%strpos(lower(projection.payload::text),option_id::text)>0%'
+      and ${productDefinition} like '%strpos(lower(reference.payload::text),option_id::text)>0%'
+      and ${productDefinition} like '%cms_qa_archived_product_reference_exact_0101%'
+      and ${productDefinition} like '%cms_qa_product_option_reference_active%'
+      and ${rbacDefinition} like '%candidate_correlations(correlation_id)asmaterialized%'
+      and ${rbacDefinition} like '%candidate_event_ids(id)asmaterialized%'
+      and ${rbacDefinition} like '%allowed_event_ids(id)asmaterialized%'
+      and ${rbacDefinition} like '%v_previous_cleanup_actor%'
+      and ${rbacDefinition} like '%exceptionwhenothersthen%'
+      and ${rbacDefinition} like '%coalesce(v_previous_cleanup_actor,'''')%'
+      and position('candidate_event_ids' in ${rbacDefinition})
+        < position('cms_system_operational_event_scope_allowed' in ${rbacDefinition})
+      and ${rbacDefinition} like '%deletefrompublic.cms_operational_eventseventusingallowed_event_ids%'
+      and ${exactAcl(retry, true)}
+      and ${exactAcl(retryCore)}
+      and ${exactAcl(reference)}
+      and ${exactAcl(productCleanup)}
+      and ${exactAcl(rbacCleanup)}
+      and has_function_privilege('service_role','${retry}','EXECUTE')
+      and not has_function_privilege('anon','${retry}','EXECUTE')
+      and not has_function_privilege('authenticated','${retry}','EXECUTE')
+      and not has_function_privilege('service_role','${retryCore}','EXECUTE')
+      and not has_function_privilege('service_role','${reference}','EXECUTE')
+      and not has_function_privilege('service_role','${productCleanup}','EXECUTE')
+      and not has_function_privilege('service_role','${rbacCleanup}','EXECUTE')
+      and exists (
+        select 1
+        from pg_catalog.pg_trigger installed
+        where installed.tgrelid='private.cms_qa_actor_leases'::regclass
+          and installed.tgname='cms_prepare_qa_actor_terminal_product_shared_vocab_cleanup'
+          and installed.tgfoid=to_regprocedure('${productCleanup}')
+          and installed.tgenabled='O'
+          and not installed.tgisinternal
+      )
+      and exists (
+        select 1
+        from pg_catalog.pg_trigger installed
+        where installed.tgrelid='private.cms_qa_actor_leases'::regclass
+          and installed.tgname='zzzz_cms_system_rbac_terminal_cleanup'
+          and installed.tgfoid=to_regprocedure('${rbacCleanup}')
+          and installed.tgenabled='O'
+          and not installed.tgisinternal
+      )
     , false) as ${alias}`;
 }

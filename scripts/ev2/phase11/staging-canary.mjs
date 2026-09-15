@@ -1264,36 +1264,50 @@ try {
       { report },
       { idempotencyKey: randomUUID() },
     );
-    check(
-      "measurement_requires_independent_review",
-      record.json.status === "measured" && record.json.requiresIndependentReview === true,
-      JSON.stringify({ ...record.json, missedBudgets }),
-    );
-    const selfReview = await system(
-      context,
-      operator,
-      "review_run",
-      { runId: record.json.runId, accept: true, rationale: "Tentativa negativa de autoaprovação" },
-      { idempotencyKey: randomUUID(), allowed: [409] },
-    );
-    check(
-      "independent_review_required",
-      selfReview.json.code === "CMS_SYSTEM_REVIEWER_SEPARATION_REQUIRED",
-      selfReview.json.code,
-    );
-    const accepted = await system(
-      context,
-      reviewer,
-      "review_run",
-      {
-        runId: record.json.runId,
-        accept: true,
-        rationale: "Evidência sintética G11 conferida por revisor segregado",
-      },
-      { idempotencyKey: randomUUID() },
-    );
-    check("segregated_review_accepted", accepted.json.status === "accepted", JSON.stringify(accepted.json));
-    measurementEvidence = { metrics, assuranceRunId: record.json.runId };
+    const measurementReviewable =
+      record.json.status === "measured" && record.json.requiresIndependentReview === true;
+    if (measurementReviewable) {
+      check(
+        "measurement_requires_independent_review",
+        true,
+        JSON.stringify({ ...record.json, missedBudgets }),
+      );
+      const selfReview = await system(
+        context,
+        operator,
+        "review_run",
+        { runId: record.json.runId, accept: true, rationale: "Tentativa negativa de autoaprovação" },
+        { idempotencyKey: randomUUID(), allowed: [409] },
+      );
+      check(
+        "independent_review_required",
+        selfReview.json.code === "CMS_SYSTEM_REVIEWER_SEPARATION_REQUIRED",
+        selfReview.json.code,
+      );
+      const accepted = await system(
+        context,
+        reviewer,
+        "review_run",
+        {
+          runId: record.json.runId,
+          accept: true,
+          rationale: "Evidência sintética G11 conferida por revisor segregado",
+        },
+        { idempotencyKey: randomUUID() },
+      );
+      check("segregated_review_accepted", accepted.json.status === "accepted", JSON.stringify(accepted.json));
+      measurementEvidence = { metrics, assuranceRunId: record.json.runId };
+    } else {
+      const reason = `measurement_not_reviewable:${JSON.stringify({
+        status: record.json.status,
+        measurementPassed: record.json.measurementPassed,
+        requiresIndependentReview: record.json.requiresIndependentReview,
+        missedBudgets,
+      })}`;
+      skip("independent_review_required", reason);
+      skip("segregated_review_accepted", reason);
+      check("measurement_requires_independent_review", false, reason);
+    }
   } else {
     for (const name of [
       "measurement_requires_independent_review",

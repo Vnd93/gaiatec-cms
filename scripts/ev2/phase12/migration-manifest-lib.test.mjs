@@ -8,6 +8,7 @@ import {
   CMS_LEAD_ORIGIN_BINDING_0084_OWNER_ONLY_HELPERS,
   CMS_PUBLIC_RELATION_LIMIT_0085_OWNER_ONLY_HELPERS,
   CMS_QA_ACTOR_RUNTIME_REPAIRS_0086_OWNER_ONLY_FUNCTIONS,
+  CMS_RELEASE_STABILITY_FOLLOWUP_0101_OWNER_ONLY_FUNCTIONS,
   CMS_RUNTIME_INTEGRITY_REPAIRS_0087_CRB_PROSRC_SHA256,
   CMS_RUNTIME_INTEGRITY_REPAIRS_0087_OWNER_ONLY_FUNCTIONS,
   CMS_RUNTIME_INTEGRITY_REPAIRS_0087_SERVICE_ONLY_RPCS,
@@ -25,6 +26,7 @@ import {
   ownerOnlyFunctionContractSql,
   publicRelationLimitSemanticSql,
   qaActorRuntimeRepairsSemanticSql,
+  releaseStabilityFollowupSemanticSql,
   runtimeIntegrityRepairsSemanticSql,
   operationalEventsReadScaleSemanticSql,
   qaActorLeaseWindowSemanticSql,
@@ -89,9 +91,9 @@ test("the repository migration history is contiguous", () => {
   // digest dos bytes. E o que impede que alguem acrescente migration sem revisao: nao basta criar
   // o arquivo, e preciso declarar o conteudo dele aqui.
   assert.deepEqual(G12_PINNED_MIGRATION_TAIL.at(-1), {
-    version: "0100",
-    file: "0100_cms_system_snapshot_lead_read_scale.sql",
-    sha256: "fbb1b318b48c6d63f61a09732728f4c4a89350d635eb77b75c6d2ccd52aa2a72",
+    version: "0101",
+    file: "0101_cms_release_stability_followup.sql",
+    sha256: "19f38be0b861b50dca33dd97c9e4efd0cd825c7b906e9a6b76a7a5210fbbbe54",
   });
   assert.deepEqual(manifest.slice(-G12_PINNED_MIGRATION_TAIL.length), G12_PINNED_MIGRATION_TAIL);
   for (const migration of manifest.slice(-G12_PINNED_MIGRATION_TAIL.length)) {
@@ -698,6 +700,40 @@ test("0100 semantic preflight proves exact lead indexes without widening access"
   assert.match(contract, /^coalesce\(/);
   assert.match(contract, /, false\) as system_snapshot_lead_read_scale_0100_semantics_exact$/);
   assert.throws(() => systemSnapshotLeadReadScaleSemanticSql("Bad Alias"));
+});
+
+test("0101 semantic preflight proves optimized paths without widening access", () => {
+  const contract = releaseStabilityFollowupSemanticSql("release_stability_followup_0101_semantics_exact");
+
+  for (const marker of [
+    "cms_retry_lead_delivery_scoped",
+    "cms_system_assert_available",
+    "cms_lock_active_qa_actor_leases",
+    "cms_lead_scope_allowed",
+    "cms_retry_lead_delivery_scoped_core_0088",
+    "cms_qa_archived_product_reference_exact_0101",
+    "cms_qa_actor_marker_is_exact",
+    "item.workflow_status=''archived''",
+    "strpos(lower(projection.payload::text),option_id::text)>0",
+    "candidate_correlations(correlation_id)asmaterialized",
+    "cms_system_operational_event_scope_allowed",
+    "v_previous_cleanup_actor",
+    "exceptionwhenothersthen",
+    "cms_prepare_qa_actor_terminal_product_shared_vocab_cleanup",
+    "zzzz_cms_system_rbac_terminal_cleanup",
+    "aclexplode",
+    "has_function_privilege",
+  ])
+    assert.ok(contract.includes(marker), marker);
+
+  assert.match(contract, /^coalesce\(/);
+  assert.match(contract, /, false\) as release_stability_followup_0101_semantics_exact$/);
+  assert.throws(() => releaseStabilityFollowupSemanticSql("Bad Alias"));
+  assert.deepEqual(CMS_RELEASE_STABILITY_FOLLOWUP_0101_OWNER_ONLY_FUNCTIONS, [
+    "private.cms_qa_archived_product_reference_exact_0101(uuid,text,text,text,uuid,uuid,timestamptz)",
+    "private.cms_cleanup_terminal_product_shared_options_0078()",
+    "private.cms_system_rbac_terminal_cleanup()",
+  ]);
 });
 
 test("0090 semantic preflight proves the lease accepts only the state the fence imposes", () => {

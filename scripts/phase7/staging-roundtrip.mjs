@@ -745,7 +745,9 @@ async function run() {
   });
   const publishedForm = await publicApi({ type: "form", key: formKey });
   assert(
-    publishedForm.status === 200 && publishedForm.data.versionId === savedForm.data.versionId,
+    publishedForm.status === 200 &&
+      publishedForm.data.key === formKey &&
+      publishedForm.data.version === savedForm.data.version,
     "Formulário publicado não chegou ao consumidor público",
     publishedForm,
   );
@@ -885,7 +887,8 @@ async function run() {
     campaignPage.status === 200 &&
       !campaignHtml.includes("submit-contact") &&
       campaignApi.status === 200 &&
-      campaignApi.data.form?.versionId === savedForm.data.versionId &&
+      campaignApi.data.form?.key === formKey &&
+      campaignApi.data.form?.version === savedForm.data.version &&
       campaignApi.data.payload?.blocks?.some((block) => block.type === "form"),
     "Landing governada não recebeu o formulário versionado",
     { pageStatus: campaignPage.status, apiStatus: campaignApi.status },
@@ -1383,7 +1386,9 @@ async function run() {
   });
   const restoredPublicForm = await publicApi({ type: "form", key: formKey });
   assert(
-    restoredPublicForm.status === 200 && restoredPublicForm.data.versionId === savedForm.data.versionId,
+    restoredPublicForm.status === 200 &&
+      restoredPublicForm.data.key === formKey &&
+      restoredPublicForm.data.version === savedForm.data.version,
     "Formulário restaurado não voltou ao consumidor público",
     restoredPublicForm,
   );

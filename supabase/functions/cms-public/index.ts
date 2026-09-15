@@ -16,6 +16,7 @@ import { governedSignedMediaIdentity } from "../_shared/cms-public-media-proxy.t
 import { buildPublicSitemapXml } from "../_shared/cms-public-sitemap.ts";
 import { PUBLIC_RELATION_LIMIT, publicRelationIds } from "../_shared/cms-public-relations.ts";
 import { resolveGovernedPublicFormBindings } from "../_shared/cms-public-form-bindings.ts";
+import { resolvePublicPagePathLookups } from "./page-path.ts";
 import { authenticateCms } from "../_shared/cms-auth.ts";
 import {
   CMS_QA_RATE_LIMIT_ACTION,
@@ -747,12 +748,8 @@ const handleRequest = async (req: Request) => {
   if (type === "page-by-path") {
     const path = url.searchParams.get("path") ?? "";
     if (!publicPathPattern.test(path) || path.length > 300) return json({ error: "Não encontrado." }, 404);
-    // Resolving a public path asked the projection, the managed rules and the legacy redirects in
-    // three sequential round trips, so the negative answer that every static public route receives
-    // paid all three. The lookups are independent, so they are issued together and the same
-    // precedence and fail-closed handling are applied to the settled results.
-    const [pageResult, managedRuleResult, legacyRuleResult] = await Promise.all([
-      client
+    const pathLookup = await resolvePublicPagePathLookups(
+      () => client
         .from("cms_published_projection")
         .select(PUBLISHED_PROJECTION_COLUMNS)
         .in("content_type", ["page", "homepage"])
@@ -760,22 +757,34 @@ const handleRequest = async (req: Request) => {
         .order("published_at", { ascending: false })
         .limit(1)
         .maybeSingle(),
-      client.from("cms_route_rules").select("destination_path,status_code").eq("source_path", path).eq("active", true).maybeSingle(),
-      client.from("cms_redirects").select("destination_path,status_code").eq("source_path", path).eq("active", true).maybeSingle(),
-    ]);
-    const { data: row, error: pageError } = pageResult;
-    if (pageError)
+      (signal) => client
+        .from("cms_route_rules")
+        .select("destination_path,status_code")
+        .eq("source_path", path)
+        .eq("active", true)
+        .abortSignal(signal)
+        .maybeSingle(),
+      (signal) => client
+        .from("cms_redirects")
+        .select("destination_path,status_code")
+        .eq("source_path", path)
+        .eq("active", true)
+        .abortSignal(signal)
+        .maybeSingle(),
+    );
+    if (pathLookup.kind === "page-error")
       return json({ error: "Conteúdo temporariamente indisponível." }, 503, { "Cache-Control": "no-store" });
-    if (!row) {
-      const { data: managedRule, error: managedRuleError } = managedRuleResult;
+    if (pathLookup.kind === "miss") {
+      const { data: managedRule, error: managedRuleError } = pathLookup.managedRuleResult;
       if (managedRuleError)
         return json({ error: "Conteúdo temporariamente indisponível." }, 503, { "Cache-Control": "no-store" });
       if (managedRule) return json({ kind: "route", rule: presentRouteRule(managedRule) }, 200, { "Cache-Control": PUBLIC_REVALIDATE });
-      const { data: legacyRule, error: legacyRuleError } = legacyRuleResult;
+      const { data: legacyRule, error: legacyRuleError } = pathLookup.legacyRuleResult;
       if (legacyRuleError)
         return json({ error: "Conteúdo temporariamente indisponível." }, 503, { "Cache-Control": "no-store" });
       return legacyRule ? json({ kind: "route", rule: presentRouteRule(legacyRule) }, 200, { "Cache-Control": PUBLIC_REVALIDATE }) : json({ kind: "fallback" }, 200, { "Cache-Control": PUBLIC_REVALIDATE });
     }
+    const row = pathLookup.row;
     // Media, related items and form bindings all derive from the row that was already read, so the
     // managed page paid three sequential round trips for work that has no ordering between its parts.
     // They are resolved together and the same precedence and fail-closed handling are kept below.

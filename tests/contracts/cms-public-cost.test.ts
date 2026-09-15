@@ -6,6 +6,7 @@ const publicApi = readFileSync("supabase/functions/cms-public/index.ts", "utf8")
 const publicRelations = readFileSync("supabase/functions/_shared/cms-public-relations.ts", "utf8");
 const publicAssetBatch = readFileSync("supabase/functions/_shared/cms-public-asset-batch.ts", "utf8");
 const publicFormBindings = readFileSync("supabase/functions/_shared/cms-public-form-bindings.ts", "utf8");
+const publicPagePath = readFileSync("supabase/functions/cms-public/page-path.ts", "utf8");
 const mediaResolution = readFileSync("supabase/functions/_shared/cms-media-resolution.ts", "utf8");
 const documentResolution = readFileSync("supabase/functions/_shared/cms-document-resolution.ts", "utf8");
 
@@ -41,23 +42,35 @@ describe("cms-public bounded query contract", () => {
     expect(formHandler).not.toContain('client.from("cms_published_projection")');
   });
 
-  it("resolves a public path in one round trip instead of three sequential lookups", () => {
+  it("short-circuits a page hit while keeping route misses in one parallel network phase", () => {
     const start = publicApi.indexOf('if (type === "page-by-path")');
     const end = publicApi.indexOf('if (type === "posts")', start);
     expect(start).toBeGreaterThan(0);
     expect(end).toBeGreaterThan(start);
     const handler = publicApi.slice(start, end);
 
-    // Every static public route receives the negative answer, so the three independent lookups must
-    // be issued together; going back to sequential awaits reintroduces the latency regression.
-    expect(handler).toContain("await Promise.all([");
+    expect(handler).toContain("resolvePublicPagePathLookups(");
+    expect(handler.match(/\.abortSignal\(signal\)/g)).toHaveLength(2);
     expect(handler).not.toContain('await client.from("cms_route_rules")');
     expect(handler).not.toContain('await client.from("cms_redirects")');
-    expect(handler).not.toMatch(/\.maybeSingle\(\);\s*\n\s*if \(pageError\)/);
+
+    // All three requests start before the page is awaited. A hit cancels and returns without waiting
+    // for the optional aggregate; only a miss awaits both routing tables, still concurrently.
+    const pageStart = publicPagePath.indexOf("const pagePromise = settlePublicLookup(loadPage)");
+    const routesStart = publicPagePath.indexOf("const routeResults = Promise.all([");
+    const pageAwait = publicPagePath.indexOf("const pageResult = await pagePromise");
+    expect(pageStart).toBeGreaterThan(0);
+    expect(routesStart).toBeGreaterThan(pageStart);
+    expect(routesStart).toBeLessThan(pageAwait);
+    expect(publicPagePath).toContain("void routeResults.catch(() => undefined)");
+    expect(publicPagePath).toContain("await routeResults");
+    expect(publicPagePath).toContain("const routingController = new AbortController()");
+    expect(publicPagePath.match(/routingController\.abort\(\)/g)).toHaveLength(2);
+    expect(publicPagePath).toContain('error || new Error("CMS_PUBLIC_LOOKUP_REJECTED")');
 
     // Precedence and fail-closed handling must survive the change.
     expect(handler.indexOf("managedRule")).toBeLessThan(handler.indexOf("legacyRule"));
-    for (const failure of ["pageError", "managedRuleError", "legacyRuleError"]) {
+    for (const failure of ['kind === "page-error"', "managedRuleError", "legacyRuleError"]) {
       expect(handler).toContain(failure);
     }
     expect(handler).toContain('"Cache-Control": "no-store"');

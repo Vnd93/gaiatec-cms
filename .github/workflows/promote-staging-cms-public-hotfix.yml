@@ -121,13 +121,14 @@ jobs:
           input_tree="$(jq -r .inputTreeSha256 bundle-input/bundle-input-manifest.json)"
           input_count="$(jq -r .inputFileCount bundle-input/bundle-input-manifest.json)"
           docker run --rm --platform linux/amd64 --network bridge --read-only \
+            --user "$(id -u):$(id -g)" \
             --cap-drop ALL --security-opt no-new-privileges \
-            --tmpfs /tmp:rw,nosuid,nodev,size=67108864 \
+            --tmpfs /tmp:rw,nosuid,nodev,size=67108864,mode=1777 \
             --volume "$GITHUB_WORKSPACE/bundle-input:/workspace:ro" \
             --volume "$RUNNER_TEMP/g12-online:/output:rw" \
-            --volume "$RUNNER_TEMP/g12-online-cache:/root/.cache/deno:rw" \
+            --volume "$RUNNER_TEMP/g12-online-cache:/deno-cache:rw" \
             --volume "$GITHUB_WORKSPACE/control/scripts/ev2/phase12/staging-cms-public-hotfix-bundle.sh:/g12-builder.sh:ro" \
-            --env DENO_DIR=/root/.cache/deno --env DENO_NO_PACKAGE_JSON=1 \
+            --env HOME=/tmp --env DENO_DIR=/deno-cache --env DENO_NO_PACKAGE_JSON=1 \
             --env G12_EDGE_RUNTIME_INDEX_DIGEST="$EDGE_RUNTIME_INDEX_DIGEST" \
             --env G12_EDGE_RUNTIME_AMD64_DIGEST="$EDGE_RUNTIME_AMD64_DIGEST" \
             --env G12_PLATFORM=linux/amd64 \
@@ -142,13 +143,14 @@ jobs:
           input_tree="$(jq -r .inputTreeSha256 bundle-input/bundle-input-manifest.json)"
           input_count="$(jq -r .inputFileCount bundle-input/bundle-input-manifest.json)"
           docker run --rm --platform linux/amd64 --network none --read-only \
+            --user "$(id -u):$(id -g)" \
             --cap-drop ALL --security-opt no-new-privileges \
-            --tmpfs /tmp:rw,nosuid,nodev,size=67108864 \
+            --tmpfs /tmp:rw,nosuid,nodev,size=67108864,mode=1777 \
             --volume "$GITHUB_WORKSPACE/bundle-input:/workspace:ro" \
             --volume "$RUNNER_TEMP/g12-offline:/output:rw" \
-            --volume "$RUNNER_TEMP/g12-offline-cache:/root/.cache/deno:rw" \
+            --volume "$RUNNER_TEMP/g12-offline-cache:/deno-cache:rw" \
             --volume "$GITHUB_WORKSPACE/control/scripts/ev2/phase12/staging-cms-public-hotfix-bundle.sh:/g12-builder.sh:ro" \
-            --env DENO_DIR=/root/.cache/deno --env DENO_NO_PACKAGE_JSON=1 \
+            --env HOME=/tmp --env DENO_DIR=/deno-cache --env DENO_NO_PACKAGE_JSON=1 \
             --env G12_EDGE_RUNTIME_INDEX_DIGEST="$EDGE_RUNTIME_INDEX_DIGEST" \
             --env G12_EDGE_RUNTIME_AMD64_DIGEST="$EDGE_RUNTIME_AMD64_DIGEST" \
             --env G12_PLATFORM=linux/amd64 \
@@ -278,10 +280,12 @@ jobs:
           test -s "$RUNNER_TEMP/g12-consumer-input/output.eszip"
           docker pull --platform linux/amd64 "$EDGE_RUNTIME_IMAGE"
           docker run --rm --platform linux/amd64 --network none --read-only \
+            --user "$(id -u):$(id -g)" \
             --cap-drop ALL --security-opt no-new-privileges \
-            --tmpfs /tmp:rw,nosuid,nodev,size=67108864 \
+            --tmpfs /tmp:rw,nosuid,nodev,size=67108864,mode=1777 \
             --volume "$RUNNER_TEMP/g12-consumer-input:/candidate:ro" \
             --volume "$RUNNER_TEMP/g12-consumer-unbundled:/output:rw" \
+            --env HOME=/tmp \
             --entrypoint /bin/sh "$EDGE_RUNTIME_IMAGE" -c \
             'edge-runtime unbundle --eszip /candidate/output.eszip --output /output'
       - name: Bind the runtime reparse to both sealed build manifests

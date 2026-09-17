@@ -40,6 +40,102 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  hotfix-bundle-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      HOTFIX_SHA: e40eb0c2cc81c27fbf8f23e8671136f9dfc6f282
+      EDGE_RUNTIME_IMAGE: >-
+        ghcr.io/supabase/edge-runtime:v1.74.3@sha256:c52405002a890ca9fcf77978671c57f3a988e03174afb277f84ac65bc917013c
+      EDGE_RUNTIME_INDEX_DIGEST: sha256:c52405002a890ca9fcf77978671c57f3a988e03174afb277f84ac65bc917013c
+      EDGE_RUNTIME_AMD64_DIGEST: sha256:cc355c3d0e9c063a351cad56d1c4c52a3c4d85aff4e1fad9d91688e75f9aad09
+    steps:
+      - name: Checkout the workflow control revision for the Docker smoke
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          path: control
+          persist-credentials: false
+      - name: Checkout the immutable cms-public hotfix for the Docker smoke
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.HOTFIX_SHA }}
+          fetch-depth: 0
+          path: candidate-source
+          persist-credentials: false
+      - name: Use the repository-pinned Node runtime for the Docker smoke
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: control/.nvmrc
+      - name: Prepare the production-mode candidate input for the Docker smoke
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs prepare-bundle-input
+          --source ../candidate-source
+          --output ../bundle-input
+      - name: Verify and pull the immutable runtime for the Docker smoke
+        env:
+          INDEX_MANIFEST: ${{ runner.temp }}/g12-smoke-edge-runtime-index.json
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect --raw "$EDGE_RUNTIME_IMAGE" > "$INDEX_MANIFEST"
+          test "sha256:$(sha256sum "$INDEX_MANIFEST" | awk '{print $1}')" = "$EDGE_RUNTIME_INDEX_DIGEST"
+          test "$(jq -r --arg digest "$EDGE_RUNTIME_AMD64_DIGEST" \
+            '[.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64" and .digest == $digest)] | length' \
+            "$INDEX_MANIFEST")" = 1
+          docker pull --platform linux/amd64 "$EDGE_RUNTIME_IMAGE"
+      - name: Exercise the hardened online Docker bundle boundary
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$RUNNER_TEMP/g12-smoke-online" "$RUNNER_TEMP/g12-smoke-online-cache"
+          input_tree="$(jq -r .inputTreeSha256 bundle-input/bundle-input-manifest.json)"
+          input_count="$(jq -r .inputFileCount bundle-input/bundle-input-manifest.json)"
+          docker run --rm --platform linux/amd64 --network bridge --read-only \
+            --user "$(id -u):$(id -g)" \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --tmpfs /tmp:rw,nosuid,nodev,size=67108864,mode=1777 \
+            --volume "$GITHUB_WORKSPACE/bundle-input:/workspace:ro" \
+            --volume "$RUNNER_TEMP/g12-smoke-online:/output:rw" \
+            --volume "$RUNNER_TEMP/g12-smoke-online-cache:/deno-cache:rw" \
+            --volume "$GITHUB_WORKSPACE/control/scripts/ev2/phase12/staging-cms-public-hotfix-bundle.sh:/g12-builder.sh:ro" \
+            --env HOME=/tmp --env DENO_DIR=/deno-cache --env DENO_NO_PACKAGE_JSON=1 \
+            --env G12_EDGE_RUNTIME_INDEX_DIGEST="$EDGE_RUNTIME_INDEX_DIGEST" \
+            --env G12_EDGE_RUNTIME_AMD64_DIGEST="$EDGE_RUNTIME_AMD64_DIGEST" \
+            --env G12_PLATFORM=linux/amd64 \
+            --env G12_INPUT_TREE_SHA256="$input_tree" \
+            --env G12_INPUT_FILE_COUNT="$input_count" \
+            --entrypoint /bin/sh "$EDGE_RUNTIME_IMAGE" /g12-builder.sh online default
+      - name: Exercise the hardened offline Docker rebuild boundary
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$RUNNER_TEMP/g12-smoke-offline" "$RUNNER_TEMP/g12-smoke-offline-cache"
+          cp -a "$RUNNER_TEMP/g12-smoke-online-cache/." "$RUNNER_TEMP/g12-smoke-offline-cache/"
+          input_tree="$(jq -r .inputTreeSha256 bundle-input/bundle-input-manifest.json)"
+          input_count="$(jq -r .inputFileCount bundle-input/bundle-input-manifest.json)"
+          docker run --rm --platform linux/amd64 --network none --read-only \
+            --user "$(id -u):$(id -g)" \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --tmpfs /tmp:rw,nosuid,nodev,size=67108864,mode=1777 \
+            --volume "$GITHUB_WORKSPACE/bundle-input:/workspace:ro" \
+            --volume "$RUNNER_TEMP/g12-smoke-offline:/output:rw" \
+            --volume "$RUNNER_TEMP/g12-smoke-offline-cache:/deno-cache:rw" \
+            --volume "$GITHUB_WORKSPACE/control/scripts/ev2/phase12/staging-cms-public-hotfix-bundle.sh:/g12-builder.sh:ro" \
+            --env HOME=/tmp --env DENO_DIR=/deno-cache --env DENO_NO_PACKAGE_JSON=1 \
+            --env G12_EDGE_RUNTIME_INDEX_DIGEST="$EDGE_RUNTIME_INDEX_DIGEST" \
+            --env G12_EDGE_RUNTIME_AMD64_DIGEST="$EDGE_RUNTIME_AMD64_DIGEST" \
+            --env G12_PLATFORM=linux/amd64 \
+            --env G12_INPUT_TREE_SHA256="$input_tree" \
+            --env G12_INPUT_FILE_COUNT="$input_count" \
+            --entrypoint /bin/sh "$EDGE_RUNTIME_IMAGE" /g12-builder.sh offline none
+      - name: Seal the byte-identical Docker smoke builds
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs seal-candidate
+          --bundle-input ../bundle-input
+          --online "$RUNNER_TEMP/g12-smoke-online"
+          --offline "$RUNNER_TEMP/g12-smoke-offline"
+          --output ../candidate-smoke-sealed
+
   database:
     runs-on: ubuntu-latest
     timeout-minutes: 25

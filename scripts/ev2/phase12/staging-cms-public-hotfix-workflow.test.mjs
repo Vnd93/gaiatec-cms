@@ -10,12 +10,16 @@ const watchdogWorkflowPath = new URL(
   "../../../.github/workflows/promote-staging-cms-public-hotfix-watchdog.yml",
   import.meta.url,
 );
+const ciWorkflowPath = new URL("../../../.github/workflows/ci.yml", import.meta.url);
 const runnerPath = new URL("./staging-cms-public-hotfix.mjs", import.meta.url);
+const builderPath = new URL("./staging-cms-public-hotfix-bundle.sh", import.meta.url);
 
-const [mainWorkflow, watchdogWorkflow, runner] = await Promise.all([
+const [mainWorkflow, watchdogWorkflow, ciWorkflow, runner, builder] = await Promise.all([
   readFile(mainWorkflowPath, "utf8"),
   readFile(watchdogWorkflowPath, "utf8"),
+  readFile(ciWorkflowPath, "utf8"),
   readFile(runnerPath, "utf8"),
+  readFile(builderPath, "utf8"),
 ]);
 
 function stepBody(workflow, name) {
@@ -24,6 +28,13 @@ function stepBody(workflow, name) {
   assert.notEqual(start, -1, `missing workflow step: ${name}`);
   const next = workflow.indexOf("\n      - name:", start + marker.length);
   return workflow.slice(start, next === -1 ? workflow.length : next);
+}
+
+function exactEnvValue(workflow, key) {
+  const pattern = new RegExp(`^[ \\t]+${key}:[ \\t]*(?:>-[ \\t]*\\r?\\n[ \\t]+)?([^\\r\\n]+)$`, "gm");
+  const matches = [...workflow.matchAll(pattern)];
+  assert.equal(matches.length, 1, `expected one ${key} assignment`);
+  return matches[0][1].trim();
 }
 
 function assertOrdered(haystack, needles) {
@@ -90,6 +101,114 @@ test("candidate build uses only the read-only job token without environment secr
     mainWorkflow.slice(permissionsStart, concurrencyStart).replaceAll("\r\n", "\n"),
     "permissions:\n  actions: read\n  contents: read\n",
   );
+});
+
+test("every hardened hotfix container runs as the host runner identity", () => {
+  for (const name of [
+    "Build once online with the immutable helper and frozen input",
+    "Rebuild offline with Docker networking disabled",
+  ]) {
+    const step = stepBody(mainWorkflow, name);
+    assert.match(step, /--user "\$\(id -u\):\$\(id -g\)"/);
+    assert.match(step, /--cap-drop ALL --security-opt no-new-privileges/);
+    assert.match(step, /--env HOME=\/tmp --env DENO_DIR=\/deno-cache/);
+    assert.match(step, /:\/deno-cache:rw/);
+    assert.doesNotMatch(step, /\/root\/\.cache\/deno/);
+  }
+
+  const consumer = stepBody(
+    mainWorkflow,
+    "Reparse every candidate module with the immutable runtime offline",
+  );
+  assert.match(consumer, /--user "\$\(id -u\):\$\(id -g\)"/);
+  assert.match(consumer, /--cap-drop ALL --security-opt no-new-privileges/);
+  assert.match(consumer, /--env HOME=\/tmp/);
+});
+
+test("the immutable builder reports every preflight and runtime boundary failure", () => {
+  assert.match(builder, /refuse\(\) \{[\s\S]*printf '%s\\n' "\$1" >&2[\s\S]*exit 1/);
+  for (const token of [
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_EDGE_RUNTIME_INDEX_DIGEST_REFUSED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_EDGE_RUNTIME_AMD64_DIGEST_REFUSED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_PLATFORM_REFUSED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_INPUT_TREE_MISSING",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_INPUT_FILE_COUNT_MISSING",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_DENO_DIR_MISSING",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_INPUT_DIRECTORY_UNREADABLE",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_OUTPUT_DIRECTORY_UNWRITABLE",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_OUTPUT_PROBE_CLEANUP_FAILED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_DENO_DIR_UNWRITABLE",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_DENO_DIR_PROBE_CLEANUP_FAILED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_TMP_DIRECTORY_UNWRITABLE",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_TMP_PROBE_CLEANUP_FAILED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_INPUT_MANIFEST_UNREADABLE",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_INPUT_FILES_MANIFEST_UNREADABLE",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_DENO_CONFIG_UNREADABLE",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_DENO_LOCK_UNREADABLE",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_IMPORT_MAP_UNREADABLE",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_ENTRYPOINT_UNREADABLE",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_EDGE_RUNTIME_BUNDLE_FAILED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_EDGE_RUNTIME_UNBUNDLE_FAILED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_FIND_FAILED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_SORT_FAILED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_HASH_FAILED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_TEMP_CLEANUP_FAILED",
+  ])
+    assert.match(builder, new RegExp(token), token);
+  assert.doesNotMatch(builder, /find .*\|.*sort .*\|.*xargs/);
+  assert.match(builder, /find \. -type f -print0 > "\$\{unbundled_files\}"/);
+  assert.match(builder, /sort -z "\$\{unbundled_files\}" > "\$\{unbundled_files_sorted\}"/);
+  assert.match(builder, /xargs -0 -r sha256sum < "\$\{unbundled_files_sorted\}"/);
+  assert.equal((builder.match(/cd "\$\{unbundled\}" \|\| exit 1/g) ?? []).length, 2);
+});
+
+test("CI executes the real hardened Docker bundle twice and seals the result", () => {
+  const jobStart = ciWorkflow.indexOf("  hotfix-bundle-smoke:");
+  const databaseStart = ciWorkflow.indexOf("\n  database:", jobStart);
+  assert.notEqual(jobStart, -1, "missing hotfix-bundle-smoke job");
+  assert.notEqual(databaseStart, -1, "missing hotfix-bundle-smoke boundary");
+  const job = ciWorkflow.slice(jobStart, databaseStart);
+  assert.match(job, /timeout-minutes: 20/);
+  for (const [key, immutableValue] of Object.entries({
+    HOTFIX_SHA: "e40eb0c2cc81c27fbf8f23e8671136f9dfc6f282",
+    EDGE_RUNTIME_IMAGE:
+      "ghcr.io/supabase/edge-runtime:v1.74.3@sha256:c52405002a890ca9fcf77978671c57f3a988e03174afb277f84ac65bc917013c",
+    EDGE_RUNTIME_INDEX_DIGEST: "sha256:c52405002a890ca9fcf77978671c57f3a988e03174afb277f84ac65bc917013c",
+    EDGE_RUNTIME_AMD64_DIGEST: "sha256:cc355c3d0e9c063a351cad56d1c4c52a3c4d85aff4e1fad9d91688e75f9aad09",
+  })) {
+    assert.equal(exactEnvValue(job, key), immutableValue);
+    assert.equal(exactEnvValue(mainWorkflow, key), immutableValue);
+  }
+  assertOrdered(job, [
+    "Prepare the production-mode candidate input for the Docker smoke",
+    "Verify and pull the immutable runtime for the Docker smoke",
+    "Exercise the hardened online Docker bundle boundary",
+    "Exercise the hardened offline Docker rebuild boundary",
+    "Seal the byte-identical Docker smoke builds",
+  ]);
+  assert.equal((job.match(/--user "\$\(id -u\):\$\(id -g\)"/g) ?? []).length, 2);
+  assert.equal((job.match(/--cap-drop ALL --security-opt no-new-privileges/g) ?? []).length, 2);
+  assert.equal((job.match(/--env HOME=\/tmp --env DENO_DIR=\/deno-cache/g) ?? []).length, 2);
+  assert.match(job, /--network bridge/);
+  assert.match(job, /--network none/);
+  assert.match(job, /staging-cms-public-hotfix\.mjs seal-candidate/);
+  assert.doesNotMatch(job, /\$\{\{\s*secrets\.|environment:/);
+
+  for (const [name, network, mode] of [
+    ["Exercise the hardened online Docker bundle boundary", "bridge", "online default"],
+    ["Exercise the hardened offline Docker rebuild boundary", "none", "offline none"],
+  ]) {
+    const step = stepBody(ciWorkflow, name);
+    assert.match(step, /install -d -m 700/);
+    assert.match(step, new RegExp(`--network ${network} --read-only`));
+    assert.match(step, /--tmpfs \/tmp:rw,nosuid,nodev,size=67108864,mode=1777/);
+    assert.match(step, /\/bundle-input:\/workspace:ro/);
+    assert.match(step, /:\/output:rw/);
+    assert.match(step, /:\/deno-cache:rw/);
+    assert.match(step, /staging-cms-public-hotfix-bundle\.sh:\/g12-builder\.sh:ro/);
+    assert.match(step, /--env G12_PLATFORM=linux\/amd64/);
+    assert.match(step, new RegExp(`/g12-builder\\.sh ${mode}`));
+  }
 });
 
 test("watchdog snapshots M/C/R before artifacts and treats an empty snapshot as a no-op", () => {

@@ -19,35 +19,120 @@ attestation="${output}/build-attestation.env"
 bundle_command='edge-runtime bundle --entrypoint /workspace/supabase/functions/cms-public/index.ts --output /output/output.eszip --checksum sha256'
 unbundle_command='edge-runtime unbundle --eszip /output/output.eszip --output /output/unbundled'
 
-test "${G12_EDGE_RUNTIME_INDEX_DIGEST:-}" = "sha256:c52405002a890ca9fcf77978671c57f3a988e03174afb277f84ac65bc917013c"
-test "${G12_EDGE_RUNTIME_AMD64_DIGEST:-}" = "sha256:cc355c3d0e9c063a351cad56d1c4c52a3c4d85aff4e1fad9d91688e75f9aad09"
-test "${G12_PLATFORM:-}" = "linux/amd64"
-test "${G12_INPUT_TREE_SHA256:-}" != ""
-test "${G12_INPUT_FILE_COUNT:-}" != ""
-test -f "${input}/bundle-input-manifest.json"
-test -f "${input}/bundle-input-files.json"
-test -f "${input}/deno.json"
-test -f "${input}/deno.lock"
-test -f "${input}/supabase/functions/import_map.json"
-test -f "${input}/supabase/functions/cms-public/index.ts"
-test ! -e "${eszip}"
-test ! -e "${unbundled}"
-test ! -e "${unbundled_manifest}"
-test ! -e "${attestation}"
+refuse() {
+  printf '%s\n' "$1" >&2
+  exit 1
+}
 
-edge-runtime bundle \
+require_equal() {
+  test "$1" = "$2" || refuse "$3"
+}
+
+require_nonempty() {
+  test -n "$1" || refuse "$2"
+}
+
+require_searchable_directory() {
+  test -d "$1" && test -x "$1" || refuse "$2"
+}
+
+require_writable_directory() {
+  directory="$1"
+  failure_token="$2"
+  cleanup_token="$3"
+  probe="${directory}/.g12-write-probe-$$"
+  require_searchable_directory "${directory}" "${failure_token}"
+  if ! (umask 077; : > "${probe}"); then
+    refuse "${failure_token}"
+  fi
+  if ! rm -f "${probe}"; then
+    refuse "${cleanup_token}"
+  fi
+}
+
+require_readable_file() {
+  test -f "$1" && test -r "$1" || refuse "$2"
+}
+
+require_absent() {
+  test ! -e "$1" || refuse "$2"
+}
+
+require_equal "${G12_EDGE_RUNTIME_INDEX_DIGEST:-}" \
+  "sha256:c52405002a890ca9fcf77978671c57f3a988e03174afb277f84ac65bc917013c" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_EDGE_RUNTIME_INDEX_DIGEST_REFUSED
+require_equal "${G12_EDGE_RUNTIME_AMD64_DIGEST:-}" \
+  "sha256:cc355c3d0e9c063a351cad56d1c4c52a3c4d85aff4e1fad9d91688e75f9aad09" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_EDGE_RUNTIME_AMD64_DIGEST_REFUSED
+require_equal "${G12_PLATFORM:-}" "linux/amd64" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_PLATFORM_REFUSED
+require_nonempty "${G12_INPUT_TREE_SHA256:-}" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_INPUT_TREE_MISSING
+require_nonempty "${G12_INPUT_FILE_COUNT:-}" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_INPUT_FILE_COUNT_MISSING
+require_nonempty "${DENO_DIR:-}" G12_STAGING_CMS_PUBLIC_HOTFIX_DENO_DIR_MISSING
+require_searchable_directory "${input}" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_INPUT_DIRECTORY_UNREADABLE
+require_writable_directory "${output}" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_OUTPUT_DIRECTORY_UNWRITABLE \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_OUTPUT_PROBE_CLEANUP_FAILED
+require_writable_directory "${DENO_DIR}" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_DENO_DIR_UNWRITABLE \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_DENO_DIR_PROBE_CLEANUP_FAILED
+require_writable_directory /tmp \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_TMP_DIRECTORY_UNWRITABLE \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_TMP_PROBE_CLEANUP_FAILED
+require_readable_file "${input}/bundle-input-manifest.json" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_INPUT_MANIFEST_UNREADABLE
+require_readable_file "${input}/bundle-input-files.json" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_INPUT_FILES_MANIFEST_UNREADABLE
+require_readable_file "${input}/deno.json" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_DENO_CONFIG_UNREADABLE
+require_readable_file "${input}/deno.lock" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_DENO_LOCK_UNREADABLE
+require_readable_file "${input}/supabase/functions/import_map.json" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_IMPORT_MAP_UNREADABLE
+require_readable_file "${input}/supabase/functions/cms-public/index.ts" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_ENTRYPOINT_UNREADABLE
+require_absent "${eszip}" G12_STAGING_CMS_PUBLIC_HOTFIX_ESZIP_ALREADY_EXISTS
+require_absent "${unbundled}" G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_ALREADY_EXISTS
+require_absent "${unbundled_manifest}" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_MANIFEST_ALREADY_EXISTS
+require_absent "${attestation}" G12_STAGING_CMS_PUBLIC_HOTFIX_ATTESTATION_ALREADY_EXISTS
+
+if ! edge-runtime bundle \
   --entrypoint /workspace/supabase/functions/cms-public/index.ts \
   --output /output/output.eszip \
-  --checksum sha256
-test -s "${eszip}"
-edge-runtime unbundle --eszip /output/output.eszip --output /output/unbundled
-test -d "${unbundled}"
+  --checksum sha256; then
+  refuse G12_STAGING_CMS_PUBLIC_HOTFIX_EDGE_RUNTIME_BUNDLE_FAILED
+fi
+test -s "${eszip}" || refuse G12_STAGING_CMS_PUBLIC_HOTFIX_ESZIP_EMPTY
+if ! edge-runtime unbundle --eszip /output/output.eszip --output /output/unbundled; then
+  refuse G12_STAGING_CMS_PUBLIC_HOTFIX_EDGE_RUNTIME_UNBUNDLE_FAILED
+fi
+test -d "${unbundled}" || refuse G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_MISSING
 
-(
-  cd "${unbundled}"
-  find . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum
-) > "${unbundled_manifest}"
-test -s "${unbundled_manifest}"
+unbundled_files="${output}/.unbundled-files.nul"
+unbundled_files_sorted="${output}/.unbundled-files.sorted.nul"
+if ! (
+  cd "${unbundled}" || exit 1
+  find . -type f -print0 > "${unbundled_files}"
+); then
+  refuse G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_FIND_FAILED
+fi
+if ! LC_ALL=C sort -z "${unbundled_files}" > "${unbundled_files_sorted}"; then
+  refuse G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_SORT_FAILED
+fi
+if ! (
+  cd "${unbundled}" || exit 1
+  xargs -0 -r sha256sum < "${unbundled_files_sorted}"
+) > "${unbundled_manifest}"; then
+  refuse G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_HASH_FAILED
+fi
+if ! rm -f "${unbundled_files}" "${unbundled_files_sorted}"; then
+  refuse G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_TEMP_CLEANUP_FAILED
+fi
+test -s "${unbundled_manifest}" || refuse G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_MANIFEST_EMPTY
 
 sha_value() {
   sha256sum "$1" | awk '{print $1}'

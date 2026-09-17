@@ -123,6 +123,10 @@ test("every hardened hotfix container runs as the host runner identity", () => {
   assert.match(consumer, /--user "\$\(id -u\):\$\(id -g\)"/);
   assert.match(consumer, /--cap-drop ALL --security-opt no-new-privileges/);
   assert.match(consumer, /--env HOME=\/tmp/);
+  assert.match(
+    consumer,
+    /edge-runtime unbundle --eszip \/candidate\/output\.eszip --output \/output\/supabase\/functions\/cms-public/,
+  );
 });
 
 test("the immutable builder reports every preflight and runtime boundary failure", () => {
@@ -156,6 +160,10 @@ test("the immutable builder reports every preflight and runtime boundary failure
   ])
     assert.match(builder, new RegExp(token), token);
   assert.doesNotMatch(builder, /find .*\|.*sort .*\|.*xargs/);
+  assert.equal(
+    (builder.match(/--output \/output\/unbundled\/supabase\/functions\/cms-public/g) ?? []).length,
+    2,
+  );
   assert.match(builder, /find \. -type f -print0 > "\$\{unbundled_files\}"/);
   assert.match(builder, /sort -z "\$\{unbundled_files\}" > "\$\{unbundled_files_sorted\}"/);
   assert.match(builder, /xargs -0 -r sha256sum < "\$\{unbundled_files_sorted\}"/);

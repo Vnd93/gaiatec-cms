@@ -17,7 +17,7 @@ unbundled="${output}/unbundled"
 unbundled_manifest="${output}/unbundled-files.sha256"
 attestation="${output}/build-attestation.env"
 bundle_command='edge-runtime bundle --entrypoint /workspace/supabase/functions/cms-public/index.ts --output /output/output.eszip --checksum sha256'
-unbundle_command='edge-runtime unbundle --eszip /output/output.eszip --output /output/unbundled'
+unbundle_command='edge-runtime unbundle --eszip /output/output.eszip --output /output/unbundled/supabase/functions/cms-public'
 
 refuse() {
   printf '%s\n' "$1" >&2
@@ -107,7 +107,9 @@ if ! edge-runtime bundle \
   refuse G12_STAGING_CMS_PUBLIC_HOTFIX_EDGE_RUNTIME_BUNDLE_FAILED
 fi
 test -s "${eszip}" || refuse G12_STAGING_CMS_PUBLIC_HOTFIX_ESZIP_EMPTY
-if ! edge-runtime unbundle --eszip /output/output.eszip --output /output/unbundled; then
+if ! edge-runtime unbundle \
+  --eszip /output/output.eszip \
+  --output /output/unbundled/supabase/functions/cms-public; then
   refuse G12_STAGING_CMS_PUBLIC_HOTFIX_EDGE_RUNTIME_UNBUNDLE_FAILED
 fi
 test -d "${unbundled}" || refuse G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_MISSING

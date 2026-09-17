@@ -287,7 +287,7 @@ jobs:
             --volume "$RUNNER_TEMP/g12-consumer-unbundled:/output:rw" \
             --env HOME=/tmp \
             --entrypoint /bin/sh "$EDGE_RUNTIME_IMAGE" -c \
-            'edge-runtime unbundle --eszip /candidate/output.eszip --output /output'
+            'edge-runtime unbundle --eszip /candidate/output.eszip --output /output/supabase/functions/cms-public'
       - name: Bind the runtime reparse to both sealed build manifests
         working-directory: control
         run: >-

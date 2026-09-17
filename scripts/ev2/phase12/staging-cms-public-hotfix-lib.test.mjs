@@ -12,6 +12,7 @@ import {
   executeHotfixRollbackTransition,
   frameRawEszip,
   functionInventorySnapshot,
+  hasExpectedCandidateEszipStructure,
   inspectEszipV2,
   normalizeGithubArtifactDigest,
   reconcileDownloadedBundleBody,
@@ -51,17 +52,23 @@ function eszipSection(content) {
   return Buffer.concat([be32(content.byteLength), content, sha256Buffer(content)]);
 }
 
-function validEszip(label = "candidate") {
+function validEszip(label = "candidate", { metadataEntryKind = 0 } = {}) {
   const modules = [
     {
-      specifier: STAGING_CMS_PUBLIC_HOTFIX.candidateEntrypointPath,
+      specifier: STAGING_CMS_PUBLIC_HOTFIX.candidateEszipEntrypointSpecifier,
       source: Buffer.from(`Deno.serve(() => new Response(${JSON.stringify(label)}));`, "utf8"),
       kind: 0,
+      entryKind: 0,
     },
     {
-      specifier: STAGING_CMS_PUBLIC_HOTFIX.candidateImportMapPath,
-      source: Buffer.from('{"imports":{"zod":"npm:zod@4.4.3"}}', "utf8"),
-      kind: 1,
+      specifier: STAGING_CMS_PUBLIC_HOTFIX.edgeRuntimeMetadataSpecifier,
+      entryKind: metadataEntryKind,
+      ...(metadataEntryKind === 0
+        ? {
+            source: Buffer.from('{"serializedWorkspaceResolver":{}}', "utf8"),
+            kind: 3,
+          }
+        : {}),
     },
   ];
   let sourceOffset = 0;
@@ -69,10 +76,12 @@ function validEszip(label = "candidate") {
   const sources = [];
   for (const module of modules) {
     const specifier = Buffer.from(module.specifier, "utf8");
+    header.push(be32(specifier.byteLength), specifier, Buffer.from([module.entryKind]));
+    if (module.entryKind === 2) {
+      header.push(be32(0));
+      continue;
+    }
     header.push(
-      be32(specifier.byteLength),
-      specifier,
-      Buffer.from([0]),
       be32(sourceOffset),
       be32(module.source.byteLength),
       be32(0),
@@ -1071,6 +1080,31 @@ test("source identity requires the fixed three-way digest, frozen lock, and impo
 test("candidate provenance binds two reproducible builds and a structurally parsed ESZIP", () => {
   const evidence = candidateEvidence();
   const provenance = candidateProvenance(evidence);
+  assert.deepEqual(provenance.rawEszip.moduleSpecifiers, [
+    STAGING_CMS_PUBLIC_HOTFIX.candidateEszipEntrypointSpecifier,
+    STAGING_CMS_PUBLIC_HOTFIX.edgeRuntimeMetadataSpecifier,
+  ]);
+  assert.deepEqual(provenance.rawEszip.moduleDescriptors, [
+    {
+      specifier: STAGING_CMS_PUBLIC_HOTFIX.candidateEszipEntrypointSpecifier,
+      entryKind: 0,
+      moduleKind: 0,
+    },
+    {
+      specifier: STAGING_CMS_PUBLIC_HOTFIX.edgeRuntimeMetadataSpecifier,
+      entryKind: 0,
+      moduleKind: 3,
+    },
+  ]);
+  assert.equal(hasExpectedCandidateEszipStructure(provenance.rawEszip), true);
+  assert.equal(
+    provenance.rawEszip.moduleSpecifiers.includes(STAGING_CMS_PUBLIC_HOTFIX.candidateEntrypointPath),
+    false,
+  );
+  assert.equal(
+    provenance.rawEszip.moduleSpecifiers.includes(STAGING_CMS_PUBLIC_HOTFIX.candidateImportMapPath),
+    false,
+  );
   const valid = validateCandidateBuildProvenance(provenance, { rawEszip: candidateRawEszip });
   assert.equal(valid.valid, true, valid.violations.join(","));
   const evidenceResult = validateCandidateBuildEvidenceFiles(provenance, evidence);
@@ -1080,6 +1114,33 @@ test("candidate provenance binds two reproducible builds and a structurally pars
   assert.match(
     validateCandidateBuildProvenance(substituted, { rawEszip: candidateRawEszip }).violations.join(","),
     /offline_invalid|reproducibility_invalid/,
+  );
+  const legacySpecifiers = structuredClone(provenance);
+  legacySpecifiers.rawEszip.moduleSpecifiers = [
+    STAGING_CMS_PUBLIC_HOTFIX.candidateEntrypointPath,
+    STAGING_CMS_PUBLIC_HOTFIX.candidateImportMapPath,
+  ];
+  legacySpecifiers.rawEszip.moduleSpecifiersSha256 = canonicalSha256(
+    legacySpecifiers.rawEszip.moduleSpecifiers,
+  );
+  assert.match(
+    validateCandidateBuildProvenance(legacySpecifiers).violations.join(","),
+    /candidate_provenance_identity_invalid/,
+  );
+  const npmMetadataRaw = validEszip("candidate", { metadataEntryKind: 2 });
+  const npmMetadataInspection = inspectEszipV2(npmMetadataRaw);
+  assert.equal(hasExpectedCandidateEszipStructure(npmMetadataInspection), false);
+  const npmMetadataProvenance = structuredClone(provenance);
+  npmMetadataProvenance.rawEszip = npmMetadataInspection;
+  for (const build of Object.values(npmMetadataProvenance.builds)) {
+    build.rawEszipSha256 = npmMetadataInspection.sha256;
+    build.rawEszipBytes = npmMetadataInspection.bytes;
+  }
+  assert.match(
+    validateCandidateBuildProvenance(npmMetadataProvenance, { rawEszip: npmMetadataRaw }).violations.join(
+      ",",
+    ),
+    /candidate_provenance_identity_invalid/,
   );
   const malformed = Buffer.from(candidateRawEszip);
   malformed[malformed.length - 1] ^= 1;

@@ -25,6 +25,7 @@ import {
   executeHotfixRollbackTransition,
   frameRawEszip,
   functionInventorySnapshot,
+  hasExpectedCandidateEszipStructure,
   inspectEszipV2,
   normalizeGithubArtifactDigest,
   normalizeFunctionTuple,
@@ -1431,11 +1432,7 @@ async function sealCandidate() {
     )
       throw new Error(`G12_STAGING_CMS_PUBLIC_HOTFIX_${mode.toUpperCase()}_BUILD_REFUSED`);
     const inspection = inspectEszipV2(eszip);
-    if (
-      inspection.checksum !== "sha256" ||
-      !inspection.moduleSpecifiers.includes(STAGING_CMS_PUBLIC_HOTFIX.candidateEntrypointPath) ||
-      !inspection.moduleSpecifiers.includes(STAGING_CMS_PUBLIC_HOTFIX.candidateImportMapPath)
-    )
+    if (!hasExpectedCandidateEszipStructure(inspection))
       throw new Error(`G12_STAGING_CMS_PUBLIC_HOTFIX_${mode.toUpperCase()}_ESZIP_REFUSED`);
     return {
       eszip,

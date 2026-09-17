@@ -40,12 +40,15 @@ export const STAGING_CMS_PUBLIC_HOTFIX = Object.freeze({
   edgeRuntimeAmd64Digest: "sha256:cc355c3d0e9c063a351cad56d1c4c52a3c4d85aff4e1fad9d91688e75f9aad09",
   bundleCommand:
     "edge-runtime bundle --entrypoint /workspace/supabase/functions/cms-public/index.ts --output /output/output.eszip --checksum sha256",
-  unbundleCommand: "edge-runtime unbundle --eszip /output/output.eszip --output /output/unbundled",
-  builderScriptSha256: "862de6288979fc929504c2286d8c19651950346c77725eb604344a43f4e52dbb",
+  unbundleCommand:
+    "edge-runtime unbundle --eszip /output/output.eszip --output /output/unbundled/supabase/functions/cms-public",
+  builderScriptSha256: "7a3df88f5baa92219ca3bf57aee90bc10559795cd365c7a7b5ea3baf64d4ff66",
   maximumWireBundleBytes: 32 * 1024 * 1024,
   maximumRawEszipBytes: 64 * 1024 * 1024,
   candidateEntrypointPath: "file:///workspace/supabase/functions/cms-public/index.ts",
   candidateImportMapPath: "file:///workspace/deno.json",
+  candidateEszipEntrypointSpecifier: "workspace/supabase/functions/cms-public/index.ts",
+  edgeRuntimeMetadataSpecifier: "---EDGE-RUNTIME-METADATA---",
   trustedBaseline: Object.freeze({
     runId: "34908383307",
     runAttempt: 1,
@@ -387,6 +390,7 @@ export function inspectEszipV2(rawEszip) {
   const sourceMapBytes = readDataSection(sourceMapSlots, "SOURCE_MAPS");
   if (cursor !== raw.byteLength || sourceBytes < 1)
     throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_ESZIP_TAIL_REFUSED");
+  const moduleDescriptors = modules.map((item) => ({ ...item }));
   return {
     version: "2.3",
     checksum: checksum === 1 ? "sha256" : "none",
@@ -394,11 +398,56 @@ export function inspectEszipV2(rawEszip) {
     moduleCount: modules.length,
     moduleSpecifiers: modules.map((item) => item.specifier),
     moduleSpecifiersSha256: canonicalSha256(modules.map((item) => item.specifier)),
+    moduleDescriptors,
+    moduleDescriptorsSha256: canonicalSha256(moduleDescriptors),
     sourceBytes,
     sourceMapBytes,
     bytes: raw.byteLength,
     sha256: sha256Bytes(raw),
   };
+}
+
+export function hasExpectedCandidateEszipStructure(inspection) {
+  const descriptors = inspection?.moduleDescriptors;
+  const specifiers = inspection?.moduleSpecifiers;
+  if (
+    inspection?.version !== "2.3" ||
+    inspection?.checksum !== "sha256" ||
+    inspection?.checksumSize !== 32 ||
+    !Number.isSafeInteger(inspection?.moduleCount) ||
+    inspection.moduleCount < 2 ||
+    !Array.isArray(specifiers) ||
+    specifiers.length !== inspection.moduleCount ||
+    new Set(specifiers).size !== specifiers.length ||
+    specifiers.some(
+      (specifier) => typeof specifier !== "string" || !specifier || /[\r\n\0]/.test(specifier),
+    ) ||
+    inspection?.moduleSpecifiersSha256 !== canonicalSha256(specifiers) ||
+    !Array.isArray(descriptors) ||
+    descriptors.length !== inspection.moduleCount ||
+    !sameCanonical(
+      descriptors.map((descriptor) => descriptor?.specifier),
+      specifiers,
+    ) ||
+    inspection?.moduleDescriptorsSha256 !== canonicalSha256(descriptors)
+  )
+    return false;
+  return (
+    descriptors.some((descriptor) =>
+      sameCanonical(descriptor, {
+        specifier: STAGING_CMS_PUBLIC_HOTFIX.candidateEszipEntrypointSpecifier,
+        entryKind: 0,
+        moduleKind: 0,
+      }),
+    ) &&
+    descriptors.some((descriptor) =>
+      sameCanonical(descriptor, {
+        specifier: STAGING_CMS_PUBLIC_HOTFIX.edgeRuntimeMetadataSpecifier,
+        entryKind: 0,
+        moduleKind: 3,
+      }),
+    )
+  );
 }
 
 export function validateCandidateBuildProvenance(provenance, { rawEszip } = {}) {
@@ -428,15 +477,7 @@ export function validateCandidateBuildProvenance(provenance, { rawEszip } = {}) 
     builder?.builderScriptSha256 !== STAGING_CMS_PUBLIC_HOTFIX.builderScriptSha256 ||
     builder?.checksum !== "sha256" ||
     builder?.lockFrozen !== true ||
-    inspection?.version !== "2.3" ||
-    inspection?.checksum !== "sha256" ||
-    inspection?.checksumSize !== 32 ||
-    !Number.isSafeInteger(inspection?.moduleCount) ||
-    inspection.moduleCount < 2 ||
-    !Array.isArray(inspection?.moduleSpecifiers) ||
-    !inspection.moduleSpecifiers.includes(STAGING_CMS_PUBLIC_HOTFIX.candidateEntrypointPath) ||
-    !inspection.moduleSpecifiers.includes(STAGING_CMS_PUBLIC_HOTFIX.candidateImportMapPath) ||
-    inspection?.moduleSpecifiersSha256 !== canonicalSha256(inspection?.moduleSpecifiers) ||
+    !hasExpectedCandidateEszipStructure(inspection) ||
     !Number.isSafeInteger(inspection?.sourceBytes) ||
     inspection.sourceBytes < 1 ||
     !Number.isSafeInteger(inspection?.sourceMapBytes) ||

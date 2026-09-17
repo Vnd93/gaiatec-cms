@@ -139,7 +139,14 @@ jobs:
         run: |
           set -euo pipefail
           install -d -m 700 "$RUNNER_TEMP/g12-offline" "$RUNNER_TEMP/g12-offline-cache"
-          cp -a "$RUNNER_TEMP/g12-online-cache/." "$RUNNER_TEMP/g12-offline-cache/"
+          # Copy only fetched dependency trees; regenerate mutable SQLite and compiler caches.
+          for cache_dir in npm remote; do
+            source_dir="$RUNNER_TEMP/g12-online-cache/$cache_dir"
+            test -d "$source_dir"
+            test ! -L "$source_dir"
+            test -n "$(find "$source_dir" -mindepth 1 -maxdepth 1 -print -quit)"
+            cp -a -- "$source_dir" "$RUNNER_TEMP/g12-offline-cache/"
+          done
           input_tree="$(jq -r .inputTreeSha256 bundle-input/bundle-input-manifest.json)"
           input_count="$(jq -r .inputFileCount bundle-input/bundle-input-manifest.json)"
           docker run --rm --platform linux/amd64 --network none --read-only \

@@ -219,6 +219,29 @@ test("CI executes the real hardened Docker bundle twice and seals the result", (
   }
 });
 
+test("offline rebuild copies only portable Deno cache trees into a fresh cache root", () => {
+  for (const [workflow, name, prefix] of [
+    [mainWorkflow, "Rebuild offline with Docker networking disabled", "g12"],
+    [ciWorkflow, "Exercise the hardened offline Docker rebuild boundary", "g12-smoke"],
+  ]) {
+    const step = stepBody(workflow, name);
+    assertOrdered(step, [
+      `install -d -m 700 "$RUNNER_TEMP/${prefix}-offline" "$RUNNER_TEMP/${prefix}-offline-cache"`,
+      "for cache_dir in npm remote; do",
+      'test -d "$source_dir"',
+      'test ! -L "$source_dir"',
+      'test -n "$(find "$source_dir" -mindepth 1 -maxdepth 1 -print -quit)"',
+      "cp -a",
+      "docker run",
+    ]);
+    assert.match(step, new RegExp(`source_dir="\\$RUNNER_TEMP/${prefix}-online-cache/\\$cache_dir"`));
+    assert.match(step, new RegExp(`cp -a -- "\\$source_dir" "\\$RUNNER_TEMP/${prefix}-offline-cache/"`));
+    assert.doesNotMatch(step, /\b(?:registries|gen)\b/);
+    assert.doesNotMatch(step, /online-cache\/\."/);
+    assert.match(step, /--network none --read-only/);
+  }
+});
+
 test("watchdog snapshots M/C/R before artifacts and treats an empty snapshot as a no-op", () => {
   assertOrdered(watchdogWorkflow, [
     "Recover the HMAC main state independently of artifacts",

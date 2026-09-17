@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -239,6 +241,36 @@ test("the immutable builder reports every preflight and runtime boundary failure
   assert.match(builder, /printf 'UNBUNDLED_LARGEST_FILE_BYTES=%s\\n'/);
   assert.match(builder, /require_uint "\$\{unbundled_total_bytes\}"/);
   assert.doesNotMatch(builder, /printf 'DENO_LOCK_SHA256=/);
+});
+
+test("the builder metrics program executes under the host awk and refuses bounded invalid inventories", async (t) => {
+  const match = /if ! awk '\n([\s\S]*?)\n' "\$\{unbundled_sizes\}" > "\$\{unbundled_metrics\}"; then/.exec(
+    builder,
+  );
+  assert.ok(match, "missing exact unbundled metrics awk program");
+  const root = await mkdtemp(join(tmpdir(), "g12-cms-public-awk-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const program = join(root, "metrics.awk");
+  const sizes = join(root, "sizes.txt");
+  await writeFile(program, match[1], "utf8");
+  const gitAwk = "C:\\Program Files\\Git\\usr\\bin\\awk.exe";
+  const awk = process.platform === "win32" && existsSync(gitAwk) ? gitAwk : "awk";
+  const run = async (input) => {
+    await writeFile(sizes, input, "utf8");
+    return spawnSync(awk, ["-f", program, sizes], { encoding: "utf8" });
+  };
+
+  const valid = await run("0 ./edge-runtime.d.ts\n12 ./index.ts\n");
+  assert.equal(valid.status, 0, valid.stderr);
+  assert.equal(valid.stdout, "2\n1\n12\n12\n");
+
+  const allEmpty = await run("0 ./a.d.ts\n0 ./b.d.ts\n");
+  assert.equal(allEmpty.status, 0, allEmpty.stderr);
+  assert.equal(allEmpty.stdout, "2\n2\n0\n0\n");
+
+  assert.notEqual((await run("2097153 ./oversized.ts\n")).status, 0);
+  assert.notEqual((await run("67108865 ./tree.ts\n")).status, 0);
+  assert.notEqual((await run("0 ./empty.d.ts\n".repeat(65_537))).status, 0);
 });
 
 test("bundle input seals the lock-verified file JSR mirror and rejects import.meta", () => {

@@ -281,15 +281,13 @@ if ! awk '
     if ($1 > largest) largest = $1
   }
   END {
-    if (
-      invalid ||
-      count < 1 || count > 65536 ||
-      total < 0 || total > 67108864 ||
-      zero < 0 || zero > count ||
-      largest < 0 || largest > 2097152 || largest > total ||
-      (total == 0 && (largest != 0 || zero != count)) ||
-      (total > 0 && (largest < 1 || zero >= count))
-    ) exit 1
+    if (invalid) exit 1
+    if (count < 1 || count > 65536) exit 1
+    if (total < 0 || total > 67108864) exit 1
+    if (zero < 0 || zero > count) exit 1
+    if (largest < 0 || largest > 2097152 || largest > total) exit 1
+    if (total == 0 && (largest != 0 || zero != count)) exit 1
+    if (total > 0 && (largest < 1 || zero >= count)) exit 1
     printf "%d\n%d\n%.0f\n%.0f\n", count, zero + 0, total + 0, largest + 0
   }
 ' "${unbundled_sizes}" > "${unbundled_metrics}"; then

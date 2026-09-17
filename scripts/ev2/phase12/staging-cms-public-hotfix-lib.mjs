@@ -45,7 +45,7 @@ export const STAGING_CMS_PUBLIC_HOTFIX = Object.freeze({
     "edge-runtime bundle --entrypoint /workspace/supabase/functions/cms-public/index.ts --output /output/output.eszip --checksum sha256",
   unbundleCommand:
     "edge-runtime unbundle --eszip /output/output.eszip --output /output/unbundled/supabase/functions/cms-public",
-  builderScriptSha256: "1f12f6256fc0ad8f00224ff12d0e6203f20380a0902e02a43d49176c1f9e7322",
+  builderScriptSha256: "d52af72629242ea92f7323bbb9d14183206dde42ff99784ab9dc950690543bff",
   maximumArtifactFileBytes: 2 * 1024 * 1024,
   maximumArtifactTreeBytes: 64 * 1024 * 1024,
   maximumArtifactFileCount: 65_536,

@@ -19,6 +19,8 @@ attestation="${output}/build-attestation.env"
 jsr_mirror="${input}/.g12-jsr"
 jsr_mirror_manifest="${jsr_mirror}/.g12-mirror-manifest.json"
 jsr_mirror_files_manifest="${jsr_mirror}/.g12-mirror-files.sha256"
+expected_npm_root_specifiers='["npm:@supabase/auth-js@2.112.4","npm:@supabase/functions-js@2.112.4","npm:@supabase/postgrest-js@2.112.4","npm:@supabase/realtime-js@2.112.4","npm:@supabase/storage-js@2.112.4","npm:openai@^4.52.5","npm:zod@4.4.3"]'
+expected_bundle_deno_lock_evidence='{"specifierCount":9,"jsrPackageCount":2,"npmPackageCount":48,"dependencyEdgeCount":59,"serializedBytes":10817,"npmRootSpecifiers":["npm:@supabase/auth-js@2.112.4","npm:@supabase/functions-js@2.112.4","npm:@supabase/postgrest-js@2.112.4","npm:@supabase/realtime-js@2.112.4","npm:@supabase/storage-js@2.112.4","npm:openai@^4.52.5","npm:zod@4.4.3"],"workspaceDependencies":["npm:zod@4.4.3"]}'
 bundle_command='edge-runtime bundle --entrypoint /workspace/supabase/functions/cms-public/index.ts --output /output/output.eszip --checksum sha256'
 unbundle_command='edge-runtime unbundle --eszip /output/output.eszip --output /output/unbundled/supabase/functions/cms-public'
 
@@ -73,6 +75,18 @@ require_equal "${G12_EDGE_RUNTIME_AMD64_DIGEST:-}" \
   G12_STAGING_CMS_PUBLIC_HOTFIX_EDGE_RUNTIME_AMD64_DIGEST_REFUSED
 require_equal "${G12_PLATFORM:-}" "linux/amd64" \
   G12_STAGING_CMS_PUBLIC_HOTFIX_PLATFORM_REFUSED
+require_equal "${G12_SOURCE_DENO_LOCK_SHA256:-}" \
+  "26a8ec603c63c1f9d25fdb1b0c020216d982878c4c5c756467bc29008dd4ba2a" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_SOURCE_DENO_LOCK_REFUSED
+require_equal "${G12_BUNDLE_DENO_LOCK_SHA256:-}" \
+  "33a32976525fedb037b7b96123119d49af0abe41a90f1b6e0459e9c9b4fecc6f" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_BUNDLE_DENO_LOCK_REFUSED
+require_equal "${G12_BUNDLE_DENO_LOCK_NPM_ROOT_SPECIFIERS:-}" \
+  "${expected_npm_root_specifiers}" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_BUNDLE_DENO_LOCK_ROOTS_REFUSED
+require_equal "${G12_BUNDLE_DENO_LOCK_EVIDENCE_JSON:-}" \
+  "${expected_bundle_deno_lock_evidence}" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_BUNDLE_DENO_LOCK_EVIDENCE_REFUSED
 require_nonempty "${G12_INPUT_TREE_SHA256:-}" \
   G12_STAGING_CMS_PUBLIC_HOTFIX_INPUT_TREE_MISSING
 require_nonempty "${G12_INPUT_FILE_COUNT:-}" \
@@ -109,6 +123,9 @@ require_readable_file "${input}/deno.json" \
   G12_STAGING_CMS_PUBLIC_HOTFIX_DENO_CONFIG_UNREADABLE
 require_readable_file "${input}/deno.lock" \
   G12_STAGING_CMS_PUBLIC_HOTFIX_DENO_LOCK_UNREADABLE
+require_equal "$(sha_value "${input}/deno.lock")" \
+  "${G12_BUNDLE_DENO_LOCK_SHA256}" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_BUNDLE_DENO_LOCK_FILE_REFUSED
 require_readable_file "${input}/supabase/functions/import_map.json" \
   G12_STAGING_CMS_PUBLIC_HOTFIX_IMPORT_MAP_UNREADABLE
 require_readable_file "${input}/supabase/functions/cms-public/index.ts" \
@@ -252,7 +269,12 @@ unbundle_command_sha=$(printf '%s' "${unbundle_command}" | sha256sum | awk '{pri
   printf 'NETWORK=%s\n' "${network}"
   printf '%s\n' 'CANDIDATE_SHA=e40eb0c2cc81c27fbf8f23e8671136f9dfc6f282'
   printf '%s\n' 'SOURCE_SHA256=84e59669b716a7f43820128ce8de21fa1ae5e69abf9452fa71dfb768a6c8367b'
-  printf 'DENO_LOCK_SHA256=%s\n' "$(sha_value "${input}/deno.lock")"
+  printf 'SOURCE_DENO_LOCK_SHA256=%s\n' "${G12_SOURCE_DENO_LOCK_SHA256}"
+  printf 'BUNDLE_DENO_LOCK_SHA256=%s\n' "${G12_BUNDLE_DENO_LOCK_SHA256}"
+  printf 'BUNDLE_DENO_LOCK_NPM_ROOT_SPECIFIERS=%s\n' \
+    "${G12_BUNDLE_DENO_LOCK_NPM_ROOT_SPECIFIERS}"
+  printf 'BUNDLE_DENO_LOCK_EVIDENCE_JSON=%s\n' \
+    "${G12_BUNDLE_DENO_LOCK_EVIDENCE_JSON}"
   printf 'DENO_CONFIG_SHA256=%s\n' "$(sha_value "${input}/deno.json")"
   printf 'IMPORT_MAP_SHA256=%s\n' "$(sha_value "${input}/supabase/functions/import_map.json")"
   printf 'INPUT_MANIFEST_SHA256=%s\n' "$(sha_value "${input}/bundle-input-manifest.json")"

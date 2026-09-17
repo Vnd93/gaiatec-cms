@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, randomFillSync } from "node:crypto";
 import test from "node:test";
 
 import { PRODUCTION_FUNCTIONS, PUBLIC_FUNCTIONS } from "./production-backend-lib.mjs";
+import { CMS_PUBLIC_BUNDLE_LOCK } from "./staging-cms-public-hotfix-deno-lock-lib.mjs";
 import { CMS_PUBLIC_JSR_MIRROR } from "./staging-cms-public-hotfix-jsr-mirror-lib.mjs";
 import {
   assertExactSourceIdentity,
@@ -55,11 +56,12 @@ function eszipSection(content) {
   return Buffer.concat([be32(content.byteLength), content, sha256Buffer(content)]);
 }
 
-function validEszip(label = "candidate", { metadataEntryKind = 0 } = {}) {
+function validEszip(label = "candidate", { metadataEntryKind = 0, entrypointSource } = {}) {
   const modules = [
     {
       specifier: STAGING_CMS_PUBLIC_HOTFIX.candidateEszipEntrypointSpecifier,
-      source: Buffer.from(`Deno.serve(() => new Response(${JSON.stringify(label)}));`, "utf8"),
+      source:
+        entrypointSource ?? Buffer.from(`Deno.serve(() => new Response(${JSON.stringify(label)}));`, "utf8"),
       kind: 0,
       entryKind: 0,
     },
@@ -122,7 +124,10 @@ function candidateEvidence() {
         `NETWORK=${network}`,
         `CANDIDATE_SHA=${STAGING_CMS_PUBLIC_HOTFIX.hotfixSha}`,
         `SOURCE_SHA256=${STAGING_CMS_PUBLIC_HOTFIX.candidateSourceSha256}`,
-        `DENO_LOCK_SHA256=${STAGING_CMS_PUBLIC_HOTFIX.denoLockSha256}`,
+        `SOURCE_DENO_LOCK_SHA256=${STAGING_CMS_PUBLIC_HOTFIX.sourceDenoLockSha256}`,
+        `BUNDLE_DENO_LOCK_SHA256=${STAGING_CMS_PUBLIC_HOTFIX.bundleDenoLockSha256}`,
+        `BUNDLE_DENO_LOCK_NPM_ROOT_SPECIFIERS=${JSON.stringify(CMS_PUBLIC_BUNDLE_LOCK.npmRootSpecifiers)}`,
+        `BUNDLE_DENO_LOCK_EVIDENCE_JSON=${JSON.stringify(CMS_PUBLIC_BUNDLE_LOCK.evidence)}`,
         `DENO_CONFIG_SHA256=${"4".repeat(64)}`,
         `IMPORT_MAP_SHA256=${STAGING_CMS_PUBLIC_HOTFIX.importMapSha256}`,
         `INPUT_MANIFEST_SHA256=${"1".repeat(64)}`,
@@ -184,7 +189,9 @@ function candidateProvenance(evidence = candidateEvidence()) {
       treeSha256: "3".repeat(64),
       fileCount: 4,
       denoConfigSha256: "4".repeat(64),
-      denoLockSha256: STAGING_CMS_PUBLIC_HOTFIX.denoLockSha256,
+      sourceDenoLockSha256: STAGING_CMS_PUBLIC_HOTFIX.sourceDenoLockSha256,
+      bundleDenoLockSha256: STAGING_CMS_PUBLIC_HOTFIX.bundleDenoLockSha256,
+      bundleDenoLock: structuredClone(CMS_PUBLIC_BUNDLE_LOCK.evidence),
       importMapSha256: STAGING_CMS_PUBLIC_HOTFIX.importMapSha256,
       jsrMirror: {
         runtimeUrl: CMS_PUBLIC_JSR_MIRROR.runtimeUrl,
@@ -311,7 +318,9 @@ function packageAndState() {
     source: {
       baselineSha256: STAGING_CMS_PUBLIC_HOTFIX.baselineSourceSha256,
       candidateSha256: STAGING_CMS_PUBLIC_HOTFIX.candidateSourceSha256,
-      denoLockSha256: STAGING_CMS_PUBLIC_HOTFIX.denoLockSha256,
+      sourceDenoLockSha256: STAGING_CMS_PUBLIC_HOTFIX.sourceDenoLockSha256,
+      bundleDenoLockSha256: STAGING_CMS_PUBLIC_HOTFIX.bundleDenoLockSha256,
+      bundleDenoLock: structuredClone(CMS_PUBLIC_BUNDLE_LOCK.evidence),
       importMapSha256: STAGING_CMS_PUBLIC_HOTFIX.importMapSha256,
     },
     builder: {
@@ -333,6 +342,7 @@ function packageAndState() {
       entrypointPath: STAGING_CMS_PUBLIC_HOTFIX.candidateEntrypointPath,
       importMapPath: STAGING_CMS_PUBLIC_HOTFIX.candidateImportMapPath,
       verifyJwt: false,
+      bundleDenoLock: structuredClone(CMS_PUBLIC_BUNDLE_LOCK.evidence),
       provenance: candidateProvenance(),
     },
     inventory: {
@@ -431,11 +441,10 @@ function receipt(action, state, boundIntent, before, after) {
 }
 
 test("raw and wire bundle limits remain finite, closed and independently enforced", () => {
-  assert.equal(STAGING_CMS_PUBLIC_HOTFIX.maximumWireBundleBytes, 32 * 1024 * 1024);
-  assert.equal(STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes, 128 * 1024 * 1024);
-  assert.equal(
-    STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes,
-    4 * STAGING_CMS_PUBLIC_HOTFIX.maximumWireBundleBytes,
+  assert.equal(STAGING_CMS_PUBLIC_HOTFIX.maximumWireBundleBytes, 20 * 1024 * 1024);
+  assert.equal(STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes, 64 * 1024 * 1024);
+  assert.ok(
+    STAGING_CMS_PUBLIC_HOTFIX.maximumWireBundleBytes < STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes,
   );
   assert.equal(
     assertRawEszipByteLength(STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes),
@@ -453,6 +462,15 @@ test("raw and wire bundle limits remain finite, closed and independently enforce
     () => assertWireBundleByteLength(STAGING_CMS_PUBLIC_HOTFIX.maximumWireBundleBytes + 1),
     /G12_STAGING_CMS_PUBLIC_HOTFIX_BUNDLE_SIZE_REFUSED/,
   );
+});
+
+test("EZBR framing refuses incompressible output before allocating beyond the wire cap", () => {
+  const incompressibleSource = randomFillSync(
+    Buffer.allocUnsafe(STAGING_CMS_PUBLIC_HOTFIX.maximumWireBundleBytes + 1024 * 1024),
+  );
+  const raw = validEszip("incompressible", { entrypointSource: incompressibleSource });
+  assert.ok(raw.byteLength < STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes);
+  assert.throws(() => frameRawEszip(raw), /G12_STAGING_CMS_PUBLIC_HOTFIX_BUNDLE_SIZE_REFUSED/);
 });
 
 test("EZBR framing is deterministic and downloaded raw or framed bodies reconcile to one exact digest", () => {
@@ -1102,7 +1120,7 @@ test("source identity requires the fixed three-way digest, frozen lock, and impo
       candidateSource: STAGING_CMS_PUBLIC_HOTFIX.candidateSourceSha256,
       parentSource: STAGING_CMS_PUBLIC_HOTFIX.baselineSourceSha256,
       rollbackSource: STAGING_CMS_PUBLIC_HOTFIX.baselineSourceSha256,
-      lockDigests: Array(3).fill(STAGING_CMS_PUBLIC_HOTFIX.denoLockSha256),
+      lockDigests: Array(3).fill(STAGING_CMS_PUBLIC_HOTFIX.sourceDenoLockSha256),
       importMapDigests: Array(3).fill(STAGING_CMS_PUBLIC_HOTFIX.importMapSha256),
     }),
     true,
@@ -1113,7 +1131,7 @@ test("source identity requires the fixed three-way digest, frozen lock, and impo
         candidateSource: STAGING_CMS_PUBLIC_HOTFIX.candidateSourceSha256,
         parentSource: STAGING_CMS_PUBLIC_HOTFIX.baselineSourceSha256,
         rollbackSource: STAGING_CMS_PUBLIC_HOTFIX.baselineSourceSha256,
-        lockDigests: ["0".repeat(64), ...Array(2).fill(STAGING_CMS_PUBLIC_HOTFIX.denoLockSha256)],
+        lockDigests: ["0".repeat(64), ...Array(2).fill(STAGING_CMS_PUBLIC_HOTFIX.sourceDenoLockSha256)],
         importMapDigests: Array(3).fill(STAGING_CMS_PUBLIC_HOTFIX.importMapSha256),
       }),
     /deno_lock_invalid/,
@@ -1156,6 +1174,12 @@ test("candidate provenance binds two reproducible builds and a structurally pars
   mirrorTreeSubstitution.input.jsrMirror.treeSha256 = "7".repeat(64);
   assert.match(
     validateCandidateBuildProvenance(mirrorTreeSubstitution).violations.join(","),
+    /candidate_provenance_identity_invalid/,
+  );
+  const bundleLockEvidenceExtension = structuredClone(provenance);
+  bundleLockEvidenceExtension.input.bundleDenoLock.legacy = true;
+  assert.match(
+    validateCandidateBuildProvenance(bundleLockEvidenceExtension).violations.join(","),
     /candidate_provenance_identity_invalid/,
   );
   const substituted = structuredClone(provenance);

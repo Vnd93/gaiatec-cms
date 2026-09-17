@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+import { CMS_PUBLIC_BUNDLE_LOCK } from "./staging-cms-public-hotfix-deno-lock-lib.mjs";
 import { STAGING_CMS_PUBLIC_HOTFIX } from "./staging-cms-public-hotfix-lib.mjs";
 
 const mainWorkflowPath = new URL(
@@ -142,6 +143,10 @@ test("the immutable builder reports every preflight and runtime boundary failure
     "G12_STAGING_CMS_PUBLIC_HOTFIX_EDGE_RUNTIME_INDEX_DIGEST_REFUSED",
     "G12_STAGING_CMS_PUBLIC_HOTFIX_EDGE_RUNTIME_AMD64_DIGEST_REFUSED",
     "G12_STAGING_CMS_PUBLIC_HOTFIX_PLATFORM_REFUSED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_SOURCE_DENO_LOCK_REFUSED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_BUNDLE_DENO_LOCK_REFUSED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_BUNDLE_DENO_LOCK_ROOTS_REFUSED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_BUNDLE_DENO_LOCK_EVIDENCE_REFUSED",
     "G12_STAGING_CMS_PUBLIC_HOTFIX_INPUT_TREE_MISSING",
     "G12_STAGING_CMS_PUBLIC_HOTFIX_INPUT_FILE_COUNT_MISSING",
     "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_URL_REFUSED",
@@ -162,6 +167,7 @@ test("the immutable builder reports every preflight and runtime boundary failure
     "G12_STAGING_CMS_PUBLIC_HOTFIX_INPUT_FILES_MANIFEST_UNREADABLE",
     "G12_STAGING_CMS_PUBLIC_HOTFIX_DENO_CONFIG_UNREADABLE",
     "G12_STAGING_CMS_PUBLIC_HOTFIX_DENO_LOCK_UNREADABLE",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_BUNDLE_DENO_LOCK_FILE_REFUSED",
     "G12_STAGING_CMS_PUBLIC_HOTFIX_IMPORT_MAP_UNREADABLE",
     "G12_STAGING_CMS_PUBLIC_HOTFIX_ENTRYPOINT_UNREADABLE",
     "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_DIRECTORY_UNREADABLE",
@@ -215,14 +221,71 @@ test("the immutable builder reports every preflight and runtime boundary failure
   assert.match(builder, /\) > "\$\{mirror_sizes\}"; then/);
   assert.match(builder, /awk '\{ total \+= \$1 \} END \{ print total \+ 0 \}' "\$\{mirror_sizes\}"/);
   assert.doesNotMatch(builder, /\)\s*\|\s*awk/);
+  assert.match(builder, /printf 'SOURCE_DENO_LOCK_SHA256=%s\\n'/);
+  assert.match(builder, /printf 'BUNDLE_DENO_LOCK_SHA256=%s\\n'/);
+  assert.match(builder, /printf 'BUNDLE_DENO_LOCK_NPM_ROOT_SPECIFIERS=%s\\n'/);
+  assert.match(builder, /printf 'BUNDLE_DENO_LOCK_EVIDENCE_JSON=%s\\n'/);
+  assert.doesNotMatch(builder, /printf 'DENO_LOCK_SHA256=/);
 });
 
 test("bundle input seals the lock-verified file JSR mirror and rejects import.meta", () => {
-  assert.match(runner, /materializeCmsPublicJsrMirror\(\{[\s\S]*lock: denoLock[\s\S]*\.g12-jsr/);
+  assert.match(runner, /projectCmsPublicBundleLock\(sourceDenoLock\)/);
+  assert.match(
+    runner,
+    /writeBytes\(join\(output, "deno\.lock"\), serializeCmsPublicBundleLock\(bundleDenoLock\)\)/,
+  );
+  assert.match(runner, /materializeCmsPublicJsrMirror\(\{[\s\S]*lock: bundleDenoLock[\s\S]*\.g12-jsr/);
   assert.match(runner, /loadCmsPublicJsrMirror\(\{[\s\S]*\.g12-jsr[\s\S]*lock: denoLock/);
   assert.match(runner, /G12_STAGING_CMS_PUBLIC_HOTFIX_IMPORT_META_REFUSED/);
   assert.match(runner, /sourceImportMetaAbsent: true/);
+  assert.match(runner, /sourceDenoLockSha256: STAGING_CMS_PUBLIC_HOTFIX\.sourceDenoLockSha256/);
+  assert.match(runner, /bundleDenoLockSha256: await fileSha256\(join\(output, "deno\.lock"\)\)/);
+  assert.match(runner, /bundleDenoLock: structuredClone\(CMS_PUBLIC_BUNDLE_LOCK\.evidence\)/);
   assert.match(runner, /jsrMirror: \{[\s\S]*manifestSha256[\s\S]*treeSha256[\s\S]*fileCount[\s\S]*bytes/);
+});
+
+test("both candidate workflows propagate the exact projected lock evidence into Docker", () => {
+  assert.equal(STAGING_CMS_PUBLIC_HOTFIX.sourceDenoLockSha256, CMS_PUBLIC_BUNDLE_LOCK.sourceSha256);
+  assert.equal(STAGING_CMS_PUBLIC_HOTFIX.bundleDenoLockSha256, CMS_PUBLIC_BUNDLE_LOCK.sha256);
+
+  for (const [workflow, stepNames] of [
+    [
+      mainWorkflow,
+      [
+        "Build once online with the immutable helper and frozen input",
+        "Rebuild offline with Docker networking disabled",
+      ],
+    ],
+    [
+      ciWorkflow,
+      [
+        "Exercise the hardened online Docker bundle boundary",
+        "Exercise the hardened offline Docker rebuild boundary",
+      ],
+    ],
+  ]) {
+    for (const name of stepNames) {
+      const step = stepBody(workflow, name);
+      assertOrdered(step, [
+        'source_deno_lock_sha256="$(jq -r .sourceDenoLockSha256 bundle-input/bundle-input-manifest.json)"',
+        'bundle_deno_lock_sha256="$(jq -r .bundleDenoLockSha256 bundle-input/bundle-input-manifest.json)"',
+        'bundle_deno_lock_npm_roots="$(jq -c .bundleDenoLock.npmRootSpecifiers bundle-input/bundle-input-manifest.json)"',
+        'bundle_deno_lock_evidence="$(jq -c .bundleDenoLock bundle-input/bundle-input-manifest.json)"',
+        "docker run",
+        '--env G12_SOURCE_DENO_LOCK_SHA256="$source_deno_lock_sha256"',
+        '--env G12_BUNDLE_DENO_LOCK_SHA256="$bundle_deno_lock_sha256"',
+        '--env G12_BUNDLE_DENO_LOCK_NPM_ROOT_SPECIFIERS="$bundle_deno_lock_npm_roots"',
+        '--env G12_BUNDLE_DENO_LOCK_EVIDENCE_JSON="$bundle_deno_lock_evidence"',
+      ]);
+      assert.doesNotMatch(step, /--env G12_DENO_LOCK_SHA256=/);
+    }
+  }
+
+  assert.match(runner, /"SOURCE_DENO_LOCK_SHA256"/);
+  assert.match(runner, /"BUNDLE_DENO_LOCK_SHA256"/);
+  assert.match(runner, /"BUNDLE_DENO_LOCK_NPM_ROOT_SPECIFIERS"/);
+  assert.match(runner, /"BUNDLE_DENO_LOCK_EVIDENCE_JSON"/);
+  assert.doesNotMatch(runner, /"DENO_LOCK_SHA256"/);
 });
 
 test("CI executes the real hardened Docker bundle twice and seals the result", () => {
@@ -281,13 +344,19 @@ test("CI executes the real hardened Docker bundle twice and seals the result", (
 });
 
 test("both candidate paths prove and report the exact bounded raw ESZIP size before sealing", () => {
+  assert.equal(STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes, 64 * 1024 * 1024);
+  assert.equal(STAGING_CMS_PUBLIC_HOTFIX.maximumWireBundleBytes, 20 * 1024 * 1024);
+  assert.ok(
+    STAGING_CMS_PUBLIC_HOTFIX.maximumWireBundleBytes < STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes,
+  );
   for (const [workflow, prefix, sealName] of [
     [mainWorkflow, "g12", "Seal only byte-identical online and network-disabled builds"],
     [ciWorkflow, "g12-smoke", "Seal the byte-identical Docker smoke builds"],
   ]) {
     assertOrdered(workflow, ["Verify and report the bounded raw ESZIP sizes", sealName]);
     const step = stepBody(workflow, "Verify and report the bounded raw ESZIP sizes");
-    assert.match(step, /maximum_raw_eszip_bytes=134217728/);
+    assert.match(step, /maximum_raw_eszip_bytes=67108864/);
+    assert.doesNotMatch(step, /maximum_raw_eszip_bytes=134217728/);
     assert.match(step, new RegExp(`online_eszip="\\$RUNNER_TEMP/${prefix}-online/output\\.eszip"`));
     assert.match(step, new RegExp(`offline_eszip="\\$RUNNER_TEMP/${prefix}-offline/output\\.eszip"`));
     assert.match(step, /stat -c %s -- "\$online_eszip"/);

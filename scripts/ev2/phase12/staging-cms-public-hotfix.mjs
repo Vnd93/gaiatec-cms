@@ -51,6 +51,12 @@ import {
   verifyHotfixReceipt,
 } from "./staging-cms-public-hotfix-lib.mjs";
 import {
+  assertCmsPublicBundleLock,
+  CMS_PUBLIC_BUNDLE_LOCK,
+  projectCmsPublicBundleLock,
+  serializeCmsPublicBundleLock,
+} from "./staging-cms-public-hotfix-deno-lock-lib.mjs";
+import {
   CMS_PUBLIC_JSR_MIRROR,
   loadCmsPublicJsrMirror,
   materializeCmsPublicJsrMirror,
@@ -217,9 +223,11 @@ function expectedAttestationKeys() {
   return [
     "BUNDLE_COMMAND_SHA256",
     "BUILDER_SCRIPT_SHA256",
+    "BUNDLE_DENO_LOCK_EVIDENCE_JSON",
+    "BUNDLE_DENO_LOCK_SHA256",
+    "BUNDLE_DENO_LOCK_NPM_ROOT_SPECIFIERS",
     "CANDIDATE_SHA",
     "DENO_CONFIG_SHA256",
-    "DENO_LOCK_SHA256",
     "EDGE_RUNTIME_AMD64_DIGEST",
     "EDGE_RUNTIME_INDEX_DIGEST",
     "ESZIP_VALIDATED",
@@ -242,6 +250,7 @@ function expectedAttestationKeys() {
     "RAW_ESZIP_SHA256",
     "SCHEMA_VERSION",
     "SOURCE_SHA256",
+    "SOURCE_DENO_LOCK_SHA256",
     "UNBUNDLED_COMMAND_SHA256",
     "UNBUNDLED_FILE_COUNT",
     "UNBUNDLED_FILES_SHA256",
@@ -263,7 +272,7 @@ async function loadBundleInput(root) {
     actual,
     denoConfig,
     denoConfigSha256,
-    denoLockSha256,
+    bundleDenoLockSha256,
     importMap,
     importMapSha256,
     denoLock,
@@ -284,6 +293,7 @@ async function loadBundleInput(root) {
     readJson(denoLockPath),
     candidateSourceUsesImportMeta(inputRoot),
   ]);
+  assertCmsPublicBundleLock(denoLock);
   const jsrMirror = await loadCmsPublicJsrMirror({
     root: join(inputRoot, ".g12-jsr"),
     lock: denoLock,
@@ -301,8 +311,11 @@ async function loadBundleInput(root) {
     manifest?.sourceSha256 !== STAGING_CMS_PUBLIC_HOTFIX.candidateSourceSha256 ||
     productionFunctionSourceDigest(inputRoot, "cms-public") !==
       STAGING_CMS_PUBLIC_HOTFIX.candidateSourceSha256 ||
-    denoLockSha256 !== STAGING_CMS_PUBLIC_HOTFIX.denoLockSha256 ||
-    manifest?.denoLockSha256 !== denoLockSha256 ||
+    manifest?.sourceDenoLockSha256 !== STAGING_CMS_PUBLIC_HOTFIX.sourceDenoLockSha256 ||
+    bundleDenoLockSha256 !== STAGING_CMS_PUBLIC_HOTFIX.bundleDenoLockSha256 ||
+    manifest?.bundleDenoLockSha256 !== bundleDenoLockSha256 ||
+    !manifest?.bundleDenoLock ||
+    canonicalSha256(manifest.bundleDenoLock) !== canonicalSha256(CMS_PUBLIC_BUNDLE_LOCK.evidence) ||
     importMapSha256 !== STAGING_CMS_PUBLIC_HOTFIX.importMapSha256 ||
     manifest?.importMapSha256 !== importMapSha256 ||
     manifest?.denoConfigSha256 !== denoConfigSha256 ||
@@ -1336,17 +1349,18 @@ async function verifySources() {
 async function prepareBundleInput() {
   const source = exactRoot(argument("source"));
   const output = exactRoot(argument("output"));
-  const denoLock = await readJson(join(source, "deno.lock"));
+  const sourceDenoLock = await readJson(join(source, "deno.lock"));
   if (
     productionFunctionSourceDigest(source, "cms-public") !== STAGING_CMS_PUBLIC_HOTFIX.candidateSourceSha256
   )
     throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_CANDIDATE_SOURCE_REFUSED");
   if (
-    (await fileSha256(join(source, "deno.lock"))) !== STAGING_CMS_PUBLIC_HOTFIX.denoLockSha256 ||
+    (await fileSha256(join(source, "deno.lock"))) !== STAGING_CMS_PUBLIC_HOTFIX.sourceDenoLockSha256 ||
     (await fileSha256(join(source, "supabase", "functions", "import_map.json"))) !==
       STAGING_CMS_PUBLIC_HOTFIX.importMapSha256
   )
     throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_DEPENDENCY_LOCK_REFUSED");
+  const bundleDenoLock = projectCmsPublicBundleLock(sourceDenoLock);
   if (await candidateSourceUsesImportMeta(source))
     throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_IMPORT_META_REFUSED");
   for (const name of [".env.local", ".env.staging.local", ".env.production.local"]) {
@@ -1385,7 +1399,7 @@ async function prepareBundleInput() {
     join(source, "supabase", "functions", "import_map.json"),
     join(output, "supabase", "functions", "import_map.json"),
   );
-  await copyFile(join(source, "deno.lock"), join(output, "deno.lock"));
+  await writeBytes(join(output, "deno.lock"), serializeCmsPublicBundleLock(bundleDenoLock));
   const importMap = JSON.parse(
     await readFile(join(source, "supabase", "functions", "import_map.json"), "utf8"),
   );
@@ -1401,7 +1415,7 @@ async function prepareBundleInput() {
   };
   await writeJson(join(output, "deno.json"), denoConfig);
   const jsrMirror = await materializeCmsPublicJsrMirror({
-    lock: denoLock,
+    lock: bundleDenoLock,
     output: join(output, ".g12-jsr"),
   });
   const inputTree = await directoryRecords(output);
@@ -1419,7 +1433,9 @@ async function prepareBundleInput() {
     event: "g12.staging.cms_public_hotfix.bundle_input",
     candidateSha: STAGING_CMS_PUBLIC_HOTFIX.hotfixSha,
     sourceSha256: STAGING_CMS_PUBLIC_HOTFIX.candidateSourceSha256,
-    denoLockSha256: await fileSha256(join(output, "deno.lock")),
+    sourceDenoLockSha256: STAGING_CMS_PUBLIC_HOTFIX.sourceDenoLockSha256,
+    bundleDenoLockSha256: await fileSha256(join(output, "deno.lock")),
+    bundleDenoLock: structuredClone(CMS_PUBLIC_BUNDLE_LOCK.evidence),
     denoConfigSha256: await fileSha256(join(output, "deno.json")),
     importMapSha256: await fileSha256(join(output, "supabase", "functions", "import_map.json")),
     sourceImportMetaAbsent: true,
@@ -1446,6 +1462,7 @@ async function prepareBundleInput() {
   publicEvent(manifest.event, {
     candidateSha: manifest.candidateSha,
     lockFrozen: true,
+    npmPackageCount: manifest.bundleDenoLock.npmPackageCount,
     jsrMirrorFileCount: manifest.jsrMirror.fileCount,
   });
 }
@@ -1476,7 +1493,11 @@ async function sealCandidate() {
       attestation.NETWORK !== network ||
       attestation.CANDIDATE_SHA !== STAGING_CMS_PUBLIC_HOTFIX.hotfixSha ||
       attestation.SOURCE_SHA256 !== STAGING_CMS_PUBLIC_HOTFIX.candidateSourceSha256 ||
-      attestation.DENO_LOCK_SHA256 !== STAGING_CMS_PUBLIC_HOTFIX.denoLockSha256 ||
+      attestation.SOURCE_DENO_LOCK_SHA256 !== STAGING_CMS_PUBLIC_HOTFIX.sourceDenoLockSha256 ||
+      attestation.BUNDLE_DENO_LOCK_SHA256 !== STAGING_CMS_PUBLIC_HOTFIX.bundleDenoLockSha256 ||
+      attestation.BUNDLE_DENO_LOCK_NPM_ROOT_SPECIFIERS !==
+        JSON.stringify(CMS_PUBLIC_BUNDLE_LOCK.npmRootSpecifiers) ||
+      attestation.BUNDLE_DENO_LOCK_EVIDENCE_JSON !== JSON.stringify(CMS_PUBLIC_BUNDLE_LOCK.evidence) ||
       attestation.DENO_CONFIG_SHA256 !== input.manifest.denoConfigSha256 ||
       attestation.IMPORT_MAP_SHA256 !== STAGING_CMS_PUBLIC_HOTFIX.importMapSha256 ||
       attestation.INPUT_MANIFEST_SHA256 !== input.manifestSha256 ||
@@ -1544,7 +1565,9 @@ async function sealCandidate() {
       treeSha256: input.actual.treeSha256,
       fileCount: input.actual.records.length,
       denoConfigSha256: input.manifest.denoConfigSha256,
-      denoLockSha256: input.manifest.denoLockSha256,
+      sourceDenoLockSha256: input.manifest.sourceDenoLockSha256,
+      bundleDenoLockSha256: input.manifest.bundleDenoLockSha256,
+      bundleDenoLock: structuredClone(input.manifest.bundleDenoLock),
       importMapSha256: input.manifest.importMapSha256,
       jsrMirror: {
         runtimeUrl: CMS_PUBLIC_JSR_MIRROR.runtimeUrl,

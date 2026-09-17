@@ -3,6 +3,7 @@ import { brotliCompressSync, brotliDecompressSync, constants as zlibConstants } 
 
 import { PRODUCTION_FUNCTIONS, PUBLIC_FUNCTIONS } from "./production-backend-lib.mjs";
 import { validatePublicBridgeRolloutProbe } from "./public-bridge-evidence-lib.mjs";
+import { CMS_PUBLIC_BUNDLE_LOCK } from "./staging-cms-public-hotfix-deno-lock-lib.mjs";
 import { CMS_PUBLIC_JSR_MIRROR } from "./staging-cms-public-hotfix-jsr-mirror-lib.mjs";
 
 const FULL_SHA = /^[a-f0-9]{40}$/;
@@ -35,7 +36,8 @@ export const STAGING_CMS_PUBLIC_HOTFIX = Object.freeze({
   }),
   baselineSourceSha256: "1e1df2c176b6ca099e4e41b9582e51f360dbde80c8160895e00c74b90b07e505",
   candidateSourceSha256: "84e59669b716a7f43820128ce8de21fa1ae5e69abf9452fa71dfb768a6c8367b",
-  denoLockSha256: "26a8ec603c63c1f9d25fdb1b0c020216d982878c4c5c756467bc29008dd4ba2a",
+  sourceDenoLockSha256: CMS_PUBLIC_BUNDLE_LOCK.sourceSha256,
+  bundleDenoLockSha256: CMS_PUBLIC_BUNDLE_LOCK.sha256,
   importMapSha256: "d33ffa2ae7065139c3b3fc49c59cdd49fdae7817c5fa78bfd2d53bebbe83407c",
   edgeRuntimeIndexDigest: "sha256:c52405002a890ca9fcf77978671c57f3a988e03174afb277f84ac65bc917013c",
   edgeRuntimeAmd64Digest: "sha256:cc355c3d0e9c063a351cad56d1c4c52a3c4d85aff4e1fad9d91688e75f9aad09",
@@ -43,9 +45,9 @@ export const STAGING_CMS_PUBLIC_HOTFIX = Object.freeze({
     "edge-runtime bundle --entrypoint /workspace/supabase/functions/cms-public/index.ts --output /output/output.eszip --checksum sha256",
   unbundleCommand:
     "edge-runtime unbundle --eszip /output/output.eszip --output /output/unbundled/supabase/functions/cms-public",
-  builderScriptSha256: "80e5e5b6d69e23953931450243996242b250a4b4e9fbbdd052a4c6037e4e275e",
-  maximumWireBundleBytes: 32 * 1024 * 1024,
-  maximumRawEszipBytes: 128 * 1024 * 1024,
+  builderScriptSha256: "8a6f3b2c77540e6a7c95988e73e928aecd8749d5a41b8e78175da541ab50fd19",
+  maximumWireBundleBytes: 20 * 1024 * 1024,
+  maximumRawEszipBytes: 64 * 1024 * 1024,
   candidateEntrypointPath: "file:///workspace/supabase/functions/cms-public/index.ts",
   candidateImportMapPath: "file:///workspace/deno.json",
   candidateEszipEntrypointSpecifier: "workspace/supabase/functions/cms-public/index.ts",
@@ -465,6 +467,7 @@ export function hasExpectedCandidateEszipStructure(inspection) {
 export function validateCandidateBuildProvenance(provenance, { rawEszip } = {}) {
   const violations = [];
   const input = provenance?.input;
+  const bundleDenoLock = input?.bundleDenoLock;
   const jsrMirror = input?.jsrMirror;
   const builder = provenance?.builder;
   const inspection = provenance?.rawEszip;
@@ -478,7 +481,9 @@ export function validateCandidateBuildProvenance(provenance, { rawEszip } = {}) 
     !Number.isSafeInteger(input?.fileCount) ||
     input.fileCount < 1 ||
     !SHA256.test(input?.denoConfigSha256 ?? "") ||
-    input?.denoLockSha256 !== STAGING_CMS_PUBLIC_HOTFIX.denoLockSha256 ||
+    input?.sourceDenoLockSha256 !== STAGING_CMS_PUBLIC_HOTFIX.sourceDenoLockSha256 ||
+    input?.bundleDenoLockSha256 !== STAGING_CMS_PUBLIC_HOTFIX.bundleDenoLockSha256 ||
+    !sameCanonical(bundleDenoLock, CMS_PUBLIC_BUNDLE_LOCK.evidence) ||
     input?.importMapSha256 !== STAGING_CMS_PUBLIC_HOTFIX.importMapSha256 ||
     jsrMirror?.runtimeUrl !== CMS_PUBLIC_JSR_MIRROR.runtimeUrl ||
     !SHA256.test(jsrMirror?.manifestSha256 ?? "") ||
@@ -554,9 +559,11 @@ export function validateCandidateBuildEvidenceFiles(provenance, evidence) {
   const expectedAttestationKeys = [
     "BUNDLE_COMMAND_SHA256",
     "BUILDER_SCRIPT_SHA256",
+    "BUNDLE_DENO_LOCK_EVIDENCE_JSON",
+    "BUNDLE_DENO_LOCK_NPM_ROOT_SPECIFIERS",
+    "BUNDLE_DENO_LOCK_SHA256",
     "CANDIDATE_SHA",
     "DENO_CONFIG_SHA256",
-    "DENO_LOCK_SHA256",
     "EDGE_RUNTIME_AMD64_DIGEST",
     "EDGE_RUNTIME_INDEX_DIGEST",
     "ESZIP_VALIDATED",
@@ -579,6 +586,7 @@ export function validateCandidateBuildEvidenceFiles(provenance, evidence) {
     "RAW_ESZIP_SHA256",
     "SCHEMA_VERSION",
     "SOURCE_SHA256",
+    "SOURCE_DENO_LOCK_SHA256",
     "UNBUNDLED_COMMAND_SHA256",
     "UNBUNDLED_FILE_COUNT",
     "UNBUNDLED_FILES_SHA256",
@@ -611,9 +619,13 @@ export function validateCandidateBuildEvidenceFiles(provenance, evidence) {
     const expectedAttestation = {
       BUNDLE_COMMAND_SHA256: provenance?.builder?.bundleCommandSha256,
       BUILDER_SCRIPT_SHA256: provenance?.builder?.builderScriptSha256,
+      BUNDLE_DENO_LOCK_SHA256: provenance?.input?.bundleDenoLockSha256,
+      BUNDLE_DENO_LOCK_NPM_ROOT_SPECIFIERS: JSON.stringify(
+        provenance?.input?.bundleDenoLock?.npmRootSpecifiers,
+      ),
+      BUNDLE_DENO_LOCK_EVIDENCE_JSON: JSON.stringify(provenance?.input?.bundleDenoLock),
       CANDIDATE_SHA: STAGING_CMS_PUBLIC_HOTFIX.hotfixSha,
       DENO_CONFIG_SHA256: provenance?.input?.denoConfigSha256,
-      DENO_LOCK_SHA256: provenance?.input?.denoLockSha256,
       EDGE_RUNTIME_AMD64_DIGEST: provenance?.builder?.edgeRuntimeAmd64Digest,
       EDGE_RUNTIME_INDEX_DIGEST: provenance?.builder?.edgeRuntimeIndexDigest,
       ESZIP_VALIDATED: "true",
@@ -636,6 +648,7 @@ export function validateCandidateBuildEvidenceFiles(provenance, evidence) {
       RAW_ESZIP_SHA256: build?.rawEszipSha256,
       SCHEMA_VERSION: "1",
       SOURCE_SHA256: STAGING_CMS_PUBLIC_HOTFIX.candidateSourceSha256,
+      SOURCE_DENO_LOCK_SHA256: provenance?.input?.sourceDenoLockSha256,
       UNBUNDLED_COMMAND_SHA256: provenance?.builder?.unbundleCommandSha256,
       UNBUNDLED_FILE_COUNT: String(build?.unbundledFileCount),
       UNBUNDLED_FILES_SHA256: build?.unbundledFilesSha256,
@@ -693,9 +706,15 @@ export function validateCandidateBuildEvidenceFiles(provenance, evidence) {
 export function frameRawEszip(rawEszip) {
   const raw = Buffer.from(rawEszip);
   inspectEszipV2(raw);
-  const compressed = brotliCompressSync(raw, {
-    params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 6 },
-  });
+  let compressed;
+  try {
+    compressed = brotliCompressSync(raw, {
+      maxOutputLength: STAGING_CMS_PUBLIC_HOTFIX.maximumWireBundleBytes - EZBR_MAGIC.byteLength,
+      params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 6 },
+    });
+  } catch (error) {
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_BUNDLE_SIZE_REFUSED", { cause: error });
+  }
   assertWireBundleByteLength(EZBR_MAGIC.byteLength + compressed.byteLength);
   return Buffer.concat([EZBR_MAGIC, compressed]);
 }
@@ -1135,7 +1154,9 @@ export function buildRecoveryPackageManifest({ baseline, candidate, inventory })
     source: {
       baselineSha256: STAGING_CMS_PUBLIC_HOTFIX.baselineSourceSha256,
       candidateSha256: STAGING_CMS_PUBLIC_HOTFIX.candidateSourceSha256,
-      denoLockSha256: STAGING_CMS_PUBLIC_HOTFIX.denoLockSha256,
+      sourceDenoLockSha256: STAGING_CMS_PUBLIC_HOTFIX.sourceDenoLockSha256,
+      bundleDenoLockSha256: STAGING_CMS_PUBLIC_HOTFIX.bundleDenoLockSha256,
+      bundleDenoLock: structuredClone(CMS_PUBLIC_BUNDLE_LOCK.evidence),
       importMapSha256: STAGING_CMS_PUBLIC_HOTFIX.importMapSha256,
     },
     builder: {
@@ -1157,6 +1178,7 @@ export function buildRecoveryPackageManifest({ baseline, candidate, inventory })
       entrypointPath: STAGING_CMS_PUBLIC_HOTFIX.candidateEntrypointPath,
       importMapPath: STAGING_CMS_PUBLIC_HOTFIX.candidateImportMapPath,
       verifyJwt: false,
+      bundleDenoLock: structuredClone(CMS_PUBLIC_BUNDLE_LOCK.evidence),
       provenance: candidate.provenance,
     },
     inventory: {
@@ -1182,7 +1204,9 @@ export function validateRecoveryPackage({ manifest, baselineBody, candidateBody,
     manifest?.target?.slug !== STAGING_CMS_PUBLIC_HOTFIX.functionSlug ||
     manifest?.source?.baselineSha256 !== STAGING_CMS_PUBLIC_HOTFIX.baselineSourceSha256 ||
     manifest?.source?.candidateSha256 !== STAGING_CMS_PUBLIC_HOTFIX.candidateSourceSha256 ||
-    manifest?.source?.denoLockSha256 !== STAGING_CMS_PUBLIC_HOTFIX.denoLockSha256 ||
+    manifest?.source?.sourceDenoLockSha256 !== STAGING_CMS_PUBLIC_HOTFIX.sourceDenoLockSha256 ||
+    manifest?.source?.bundleDenoLockSha256 !== STAGING_CMS_PUBLIC_HOTFIX.bundleDenoLockSha256 ||
+    !sameCanonical(manifest?.source?.bundleDenoLock, CMS_PUBLIC_BUNDLE_LOCK.evidence) ||
     manifest?.source?.importMapSha256 !== STAGING_CMS_PUBLIC_HOTFIX.importMapSha256 ||
     manifest?.builder?.edgeRuntimeIndexDigest !== STAGING_CMS_PUBLIC_HOTFIX.edgeRuntimeIndexDigest ||
     manifest?.builder?.edgeRuntimeAmd64Digest !== STAGING_CMS_PUBLIC_HOTFIX.edgeRuntimeAmd64Digest ||
@@ -1192,6 +1216,7 @@ export function validateRecoveryPackage({ manifest, baselineBody, candidateBody,
     manifest?.candidate?.entrypointPath !== STAGING_CMS_PUBLIC_HOTFIX.candidateEntrypointPath ||
     manifest?.candidate?.importMapPath !== STAGING_CMS_PUBLIC_HOTFIX.candidateImportMapPath ||
     manifest?.candidate?.verifyJwt !== false ||
+    !sameCanonical(manifest?.candidate?.bundleDenoLock, CMS_PUBLIC_BUNDLE_LOCK.evidence) ||
     manifest?.candidate?.sha256 === manifest?.baseline?.sha256 ||
     !Number.isSafeInteger(manifest?.baseline?.bytes) ||
     manifest.baseline.bytes < 32 ||
@@ -2020,7 +2045,7 @@ export function assertExactSourceIdentity({
   if (
     !Array.isArray(lockDigests) ||
     lockDigests.length !== 3 ||
-    lockDigests.some((value) => value !== STAGING_CMS_PUBLIC_HOTFIX.denoLockSha256)
+    lockDigests.some((value) => value !== STAGING_CMS_PUBLIC_HOTFIX.sourceDenoLockSha256)
   )
     violations.push("deno_lock_invalid");
   if (

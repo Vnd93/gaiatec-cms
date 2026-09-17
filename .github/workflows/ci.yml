@@ -95,6 +95,10 @@ jobs:
           jsr_tree="$(jq -r .jsrMirror.treeSha256 bundle-input/bundle-input-manifest.json)"
           jsr_count="$(jq -r .jsrMirror.fileCount bundle-input/bundle-input-manifest.json)"
           jsr_bytes="$(jq -r .jsrMirror.bytes bundle-input/bundle-input-manifest.json)"
+          source_deno_lock_sha256="$(jq -r .sourceDenoLockSha256 bundle-input/bundle-input-manifest.json)"
+          bundle_deno_lock_sha256="$(jq -r .bundleDenoLockSha256 bundle-input/bundle-input-manifest.json)"
+          bundle_deno_lock_npm_roots="$(jq -c .bundleDenoLock.npmRootSpecifiers bundle-input/bundle-input-manifest.json)"
+          bundle_deno_lock_evidence="$(jq -c .bundleDenoLock bundle-input/bundle-input-manifest.json)"
           docker run --rm --platform linux/amd64 --network bridge --read-only \
             --user "$(id -u):$(id -g)" \
             --cap-drop ALL --security-opt no-new-privileges \
@@ -115,6 +119,10 @@ jobs:
             --env G12_JSR_MIRROR_TREE_SHA256="$jsr_tree" \
             --env G12_JSR_MIRROR_FILE_COUNT="$jsr_count" \
             --env G12_JSR_MIRROR_BYTES="$jsr_bytes" \
+            --env G12_SOURCE_DENO_LOCK_SHA256="$source_deno_lock_sha256" \
+            --env G12_BUNDLE_DENO_LOCK_SHA256="$bundle_deno_lock_sha256" \
+            --env G12_BUNDLE_DENO_LOCK_NPM_ROOT_SPECIFIERS="$bundle_deno_lock_npm_roots" \
+            --env G12_BUNDLE_DENO_LOCK_EVIDENCE_JSON="$bundle_deno_lock_evidence" \
             --entrypoint /bin/sh "$EDGE_RUNTIME_IMAGE" /g12-builder.sh online default
       - name: Exercise the hardened offline Docker rebuild boundary
         run: |
@@ -153,6 +161,10 @@ jobs:
           jsr_tree="$(jq -r .jsrMirror.treeSha256 bundle-input/bundle-input-manifest.json)"
           jsr_count="$(jq -r .jsrMirror.fileCount bundle-input/bundle-input-manifest.json)"
           jsr_bytes="$(jq -r .jsrMirror.bytes bundle-input/bundle-input-manifest.json)"
+          source_deno_lock_sha256="$(jq -r .sourceDenoLockSha256 bundle-input/bundle-input-manifest.json)"
+          bundle_deno_lock_sha256="$(jq -r .bundleDenoLockSha256 bundle-input/bundle-input-manifest.json)"
+          bundle_deno_lock_npm_roots="$(jq -c .bundleDenoLock.npmRootSpecifiers bundle-input/bundle-input-manifest.json)"
+          bundle_deno_lock_evidence="$(jq -c .bundleDenoLock bundle-input/bundle-input-manifest.json)"
           docker run --rm --platform linux/amd64 --network none --read-only \
             --user "$(id -u):$(id -g)" \
             --cap-drop ALL --security-opt no-new-privileges \
@@ -173,11 +185,15 @@ jobs:
             --env G12_JSR_MIRROR_TREE_SHA256="$jsr_tree" \
             --env G12_JSR_MIRROR_FILE_COUNT="$jsr_count" \
             --env G12_JSR_MIRROR_BYTES="$jsr_bytes" \
+            --env G12_SOURCE_DENO_LOCK_SHA256="$source_deno_lock_sha256" \
+            --env G12_BUNDLE_DENO_LOCK_SHA256="$bundle_deno_lock_sha256" \
+            --env G12_BUNDLE_DENO_LOCK_NPM_ROOT_SPECIFIERS="$bundle_deno_lock_npm_roots" \
+            --env G12_BUNDLE_DENO_LOCK_EVIDENCE_JSON="$bundle_deno_lock_evidence" \
             --entrypoint /bin/sh "$EDGE_RUNTIME_IMAGE" /g12-builder.sh offline none
       - name: Verify and report the bounded raw ESZIP sizes
         run: |
           set -euo pipefail
-          maximum_raw_eszip_bytes=134217728
+          maximum_raw_eszip_bytes=67108864
           online_eszip="$RUNNER_TEMP/g12-smoke-online/output.eszip"
           offline_eszip="$RUNNER_TEMP/g12-smoke-offline/output.eszip"
           online_attestation="$RUNNER_TEMP/g12-smoke-online/build-attestation.env"

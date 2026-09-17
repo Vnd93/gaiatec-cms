@@ -3,6 +3,7 @@ import { brotliCompressSync, brotliDecompressSync, constants as zlibConstants } 
 
 import { PRODUCTION_FUNCTIONS, PUBLIC_FUNCTIONS } from "./production-backend-lib.mjs";
 import { validatePublicBridgeRolloutProbe } from "./public-bridge-evidence-lib.mjs";
+import { CMS_PUBLIC_JSR_MIRROR } from "./staging-cms-public-hotfix-jsr-mirror-lib.mjs";
 
 const FULL_SHA = /^[a-f0-9]{40}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
@@ -42,7 +43,7 @@ export const STAGING_CMS_PUBLIC_HOTFIX = Object.freeze({
     "edge-runtime bundle --entrypoint /workspace/supabase/functions/cms-public/index.ts --output /output/output.eszip --checksum sha256",
   unbundleCommand:
     "edge-runtime unbundle --eszip /output/output.eszip --output /output/unbundled/supabase/functions/cms-public",
-  builderScriptSha256: "7a3df88f5baa92219ca3bf57aee90bc10559795cd365c7a7b5ea3baf64d4ff66",
+  builderScriptSha256: "80e5e5b6d69e23953931450243996242b250a4b4e9fbbdd052a4c6037e4e275e",
   maximumWireBundleBytes: 32 * 1024 * 1024,
   maximumRawEszipBytes: 64 * 1024 * 1024,
   candidateEntrypointPath: "file:///workspace/supabase/functions/cms-public/index.ts",
@@ -453,6 +454,7 @@ export function hasExpectedCandidateEszipStructure(inspection) {
 export function validateCandidateBuildProvenance(provenance, { rawEszip } = {}) {
   const violations = [];
   const input = provenance?.input;
+  const jsrMirror = input?.jsrMirror;
   const builder = provenance?.builder;
   const inspection = provenance?.rawEszip;
   if (
@@ -467,6 +469,16 @@ export function validateCandidateBuildProvenance(provenance, { rawEszip } = {}) 
     !SHA256.test(input?.denoConfigSha256 ?? "") ||
     input?.denoLockSha256 !== STAGING_CMS_PUBLIC_HOTFIX.denoLockSha256 ||
     input?.importMapSha256 !== STAGING_CMS_PUBLIC_HOTFIX.importMapSha256 ||
+    jsrMirror?.runtimeUrl !== CMS_PUBLIC_JSR_MIRROR.runtimeUrl ||
+    !SHA256.test(jsrMirror?.manifestSha256 ?? "") ||
+    !SHA256.test(jsrMirror?.filesManifestSha256 ?? "") ||
+    !SHA256.test(jsrMirror?.treeSha256 ?? "") ||
+    jsrMirror?.filesManifestSha256 !== jsrMirror?.treeSha256 ||
+    !Number.isSafeInteger(jsrMirror?.fileCount) ||
+    jsrMirror.fileCount < 1 ||
+    !Number.isSafeInteger(jsrMirror?.bytes) ||
+    jsrMirror.bytes < 1 ||
+    jsrMirror?.moduleImportMetaAbsent !== true ||
     builder?.edgeRuntimeIndexDigest !== STAGING_CMS_PUBLIC_HOTFIX.edgeRuntimeIndexDigest ||
     builder?.edgeRuntimeAmd64Digest !== STAGING_CMS_PUBLIC_HOTFIX.edgeRuntimeAmd64Digest ||
     builder?.platform !== "linux/amd64" ||
@@ -543,6 +555,12 @@ export function validateCandidateBuildEvidenceFiles(provenance, evidence) {
     "INPUT_FILES_MANIFEST_SHA256",
     "INPUT_MANIFEST_SHA256",
     "INPUT_TREE_SHA256",
+    "JSR_MIRROR_BYTES",
+    "JSR_MIRROR_FILE_COUNT",
+    "JSR_MIRROR_FILES_MANIFEST_SHA256",
+    "JSR_MIRROR_MANIFEST_SHA256",
+    "JSR_MIRROR_TREE_SHA256",
+    "JSR_URL",
     "MODE",
     "NETWORK",
     "PLATFORM",
@@ -594,6 +612,12 @@ export function validateCandidateBuildEvidenceFiles(provenance, evidence) {
       INPUT_FILES_MANIFEST_SHA256: provenance?.input?.filesManifestSha256,
       INPUT_MANIFEST_SHA256: provenance?.input?.manifestSha256,
       INPUT_TREE_SHA256: provenance?.input?.treeSha256,
+      JSR_MIRROR_BYTES: String(provenance?.input?.jsrMirror?.bytes),
+      JSR_MIRROR_FILE_COUNT: String(provenance?.input?.jsrMirror?.fileCount),
+      JSR_MIRROR_FILES_MANIFEST_SHA256: provenance?.input?.jsrMirror?.filesManifestSha256,
+      JSR_MIRROR_MANIFEST_SHA256: provenance?.input?.jsrMirror?.manifestSha256,
+      JSR_MIRROR_TREE_SHA256: provenance?.input?.jsrMirror?.treeSha256,
+      JSR_URL: provenance?.input?.jsrMirror?.runtimeUrl,
       MODE: mode,
       NETWORK: network,
       PLATFORM: provenance?.builder?.platform,

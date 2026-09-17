@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+
+import { STAGING_CMS_PUBLIC_HOTFIX } from "./staging-cms-public-hotfix-lib.mjs";
 
 const mainWorkflowPath = new URL(
   "../../../.github/workflows/promote-staging-cms-public-hotfix.yml",
@@ -130,6 +133,10 @@ test("every hardened hotfix container runs as the host runner identity", () => {
 });
 
 test("the immutable builder reports every preflight and runtime boundary failure", () => {
+  assert.equal(
+    createHash("sha256").update(Buffer.from(builder, "utf8")).digest("hex"),
+    STAGING_CMS_PUBLIC_HOTFIX.builderScriptSha256,
+  );
   assert.match(builder, /refuse\(\) \{[\s\S]*printf '%s\\n' "\$1" >&2[\s\S]*exit 1/);
   for (const token of [
     "G12_STAGING_CMS_PUBLIC_HOTFIX_EDGE_RUNTIME_INDEX_DIGEST_REFUSED",
@@ -137,6 +144,12 @@ test("the immutable builder reports every preflight and runtime boundary failure
     "G12_STAGING_CMS_PUBLIC_HOTFIX_PLATFORM_REFUSED",
     "G12_STAGING_CMS_PUBLIC_HOTFIX_INPUT_TREE_MISSING",
     "G12_STAGING_CMS_PUBLIC_HOTFIX_INPUT_FILE_COUNT_MISSING",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_URL_REFUSED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_MANIFEST_SHA256_MISSING",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_FILES_MANIFEST_SHA256_MISSING",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_TREE_SHA256_MISSING",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_FILE_COUNT_MISSING",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_BYTES_MISSING",
     "G12_STAGING_CMS_PUBLIC_HOTFIX_DENO_DIR_MISSING",
     "G12_STAGING_CMS_PUBLIC_HOTFIX_INPUT_DIRECTORY_UNREADABLE",
     "G12_STAGING_CMS_PUBLIC_HOTFIX_OUTPUT_DIRECTORY_UNWRITABLE",
@@ -151,6 +164,32 @@ test("the immutable builder reports every preflight and runtime boundary failure
     "G12_STAGING_CMS_PUBLIC_HOTFIX_DENO_LOCK_UNREADABLE",
     "G12_STAGING_CMS_PUBLIC_HOTFIX_IMPORT_MAP_UNREADABLE",
     "G12_STAGING_CMS_PUBLIC_HOTFIX_ENTRYPOINT_UNREADABLE",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_DIRECTORY_UNREADABLE",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_MANIFEST_UNREADABLE",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_FILES_MANIFEST_UNREADABLE",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_FUNCTIONS_REGISTRY_METADATA_UNREADABLE",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_FUNCTIONS_VERSION_METADATA_UNREADABLE",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_SUPABASE_REGISTRY_METADATA_UNREADABLE",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_SUPABASE_VERSION_METADATA_UNREADABLE",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_SYMLINK_REFUSED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_ENTRY_REFUSED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_FIND_FAILED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_SORT_FAILED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_HASH_FAILED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_INVENTORY_REFUSED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_FILE_COUNT_FAILED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_SIZE_SCAN_FAILED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_BYTES_FAILED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_MANIFEST_REFUSED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_FILES_MANIFEST_REFUSED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_TREE_REFUSED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_FILE_COUNT_REFUSED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_BYTES_REFUSED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_FUNCTIONS_REGISTRY_METADATA_REFUSED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_FUNCTIONS_VERSION_METADATA_REFUSED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_SUPABASE_REGISTRY_METADATA_REFUSED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_SUPABASE_VERSION_METADATA_REFUSED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_TEMP_CLEANUP_FAILED",
     "G12_STAGING_CMS_PUBLIC_HOTFIX_EDGE_RUNTIME_BUNDLE_FAILED",
     "G12_STAGING_CMS_PUBLIC_HOTFIX_EDGE_RUNTIME_UNBUNDLE_FAILED",
     "G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_FIND_FAILED",
@@ -168,6 +207,22 @@ test("the immutable builder reports every preflight and runtime boundary failure
   assert.match(builder, /sort -z "\$\{unbundled_files\}" > "\$\{unbundled_files_sorted\}"/);
   assert.match(builder, /xargs -0 -r sha256sum < "\$\{unbundled_files_sorted\}"/);
   assert.equal((builder.match(/cd "\$\{unbundled\}" \|\| exit 1/g) ?? []).length, 2);
+  assert.match(builder, /require_equal "\$\{JSR_URL:-\}" "file:\/\/\/workspace\/\.g12-jsr\/"/);
+  assert.match(builder, /find \. -type f[\s\S]*\.g12-mirror-manifest\.json[\s\S]*-print0/);
+  assert.match(builder, /xargs -0 -r sha256sum --text < "\$\{mirror_files_sorted\}"/);
+  assert.match(builder, /cmp -s "\$\{mirror_files_actual\}" "\$\{jsr_mirror_files_manifest\}"/);
+  assert.match(builder, /xargs -0 -r -n 1 wc -c < "\$\{mirror_files_sorted\}"/);
+  assert.match(builder, /\) > "\$\{mirror_sizes\}"; then/);
+  assert.match(builder, /awk '\{ total \+= \$1 \} END \{ print total \+ 0 \}' "\$\{mirror_sizes\}"/);
+  assert.doesNotMatch(builder, /\)\s*\|\s*awk/);
+});
+
+test("bundle input seals the lock-verified file JSR mirror and rejects import.meta", () => {
+  assert.match(runner, /materializeCmsPublicJsrMirror\(\{[\s\S]*lock: denoLock[\s\S]*\.g12-jsr/);
+  assert.match(runner, /loadCmsPublicJsrMirror\(\{[\s\S]*\.g12-jsr[\s\S]*lock: denoLock/);
+  assert.match(runner, /G12_STAGING_CMS_PUBLIC_HOTFIX_IMPORT_META_REFUSED/);
+  assert.match(runner, /sourceImportMetaAbsent: true/);
+  assert.match(runner, /jsrMirror: \{[\s\S]*manifestSha256[\s\S]*treeSha256[\s\S]*fileCount[\s\S]*bytes/);
 });
 
 test("CI executes the real hardened Docker bundle twice and seals the result", () => {
@@ -197,6 +252,7 @@ test("CI executes the real hardened Docker bundle twice and seals the result", (
   assert.equal((job.match(/--user "\$\(id -u\):\$\(id -g\)"/g) ?? []).length, 2);
   assert.equal((job.match(/--cap-drop ALL --security-opt no-new-privileges/g) ?? []).length, 2);
   assert.equal((job.match(/--env HOME=\/tmp --env DENO_DIR=\/deno-cache/g) ?? []).length, 2);
+  assert.equal((job.match(/--env JSR_URL=file:\/\/\/workspace\/\.g12-jsr\//g) ?? []).length, 2);
   assert.match(job, /--network bridge/);
   assert.match(job, /--network none/);
   assert.match(job, /staging-cms-public-hotfix\.mjs seal-candidate/);
@@ -215,11 +271,15 @@ test("CI executes the real hardened Docker bundle twice and seals the result", (
     assert.match(step, /:\/deno-cache:rw/);
     assert.match(step, /staging-cms-public-hotfix-bundle\.sh:\/g12-builder\.sh:ro/);
     assert.match(step, /--env G12_PLATFORM=linux\/amd64/);
+    assert.match(step, /jq -r \.jsrMirror\.manifestSha256/);
+    assert.match(step, /--env G12_JSR_MIRROR_TREE_SHA256="\$jsr_tree"/);
+    assert.match(step, /--env G12_JSR_MIRROR_FILE_COUNT="\$jsr_count"/);
+    assert.match(step, /--env G12_JSR_MIRROR_BYTES="\$jsr_bytes"/);
     assert.match(step, new RegExp(`/g12-builder\\.sh ${mode}`));
   }
 });
 
-test("offline rebuild copies only portable Deno cache trees into a fresh cache root", () => {
+test("offline rebuild copies only npm into a fresh cache and proves JSR never used remote", () => {
   for (const [workflow, name, prefix] of [
     [mainWorkflow, "Rebuild offline with Docker networking disabled", "g12"],
     [ciWorkflow, "Exercise the hardened offline Docker rebuild boundary", "g12-smoke"],
@@ -227,18 +287,27 @@ test("offline rebuild copies only portable Deno cache trees into a fresh cache r
     const step = stepBody(workflow, name);
     assertOrdered(step, [
       `install -d -m 700 "$RUNNER_TEMP/${prefix}-offline" "$RUNNER_TEMP/${prefix}-offline-cache"`,
-      "for cache_dir in npm remote; do",
+      `online_remote="$RUNNER_TEMP/${prefix}-online-cache/remote"`,
+      'if ! online_remote_entry="$(find "$online_remote" -mindepth 1 -print -quit)"; then',
+      'test -z "$online_remote_entry"',
+      `source_dir="$RUNNER_TEMP/${prefix}-online-cache/npm"`,
       'test -d "$source_dir"',
       'test ! -L "$source_dir"',
-      'test -n "$(find "$source_dir" -mindepth 1 -maxdepth 1 -print -quit)"',
+      'if ! source_entry="$(find "$source_dir" -mindepth 1 -maxdepth 1 -print -quit)"; then',
+      'test -n "$source_entry"',
+      `if ! offline_entry="$(find "$RUNNER_TEMP/${prefix}-offline-cache" -mindepth 1 -maxdepth 1 -print -quit)"; then`,
+      'test -z "$offline_entry"',
       "cp -a",
+      `if ! offline_names="$(find "$RUNNER_TEMP/${prefix}-offline-cache" -mindepth 1 -maxdepth 1 -printf '%f\\n')"; then`,
+      'test "$offline_names" = npm',
       "docker run",
     ]);
-    assert.match(step, new RegExp(`source_dir="\\$RUNNER_TEMP/${prefix}-online-cache/\\$cache_dir"`));
     assert.match(step, new RegExp(`cp -a -- "\\$source_dir" "\\$RUNNER_TEMP/${prefix}-offline-cache/"`));
-    assert.doesNotMatch(step, /\b(?:registries|gen)\b/);
+    assert.doesNotMatch(step, /for cache_dir|\b(?:registries|gen)\b/);
     assert.doesNotMatch(step, /online-cache\/\."/);
+    assert.doesNotMatch(step, /test[^\n]*\$\(find/);
     assert.match(step, /--network none --read-only/);
+    assert.match(step, /--env JSR_URL=file:\/\/\/workspace\/\.g12-jsr\//);
   }
 });
 

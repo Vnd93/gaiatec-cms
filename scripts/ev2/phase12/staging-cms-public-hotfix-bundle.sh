@@ -16,6 +16,9 @@ eszip="${output}/output.eszip"
 unbundled="${output}/unbundled"
 unbundled_manifest="${output}/unbundled-files.sha256"
 attestation="${output}/build-attestation.env"
+jsr_mirror="${input}/.g12-jsr"
+jsr_mirror_manifest="${jsr_mirror}/.g12-mirror-manifest.json"
+jsr_mirror_files_manifest="${jsr_mirror}/.g12-mirror-files.sha256"
 bundle_command='edge-runtime bundle --entrypoint /workspace/supabase/functions/cms-public/index.ts --output /output/output.eszip --checksum sha256'
 unbundle_command='edge-runtime unbundle --eszip /output/output.eszip --output /output/unbundled/supabase/functions/cms-public'
 
@@ -58,6 +61,10 @@ require_absent() {
   test ! -e "$1" || refuse "$2"
 }
 
+sha_value() {
+  sha256sum "$1" | awk '{print $1}'
+}
+
 require_equal "${G12_EDGE_RUNTIME_INDEX_DIGEST:-}" \
   "sha256:c52405002a890ca9fcf77978671c57f3a988e03174afb277f84ac65bc917013c" \
   G12_STAGING_CMS_PUBLIC_HOTFIX_EDGE_RUNTIME_INDEX_DIGEST_REFUSED
@@ -70,6 +77,18 @@ require_nonempty "${G12_INPUT_TREE_SHA256:-}" \
   G12_STAGING_CMS_PUBLIC_HOTFIX_INPUT_TREE_MISSING
 require_nonempty "${G12_INPUT_FILE_COUNT:-}" \
   G12_STAGING_CMS_PUBLIC_HOTFIX_INPUT_FILE_COUNT_MISSING
+require_equal "${JSR_URL:-}" "file:///workspace/.g12-jsr/" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_URL_REFUSED
+require_nonempty "${G12_JSR_MIRROR_MANIFEST_SHA256:-}" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_MANIFEST_SHA256_MISSING
+require_nonempty "${G12_JSR_MIRROR_FILES_MANIFEST_SHA256:-}" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_FILES_MANIFEST_SHA256_MISSING
+require_nonempty "${G12_JSR_MIRROR_TREE_SHA256:-}" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_TREE_SHA256_MISSING
+require_nonempty "${G12_JSR_MIRROR_FILE_COUNT:-}" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_FILE_COUNT_MISSING
+require_nonempty "${G12_JSR_MIRROR_BYTES:-}" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_BYTES_MISSING
 require_nonempty "${DENO_DIR:-}" G12_STAGING_CMS_PUBLIC_HOTFIX_DENO_DIR_MISSING
 require_searchable_directory "${input}" \
   G12_STAGING_CMS_PUBLIC_HOTFIX_INPUT_DIRECTORY_UNREADABLE
@@ -94,11 +113,96 @@ require_readable_file "${input}/supabase/functions/import_map.json" \
   G12_STAGING_CMS_PUBLIC_HOTFIX_IMPORT_MAP_UNREADABLE
 require_readable_file "${input}/supabase/functions/cms-public/index.ts" \
   G12_STAGING_CMS_PUBLIC_HOTFIX_ENTRYPOINT_UNREADABLE
+require_searchable_directory "${jsr_mirror}" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_DIRECTORY_UNREADABLE
+test ! -L "${jsr_mirror}" || refuse G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_SYMLINK_REFUSED
+require_readable_file "${jsr_mirror_manifest}" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_MANIFEST_UNREADABLE
+require_readable_file "${jsr_mirror_files_manifest}" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_FILES_MANIFEST_UNREADABLE
+require_readable_file "${jsr_mirror}/@supabase/functions-js/meta.json" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_FUNCTIONS_REGISTRY_METADATA_UNREADABLE
+require_readable_file "${jsr_mirror}/@supabase/functions-js/2.112.4_meta.json" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_FUNCTIONS_VERSION_METADATA_UNREADABLE
+require_readable_file "${jsr_mirror}/@supabase/supabase-js/meta.json" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_SUPABASE_REGISTRY_METADATA_UNREADABLE
+require_readable_file "${jsr_mirror}/@supabase/supabase-js/2.112.4_meta.json" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_SUPABASE_VERSION_METADATA_UNREADABLE
 require_absent "${eszip}" G12_STAGING_CMS_PUBLIC_HOTFIX_ESZIP_ALREADY_EXISTS
 require_absent "${unbundled}" G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_ALREADY_EXISTS
 require_absent "${unbundled_manifest}" \
   G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_MANIFEST_ALREADY_EXISTS
 require_absent "${attestation}" G12_STAGING_CMS_PUBLIC_HOTFIX_ATTESTATION_ALREADY_EXISTS
+
+mirror_files="/tmp/.g12-jsr-files-$$.nul"
+mirror_files_sorted="/tmp/.g12-jsr-files-sorted-$$.nul"
+mirror_files_actual="/tmp/.g12-jsr-files-$$.sha256"
+mirror_sizes="/tmp/.g12-jsr-sizes-$$.txt"
+mirror_symlink="$(find "${jsr_mirror}" -type l -print -quit)"
+test -z "${mirror_symlink}" || refuse G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_SYMLINK_REFUSED
+mirror_special="$(find "${jsr_mirror}" ! -type d ! -type f ! -type l -print -quit)"
+test -z "${mirror_special}" || refuse G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_ENTRY_REFUSED
+if ! (
+  cd "${jsr_mirror}" || exit 1
+  find . -type f \
+    ! -path './.g12-mirror-manifest.json' \
+    ! -path './.g12-mirror-files.sha256' \
+    -print0 > "${mirror_files}"
+); then
+  refuse G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_FIND_FAILED
+fi
+if ! LC_ALL=C sort -z "${mirror_files}" > "${mirror_files_sorted}"; then
+  refuse G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_SORT_FAILED
+fi
+if ! (
+  cd "${jsr_mirror}" || exit 1
+  xargs -0 -r sha256sum --text < "${mirror_files_sorted}"
+) > "${mirror_files_actual}"; then
+  refuse G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_HASH_FAILED
+fi
+if ! cmp -s "${mirror_files_actual}" "${jsr_mirror_files_manifest}"; then
+  refuse G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_INVENTORY_REFUSED
+fi
+if ! mirror_count="$(awk 'END { print NR + 0 }' "${mirror_files_actual}")"; then
+  refuse G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_FILE_COUNT_FAILED
+fi
+if ! (
+  cd "${jsr_mirror}" || exit 1
+  xargs -0 -r -n 1 wc -c < "${mirror_files_sorted}"
+) > "${mirror_sizes}"; then
+  refuse G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_SIZE_SCAN_FAILED
+fi
+if ! mirror_bytes="$(awk '{ total += $1 } END { print total + 0 }' "${mirror_sizes}")"; then
+  refuse G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_BYTES_FAILED
+fi
+require_equal "$(sha_value "${jsr_mirror_manifest}")" \
+  "${G12_JSR_MIRROR_MANIFEST_SHA256}" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_MANIFEST_REFUSED
+require_equal "$(sha_value "${jsr_mirror_files_manifest}")" \
+  "${G12_JSR_MIRROR_FILES_MANIFEST_SHA256}" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_FILES_MANIFEST_REFUSED
+require_equal "$(sha_value "${mirror_files_actual}")" \
+  "${G12_JSR_MIRROR_TREE_SHA256}" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_TREE_REFUSED
+require_equal "${mirror_count}" "${G12_JSR_MIRROR_FILE_COUNT}" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_FILE_COUNT_REFUSED
+require_equal "${mirror_bytes}" "${G12_JSR_MIRROR_BYTES}" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_BYTES_REFUSED
+require_equal "$(sha_value "${jsr_mirror}/@supabase/functions-js/meta.json")" \
+  "2d593584eb6f295b742bd3d09f4375f5eded97bb202a37696f728433c523a061" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_FUNCTIONS_REGISTRY_METADATA_REFUSED
+require_equal "$(sha_value "${jsr_mirror}/@supabase/functions-js/2.112.4_meta.json")" \
+  "6da8c600c7fd727f0d1f0e81b638a13d7f9aaee7269d62e959abc94abb59bb15" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_FUNCTIONS_VERSION_METADATA_REFUSED
+require_equal "$(sha_value "${jsr_mirror}/@supabase/supabase-js/meta.json")" \
+  "2d593584eb6f295b742bd3d09f4375f5eded97bb202a37696f728433c523a061" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_SUPABASE_REGISTRY_METADATA_REFUSED
+require_equal "$(sha_value "${jsr_mirror}/@supabase/supabase-js/2.112.4_meta.json")" \
+  "f20220bf7de53d493d2f01aa269132b660572ba407e7de68f1b43422b9e8002a" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_SUPABASE_VERSION_METADATA_REFUSED
+if ! rm -f "${mirror_files}" "${mirror_files_sorted}" "${mirror_files_actual}" "${mirror_sizes}"; then
+  refuse G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_TEMP_CLEANUP_FAILED
+fi
 
 if ! edge-runtime bundle \
   --entrypoint /workspace/supabase/functions/cms-public/index.ts \
@@ -136,10 +240,6 @@ if ! rm -f "${unbundled_files}" "${unbundled_files_sorted}"; then
 fi
 test -s "${unbundled_manifest}" || refuse G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_MANIFEST_EMPTY
 
-sha_value() {
-  sha256sum "$1" | awk '{print $1}'
-}
-
 byte_count=$(wc -c < "${eszip}" | tr -d '[:space:]')
 unbundled_count=$(wc -l < "${unbundled_manifest}" | tr -d '[:space:]')
 bundle_command_sha=$(printf '%s' "${bundle_command}" | sha256sum | awk '{print $1}')
@@ -159,6 +259,13 @@ unbundle_command_sha=$(printf '%s' "${unbundle_command}" | sha256sum | awk '{pri
   printf 'INPUT_FILES_MANIFEST_SHA256=%s\n' "$(sha_value "${input}/bundle-input-files.json")"
   printf 'INPUT_TREE_SHA256=%s\n' "${G12_INPUT_TREE_SHA256}"
   printf 'INPUT_FILE_COUNT=%s\n' "${G12_INPUT_FILE_COUNT}"
+  printf 'JSR_URL=%s\n' "${JSR_URL}"
+  printf 'JSR_MIRROR_MANIFEST_SHA256=%s\n' "${G12_JSR_MIRROR_MANIFEST_SHA256}"
+  printf 'JSR_MIRROR_FILES_MANIFEST_SHA256=%s\n' \
+    "${G12_JSR_MIRROR_FILES_MANIFEST_SHA256}"
+  printf 'JSR_MIRROR_TREE_SHA256=%s\n' "${G12_JSR_MIRROR_TREE_SHA256}"
+  printf 'JSR_MIRROR_FILE_COUNT=%s\n' "${G12_JSR_MIRROR_FILE_COUNT}"
+  printf 'JSR_MIRROR_BYTES=%s\n' "${G12_JSR_MIRROR_BYTES}"
   printf 'RAW_ESZIP_SHA256=%s\n' "$(sha_value "${eszip}")"
   printf 'RAW_ESZIP_BYTES=%s\n' "${byte_count}"
   printf 'UNBUNDLED_FILES_SHA256=%s\n' "$(sha_value "${unbundled_manifest}")"

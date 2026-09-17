@@ -120,6 +120,11 @@ jobs:
           install -d -m 700 "$RUNNER_TEMP/g12-online" "$RUNNER_TEMP/g12-online-cache"
           input_tree="$(jq -r .inputTreeSha256 bundle-input/bundle-input-manifest.json)"
           input_count="$(jq -r .inputFileCount bundle-input/bundle-input-manifest.json)"
+          jsr_manifest="$(jq -r .jsrMirror.manifestSha256 bundle-input/bundle-input-manifest.json)"
+          jsr_files_manifest="$(jq -r .jsrMirror.filesManifestSha256 bundle-input/bundle-input-manifest.json)"
+          jsr_tree="$(jq -r .jsrMirror.treeSha256 bundle-input/bundle-input-manifest.json)"
+          jsr_count="$(jq -r .jsrMirror.fileCount bundle-input/bundle-input-manifest.json)"
+          jsr_bytes="$(jq -r .jsrMirror.bytes bundle-input/bundle-input-manifest.json)"
           docker run --rm --platform linux/amd64 --network bridge --read-only \
             --user "$(id -u):$(id -g)" \
             --cap-drop ALL --security-opt no-new-privileges \
@@ -129,26 +134,55 @@ jobs:
             --volume "$RUNNER_TEMP/g12-online-cache:/deno-cache:rw" \
             --volume "$GITHUB_WORKSPACE/control/scripts/ev2/phase12/staging-cms-public-hotfix-bundle.sh:/g12-builder.sh:ro" \
             --env HOME=/tmp --env DENO_DIR=/deno-cache --env DENO_NO_PACKAGE_JSON=1 \
+            --env JSR_URL=file:///workspace/.g12-jsr/ \
             --env G12_EDGE_RUNTIME_INDEX_DIGEST="$EDGE_RUNTIME_INDEX_DIGEST" \
             --env G12_EDGE_RUNTIME_AMD64_DIGEST="$EDGE_RUNTIME_AMD64_DIGEST" \
             --env G12_PLATFORM=linux/amd64 \
             --env G12_INPUT_TREE_SHA256="$input_tree" \
             --env G12_INPUT_FILE_COUNT="$input_count" \
+            --env G12_JSR_MIRROR_MANIFEST_SHA256="$jsr_manifest" \
+            --env G12_JSR_MIRROR_FILES_MANIFEST_SHA256="$jsr_files_manifest" \
+            --env G12_JSR_MIRROR_TREE_SHA256="$jsr_tree" \
+            --env G12_JSR_MIRROR_FILE_COUNT="$jsr_count" \
+            --env G12_JSR_MIRROR_BYTES="$jsr_bytes" \
             --entrypoint /bin/sh "$EDGE_RUNTIME_IMAGE" /g12-builder.sh online default
       - name: Rebuild offline with Docker networking disabled
         run: |
           set -euo pipefail
           install -d -m 700 "$RUNNER_TEMP/g12-offline" "$RUNNER_TEMP/g12-offline-cache"
-          # Copy only fetched dependency trees; regenerate mutable SQLite and compiler caches.
-          for cache_dir in npm remote; do
-            source_dir="$RUNNER_TEMP/g12-online-cache/$cache_dir"
-            test -d "$source_dir"
-            test ! -L "$source_dir"
-            test -n "$(find "$source_dir" -mindepth 1 -maxdepth 1 -print -quit)"
-            cp -a -- "$source_dir" "$RUNNER_TEMP/g12-offline-cache/"
-          done
+          # JSR resolves from the sealed file mirror; only the portable npm tree crosses the boundary.
+          online_remote="$RUNNER_TEMP/g12-online-cache/remote"
+          if [ -e "$online_remote" ] || [ -L "$online_remote" ]; then
+            test -d "$online_remote"
+            test ! -L "$online_remote"
+            if ! online_remote_entry="$(find "$online_remote" -mindepth 1 -print -quit)"; then
+              exit 1
+            fi
+            test -z "$online_remote_entry"
+          fi
+          source_dir="$RUNNER_TEMP/g12-online-cache/npm"
+          test -d "$source_dir"
+          test ! -L "$source_dir"
+          if ! source_entry="$(find "$source_dir" -mindepth 1 -maxdepth 1 -print -quit)"; then
+            exit 1
+          fi
+          test -n "$source_entry"
+          if ! offline_entry="$(find "$RUNNER_TEMP/g12-offline-cache" -mindepth 1 -maxdepth 1 -print -quit)"; then
+            exit 1
+          fi
+          test -z "$offline_entry"
+          cp -a -- "$source_dir" "$RUNNER_TEMP/g12-offline-cache/"
+          if ! offline_names="$(find "$RUNNER_TEMP/g12-offline-cache" -mindepth 1 -maxdepth 1 -printf '%f\n')"; then
+            exit 1
+          fi
+          test "$offline_names" = npm
           input_tree="$(jq -r .inputTreeSha256 bundle-input/bundle-input-manifest.json)"
           input_count="$(jq -r .inputFileCount bundle-input/bundle-input-manifest.json)"
+          jsr_manifest="$(jq -r .jsrMirror.manifestSha256 bundle-input/bundle-input-manifest.json)"
+          jsr_files_manifest="$(jq -r .jsrMirror.filesManifestSha256 bundle-input/bundle-input-manifest.json)"
+          jsr_tree="$(jq -r .jsrMirror.treeSha256 bundle-input/bundle-input-manifest.json)"
+          jsr_count="$(jq -r .jsrMirror.fileCount bundle-input/bundle-input-manifest.json)"
+          jsr_bytes="$(jq -r .jsrMirror.bytes bundle-input/bundle-input-manifest.json)"
           docker run --rm --platform linux/amd64 --network none --read-only \
             --user "$(id -u):$(id -g)" \
             --cap-drop ALL --security-opt no-new-privileges \
@@ -158,11 +192,17 @@ jobs:
             --volume "$RUNNER_TEMP/g12-offline-cache:/deno-cache:rw" \
             --volume "$GITHUB_WORKSPACE/control/scripts/ev2/phase12/staging-cms-public-hotfix-bundle.sh:/g12-builder.sh:ro" \
             --env HOME=/tmp --env DENO_DIR=/deno-cache --env DENO_NO_PACKAGE_JSON=1 \
+            --env JSR_URL=file:///workspace/.g12-jsr/ \
             --env G12_EDGE_RUNTIME_INDEX_DIGEST="$EDGE_RUNTIME_INDEX_DIGEST" \
             --env G12_EDGE_RUNTIME_AMD64_DIGEST="$EDGE_RUNTIME_AMD64_DIGEST" \
             --env G12_PLATFORM=linux/amd64 \
             --env G12_INPUT_TREE_SHA256="$input_tree" \
             --env G12_INPUT_FILE_COUNT="$input_count" \
+            --env G12_JSR_MIRROR_MANIFEST_SHA256="$jsr_manifest" \
+            --env G12_JSR_MIRROR_FILES_MANIFEST_SHA256="$jsr_files_manifest" \
+            --env G12_JSR_MIRROR_TREE_SHA256="$jsr_tree" \
+            --env G12_JSR_MIRROR_FILE_COUNT="$jsr_count" \
+            --env G12_JSR_MIRROR_BYTES="$jsr_bytes" \
             --entrypoint /bin/sh "$EDGE_RUNTIME_IMAGE" /g12-builder.sh offline none
       - name: Seal only byte-identical online and network-disabled builds
         working-directory: control

@@ -50,6 +50,12 @@ import {
   verifyHotfixProbeProof,
   verifyHotfixReceipt,
 } from "./staging-cms-public-hotfix-lib.mjs";
+import {
+  CMS_PUBLIC_JSR_MIRROR,
+  loadCmsPublicJsrMirror,
+  materializeCmsPublicJsrMirror,
+  sourceContainsImportMeta,
+} from "./staging-cms-public-hotfix-jsr-mirror-lib.mjs";
 
 function argument(name, { required = true } = {}) {
   const index = process.argv.indexOf(`--${name}`);
@@ -177,6 +183,22 @@ async function directoryRecords(root, { excluded = [] } = {}) {
   return { records, treeSha256: canonicalSha256(records) };
 }
 
+async function candidateSourceUsesImportMeta(root) {
+  const paths = [
+    ...(await walkFiles(join(root, "supabase", "functions", "_shared"))),
+    ...(await walkFiles(join(root, "supabase", "functions", "cms-public"))),
+    join(root, "src", "shared", "contracts", "cms-content.ts"),
+  ];
+  for (const path of paths) {
+    const source = decodeUtf8(
+      await readBoundedFile(path, STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes),
+      "CANDIDATE_SOURCE",
+    );
+    if (sourceContainsImportMeta(source)) return true;
+  }
+  return false;
+}
+
 function parseBuildAttestation(value) {
   const text = String(value ?? "");
   if (!text.endsWith("\n") || Buffer.byteLength(text, "utf8") > 16_384 || /\r|\0/.test(text))
@@ -207,6 +229,12 @@ function expectedAttestationKeys() {
     "INPUT_FILES_MANIFEST_SHA256",
     "INPUT_MANIFEST_SHA256",
     "INPUT_TREE_SHA256",
+    "JSR_MIRROR_BYTES",
+    "JSR_MIRROR_FILE_COUNT",
+    "JSR_MIRROR_FILES_MANIFEST_SHA256",
+    "JSR_MIRROR_MANIFEST_SHA256",
+    "JSR_MIRROR_TREE_SHA256",
+    "JSR_URL",
     "MODE",
     "NETWORK",
     "PLATFORM",
@@ -238,6 +266,8 @@ async function loadBundleInput(root) {
     denoLockSha256,
     importMap,
     importMapSha256,
+    denoLock,
+    sourceUsesImportMeta,
   ] = await Promise.all([
     readJson(manifestPath),
     readJson(filesPath),
@@ -251,7 +281,13 @@ async function loadBundleInput(root) {
     fileSha256(denoLockPath),
     readJson(importMapPath),
     fileSha256(importMapPath),
+    readJson(denoLockPath),
+    candidateSourceUsesImportMeta(inputRoot),
   ]);
+  const jsrMirror = await loadCmsPublicJsrMirror({
+    root: join(inputRoot, ".g12-jsr"),
+    lock: denoLock,
+  });
   const expectedImports = { zod: "npm:zod@4.4.3" };
   const expectedDenoConfig = {
     imports: expectedImports,
@@ -272,6 +308,15 @@ async function loadBundleInput(root) {
     manifest?.denoConfigSha256 !== denoConfigSha256 ||
     canonicalSha256(denoConfig) !== canonicalSha256(expectedDenoConfig) ||
     canonicalSha256(importMap) !== canonicalSha256({ imports: expectedImports }) ||
+    manifest?.sourceImportMetaAbsent !== true ||
+    sourceUsesImportMeta ||
+    manifest?.jsrMirror?.runtimeUrl !== CMS_PUBLIC_JSR_MIRROR.runtimeUrl ||
+    manifest?.jsrMirror?.manifestSha256 !== jsrMirror.manifestSha256 ||
+    manifest?.jsrMirror?.filesManifestSha256 !== jsrMirror.filesManifestSha256 ||
+    manifest?.jsrMirror?.treeSha256 !== jsrMirror.actual.treeSha256 ||
+    manifest?.jsrMirror?.fileCount !== jsrMirror.actual.records.length ||
+    manifest?.jsrMirror?.bytes !== jsrMirror.actual.bytes ||
+    manifest?.jsrMirror?.moduleImportMetaAbsent !== true ||
     manifest?.filesManifestSha256 !== filesManifestSha256 ||
     manifest?.inputTreeSha256 !== actual.treeSha256 ||
     manifest?.inputFileCount !== actual.records.length ||
@@ -295,6 +340,7 @@ async function loadBundleInput(root) {
     manifestSha256,
     filesManifestSha256,
     actual,
+    jsrMirror,
   };
 }
 
@@ -1290,6 +1336,7 @@ async function verifySources() {
 async function prepareBundleInput() {
   const source = exactRoot(argument("source"));
   const output = exactRoot(argument("output"));
+  const denoLock = await readJson(join(source, "deno.lock"));
   if (
     productionFunctionSourceDigest(source, "cms-public") !== STAGING_CMS_PUBLIC_HOTFIX.candidateSourceSha256
   )
@@ -1300,6 +1347,8 @@ async function prepareBundleInput() {
       STAGING_CMS_PUBLIC_HOTFIX.importMapSha256
   )
     throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_DEPENDENCY_LOCK_REFUSED");
+  if (await candidateSourceUsesImportMeta(source))
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_IMPORT_META_REFUSED");
   for (const name of [".env.local", ".env.staging.local", ".env.production.local"]) {
     try {
       await lstat(join(source, name));
@@ -1351,6 +1400,10 @@ async function prepareBundleInput() {
     nodeModulesDir: "none",
   };
   await writeJson(join(output, "deno.json"), denoConfig);
+  const jsrMirror = await materializeCmsPublicJsrMirror({
+    lock: denoLock,
+    output: join(output, ".g12-jsr"),
+  });
   const inputTree = await directoryRecords(output);
   const filesManifest = {
     schemaVersion: 1,
@@ -1369,6 +1422,16 @@ async function prepareBundleInput() {
     denoLockSha256: await fileSha256(join(output, "deno.lock")),
     denoConfigSha256: await fileSha256(join(output, "deno.json")),
     importMapSha256: await fileSha256(join(output, "supabase", "functions", "import_map.json")),
+    sourceImportMetaAbsent: true,
+    jsrMirror: {
+      runtimeUrl: CMS_PUBLIC_JSR_MIRROR.runtimeUrl,
+      manifestSha256: jsrMirror.manifestSha256,
+      filesManifestSha256: jsrMirror.filesManifestSha256,
+      treeSha256: jsrMirror.actual.treeSha256,
+      fileCount: jsrMirror.actual.records.length,
+      bytes: jsrMirror.actual.bytes,
+      moduleImportMetaAbsent: true,
+    },
     filesManifestSha256: await fileSha256(filesManifestPath),
     inputTreeSha256: inputTree.treeSha256,
     inputFileCount: inputTree.records.length,
@@ -1380,7 +1443,11 @@ async function prepareBundleInput() {
     importMapPath: STAGING_CMS_PUBLIC_HOTFIX.candidateImportMapPath,
   };
   await writeJson(join(output, "bundle-input-manifest.json"), manifest);
-  publicEvent(manifest.event, { candidateSha: manifest.candidateSha, lockFrozen: true });
+  publicEvent(manifest.event, {
+    candidateSha: manifest.candidateSha,
+    lockFrozen: true,
+    jsrMirrorFileCount: manifest.jsrMirror.fileCount,
+  });
 }
 
 async function sealCandidate() {
@@ -1416,6 +1483,12 @@ async function sealCandidate() {
       attestation.INPUT_FILES_MANIFEST_SHA256 !== input.filesManifestSha256 ||
       attestation.INPUT_TREE_SHA256 !== input.actual.treeSha256 ||
       Number(attestation.INPUT_FILE_COUNT) !== input.actual.records.length ||
+      attestation.JSR_URL !== CMS_PUBLIC_JSR_MIRROR.runtimeUrl ||
+      attestation.JSR_MIRROR_MANIFEST_SHA256 !== input.jsrMirror.manifestSha256 ||
+      attestation.JSR_MIRROR_FILES_MANIFEST_SHA256 !== input.jsrMirror.filesManifestSha256 ||
+      attestation.JSR_MIRROR_TREE_SHA256 !== input.jsrMirror.actual.treeSha256 ||
+      Number(attestation.JSR_MIRROR_FILE_COUNT) !== input.jsrMirror.actual.records.length ||
+      Number(attestation.JSR_MIRROR_BYTES) !== input.jsrMirror.actual.bytes ||
       attestation.RAW_ESZIP_SHA256 !== sha256Bytes(eszip) ||
       Number(attestation.RAW_ESZIP_BYTES) !== eszip.byteLength ||
       attestation.UNBUNDLED_FILES_SHA256 !== unbundled.sha256 ||
@@ -1473,6 +1546,15 @@ async function sealCandidate() {
       denoConfigSha256: input.manifest.denoConfigSha256,
       denoLockSha256: input.manifest.denoLockSha256,
       importMapSha256: input.manifest.importMapSha256,
+      jsrMirror: {
+        runtimeUrl: CMS_PUBLIC_JSR_MIRROR.runtimeUrl,
+        manifestSha256: input.jsrMirror.manifestSha256,
+        filesManifestSha256: input.jsrMirror.filesManifestSha256,
+        treeSha256: input.jsrMirror.actual.treeSha256,
+        fileCount: input.jsrMirror.actual.records.length,
+        bytes: input.jsrMirror.actual.bytes,
+        moduleImportMetaAbsent: true,
+      },
     },
     builder: {
       edgeRuntimeIndexDigest: STAGING_CMS_PUBLIC_HOTFIX.edgeRuntimeIndexDigest,

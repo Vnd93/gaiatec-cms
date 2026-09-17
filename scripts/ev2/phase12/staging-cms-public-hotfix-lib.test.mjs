@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 
 import { PRODUCTION_FUNCTIONS, PUBLIC_FUNCTIONS } from "./production-backend-lib.mjs";
+import { CMS_PUBLIC_JSR_MIRROR } from "./staging-cms-public-hotfix-jsr-mirror-lib.mjs";
 import {
   assertExactSourceIdentity,
   buildHotfixRecoveryState,
@@ -126,6 +127,12 @@ function candidateEvidence() {
         `INPUT_FILES_MANIFEST_SHA256=${"2".repeat(64)}`,
         `INPUT_TREE_SHA256=${"3".repeat(64)}`,
         "INPUT_FILE_COUNT=4",
+        `JSR_URL=${CMS_PUBLIC_JSR_MIRROR.runtimeUrl}`,
+        `JSR_MIRROR_MANIFEST_SHA256=${"5".repeat(64)}`,
+        `JSR_MIRROR_FILES_MANIFEST_SHA256=${"6".repeat(64)}`,
+        `JSR_MIRROR_TREE_SHA256=${"6".repeat(64)}`,
+        "JSR_MIRROR_FILE_COUNT=168",
+        "JSR_MIRROR_BYTES=712180",
         `RAW_ESZIP_SHA256=${inspection.sha256}`,
         `RAW_ESZIP_BYTES=${inspection.bytes}`,
         `UNBUNDLED_FILES_SHA256=${sha256Bytes(unbundledFiles)}`,
@@ -177,6 +184,15 @@ function candidateProvenance(evidence = candidateEvidence()) {
       denoConfigSha256: "4".repeat(64),
       denoLockSha256: STAGING_CMS_PUBLIC_HOTFIX.denoLockSha256,
       importMapSha256: STAGING_CMS_PUBLIC_HOTFIX.importMapSha256,
+      jsrMirror: {
+        runtimeUrl: CMS_PUBLIC_JSR_MIRROR.runtimeUrl,
+        manifestSha256: "5".repeat(64),
+        filesManifestSha256: "6".repeat(64),
+        treeSha256: "6".repeat(64),
+        fileCount: 168,
+        bytes: 712180,
+        moduleImportMetaAbsent: true,
+      },
     },
     builder: {
       edgeRuntimeIndexDigest: STAGING_CMS_PUBLIC_HOTFIX.edgeRuntimeIndexDigest,
@@ -1109,6 +1125,12 @@ test("candidate provenance binds two reproducible builds and a structurally pars
   assert.equal(valid.valid, true, valid.violations.join(","));
   const evidenceResult = validateCandidateBuildEvidenceFiles(provenance, evidence);
   assert.equal(evidenceResult.valid, true, evidenceResult.violations.join(","));
+  const mirrorTreeSubstitution = structuredClone(provenance);
+  mirrorTreeSubstitution.input.jsrMirror.treeSha256 = "7".repeat(64);
+  assert.match(
+    validateCandidateBuildProvenance(mirrorTreeSubstitution).violations.join(","),
+    /candidate_provenance_identity_invalid/,
+  );
   const substituted = structuredClone(provenance);
   substituted.builds.offline.rawEszipSha256 = "0".repeat(64);
   assert.match(

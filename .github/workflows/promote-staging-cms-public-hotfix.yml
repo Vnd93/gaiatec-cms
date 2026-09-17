@@ -85,7 +85,7 @@ jobs:
       - name: Verify the exact successful CI run bound to the hotfix bytes
         working-directory: control
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: >-
           node scripts/ev2/phase12/staging-cms-public-hotfix.mjs verify-candidate-ci
           --output ../candidate-ci-evidence.json
@@ -182,7 +182,7 @@ jobs:
       - name: Verify candidate artifact metadata against this exact run
         working-directory: control
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: >-
           node scripts/ev2/phase12/staging-cms-public-hotfix.mjs verify-run-artifact
           --kind candidate

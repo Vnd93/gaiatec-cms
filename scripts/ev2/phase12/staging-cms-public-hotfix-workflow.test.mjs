@@ -65,6 +65,33 @@ test("main workflow refuses every rerun before checkout, artifacts, state, or mu
   );
 });
 
+test("candidate build uses only the read-only job token without environment secrets", () => {
+  const buildStart = mainWorkflow.indexOf("  build-candidate:");
+  const promoteStart = mainWorkflow.indexOf("\n  promote:", buildStart);
+  assert.notEqual(buildStart, -1, "missing build-candidate job");
+  assert.notEqual(promoteStart, -1, "missing promote job boundary");
+  const buildCandidate = mainWorkflow.slice(buildStart, promoteStart);
+  assert.doesNotMatch(buildCandidate, /\$\{\{\s*secrets\./);
+  assert.doesNotMatch(buildCandidate, /^\s+environment:/m);
+  assert.equal((buildCandidate.match(/GITHUB_TOKEN: \$\{\{ github\.token \}\}/g) ?? []).length, 2);
+
+  for (const name of [
+    "Verify the exact successful CI run bound to the hotfix bytes",
+    "Verify candidate artifact metadata against this exact run",
+  ]) {
+    assert.match(stepBody(mainWorkflow, name), /GITHUB_TOKEN: \$\{\{ github\.token \}\}/, name);
+  }
+
+  const permissionsStart = mainWorkflow.indexOf("permissions:");
+  const concurrencyStart = mainWorkflow.indexOf("\nconcurrency:", permissionsStart);
+  assert.notEqual(permissionsStart, -1, "missing global permissions");
+  assert.notEqual(concurrencyStart, -1, "missing concurrency boundary");
+  assert.equal(
+    mainWorkflow.slice(permissionsStart, concurrencyStart).replaceAll("\r\n", "\n"),
+    "permissions:\n  actions: read\n  contents: read\n",
+  );
+});
+
 test("watchdog snapshots M/C/R before artifacts and treats an empty snapshot as a no-op", () => {
   assertOrdered(watchdogWorkflow, [
     "Recover the HMAC main state independently of artifacts",

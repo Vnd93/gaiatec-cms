@@ -296,8 +296,11 @@ test("both candidate paths prove and report the exact bounded raw ESZIP size bef
     assert.match(step, /test "\$online_bytes" = "\$online_attested_bytes"/);
     assert.match(step, /test "\$offline_bytes" = "\$offline_attested_bytes"/);
     assert.match(step, /test "\$online_bytes" = "\$offline_bytes"/);
-    assert.match(step, /test "\$online_bytes" -le "\$maximum_raw_eszip_bytes"/);
     assert.match(step, /g12\.staging\.cms_public_hotfix\.raw_eszip_boundary/);
+    assertOrdered(step, [
+      "g12.staging.cms_public_hotfix.raw_eszip_boundary",
+      'test "$online_bytes" -le "$maximum_raw_eszip_bytes"',
+    ]);
     assert.doesNotMatch(step, /\$\{\{\s*secrets\./);
   }
 });

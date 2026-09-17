@@ -217,10 +217,10 @@ jobs:
             refuse G12_STAGING_CMS_PUBLIC_HOTFIX_OFFLINE_ESZIP_SIZE_REFUSED
           test "$online_bytes" = "$offline_bytes" || \
             refuse G12_STAGING_CMS_PUBLIC_HOTFIX_REPRODUCIBLE_ESZIP_SIZE_REFUSED
-          test "$online_bytes" -le "$maximum_raw_eszip_bytes" || \
-            refuse G12_STAGING_CMS_PUBLIC_HOTFIX_RAW_ESZIP_SIZE_REFUSED
           printf '{"event":"g12.staging.cms_public_hotfix.raw_eszip_boundary","onlineRawEszipBytes":%s,"offlineRawEszipBytes":%s,"maximumRawEszipBytes":%s}\n' \
             "$online_bytes" "$offline_bytes" "$maximum_raw_eszip_bytes"
+          test "$online_bytes" -le "$maximum_raw_eszip_bytes" || \
+            refuse G12_STAGING_CMS_PUBLIC_HOTFIX_RAW_ESZIP_SIZE_REFUSED
       - name: Seal the byte-identical Docker smoke builds
         working-directory: control
         run: >-

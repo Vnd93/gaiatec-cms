@@ -45,7 +45,7 @@ export const STAGING_CMS_PUBLIC_HOTFIX = Object.freeze({
     "edge-runtime unbundle --eszip /output/output.eszip --output /output/unbundled/supabase/functions/cms-public",
   builderScriptSha256: "80e5e5b6d69e23953931450243996242b250a4b4e9fbbdd052a4c6037e4e275e",
   maximumWireBundleBytes: 32 * 1024 * 1024,
-  maximumRawEszipBytes: 64 * 1024 * 1024,
+  maximumRawEszipBytes: 128 * 1024 * 1024,
   candidateEntrypointPath: "file:///workspace/supabase/functions/cms-public/index.ts",
   candidateImportMapPath: "file:///workspace/deno.json",
   candidateEszipEntrypointSpecifier: "workspace/supabase/functions/cms-public/index.ts",
@@ -94,6 +94,18 @@ export function sha256Bytes(value) {
 
 export function canonicalSha256(value) {
   return sha256Bytes(canonicalBytes(value));
+}
+
+export function assertRawEszipByteLength(value) {
+  if (!Number.isSafeInteger(value) || value < 32 || value > STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes)
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_ESZIP_SIZE_REFUSED");
+  return value;
+}
+
+export function assertWireBundleByteLength(value) {
+  if (!Number.isSafeInteger(value) || value < 32 || value > STAGING_CMS_PUBLIC_HOTFIX.maximumWireBundleBytes)
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_BUNDLE_SIZE_REFUSED");
+  return value;
 }
 
 function safeCanonicalSha256(value) {
@@ -272,8 +284,7 @@ function verifyEszipSection(content, digest, checksum) {
 
 export function inspectEszipV2(rawEszip) {
   const raw = Buffer.from(rawEszip);
-  if (raw.byteLength < 32 || raw.byteLength > STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes)
-    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_ESZIP_SIZE_REFUSED");
+  assertRawEszipByteLength(raw.byteLength);
   if (raw.byteLength < 8 || !raw.subarray(0, ESZIP_V2_3_MAGIC.byteLength).equals(ESZIP_V2_3_MAGIC))
     throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_ESZIP_VERSION_REFUSED");
   let cursor = 8;
@@ -685,6 +696,7 @@ export function frameRawEszip(rawEszip) {
   const compressed = brotliCompressSync(raw, {
     params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 6 },
   });
+  assertWireBundleByteLength(EZBR_MAGIC.byteLength + compressed.byteLength);
   return Buffer.concat([EZBR_MAGIC, compressed]);
 }
 
@@ -692,8 +704,7 @@ export function reconcileDownloadedBundleBody(downloadedBody, expectedSha256) {
   if (!SHA256.test(String(expectedSha256 ?? "")))
     throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_BASELINE_DIGEST_REFUSED");
   const downloaded = Buffer.from(downloadedBody);
-  if (downloaded.byteLength < 32 || downloaded.byteLength > STAGING_CMS_PUBLIC_HOTFIX.maximumWireBundleBytes)
-    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_BUNDLE_SIZE_REFUSED");
+  assertWireBundleByteLength(downloaded.byteLength);
   let rawEszip;
   let deploymentBody;
   if (downloaded.subarray(0, EZBR_MAGIC.byteLength).equals(EZBR_MAGIC)) {

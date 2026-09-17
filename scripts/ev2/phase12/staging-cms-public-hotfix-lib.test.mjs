@@ -6,6 +6,8 @@ import { PRODUCTION_FUNCTIONS, PUBLIC_FUNCTIONS } from "./production-backend-lib
 import { CMS_PUBLIC_JSR_MIRROR } from "./staging-cms-public-hotfix-jsr-mirror-lib.mjs";
 import {
   assertExactSourceIdentity,
+  assertRawEszipByteLength,
+  assertWireBundleByteLength,
   buildHotfixRecoveryState,
   buildRecoveryPackageManifest,
   canonicalSha256,
@@ -427,6 +429,31 @@ function receipt(action, state, boundIntent, before, after) {
     appliedAt: action === "candidate" ? "2026-09-15T12:01:00.000Z" : "2026-09-15T12:03:00.000Z",
   };
 }
+
+test("raw and wire bundle limits remain finite, closed and independently enforced", () => {
+  assert.equal(STAGING_CMS_PUBLIC_HOTFIX.maximumWireBundleBytes, 32 * 1024 * 1024);
+  assert.equal(STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes, 128 * 1024 * 1024);
+  assert.equal(
+    STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes,
+    4 * STAGING_CMS_PUBLIC_HOTFIX.maximumWireBundleBytes,
+  );
+  assert.equal(
+    assertRawEszipByteLength(STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes),
+    STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes,
+  );
+  assert.throws(
+    () => assertRawEszipByteLength(STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes + 1),
+    /G12_STAGING_CMS_PUBLIC_HOTFIX_ESZIP_SIZE_REFUSED/,
+  );
+  assert.equal(
+    assertWireBundleByteLength(STAGING_CMS_PUBLIC_HOTFIX.maximumWireBundleBytes),
+    STAGING_CMS_PUBLIC_HOTFIX.maximumWireBundleBytes,
+  );
+  assert.throws(
+    () => assertWireBundleByteLength(STAGING_CMS_PUBLIC_HOTFIX.maximumWireBundleBytes + 1),
+    /G12_STAGING_CMS_PUBLIC_HOTFIX_BUNDLE_SIZE_REFUSED/,
+  );
+});
 
 test("EZBR framing is deterministic and downloaded raw or framed bodies reconcile to one exact digest", () => {
   const raw = validEszip("exact-baseline");

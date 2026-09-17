@@ -174,6 +174,53 @@ jobs:
             --env G12_JSR_MIRROR_FILE_COUNT="$jsr_count" \
             --env G12_JSR_MIRROR_BYTES="$jsr_bytes" \
             --entrypoint /bin/sh "$EDGE_RUNTIME_IMAGE" /g12-builder.sh offline none
+      - name: Verify and report the bounded raw ESZIP sizes
+        run: |
+          set -euo pipefail
+          maximum_raw_eszip_bytes=134217728
+          online_eszip="$RUNNER_TEMP/g12-smoke-online/output.eszip"
+          offline_eszip="$RUNNER_TEMP/g12-smoke-offline/output.eszip"
+          online_attestation="$RUNNER_TEMP/g12-smoke-online/build-attestation.env"
+          offline_attestation="$RUNNER_TEMP/g12-smoke-offline/build-attestation.env"
+          refuse() {
+            printf '%s\n' "$1" >&2
+            exit 1
+          }
+          attested_bytes() {
+            awk -F= '
+              $1 == "RAW_ESZIP_BYTES" { count += 1; value = $2 }
+              END {
+                if (count != 1 || value !~ /^[1-9][0-9]*$/) exit 1
+                print value
+              }
+            ' "$1"
+          }
+          for path in "$online_eszip" "$offline_eszip" "$online_attestation" "$offline_attestation"; do
+            test -f "$path" && test ! -L "$path" || \
+              refuse G12_STAGING_CMS_PUBLIC_HOTFIX_SIZE_EVIDENCE_FILE_REFUSED
+          done
+          if ! online_bytes="$(stat -c %s -- "$online_eszip")"; then
+            refuse G12_STAGING_CMS_PUBLIC_HOTFIX_ONLINE_ESZIP_STAT_REFUSED
+          fi
+          if ! offline_bytes="$(stat -c %s -- "$offline_eszip")"; then
+            refuse G12_STAGING_CMS_PUBLIC_HOTFIX_OFFLINE_ESZIP_STAT_REFUSED
+          fi
+          if ! online_attested_bytes="$(attested_bytes "$online_attestation")"; then
+            refuse G12_STAGING_CMS_PUBLIC_HOTFIX_ONLINE_ESZIP_ATTESTATION_REFUSED
+          fi
+          if ! offline_attested_bytes="$(attested_bytes "$offline_attestation")"; then
+            refuse G12_STAGING_CMS_PUBLIC_HOTFIX_OFFLINE_ESZIP_ATTESTATION_REFUSED
+          fi
+          test "$online_bytes" = "$online_attested_bytes" || \
+            refuse G12_STAGING_CMS_PUBLIC_HOTFIX_ONLINE_ESZIP_SIZE_REFUSED
+          test "$offline_bytes" = "$offline_attested_bytes" || \
+            refuse G12_STAGING_CMS_PUBLIC_HOTFIX_OFFLINE_ESZIP_SIZE_REFUSED
+          test "$online_bytes" = "$offline_bytes" || \
+            refuse G12_STAGING_CMS_PUBLIC_HOTFIX_REPRODUCIBLE_ESZIP_SIZE_REFUSED
+          test "$online_bytes" -le "$maximum_raw_eszip_bytes" || \
+            refuse G12_STAGING_CMS_PUBLIC_HOTFIX_RAW_ESZIP_SIZE_REFUSED
+          printf '{"event":"g12.staging.cms_public_hotfix.raw_eszip_boundary","onlineRawEszipBytes":%s,"offlineRawEszipBytes":%s,"maximumRawEszipBytes":%s}\n' \
+            "$online_bytes" "$offline_bytes" "$maximum_raw_eszip_bytes"
       - name: Seal the byte-identical Docker smoke builds
         working-directory: control
         run: >-

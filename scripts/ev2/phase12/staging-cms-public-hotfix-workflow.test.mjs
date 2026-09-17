@@ -247,6 +247,7 @@ test("CI executes the real hardened Docker bundle twice and seals the result", (
     "Verify and pull the immutable runtime for the Docker smoke",
     "Exercise the hardened online Docker bundle boundary",
     "Exercise the hardened offline Docker rebuild boundary",
+    "Verify and report the bounded raw ESZIP sizes",
     "Seal the byte-identical Docker smoke builds",
   ]);
   assert.equal((job.match(/--user "\$\(id -u\):\$\(id -g\)"/g) ?? []).length, 2);
@@ -276,6 +277,28 @@ test("CI executes the real hardened Docker bundle twice and seals the result", (
     assert.match(step, /--env G12_JSR_MIRROR_FILE_COUNT="\$jsr_count"/);
     assert.match(step, /--env G12_JSR_MIRROR_BYTES="\$jsr_bytes"/);
     assert.match(step, new RegExp(`/g12-builder\\.sh ${mode}`));
+  }
+});
+
+test("both candidate paths prove and report the exact bounded raw ESZIP size before sealing", () => {
+  for (const [workflow, prefix, sealName] of [
+    [mainWorkflow, "g12", "Seal only byte-identical online and network-disabled builds"],
+    [ciWorkflow, "g12-smoke", "Seal the byte-identical Docker smoke builds"],
+  ]) {
+    assertOrdered(workflow, ["Verify and report the bounded raw ESZIP sizes", sealName]);
+    const step = stepBody(workflow, "Verify and report the bounded raw ESZIP sizes");
+    assert.match(step, /maximum_raw_eszip_bytes=134217728/);
+    assert.match(step, new RegExp(`online_eszip="\\$RUNNER_TEMP/${prefix}-online/output\\.eszip"`));
+    assert.match(step, new RegExp(`offline_eszip="\\$RUNNER_TEMP/${prefix}-offline/output\\.eszip"`));
+    assert.match(step, /stat -c %s -- "\$online_eszip"/);
+    assert.match(step, /stat -c %s -- "\$offline_eszip"/);
+    assert.match(step, /\$1 == "RAW_ESZIP_BYTES" \{ count \+= 1; value = \$2 \}/);
+    assert.match(step, /test "\$online_bytes" = "\$online_attested_bytes"/);
+    assert.match(step, /test "\$offline_bytes" = "\$offline_attested_bytes"/);
+    assert.match(step, /test "\$online_bytes" = "\$offline_bytes"/);
+    assert.match(step, /test "\$online_bytes" -le "\$maximum_raw_eszip_bytes"/);
+    assert.match(step, /g12\.staging\.cms_public_hotfix\.raw_eszip_boundary/);
+    assert.doesNotMatch(step, /\$\{\{\s*secrets\./);
   }
 });
 

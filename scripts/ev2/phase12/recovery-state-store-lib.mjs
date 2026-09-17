@@ -18,6 +18,18 @@ const RECOVERY_KINDS = Object.freeze({
     event: "g12.staging.cms_public_legacy.engaged",
     variable: "G12_STAGING_CMS_PUBLIC_LEGACY_RECOVERY",
   },
+  "staging-cms-public-hotfix": {
+    event: "g12.staging.cms_public_hotfix.prepared",
+    variable: "G12_STAGING_CMS_PUBLIC_HOTFIX_RECOVERY",
+  },
+  "staging-cms-public-hotfix-candidate-intent": {
+    event: "g12.staging.cms_public_hotfix.candidate_intent",
+    variable: "G12_STAGING_CMS_PUBLIC_HOTFIX_CANDIDATE_INTENT",
+  },
+  "staging-cms-public-hotfix-rollback-intent": {
+    event: "g12.staging.cms_public_hotfix.rollback_intent",
+    variable: "G12_STAGING_CMS_PUBLIC_HOTFIX_ROLLBACK_INTENT",
+  },
   "staging-deploy": {
     event: "g12.staging.deploy.prepared",
     variable: "G12_STAGING_DEPLOY_RECOVERY",
@@ -27,6 +39,15 @@ const RECOVERY_KINDS = Object.freeze({
     variable: "G12_STAGING_ROLLBACK_RECOVERY",
   },
 });
+
+export const STAGING_RECOVERY_KINDS = Object.freeze([
+  "staging-cms-public-hotfix",
+  "staging-cms-public-hotfix-candidate-intent",
+  "staging-cms-public-hotfix-rollback-intent",
+  "staging-deploy",
+  "staging-cms-public-legacy",
+  "staging-rollback",
+]);
 
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
@@ -145,4 +166,104 @@ export function serializeRecoveryStateVariable(wrapper) {
   if (Buffer.byteLength(value, "utf8") > MAX_RECOVERY_STATE_VARIABLE_BYTES)
     throw new Error("G12_RECOVERY_STATE_VARIABLE_SIZE_REFUSED");
   return value;
+}
+
+function sameWorkflowBinding(left, right) {
+  return (
+    String(left?.runId ?? "") === String(right?.runId ?? "") &&
+    Number(left?.runAttempt) === Number(right?.runAttempt) &&
+    left?.controlSha === right?.controlSha
+  );
+}
+
+export function planHotfixTerminalCleanup({ outcome, main, candidateIntent, rollbackIntent }) {
+  const key = [main, candidateIntent, rollbackIntent].map((value) => (value ? "1" : "0")).join("");
+  const progress =
+    {
+      restored: {
+        111: {
+          phase: "armed",
+          remainingClearOrder: ["main", "candidateIntent", "rollbackIntent"],
+        },
+        "011": {
+          phase: "main-cleared",
+          remainingClearOrder: ["candidateIntent", "rollbackIntent"],
+        },
+        "001": { phase: "candidate-cleared", remainingClearOrder: ["rollbackIntent"] },
+        "000": { phase: "complete", remainingClearOrder: [] },
+      },
+      promoted: {
+        110: { phase: "armed", remainingClearOrder: ["candidateIntent", "main"] },
+        100: { phase: "candidate-cleared", remainingClearOrder: ["main"] },
+        "000": { phase: "complete", remainingClearOrder: [] },
+      },
+    }[outcome]?.[key] ?? null;
+  return progress
+    ? { valid: true, outcome, ...progress }
+    : {
+        valid: false,
+        outcome,
+        phase: "invalid",
+        remainingClearOrder: [],
+        violations: [`hotfix_terminal_cleanup_prefix_invalid:${outcome}:${key}`],
+      };
+}
+
+export function evaluateStagingRecoveryFence({ ownerKind, expected, states }) {
+  const violations = [];
+  if (!STAGING_RECOVERY_KINDS.includes(ownerKind)) violations.push("fence_owner_kind_invalid");
+  if (
+    !POSITIVE_INTEGER.test(String(expected?.runId ?? "")) ||
+    !Number.isSafeInteger(Number(expected?.runAttempt)) ||
+    Number(expected.runAttempt) < 1 ||
+    !FULL_SHA.test(String(expected?.controlSha ?? ""))
+  )
+    violations.push("fence_expected_binding_invalid");
+  const presentKinds = [];
+  for (const kind of STAGING_RECOVERY_KINDS) {
+    const state = states?.[kind] ?? null;
+    if (!state) continue;
+    presentKinds.push(kind);
+    const stateViolations = validateState(kind, state);
+    if (stateViolations.length > 0)
+      violations.push(...stateViolations.map((item) => `fence_${kind}_${item}`));
+  }
+  const allowed =
+    ownerKind === "staging-cms-public-hotfix"
+      ? new Set([
+          "staging-cms-public-hotfix",
+          "staging-cms-public-hotfix-candidate-intent",
+          "staging-cms-public-hotfix-rollback-intent",
+        ])
+      : ownerKind === "staging-deploy" || ownerKind === "staging-cms-public-legacy"
+        ? new Set(["staging-deploy", "staging-cms-public-legacy"])
+        : new Set([ownerKind]);
+  for (const kind of presentKinds) if (!allowed.has(kind)) violations.push(`fence_conflict:${kind}`);
+  for (const kind of presentKinds) {
+    const workflow = states[kind]?.workflow;
+    if (!sameWorkflowBinding(workflow, expected)) violations.push(`fence_binding_mismatch:${kind}`);
+  }
+  if (
+    presentKinds.includes("staging-deploy") &&
+    presentKinds.includes("staging-cms-public-legacy") &&
+    !sameWorkflowBinding(states["staging-deploy"]?.workflow, states["staging-cms-public-legacy"]?.workflow)
+  )
+    violations.push("fence_deploy_legacy_pair_mismatch");
+  const hotfixMainPresent = presentKinds.includes("staging-cms-public-hotfix");
+  const hotfixIntentKinds = [
+    "staging-cms-public-hotfix-candidate-intent",
+    "staging-cms-public-hotfix-rollback-intent",
+  ].filter((kind) => presentKinds.includes(kind));
+  if (!hotfixMainPresent && hotfixIntentKinds.length > 0) violations.push("fence_hotfix_intent_orphan");
+  if (
+    presentKinds.includes("staging-cms-public-hotfix-rollback-intent") &&
+    !presentKinds.includes("staging-cms-public-hotfix-candidate-intent")
+  )
+    violations.push("fence_hotfix_rollback_without_candidate_intent");
+  return {
+    valid: violations.length === 0,
+    open: violations.length === 0,
+    violations: [...new Set(violations)],
+    presentKinds,
+  };
 }

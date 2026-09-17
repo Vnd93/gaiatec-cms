@@ -13,6 +13,7 @@ import {
   recoveryStateVariableName,
   sealRecoveryStateVariable,
   serializeRecoveryStateVariable,
+  STAGING_RECOVERY_KINDS,
 } from "./recovery-state-store-lib.mjs";
 
 let importSequence = 0;
@@ -172,6 +173,21 @@ function recoveryGetFixture() {
   return { key, runId, controlSha, kind, state, variable, stored };
 }
 
+function stagingRecoveryFixture(kind, event, binding = {}) {
+  const key = binding.key ?? "4".repeat(64);
+  const runId = binding.runId ?? "34260253043";
+  const runAttempt = binding.runAttempt ?? 1;
+  const controlSha = binding.controlSha ?? "f".repeat(40);
+  const state = {
+    schemaVersion: 1,
+    event,
+    workflow: { runId, runAttempt, controlSha },
+  };
+  const variable = recoveryStateVariableName(kind);
+  const stored = serializeRecoveryStateVariable(sealRecoveryStateVariable(kind, state, key));
+  return { key, runId, runAttempt, controlSha, kind, state, variable, stored };
+}
+
 test("recovery state put verifies an eventually visible GitHub variable without repeating the POST", async () => {
   const directory = await mkdtemp(join(tmpdir(), "g12-recovery-eventual-write-"));
   try {
@@ -180,7 +196,7 @@ test("recovery state put verifies an eventually visible GitHub variable without 
     const outputPath = join(directory, "github-output.txt");
     await writeFile(statePath, `${JSON.stringify(fixture.state)}\n`, "utf8");
     const calls = [];
-    let variableReads = 0;
+    let targetVariableReads = 0;
 
     await runCli(
       "./recovery-state-store.mjs",
@@ -199,8 +215,13 @@ test("recovery state put verifies an eventually visible GitHub variable without 
         calls.push({ url: String(url), method, body: options.body });
         if (method === "POST") return new Response(null, { status: 201 });
         if (method === "GET") {
-          variableReads += 1;
-          if (variableReads <= 2)
+          if (!String(url).endsWith(`/${fixture.variable}`))
+            return new Response(JSON.stringify({ message: "Not Found" }), {
+              status: 404,
+              headers: { "Content-Type": "application/json" },
+            });
+          targetVariableReads += 1;
+          if (targetVariableReads <= 3)
             return new Response(JSON.stringify({ message: "Not Found" }), {
               status: 404,
               headers: { "Content-Type": "application/json" },
@@ -212,17 +233,184 @@ test("recovery state put verifies an eventually visible GitHub variable without 
         }
         return new Response(JSON.stringify({ message: "Unexpected method" }), { status: 500 });
       },
+      { setTimeoutImplementation: (callback) => callback() },
     );
 
-    assert.deepEqual(
-      calls.map(({ method }) => method),
-      ["GET", "POST", "GET", "GET"],
+    assert.equal(calls.filter(({ method }) => method === "POST").length, 1);
+    assert.equal(
+      calls.filter(({ method }) => method === "GET").length,
+      2 * STAGING_RECOVERY_KINDS.length + 3,
     );
-    assert.deepEqual(JSON.parse(calls[1].body), {
+    const creation = calls.find(({ method }) => method === "POST");
+    assert.deepEqual(JSON.parse(creation.body), {
       name: fixture.variable,
       value: fixture.stored,
     });
     assert.equal(await readFile(outputPath, "utf8"), `variable=${fixture.variable}\nsource=variable\n`);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("recovery state put refuses a cross-domain staging owner before POST", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "g12-recovery-fence-conflict-"));
+  try {
+    const fixture = recoveryGetFixture();
+    const conflict = stagingRecoveryFixture(
+      "staging-cms-public-hotfix",
+      "g12.staging.cms_public_hotfix.prepared",
+      fixture,
+    );
+    const statePath = join(directory, "state.json");
+    await writeFile(statePath, `${JSON.stringify(fixture.state)}\n`, "utf8");
+    const calls = [];
+
+    await assert.rejects(
+      runCli(
+        "./recovery-state-store.mjs",
+        ["put", "--kind", fixture.kind, "--file", statePath],
+        {
+          GITHUB_REPOSITORY: "Vnd93/gaiatec-cms",
+          RELEASE_GUARD_TOKEN: "t".repeat(40),
+          RECOVERY_STATE_HMAC_KEY: fixture.key,
+          GITHUB_RUN_ID: fixture.runId,
+          GITHUB_RUN_ATTEMPT: "1",
+          CONTROL_SHA: fixture.controlSha,
+        },
+        async (url, options = {}) => {
+          const method = options.method ?? "GET";
+          calls.push({ url: String(url), method });
+          if (method === "GET" && String(url).endsWith(`/${conflict.variable}`))
+            return new Response(JSON.stringify({ name: conflict.variable, value: conflict.stored }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          return new Response(JSON.stringify({ message: "Not Found" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          });
+        },
+      ),
+      /G12_RECOVERY_STATE_FENCE_CLOSED:fence_conflict:staging-cms-public-hotfix/,
+    );
+
+    assert.equal(calls.length, STAGING_RECOVERY_KINDS.length);
+    assert.ok(calls.every(({ method }) => method === "GET"));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("rollback intent put refuses a missing candidate intent before POST", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "g12-recovery-fence-orphan-rollback-"));
+  try {
+    const rollback = stagingRecoveryFixture(
+      "staging-cms-public-hotfix-rollback-intent",
+      "g12.staging.cms_public_hotfix.rollback_intent",
+    );
+    const main = stagingRecoveryFixture(
+      "staging-cms-public-hotfix",
+      "g12.staging.cms_public_hotfix.prepared",
+      rollback,
+    );
+    const statePath = join(directory, "rollback-intent.json");
+    await writeFile(statePath, `${JSON.stringify(rollback.state)}\n`, "utf8");
+    const calls = [];
+
+    await assert.rejects(
+      runCli(
+        "./recovery-state-store.mjs",
+        ["put", "--kind", rollback.kind, "--file", statePath],
+        {
+          GITHUB_REPOSITORY: "Vnd93/gaiatec-cms",
+          RELEASE_GUARD_TOKEN: "t".repeat(40),
+          RECOVERY_STATE_HMAC_KEY: rollback.key,
+          GITHUB_RUN_ID: rollback.runId,
+          GITHUB_RUN_ATTEMPT: String(rollback.runAttempt),
+          CONTROL_SHA: rollback.controlSha,
+        },
+        async (url, options = {}) => {
+          const method = options.method ?? "GET";
+          calls.push({ url: String(url), method });
+          if (method === "GET" && String(url).endsWith(`/${main.variable}`))
+            return new Response(JSON.stringify({ name: main.variable, value: main.stored }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          return new Response(JSON.stringify({ message: "Not Found" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          });
+        },
+      ),
+      /G12_RECOVERY_STATE_FENCE_CLOSED:fence_hotfix_rollback_without_candidate_intent/,
+    );
+
+    assert.equal(calls.length, STAGING_RECOVERY_KINDS.length);
+    assert.ok(calls.every(({ method }) => method === "GET"));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("recovery state put detects a cross-domain race after the single POST", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "g12-recovery-fence-race-"));
+  try {
+    const fixture = recoveryGetFixture();
+    const conflict = stagingRecoveryFixture(
+      "staging-cms-public-hotfix",
+      "g12.staging.cms_public_hotfix.prepared",
+      fixture,
+    );
+    const statePath = join(directory, "state.json");
+    await writeFile(statePath, `${JSON.stringify(fixture.state)}\n`, "utf8");
+    const calls = [];
+    let targetCreated = false;
+    let conflictReads = 0;
+
+    await assert.rejects(
+      runCli(
+        "./recovery-state-store.mjs",
+        ["put", "--kind", fixture.kind, "--file", statePath],
+        {
+          GITHUB_REPOSITORY: "Vnd93/gaiatec-cms",
+          RELEASE_GUARD_TOKEN: "t".repeat(40),
+          RECOVERY_STATE_HMAC_KEY: fixture.key,
+          GITHUB_RUN_ID: fixture.runId,
+          GITHUB_RUN_ATTEMPT: "1",
+          CONTROL_SHA: fixture.controlSha,
+        },
+        async (url, options = {}) => {
+          const method = options.method ?? "GET";
+          const href = String(url);
+          calls.push({ url: href, method });
+          if (method === "POST") {
+            targetCreated = true;
+            return new Response(null, { status: 201 });
+          }
+          if (method === "GET" && href.endsWith(`/${fixture.variable}`) && targetCreated)
+            return new Response(JSON.stringify({ name: fixture.variable, value: fixture.stored }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          if (method === "GET" && href.endsWith(`/${conflict.variable}`)) {
+            conflictReads += 1;
+            if (conflictReads > 1)
+              return new Response(JSON.stringify({ name: conflict.variable, value: conflict.stored }), {
+                status: 200,
+                headers: { "Content-Type": "application/json" },
+              });
+          }
+          return new Response(JSON.stringify({ message: "Not Found" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          });
+        },
+      ),
+      /G12_RECOVERY_STATE_FENCE_CLOSED:fence_conflict:staging-cms-public-hotfix/,
+    );
+
+    assert.equal(calls.filter(({ method }) => method === "POST").length, 1);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

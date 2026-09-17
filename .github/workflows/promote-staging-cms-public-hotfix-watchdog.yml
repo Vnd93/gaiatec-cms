@@ -1,0 +1,1027 @@
+name: Promote staging cms-public hotfix watchdog
+
+on:
+  workflow_run:
+    workflows: ["Promote staging cms-public hotfix"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: ${{ github.event.workflow_run.run_attempt == 1 && 'staging' || format('staging-hotfix-watchdog-refused-{0}-{1}', github.event.workflow_run.id, github.event.workflow_run.run_attempt) }}
+  cancel-in-progress: false
+
+jobs:
+  recover-incomplete-hotfix:
+    if: >-
+      github.event.workflow_run.run_attempt == 1 &&
+      github.event.workflow_run.conclusion != 'success' &&
+      github.event.workflow_run.event == 'workflow_dispatch' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.path == '.github/workflows/promote-staging-cms-public-hotfix.yml' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: staging
+    steps:
+      - name: Checkout the exact parent control revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          path: control
+          persist-credentials: false
+      - name: Checkout current main controls for the cross-workflow fence
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          path: fence-control
+          persist-credentials: false
+      - name: Use the parent repository-pinned Node runtime
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: control/.nvmrc
+      - name: Validate parent and watchdog identities before recovery
+        env:
+          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git -C control rev-parse HEAD)" = "$PARENT_CONTROL_SHA"
+          test "$(git -C fence-control rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(printf '%s' "$PARENT_RUN_ID" | grep -E '^[1-9][0-9]*$')" = "$PARENT_RUN_ID"
+          test "$(printf '%s' "$PARENT_RUN_ATTEMPT" | grep -E '^[1-9][0-9]*$')" = "$PARENT_RUN_ATTEMPT"
+          test "$(printf '%s' "$PARENT_CONTROL_SHA" | grep -E '^[a-f0-9]{40}$')" = "$PARENT_CONTROL_SHA"
+      - name: Recover the HMAC main state independently of artifacts
+        id: main_variable
+        working-directory: fence-control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs get
+          --allow-missing
+          --kind staging-cms-public-hotfix
+          --file ../main-variable/hotfix-state.json
+          --run-id "$PARENT_RUN_ID"
+          --run-attempt "$PARENT_RUN_ATTEMPT"
+          --control-sha "$PARENT_CONTROL_SHA"
+      - name: Recover the candidate-intent variable independently of artifacts
+        id: candidate_variable
+        working-directory: fence-control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs get
+          --allow-missing
+          --kind staging-cms-public-hotfix-candidate-intent
+          --file ../candidate-variable/candidate-intent.json
+          --run-id "$PARENT_RUN_ID"
+          --run-attempt "$PARENT_RUN_ATTEMPT"
+          --control-sha "$PARENT_CONTROL_SHA"
+      - name: Recover the rollback-intent variable independently of artifacts
+        id: rollback_variable
+        working-directory: fence-control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs get
+          --allow-missing
+          --kind staging-cms-public-hotfix-rollback-intent
+          --file ../rollback-variable/rollback-intent.json
+          --run-id "$PARENT_RUN_ID"
+          --run-attempt "$PARENT_RUN_ATTEMPT"
+          --control-sha "$PARENT_CONTROL_SHA"
+      - name: Classify the authoritative remote marker snapshot
+        id: marker_context
+        env:
+          MAIN_PRESENT: ${{ steps.main_variable.outputs.state_present }}
+          CANDIDATE_PRESENT: ${{ steps.candidate_variable.outputs.state_present }}
+          ROLLBACK_PRESENT: ${{ steps.rollback_variable.outputs.state_present }}
+        run: |
+          set -euo pipefail
+          if [ "$MAIN_PRESENT" != true ] && [ "$CANDIDATE_PRESENT" != true ] && \
+             [ "$ROLLBACK_PRESENT" != true ]; then
+            echo 'required=false' >> "$GITHUB_OUTPUT"
+            echo 'mode=complete' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$MAIN_PRESENT" != true ]; then
+            test "$ROLLBACK_PRESENT" = true
+            echo 'required=true' >> "$GITHUB_OUTPUT"
+            echo 'mode=restored-cleanup' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$ROLLBACK_PRESENT" = true ]; then
+            test "$CANDIDATE_PRESENT" = true
+          fi
+          echo 'required=true' >> "$GITHUB_OUTPUT"
+          echo 'mode=recovery' >> "$GITHUB_OUTPUT"
+      - name: Resolve the complete exact parent artifact inventory
+        if: steps.marker_context.outputs.required == 'true'
+        id: parent_artifacts
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs resolve-run-artifacts
+          --run-id "$PARENT_RUN_ID"
+          --run-attempt "$PARENT_RUN_ATTEMPT"
+          --control-sha "$PARENT_CONTROL_SHA"
+          --workflow-path .github/workflows/promote-staging-cms-public-hotfix.yml
+          --output ../parent-artifacts.json
+      - name: Download only the exact parent state artifact
+        if: >-
+          steps.marker_context.outputs.required == 'true' &&
+          steps.parent_artifacts.outputs.state_present == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.parent_artifacts.outputs.state_id }}
+          digest-mismatch: error
+          path: state-roundtrip
+          merge-multiple: true
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+      - name: Verify and reconcile the parent main state
+        if: steps.marker_context.outputs.required == 'true'
+        id: recovery_context
+        working-directory: fence-control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          STATE_ARTIFACT_PRESENT: ${{ steps.parent_artifacts.outputs.state_present }}
+          VARIABLE_STATE_PRESENT: ${{ steps.main_variable.outputs.state_present }}
+          MARKER_MODE: ${{ steps.marker_context.outputs.mode }}
+          CANDIDATE_VARIABLE_PRESENT: ${{ steps.candidate_variable.outputs.state_present }}
+          ROLLBACK_VARIABLE_PRESENT: ${{ steps.rollback_variable.outputs.state_present }}
+          PROMOTED_TERMINAL_PRESENT: ${{ steps.parent_artifacts.outputs.promoted_terminal_present }}
+          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          test "$STATE_ARTIFACT_PRESENT" = true
+          node scripts/ev2/phase12/recovery-state-store.mjs verify \
+            --kind staging-cms-public-hotfix \
+            --wrapper-file ../state-roundtrip/hotfix-state-wrapper.json \
+            --file ../state-verified/hotfix-state.json \
+            --run-id "$PARENT_RUN_ID" --run-attempt "$PARENT_RUN_ATTEMPT" \
+            --control-sha "$PARENT_CONTROL_SHA"
+          cmp ../state-roundtrip/hotfix-state.json ../state-verified/hotfix-state.json
+          if [ "$VARIABLE_STATE_PRESENT" = true ]; then
+            cmp ../main-variable/hotfix-state.json ../state-verified/hotfix-state.json
+          fi
+          install -d -m 700 ../recovered-state
+          install -m 600 ../state-verified/hotfix-state.json ../recovered-state/hotfix-state.json
+          echo 'required=true' >> "$GITHUB_OUTPUT"
+          if [ "$MARKER_MODE" = restored-cleanup ]; then
+            echo 'mode=restored-cleanup' >> "$GITHUB_OUTPUT"
+          elif [ "$PROMOTED_TERMINAL_PRESENT" = true ]; then
+            test "$ROLLBACK_VARIABLE_PRESENT" != true
+            echo 'mode=promoted-cleanup' >> "$GITHUB_OUTPUT"
+          else
+            echo 'mode=recovery' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Download only the exact parent recovery package
+        if: steps.recovery_context.outputs.required == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.parent_artifacts.outputs.recovery_id }}
+          digest-mismatch: error
+          path: recovery-roundtrip
+          merge-multiple: true
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+      - name: Revalidate the recovery package against its exact parent artifact
+        if: steps.recovery_context.outputs.required == 'true'
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs verify-artifact
+          --state ../recovered-state/hotfix-state.json
+          --package ../recovery-roundtrip
+          --run-id "$PARENT_RUN_ID"
+          --run-attempt "$PARENT_RUN_ATTEMPT"
+          --control-sha "$PARENT_CONTROL_SHA"
+      - name: Download only the exact parent candidate-intent artifact
+        if: >-
+          steps.recovery_context.outputs.required == 'true' &&
+          steps.parent_artifacts.outputs.candidate_intent_present == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.parent_artifacts.outputs.candidate_intent_id }}
+          digest-mismatch: error
+          path: candidate-intent-roundtrip
+          merge-multiple: true
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+      - name: Verify and reconcile the exact parent candidate intent
+        if: steps.recovery_context.outputs.required == 'true'
+        id: candidate_context
+        working-directory: fence-control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          INTENT_ARTIFACT_PRESENT: ${{ steps.parent_artifacts.outputs.candidate_intent_present }}
+          INTENT_VARIABLE_PRESENT: ${{ steps.candidate_variable.outputs.state_present }}
+          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$INTENT_ARTIFACT_PRESENT" != true ]; then
+            test "$INTENT_VARIABLE_PRESENT" != true
+            echo 'present=false' >> "$GITHUB_OUTPUT"
+            echo 'artifact_present=false' >> "$GITHUB_OUTPUT"
+            echo 'variable_present=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          node scripts/ev2/phase12/recovery-state-store.mjs verify \
+            --kind staging-cms-public-hotfix-candidate-intent \
+            --wrapper-file ../candidate-intent-roundtrip/candidate-intent-wrapper.json \
+            --file ../candidate-intent-verified/candidate-intent.json \
+            --run-id "$PARENT_RUN_ID" --run-attempt "$PARENT_RUN_ATTEMPT" \
+            --control-sha "$PARENT_CONTROL_SHA"
+          cmp ../candidate-intent-roundtrip/candidate-intent.json \
+            ../candidate-intent-verified/candidate-intent.json
+          if [ "$INTENT_VARIABLE_PRESENT" = true ]; then
+            cmp ../candidate-variable/candidate-intent.json \
+              ../candidate-intent-verified/candidate-intent.json
+          fi
+          echo "present=$INTENT_VARIABLE_PRESENT" >> "$GITHUB_OUTPUT"
+          echo 'artifact_present=true' >> "$GITHUB_OUTPUT"
+          echo "variable_present=$INTENT_VARIABLE_PRESENT" >> "$GITHUB_OUTPUT"
+      - name: Download an existing exact parent candidate receipt
+        if: >-
+          steps.recovery_context.outputs.required == 'true' &&
+          steps.parent_artifacts.outputs.candidate_receipt_present == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.parent_artifacts.outputs.candidate_receipt_id }}
+          digest-mismatch: error
+          path: candidate-receipt-roundtrip
+          merge-multiple: true
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+      - name: Refuse unsupported rollback evidence attributed to the main run
+        if: steps.recovery_context.outputs.required == 'true'
+        env:
+          MAIN_ROLLBACK_INTENT: ${{ steps.parent_artifacts.outputs.rollback_intent_present }}
+          MAIN_ROLLBACK_RECEIPT: ${{ steps.parent_artifacts.outputs.rollback_receipt_present }}
+        run: |
+          set -euo pipefail
+          test "$MAIN_ROLLBACK_INTENT" != true
+          test "$MAIN_ROLLBACK_RECEIPT" != true
+      - name: Resolve the current watchdog artifact inventory before classification
+        if: >-
+          steps.recovery_context.outputs.mode == 'recovery' &&
+          steps.rollback_variable.outputs.state_present != 'true'
+        id: current_watchdog_artifacts
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs resolve-run-artifacts
+          --run-id "$GITHUB_RUN_ID"
+          --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --control-sha "$GITHUB_SHA"
+          --workflow-path .github/workflows/promote-staging-cms-public-hotfix-watchdog.yml
+          --output ../watchdog-artifacts-before-rollback.json
+      - name: Resolve a predecessor watchdog evidence chain
+        if: >-
+          steps.recovery_context.outputs.required == 'true' &&
+          steps.rollback_variable.outputs.state_present == 'true'
+        id: predecessor_watchdog_artifacts
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs resolve-watchdog-artifacts
+          --state ../recovered-state/hotfix-state.json
+          --rollback-intent ../rollback-variable/rollback-intent.json
+          --output ../watchdog-artifacts-predecessor.json
+      - name: Select recovery or certified terminal cleanup
+        if: steps.recovery_context.outputs.required == 'true'
+        id: execution_context
+        env:
+          INITIAL_MODE: ${{ steps.recovery_context.outputs.mode }}
+          ROLLBACK_PRESENT: ${{ steps.rollback_variable.outputs.state_present }}
+          RECOVERY_TERMINAL_PRESENT: ${{ steps.predecessor_watchdog_artifacts.outputs.recovery_terminal_present }}
+        run: |
+          set -euo pipefail
+          if [ "$INITIAL_MODE" = recovery ] && [ "$ROLLBACK_PRESENT" = true ] && \
+             [ "$RECOVERY_TERMINAL_PRESENT" = true ]; then
+            echo 'mode=restored-cleanup' >> "$GITHUB_OUTPUT"
+          elif [ "$INITIAL_MODE" = restored-cleanup ]; then
+            test "$RECOVERY_TERMINAL_PRESENT" = true
+            echo 'mode=restored-cleanup' >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=$INITIAL_MODE" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Download the predecessor rollback-intent artifact
+        if: >-
+          steps.recovery_context.outputs.required == 'true' &&
+          steps.rollback_variable.outputs.state_present == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.predecessor_watchdog_artifacts.outputs.rollback_intent_id }}
+          digest-mismatch: error
+          path: rollback-intent-roundtrip
+          merge-multiple: true
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.predecessor_watchdog_artifacts.outputs.rollback_intent_owner_run_id }}
+      - name: Verify the predecessor rollback-intent wrapper
+        if: >-
+          steps.recovery_context.outputs.required == 'true' &&
+          steps.rollback_variable.outputs.state_present == 'true'
+        working-directory: fence-control
+        env:
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          node scripts/ev2/phase12/recovery-state-store.mjs verify \
+            --kind staging-cms-public-hotfix-rollback-intent \
+            --wrapper-file ../rollback-intent-roundtrip/rollback-intent-wrapper.json \
+            --file ../rollback-intent-verified/rollback-intent.json \
+            --run-id "$PARENT_RUN_ID" --run-attempt "$PARENT_RUN_ATTEMPT" \
+            --control-sha "$PARENT_CONTROL_SHA"
+          cmp ../rollback-variable/rollback-intent.json \
+            ../rollback-intent-verified/rollback-intent.json
+      - name: Download a predecessor rollback receipt when present
+        if: >-
+          steps.recovery_context.outputs.required == 'true' &&
+          steps.predecessor_watchdog_artifacts.outputs.rollback_receipt_present == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.predecessor_watchdog_artifacts.outputs.rollback_receipt_id }}
+          digest-mismatch: error
+          path: rollback-receipt-roundtrip
+          merge-multiple: true
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.predecessor_watchdog_artifacts.outputs.rollback_receipt_owner_run_id }}
+      - name: Download the exact parent promoted terminal certificate
+        if: steps.execution_context.outputs.mode == 'promoted-cleanup'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.parent_artifacts.outputs.promoted_terminal_id }}
+          digest-mismatch: error
+          path: promoted-terminal-roundtrip
+          merge-multiple: true
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+      - name: Download the exact predecessor restored terminal certificate
+        if: steps.execution_context.outputs.mode == 'restored-cleanup'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.predecessor_watchdog_artifacts.outputs.recovery_terminal_id }}
+          digest-mismatch: error
+          path: recovery-terminal-roundtrip
+          merge-multiple: true
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.predecessor_watchdog_artifacts.outputs.recovery_terminal_owner_run_id }}
+      - name: Revalidate a terminal certificate and fresh live state before resumed cleanup
+        if: >-
+          steps.execution_context.outputs.mode == 'promoted-cleanup' ||
+          steps.execution_context.outputs.mode == 'restored-cleanup'
+        id: terminal_cleanup
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          CLEANUP_MODE: ${{ steps.execution_context.outputs.mode }}
+          CANDIDATE_RECEIPT_PRESENT: ${{ steps.parent_artifacts.outputs.candidate_receipt_present }}
+          RECOVERY_TERMINAL_PRESENT: ${{ steps.predecessor_watchdog_artifacts.outputs.recovery_terminal_present }}
+          ROLLBACK_RECEIPT_PRESENT: ${{ steps.predecessor_watchdog_artifacts.outputs.rollback_receipt_present }}
+        run: |
+          set -euo pipefail
+          args=(
+            --state ../recovered-state/hotfix-state.json
+            --package ../recovery-roundtrip
+            --artifacts ../parent-artifacts.json
+            --candidate-intent ../candidate-intent-verified/candidate-intent.json
+            --executor-workflow .github/workflows/promote-staging-cms-public-hotfix-watchdog.yml
+          )
+          if [ "$CANDIDATE_RECEIPT_PRESENT" = true ]; then
+            args+=(--candidate-receipt ../candidate-receipt-roundtrip/candidate-receipt.json)
+          fi
+          if [ "$CLEANUP_MODE" = promoted-cleanup ]; then
+            args+=(--outcome promoted)
+            args+=(--terminal-artifact ../promoted-terminal-roundtrip)
+          else
+            test "$RECOVERY_TERMINAL_PRESENT" = true
+            test "$ROLLBACK_RECEIPT_PRESENT" = true
+            args+=(--outcome restored)
+            args+=(--successor-artifacts ../watchdog-artifacts-predecessor.json)
+            args+=(--rollback-intent ../rollback-intent-verified/rollback-intent.json)
+            args+=(--rollback-receipt ../rollback-receipt-roundtrip/rollback-receipt.json)
+            args+=(--terminal-artifact ../recovery-terminal-roundtrip)
+          fi
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs verify-terminal-cleanup "${args[@]}"
+      - name: Resume only the remaining terminal compare-and-clears
+        if: steps.terminal_cleanup.outcome == 'success'
+        working-directory: fence-control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          CLEANUP_MODE: ${{ steps.execution_context.outputs.mode }}
+          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$CLEANUP_MODE" = restored-cleanup ]; then
+            node scripts/ev2/phase12/recovery-state-store.mjs clear \
+              --kind staging-cms-public-hotfix \
+              --file ../recovered-state/hotfix-state.json \
+              --run-id "$PARENT_RUN_ID" --run-attempt "$PARENT_RUN_ATTEMPT" \
+              --control-sha "$PARENT_CONTROL_SHA"
+          fi
+          node scripts/ev2/phase12/recovery-state-store.mjs clear \
+            --kind staging-cms-public-hotfix-candidate-intent \
+            --file ../candidate-intent-verified/candidate-intent.json \
+            --run-id "$PARENT_RUN_ID" --run-attempt "$PARENT_RUN_ATTEMPT" \
+            --control-sha "$PARENT_CONTROL_SHA"
+          if [ "$CLEANUP_MODE" = restored-cleanup ]; then
+            node scripts/ev2/phase12/recovery-state-store.mjs clear \
+              --kind staging-cms-public-hotfix-rollback-intent \
+              --file ../rollback-intent-verified/rollback-intent.json \
+              --run-id "$PARENT_RUN_ID" --run-attempt "$PARENT_RUN_ATTEMPT" \
+              --control-sha "$PARENT_CONTROL_SHA"
+          else
+            node scripts/ev2/phase12/recovery-state-store.mjs clear \
+              --kind staging-cms-public-hotfix \
+              --file ../recovered-state/hotfix-state.json \
+              --run-id "$PARENT_RUN_ID" --run-attempt "$PARENT_RUN_ATTEMPT" \
+              --control-sha "$PARENT_CONTROL_SHA"
+          fi
+      - name: Prove the staging recovery fence is empty after resumed cleanup
+        if: steps.terminal_cleanup.outcome == 'success'
+        working-directory: fence-control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs fence
+          --owner-kind staging-cms-public-hotfix
+          --require-empty
+          --file ../watchdog-resumed-empty-fence.json
+          --run-id "$PARENT_RUN_ID" --run-attempt "$PARENT_RUN_ATTEMPT"
+          --control-sha "$PARENT_CONTROL_SHA"
+      - name: Observe the exact live state before deciding recovery
+        if: steps.execution_context.outputs.mode == 'recovery'
+        id: initial_observation
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          CANDIDATE_INTENT_PRESENT: ${{ steps.candidate_context.outputs.present }}
+          CANDIDATE_RECEIPT_PRESENT: ${{ steps.parent_artifacts.outputs.candidate_receipt_present }}
+          ROLLBACK_INTENT_PRESENT: ${{ steps.rollback_variable.outputs.state_present }}
+          ROLLBACK_RECEIPT_PRESENT: ${{ steps.predecessor_watchdog_artifacts.outputs.rollback_receipt_present }}
+        run: |
+          set -euo pipefail
+          args=(
+            --state ../recovered-state/hotfix-state.json
+            --package ../recovery-roundtrip
+            --artifacts ../parent-artifacts.json
+            --executor-workflow .github/workflows/promote-staging-cms-public-hotfix-watchdog.yml
+            --output ../initial-observation.json
+          )
+          if [ "$ROLLBACK_INTENT_PRESENT" = true ]; then
+            args+=(--successor-artifacts ../watchdog-artifacts-predecessor.json)
+            args+=(--rollback-intent ../rollback-intent-verified/rollback-intent.json)
+          else
+            args+=(--successor-artifacts ../watchdog-artifacts-before-rollback.json)
+          fi
+          if [ "$CANDIDATE_INTENT_PRESENT" = true ]; then
+            args+=(--candidate-intent ../candidate-intent-verified/candidate-intent.json)
+          fi
+          if [ "$CANDIDATE_RECEIPT_PRESENT" = true ]; then
+            args+=(--candidate-receipt ../candidate-receipt-roundtrip/candidate-receipt.json)
+          fi
+          if [ "$ROLLBACK_RECEIPT_PRESENT" = true ]; then
+            args+=(--rollback-receipt ../rollback-receipt-roundtrip/rollback-receipt.json)
+          fi
+          if [ "$CANDIDATE_INTENT_PRESENT" != true ]; then
+            args+=(--ignore-uncommitted-candidate-intent true)
+          fi
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs observe "${args[@]}"
+      - name: Preserve ambiguous baseline plus candidate intent for manual reconciliation
+        if: >-
+          steps.execution_context.outputs.mode == 'recovery' &&
+          steps.initial_observation.outputs.classification == 'baseline-with-candidate-intent'
+        run: |
+          echo '::error::Candidate intent is durable while the live tuple is the original baseline; recovery remains fail-closed.'
+          exit 1
+      - name: Refuse every unowned live classification
+        if: >-
+          steps.execution_context.outputs.mode == 'recovery' &&
+          steps.initial_observation.outputs.classification != 'baseline' &&
+          steps.initial_observation.outputs.classification != 'candidate-intended' &&
+          steps.initial_observation.outputs.classification != 'candidate-receipted' &&
+          steps.initial_observation.outputs.classification != 'candidate-with-rollback-intent' &&
+          steps.initial_observation.outputs.classification != 'rollback-intended' &&
+          steps.initial_observation.outputs.classification != 'rollback-receipted' &&
+          steps.initial_observation.outputs.classification != 'baseline-with-candidate-intent'
+        run: |
+          echo '::error::The live cms-public tuple is not owned by this recovery chain.'
+          exit 1
+      - name: Prepare a rollback intent only while the exact candidate is live
+        if: >-
+          steps.execution_context.outputs.mode == 'recovery' &&
+          steps.rollback_variable.outputs.state_present != 'true' &&
+          (steps.initial_observation.outputs.classification == 'candidate-intended' ||
+          steps.initial_observation.outputs.classification == 'candidate-receipted')
+        id: prepare_rollback
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          CANDIDATE_RECEIPT_PRESENT: ${{ steps.parent_artifacts.outputs.candidate_receipt_present }}
+        run: |
+          set -euo pipefail
+          args=(
+            --action rollback
+            --state ../recovered-state/hotfix-state.json
+            --package ../recovery-roundtrip
+            --artifacts ../parent-artifacts.json
+            --successor-artifacts ../watchdog-artifacts-before-rollback.json
+            --candidate-intent ../candidate-intent-verified/candidate-intent.json
+            --executor-workflow .github/workflows/promote-staging-cms-public-hotfix-watchdog.yml
+            --output ../rollback-intent-artifact/rollback-intent.json
+          )
+          if [ "$CANDIDATE_RECEIPT_PRESENT" = true ]; then
+            args+=(--candidate-receipt ../candidate-receipt-roundtrip/candidate-receipt.json)
+          fi
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs prepare-intent "${args[@]}"
+      - name: Seal the new rollback-intent recovery wrapper
+        if: steps.prepare_rollback.outcome == 'success'
+        working-directory: fence-control
+        env:
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs seal
+          --kind staging-cms-public-hotfix-rollback-intent
+          --file ../rollback-intent-artifact/rollback-intent.json
+          --wrapper-file ../rollback-intent-artifact/rollback-intent-wrapper.json
+          --run-id "$PARENT_RUN_ID" --run-attempt "$PARENT_RUN_ATTEMPT"
+          --control-sha "$PARENT_CONTROL_SHA"
+      - name: Upload the rollback intent before any recovery PATCH
+        if: steps.prepare_rollback.outcome == 'success'
+        id: rollback_intent_artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: staging-cms-public-hotfix-rollback-intent-${{ github.run_id }}-${{ github.run_attempt }}
+          path: rollback-intent-artifact
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 90
+          overwrite: false
+          include-hidden-files: false
+      - name: Persist the new rollback intent after its artifact is durable
+        if: steps.prepare_rollback.outcome == 'success'
+        working-directory: fence-control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs put
+          --kind staging-cms-public-hotfix-rollback-intent
+          --file ../rollback-intent-artifact/rollback-intent.json
+          --run-id "$PARENT_RUN_ID" --run-attempt "$PARENT_RUN_ATTEMPT"
+          --control-sha "$PARENT_CONTROL_SHA"
+      - name: Resolve the exact rollback evidence owner across watchdog retries
+        if: >-
+          steps.execution_context.outputs.mode == 'recovery' &&
+          steps.initial_observation.outputs.classification != 'baseline' &&
+          steps.initial_observation.outputs.classification != 'baseline-with-candidate-intent'
+        id: rollback_artifacts
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          EXISTING_INTENT: ${{ steps.rollback_variable.outputs.state_present }}
+        run: |
+          set -euo pipefail
+          if [ "$EXISTING_INTENT" = true ]; then
+            intent=../rollback-intent-verified/rollback-intent.json
+          else
+            intent=../rollback-intent-artifact/rollback-intent.json
+          fi
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs resolve-watchdog-artifacts \
+            --state ../recovered-state/hotfix-state.json \
+            --rollback-intent "$intent" \
+            --output ../watchdog-artifacts-rollback.json
+      - name: Download the exact rollback intent for the final chain
+        if: steps.rollback_artifacts.outcome == 'success'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.rollback_artifacts.outputs.rollback_intent_id }}
+          digest-mismatch: error
+          path: rollback-intent-final-roundtrip
+          merge-multiple: true
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.rollback_artifacts.outputs.rollback_intent_owner_run_id }}
+      - name: Verify the exact rollback-intent final wrapper and variable
+        if: steps.rollback_artifacts.outcome == 'success'
+        working-directory: fence-control
+        env:
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          node scripts/ev2/phase12/recovery-state-store.mjs verify \
+            --kind staging-cms-public-hotfix-rollback-intent \
+            --wrapper-file ../rollback-intent-final-roundtrip/rollback-intent-wrapper.json \
+            --file ../rollback-intent-final/rollback-intent.json \
+            --run-id "$PARENT_RUN_ID" --run-attempt "$PARENT_RUN_ATTEMPT" \
+            --control-sha "$PARENT_CONTROL_SHA"
+          if [ -f ../rollback-variable/rollback-intent.json ]; then
+            cmp ../rollback-variable/rollback-intent.json ../rollback-intent-final/rollback-intent.json
+          else
+            cmp ../rollback-intent-artifact/rollback-intent.json ../rollback-intent-final/rollback-intent.json
+          fi
+      - name: Download an existing exact rollback receipt for the final chain
+        if: >-
+          steps.rollback_artifacts.outcome == 'success' &&
+          steps.rollback_artifacts.outputs.rollback_receipt_present == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.rollback_artifacts.outputs.rollback_receipt_id }}
+          digest-mismatch: error
+          path: rollback-receipt-final-roundtrip
+          merge-multiple: true
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.rollback_artifacts.outputs.rollback_receipt_owner_run_id }}
+      - name: Recheck the complete cross-workflow fence before recovery mutation
+        if: steps.rollback_artifacts.outcome == 'success'
+        id: recovery_fence
+        working-directory: fence-control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs fence
+          --owner-kind staging-cms-public-hotfix
+          --file ../watchdog-recovery-fence.json
+          --run-id "$PARENT_RUN_ID" --run-attempt "$PARENT_RUN_ATTEMPT"
+          --control-sha "$PARENT_CONTROL_SHA"
+      - name: Observe again with the durable rollback evidence
+        if: steps.rollback_artifacts.outcome == 'success'
+        id: rollback_observation
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          CANDIDATE_RECEIPT_PRESENT: ${{ steps.parent_artifacts.outputs.candidate_receipt_present }}
+          ROLLBACK_RECEIPT_PRESENT: ${{ steps.rollback_artifacts.outputs.rollback_receipt_present }}
+        run: |
+          set -euo pipefail
+          args=(
+            --state ../recovered-state/hotfix-state.json
+            --package ../recovery-roundtrip
+            --artifacts ../parent-artifacts.json
+            --successor-artifacts ../watchdog-artifacts-rollback.json
+            --candidate-intent ../candidate-intent-verified/candidate-intent.json
+            --rollback-intent ../rollback-intent-final/rollback-intent.json
+            --executor-workflow .github/workflows/promote-staging-cms-public-hotfix-watchdog.yml
+            --output ../rollback-observation.json
+          )
+          if [ "$CANDIDATE_RECEIPT_PRESENT" = true ]; then
+            args+=(--candidate-receipt ../candidate-receipt-roundtrip/candidate-receipt.json)
+          fi
+          if [ "$ROLLBACK_RECEIPT_PRESENT" = true ]; then
+            args+=(--rollback-receipt ../rollback-receipt-final-roundtrip/rollback-receipt.json)
+          fi
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs observe "${args[@]}"
+      - name: Restore or reconcile the exact baseline transition
+        if: >-
+          steps.rollback_artifacts.outcome == 'success' &&
+          (steps.rollback_observation.outputs.classification == 'candidate-with-rollback-intent' ||
+          steps.rollback_observation.outputs.classification == 'rollback-intended')
+        id: restore_baseline
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          CANDIDATE_RECEIPT_PRESENT: ${{ steps.parent_artifacts.outputs.candidate_receipt_present }}
+          ROLLBACK_INTENT_PREPARED: ${{ steps.prepare_rollback.outcome }}
+        run: |
+          set -euo pipefail
+          args=(
+            --state ../recovered-state/hotfix-state.json
+            --package ../recovery-roundtrip
+            --artifacts ../parent-artifacts.json
+            --successor-artifacts ../watchdog-artifacts-rollback.json
+            --candidate-intent ../candidate-intent-verified/candidate-intent.json
+            --rollback-intent ../rollback-intent-final/rollback-intent.json
+            --executor-workflow .github/workflows/promote-staging-cms-public-hotfix-watchdog.yml
+            --rollback-receipt ../rollback-receipt-artifact/rollback-receipt.json
+          )
+          if [ "$CANDIDATE_RECEIPT_PRESENT" = true ]; then
+            args+=(--candidate-receipt ../candidate-receipt-roundtrip/candidate-receipt.json)
+          fi
+          if [ "$ROLLBACK_INTENT_PREPARED" = success ]; then
+            args+=(--allow-patch true)
+          fi
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs restore-baseline "${args[@]}"
+      - name: Upload the new rollback receipt immediately after observation
+        if: steps.restore_baseline.outcome == 'success'
+        id: rollback_receipt_artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: staging-cms-public-hotfix-rollback-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: rollback-receipt-artifact
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 90
+          overwrite: false
+          include-hidden-files: false
+      - name: Resolve the complete final rollback evidence chain
+        if: steps.rollback_artifacts.outcome == 'success'
+        id: final_rollback_artifacts
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs resolve-watchdog-artifacts
+          --state ../recovered-state/hotfix-state.json
+          --rollback-intent ../rollback-intent-final/rollback-intent.json
+          --output ../watchdog-artifacts-final.json
+      - name: Download the exact final rollback receipt
+        if: steps.final_rollback_artifacts.outcome == 'success'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.final_rollback_artifacts.outputs.rollback_receipt_id }}
+          digest-mismatch: error
+          path: rollback-receipt-terminal-roundtrip
+          merge-multiple: true
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.final_rollback_artifacts.outputs.rollback_receipt_owner_run_id }}
+      - name: Select only a provable baseline or restored terminal outcome
+        if: steps.execution_context.outputs.mode == 'recovery'
+        id: terminal_mode
+        env:
+          INITIAL_CLASSIFICATION: ${{ steps.initial_observation.outputs.classification }}
+          ROLLBACK_CLASSIFICATION: ${{ steps.rollback_observation.outputs.classification }}
+          ROLLBACK_CHAIN: ${{ steps.final_rollback_artifacts.outcome }}
+        run: |
+          set -euo pipefail
+          if [ "$INITIAL_CLASSIFICATION" = baseline ]; then
+            echo 'outcome=baseline' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$ROLLBACK_CHAIN" = success ] && \
+             { [ "$ROLLBACK_CLASSIFICATION" = rollback-receipted ] || \
+               [ "${{ steps.restore_baseline.outcome }}" = success ]; }; then
+            echo 'outcome=restored' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo '::error::Recovery did not reach a provable terminal state.'
+          exit 1
+      - name: Run the bound full probe for the selected terminal state
+        if: steps.terminal_mode.outcome == 'success'
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          TERMINAL_OUTCOME: ${{ steps.terminal_mode.outputs.outcome }}
+          CANDIDATE_INTENT_PRESENT: ${{ steps.candidate_context.outputs.present }}
+          CANDIDATE_RECEIPT_PRESENT: ${{ steps.parent_artifacts.outputs.candidate_receipt_present }}
+        run: |
+          set -euo pipefail
+          args=(
+            --outcome "$TERMINAL_OUTCOME"
+            --state ../recovered-state/hotfix-state.json
+            --package ../recovery-roundtrip
+            --artifacts ../parent-artifacts.json
+            --executor-workflow .github/workflows/promote-staging-cms-public-hotfix-watchdog.yml
+            --output ../recovered-terminal/g12-hotfix-full-probe.json
+            --proof ../recovered-terminal/g12-hotfix-probe-proof.json
+            --cms-public-canary ../recovered-terminal/g12-hotfix-cms-public-canary.json
+            --diagnostics ../recovered-terminal/g12-hotfix-full-probe-diagnostics.json
+          )
+          if [ "$TERMINAL_OUTCOME" = restored ]; then
+            args+=(--successor-artifacts ../watchdog-artifacts-final.json)
+            args+=(--candidate-intent ../candidate-intent-verified/candidate-intent.json)
+            args+=(--rollback-intent ../rollback-intent-final/rollback-intent.json)
+            args+=(--rollback-receipt ../rollback-receipt-terminal-roundtrip/rollback-receipt.json)
+            if [ "$CANDIDATE_RECEIPT_PRESENT" = true ]; then
+              args+=(--candidate-receipt ../candidate-receipt-roundtrip/candidate-receipt.json)
+            fi
+          else
+            args+=(--successor-artifacts ../watchdog-artifacts-before-rollback.json)
+            if [ "$CANDIDATE_INTENT_PRESENT" != true ]; then
+              args+=(--ignore-uncommitted-candidate-intent true)
+            fi
+          fi
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs run-bound-full-probe "${args[@]}"
+      - name: Seal terminal recovery evidence against a fresh remote domain and live read
+        if: steps.terminal_mode.outcome == 'success'
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          TERMINAL_OUTCOME: ${{ steps.terminal_mode.outputs.outcome }}
+          CANDIDATE_INTENT_PRESENT: ${{ steps.candidate_context.outputs.present }}
+          CANDIDATE_RECEIPT_PRESENT: ${{ steps.parent_artifacts.outputs.candidate_receipt_present }}
+        run: |
+          set -euo pipefail
+          args=(
+            --outcome "$TERMINAL_OUTCOME"
+            --state ../recovered-state/hotfix-state.json
+            --package ../recovery-roundtrip
+            --artifacts ../parent-artifacts.json
+            --executor-workflow .github/workflows/promote-staging-cms-public-hotfix-watchdog.yml
+            --probe ../recovered-terminal/g12-hotfix-full-probe.json
+            --probe-proof ../recovered-terminal/g12-hotfix-probe-proof.json
+            --cms-public-canary ../recovered-terminal/g12-hotfix-cms-public-canary.json
+            --output ../recovered-terminal/g12-hotfix-terminal.json
+          )
+          if [ "$TERMINAL_OUTCOME" = restored ]; then
+            args+=(--successor-artifacts ../watchdog-artifacts-final.json)
+            args+=(--candidate-intent ../candidate-intent-verified/candidate-intent.json)
+            args+=(--rollback-intent ../rollback-intent-final/rollback-intent.json)
+            args+=(--rollback-receipt ../rollback-receipt-terminal-roundtrip/rollback-receipt.json)
+            if [ "$CANDIDATE_RECEIPT_PRESENT" = true ]; then
+              args+=(--candidate-receipt ../candidate-receipt-roundtrip/candidate-receipt.json)
+            fi
+          else
+            args+=(--successor-artifacts ../watchdog-artifacts-before-rollback.json)
+            if [ "$CANDIDATE_INTENT_PRESENT" != true ]; then
+              args+=(--ignore-uncommitted-candidate-intent true)
+            fi
+          fi
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs terminal "${args[@]}"
+      - name: Bind the terminal artifact name to its exact receipt chain
+        if: steps.terminal_mode.outcome == 'success'
+        id: terminal_artifact_name
+        env:
+          TERMINAL_OUTCOME: ${{ steps.terminal_mode.outputs.outcome }}
+          ROLLBACK_RECEIPT_ID: ${{ steps.final_rollback_artifacts.outputs.rollback_receipt_id }}
+        run: |
+          set -euo pipefail
+          if [ "$TERMINAL_OUTCOME" = restored ]; then
+            test "$(printf '%s' "$ROLLBACK_RECEIPT_ID" | grep -E '^[1-9][0-9]*$')" = "$ROLLBACK_RECEIPT_ID"
+            echo "name=staging-cms-public-hotfix-recovered-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-receipt-$ROLLBACK_RECEIPT_ID" >> "$GITHUB_OUTPUT"
+          else
+            test "$TERMINAL_OUTCOME" = baseline
+            test -z "$ROLLBACK_RECEIPT_ID"
+            echo "name=staging-cms-public-hotfix-recovered-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Upload terminal recovery evidence before clearing any state
+        if: steps.terminal_mode.outcome == 'success'
+        id: recovery_terminal_artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ steps.terminal_artifact_name.outputs.name }}
+          path: recovered-terminal
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 90
+          overwrite: false
+          include-hidden-files: false
+      - name: Verify terminal recovery artifact metadata
+        if: steps.recovery_terminal_artifact.outcome == 'success'
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs verify-run-artifact
+          --kind recoveryTerminal
+          --artifact-id "${{ steps.recovery_terminal_artifact.outputs.artifact-id }}"
+          --artifact-name "${{ steps.terminal_artifact_name.outputs.name }}"
+          --artifact-digest "${{ steps.recovery_terminal_artifact.outputs.artifact-digest }}"
+          --receipt-artifact-id "${{ steps.final_rollback_artifacts.outputs.rollback_receipt_id }}"
+          --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --control-sha "$GITHUB_SHA"
+          --workflow-path .github/workflows/promote-staging-cms-public-hotfix-watchdog.yml
+      - name: Recheck the owned recovery fence before ordered clears
+        if: steps.recovery_terminal_artifact.outcome == 'success'
+        working-directory: fence-control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs fence
+          --owner-kind staging-cms-public-hotfix
+          --file ../watchdog-terminal-fence.json
+          --run-id "$PARENT_RUN_ID" --run-attempt "$PARENT_RUN_ATTEMPT"
+          --control-sha "$PARENT_CONTROL_SHA"
+      - name: Clear terminal recovery state in interruption-safe order
+        if: steps.recovery_terminal_artifact.outcome == 'success'
+        working-directory: fence-control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          TERMINAL_OUTCOME: ${{ steps.terminal_mode.outputs.outcome }}
+          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$TERMINAL_OUTCOME" = restored ]; then
+            node scripts/ev2/phase12/recovery-state-store.mjs clear \
+              --kind staging-cms-public-hotfix \
+              --file ../recovered-state/hotfix-state.json \
+              --run-id "$PARENT_RUN_ID" --run-attempt "$PARENT_RUN_ATTEMPT" \
+              --control-sha "$PARENT_CONTROL_SHA"
+            node scripts/ev2/phase12/recovery-state-store.mjs clear \
+              --kind staging-cms-public-hotfix-candidate-intent \
+              --file ../candidate-intent-verified/candidate-intent.json \
+              --run-id "$PARENT_RUN_ID" --run-attempt "$PARENT_RUN_ATTEMPT" \
+              --control-sha "$PARENT_CONTROL_SHA"
+            node scripts/ev2/phase12/recovery-state-store.mjs clear \
+              --kind staging-cms-public-hotfix-rollback-intent \
+              --file ../rollback-intent-final/rollback-intent.json \
+              --run-id "$PARENT_RUN_ID" --run-attempt "$PARENT_RUN_ATTEMPT" \
+              --control-sha "$PARENT_CONTROL_SHA"
+          else
+            node scripts/ev2/phase12/recovery-state-store.mjs clear \
+              --kind staging-cms-public-hotfix \
+              --file ../recovered-state/hotfix-state.json \
+              --run-id "$PARENT_RUN_ID" --run-attempt "$PARENT_RUN_ATTEMPT" \
+              --control-sha "$PARENT_CONTROL_SHA"
+          fi
+      - name: Prove the staging recovery fence is empty
+        if: steps.recovery_terminal_artifact.outcome == 'success'
+        working-directory: fence-control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs fence
+          --owner-kind staging-cms-public-hotfix
+          --require-empty
+          --file ../watchdog-empty-fence.json
+          --run-id "$PARENT_RUN_ID" --run-attempt "$PARENT_RUN_ATTEMPT"
+          --control-sha "$PARENT_CONTROL_SHA"

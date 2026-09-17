@@ -1,0 +1,719 @@
+name: Promote staging cms-public hotfix
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: >-
+          Digite a autorizacao literal vinculada ao hotfix e ao rollback imutaveis.
+        required: true
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: ${{ github.run_attempt == '1' && 'staging' || format('staging-hotfix-rerun-refused-{0}-{1}', github.run_id, github.run_attempt) }}
+  cancel-in-progress: false
+
+env:
+  HOTFIX_SHA: e40eb0c2cc81c27fbf8f23e8671136f9dfc6f282
+  HOTFIX_PARENT_SHA: 4f96e78bad1d29fbee245a11c7536986f2bf79c6
+  ROLLBACK_SHA: c8aec5cad25830580bf9ca8a89594ebce1aa3570
+  EDGE_RUNTIME_IMAGE: >-
+    ghcr.io/supabase/edge-runtime:v1.74.3@sha256:c52405002a890ca9fcf77978671c57f3a988e03174afb277f84ac65bc917013c
+  EDGE_RUNTIME_INDEX_DIGEST: sha256:c52405002a890ca9fcf77978671c57f3a988e03174afb277f84ac65bc917013c
+  EDGE_RUNTIME_AMD64_DIGEST: sha256:cc355c3d0e9c063a351cad56d1c4c52a3c4d85aff4e1fad9d91688e75f9aad09
+  HOTFIX_CONFIRMATION: >-
+    PROMOTE_STAGING_CMS_PUBLIC_e40eb0c2cc81c27fbf8f23e8671136f9dfc6f282_ROLLBACK_c8aec5cad25830580bf9ca8a89594ebce1aa3570
+
+jobs:
+  build-candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      artifact_id: ${{ steps.candidate_artifact.outputs.artifact-id }}
+      artifact_digest: ${{ steps.candidate_artifact.outputs.artifact-digest }}
+      artifact_name: ${{ steps.names.outputs.candidate }}
+    steps:
+      - name: Validate the exact operator, branch and literal authorization
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+          DISPATCH_ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          test "$RUN_ATTEMPT" = 1
+          test "$DISPATCH_REF" = refs/heads/main
+          test "${DISPATCH_ACTOR,,}" = vnd93
+          test "${TRIGGERING_ACTOR,,}" = vnd93
+          test "$CONFIRMATION" = "$HOTFIX_CONFIRMATION"
+      - name: Checkout the exact workflow control revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          path: control
+          persist-credentials: false
+      - name: Checkout the immutable cms-public hotfix
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.HOTFIX_SHA }}
+          fetch-depth: 0
+          path: candidate-source
+          persist-credentials: false
+      - name: Checkout the immutable hotfix parent
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.HOTFIX_PARENT_SHA }}
+          fetch-depth: 0
+          path: parent-source
+          persist-credentials: false
+      - name: Checkout the immutable rollback baseline
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.ROLLBACK_SHA }}
+          fetch-depth: 0
+          path: rollback-source
+          persist-credentials: false
+      - name: Use the repository-pinned Node runtime
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: control/.nvmrc
+      - name: Verify the exact successful CI run bound to the hotfix bytes
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs verify-candidate-ci
+          --output ../candidate-ci-evidence.json
+      - name: Prove all source, lock and function-scope identities
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs verify-sources
+          --candidate ../candidate-source
+          --parent ../parent-source
+          --rollback ../rollback-source
+          --output ../candidate-source-evidence.json
+      - name: Prepare the complete read-only candidate input tree
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs prepare-bundle-input
+          --source ../candidate-source
+          --output ../bundle-input
+      - name: Verify and pull the immutable linux amd64 edge-runtime image
+        env:
+          INDEX_MANIFEST: ${{ runner.temp }}/g12-edge-runtime-index.json
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect --raw "$EDGE_RUNTIME_IMAGE" > "$INDEX_MANIFEST"
+          test "sha256:$(sha256sum "$INDEX_MANIFEST" | awk '{print $1}')" = "$EDGE_RUNTIME_INDEX_DIGEST"
+          test "$(jq -r --arg digest "$EDGE_RUNTIME_AMD64_DIGEST" \
+            '[.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64" and .digest == $digest)] | length' \
+            "$INDEX_MANIFEST")" = 1
+          docker pull --platform linux/amd64 "$EDGE_RUNTIME_IMAGE"
+      - name: Build once online with the immutable helper and frozen input
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$RUNNER_TEMP/g12-online" "$RUNNER_TEMP/g12-online-cache"
+          input_tree="$(jq -r .inputTreeSha256 bundle-input/bundle-input-manifest.json)"
+          input_count="$(jq -r .inputFileCount bundle-input/bundle-input-manifest.json)"
+          docker run --rm --platform linux/amd64 --network bridge --read-only \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --tmpfs /tmp:rw,nosuid,nodev,size=67108864 \
+            --volume "$GITHUB_WORKSPACE/bundle-input:/workspace:ro" \
+            --volume "$RUNNER_TEMP/g12-online:/output:rw" \
+            --volume "$RUNNER_TEMP/g12-online-cache:/root/.cache/deno:rw" \
+            --volume "$GITHUB_WORKSPACE/control/scripts/ev2/phase12/staging-cms-public-hotfix-bundle.sh:/g12-builder.sh:ro" \
+            --env DENO_DIR=/root/.cache/deno --env DENO_NO_PACKAGE_JSON=1 \
+            --env G12_EDGE_RUNTIME_INDEX_DIGEST="$EDGE_RUNTIME_INDEX_DIGEST" \
+            --env G12_EDGE_RUNTIME_AMD64_DIGEST="$EDGE_RUNTIME_AMD64_DIGEST" \
+            --env G12_PLATFORM=linux/amd64 \
+            --env G12_INPUT_TREE_SHA256="$input_tree" \
+            --env G12_INPUT_FILE_COUNT="$input_count" \
+            --entrypoint /bin/sh "$EDGE_RUNTIME_IMAGE" /g12-builder.sh online default
+      - name: Rebuild offline with Docker networking disabled
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$RUNNER_TEMP/g12-offline" "$RUNNER_TEMP/g12-offline-cache"
+          cp -a "$RUNNER_TEMP/g12-online-cache/." "$RUNNER_TEMP/g12-offline-cache/"
+          input_tree="$(jq -r .inputTreeSha256 bundle-input/bundle-input-manifest.json)"
+          input_count="$(jq -r .inputFileCount bundle-input/bundle-input-manifest.json)"
+          docker run --rm --platform linux/amd64 --network none --read-only \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --tmpfs /tmp:rw,nosuid,nodev,size=67108864 \
+            --volume "$GITHUB_WORKSPACE/bundle-input:/workspace:ro" \
+            --volume "$RUNNER_TEMP/g12-offline:/output:rw" \
+            --volume "$RUNNER_TEMP/g12-offline-cache:/root/.cache/deno:rw" \
+            --volume "$GITHUB_WORKSPACE/control/scripts/ev2/phase12/staging-cms-public-hotfix-bundle.sh:/g12-builder.sh:ro" \
+            --env DENO_DIR=/root/.cache/deno --env DENO_NO_PACKAGE_JSON=1 \
+            --env G12_EDGE_RUNTIME_INDEX_DIGEST="$EDGE_RUNTIME_INDEX_DIGEST" \
+            --env G12_EDGE_RUNTIME_AMD64_DIGEST="$EDGE_RUNTIME_AMD64_DIGEST" \
+            --env G12_PLATFORM=linux/amd64 \
+            --env G12_INPUT_TREE_SHA256="$input_tree" \
+            --env G12_INPUT_FILE_COUNT="$input_count" \
+            --entrypoint /bin/sh "$EDGE_RUNTIME_IMAGE" /g12-builder.sh offline none
+      - name: Seal only byte-identical online and network-disabled builds
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs seal-candidate
+          --bundle-input ../bundle-input
+          --online "$RUNNER_TEMP/g12-online"
+          --offline "$RUNNER_TEMP/g12-offline"
+          --output ../candidate-sealed
+      - name: Derive the unique candidate artifact name
+        id: names
+        run: >-
+          printf 'candidate=staging-cms-public-hotfix-candidate-%s-%s\n'
+          "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - name: Upload the sealed candidate exactly once
+        id: candidate_artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ steps.names.outputs.candidate }}
+          path: candidate-sealed
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+          overwrite: false
+          include-hidden-files: false
+      - name: Verify candidate artifact metadata against this exact run
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs verify-run-artifact
+          --kind candidate
+          --artifact-id "${{ steps.candidate_artifact.outputs.artifact-id }}"
+          --artifact-name "${{ steps.names.outputs.candidate }}"
+          --artifact-digest "${{ steps.candidate_artifact.outputs.artifact-digest }}"
+          --run-id "$GITHUB_RUN_ID"
+          --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --control-sha "$GITHUB_SHA"
+          --workflow-path .github/workflows/promote-staging-cms-public-hotfix.yml
+
+  promote:
+    needs: build-candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: staging
+    steps:
+      - name: Validate the exact promotion identity
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+          DISPATCH_ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          test "$RUN_ATTEMPT" = 1
+          test "$DISPATCH_REF" = refs/heads/main
+          test "${DISPATCH_ACTOR,,}" = vnd93
+          test "${TRIGGERING_ACTOR,,}" = vnd93
+          test "$CONFIRMATION" = "$HOTFIX_CONFIRMATION"
+          test -n "${{ needs.build-candidate.outputs.artifact_id }}"
+          test "${{ needs.build-candidate.outputs.artifact_name }}" = \
+            "staging-cms-public-hotfix-candidate-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+      - name: Checkout the exact trusted control revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          path: control
+          persist-credentials: false
+      - name: Use the repository-pinned Node runtime
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: control/.nvmrc
+      - name: Fail closed on every occupied staging recovery domain
+        id: initial_recovery_fence
+        working-directory: control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs fence
+          --owner-kind staging-cms-public-hotfix
+          --file ../initial-recovery-fence.json
+          --run-id "$GITHUB_RUN_ID"
+          --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --control-sha "$GITHUB_SHA"
+      - name: Verify the exact candidate artifact before download
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs verify-run-artifact
+          --kind candidate
+          --artifact-id "${{ needs.build-candidate.outputs.artifact_id }}"
+          --artifact-name "${{ needs.build-candidate.outputs.artifact_name }}"
+          --artifact-digest "${{ needs.build-candidate.outputs.artifact_digest }}"
+          --run-id "$GITHUB_RUN_ID"
+          --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --control-sha "$GITHUB_SHA"
+          --workflow-path .github/workflows/promote-staging-cms-public-hotfix.yml
+      - name: Download only the resolved immutable candidate into a fresh directory
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.build-candidate.outputs.artifact_id }}
+          digest-mismatch: error
+          path: candidate-roundtrip
+          merge-multiple: true
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.run_id }}
+      - name: Materialize the exact candidate ESZIP from the round trip
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs materialize-candidate-eszip
+          --candidate ../candidate-roundtrip
+          --output "$RUNNER_TEMP/g12-consumer-input/output.eszip"
+      - name: Reparse every candidate module with the immutable runtime offline
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$RUNNER_TEMP/g12-consumer-input" "$RUNNER_TEMP/g12-consumer-unbundled"
+          test -s "$RUNNER_TEMP/g12-consumer-input/output.eszip"
+          docker pull --platform linux/amd64 "$EDGE_RUNTIME_IMAGE"
+          docker run --rm --platform linux/amd64 --network none --read-only \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --tmpfs /tmp:rw,nosuid,nodev,size=67108864 \
+            --volume "$RUNNER_TEMP/g12-consumer-input:/candidate:ro" \
+            --volume "$RUNNER_TEMP/g12-consumer-unbundled:/output:rw" \
+            --entrypoint /bin/sh "$EDGE_RUNTIME_IMAGE" -c \
+            'edge-runtime unbundle --eszip /candidate/output.eszip --output /output'
+      - name: Bind the runtime reparse to both sealed build manifests
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs verify-runtime-unbundle
+          --candidate ../candidate-roundtrip
+          --unbundled "$RUNNER_TEMP/g12-consumer-unbundled"
+      - name: Download the immutable trusted terminal baseline
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: "10373653337"
+          digest-mismatch: error
+          path: trusted-baseline
+          merge-multiple: true
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: "34908383307"
+      - name: Verify the failed run had a successful exact baseline finalizer
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs verify-trusted-baseline
+          --evidence ../trusted-baseline
+          --output ../trusted-baseline-verified.json
+      - name: Prove the live staging baseline before capture
+        working-directory: control
+        env:
+          EV2_G12_ORIGIN: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
+          EV2_G12_EXPECTED_SHA: ${{ env.ROLLBACK_SHA }}
+          EV2_G12_ENVIRONMENT: staging
+          EV2_G12_PROBE_PROFILE: full
+          EV2_G12_SAMPLE_COUNT: "20"
+          EV2_G12_WARMUP_SAMPLES_PER_ROUTE: "20"
+          EV2_G12_REQUEST_TIMEOUT_MS: "10000"
+          EV2_G12_READINESS_ATTEMPTS: "10"
+          EV2_G12_READINESS_INTERVAL_MS: "1500"
+          EV2_G12_WARMUP_ATTEMPTS: "10"
+          EV2_G12_CSP_MODE: report-only
+          EV2_G12_REPORT_PATH: ${{ runner.temp }}/g12-hotfix-pre-probe.json
+        run: |
+          set -euo pipefail
+          node scripts/ev2/phase12/rollout-probe.mjs
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs validate-probe \
+            --mode pre --file "$EV2_G12_REPORT_PATH"
+      - name: Capture exact live baseline and candidate bytes before mutation
+        working-directory: control
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs capture-baseline
+          --trusted ../trusted-baseline-verified.json
+          --candidate ../candidate-roundtrip
+          --output ../recovery-package
+      - name: Upload the complete recovery package before any bundle mutation
+        id: recovery_artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: staging-cms-public-hotfix-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: recovery-package
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+          overwrite: false
+          include-hidden-files: false
+      - name: Download only the recovery artifact ID into a fresh directory
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.recovery_artifact.outputs.artifact-id }}
+          digest-mismatch: error
+          path: recovery-roundtrip
+          merge-multiple: true
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.run_id }}
+      - name: Build recovery state only from the downloaded immutable package
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs build-state
+          --package ../recovery-roundtrip
+          --run-id "$GITHUB_RUN_ID"
+          --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --control-sha "$GITHUB_SHA"
+          --artifact-id "${{ steps.recovery_artifact.outputs.artifact-id }}"
+          --artifact-digest "${{ steps.recovery_artifact.outputs.artifact-digest }}"
+          --output ../state-artifact/hotfix-state.json
+      - name: Seal a HMAC state wrapper before publishing its artifact
+        working-directory: control
+        env:
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs seal
+          --kind staging-cms-public-hotfix
+          --file ../state-artifact/hotfix-state.json
+          --wrapper-file ../state-artifact/hotfix-state-wrapper.json
+          --run-id "$GITHUB_RUN_ID"
+          --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --control-sha "$GITHUB_SHA"
+      - name: Upload the HMAC recovery state before any bundle mutation
+        id: state_artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: staging-cms-public-hotfix-state-${{ github.run_id }}-${{ github.run_attempt }}
+          path: state-artifact
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+          overwrite: false
+          include-hidden-files: false
+      - name: Verify recovery and state artifact metadata against this run
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+        run: |
+          set -euo pipefail
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs verify-run-artifact \
+            --kind recovery \
+            --artifact-id "${{ steps.recovery_artifact.outputs.artifact-id }}" \
+            --artifact-name "staging-cms-public-hotfix-recovery-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            --artifact-digest "${{ steps.recovery_artifact.outputs.artifact-digest }}" \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --control-sha "$GITHUB_SHA" \
+            --workflow-path .github/workflows/promote-staging-cms-public-hotfix.yml
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs verify-run-artifact \
+            --kind state \
+            --artifact-id "${{ steps.state_artifact.outputs.artifact-id }}" \
+            --artifact-name "staging-cms-public-hotfix-state-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            --artifact-digest "${{ steps.state_artifact.outputs.artifact-digest }}" \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --control-sha "$GITHUB_SHA" \
+            --workflow-path .github/workflows/promote-staging-cms-public-hotfix.yml
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs verify-artifact \
+            --state ../state-artifact/hotfix-state.json \
+            --package ../recovery-roundtrip \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --control-sha "$GITHUB_SHA"
+      - name: Persist the exact recovery state redundantly
+        working-directory: control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs put
+          --kind staging-cms-public-hotfix
+          --file ../state-artifact/hotfix-state.json
+          --run-id "$GITHUB_RUN_ID"
+          --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --control-sha "$GITHUB_SHA"
+      - name: Recheck the complete cross-workflow recovery fence
+        id: armed_recovery_fence
+        working-directory: control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs fence
+          --owner-kind staging-cms-public-hotfix
+          --file ../armed-recovery-fence.json
+          --run-id "$GITHUB_RUN_ID"
+          --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --control-sha "$GITHUB_SHA"
+      - name: Resolve the exact pre-intent artifact inventory
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs resolve-run-artifacts
+          --run-id "$GITHUB_RUN_ID"
+          --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --control-sha "$GITHUB_SHA"
+          --output ../artifacts-before-intent.json
+      - name: Prepare a candidate intent against the stable live baseline
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs prepare-intent
+          --action candidate
+          --state ../state-artifact/hotfix-state.json
+          --package ../recovery-roundtrip
+          --artifacts ../artifacts-before-intent.json
+          --executor-workflow .github/workflows/promote-staging-cms-public-hotfix.yml
+          --output ../candidate-intent-artifact/candidate-intent.json
+      - name: Seal the candidate-intent recovery wrapper
+        working-directory: control
+        env:
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs seal
+          --kind staging-cms-public-hotfix-candidate-intent
+          --file ../candidate-intent-artifact/candidate-intent.json
+          --wrapper-file ../candidate-intent-artifact/candidate-intent-wrapper.json
+          --run-id "$GITHUB_RUN_ID"
+          --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --control-sha "$GITHUB_SHA"
+      - name: Upload the candidate intent before the PATCH
+        id: candidate_intent_artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: staging-cms-public-hotfix-candidate-intent-${{ github.run_id }}-${{ github.run_attempt }}
+          path: candidate-intent-artifact
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+          overwrite: false
+          include-hidden-files: false
+      - name: Verify and redownload the exact candidate intent
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs verify-run-artifact
+          --kind candidateIntent
+          --artifact-id "${{ steps.candidate_intent_artifact.outputs.artifact-id }}"
+          --artifact-name "staging-cms-public-hotfix-candidate-intent-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          --artifact-digest "${{ steps.candidate_intent_artifact.outputs.artifact-digest }}"
+          --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --control-sha "$GITHUB_SHA"
+          --workflow-path .github/workflows/promote-staging-cms-public-hotfix.yml
+      - name: Download only the candidate-intent artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.candidate_intent_artifact.outputs.artifact-id }}
+          digest-mismatch: error
+          path: candidate-intent-roundtrip
+          merge-multiple: true
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.run_id }}
+      - name: Verify the HMAC candidate-intent wrapper from the round trip
+        working-directory: control
+        env:
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: |
+          set -euo pipefail
+          node scripts/ev2/phase12/recovery-state-store.mjs verify \
+            --kind staging-cms-public-hotfix-candidate-intent \
+            --wrapper-file ../candidate-intent-roundtrip/candidate-intent-wrapper.json \
+            --file ../candidate-intent-verified/candidate-intent.json \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --control-sha "$GITHUB_SHA"
+          cmp ../candidate-intent-roundtrip/candidate-intent.json \
+            ../candidate-intent-verified/candidate-intent.json
+      - name: Persist the exact candidate intent before the PATCH
+        working-directory: control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs put
+          --kind staging-cms-public-hotfix-candidate-intent
+          --file ../candidate-intent-verified/candidate-intent.json
+          --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --control-sha "$GITHUB_SHA"
+      - name: Fence all staging domains immediately before the PATCH
+        id: mutation_recovery_fence
+        working-directory: control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs fence
+          --owner-kind staging-cms-public-hotfix
+          --file ../mutation-recovery-fence.json
+          --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --control-sha "$GITHUB_SHA"
+      - name: Resolve the exact pre-PATCH artifact inventory
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs resolve-run-artifacts
+          --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --control-sha "$GITHUB_SHA"
+          --output ../artifacts-before-patch.json
+      - name: Apply only the exact candidate bundle once
+        id: apply_candidate
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs apply-candidate
+          --state ../state-artifact/hotfix-state.json
+          --package ../recovery-roundtrip
+          --artifacts ../artifacts-before-patch.json
+          --candidate-intent ../candidate-intent-verified/candidate-intent.json
+          --executor-workflow .github/workflows/promote-staging-cms-public-hotfix.yml
+          --receipt ../candidate-receipt-artifact/candidate-receipt.json
+      - name: Upload the candidate receipt immediately after observation
+        id: candidate_receipt_artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: staging-cms-public-hotfix-candidate-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: candidate-receipt-artifact
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+          overwrite: false
+          include-hidden-files: false
+      - name: Verify the candidate receipt artifact metadata
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs verify-run-artifact
+          --kind candidateReceipt
+          --artifact-id "${{ steps.candidate_receipt_artifact.outputs.artifact-id }}"
+          --artifact-name "staging-cms-public-hotfix-candidate-receipt-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          --artifact-digest "${{ steps.candidate_receipt_artifact.outputs.artifact-digest }}"
+          --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --control-sha "$GITHUB_SHA"
+          --workflow-path .github/workflows/promote-staging-cms-public-hotfix.yml
+      - name: Download only the exact candidate receipt
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.candidate_receipt_artifact.outputs.artifact-id }}
+          digest-mismatch: error
+          path: candidate-receipt-roundtrip
+          merge-multiple: true
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.run_id }}
+      - name: Resolve the exact promoted evidence inventory
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs resolve-run-artifacts
+          --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --control-sha "$GITHUB_SHA"
+          --output ../artifacts-promoted.json
+      - name: Run the bound full site and cms-public canaries
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs run-bound-full-probe
+          --outcome promoted
+          --state ../state-artifact/hotfix-state.json
+          --package ../recovery-roundtrip
+          --artifacts ../artifacts-promoted.json
+          --candidate-intent ../candidate-intent-verified/candidate-intent.json
+          --candidate-receipt ../candidate-receipt-roundtrip/candidate-receipt.json
+          --executor-workflow .github/workflows/promote-staging-cms-public-hotfix.yml
+          --output ../promoted-terminal/g12-hotfix-full-probe.json
+          --proof ../promoted-terminal/g12-hotfix-probe-proof.json
+          --cms-public-canary ../promoted-terminal/g12-hotfix-cms-public-canary.json
+          --diagnostics ../promoted-terminal/g12-hotfix-full-probe-diagnostics.json
+      - name: Seal terminal promoted evidence against a fresh live read
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs terminal
+          --outcome promoted
+          --state ../state-artifact/hotfix-state.json
+          --package ../recovery-roundtrip
+          --artifacts ../artifacts-promoted.json
+          --candidate-intent ../candidate-intent-verified/candidate-intent.json
+          --candidate-receipt ../candidate-receipt-roundtrip/candidate-receipt.json
+          --executor-workflow .github/workflows/promote-staging-cms-public-hotfix.yml
+          --probe ../promoted-terminal/g12-hotfix-full-probe.json
+          --probe-proof ../promoted-terminal/g12-hotfix-probe-proof.json
+          --cms-public-canary ../promoted-terminal/g12-hotfix-cms-public-canary.json
+          --output ../promoted-terminal/g12-hotfix-terminal.json
+      - name: Upload terminal promoted evidence before clearing recovery state
+        id: promoted_terminal_artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: staging-cms-public-hotfix-promoted-${{ github.run_id }}-${{ github.run_attempt }}
+          path: promoted-terminal
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 90
+          overwrite: false
+          include-hidden-files: false
+      - name: Verify terminal evidence metadata before compare-and-clear
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs verify-run-artifact
+          --kind promotedTerminal
+          --artifact-id "${{ steps.promoted_terminal_artifact.outputs.artifact-id }}"
+          --artifact-name "staging-cms-public-hotfix-promoted-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          --artifact-digest "${{ steps.promoted_terminal_artifact.outputs.artifact-digest }}"
+          --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --control-sha "$GITHUB_SHA"
+          --workflow-path .github/workflows/promote-staging-cms-public-hotfix.yml
+      - name: Clear candidate intent first after terminal verification
+        working-directory: control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs clear
+          --kind staging-cms-public-hotfix-candidate-intent
+          --file ../candidate-intent-verified/candidate-intent.json
+          --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --control-sha "$GITHUB_SHA"
+      - name: Clear the main state last after all subordinate intents
+        working-directory: control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs clear
+          --kind staging-cms-public-hotfix
+          --file ../state-artifact/hotfix-state.json
+          --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --control-sha "$GITHUB_SHA"
+      - name: Prove the staging recovery fence is empty at terminal success
+        working-directory: control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: |
+          set -euo pipefail
+          node scripts/ev2/phase12/recovery-state-store.mjs fence \
+            --owner-kind staging-cms-public-hotfix \
+            --require-empty \
+            --file ../terminal-recovery-fence.json \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --control-sha "$GITHUB_SHA"

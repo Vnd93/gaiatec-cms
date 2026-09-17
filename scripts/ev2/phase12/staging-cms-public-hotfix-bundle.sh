@@ -37,6 +37,16 @@ require_nonempty() {
   test -n "$1" || refuse "$2"
 }
 
+require_uint() {
+  value="$1"
+  failure_token="$2"
+  case "${value}" in
+    "" | *[!0-9]*) refuse "${failure_token}" ;;
+    0 | [1-9]*) ;;
+    *) refuse "${failure_token}" ;;
+  esac
+}
+
 require_searchable_directory() {
   test -d "$1" && test -x "$1" || refuse "$2"
 }
@@ -237,6 +247,8 @@ test -d "${unbundled}" || refuse G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_MISSING
 
 unbundled_files="${output}/.unbundled-files.nul"
 unbundled_files_sorted="${output}/.unbundled-files.sorted.nul"
+unbundled_sizes="${output}/.unbundled-sizes.txt"
+unbundled_metrics="${output}/.unbundled-metrics.txt"
 if ! (
   cd "${unbundled}" || exit 1
   find . -type f -print0 > "${unbundled_files}"
@@ -252,13 +264,63 @@ if ! (
 ) > "${unbundled_manifest}"; then
   refuse G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_HASH_FAILED
 fi
-if ! rm -f "${unbundled_files}" "${unbundled_files_sorted}"; then
+test -s "${unbundled_manifest}" || refuse G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_MANIFEST_EMPTY
+unbundled_count=$(wc -l < "${unbundled_manifest}" | tr -d '[:space:]')
+if ! (
+  cd "${unbundled}" || exit 1
+  xargs -0 -r -n 1 wc -c < "${unbundled_files_sorted}"
+) > "${unbundled_sizes}"; then
+  refuse G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_SIZE_SCAN_FAILED
+fi
+if ! awk '
+  $1 !~ /^[0-9]+$/ { invalid = 1; next }
+  {
+    count += 1
+    total += $1
+    if ($1 == 0) zero += 1
+    if ($1 > largest) largest = $1
+  }
+  END {
+    if (
+      invalid ||
+      count < 1 || count > 65536 ||
+      total < 0 || total > 67108864 ||
+      zero < 0 || zero > count ||
+      largest < 0 || largest > 2097152 || largest > total ||
+      (total == 0 && (largest != 0 || zero != count)) ||
+      (total > 0 && (largest < 1 || zero >= count))
+    ) exit 1
+    printf "%d\n%d\n%.0f\n%.0f\n", count, zero + 0, total + 0, largest + 0
+  }
+' "${unbundled_sizes}" > "${unbundled_metrics}"; then
+  refuse G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_METRICS_FAILED
+fi
+if ! {
+  IFS= read -r unbundled_size_count
+  IFS= read -r unbundled_zero_byte_file_count
+  IFS= read -r unbundled_total_bytes
+  IFS= read -r unbundled_largest_file_bytes
+} < "${unbundled_metrics}"; then
+  refuse G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_METRICS_FAILED
+fi
+require_uint "${unbundled_size_count}" G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_METRICS_FAILED
+require_uint "${unbundled_zero_byte_file_count}" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_METRICS_FAILED
+require_uint "${unbundled_total_bytes}" G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_METRICS_FAILED
+require_uint "${unbundled_largest_file_bytes}" \
+  G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_METRICS_FAILED
+if test "${unbundled_size_count}" != "${unbundled_count}"; then
+  refuse G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_SIZE_COUNT_REFUSED
+fi
+if ! rm -f \
+  "${unbundled_files}" \
+  "${unbundled_files_sorted}" \
+  "${unbundled_sizes}" \
+  "${unbundled_metrics}"; then
   refuse G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_TEMP_CLEANUP_FAILED
 fi
-test -s "${unbundled_manifest}" || refuse G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_MANIFEST_EMPTY
 
 byte_count=$(wc -c < "${eszip}" | tr -d '[:space:]')
-unbundled_count=$(wc -l < "${unbundled_manifest}" | tr -d '[:space:]')
 bundle_command_sha=$(printf '%s' "${bundle_command}" | sha256sum | awk '{print $1}')
 unbundle_command_sha=$(printf '%s' "${unbundle_command}" | sha256sum | awk '{print $1}')
 
@@ -292,6 +354,9 @@ unbundle_command_sha=$(printf '%s' "${unbundle_command}" | sha256sum | awk '{pri
   printf 'RAW_ESZIP_BYTES=%s\n' "${byte_count}"
   printf 'UNBUNDLED_FILES_SHA256=%s\n' "$(sha_value "${unbundled_manifest}")"
   printf 'UNBUNDLED_FILE_COUNT=%s\n' "${unbundled_count}"
+  printf 'UNBUNDLED_TOTAL_BYTES=%s\n' "${unbundled_total_bytes}"
+  printf 'UNBUNDLED_ZERO_BYTE_FILE_COUNT=%s\n' "${unbundled_zero_byte_file_count}"
+  printf 'UNBUNDLED_LARGEST_FILE_BYTES=%s\n' "${unbundled_largest_file_bytes}"
   printf 'EDGE_RUNTIME_INDEX_DIGEST=%s\n' "${G12_EDGE_RUNTIME_INDEX_DIGEST}"
   printf 'EDGE_RUNTIME_AMD64_DIGEST=%s\n' "${G12_EDGE_RUNTIME_AMD64_DIGEST}"
   printf 'PLATFORM=%s\n' "${G12_PLATFORM}"

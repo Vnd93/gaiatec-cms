@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import { CMS_PUBLIC_BUNDLE_LOCK } from "./staging-cms-public-hotfix-deno-lock-lib.mjs";
 import { STAGING_CMS_PUBLIC_HOTFIX } from "./staging-cms-public-hotfix-lib.mjs";
+import { directoryRecords, readBoundedFile, walkFiles } from "./staging-cms-public-hotfix.mjs";
 
 const mainWorkflowPath = new URL(
   "../../../.github/workflows/promote-staging-cms-public-hotfix.yml",
@@ -16,13 +19,15 @@ const watchdogWorkflowPath = new URL(
 );
 const ciWorkflowPath = new URL("../../../.github/workflows/ci.yml", import.meta.url);
 const runnerPath = new URL("./staging-cms-public-hotfix.mjs", import.meta.url);
+const libraryPath = new URL("./staging-cms-public-hotfix-lib.mjs", import.meta.url);
 const builderPath = new URL("./staging-cms-public-hotfix-bundle.sh", import.meta.url);
 
-const [mainWorkflow, watchdogWorkflow, ciWorkflow, runner, builder] = await Promise.all([
+const [mainWorkflow, watchdogWorkflow, ciWorkflow, runner, library, builder] = await Promise.all([
   readFile(mainWorkflowPath, "utf8"),
   readFile(watchdogWorkflowPath, "utf8"),
   readFile(ciWorkflowPath, "utf8"),
   readFile(runnerPath, "utf8"),
+  readFile(libraryPath, "utf8"),
   readFile(builderPath, "utf8"),
 ]);
 
@@ -201,6 +206,9 @@ test("the immutable builder reports every preflight and runtime boundary failure
     "G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_FIND_FAILED",
     "G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_SORT_FAILED",
     "G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_HASH_FAILED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_SIZE_SCAN_FAILED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_METRICS_FAILED",
+    "G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_SIZE_COUNT_REFUSED",
     "G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_TEMP_CLEANUP_FAILED",
   ])
     assert.match(builder, new RegExp(token), token);
@@ -212,7 +220,8 @@ test("the immutable builder reports every preflight and runtime boundary failure
   assert.match(builder, /find \. -type f -print0 > "\$\{unbundled_files\}"/);
   assert.match(builder, /sort -z "\$\{unbundled_files\}" > "\$\{unbundled_files_sorted\}"/);
   assert.match(builder, /xargs -0 -r sha256sum < "\$\{unbundled_files_sorted\}"/);
-  assert.equal((builder.match(/cd "\$\{unbundled\}" \|\| exit 1/g) ?? []).length, 2);
+  assert.match(builder, /xargs -0 -r -n 1 wc -c < "\$\{unbundled_files_sorted\}"/);
+  assert.equal((builder.match(/cd "\$\{unbundled\}" \|\| exit 1/g) ?? []).length, 3);
   assert.match(builder, /require_equal "\$\{JSR_URL:-\}" "file:\/\/\/workspace\/\.g12-jsr\/"/);
   assert.match(builder, /find \. -type f[\s\S]*\.g12-mirror-manifest\.json[\s\S]*-print0/);
   assert.match(builder, /xargs -0 -r sha256sum --text < "\$\{mirror_files_sorted\}"/);
@@ -225,6 +234,10 @@ test("the immutable builder reports every preflight and runtime boundary failure
   assert.match(builder, /printf 'BUNDLE_DENO_LOCK_SHA256=%s\\n'/);
   assert.match(builder, /printf 'BUNDLE_DENO_LOCK_NPM_ROOT_SPECIFIERS=%s\\n'/);
   assert.match(builder, /printf 'BUNDLE_DENO_LOCK_EVIDENCE_JSON=%s\\n'/);
+  assert.match(builder, /printf 'UNBUNDLED_TOTAL_BYTES=%s\\n'/);
+  assert.match(builder, /printf 'UNBUNDLED_ZERO_BYTE_FILE_COUNT=%s\\n'/);
+  assert.match(builder, /printf 'UNBUNDLED_LARGEST_FILE_BYTES=%s\\n'/);
+  assert.match(builder, /require_uint "\$\{unbundled_total_bytes\}"/);
   assert.doesNotMatch(builder, /printf 'DENO_LOCK_SHA256=/);
 });
 
@@ -242,6 +255,134 @@ test("bundle input seals the lock-verified file JSR mirror and rejects import.me
   assert.match(runner, /bundleDenoLockSha256: await fileSha256\(join\(output, "deno\.lock"\)\)/);
   assert.match(runner, /bundleDenoLock: structuredClone\(CMS_PUBLIC_BUNDLE_LOCK\.evidence\)/);
   assert.match(runner, /jsrMirror: \{[\s\S]*manifestSha256[\s\S]*treeSha256[\s\S]*fileCount[\s\S]*bytes/);
+});
+
+test("tree and ESZIP inventories stay bounded while only verified unbundles accept empty files", () => {
+  const directoryStart = runner.indexOf("async function directoryRecords(");
+  const directoryEnd = runner.indexOf("async function candidateSourceUsesImportMeta", directoryStart);
+  const directoryBody = runner.slice(directoryStart, directoryEnd);
+  assert.notEqual(directoryStart, -1);
+  assert.notEqual(directoryEnd, -1);
+  assert.match(directoryBody, /allowEmptyFiles = false/);
+  assert.match(directoryBody, /maximumFileBytes = STAGING_CMS_PUBLIC_HOTFIX\.maximumArtifactFileBytes/);
+  assert.match(directoryBody, /maximumTreeBytes = STAGING_CMS_PUBLIC_HOTFIX\.maximumArtifactTreeBytes/);
+  assert.match(directoryBody, /maximumEntryCount = STAGING_CMS_PUBLIC_HOTFIX\.maximumArtifactEntryCount/);
+  assert.doesNotMatch(directoryBody, /maximumRawEszipBytes/);
+  assert.match(directoryBody, /emptyFileCount/);
+  assert.match(directoryBody, /largestFileBytes/);
+  assert.match(library, /G12_STAGING_CMS_PUBLIC_HOTFIX_TREE_TOO_LARGE_REFUSED/);
+  assert.equal((runner.match(/allowEmptyFiles: true/g) ?? []).length, 2);
+  assert.match(runner, /const directory = await opendir\(current\)/);
+  assert.doesNotMatch(runner, /await readdir\(current/);
+
+  const validationStart = runner.indexOf("async function validateUnbundledManifest");
+  const validationEnd = runner.indexOf("async function loadCandidateBuildEvidence", validationStart);
+  const runtimeStart = runner.indexOf("async function verifyRuntimeUnbundle");
+  const runtimeEnd = runner.indexOf("function githubToken", runtimeStart);
+  assert.match(runner.slice(validationStart, validationEnd), /allowEmptyFiles: true/);
+  assert.match(runner.slice(runtimeStart, runtimeEnd), /allowEmptyFiles: true/);
+  assert.match(runner, /g12\.staging\.cms_public_hotfix\.unbundled_file_boundary/);
+  assert.match(runner, /g12\.staging\.cms_public_hotfix\.file_boundary_refused/);
+  assert.match(library, /G12_STAGING_CMS_PUBLIC_HOTFIX_FILE_EMPTY_REFUSED/);
+  assert.match(library, /G12_STAGING_CMS_PUBLIC_HOTFIX_FILE_TOO_LARGE_REFUSED/);
+
+  assert.match(library, /const moduleSpecifiers = new Set\(\)/);
+  assert.match(library, /moduleSpecifiers\.has\(specifier\)/);
+  assert.match(library, /moduleSpecifiers\.add\(specifier\)/);
+  assert.doesNotMatch(library, /modules\.some\(\(item\) => item\.specifier === specifier\)/);
+  assert.match(library, /G12_STAGING_CMS_PUBLIC_HOTFIX_ESZIP_MODULE_COUNT_REFUSED/);
+});
+
+test("artifact tree boundaries execute at exact limits and refuse cap plus one without path disclosure", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "g12-cms-public-tree-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+
+  const totalRoot = join(root, "total");
+  await mkdir(totalRoot);
+  await writeFile(join(totalRoot, "payload"), Buffer.from("ab"));
+  const exactTotal = await directoryRecords(totalRoot, {
+    maximumFileBytes: 3,
+    maximumTreeBytes: 2,
+  });
+  assert.equal(exactTotal.inventory.totalBytes, 2);
+  await writeFile(join(totalRoot, "payload"), Buffer.from("abc"));
+  await assert.rejects(
+    () =>
+      directoryRecords(totalRoot, {
+        maximumFileBytes: 3,
+        maximumTreeBytes: 2,
+      }),
+    /G12_STAGING_CMS_PUBLIC_HOTFIX_TREE_TOO_LARGE_REFUSED/,
+  );
+
+  const pathRoot = join(root, "path");
+  await mkdir(pathRoot);
+  await writeFile(join(pathRoot, "éé"), Buffer.from("x"));
+  assert.equal((await walkFiles(pathRoot, { maximumPathBytes: 4 })).files.length, 1);
+  await rm(join(pathRoot, "éé"));
+  const oversizedName = "ééa";
+  await writeFile(join(pathRoot, oversizedName), Buffer.from("x"));
+  const logs = [];
+  const originalLog = console.log;
+  console.log = (...values) => logs.push(values.join(" "));
+  try {
+    await assert.rejects(
+      () => walkFiles(pathRoot, { maximumPathBytes: 4 }),
+      /G12_STAGING_CMS_PUBLIC_HOTFIX_TREE_PATH_SIZE_REFUSED/,
+    );
+  } finally {
+    console.log = originalLog;
+  }
+  const refusalOutput = logs.join("\n");
+  assert.match(refusalOutput, /tree_boundary_refused/);
+  assert.doesNotMatch(refusalOutput, new RegExp(oversizedName));
+  assert.equal(refusalOutput.includes(pathRoot), false);
+
+  const depthRoot = join(root, "depth");
+  await mkdir(depthRoot);
+  let current = depthRoot;
+  for (let depth = 0; depth < 64; depth += 1) {
+    current = join(current, "a");
+    await mkdir(current);
+  }
+  assert.equal((await walkFiles(depthRoot, { maximumDepth: 64 })).entryCount, 64);
+  await mkdir(join(current, "a"));
+  await assert.rejects(
+    () => walkFiles(depthRoot, { maximumDepth: 64 }),
+    /G12_STAGING_CMS_PUBLIC_HOTFIX_TREE_DEPTH_REFUSED/,
+  );
+
+  const entryRoot = join(root, "entries");
+  await mkdir(entryRoot);
+  await mkdir(join(entryRoot, "a"));
+  await mkdir(join(entryRoot, "b"));
+  assert.equal((await walkFiles(entryRoot, { maximumEntryCount: 2 })).entryCount, 2);
+  await mkdir(join(entryRoot, "c"));
+  await assert.rejects(
+    () => walkFiles(entryRoot, { maximumEntryCount: 2 }),
+    /G12_STAGING_CMS_PUBLIC_HOTFIX_TREE_ENTRY_COUNT_REFUSED/,
+  );
+
+  const fileRoot = join(root, "files");
+  await mkdir(fileRoot);
+  await writeFile(join(fileRoot, "a"), Buffer.from("a"));
+  assert.equal((await walkFiles(fileRoot, { maximumFileCount: 1 })).files.length, 1);
+  await writeFile(join(fileRoot, "b"), Buffer.from("b"));
+  await assert.rejects(
+    () => walkFiles(fileRoot, { maximumFileCount: 1 }),
+    /G12_STAGING_CMS_PUBLIC_HOTFIX_TREE_FILE_COUNT_REFUSED/,
+  );
+
+  const boundedRoot = join(root, "bounded");
+  await mkdir(boundedRoot);
+  const boundedFile = join(boundedRoot, "payload");
+  await writeFile(boundedFile, Buffer.from("ab"));
+  assert.equal((await readBoundedFile(boundedFile, 2)).byteLength, 2);
+  await writeFile(boundedFile, Buffer.from("abc"));
+  await assert.rejects(
+    () => readBoundedFile(boundedFile, 2, { relativePath: "payload" }),
+    /G12_STAGING_CMS_PUBLIC_HOTFIX_FILE_TOO_LARGE_REFUSED/,
+  );
 });
 
 test("both candidate workflows propagate the exact projected lock evidence into Docker", () => {

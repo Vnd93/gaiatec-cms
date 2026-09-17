@@ -45,7 +45,14 @@ export const STAGING_CMS_PUBLIC_HOTFIX = Object.freeze({
     "edge-runtime bundle --entrypoint /workspace/supabase/functions/cms-public/index.ts --output /output/output.eszip --checksum sha256",
   unbundleCommand:
     "edge-runtime unbundle --eszip /output/output.eszip --output /output/unbundled/supabase/functions/cms-public",
-  builderScriptSha256: "8a6f3b2c77540e6a7c95988e73e928aecd8749d5a41b8e78175da541ab50fd19",
+  builderScriptSha256: "1f12f6256fc0ad8f00224ff12d0e6203f20380a0902e02a43d49176c1f9e7322",
+  maximumArtifactFileBytes: 2 * 1024 * 1024,
+  maximumArtifactTreeBytes: 64 * 1024 * 1024,
+  maximumArtifactFileCount: 65_536,
+  maximumArtifactEntryCount: 65_536,
+  maximumArtifactPathBytes: 4_096,
+  maximumArtifactDepth: 64,
+  maximumEszipModuleCount: 65_536,
   maximumWireBundleBytes: 20 * 1024 * 1024,
   maximumRawEszipBytes: 64 * 1024 * 1024,
   candidateEntrypointPath: "file:///workspace/supabase/functions/cms-public/index.ts",
@@ -108,6 +115,87 @@ export function assertWireBundleByteLength(value) {
   if (!Number.isSafeInteger(value) || value < 32 || value > STAGING_CMS_PUBLIC_HOTFIX.maximumWireBundleBytes)
     throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_BUNDLE_SIZE_REFUSED");
   return value;
+}
+
+export function assertBoundedFileByteLength(value, maximumBytes, { allowEmpty = false } = {}) {
+  if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 1)
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_FILE_LIMIT_REFUSED");
+  if (!Number.isSafeInteger(value) || value < 0)
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_FILE_SIZE_REFUSED");
+  if (value === 0 && !allowEmpty) throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_FILE_EMPTY_REFUSED");
+  if (value > maximumBytes) throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_FILE_TOO_LARGE_REFUSED");
+  return value;
+}
+
+export function assertArtifactTreeFileCount(
+  value,
+  maximum = STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactFileCount,
+) {
+  if (!Number.isSafeInteger(maximum) || maximum < 1)
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_TREE_FILE_COUNT_LIMIT_REFUSED");
+  if (!Number.isSafeInteger(value) || value < 0 || value > maximum)
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_TREE_FILE_COUNT_REFUSED");
+  return value;
+}
+
+export function assertArtifactTreeEntryCount(
+  value,
+  maximum = STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactEntryCount,
+) {
+  if (!Number.isSafeInteger(maximum) || maximum < 1)
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_TREE_ENTRY_COUNT_LIMIT_REFUSED");
+  if (!Number.isSafeInteger(value) || value < 0 || value > maximum)
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_TREE_ENTRY_COUNT_REFUSED");
+  return value;
+}
+
+export function assertArtifactTreeByteLength(
+  value,
+  maximum = STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactTreeBytes,
+) {
+  if (!Number.isSafeInteger(maximum) || maximum < 1)
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_TREE_SIZE_LIMIT_REFUSED");
+  if (!Number.isSafeInteger(value) || value < 0 || value > maximum)
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_TREE_TOO_LARGE_REFUSED");
+  return value;
+}
+
+export function assertArtifactTreePath(
+  value,
+  {
+    maximumBytes = STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactPathBytes,
+    maximumDepth = STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactDepth,
+  } = {},
+) {
+  const relativePath = String(value ?? "");
+  const parts = relativePath.split("/");
+  if (
+    !relativePath ||
+    relativePath.startsWith("/") ||
+    /^[A-Za-z]:(?:$|\/)/.test(relativePath) ||
+    relativePath.startsWith("../") ||
+    relativePath.includes("\\") ||
+    Array.from(relativePath).some((character) => {
+      const code = character.codePointAt(0);
+      return code <= 31 || code === 127;
+    }) ||
+    parts.some((part) => !part || part === "." || part === "..")
+  )
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_TREE_PATH_REFUSED");
+  const bytes = Buffer.byteLength(relativePath, "utf8");
+  if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 1 || bytes > maximumBytes)
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_TREE_PATH_SIZE_REFUSED");
+  if (!Number.isSafeInteger(maximumDepth) || maximumDepth < 1 || parts.length > maximumDepth)
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_TREE_DEPTH_REFUSED");
+  return { relativePath, bytes, depth: parts.length };
+}
+
+export function safeArtifactTreeEvidencePath(value, options) {
+  try {
+    return assertArtifactTreePath(value, options).relativePath;
+  } catch {
+    return undefined;
+  }
 }
 
 function safeCanonicalSha256(value) {
@@ -325,6 +413,7 @@ export function inspectEszipV2(rawEszip) {
 
   const modulesHeader = readSection();
   const modules = [];
+  const moduleSpecifiers = new Set();
   const sourceSlots = [];
   const sourceMapSlots = [];
   let headerCursor = 0;
@@ -340,11 +429,14 @@ export function inspectEszipV2(rawEszip) {
     return value.readUInt32BE(0);
   };
   while (headerCursor < modulesHeader.byteLength) {
+    if (modules.length >= STAGING_CMS_PUBLIC_HOTFIX.maximumEszipModuleCount)
+      throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_ESZIP_MODULE_COUNT_REFUSED");
     const specifierLength = headerU32();
     if (specifierLength < 1) throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_ESZIP_SPECIFIER_REFUSED");
     const specifier = exactUtf8(headerBytes(specifierLength));
-    if (!specifier || /[\r\n\0]/.test(specifier) || modules.some((item) => item.specifier === specifier))
+    if (!specifier || /[\r\n\0]/.test(specifier) || moduleSpecifiers.has(specifier))
       throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_ESZIP_SPECIFIER_REFUSED");
+    moduleSpecifiers.add(specifier);
     const entryKind = headerBytes(1)[0];
     if (entryKind === 0) {
       const sourceOffset = headerU32();
@@ -430,6 +522,7 @@ export function hasExpectedCandidateEszipStructure(inspection) {
     inspection?.checksumSize !== 32 ||
     !Number.isSafeInteger(inspection?.moduleCount) ||
     inspection.moduleCount < 2 ||
+    inspection.moduleCount > STAGING_CMS_PUBLIC_HOTFIX.maximumEszipModuleCount ||
     !Array.isArray(specifiers) ||
     specifiers.length !== inspection.moduleCount ||
     new Set(specifiers).size !== specifiers.length ||
@@ -520,6 +613,11 @@ export function validateCandidateBuildProvenance(provenance, { rawEszip } = {}) 
     ["offline", "none", provenance?.builds?.offline],
   ];
   for (const [mode, network, build] of builds) {
+    const nonEmptyFileCount =
+      Number.isSafeInteger(build?.unbundledFileCount) &&
+      Number.isSafeInteger(build?.unbundledZeroByteFileCount)
+        ? build.unbundledFileCount - build.unbundledZeroByteFileCount
+        : -1;
     if (
       build?.mode !== mode ||
       build?.network !== network ||
@@ -529,6 +627,24 @@ export function validateCandidateBuildProvenance(provenance, { rawEszip } = {}) 
       !SHA256.test(build?.unbundledFilesSha256 ?? "") ||
       !Number.isSafeInteger(build?.unbundledFileCount) ||
       build.unbundledFileCount < 1 ||
+      build.unbundledFileCount > STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactFileCount ||
+      !Number.isSafeInteger(build?.unbundledTotalBytes) ||
+      build.unbundledTotalBytes < 0 ||
+      build.unbundledTotalBytes > STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactTreeBytes ||
+      !Number.isSafeInteger(build?.unbundledZeroByteFileCount) ||
+      build.unbundledZeroByteFileCount < 0 ||
+      build.unbundledZeroByteFileCount > build.unbundledFileCount ||
+      !Number.isSafeInteger(build?.unbundledLargestFileBytes) ||
+      build.unbundledLargestFileBytes < 0 ||
+      build.unbundledLargestFileBytes > STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactFileBytes ||
+      build.unbundledLargestFileBytes > build.unbundledTotalBytes ||
+      nonEmptyFileCount < 0 ||
+      build.unbundledTotalBytes < nonEmptyFileCount ||
+      (nonEmptyFileCount > 0 &&
+        (build.unbundledLargestFileBytes > build.unbundledTotalBytes - (nonEmptyFileCount - 1) ||
+          build.unbundledLargestFileBytes * nonEmptyFileCount < build.unbundledTotalBytes)) ||
+      (build.unbundledTotalBytes === 0) !== (build.unbundledZeroByteFileCount === build.unbundledFileCount) ||
+      build.unbundledTotalBytes > 0 !== build.unbundledLargestFileBytes > 0 ||
       build?.rawEszipSha256 !== inspection?.sha256 ||
       build?.rawEszipBytes !== inspection?.bytes
     )
@@ -538,7 +654,12 @@ export function validateCandidateBuildProvenance(provenance, { rawEszip } = {}) 
     provenance?.builds?.online?.rawEszipSha256 !== provenance?.builds?.offline?.rawEszipSha256 ||
     provenance?.builds?.online?.rawEszipBytes !== provenance?.builds?.offline?.rawEszipBytes ||
     provenance?.builds?.online?.unbundledFilesSha256 !== provenance?.builds?.offline?.unbundledFilesSha256 ||
-    provenance?.builds?.online?.unbundledFileCount !== provenance?.builds?.offline?.unbundledFileCount
+    provenance?.builds?.online?.unbundledFileCount !== provenance?.builds?.offline?.unbundledFileCount ||
+    provenance?.builds?.online?.unbundledTotalBytes !== provenance?.builds?.offline?.unbundledTotalBytes ||
+    provenance?.builds?.online?.unbundledZeroByteFileCount !==
+      provenance?.builds?.offline?.unbundledZeroByteFileCount ||
+    provenance?.builds?.online?.unbundledLargestFileBytes !==
+      provenance?.builds?.offline?.unbundledLargestFileBytes
   )
     violations.push("candidate_provenance_reproducibility_invalid");
   if (rawEszip !== undefined) {
@@ -590,6 +711,9 @@ export function validateCandidateBuildEvidenceFiles(provenance, evidence) {
     "UNBUNDLED_COMMAND_SHA256",
     "UNBUNDLED_FILE_COUNT",
     "UNBUNDLED_FILES_SHA256",
+    "UNBUNDLED_LARGEST_FILE_BYTES",
+    "UNBUNDLED_TOTAL_BYTES",
+    "UNBUNDLED_ZERO_BYTE_FILE_COUNT",
   ].sort();
   for (const mode of ["online", "offline"]) {
     const build = provenance?.builds?.[mode];
@@ -652,6 +776,9 @@ export function validateCandidateBuildEvidenceFiles(provenance, evidence) {
       UNBUNDLED_COMMAND_SHA256: provenance?.builder?.unbundleCommandSha256,
       UNBUNDLED_FILE_COUNT: String(build?.unbundledFileCount),
       UNBUNDLED_FILES_SHA256: build?.unbundledFilesSha256,
+      UNBUNDLED_LARGEST_FILE_BYTES: String(build?.unbundledLargestFileBytes),
+      UNBUNDLED_TOTAL_BYTES: String(build?.unbundledTotalBytes),
+      UNBUNDLED_ZERO_BYTE_FILE_COUNT: String(build?.unbundledZeroByteFileCount),
     };
     if (
       attestation.byteLength < 1 ||
@@ -670,24 +797,18 @@ export function validateCandidateBuildEvidenceFiles(provenance, evidence) {
       if (!manifestText.endsWith("\n") || /\r|\0/.test(manifestText)) throw new Error("invalid");
       manifestLines = manifestText.slice(0, -1).split("\n");
       const paths = [];
+      let zeroByteFileCount = 0;
       for (const line of manifestLines) {
         const match = /^([a-f0-9]{64}) {2}\.\/(.+)$/.exec(line);
         const path = match?.[2] ?? "";
-        if (
-          !match ||
-          path.startsWith("/") ||
-          path.includes("\\") ||
-          Array.from(path).some((character) => {
-            const code = character.codePointAt(0);
-            return code <= 31 || code === 127;
-          }) ||
-          path.split("/").some((part) => !part || part === "." || part === "..")
-        )
-          throw new Error("invalid");
+        if (!match) throw new Error("invalid");
+        assertArtifactTreePath(path);
         if (paths.length > 0 && Buffer.compare(Buffer.from(paths.at(-1)), Buffer.from(path)) >= 0)
           throw new Error("invalid");
+        if (match[1] === sha256Bytes(Buffer.alloc(0))) zeroByteFileCount += 1;
         paths.push(path);
       }
+      if (zeroByteFileCount !== build?.unbundledZeroByteFileCount) throw new Error("invalid");
     } catch {
       manifestStructureValid = false;
     }
@@ -696,6 +817,7 @@ export function validateCandidateBuildEvidenceFiles(provenance, evidence) {
       unbundledFiles.byteLength > 20_000_000 ||
       sha256Bytes(unbundledFiles) !== build?.unbundledFilesSha256 ||
       manifestLines.length !== build?.unbundledFileCount ||
+      manifestLines.length > STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactFileCount ||
       !manifestStructureValid
     )
       violations.push(`candidate_evidence_${mode}_unbundled_invalid`);

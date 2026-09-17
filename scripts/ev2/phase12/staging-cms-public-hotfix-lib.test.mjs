@@ -6,6 +6,11 @@ import { PRODUCTION_FUNCTIONS, PUBLIC_FUNCTIONS } from "./production-backend-lib
 import { CMS_PUBLIC_BUNDLE_LOCK } from "./staging-cms-public-hotfix-deno-lock-lib.mjs";
 import { CMS_PUBLIC_JSR_MIRROR } from "./staging-cms-public-hotfix-jsr-mirror-lib.mjs";
 import {
+  assertBoundedFileByteLength,
+  assertArtifactTreeByteLength,
+  assertArtifactTreeEntryCount,
+  assertArtifactTreeFileCount,
+  assertArtifactTreePath,
   assertExactSourceIdentity,
   assertRawEszipByteLength,
   assertWireBundleByteLength,
@@ -20,6 +25,7 @@ import {
   inspectEszipV2,
   normalizeGithubArtifactDigest,
   reconcileDownloadedBundleBody,
+  safeArtifactTreeEvidencePath,
   selectHotfixWatchdogArtifactChain,
   sealHotfixIntent,
   sealHotfixProbeProof,
@@ -56,26 +62,7 @@ function eszipSection(content) {
   return Buffer.concat([be32(content.byteLength), content, sha256Buffer(content)]);
 }
 
-function validEszip(label = "candidate", { metadataEntryKind = 0, entrypointSource } = {}) {
-  const modules = [
-    {
-      specifier: STAGING_CMS_PUBLIC_HOTFIX.candidateEszipEntrypointSpecifier,
-      source:
-        entrypointSource ?? Buffer.from(`Deno.serve(() => new Response(${JSON.stringify(label)}));`, "utf8"),
-      kind: 0,
-      entryKind: 0,
-    },
-    {
-      specifier: STAGING_CMS_PUBLIC_HOTFIX.edgeRuntimeMetadataSpecifier,
-      entryKind: metadataEntryKind,
-      ...(metadataEntryKind === 0
-        ? {
-            source: Buffer.from('{"serializedWorkspaceResolver":{}}', "utf8"),
-            kind: 3,
-          }
-        : {}),
-    },
-  ];
+function eszipFromModules(modules) {
   let sourceOffset = 0;
   const header = [];
   const sources = [];
@@ -109,11 +96,33 @@ function validEszip(label = "candidate", { metadataEntryKind = 0, entrypointSour
   ]);
 }
 
+function validEszip(label = "candidate", { metadataEntryKind = 0, entrypointSource } = {}) {
+  return eszipFromModules([
+    {
+      specifier: STAGING_CMS_PUBLIC_HOTFIX.candidateEszipEntrypointSpecifier,
+      source:
+        entrypointSource ?? Buffer.from(`Deno.serve(() => new Response(${JSON.stringify(label)}));`, "utf8"),
+      kind: 0,
+      entryKind: 0,
+    },
+    {
+      specifier: STAGING_CMS_PUBLIC_HOTFIX.edgeRuntimeMetadataSpecifier,
+      entryKind: metadataEntryKind,
+      ...(metadataEntryKind === 0
+        ? {
+            source: Buffer.from('{"serializedWorkspaceResolver":{}}', "utf8"),
+            kind: 3,
+          }
+        : {}),
+    },
+  ]);
+}
+
 const candidateRawEszip = validEszip();
 const candidateBody = frameRawEszip(candidateRawEszip);
 
 function candidateEvidence() {
-  const unbundledFiles = Buffer.from(`${"0".repeat(64)}  ./index.ts\n`, "utf8");
+  const unbundledFiles = Buffer.from(`${sha256Bytes(Buffer.alloc(0))}  ./edge-runtime.d.ts\n`, "utf8");
   const inspection = inspectEszipV2(candidateRawEszip);
   const attestation = (mode, network) =>
     Buffer.from(
@@ -144,6 +153,9 @@ function candidateEvidence() {
         `RAW_ESZIP_BYTES=${inspection.bytes}`,
         `UNBUNDLED_FILES_SHA256=${sha256Bytes(unbundledFiles)}`,
         "UNBUNDLED_FILE_COUNT=1",
+        "UNBUNDLED_TOTAL_BYTES=0",
+        "UNBUNDLED_ZERO_BYTE_FILE_COUNT=1",
+        "UNBUNDLED_LARGEST_FILE_BYTES=0",
         `EDGE_RUNTIME_INDEX_DIGEST=${STAGING_CMS_PUBLIC_HOTFIX.edgeRuntimeIndexDigest}`,
         `EDGE_RUNTIME_AMD64_DIGEST=${STAGING_CMS_PUBLIC_HOTFIX.edgeRuntimeAmd64Digest}`,
         "PLATFORM=linux/amd64",
@@ -177,6 +189,9 @@ function candidateProvenance(evidence = candidateEvidence()) {
     unbundledFilesFile: `${mode}-unbundled-files.sha256`,
     unbundledFilesSha256: sha256Bytes(evidence[mode].unbundledFiles),
     unbundledFileCount: 1,
+    unbundledTotalBytes: 0,
+    unbundledZeroByteFileCount: 1,
+    unbundledLargestFileBytes: 0,
     rawEszipSha256: inspection.sha256,
     rawEszipBytes: inspection.bytes,
   });
@@ -441,6 +456,13 @@ function receipt(action, state, boundIntent, before, after) {
 }
 
 test("raw and wire bundle limits remain finite, closed and independently enforced", () => {
+  assert.equal(STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactFileBytes, 2 * 1024 * 1024);
+  assert.equal(STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactTreeBytes, 64 * 1024 * 1024);
+  assert.equal(STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactFileCount, 65_536);
+  assert.equal(STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactEntryCount, 65_536);
+  assert.equal(STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactPathBytes, 4_096);
+  assert.equal(STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactDepth, 64);
+  assert.equal(STAGING_CMS_PUBLIC_HOTFIX.maximumEszipModuleCount, 65_536);
   assert.equal(STAGING_CMS_PUBLIC_HOTFIX.maximumWireBundleBytes, 20 * 1024 * 1024);
   assert.equal(STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes, 64 * 1024 * 1024);
   assert.ok(
@@ -462,6 +484,78 @@ test("raw and wire bundle limits remain finite, closed and independently enforce
     () => assertWireBundleByteLength(STAGING_CMS_PUBLIC_HOTFIX.maximumWireBundleBytes + 1),
     /G12_STAGING_CMS_PUBLIC_HOTFIX_BUNDLE_SIZE_REFUSED/,
   );
+});
+
+test("artifact tree count, byte, path and depth helpers enforce exact caps", () => {
+  const limits = STAGING_CMS_PUBLIC_HOTFIX;
+  assert.equal(assertArtifactTreeFileCount(limits.maximumArtifactFileCount), 65_536);
+  assert.throws(
+    () => assertArtifactTreeFileCount(limits.maximumArtifactFileCount + 1),
+    /G12_STAGING_CMS_PUBLIC_HOTFIX_TREE_FILE_COUNT_REFUSED/,
+  );
+  assert.equal(assertArtifactTreeEntryCount(limits.maximumArtifactEntryCount), 65_536);
+  assert.throws(
+    () => assertArtifactTreeEntryCount(limits.maximumArtifactEntryCount + 1),
+    /G12_STAGING_CMS_PUBLIC_HOTFIX_TREE_ENTRY_COUNT_REFUSED/,
+  );
+  assert.equal(assertArtifactTreeByteLength(limits.maximumArtifactTreeBytes), 64 * 1024 * 1024);
+  assert.throws(
+    () => assertArtifactTreeByteLength(limits.maximumArtifactTreeBytes + 1),
+    /G12_STAGING_CMS_PUBLIC_HOTFIX_TREE_TOO_LARGE_REFUSED/,
+  );
+
+  const exactPath = "é".repeat(2_048);
+  const oversizedPath = `${exactPath}a`;
+  assert.equal(assertArtifactTreePath(exactPath).bytes, limits.maximumArtifactPathBytes);
+  assert.throws(
+    () => assertArtifactTreePath(oversizedPath),
+    /G12_STAGING_CMS_PUBLIC_HOTFIX_TREE_PATH_SIZE_REFUSED/,
+  );
+  assert.equal(safeArtifactTreeEvidencePath(oversizedPath), undefined);
+  assert.equal(safeArtifactTreeEvidencePath("C:/private/payload"), undefined);
+
+  const exactDepth = Array.from({ length: limits.maximumArtifactDepth }, () => "a").join("/");
+  const excessiveDepth = `${exactDepth}/a`;
+  assert.equal(assertArtifactTreePath(exactDepth).depth, limits.maximumArtifactDepth);
+  assert.throws(
+    () => assertArtifactTreePath(excessiveDepth),
+    /G12_STAGING_CMS_PUBLIC_HOTFIX_TREE_DEPTH_REFUSED/,
+  );
+});
+
+test("artifact file boundaries accept attested empty files only through explicit opt-in", () => {
+  const maximum = STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactFileBytes;
+  assert.equal(assertBoundedFileByteLength(0, maximum, { allowEmpty: true }), 0);
+  assert.equal(assertBoundedFileByteLength(maximum, maximum), maximum);
+  assert.throws(
+    () => assertBoundedFileByteLength(0, maximum),
+    /G12_STAGING_CMS_PUBLIC_HOTFIX_FILE_EMPTY_REFUSED/,
+  );
+  assert.throws(
+    () => assertBoundedFileByteLength(maximum + 1, maximum),
+    /G12_STAGING_CMS_PUBLIC_HOTFIX_FILE_TOO_LARGE_REFUSED/,
+  );
+  assert.throws(
+    () => assertBoundedFileByteLength(64 * 1024 * 1024 + 1, maximum),
+    /G12_STAGING_CMS_PUBLIC_HOTFIX_FILE_TOO_LARGE_REFUSED/,
+  );
+});
+
+test("ESZIP parsing rejects duplicate specifiers and a module-count cap plus one", () => {
+  const duplicate = eszipFromModules([
+    { specifier: "workspace/entry.ts", source: Buffer.from("export {};"), kind: 0, entryKind: 0 },
+    { specifier: "workspace/entry.ts", entryKind: 2 },
+  ]);
+  assert.throws(() => inspectEszipV2(duplicate), /G12_STAGING_CMS_PUBLIC_HOTFIX_ESZIP_SPECIFIER_REFUSED/);
+
+  const modules = [
+    { specifier: "workspace/entry.ts", source: Buffer.from("export {};"), kind: 0, entryKind: 0 },
+  ];
+  for (let index = 0; index < STAGING_CMS_PUBLIC_HOTFIX.maximumEszipModuleCount; index += 1)
+    modules.push({ specifier: `vfs://g12/${index}`, entryKind: 2 });
+  const overCount = eszipFromModules(modules);
+  assert.ok(overCount.byteLength < STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes);
+  assert.throws(() => inspectEszipV2(overCount), /G12_STAGING_CMS_PUBLIC_HOTFIX_ESZIP_MODULE_COUNT_REFUSED/);
 });
 
 test("EZBR framing refuses incompressible output before allocating beyond the wire cap", () => {
@@ -1170,6 +1264,137 @@ test("candidate provenance binds two reproducible builds and a structurally pars
   assert.equal(valid.valid, true, valid.violations.join(","));
   const evidenceResult = validateCandidateBuildEvidenceFiles(provenance, evidence);
   assert.equal(evidenceResult.valid, true, evidenceResult.violations.join(","));
+  for (const [key, attestationKey, original, replacement] of [
+    ["unbundledTotalBytes", "UNBUNDLED_TOTAL_BYTES", "0", "1"],
+    ["unbundledZeroByteFileCount", "UNBUNDLED_ZERO_BYTE_FILE_COUNT", "1", "0"],
+    ["unbundledLargestFileBytes", "UNBUNDLED_LARGEST_FILE_BYTES", "0", "1"],
+  ]) {
+    const alteredEvidence = candidateEvidence();
+    alteredEvidence.online.attestation = Buffer.from(
+      alteredEvidence.online.attestation
+        .toString("utf8")
+        .replace(`${attestationKey}=${original}`, `${attestationKey}=${replacement}`),
+      "utf8",
+    );
+    const alteredProvenance = candidateProvenance(alteredEvidence);
+    assert.equal(alteredProvenance.builds.online[key], provenance.builds.online[key]);
+    assert.match(
+      validateCandidateBuildEvidenceFiles(alteredProvenance, alteredEvidence).violations.join(","),
+      /candidate_evidence_online_attestation_invalid/,
+      attestationKey,
+    );
+  }
+
+  const missingMetricEvidence = candidateEvidence();
+  missingMetricEvidence.online.attestation = Buffer.from(
+    missingMetricEvidence.online.attestation.toString("utf8").replace("UNBUNDLED_TOTAL_BYTES=0\n", ""),
+    "utf8",
+  );
+  assert.match(
+    validateCandidateBuildEvidenceFiles(
+      candidateProvenance(missingMetricEvidence),
+      missingMetricEvidence,
+    ).violations.join(","),
+    /candidate_evidence_online_attestation_invalid/,
+  );
+
+  const originalUnbundledSha256 = sha256Bytes(evidence.online.unbundledFiles);
+  const substitutedUnbundledFiles = Buffer.from(
+    `${sha256Bytes(Buffer.from([0]))}  ./edge-runtime.d.ts\n`,
+    "utf8",
+  );
+  const nonEmptySubstitution = {
+    ...evidence,
+    online: {
+      ...evidence.online,
+      attestation: Buffer.from(
+        evidence.online.attestation
+          .toString("utf8")
+          .replace(originalUnbundledSha256, sha256Bytes(substitutedUnbundledFiles)),
+        "utf8",
+      ),
+      unbundledFiles: substitutedUnbundledFiles,
+    },
+  };
+  assert.match(
+    validateCandidateBuildEvidenceFiles(
+      candidateProvenance(nonEmptySubstitution),
+      nonEmptySubstitution,
+    ).violations.join(","),
+    /candidate_evidence_online_unbundled_invalid/,
+  );
+
+  for (const [field, onlineMetrics, offlineMetrics] of [
+    [
+      "unbundledTotalBytes",
+      {
+        unbundledFileCount: 2,
+        unbundledTotalBytes: 3,
+        unbundledZeroByteFileCount: 0,
+        unbundledLargestFileBytes: 2,
+      },
+      {
+        unbundledFileCount: 2,
+        unbundledTotalBytes: 4,
+        unbundledZeroByteFileCount: 0,
+        unbundledLargestFileBytes: 2,
+      },
+    ],
+    [
+      "unbundledZeroByteFileCount",
+      {
+        unbundledFileCount: 3,
+        unbundledTotalBytes: 4,
+        unbundledZeroByteFileCount: 1,
+        unbundledLargestFileBytes: 2,
+      },
+      {
+        unbundledFileCount: 3,
+        unbundledTotalBytes: 4,
+        unbundledZeroByteFileCount: 0,
+        unbundledLargestFileBytes: 2,
+      },
+    ],
+    [
+      "unbundledLargestFileBytes",
+      {
+        unbundledFileCount: 2,
+        unbundledTotalBytes: 4,
+        unbundledZeroByteFileCount: 0,
+        unbundledLargestFileBytes: 2,
+      },
+      {
+        unbundledFileCount: 2,
+        unbundledTotalBytes: 4,
+        unbundledZeroByteFileCount: 0,
+        unbundledLargestFileBytes: 3,
+      },
+    ],
+  ]) {
+    const mismatch = structuredClone(provenance);
+    Object.assign(mismatch.builds.online, onlineMetrics);
+    Object.assign(mismatch.builds.offline, offlineMetrics);
+    assert.match(
+      validateCandidateBuildProvenance(mismatch).violations.join(","),
+      /candidate_provenance_reproducibility_invalid/,
+      field,
+    );
+  }
+
+  for (const [field, value] of [
+    ["unbundledFileCount", STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactFileCount + 1],
+    ["unbundledTotalBytes", STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactTreeBytes + 1],
+    ["unbundledZeroByteFileCount", 2],
+    ["unbundledLargestFileBytes", STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactFileBytes + 1],
+  ]) {
+    const outOfRange = structuredClone(provenance);
+    outOfRange.builds.online[field] = value;
+    assert.match(
+      validateCandidateBuildProvenance(outOfRange).violations.join(","),
+      /candidate_provenance_online_invalid/,
+      field,
+    );
+  }
   const mirrorTreeSubstitution = structuredClone(provenance);
   mirrorTreeSubstitution.input.jsrMirror.treeSha256 = "7".repeat(64);
   assert.match(

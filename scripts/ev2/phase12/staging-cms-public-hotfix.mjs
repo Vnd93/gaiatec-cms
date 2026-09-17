@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
-import { copyFile, cp, lstat, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { copyFile, cp, lstat, mkdir, open, opendir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -16,6 +17,11 @@ import {
   verifyRecoveryStateVariable,
 } from "./recovery-state-store-lib.mjs";
 import {
+  assertArtifactTreeByteLength,
+  assertArtifactTreeEntryCount,
+  assertArtifactTreeFileCount,
+  assertArtifactTreePath,
+  assertBoundedFileByteLength,
   assertExactSourceIdentity,
   assertTrustedBaselineTuple,
   buildHotfixRecoveryState,
@@ -31,6 +37,7 @@ import {
   normalizeFunctionTuple,
   reconcileDownloadedBundleBody,
   sameFunctionTuple,
+  safeArtifactTreeEvidencePath,
   selectHotfixWatchdogArtifactChain,
   sealHotfixIntent,
   sealHotfixProbeProof,
@@ -92,20 +99,76 @@ async function writeBytes(path, value, { exclusive = true } = {}) {
   await writeFile(target, value, { mode: 0o600, ...(exclusive ? { flag: "wx" } : {}) });
 }
 
-async function readBoundedFile(path, maximumBytes) {
+async function readBoundedFile(path, maximumBytes, { allowEmpty = false, relativePath = "" } = {}) {
   const target = resolve(path);
-  const metadata = await lstat(target);
-  if (
-    !metadata.isFile() ||
-    metadata.size < 1 ||
-    metadata.size > maximumBytes ||
-    !Number.isSafeInteger(metadata.size)
-  )
-    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_FILE_SIZE_REFUSED");
-  const bytes = await readFile(target);
-  if (bytes.byteLength !== metadata.size)
-    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_FILE_CHANGED_DURING_READ");
-  return bytes;
+  const requestedRelativePath = String(relativePath ?? "");
+  const safeRelativePath = requestedRelativePath
+    ? safeArtifactTreeEvidencePath(requestedRelativePath)
+    : undefined;
+  if (requestedRelativePath && !safeRelativePath)
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_FILE_EVIDENCE_PATH_REFUSED");
+  const pathMetadata = await lstat(target);
+  if (!pathMetadata.isFile() || pathMetadata.isSymbolicLink()) {
+    publicEvent("g12.staging.cms_public_hotfix.file_boundary_refused", {
+      reason: "type",
+      ...(safeRelativePath ? { relativePath: safeRelativePath } : {}),
+    });
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_FILE_TYPE_REFUSED");
+  }
+  const handle = await open(target, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0));
+  try {
+    const metadata = await handle.stat();
+    if (!metadata.isFile() || metadata.dev !== pathMetadata.dev || metadata.ino !== pathMetadata.ino)
+      throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_FILE_CHANGED_DURING_READ");
+    try {
+      assertBoundedFileByteLength(metadata.size, maximumBytes, { allowEmpty });
+    } catch (error) {
+      let reason = "invalid_size";
+      if (error?.message?.includes("EMPTY")) reason = "empty";
+      else if (error?.message?.includes("TOO_LARGE")) reason = "too_large";
+      publicEvent("g12.staging.cms_public_hotfix.file_boundary_refused", {
+        reason,
+        ...(safeRelativePath ? { relativePath: safeRelativePath } : {}),
+        actualBytes: Number.isSafeInteger(metadata.size) ? metadata.size : null,
+        maximumBytes,
+      });
+      throw new Error(
+        `${error.message}${safeRelativePath ? `:${safeRelativePath}` : ""}:${metadata.size}:${maximumBytes}`,
+        { cause: error },
+      );
+    }
+    const bytes = Buffer.allocUnsafe(metadata.size);
+    let offset = 0;
+    while (offset < metadata.size) {
+      const result = await handle.read(bytes, offset, metadata.size - offset, offset);
+      if (result.bytesRead === 0) break;
+      offset += result.bytesRead;
+    }
+    const extra = Buffer.allocUnsafe(1);
+    const extraRead = await handle.read(extra, 0, 1, metadata.size);
+    const after = await handle.stat();
+    if (
+      offset !== metadata.size ||
+      extraRead.bytesRead !== 0 ||
+      after.size !== metadata.size ||
+      after.dev !== metadata.dev ||
+      after.ino !== metadata.ino ||
+      after.mtimeMs !== metadata.mtimeMs ||
+      after.ctimeMs !== metadata.ctimeMs
+    ) {
+      publicEvent("g12.staging.cms_public_hotfix.file_boundary_refused", {
+        reason: "changed_during_read",
+        ...(safeRelativePath ? { relativePath: safeRelativePath } : {}),
+        expectedBytes: metadata.size,
+        actualBytes: after.size,
+        maximumBytes,
+      });
+      throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_FILE_CHANGED_DURING_READ");
+    }
+    return bytes;
+  } finally {
+    await handle.close();
+  }
 }
 
 function decodeUtf8(bytes, label = "FILE") {
@@ -130,7 +193,7 @@ async function verifiedDirectoryRoot(value) {
 
 async function fileSha256(path) {
   return createHash("sha256")
-    .update(await readBoundedFile(resolve(path), STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes))
+    .update(await readBoundedFile(resolve(path), STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactFileBytes))
     .digest("hex");
 }
 
@@ -144,60 +207,206 @@ function publicEvent(event, fields = {}) {
   console.log(JSON.stringify({ event, ...fields, secretsDisclosed: false }));
 }
 
-async function walkFiles(root, current = root, files = []) {
-  if (current === root) {
-    const rootMetadata = await lstat(root);
-    if (!rootMetadata.isDirectory() || rootMetadata.isSymbolicLink())
-      throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_ARTIFACT_ROOT_REFUSED");
-  }
-  for (const entry of await readdir(current, { withFileTypes: true })) {
-    const path = join(current, entry.name);
-    const metadata = await lstat(path);
-    if (metadata.isSymbolicLink()) throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_ARTIFACT_SYMLINK_REFUSED");
-    if (metadata.isDirectory()) await walkFiles(root, path, files);
-    else if (metadata.isFile()) files.push(path);
-    else throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_ARTIFACT_ENTRY_REFUSED");
-  }
-  return files;
+async function walkFiles(
+  root,
+  {
+    maximumFileCount = STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactFileCount,
+    maximumEntryCount = STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactEntryCount,
+    maximumPathBytes = STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactPathBytes,
+    maximumDepth = STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactDepth,
+  } = {},
+) {
+  const base = exactRoot(root);
+  const rootMetadata = await lstat(base);
+  if (!rootMetadata.isDirectory() || rootMetadata.isSymbolicLink())
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_ARTIFACT_ROOT_REFUSED");
+  const files = [];
+  let entryCount = 0;
+  const visit = async (current) => {
+    const directory = await opendir(current);
+    for await (const entry of directory) {
+      entryCount += 1;
+      try {
+        assertArtifactTreeEntryCount(entryCount, maximumEntryCount);
+      } catch (error) {
+        publicEvent("g12.staging.cms_public_hotfix.tree_boundary_refused", {
+          reason: "entry_count",
+          actualEntryCount: entryCount,
+          maximumEntryCount,
+        });
+        throw error;
+      }
+      const path = join(current, entry.name);
+      const relativePath = relative(base, path).replaceAll("\\", "/");
+      try {
+        assertArtifactTreePath(relativePath, {
+          maximumBytes: maximumPathBytes,
+          maximumDepth,
+        });
+      } catch (error) {
+        let reason = "path";
+        if (error?.message?.includes("PATH_SIZE")) reason = "path_too_large";
+        else if (error?.message?.includes("DEPTH")) reason = "depth";
+        const safeRelativePath = safeArtifactTreeEvidencePath(relativePath, {
+          maximumBytes: maximumPathBytes,
+          maximumDepth,
+        });
+        publicEvent("g12.staging.cms_public_hotfix.tree_boundary_refused", {
+          reason,
+          ...(safeRelativePath ? { relativePath: safeRelativePath } : {}),
+          actualBytes: Buffer.byteLength(relativePath, "utf8"),
+          actualDepth: relativePath.split("/").length,
+          maximumBytes: maximumPathBytes,
+          maximumDepth,
+        });
+        throw new Error(error.message, { cause: error });
+      }
+      const metadata = await lstat(path);
+      if (metadata.isSymbolicLink())
+        throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_ARTIFACT_SYMLINK_REFUSED");
+      if (metadata.isDirectory()) await visit(path);
+      else if (metadata.isFile()) {
+        try {
+          assertArtifactTreeFileCount(files.length + 1, maximumFileCount);
+        } catch (error) {
+          publicEvent("g12.staging.cms_public_hotfix.tree_boundary_refused", {
+            reason: "file_count",
+            actualFileCount: files.length + 1,
+            maximumFileCount,
+          });
+          throw error;
+        }
+        files.push(path);
+      } else throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_ARTIFACT_ENTRY_REFUSED");
+    }
+  };
+  await visit(base);
+  return { files, entryCount };
 }
 
 async function findUnique(root, name) {
-  const matches = (await walkFiles(root)).filter((path) => basename(path) === name);
+  const matches = (await walkFiles(root)).files.filter((path) => basename(path) === name);
   if (matches.length !== 1)
     throw new Error(`G12_STAGING_CMS_PUBLIC_HOTFIX_ARTIFACT_FILE_REFUSED:${name}:${matches.length}`);
   return matches[0];
 }
 
-async function directoryRecords(root, { excluded = [] } = {}) {
+async function directoryRecords(
+  root,
+  {
+    excluded = [],
+    allowEmptyFiles = false,
+    maximumFileBytes = STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactFileBytes,
+    maximumTreeBytes = STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactTreeBytes,
+    maximumFileCount = STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactFileCount,
+    maximumEntryCount = STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactEntryCount,
+    maximumPathBytes = STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactPathBytes,
+    maximumDepth = STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactDepth,
+    inventoryEvent = "",
+    inventoryFields = {},
+  } = {},
+) {
   const base = exactRoot(root);
   const excludedSet = new Set(excluded);
-  const records = [];
-  for (const path of await walkFiles(base)) {
+  const entries = [];
+  const walked = await walkFiles(base, {
+    maximumFileCount,
+    maximumEntryCount,
+    maximumPathBytes,
+    maximumDepth,
+  });
+  for (const path of walked.files) {
     const relativePath = relative(base, path).replaceAll("\\", "/");
-    if (
-      !relativePath ||
-      relativePath.startsWith("../") ||
-      relativePath.includes("/../") ||
-      /[\r\n\0]/.test(relativePath)
-    )
-      throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_TREE_PATH_REFUSED");
     if (excludedSet.has(relativePath)) continue;
-    const bytes = await readBoundedFile(path, STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes);
-    records.push({ path: relativePath, bytes: bytes.byteLength, sha256: sha256Bytes(bytes) });
+    const metadata = await lstat(path);
+    if (!metadata.isFile() || metadata.isSymbolicLink() || !Number.isSafeInteger(metadata.size))
+      throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_TREE_METADATA_REFUSED");
+    entries.push({ path, relativePath, bytes: metadata.size });
+  }
+  const metadataInventory = {
+    fileCount: entries.length,
+    emptyFileCount: entries.filter((entry) => entry.bytes === 0).length,
+    totalBytes: entries.reduce((total, entry) => total + entry.bytes, 0),
+    largestFileBytes: entries.reduce((largest, entry) => Math.max(largest, entry.bytes), 0),
+    maximumFileBytes,
+    maximumTreeBytes,
+    maximumFileCount,
+    maximumEntryCount,
+    entryCount: walked.entryCount,
+    maximumPathBytes,
+    maximumDepth,
+  };
+  try {
+    assertArtifactTreeByteLength(metadataInventory.totalBytes, maximumTreeBytes);
+  } catch (error) {
+    if (inventoryEvent) publicEvent(inventoryEvent, { ...inventoryFields, ...metadataInventory });
+    throw new Error(`${error.message}:${metadataInventory.totalBytes}:${maximumTreeBytes}`, {
+      cause: error,
+    });
+  }
+  const records = [];
+  let totalBytes = 0;
+  let emptyFileCount = 0;
+  let largestFileBytes = 0;
+  for (const entry of entries) {
+    const bytes = await readBoundedFile(entry.path, maximumFileBytes, {
+      allowEmpty: allowEmptyFiles,
+      relativePath: entry.relativePath,
+    });
+    totalBytes += bytes.byteLength;
+    if (bytes.byteLength === 0) emptyFileCount += 1;
+    largestFileBytes = Math.max(largestFileBytes, bytes.byteLength);
+    try {
+      assertArtifactTreeByteLength(totalBytes, maximumTreeBytes);
+    } catch (error) {
+      if (inventoryEvent)
+        publicEvent(inventoryEvent, {
+          ...inventoryFields,
+          fileCount: records.length + 1,
+          emptyFileCount,
+          totalBytes,
+          largestFileBytes,
+          maximumFileBytes,
+          maximumTreeBytes,
+          maximumFileCount,
+          maximumEntryCount,
+          entryCount: walked.entryCount,
+          maximumPathBytes,
+          maximumDepth,
+        });
+      throw new Error(`${error.message}:${totalBytes}:${maximumTreeBytes}`, { cause: error });
+    }
+    records.push({ path: entry.relativePath, bytes: bytes.byteLength, sha256: sha256Bytes(bytes) });
   }
   records.sort((left, right) => Buffer.from(left.path).compare(Buffer.from(right.path)));
-  return { records, treeSha256: canonicalSha256(records) };
+  const inventory = {
+    fileCount: records.length,
+    emptyFileCount,
+    totalBytes,
+    largestFileBytes,
+    maximumFileBytes,
+    maximumTreeBytes,
+    maximumFileCount,
+    maximumEntryCount,
+    entryCount: walked.entryCount,
+    maximumPathBytes,
+    maximumDepth,
+  };
+  if (inventoryEvent) publicEvent(inventoryEvent, { ...inventoryFields, ...inventory });
+  return { records, treeSha256: canonicalSha256(records), inventory };
 }
 
 async function candidateSourceUsesImportMeta(root) {
+  const shared = await walkFiles(join(root, "supabase", "functions", "_shared"));
+  const cmsPublic = await walkFiles(join(root, "supabase", "functions", "cms-public"));
   const paths = [
-    ...(await walkFiles(join(root, "supabase", "functions", "_shared"))),
-    ...(await walkFiles(join(root, "supabase", "functions", "cms-public"))),
+    ...shared.files,
+    ...cmsPublic.files,
     join(root, "src", "shared", "contracts", "cms-content.ts"),
   ];
   for (const path of paths) {
     const source = decodeUtf8(
-      await readBoundedFile(path, STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes),
+      await readBoundedFile(path, STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactFileBytes),
       "CANDIDATE_SOURCE",
     );
     if (sourceContainsImportMeta(source)) return true;
@@ -254,6 +463,9 @@ function expectedAttestationKeys() {
     "UNBUNDLED_COMMAND_SHA256",
     "UNBUNDLED_FILE_COUNT",
     "UNBUNDLED_FILES_SHA256",
+    "UNBUNDLED_LARGEST_FILE_BYTES",
+    "UNBUNDLED_TOTAL_BYTES",
+    "UNBUNDLED_ZERO_BYTE_FILE_COUNT",
   ].sort();
 }
 
@@ -357,13 +569,17 @@ async function loadBundleInput(root) {
   };
 }
 
-async function validateUnbundledManifest(buildRoot) {
+async function validateUnbundledManifest(buildRoot, mode) {
   const path = join(buildRoot, "unbundled-files.sha256");
   const bytes = await readBoundedFile(path, 20_000_000);
   const raw = decodeUtf8(bytes, "UNBUNDLED_MANIFEST");
   if (!raw.endsWith("\n") || /\r|\0/.test(raw))
     throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_MANIFEST_REFUSED");
-  const actual = await directoryRecords(join(buildRoot, "unbundled"));
+  const actual = await directoryRecords(join(buildRoot, "unbundled"), {
+    allowEmptyFiles: true,
+    inventoryEvent: "g12.staging.cms_public_hotfix.unbundled_file_boundary",
+    inventoryFields: { mode },
+  });
   if (actual.records.length < 1) throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_EMPTY_REFUSED");
   const expected = actual.records.map((record) => `${record.sha256}  ./${record.path}\n`).join("");
   if (raw !== expected) throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_UNBUNDLED_MANIFEST_REFUSED");
@@ -371,6 +587,7 @@ async function validateUnbundledManifest(buildRoot) {
     text: raw,
     sha256: sha256Bytes(Buffer.from(raw, "utf8")),
     count: actual.records.length,
+    inventory: actual.inventory,
   };
 }
 
@@ -445,7 +662,11 @@ async function materializeCandidateEszip() {
 async function verifyRuntimeUnbundle() {
   const candidate = await loadCandidateArtifact(argument("candidate"));
   const unbundledRoot = await verifiedDirectoryRoot(argument("unbundled"));
-  const actual = await directoryRecords(unbundledRoot);
+  const actual = await directoryRecords(unbundledRoot, {
+    allowEmptyFiles: true,
+    inventoryEvent: "g12.staging.cms_public_hotfix.unbundled_file_boundary",
+    inventoryFields: { mode: "runtime" },
+  });
   if (actual.records.length < 1)
     throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_RUNTIME_UNBUNDLE_EMPTY_REFUSED");
   const manifest = Buffer.from(
@@ -459,6 +680,9 @@ async function verifyRuntimeUnbundle() {
     throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_RUNTIME_UNBUNDLE_MISMATCH");
   publicEvent("g12.staging.cms_public_hotfix.runtime_unbundle_verified", {
     fileCount: actual.records.length,
+    emptyFileCount: actual.inventory.emptyFileCount,
+    totalBytes: actual.inventory.totalBytes,
+    largestFileBytes: actual.inventory.largestFileBytes,
     manifestSha256: sha256Bytes(manifest),
   });
 }
@@ -1481,7 +1705,7 @@ async function sealCandidate() {
     const [eszip, attestationBytes, unbundled] = await Promise.all([
       readBoundedFile(join(buildRoot, "output.eszip"), STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes),
       readBoundedFile(join(buildRoot, "build-attestation.env"), 16_384),
-      validateUnbundledManifest(buildRoot),
+      validateUnbundledManifest(buildRoot, mode),
     ]);
     const attestationText = decodeUtf8(attestationBytes, "BUILD_ATTESTATION");
     const attestation = parseBuildAttestation(attestationText);
@@ -1511,9 +1735,12 @@ async function sealCandidate() {
       Number(attestation.JSR_MIRROR_FILE_COUNT) !== input.jsrMirror.actual.records.length ||
       Number(attestation.JSR_MIRROR_BYTES) !== input.jsrMirror.actual.bytes ||
       attestation.RAW_ESZIP_SHA256 !== sha256Bytes(eszip) ||
-      Number(attestation.RAW_ESZIP_BYTES) !== eszip.byteLength ||
+      attestation.RAW_ESZIP_BYTES !== String(eszip.byteLength) ||
       attestation.UNBUNDLED_FILES_SHA256 !== unbundled.sha256 ||
-      Number(attestation.UNBUNDLED_FILE_COUNT) !== unbundled.count ||
+      attestation.UNBUNDLED_FILE_COUNT !== String(unbundled.count) ||
+      attestation.UNBUNDLED_TOTAL_BYTES !== String(unbundled.inventory.totalBytes) ||
+      attestation.UNBUNDLED_ZERO_BYTE_FILE_COUNT !== String(unbundled.inventory.emptyFileCount) ||
+      attestation.UNBUNDLED_LARGEST_FILE_BYTES !== String(unbundled.inventory.largestFileBytes) ||
       attestation.EDGE_RUNTIME_INDEX_DIGEST !== STAGING_CMS_PUBLIC_HOTFIX.edgeRuntimeIndexDigest ||
       attestation.EDGE_RUNTIME_AMD64_DIGEST !== STAGING_CMS_PUBLIC_HOTFIX.edgeRuntimeAmd64Digest ||
       attestation.PLATFORM !== "linux/amd64" ||
@@ -1539,6 +1766,9 @@ async function sealCandidate() {
         unbundledFilesFile: `${mode}-unbundled-files.sha256`,
         unbundledFilesSha256: unbundled.sha256,
         unbundledFileCount: unbundled.count,
+        unbundledTotalBytes: unbundled.inventory.totalBytes,
+        unbundledZeroByteFileCount: unbundled.inventory.emptyFileCount,
+        unbundledLargestFileBytes: unbundled.inventory.largestFileBytes,
         rawEszipSha256: inspection.sha256,
         rawEszipBytes: inspection.bytes,
       },
@@ -3275,30 +3505,35 @@ async function writeTerminalEvidence() {
   publicEvent(report.event, { outcome });
 }
 
-const operation = process.argv[2];
-const operations = {
-  "verify-run-artifact": verifyRunArtifact,
-  "resolve-run-artifacts": resolveRunArtifacts,
-  "resolve-watchdog-artifacts": resolveWatchdogArtifacts,
-  "verify-sources": verifySources,
-  "prepare-bundle-input": prepareBundleInput,
-  "seal-candidate": sealCandidate,
-  "materialize-candidate-eszip": materializeCandidateEszip,
-  "verify-runtime-unbundle": verifyRuntimeUnbundle,
-  "verify-candidate-ci": verifyCandidateCi,
-  "verify-trusted-baseline": verifyTrustedBaseline,
-  "capture-baseline": captureBaseline,
-  "build-state": buildState,
-  "verify-artifact": verifyArtifactAndPackage,
-  "prepare-intent": prepareIntent,
-  "apply-candidate": applyCandidate,
-  "restore-baseline": restoreBaseline,
-  observe: observeState,
-  "validate-probe": validateProbe,
-  "run-bound-full-probe": runBoundFullProbe,
-  "verify-terminal-cleanup": verifyTerminalCleanup,
-  terminal: writeTerminalEvidence,
-};
+export { directoryRecords, readBoundedFile, walkFiles };
 
-if (!Object.hasOwn(operations, operation)) throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_OPERATION_REFUSED");
-await operations[operation]();
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const operation = process.argv[2];
+  const operations = {
+    "verify-run-artifact": verifyRunArtifact,
+    "resolve-run-artifacts": resolveRunArtifacts,
+    "resolve-watchdog-artifacts": resolveWatchdogArtifacts,
+    "verify-sources": verifySources,
+    "prepare-bundle-input": prepareBundleInput,
+    "seal-candidate": sealCandidate,
+    "materialize-candidate-eszip": materializeCandidateEszip,
+    "verify-runtime-unbundle": verifyRuntimeUnbundle,
+    "verify-candidate-ci": verifyCandidateCi,
+    "verify-trusted-baseline": verifyTrustedBaseline,
+    "capture-baseline": captureBaseline,
+    "build-state": buildState,
+    "verify-artifact": verifyArtifactAndPackage,
+    "prepare-intent": prepareIntent,
+    "apply-candidate": applyCandidate,
+    "restore-baseline": restoreBaseline,
+    observe: observeState,
+    "validate-probe": validateProbe,
+    "run-bound-full-probe": runBoundFullProbe,
+    "verify-terminal-cleanup": verifyTerminalCleanup,
+    terminal: writeTerminalEvidence,
+  };
+
+  if (!Object.hasOwn(operations, operation))
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_OPERATION_REFUSED");
+  await operations[operation]();
+}

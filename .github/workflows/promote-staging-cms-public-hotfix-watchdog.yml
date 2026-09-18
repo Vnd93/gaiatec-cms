@@ -76,9 +76,9 @@ jobs:
           test "$GITHUB_TRIGGERING_ACTOR" = Vnd93
           test "$GITHUB_REF" = refs/heads/main
           test "$(printf '%s' "$GITHUB_RUN_ATTEMPT" | grep -E '^[1-9][0-9]*$')" = "$GITHUB_RUN_ATTEMPT"
-          test "$PARENT_RUN_ID" = 35295119905
+          test "$PARENT_RUN_ID" = 35302861714
           test "$PARENT_RUN_ATTEMPT" = 1
-          test "$PARENT_CONTROL_SHA" = 33a626ca0ef17c96686c8bbea9a71b326724ec0c
+          test "$PARENT_CONTROL_SHA" = 351e0d3f8ece51db30abe000e9b562ec11ae1006
           test "$(printf '%s' "$GITHUB_SHA" | grep -E '^[a-f0-9]{40}$')" = "$GITHUB_SHA"
           test "$(printf '%s' "$RECOVERY_CI_RUN_ID" | grep -E '^[1-9][0-9]*$')" = "$RECOVERY_CI_RUN_ID"
           expected="RECOVER_STAGING_CMS_PUBLIC_PARENT_RUN_${PARENT_RUN_ID}_ATTEMPT_${PARENT_RUN_ATTEMPT}_PARENT_CONTROL_${PARENT_CONTROL_SHA}_RECOVERY_CONTROL_${GITHUB_SHA}_CI_${RECOVERY_CI_RUN_ID}_ROLLBACK_c8aec5cad25830580bf9ca8a89594ebce1aa3570"

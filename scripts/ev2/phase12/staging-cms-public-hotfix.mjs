@@ -598,14 +598,14 @@ async function validateUnbundledManifest(buildRoot, mode) {
 async function loadCandidateBuildEvidence(root, provenance) {
   const base = await verifiedDirectoryRoot(root);
   const evidence = {};
-  for (const mode of ["online", "offline"]) {
-    const build = provenance?.builds?.[mode];
+  for (const key of ["primary", "rebuild"]) {
+    const build = provenance?.builds?.[key];
     if (
-      build?.attestationFile !== `${mode}-build-attestation.env` ||
-      build?.unbundledFilesFile !== `${mode}-unbundled-files.sha256`
+      build?.attestationFile !== `${key}-build-attestation.env` ||
+      build?.unbundledFilesFile !== `${key}-unbundled-files.sha256`
     )
       throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_BUILD_EVIDENCE_PATH_REFUSED");
-    evidence[mode] = {
+    evidence[key] = {
       attestation: await readBoundedFile(join(base, build.attestationFile), 16_384),
       unbundledFiles: await readBoundedFile(join(base, build.unbundledFilesFile), 20_000_000),
     };
@@ -678,8 +678,8 @@ async function verifyRuntimeUnbundle() {
     "utf8",
   );
   if (
-    !manifest.equals(candidate.buildEvidence.online.unbundledFiles) ||
-    !manifest.equals(candidate.buildEvidence.offline.unbundledFiles)
+    !manifest.equals(candidate.buildEvidence.primary.unbundledFiles) ||
+    !manifest.equals(candidate.buildEvidence.rebuild.unbundledFiles)
   )
     throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_RUNTIME_UNBUNDLE_MISMATCH");
   publicEvent("g12.staging.cms_public_hotfix.runtime_unbundle_verified", {
@@ -1705,7 +1705,7 @@ async function sealCandidate() {
   const builderScriptSha256 = await fileSha256(builderScriptPath);
   if (builderScriptSha256 !== STAGING_CMS_PUBLIC_HOTFIX.builderScriptSha256)
     throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_BUILDER_SCRIPT_REFUSED");
-  const validateBuild = async (root, mode, network) => {
+  const validateBuild = async (root, key, mode, network) => {
     const buildRoot = await verifiedDirectoryRoot(root);
     const [eszip, attestationBytes, unbundled] = await Promise.all([
       readBoundedFile(join(buildRoot, "output.eszip"), STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes),
@@ -1716,7 +1716,7 @@ async function sealCandidate() {
     const attestation = parseBuildAttestation(attestationText);
     if (
       JSON.stringify(Object.keys(attestation).sort()) !== JSON.stringify(expectedAttestationKeys()) ||
-      attestation.SCHEMA_VERSION !== "1" ||
+      attestation.SCHEMA_VERSION !== "2" ||
       attestation.EVENT !== "g12.staging.cms_public_hotfix.bundle_attestation" ||
       attestation.MODE !== mode ||
       attestation.NETWORK !== network ||
@@ -1766,9 +1766,9 @@ async function sealCandidate() {
       evidence: {
         mode,
         network,
-        attestationFile: `${mode}-build-attestation.env`,
+        attestationFile: `${key}-build-attestation.env`,
         attestationSha256: sha256Bytes(Buffer.from(attestationText, "utf8")),
-        unbundledFilesFile: `${mode}-unbundled-files.sha256`,
+        unbundledFilesFile: `${key}-unbundled-files.sha256`,
         unbundledFilesSha256: unbundled.sha256,
         unbundledFileCount: unbundled.count,
         unbundledTotalBytes: unbundled.inventory.totalBytes,
@@ -1781,18 +1781,18 @@ async function sealCandidate() {
       unbundledText: unbundled.text,
     };
   };
-  const [online, offline] = await Promise.all([
-    validateBuild(argument("online"), "online", "default"),
-    validateBuild(argument("offline"), "offline", "none"),
+  const [primary, rebuild] = await Promise.all([
+    validateBuild(argument("primary"), "primary", "online-primary", "default"),
+    validateBuild(argument("rebuild"), "rebuild", "online-rebuild", "default"),
   ]);
   if (
-    !online.eszip.equals(offline.eszip) ||
-    canonicalSha256(online.inspection) !== canonicalSha256(offline.inspection)
+    !primary.eszip.equals(rebuild.eszip) ||
+    canonicalSha256(primary.inspection) !== canonicalSha256(rebuild.inspection)
   )
     throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_REPRODUCIBILITY_REFUSED");
-  const body = frameRawEszip(online.eszip);
+  const body = frameRawEszip(primary.eszip);
   const provenance = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     event: "g12.staging.cms_public_hotfix.bundle_provenance",
     input: {
       manifestSha256: input.manifestSha256,
@@ -1824,12 +1824,12 @@ async function sealCandidate() {
       lockFrozen: true,
       builderScriptSha256,
     },
-    rawEszip: online.inspection,
-    builds: { online: online.evidence, offline: offline.evidence },
+    rawEszip: primary.inspection,
+    builds: { primary: primary.evidence, rebuild: rebuild.evidence },
     reproducible: true,
   };
   const provenanceResult = validateCandidateBuildProvenance(provenance, {
-    rawEszip: online.eszip,
+    rawEszip: primary.eszip,
   });
   if (!provenanceResult.valid)
     throw new Error(
@@ -1839,10 +1839,10 @@ async function sealCandidate() {
   await mkdir(output, { recursive: true, mode: 0o700 });
   await writeBytes(join(output, "candidate-body.ezbr"), body);
   await Promise.all([
-    writeBytes(join(output, online.evidence.attestationFile), Buffer.from(online.attestationText, "utf8")),
-    writeBytes(join(output, online.evidence.unbundledFilesFile), Buffer.from(online.unbundledText, "utf8")),
-    writeBytes(join(output, offline.evidence.attestationFile), Buffer.from(offline.attestationText, "utf8")),
-    writeBytes(join(output, offline.evidence.unbundledFilesFile), Buffer.from(offline.unbundledText, "utf8")),
+    writeBytes(join(output, primary.evidence.attestationFile), Buffer.from(primary.attestationText, "utf8")),
+    writeBytes(join(output, primary.evidence.unbundledFilesFile), Buffer.from(primary.unbundledText, "utf8")),
+    writeBytes(join(output, rebuild.evidence.attestationFile), Buffer.from(rebuild.attestationText, "utf8")),
+    writeBytes(join(output, rebuild.evidence.unbundledFilesFile), Buffer.from(rebuild.unbundledText, "utf8")),
   ]);
   const manifest = {
     schemaVersion: 1,
@@ -1851,7 +1851,7 @@ async function sealCandidate() {
     sourceSha256: STAGING_CMS_PUBLIC_HOTFIX.candidateSourceSha256,
     sha256: sha256Bytes(body),
     bytes: body.byteLength,
-    rawEszipSha256: sha256Bytes(online.eszip),
+    rawEszipSha256: sha256Bytes(primary.eszip),
     entrypointPath: STAGING_CMS_PUBLIC_HOTFIX.candidateEntrypointPath,
     importMapPath: STAGING_CMS_PUBLIC_HOTFIX.candidateImportMapPath,
     verifyJwt: false,
@@ -2295,20 +2295,20 @@ async function captureBaseline() {
     writeBytes(join(output, "baseline-body.ezbr"), reconciled.deploymentBody),
     writeBytes(join(output, "candidate-body.ezbr"), candidateBody),
     writeBytes(
-      join(output, candidateManifest.provenance.builds.online.attestationFile),
-      candidateBuildEvidence.online.attestation,
+      join(output, candidateManifest.provenance.builds.primary.attestationFile),
+      candidateBuildEvidence.primary.attestation,
     ),
     writeBytes(
-      join(output, candidateManifest.provenance.builds.online.unbundledFilesFile),
-      candidateBuildEvidence.online.unbundledFiles,
+      join(output, candidateManifest.provenance.builds.primary.unbundledFilesFile),
+      candidateBuildEvidence.primary.unbundledFiles,
     ),
     writeBytes(
-      join(output, candidateManifest.provenance.builds.offline.attestationFile),
-      candidateBuildEvidence.offline.attestation,
+      join(output, candidateManifest.provenance.builds.rebuild.attestationFile),
+      candidateBuildEvidence.rebuild.attestation,
     ),
     writeBytes(
-      join(output, candidateManifest.provenance.builds.offline.unbundledFilesFile),
-      candidateBuildEvidence.offline.unbundledFiles,
+      join(output, candidateManifest.provenance.builds.rebuild.unbundledFilesFile),
+      candidateBuildEvidence.rebuild.unbundledFiles,
     ),
     writeJson(join(output, "baseline-inventory.json"), liveSnapshot.records),
     writeJson(join(output, "package-manifest.json"), manifest),

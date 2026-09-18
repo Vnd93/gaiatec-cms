@@ -7,7 +7,7 @@ const PACKAGE_PATH = /^\/[A-Za-z0-9._@/+()-]+$/;
 
 export const CMS_PUBLIC_JSR_MIRROR = Object.freeze({
   registryUrl: "https://jsr.io/",
-  runtimeUrl: "file:///workspace/.g12-jsr/",
+  runtimeUrl: "https://jsr.io/",
   manifestFile: ".g12-mirror-manifest.json",
   filesFile: ".g12-mirror-files.sha256",
   maximumMetadataBytes: 1024 * 1024,

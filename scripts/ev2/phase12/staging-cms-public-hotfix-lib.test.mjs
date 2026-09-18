@@ -57,7 +57,7 @@ test("manual recovery authorization is bound to the incident, fixed control, CI 
   const ciRunId = "35295987041";
   assert.equal(
     stagingCmsPublicRecoveryConfirmation({ controlSha, ciRunId }),
-    `RECOVER_STAGING_CMS_PUBLIC_PARENT_RUN_35295119905_ATTEMPT_1_PARENT_CONTROL_33a626ca0ef17c96686c8bbea9a71b326724ec0c_RECOVERY_CONTROL_${controlSha}_CI_${ciRunId}_ROLLBACK_c8aec5cad25830580bf9ca8a89594ebce1aa3570`,
+    `RECOVER_STAGING_CMS_PUBLIC_PARENT_RUN_35302861714_ATTEMPT_1_PARENT_CONTROL_351e0d3f8ece51db30abe000e9b562ec11ae1006_RECOVERY_CONTROL_${controlSha}_CI_${ciRunId}_ROLLBACK_c8aec5cad25830580bf9ca8a89594ebce1aa3570`,
   );
   assert.throws(
     () => stagingCmsPublicRecoveryConfirmation({ controlSha: "bad", ciRunId }),
@@ -109,6 +109,11 @@ function eszipFromModules(modules) {
   for (const module of modules) {
     const specifier = Buffer.from(module.specifier, "utf8");
     header.push(be32(specifier.byteLength), specifier, Buffer.from([module.entryKind]));
+    if (module.entryKind === 1) {
+      const target = Buffer.from(module.target, "utf8");
+      header.push(be32(target.byteLength), target);
+      continue;
+    }
     if (module.entryKind === 2) {
       header.push(be32(0));
       continue;
@@ -136,8 +141,19 @@ function eszipFromModules(modules) {
   ]);
 }
 
-function validEszip(label = "candidate", { metadataEntryKind = 0, entrypointSource } = {}) {
-  return eszipFromModules([
+function validEszip(
+  label = "candidate",
+  {
+    metadataEntryKind = 0,
+    entrypointSource,
+    jsrRedirectTarget = "https://jsr.io/@supabase/functions-js/2.112.4/src/edge-runtime.d.ts",
+    jsrModuleSpecifier = jsrRedirectTarget,
+    includeSupabaseRedirect = true,
+    supabaseRedirectTarget = "https://jsr.io/@supabase/supabase-js/2.112.4/src/index.ts",
+    supabaseModuleSpecifier = supabaseRedirectTarget,
+  } = {},
+) {
+  const modules = [
     {
       specifier: STAGING_CMS_PUBLIC_HOTFIX.candidateEszipEntrypointSpecifier,
       source:
@@ -146,16 +162,43 @@ function validEszip(label = "candidate", { metadataEntryKind = 0, entrypointSour
       entryKind: 0,
     },
     {
-      specifier: STAGING_CMS_PUBLIC_HOTFIX.edgeRuntimeMetadataSpecifier,
-      entryKind: metadataEntryKind,
-      ...(metadataEntryKind === 0
-        ? {
-            source: Buffer.from('{"serializedWorkspaceResolver":{}}', "utf8"),
-            kind: 3,
-          }
-        : {}),
+      specifier: "jsr:@supabase/functions-js/edge-runtime.d.ts",
+      entryKind: 1,
+      target: jsrRedirectTarget,
     },
-  ]);
+    {
+      specifier: jsrModuleSpecifier,
+      source: Buffer.from("export {};", "utf8"),
+      kind: 0,
+      entryKind: 0,
+    },
+  ];
+  if (includeSupabaseRedirect) {
+    modules.push(
+      {
+        specifier: "jsr:@supabase/supabase-js@2",
+        entryKind: 1,
+        target: supabaseRedirectTarget,
+      },
+      {
+        specifier: supabaseModuleSpecifier,
+        source: Buffer.from("export const createClient = () => ({});", "utf8"),
+        kind: 0,
+        entryKind: 0,
+      },
+    );
+  }
+  modules.push({
+    specifier: STAGING_CMS_PUBLIC_HOTFIX.edgeRuntimeMetadataSpecifier,
+    entryKind: metadataEntryKind,
+    ...(metadataEntryKind === 0
+      ? {
+          source: Buffer.from('{"serializedWorkspaceResolver":{}}', "utf8"),
+          kind: 3,
+        }
+      : {}),
+  });
+  return eszipFromModules(modules);
 }
 
 const candidateRawEszip = validEszip();
@@ -167,7 +210,7 @@ function candidateEvidence() {
   const attestation = (mode, network) =>
     Buffer.from(
       [
-        "SCHEMA_VERSION=1",
+        "SCHEMA_VERSION=2",
         "EVENT=g12.staging.cms_public_hotfix.bundle_attestation",
         `MODE=${mode}`,
         `NETWORK=${network}`,
@@ -208,12 +251,12 @@ function candidateEvidence() {
       "utf8",
     );
   return {
-    online: {
-      attestation: attestation("online", "default"),
+    primary: {
+      attestation: attestation("online-primary", "default"),
       unbundledFiles,
     },
-    offline: {
-      attestation: attestation("offline", "none"),
+    rebuild: {
+      attestation: attestation("online-rebuild", "default"),
       unbundledFiles,
     },
   };
@@ -221,13 +264,13 @@ function candidateEvidence() {
 
 function candidateProvenance(evidence = candidateEvidence()) {
   const inspection = inspectEszipV2(candidateRawEszip);
-  const build = (mode, network) => ({
+  const build = (key, mode, network) => ({
     mode,
     network,
-    attestationFile: `${mode}-build-attestation.env`,
-    attestationSha256: sha256Bytes(evidence[mode].attestation),
-    unbundledFilesFile: `${mode}-unbundled-files.sha256`,
-    unbundledFilesSha256: sha256Bytes(evidence[mode].unbundledFiles),
+    attestationFile: `${key}-build-attestation.env`,
+    attestationSha256: sha256Bytes(evidence[key].attestation),
+    unbundledFilesFile: `${key}-unbundled-files.sha256`,
+    unbundledFilesSha256: sha256Bytes(evidence[key].unbundledFiles),
     unbundledFileCount: 1,
     unbundledTotalBytes: 0,
     unbundledZeroByteFileCount: 1,
@@ -236,7 +279,7 @@ function candidateProvenance(evidence = candidateEvidence()) {
     rawEszipBytes: inspection.bytes,
   });
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     event: "g12.staging.cms_public_hotfix.bundle_provenance",
     input: {
       manifestSha256: "1".repeat(64),
@@ -270,8 +313,8 @@ function candidateProvenance(evidence = candidateEvidence()) {
     },
     rawEszip: inspection,
     builds: {
-      online: build("online", "default"),
-      offline: build("offline", "none"),
+      primary: build("primary", "online-primary", "default"),
+      rebuild: build("rebuild", "online-rebuild", "default"),
     },
     reproducible: true,
   };
@@ -425,7 +468,7 @@ function liveCandidate(fixture) {
   Object.assign(target, {
     version: fixture.target.version + 1,
     ezbr_sha256: fixture.state.candidate.bodySha256,
-    updated_at: "2026-09-18T03:00:00.000Z",
+    updated_at: "2026-09-18T04:00:00.000Z",
     entrypoint_path: STAGING_CMS_PUBLIC_HOTFIX.candidateEntrypointPath,
     import_map_path: STAGING_CMS_PUBLIC_HOTFIX.candidateImportMapPath,
     import_map: true,
@@ -467,7 +510,7 @@ function intent(action, state, before) {
       state,
       before,
       expected,
-      preparedAt: action === "candidate" ? "2026-09-18T02:59:00.000Z" : "2026-09-18T03:01:30.000Z",
+      preparedAt: action === "candidate" ? "2026-09-18T03:59:00.000Z" : "2026-09-18T04:01:30.000Z",
     },
     key,
   );
@@ -491,7 +534,7 @@ function receipt(action, state, boundIntent, before, after) {
     before,
     after,
     nonTargetSha256: state.baseline.nonTargetSha256,
-    appliedAt: action === "candidate" ? "2026-09-18T03:01:00.000Z" : "2026-09-18T03:03:00.000Z",
+    appliedAt: action === "candidate" ? "2026-09-18T04:01:00.000Z" : "2026-09-18T04:03:00.000Z",
   };
 }
 
@@ -751,10 +794,12 @@ test("trusted failed baseline is accepted only with the exact successful finaliz
   );
 });
 
-test("recovered baseline requires the exact successful recovery, artifacts, receipt and v285 tuple", () => {
+test("recovered baseline requires the exact successful recovery, artifacts, receipt and v287 tuple", () => {
   const expected = STAGING_CMS_PUBLIC_HOTFIX.recoveredBaseline;
   const sourceBaseline = STAGING_CMS_PUBLIC_HOTFIX.sourceBaselineFunction;
   const sourceSnapshot = functionInventorySnapshot(baselineInventory(sourceBaseline));
+  const recoverySourceBaseline = STAGING_CMS_PUBLIC_HOTFIX.recoverySourceBaselineFunction;
+  const recoverySourceSnapshot = functionInventorySnapshot(baselineInventory(recoverySourceBaseline));
   const fixture = packageAndState();
   const state = structuredClone(fixture.state);
   state.workflow = {
@@ -769,10 +814,10 @@ test("recovered baseline requires the exact successful recovery, artifacts, rece
     digest: `sha256:${"e".repeat(64)}`,
     packageManifestSha256: "7".repeat(64),
   };
-  state.baseline.tuple = sourceSnapshot.target;
-  state.baseline.inventorySha256 = sourceSnapshot.inventorySha256;
-  state.baseline.nonTargetSha256 = sourceSnapshot.nonTargetSha256;
-  assert.equal(validateHotfixRecoveryState(state, { baselineFunction: sourceBaseline }).valid, true);
+  state.baseline.tuple = recoverySourceSnapshot.target;
+  state.baseline.inventorySha256 = recoverySourceSnapshot.inventorySha256;
+  state.baseline.nonTargetSha256 = recoverySourceSnapshot.nonTargetSha256;
+  assert.equal(validateHotfixRecoveryState(state, { baselineFunction: recoverySourceBaseline }).valid, true);
   const executor = {
     runId: expected.runId,
     runAttempt: expected.runAttempt,
@@ -781,10 +826,10 @@ test("recovered baseline requires the exact successful recovery, artifacts, rece
     workflowPath: expected.workflowPath,
   };
   const before = {
-    ...sourceSnapshot.target,
-    version: sourceBaseline.version + 1,
+    ...recoverySourceSnapshot.target,
+    version: recoverySourceBaseline.version + 1,
     bundleSha256: state.candidate.bodySha256,
-    updatedAt: "2026-09-18T01:26:12.690Z",
+    updatedAt: "2026-09-18T03:23:56.211Z",
     entrypointPath: state.candidate.entrypointPath,
     importMap: true,
     importMapPath: state.candidate.importMapPath,
@@ -799,17 +844,17 @@ test("recovered baseline requires the exact successful recovery, artifacts, rece
     slug: STAGING_CMS_PUBLIC_HOTFIX.functionSlug,
     intentSha256: "9".repeat(64),
     preparedBy: executor,
-    intentPreparedAt: "2026-09-18T02:15:36.008Z",
+    intentPreparedAt: "2026-09-18T03:24:59.229Z",
     completedBy: executor,
     completionMode: "patched",
     state,
     before,
     after: STAGING_CMS_PUBLIC_HOTFIX.baselineFunction,
-    nonTargetSha256: sourceSnapshot.nonTargetSha256,
-    appliedAt: "2026-09-18T02:15:54.108Z",
+    nonTargetSha256: recoverySourceSnapshot.nonTargetSha256,
+    appliedAt: "2026-09-18T03:25:10.890Z",
   };
   const recoveredReceipt = sealHotfixReceipt(receiptPayload, key, {
-    stateBaselineFunction: sourceBaseline,
+    stateBaselineFunction: recoverySourceBaseline,
   });
   const fileDigests = {
     terminal: "3".repeat(64),
@@ -858,8 +903,8 @@ test("recovered baseline requires the exact successful recovery, artifacts, rece
       legacyMiss: { status: 404, kind: "not-found", cache: "no-store", cors: "*", json: true },
       options: { status: 200, kind: "empty", cache: "no-store", cors: "*", json: false },
     },
-    startedAt: "2026-09-18T02:17:03.841Z",
-    completedAt: "2026-09-18T02:17:22.463Z",
+    startedAt: "2026-09-18T03:25:12.000Z",
+    completedAt: "2026-09-18T03:26:24.000Z",
   };
   const receiptSha256 = canonicalSha256(recoveredReceipt);
   const recoveredProof = sealHotfixProbeProof(
@@ -874,12 +919,12 @@ test("recovered baseline requires the exact successful recovery, artifacts, rece
       packageManifestSha256: state.recoveryArtifact.packageManifestSha256,
       classification: "rollback-receipted",
       target: STAGING_CMS_PUBLIC_HOTFIX.baselineFunction,
-      nonTargetSha256: sourceSnapshot.nonTargetSha256,
+      nonTargetSha256: recoverySourceSnapshot.nonTargetSha256,
       candidateIntentSha256: "8".repeat(64),
       rollbackIntentSha256: "9".repeat(64),
       receiptSha256,
-      startedAt: "2026-09-18T02:15:56.000Z",
-      completedAt: "2026-09-18T02:17:23.000Z",
+      startedAt: "2026-09-18T03:25:12.000Z",
+      completedAt: "2026-09-18T03:26:24.000Z",
       probeSha256: fileDigests.probe,
       cmsPublicCanarySha256: fileDigests.canary,
     },
@@ -900,12 +945,12 @@ test("recovered baseline requires the exact successful recovery, artifacts, rece
     liveObservation: {
       classification: "rollback-receipted",
       target: STAGING_CMS_PUBLIC_HOTFIX.baselineFunction,
-      nonTargetSha256: sourceSnapshot.nonTargetSha256,
+      nonTargetSha256: recoverySourceSnapshot.nonTargetSha256,
       bodySha256: STAGING_CMS_PUBLIC_HOTFIX.baselineFunction.bundleSha256,
-      observedAt: "2026-09-18T02:17:29.055Z",
+      observedAt: "2026-09-18T03:26:27.387Z",
     },
     receiptSha256,
-    completedAt: "2026-09-18T02:17:29.055Z",
+    completedAt: "2026-09-18T03:26:27.387Z",
     productionMutations: 0,
     nonTargetFunctionMutations: 0,
   };
@@ -924,7 +969,7 @@ test("recovered baseline requires the exact successful recovery, artifacts, rece
       run_attempt: expected.runAttempt,
       name: expected.workflowName,
       path: expected.workflowPath,
-      event: "workflow_dispatch",
+      event: expected.event,
       status: "completed",
       conclusion: "success",
       head_branch: "main",
@@ -957,11 +1002,11 @@ test("recovered baseline requires the exact successful recovery, artifacts, rece
   };
   const result = validateRecoveredBaselineEvidence(input);
   assert.equal(result.valid, true, result.violations.join(","));
-  assert.equal(result.snapshot.target.version, 285);
+  assert.equal(result.snapshot.target.version, 287);
 
   const mismatchedIntent = structuredClone(input);
   mismatchedIntent.receipt = sealHotfixReceipt({ ...receiptPayload, intentSha256: "1".repeat(64) }, key, {
-    stateBaselineFunction: sourceBaseline,
+    stateBaselineFunction: recoverySourceBaseline,
   });
   const mismatchedReceiptSha256 = canonicalSha256(mismatchedIntent.receipt);
   mismatchedIntent.probeProof = sealHotfixProbeProof(
@@ -974,8 +1019,8 @@ test("recovered baseline requires the exact successful recovery, artifacts, rece
     /recovered_probe_proof_rollback_intent_sha256_mismatch/,
   );
   const wrongTerminalOrder = structuredClone(input);
-  wrongTerminalOrder.terminal.liveObservation.observedAt = "2026-09-18T02:17:22.999Z";
-  wrongTerminalOrder.terminal.completedAt = "2026-09-18T02:17:23.500Z";
+  wrongTerminalOrder.terminal.liveObservation.observedAt = "2026-09-18T03:26:23.999Z";
+  wrongTerminalOrder.terminal.completedAt = "2026-09-18T03:26:24.500Z";
   assert.match(
     validateRecoveredBaselineEvidence(wrongTerminalOrder).violations.join(","),
     /recovered_terminal_order_invalid/,
@@ -1052,7 +1097,7 @@ test("state machine requires durable intents and receipts for every owned transi
   const rollbackInventory = structuredClone(fixture.inventory);
   const rollbackTargetRaw = rollbackInventory.find((record) => record.name === "cms-public");
   rollbackTargetRaw.version = fixture.target.version + 2;
-  rollbackTargetRaw.updated_at = "2026-09-18T03:02:00.000Z";
+  rollbackTargetRaw.updated_at = "2026-09-18T04:02:00.000Z";
   const rollbackTarget = functionInventorySnapshot(rollbackInventory).target;
   const rollbackIntent = intent("rollback", fixture.state, candidateTarget);
   assert.equal(
@@ -1148,7 +1193,7 @@ test("a verified watchdog can complete a predecessor rollback intent without era
   const rollbackInventory = structuredClone(fixture.inventory);
   const rollbackTargetRaw = rollbackInventory.find((record) => record.name === "cms-public");
   rollbackTargetRaw.version = fixture.target.version + 2;
-  rollbackTargetRaw.updated_at = "2026-09-18T03:02:00.000Z";
+  rollbackTargetRaw.updated_at = "2026-09-18T04:02:00.000Z";
   const rollbackTarget = functionInventorySnapshot(rollbackInventory).target;
   const predecessorIntent = intent("rollback", fixture.state, candidateTarget);
   const watchdog = {
@@ -1408,8 +1453,8 @@ test("probe proof binds the post-transition window to state, intent, receipt, ta
     candidateIntentSha256: canonicalSha256(candidateIntent),
     rollbackIntentSha256: null,
     receiptSha256: canonicalSha256(candidateReceipt),
-    startedAt: "2026-09-18T03:01:30.000Z",
-    completedAt: "2026-09-18T03:02:00.000Z",
+    startedAt: "2026-09-18T04:01:30.000Z",
+    completedAt: "2026-09-18T04:02:00.000Z",
     probeSha256: "4".repeat(64),
     cmsPublicCanarySha256: "5".repeat(64),
   };
@@ -1536,16 +1581,16 @@ test("cms-public canary evidence binds exact scenarios, managed latency, and the
       legacyMiss: { status: 404, kind: "not-found", cache: "no-store", cors: "*", json: true },
       options: { status: 200, kind: "empty", cache: "no-store", cors: "*", json: false },
     },
-    startedAt: "2026-09-18T03:01:30.000Z",
-    completedAt: "2026-09-18T03:02:30.000Z",
+    startedAt: "2026-09-18T04:01:30.000Z",
+    completedAt: "2026-09-18T04:02:30.000Z",
   };
   const result = validateCmsPublicHotfixCanary(report, {
     state: fixture.state,
     outcome: "promoted",
     classification: "candidate-receipted",
     target,
-    minimumStartedAt: "2026-09-18T03:01:00.000Z",
-    maximumCompletedAt: "2026-09-18T03:03:00.000Z",
+    minimumStartedAt: "2026-09-18T04:01:00.000Z",
+    maximumCompletedAt: "2026-09-18T04:03:00.000Z",
   });
   assert.equal(result.valid, true, result.violations.join(","));
   const slow = structuredClone(report);
@@ -1593,11 +1638,35 @@ test("candidate provenance binds two reproducible builds and a structurally pars
   const provenance = candidateProvenance(evidence);
   assert.deepEqual(provenance.rawEszip.moduleSpecifiers, [
     STAGING_CMS_PUBLIC_HOTFIX.candidateEszipEntrypointSpecifier,
+    "jsr:@supabase/functions-js/edge-runtime.d.ts",
+    "https://jsr.io/@supabase/functions-js/2.112.4/src/edge-runtime.d.ts",
+    "jsr:@supabase/supabase-js@2",
+    "https://jsr.io/@supabase/supabase-js/2.112.4/src/index.ts",
     STAGING_CMS_PUBLIC_HOTFIX.edgeRuntimeMetadataSpecifier,
   ]);
   assert.deepEqual(provenance.rawEszip.moduleDescriptors, [
     {
       specifier: STAGING_CMS_PUBLIC_HOTFIX.candidateEszipEntrypointSpecifier,
+      entryKind: 0,
+      moduleKind: 0,
+    },
+    {
+      specifier: "jsr:@supabase/functions-js/edge-runtime.d.ts",
+      entryKind: 1,
+      target: "https://jsr.io/@supabase/functions-js/2.112.4/src/edge-runtime.d.ts",
+    },
+    {
+      specifier: "https://jsr.io/@supabase/functions-js/2.112.4/src/edge-runtime.d.ts",
+      entryKind: 0,
+      moduleKind: 0,
+    },
+    {
+      specifier: "jsr:@supabase/supabase-js@2",
+      entryKind: 1,
+      target: "https://jsr.io/@supabase/supabase-js/2.112.4/src/index.ts",
+    },
+    {
+      specifier: "https://jsr.io/@supabase/supabase-js/2.112.4/src/index.ts",
       entryKind: 0,
       moduleKind: 0,
     },
@@ -1626,24 +1695,24 @@ test("candidate provenance binds two reproducible builds and a structurally pars
     ["unbundledLargestFileBytes", "UNBUNDLED_LARGEST_FILE_BYTES", "0", "1"],
   ]) {
     const alteredEvidence = candidateEvidence();
-    alteredEvidence.online.attestation = Buffer.from(
-      alteredEvidence.online.attestation
+    alteredEvidence.primary.attestation = Buffer.from(
+      alteredEvidence.primary.attestation
         .toString("utf8")
         .replace(`${attestationKey}=${original}`, `${attestationKey}=${replacement}`),
       "utf8",
     );
     const alteredProvenance = candidateProvenance(alteredEvidence);
-    assert.equal(alteredProvenance.builds.online[key], provenance.builds.online[key]);
+    assert.equal(alteredProvenance.builds.primary[key], provenance.builds.primary[key]);
     assert.match(
       validateCandidateBuildEvidenceFiles(alteredProvenance, alteredEvidence).violations.join(","),
-      /candidate_evidence_online_attestation_invalid/,
+      /candidate_evidence_primary_attestation_invalid/,
       attestationKey,
     );
   }
 
   const missingMetricEvidence = candidateEvidence();
-  missingMetricEvidence.online.attestation = Buffer.from(
-    missingMetricEvidence.online.attestation.toString("utf8").replace("UNBUNDLED_TOTAL_BYTES=0\n", ""),
+  missingMetricEvidence.primary.attestation = Buffer.from(
+    missingMetricEvidence.primary.attestation.toString("utf8").replace("UNBUNDLED_TOTAL_BYTES=0\n", ""),
     "utf8",
   );
   assert.match(
@@ -1651,20 +1720,20 @@ test("candidate provenance binds two reproducible builds and a structurally pars
       candidateProvenance(missingMetricEvidence),
       missingMetricEvidence,
     ).violations.join(","),
-    /candidate_evidence_online_attestation_invalid/,
+    /candidate_evidence_primary_attestation_invalid/,
   );
 
-  const originalUnbundledSha256 = sha256Bytes(evidence.online.unbundledFiles);
+  const originalUnbundledSha256 = sha256Bytes(evidence.primary.unbundledFiles);
   const substitutedUnbundledFiles = Buffer.from(
     `${sha256Bytes(Buffer.from([0]))}  ./edge-runtime.d.ts\n`,
     "utf8",
   );
   const nonEmptySubstitution = {
     ...evidence,
-    online: {
-      ...evidence.online,
+    primary: {
+      ...evidence.primary,
       attestation: Buffer.from(
-        evidence.online.attestation
+        evidence.primary.attestation
           .toString("utf8")
           .replace(originalUnbundledSha256, sha256Bytes(substitutedUnbundledFiles)),
         "utf8",
@@ -1677,10 +1746,10 @@ test("candidate provenance binds two reproducible builds and a structurally pars
       candidateProvenance(nonEmptySubstitution),
       nonEmptySubstitution,
     ).violations.join(","),
-    /candidate_evidence_online_unbundled_invalid/,
+    /candidate_evidence_primary_unbundled_invalid/,
   );
 
-  for (const [field, onlineMetrics, offlineMetrics] of [
+  for (const [field, primaryMetrics, rebuildMetrics] of [
     [
       "unbundledTotalBytes",
       {
@@ -1728,8 +1797,8 @@ test("candidate provenance binds two reproducible builds and a structurally pars
     ],
   ]) {
     const mismatch = structuredClone(provenance);
-    Object.assign(mismatch.builds.online, onlineMetrics);
-    Object.assign(mismatch.builds.offline, offlineMetrics);
+    Object.assign(mismatch.builds.primary, primaryMetrics);
+    Object.assign(mismatch.builds.rebuild, rebuildMetrics);
     assert.match(
       validateCandidateBuildProvenance(mismatch).violations.join(","),
       /candidate_provenance_reproducibility_invalid/,
@@ -1744,10 +1813,10 @@ test("candidate provenance binds two reproducible builds and a structurally pars
     ["unbundledLargestFileBytes", STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactFileBytes + 1],
   ]) {
     const outOfRange = structuredClone(provenance);
-    outOfRange.builds.online[field] = value;
+    outOfRange.builds.primary[field] = value;
     assert.match(
       validateCandidateBuildProvenance(outOfRange).violations.join(","),
-      /candidate_provenance_online_invalid/,
+      /candidate_provenance_primary_invalid/,
       field,
     );
   }
@@ -1764,10 +1833,10 @@ test("candidate provenance binds two reproducible builds and a structurally pars
     /candidate_provenance_identity_invalid/,
   );
   const substituted = structuredClone(provenance);
-  substituted.builds.offline.rawEszipSha256 = "0".repeat(64);
+  substituted.builds.rebuild.rawEszipSha256 = "0".repeat(64);
   assert.match(
     validateCandidateBuildProvenance(substituted, { rawEszip: candidateRawEszip }).violations.join(","),
-    /offline_invalid|reproducibility_invalid/,
+    /rebuild_invalid|reproducibility_invalid/,
   );
   const legacySpecifiers = structuredClone(provenance);
   legacySpecifiers.rawEszip.moduleSpecifiers = [
@@ -1802,6 +1871,24 @@ test("candidate provenance binds two reproducible builds and a structurally pars
     validateCandidateBuildProvenance(provenance, { rawEszip: malformed }).violations.join(","),
     /eszip_invalid|eszip_mismatch/,
   );
+});
+
+test("candidate structure rejects the non-portable JSR redirect emitted by the failed build", () => {
+  for (const options of [
+    {
+      jsrRedirectTarget: "file:///workspace/.g12-jsr/@supabase/functions-js/2.112.4/src/edge-runtime.d.ts",
+      jsrModuleSpecifier: "workspace/.g12-jsr/@supabase/functions-js/2.112.4/src/edge-runtime.d.ts",
+    },
+    { includeSupabaseRedirect: false },
+    {
+      supabaseRedirectTarget: "https://jsr.io/@supabase/supabase-js/2.112.3/src/index.ts",
+      supabaseModuleSpecifier: "https://jsr.io/@supabase/supabase-js/2.112.3/src/index.ts",
+    },
+    {
+      supabaseModuleSpecifier: "https://jsr.io/@supabase/supabase-js/2.112.4/src/missing.ts",
+    },
+  ])
+    assert.equal(hasExpectedCandidateEszipStructure(inspectEszipV2(validEszip("broken", options))), false);
 });
 
 test("package validation rejects byte, inventory, and immutable builder substitutions", () => {

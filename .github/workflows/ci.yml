@@ -84,10 +84,10 @@ jobs:
             '[.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64" and .digest == $digest)] | length' \
             "$INDEX_MANIFEST")" = 1
           docker pull --platform linux/amd64 "$EDGE_RUNTIME_IMAGE"
-      - name: Exercise the hardened online Docker bundle boundary
+      - name: Build the primary Docker candidate with canonical JSR identities
         run: |
           set -euo pipefail
-          install -d -m 700 "$RUNNER_TEMP/g12-smoke-online" "$RUNNER_TEMP/g12-smoke-online-cache"
+          install -d -m 700 "$RUNNER_TEMP/g12-smoke-primary" "$RUNNER_TEMP/g12-smoke-primary-cache"
           input_tree="$(jq -r .inputTreeSha256 bundle-input/bundle-input-manifest.json)"
           input_count="$(jq -r .inputFileCount bundle-input/bundle-input-manifest.json)"
           jsr_manifest="$(jq -r .jsrMirror.manifestSha256 bundle-input/bundle-input-manifest.json)"
@@ -104,11 +104,11 @@ jobs:
             --cap-drop ALL --security-opt no-new-privileges \
             --tmpfs /tmp:rw,nosuid,nodev,size=67108864,mode=1777 \
             --volume "$GITHUB_WORKSPACE/bundle-input:/workspace:ro" \
-            --volume "$RUNNER_TEMP/g12-smoke-online:/output:rw" \
-            --volume "$RUNNER_TEMP/g12-smoke-online-cache:/deno-cache:rw" \
+            --volume "$RUNNER_TEMP/g12-smoke-primary:/output:rw" \
+            --volume "$RUNNER_TEMP/g12-smoke-primary-cache:/deno-cache:rw" \
             --volume "$GITHUB_WORKSPACE/control/scripts/ev2/phase12/staging-cms-public-hotfix-bundle.sh:/g12-builder.sh:ro" \
             --env HOME=/tmp --env DENO_DIR=/deno-cache --env DENO_NO_PACKAGE_JSON=1 \
-            --env JSR_URL=file:///workspace/.g12-jsr/ \
+            --env JSR_URL=https://jsr.io/ \
             --env G12_EDGE_RUNTIME_INDEX_DIGEST="$EDGE_RUNTIME_INDEX_DIGEST" \
             --env G12_EDGE_RUNTIME_AMD64_DIGEST="$EDGE_RUNTIME_AMD64_DIGEST" \
             --env G12_PLATFORM=linux/amd64 \
@@ -123,37 +123,11 @@ jobs:
             --env G12_BUNDLE_DENO_LOCK_SHA256="$bundle_deno_lock_sha256" \
             --env G12_BUNDLE_DENO_LOCK_NPM_ROOT_SPECIFIERS="$bundle_deno_lock_npm_roots" \
             --env G12_BUNDLE_DENO_LOCK_EVIDENCE_JSON="$bundle_deno_lock_evidence" \
-            --entrypoint /bin/sh "$EDGE_RUNTIME_IMAGE" /g12-builder.sh online default
-      - name: Exercise the hardened offline Docker rebuild boundary
+            --entrypoint /bin/sh "$EDGE_RUNTIME_IMAGE" /g12-builder.sh online-primary default
+      - name: Rebuild independently with a fresh online cache
         run: |
           set -euo pipefail
-          install -d -m 700 "$RUNNER_TEMP/g12-smoke-offline" "$RUNNER_TEMP/g12-smoke-offline-cache"
-          # JSR resolves from the sealed file mirror; only the portable npm tree crosses the boundary.
-          online_remote="$RUNNER_TEMP/g12-smoke-online-cache/remote"
-          if [ -e "$online_remote" ] || [ -L "$online_remote" ]; then
-            test -d "$online_remote"
-            test ! -L "$online_remote"
-            if ! online_remote_entry="$(find "$online_remote" -mindepth 1 -print -quit)"; then
-              exit 1
-            fi
-            test -z "$online_remote_entry"
-          fi
-          source_dir="$RUNNER_TEMP/g12-smoke-online-cache/npm"
-          test -d "$source_dir"
-          test ! -L "$source_dir"
-          if ! source_entry="$(find "$source_dir" -mindepth 1 -maxdepth 1 -print -quit)"; then
-            exit 1
-          fi
-          test -n "$source_entry"
-          if ! offline_entry="$(find "$RUNNER_TEMP/g12-smoke-offline-cache" -mindepth 1 -maxdepth 1 -print -quit)"; then
-            exit 1
-          fi
-          test -z "$offline_entry"
-          cp -a -- "$source_dir" "$RUNNER_TEMP/g12-smoke-offline-cache/"
-          if ! offline_names="$(find "$RUNNER_TEMP/g12-smoke-offline-cache" -mindepth 1 -maxdepth 1 -printf '%f\n')"; then
-            exit 1
-          fi
-          test "$offline_names" = npm
+          install -d -m 700 "$RUNNER_TEMP/g12-smoke-rebuild" "$RUNNER_TEMP/g12-smoke-rebuild-cache"
           input_tree="$(jq -r .inputTreeSha256 bundle-input/bundle-input-manifest.json)"
           input_count="$(jq -r .inputFileCount bundle-input/bundle-input-manifest.json)"
           jsr_manifest="$(jq -r .jsrMirror.manifestSha256 bundle-input/bundle-input-manifest.json)"
@@ -165,16 +139,16 @@ jobs:
           bundle_deno_lock_sha256="$(jq -r .bundleDenoLockSha256 bundle-input/bundle-input-manifest.json)"
           bundle_deno_lock_npm_roots="$(jq -c .bundleDenoLock.npmRootSpecifiers bundle-input/bundle-input-manifest.json)"
           bundle_deno_lock_evidence="$(jq -c .bundleDenoLock bundle-input/bundle-input-manifest.json)"
-          docker run --rm --platform linux/amd64 --network none --read-only \
+          docker run --rm --platform linux/amd64 --network bridge --read-only \
             --user "$(id -u):$(id -g)" \
             --cap-drop ALL --security-opt no-new-privileges \
             --tmpfs /tmp:rw,nosuid,nodev,size=67108864,mode=1777 \
             --volume "$GITHUB_WORKSPACE/bundle-input:/workspace:ro" \
-            --volume "$RUNNER_TEMP/g12-smoke-offline:/output:rw" \
-            --volume "$RUNNER_TEMP/g12-smoke-offline-cache:/deno-cache:rw" \
+            --volume "$RUNNER_TEMP/g12-smoke-rebuild:/output:rw" \
+            --volume "$RUNNER_TEMP/g12-smoke-rebuild-cache:/deno-cache:rw" \
             --volume "$GITHUB_WORKSPACE/control/scripts/ev2/phase12/staging-cms-public-hotfix-bundle.sh:/g12-builder.sh:ro" \
             --env HOME=/tmp --env DENO_DIR=/deno-cache --env DENO_NO_PACKAGE_JSON=1 \
-            --env JSR_URL=file:///workspace/.g12-jsr/ \
+            --env JSR_URL=https://jsr.io/ \
             --env G12_EDGE_RUNTIME_INDEX_DIGEST="$EDGE_RUNTIME_INDEX_DIGEST" \
             --env G12_EDGE_RUNTIME_AMD64_DIGEST="$EDGE_RUNTIME_AMD64_DIGEST" \
             --env G12_PLATFORM=linux/amd64 \
@@ -189,15 +163,15 @@ jobs:
             --env G12_BUNDLE_DENO_LOCK_SHA256="$bundle_deno_lock_sha256" \
             --env G12_BUNDLE_DENO_LOCK_NPM_ROOT_SPECIFIERS="$bundle_deno_lock_npm_roots" \
             --env G12_BUNDLE_DENO_LOCK_EVIDENCE_JSON="$bundle_deno_lock_evidence" \
-            --entrypoint /bin/sh "$EDGE_RUNTIME_IMAGE" /g12-builder.sh offline none
+            --entrypoint /bin/sh "$EDGE_RUNTIME_IMAGE" /g12-builder.sh online-rebuild default
       - name: Verify and report the bounded raw ESZIP sizes
         run: |
           set -euo pipefail
           maximum_raw_eszip_bytes=67108864
-          online_eszip="$RUNNER_TEMP/g12-smoke-online/output.eszip"
-          offline_eszip="$RUNNER_TEMP/g12-smoke-offline/output.eszip"
-          online_attestation="$RUNNER_TEMP/g12-smoke-online/build-attestation.env"
-          offline_attestation="$RUNNER_TEMP/g12-smoke-offline/build-attestation.env"
+          primary_eszip="$RUNNER_TEMP/g12-smoke-primary/output.eszip"
+          rebuild_eszip="$RUNNER_TEMP/g12-smoke-rebuild/output.eszip"
+          primary_attestation="$RUNNER_TEMP/g12-smoke-primary/build-attestation.env"
+          rebuild_attestation="$RUNNER_TEMP/g12-smoke-rebuild/build-attestation.env"
           refuse() {
             printf '%s\n' "$1" >&2
             exit 1
@@ -211,39 +185,43 @@ jobs:
               }
             ' "$1"
           }
-          for path in "$online_eszip" "$offline_eszip" "$online_attestation" "$offline_attestation"; do
+          for path in "$primary_eszip" "$rebuild_eszip" "$primary_attestation" "$rebuild_attestation"; do
             test -f "$path" && test ! -L "$path" || \
               refuse G12_STAGING_CMS_PUBLIC_HOTFIX_SIZE_EVIDENCE_FILE_REFUSED
           done
-          if ! online_bytes="$(stat -c %s -- "$online_eszip")"; then
-            refuse G12_STAGING_CMS_PUBLIC_HOTFIX_ONLINE_ESZIP_STAT_REFUSED
+          if ! primary_bytes="$(stat -c %s -- "$primary_eszip")"; then
+            refuse G12_STAGING_CMS_PUBLIC_HOTFIX_PRIMARY_ESZIP_STAT_REFUSED
           fi
-          if ! offline_bytes="$(stat -c %s -- "$offline_eszip")"; then
-            refuse G12_STAGING_CMS_PUBLIC_HOTFIX_OFFLINE_ESZIP_STAT_REFUSED
+          if ! rebuild_bytes="$(stat -c %s -- "$rebuild_eszip")"; then
+            refuse G12_STAGING_CMS_PUBLIC_HOTFIX_REBUILD_ESZIP_STAT_REFUSED
           fi
-          if ! online_attested_bytes="$(attested_bytes "$online_attestation")"; then
-            refuse G12_STAGING_CMS_PUBLIC_HOTFIX_ONLINE_ESZIP_ATTESTATION_REFUSED
+          if ! primary_attested_bytes="$(attested_bytes "$primary_attestation")"; then
+            refuse G12_STAGING_CMS_PUBLIC_HOTFIX_PRIMARY_ESZIP_ATTESTATION_REFUSED
           fi
-          if ! offline_attested_bytes="$(attested_bytes "$offline_attestation")"; then
-            refuse G12_STAGING_CMS_PUBLIC_HOTFIX_OFFLINE_ESZIP_ATTESTATION_REFUSED
+          if ! rebuild_attested_bytes="$(attested_bytes "$rebuild_attestation")"; then
+            refuse G12_STAGING_CMS_PUBLIC_HOTFIX_REBUILD_ESZIP_ATTESTATION_REFUSED
           fi
-          test "$online_bytes" = "$online_attested_bytes" || \
-            refuse G12_STAGING_CMS_PUBLIC_HOTFIX_ONLINE_ESZIP_SIZE_REFUSED
-          test "$offline_bytes" = "$offline_attested_bytes" || \
-            refuse G12_STAGING_CMS_PUBLIC_HOTFIX_OFFLINE_ESZIP_SIZE_REFUSED
-          test "$online_bytes" = "$offline_bytes" || \
+          test "$primary_bytes" = "$primary_attested_bytes" || \
+            refuse G12_STAGING_CMS_PUBLIC_HOTFIX_PRIMARY_ESZIP_SIZE_REFUSED
+          test "$rebuild_bytes" = "$rebuild_attested_bytes" || \
+            refuse G12_STAGING_CMS_PUBLIC_HOTFIX_REBUILD_ESZIP_SIZE_REFUSED
+          test "$primary_bytes" = "$rebuild_bytes" || \
             refuse G12_STAGING_CMS_PUBLIC_HOTFIX_REPRODUCIBLE_ESZIP_SIZE_REFUSED
-          printf '{"event":"g12.staging.cms_public_hotfix.raw_eszip_boundary","onlineRawEszipBytes":%s,"offlineRawEszipBytes":%s,"maximumRawEszipBytes":%s}\n' \
-            "$online_bytes" "$offline_bytes" "$maximum_raw_eszip_bytes"
-          test "$online_bytes" -le "$maximum_raw_eszip_bytes" || \
+          printf '{"event":"g12.staging.cms_public_hotfix.raw_eszip_boundary","primaryRawEszipBytes":%s,"rebuildRawEszipBytes":%s,"maximumRawEszipBytes":%s}\n' \
+            "$primary_bytes" "$rebuild_bytes" "$maximum_raw_eszip_bytes"
+          test "$primary_bytes" -le "$maximum_raw_eszip_bytes" || \
             refuse G12_STAGING_CMS_PUBLIC_HOTFIX_RAW_ESZIP_SIZE_REFUSED
+      - name: Cold-boot the exact Docker smoke candidate without external egress
+        run: >-
+          sh control/scripts/ev2/phase12/staging-cms-public-hotfix-boot-smoke.sh
+          "$RUNNER_TEMP/g12-smoke-primary/output.eszip"
       - name: Seal the byte-identical Docker smoke builds
         working-directory: control
         run: >-
           node scripts/ev2/phase12/staging-cms-public-hotfix.mjs seal-candidate
           --bundle-input ../bundle-input
-          --online "$RUNNER_TEMP/g12-smoke-online"
-          --offline "$RUNNER_TEMP/g12-smoke-offline"
+          --primary "$RUNNER_TEMP/g12-smoke-primary"
+          --rebuild "$RUNNER_TEMP/g12-smoke-rebuild"
           --output ../candidate-smoke-sealed
 
   database:

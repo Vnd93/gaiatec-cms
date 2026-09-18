@@ -23,14 +23,16 @@ const ciWorkflowPath = new URL("../../../.github/workflows/ci.yml", import.meta.
 const runnerPath = new URL("./staging-cms-public-hotfix.mjs", import.meta.url);
 const libraryPath = new URL("./staging-cms-public-hotfix-lib.mjs", import.meta.url);
 const builderPath = new URL("./staging-cms-public-hotfix-bundle.sh", import.meta.url);
+const bootSmokePath = new URL("./staging-cms-public-hotfix-boot-smoke.sh", import.meta.url);
 
-const [mainWorkflow, watchdogWorkflow, ciWorkflow, runner, library, builder] = await Promise.all([
+const [mainWorkflow, watchdogWorkflow, ciWorkflow, runner, library, builder, bootSmoke] = await Promise.all([
   readFile(mainWorkflowPath, "utf8"),
   readFile(watchdogWorkflowPath, "utf8"),
   readFile(ciWorkflowPath, "utf8"),
   readFile(runnerPath, "utf8"),
   readFile(libraryPath, "utf8"),
   readFile(builderPath, "utf8"),
+  readFile(bootSmokePath, "utf8"),
 ]);
 
 function stepBody(workflow, name) {
@@ -109,9 +111,9 @@ test("manual watchdog recovery is exact, CI-bound, rollback-only and uses fixed 
     'test "$GITHUB_TRIGGERING_ACTOR" = Vnd93',
     'test "$GITHUB_REF" = refs/heads/main',
     "grep -E '^[1-9][0-9]*$'",
-    'test "$PARENT_RUN_ID" = 35295119905',
+    'test "$PARENT_RUN_ID" = 35302861714',
     'test "$PARENT_RUN_ATTEMPT" = 1',
-    'test "$PARENT_CONTROL_SHA" = 33a626ca0ef17c96686c8bbea9a71b326724ec0c',
+    'test "$PARENT_CONTROL_SHA" = 351e0d3f8ece51db30abe000e9b562ec11ae1006',
     'expected="RECOVER_STAGING_CMS_PUBLIC_PARENT_RUN_${PARENT_RUN_ID}',
     'test "$AUTHORIZATION" = "$expected"',
   ]);
@@ -246,7 +248,7 @@ test("promotion control CI and recovered baseline are verified before every stag
   assert.match(recoveredGate, /--recovered-terminal \.\.\/trusted-recovery-terminal/);
   assert.match(recoveredGate, /--recovered-receipt \.\.\/trusted-recovery-receipt/);
   assert.match(recoveredGate, /RECOVERY_STATE_HMAC_KEY: \$\{\{ secrets\.EVIDENCE_SALT \}\}/);
-  for (const token of ['artifact-ids: "10529465038"', 'artifact-ids: "10528643032"', 'run-id: "35298567582"'])
+  for (const token of ['artifact-ids: "10529724829"', 'artifact-ids: "10530705305"', 'run-id: "35303083920"'])
     assert.match(mainWorkflow, new RegExp(token.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   const firstMutation = mainWorkflow.indexOf("staging-cms-public-hotfix.mjs apply-candidate");
   assert.ok(firstMutation > 0);
@@ -260,8 +262,8 @@ test("promotion control CI and recovered baseline are verified before every stag
 
 test("every hardened hotfix container runs as the host runner identity", () => {
   for (const name of [
-    "Build once online with the immutable helper and frozen input",
-    "Rebuild offline with Docker networking disabled",
+    "Build the primary candidate online with canonical JSR identities",
+    "Rebuild independently online with canonical JSR identities",
   ]) {
     const step = stepBody(mainWorkflow, name);
     assert.match(step, /--user "\$\(id -u\):\$\(id -g\)"/);
@@ -368,7 +370,7 @@ test("the immutable builder reports every preflight and runtime boundary failure
   assert.match(builder, /xargs -0 -r sha256sum < "\$\{unbundled_files_sorted\}"/);
   assert.match(builder, /xargs -0 -r -n 1 wc -c < "\$\{unbundled_files_sorted\}"/);
   assert.equal((builder.match(/cd "\$\{unbundled\}" \|\| exit 1/g) ?? []).length, 3);
-  assert.match(builder, /require_equal "\$\{JSR_URL:-\}" "file:\/\/\/workspace\/\.g12-jsr\/"/);
+  assert.match(builder, /require_equal "\$\{JSR_URL:-\}" "https:\/\/jsr\.io\/"/);
   assert.match(builder, /find \. -type f[\s\S]*\.g12-mirror-manifest\.json[\s\S]*-print0/);
   assert.match(builder, /xargs -0 -r sha256sum --text < "\$\{mirror_files_sorted\}"/);
   assert.match(builder, /cmp -s "\$\{mirror_files_actual\}" "\$\{jsr_mirror_files_manifest\}"/);
@@ -569,15 +571,15 @@ test("both candidate workflows propagate the exact projected lock evidence into 
     [
       mainWorkflow,
       [
-        "Build once online with the immutable helper and frozen input",
-        "Rebuild offline with Docker networking disabled",
+        "Build the primary candidate online with canonical JSR identities",
+        "Rebuild independently online with canonical JSR identities",
       ],
     ],
     [
       ciWorkflow,
       [
-        "Exercise the hardened online Docker bundle boundary",
-        "Exercise the hardened offline Docker rebuild boundary",
+        "Build the primary Docker candidate with canonical JSR identities",
+        "Rebuild independently with a fresh online cache",
       ],
     ],
   ]) {
@@ -625,23 +627,23 @@ test("CI executes the real hardened Docker bundle twice and seals the result", (
   assertOrdered(job, [
     "Prepare the production-mode candidate input for the Docker smoke",
     "Verify and pull the immutable runtime for the Docker smoke",
-    "Exercise the hardened online Docker bundle boundary",
-    "Exercise the hardened offline Docker rebuild boundary",
+    "Build the primary Docker candidate with canonical JSR identities",
+    "Rebuild independently with a fresh online cache",
     "Verify and report the bounded raw ESZIP sizes",
+    "Cold-boot the exact Docker smoke candidate without external egress",
     "Seal the byte-identical Docker smoke builds",
   ]);
   assert.equal((job.match(/--user "\$\(id -u\):\$\(id -g\)"/g) ?? []).length, 2);
   assert.equal((job.match(/--cap-drop ALL --security-opt no-new-privileges/g) ?? []).length, 2);
   assert.equal((job.match(/--env HOME=\/tmp --env DENO_DIR=\/deno-cache/g) ?? []).length, 2);
-  assert.equal((job.match(/--env JSR_URL=file:\/\/\/workspace\/\.g12-jsr\//g) ?? []).length, 2);
-  assert.match(job, /--network bridge/);
-  assert.match(job, /--network none/);
+  assert.equal((job.match(/--env JSR_URL=https:\/\/jsr\.io\//g) ?? []).length, 2);
+  assert.equal((job.match(/--network bridge/g) ?? []).length, 2);
   assert.match(job, /staging-cms-public-hotfix\.mjs seal-candidate/);
   assert.doesNotMatch(job, /\$\{\{\s*secrets\.|environment:/);
 
   for (const [name, network, mode] of [
-    ["Exercise the hardened online Docker bundle boundary", "bridge", "online default"],
-    ["Exercise the hardened offline Docker rebuild boundary", "none", "offline none"],
+    ["Build the primary Docker candidate with canonical JSR identities", "bridge", "online-primary default"],
+    ["Rebuild independently with a fresh online cache", "bridge", "online-rebuild default"],
   ]) {
     const step = stepBody(ciWorkflow, name);
     assert.match(step, /install -d -m 700/);
@@ -667,60 +669,79 @@ test("both candidate paths prove and report the exact bounded raw ESZIP size bef
     STAGING_CMS_PUBLIC_HOTFIX.maximumWireBundleBytes < STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes,
   );
   for (const [workflow, prefix, sealName] of [
-    [mainWorkflow, "g12", "Seal only byte-identical online and network-disabled builds"],
+    [mainWorkflow, "g12", "Seal only byte-identical independent online builds"],
     [ciWorkflow, "g12-smoke", "Seal the byte-identical Docker smoke builds"],
   ]) {
     assertOrdered(workflow, ["Verify and report the bounded raw ESZIP sizes", sealName]);
     const step = stepBody(workflow, "Verify and report the bounded raw ESZIP sizes");
     assert.match(step, /maximum_raw_eszip_bytes=67108864/);
     assert.doesNotMatch(step, /maximum_raw_eszip_bytes=134217728/);
-    assert.match(step, new RegExp(`online_eszip="\\$RUNNER_TEMP/${prefix}-online/output\\.eszip"`));
-    assert.match(step, new RegExp(`offline_eszip="\\$RUNNER_TEMP/${prefix}-offline/output\\.eszip"`));
-    assert.match(step, /stat -c %s -- "\$online_eszip"/);
-    assert.match(step, /stat -c %s -- "\$offline_eszip"/);
+    assert.match(step, new RegExp(`primary_eszip="\\$RUNNER_TEMP/${prefix}-primary/output\\.eszip"`));
+    assert.match(step, new RegExp(`rebuild_eszip="\\$RUNNER_TEMP/${prefix}-rebuild/output\\.eszip"`));
+    assert.match(step, /stat -c %s -- "\$primary_eszip"/);
+    assert.match(step, /stat -c %s -- "\$rebuild_eszip"/);
     assert.match(step, /\$1 == "RAW_ESZIP_BYTES" \{ count \+= 1; value = \$2 \}/);
-    assert.match(step, /test "\$online_bytes" = "\$online_attested_bytes"/);
-    assert.match(step, /test "\$offline_bytes" = "\$offline_attested_bytes"/);
-    assert.match(step, /test "\$online_bytes" = "\$offline_bytes"/);
+    assert.match(step, /test "\$primary_bytes" = "\$primary_attested_bytes"/);
+    assert.match(step, /test "\$rebuild_bytes" = "\$rebuild_attested_bytes"/);
+    assert.match(step, /test "\$primary_bytes" = "\$rebuild_bytes"/);
     assert.match(step, /g12\.staging\.cms_public_hotfix\.raw_eszip_boundary/);
     assertOrdered(step, [
       "g12.staging.cms_public_hotfix.raw_eszip_boundary",
-      'test "$online_bytes" -le "$maximum_raw_eszip_bytes"',
+      'test "$primary_bytes" -le "$maximum_raw_eszip_bytes"',
     ]);
     assert.doesNotMatch(step, /\$\{\{\s*secrets\./);
   }
 });
 
-test("offline rebuild copies only npm into a fresh cache and proves JSR never used remote", () => {
+test("independent rebuild uses a fresh cache and canonical portable JSR identities", () => {
   for (const [workflow, name, prefix] of [
-    [mainWorkflow, "Rebuild offline with Docker networking disabled", "g12"],
-    [ciWorkflow, "Exercise the hardened offline Docker rebuild boundary", "g12-smoke"],
+    [mainWorkflow, "Rebuild independently online with canonical JSR identities", "g12"],
+    [ciWorkflow, "Rebuild independently with a fresh online cache", "g12-smoke"],
   ]) {
     const step = stepBody(workflow, name);
     assertOrdered(step, [
-      `install -d -m 700 "$RUNNER_TEMP/${prefix}-offline" "$RUNNER_TEMP/${prefix}-offline-cache"`,
-      `online_remote="$RUNNER_TEMP/${prefix}-online-cache/remote"`,
-      'if ! online_remote_entry="$(find "$online_remote" -mindepth 1 -print -quit)"; then',
-      'test -z "$online_remote_entry"',
-      `source_dir="$RUNNER_TEMP/${prefix}-online-cache/npm"`,
-      'test -d "$source_dir"',
-      'test ! -L "$source_dir"',
-      'if ! source_entry="$(find "$source_dir" -mindepth 1 -maxdepth 1 -print -quit)"; then',
-      'test -n "$source_entry"',
-      `if ! offline_entry="$(find "$RUNNER_TEMP/${prefix}-offline-cache" -mindepth 1 -maxdepth 1 -print -quit)"; then`,
-      'test -z "$offline_entry"',
-      "cp -a",
-      `if ! offline_names="$(find "$RUNNER_TEMP/${prefix}-offline-cache" -mindepth 1 -maxdepth 1 -printf '%f\\n')"; then`,
-      'test "$offline_names" = npm',
+      `install -d -m 700 "$RUNNER_TEMP/${prefix}-rebuild" "$RUNNER_TEMP/${prefix}-rebuild-cache"`,
       "docker run",
     ]);
-    assert.match(step, new RegExp(`cp -a -- "\\$source_dir" "\\$RUNNER_TEMP/${prefix}-offline-cache/"`));
-    assert.doesNotMatch(step, /for cache_dir|\b(?:registries|gen)\b/);
-    assert.doesNotMatch(step, /online-cache\/\."/);
-    assert.doesNotMatch(step, /test[^\n]*\$\(find/);
-    assert.match(step, /--network none --read-only/);
-    assert.match(step, /--env JSR_URL=file:\/\/\/workspace\/\.g12-jsr\//);
+    assert.doesNotMatch(step, /cp -a|primary-cache/);
+    assert.match(step, /--network bridge --read-only/);
+    assert.match(step, /--env JSR_URL=https:\/\/jsr\.io\//);
+    assert.match(step, /\/g12-builder\.sh online-rebuild default/);
   }
+});
+
+test("the exact ESZIP cold-boots on the pinned runtime before sealing and mutation", () => {
+  assert.match(bootSmoke, /--network none/);
+  assert.match(bootSmoke, /--read-only/);
+  assert.match(bootSmoke, /--cap-drop ALL/);
+  assert.match(bootSmoke, /--security-opt no-new-privileges/);
+  assert.match(bootSmoke, /docker exec/);
+  assert.match(bootSmoke, /timeout 3 \/bin\/bash -c/);
+  assert.match(bootSmoke, /\/dev\/tcp\/127\.0\.0\.1\/9000/);
+  assert.match(bootSmoke, /edge-runtime:v1\.74\.3@sha256:c5240500/);
+  assert.match(bootSmoke, /start[\s\S]*--main-service \/candidate\/output\.eszip/);
+  assert.match(bootSmoke, /--main-entrypoint workspace\/supabase\/functions\/cms-public\/index\.ts/);
+  assert.match(bootSmoke, /OPTIONS \/ HTTP\/1\.1/);
+  assert.match(bootSmoke, /'HTTP\/1\.1 200 '/);
+  assert.match(bootSmoke, /G12_STAGING_CMS_PUBLIC_HOTFIX_BOOT_REQUEST_REFUSED/);
+  assert.doesNotMatch(bootSmoke, /SUPABASE_|TOKEN|PASSWORD|SECRET/);
+
+  assertOrdered(mainWorkflow, [
+    "Verify and report the bounded raw ESZIP sizes",
+    "Cold-boot the exact byte-identical candidate without external egress",
+    "Seal only byte-identical independent online builds",
+  ]);
+  assertOrdered(ciWorkflow, [
+    "Verify and report the bounded raw ESZIP sizes",
+    "Cold-boot the exact Docker smoke candidate without external egress",
+    "Seal the byte-identical Docker smoke builds",
+  ]);
+  assertOrdered(mainWorkflow, [
+    "Bind the runtime reparse to both sealed build manifests",
+    "Cold-boot the round-tripped candidate before any mutation",
+    "Capture exact live baseline and candidate bytes before mutation",
+    "Apply only the exact candidate bundle once",
+  ]);
 });
 
 test("watchdog snapshots M/C/R before artifacts and treats an empty snapshot as a no-op", () => {

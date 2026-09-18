@@ -6,7 +6,7 @@ umask 077
 mode="${1:-}"
 network="${2:-}"
 case "${mode}:${network}" in
-  online:default|offline:none) ;;
+  online-primary:default|online-rebuild:default) ;;
   *) echo "G12_STAGING_CMS_PUBLIC_HOTFIX_BUILD_MODE_REFUSED" >&2; exit 64 ;;
 esac
 
@@ -101,7 +101,7 @@ require_nonempty "${G12_INPUT_TREE_SHA256:-}" \
   G12_STAGING_CMS_PUBLIC_HOTFIX_INPUT_TREE_MISSING
 require_nonempty "${G12_INPUT_FILE_COUNT:-}" \
   G12_STAGING_CMS_PUBLIC_HOTFIX_INPUT_FILE_COUNT_MISSING
-require_equal "${JSR_URL:-}" "file:///workspace/.g12-jsr/" \
+require_equal "${JSR_URL:-}" "https://jsr.io/" \
   G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_URL_REFUSED
 require_nonempty "${G12_JSR_MIRROR_MANIFEST_SHA256:-}" \
   G12_STAGING_CMS_PUBLIC_HOTFIX_JSR_MIRROR_MANIFEST_SHA256_MISSING
@@ -323,7 +323,7 @@ bundle_command_sha=$(printf '%s' "${bundle_command}" | sha256sum | awk '{print $
 unbundle_command_sha=$(printf '%s' "${unbundle_command}" | sha256sum | awk '{print $1}')
 
 {
-  printf '%s\n' 'SCHEMA_VERSION=1'
+  printf '%s\n' 'SCHEMA_VERSION=2'
   printf '%s\n' 'EVENT=g12.staging.cms_public_hotfix.bundle_attestation'
   printf 'MODE=%s\n' "${mode}"
   printf 'NETWORK=%s\n' "${network}"

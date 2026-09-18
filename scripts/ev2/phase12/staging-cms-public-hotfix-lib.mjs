@@ -20,9 +20,9 @@ export const STAGING_CMS_PUBLIC_HOTFIX = Object.freeze({
   watchdogName: "Promote staging cms-public hotfix watchdog",
   watchdogPath: ".github/workflows/promote-staging-cms-public-hotfix-watchdog.yml",
   recoveryIncident: Object.freeze({
-    parentRunId: "35295119905",
+    parentRunId: "35302861714",
     parentRunAttempt: 1,
-    parentControlSha: "33a626ca0ef17c96686c8bbea9a71b326724ec0c",
+    parentControlSha: "351e0d3f8ece51db30abe000e9b562ec11ae1006",
     ciWorkflowName: "CI",
     ciWorkflowPath: ".github/workflows/ci.yml",
     ciJobs: Object.freeze(["browser", "database", "hotfix-bundle-smoke", "quality"]),
@@ -51,7 +51,7 @@ export const STAGING_CMS_PUBLIC_HOTFIX = Object.freeze({
     "edge-runtime bundle --entrypoint /workspace/supabase/functions/cms-public/index.ts --output /output/output.eszip --checksum sha256",
   unbundleCommand:
     "edge-runtime unbundle --eszip /output/output.eszip --output /output/unbundled/supabase/functions/cms-public",
-  builderScriptSha256: "d52af72629242ea92f7323bbb9d14183206dde42ff99784ab9dc950690543bff",
+  builderScriptSha256: "0764226766771f29e664c0a4f1842f2e266c51bcf6e237f2867d4ea627454088",
   maximumArtifactFileBytes: 2 * 1024 * 1024,
   maximumArtifactTreeBytes: 64 * 1024 * 1024,
   maximumArtifactFileCount: 65_536,
@@ -68,6 +68,7 @@ export const STAGING_CMS_PUBLIC_HOTFIX = Object.freeze({
   trustedBaseline: Object.freeze({
     runId: "34908383307",
     runAttempt: 1,
+    event: "workflow_dispatch",
     artifactId: "10373653337",
     artifactName: "staging-terminal-34908383307-1",
     artifactDigest: "sha256:7899884c96e7a8bb2048d00ef5dd47b5c1c151e2f439768addd0ce4ae3d0b8cb",
@@ -88,21 +89,7 @@ export const STAGING_CMS_PUBLIC_HOTFIX = Object.freeze({
     importMapPath:
       "file:///home/runner/work/gaiatec-cms/gaiatec-cms/candidate-recovery/supabase/functions/import_map.json",
   }),
-  recoveredBaseline: Object.freeze({
-    runId: "35298567582",
-    runAttempt: 1,
-    controlSha: "6fc1577bc5a7de23fc0ee5e6802b0bfd29ba1303",
-    workflowName: "Promote staging cms-public hotfix watchdog",
-    workflowPath: ".github/workflows/promote-staging-cms-public-hotfix-watchdog.yml",
-    jobName: "recover-incomplete-hotfix",
-    terminalArtifactId: "10529465038",
-    terminalArtifactName: "staging-cms-public-hotfix-recovered-35298567582-1-receipt-10528643032",
-    terminalArtifactDigest: "sha256:dece0085b04cb6acc028163ec0bc164cd7385b1657a053a2e4946b52bbb660c2",
-    receiptArtifactId: "10528643032",
-    receiptArtifactName: "staging-cms-public-hotfix-rollback-receipt-35298567582-1",
-    receiptArtifactDigest: "sha256:023d87ad4465601f4150dc80b1ba6e064d67ab52eee3be9ab72f1815ec38a637",
-  }),
-  baselineFunction: Object.freeze({
+  recoverySourceBaselineFunction: Object.freeze({
     id: "9da3b9be-6ac5-4393-aa57-b550fe549e7f",
     name: "cms-public",
     slug: "cms-public",
@@ -110,6 +97,37 @@ export const STAGING_CMS_PUBLIC_HOTFIX = Object.freeze({
     bundleSha256: "1960d5302b5aede36aaed5fb309f0645c2334d687cdf6e76760936257a6049f7",
     createdAt: "2026-08-28T22:17:33.542Z",
     updatedAt: "2026-09-18T02:15:50.806Z",
+    status: "ACTIVE",
+    verifyJwt: false,
+    importMap: true,
+    entrypointPath:
+      "file:///home/runner/work/gaiatec-cms/gaiatec-cms/candidate-recovery/supabase/functions/cms-public/index.ts",
+    importMapPath:
+      "file:///home/runner/work/gaiatec-cms/gaiatec-cms/candidate-recovery/supabase/functions/import_map.json",
+  }),
+  recoveredBaseline: Object.freeze({
+    runId: "35303083920",
+    runAttempt: 1,
+    controlSha: "351e0d3f8ece51db30abe000e9b562ec11ae1006",
+    workflowName: "Promote staging cms-public hotfix watchdog",
+    workflowPath: ".github/workflows/promote-staging-cms-public-hotfix-watchdog.yml",
+    event: "workflow_run",
+    jobName: "recover-incomplete-hotfix",
+    terminalArtifactId: "10529724829",
+    terminalArtifactName: "staging-cms-public-hotfix-recovered-35303083920-1-receipt-10530705305",
+    terminalArtifactDigest: "sha256:88e714ce92650f650d83bf5815586e2f427e7164c8c3bee176fc87dc450d353e",
+    receiptArtifactId: "10530705305",
+    receiptArtifactName: "staging-cms-public-hotfix-rollback-receipt-35303083920-1",
+    receiptArtifactDigest: "sha256:587c7fa3e472159b49e4ddc0c3a70d52cf8bf3055064702f411b65175c3221f3",
+  }),
+  baselineFunction: Object.freeze({
+    id: "9da3b9be-6ac5-4393-aa57-b550fe549e7f",
+    name: "cms-public",
+    slug: "cms-public",
+    version: 287,
+    bundleSha256: "1960d5302b5aede36aaed5fb309f0645c2334d687cdf6e76760936257a6049f7",
+    createdAt: "2026-08-28T22:17:33.542Z",
+    updatedAt: "2026-09-18T03:25:09.917Z",
     status: "ACTIVE",
     verifyJwt: false,
     importMap: true,
@@ -615,6 +633,32 @@ export function hasExpectedCandidateEszipStructure(inspection) {
     inspection?.moduleDescriptorsSha256 !== canonicalSha256(descriptors)
   )
     return false;
+  const descriptorBySpecifier = new Map(descriptors.map((descriptor) => [descriptor?.specifier, descriptor]));
+  const expectedJsrRedirects = new Map([
+    [
+      "jsr:@supabase/functions-js/edge-runtime.d.ts",
+      "https://jsr.io/@supabase/functions-js/2.112.4/src/edge-runtime.d.ts",
+    ],
+    ["jsr:@supabase/supabase-js@2", "https://jsr.io/@supabase/supabase-js/2.112.4/src/index.ts"],
+  ]);
+  const jsrRedirects = descriptors.filter(
+    (descriptor) => descriptor?.entryKind === 1 && descriptor.specifier.startsWith("jsr:"),
+  );
+  if (
+    descriptors.some(
+      (descriptor) =>
+        descriptor?.specifier?.includes(".g12-jsr") ||
+        (descriptor?.entryKind === 1 &&
+          (descriptor.target.startsWith("file:") || descriptor.target.includes(".g12-jsr"))),
+    ) ||
+    jsrRedirects.length !== expectedJsrRedirects.size ||
+    jsrRedirects.some(
+      (descriptor) =>
+        expectedJsrRedirects.get(descriptor.specifier) !== descriptor.target ||
+        descriptorBySpecifier.get(descriptor.target)?.entryKind !== 0,
+    )
+  )
+    return false;
   return (
     descriptors.some((descriptor) =>
       sameCanonical(descriptor, {
@@ -641,7 +685,7 @@ export function validateCandidateBuildProvenance(provenance, { rawEszip } = {}) 
   const builder = provenance?.builder;
   const inspection = provenance?.rawEszip;
   if (
-    provenance?.schemaVersion !== 1 ||
+    provenance?.schemaVersion !== 2 ||
     provenance?.event !== "g12.staging.cms_public_hotfix.bundle_provenance" ||
     provenance?.reproducible !== true ||
     !SHA256.test(input?.manifestSha256 ?? "") ||
@@ -685,10 +729,10 @@ export function validateCandidateBuildProvenance(provenance, { rawEszip } = {}) 
   )
     violations.push("candidate_provenance_identity_invalid");
   const builds = [
-    ["online", "default", provenance?.builds?.online],
-    ["offline", "none", provenance?.builds?.offline],
+    ["primary", "online-primary", "default", provenance?.builds?.primary],
+    ["rebuild", "online-rebuild", "default", provenance?.builds?.rebuild],
   ];
-  for (const [mode, network, build] of builds) {
+  for (const [key, mode, network, build] of builds) {
     const nonEmptyFileCount =
       Number.isSafeInteger(build?.unbundledFileCount) &&
       Number.isSafeInteger(build?.unbundledZeroByteFileCount)
@@ -697,9 +741,9 @@ export function validateCandidateBuildProvenance(provenance, { rawEszip } = {}) 
     if (
       build?.mode !== mode ||
       build?.network !== network ||
-      build?.attestationFile !== `${mode}-build-attestation.env` ||
+      build?.attestationFile !== `${key}-build-attestation.env` ||
       !SHA256.test(build?.attestationSha256 ?? "") ||
-      build?.unbundledFilesFile !== `${mode}-unbundled-files.sha256` ||
+      build?.unbundledFilesFile !== `${key}-unbundled-files.sha256` ||
       !SHA256.test(build?.unbundledFilesSha256 ?? "") ||
       !Number.isSafeInteger(build?.unbundledFileCount) ||
       build.unbundledFileCount < 1 ||
@@ -724,18 +768,18 @@ export function validateCandidateBuildProvenance(provenance, { rawEszip } = {}) 
       build?.rawEszipSha256 !== inspection?.sha256 ||
       build?.rawEszipBytes !== inspection?.bytes
     )
-      violations.push(`candidate_provenance_${mode}_invalid`);
+      violations.push(`candidate_provenance_${key}_invalid`);
   }
   if (
-    provenance?.builds?.online?.rawEszipSha256 !== provenance?.builds?.offline?.rawEszipSha256 ||
-    provenance?.builds?.online?.rawEszipBytes !== provenance?.builds?.offline?.rawEszipBytes ||
-    provenance?.builds?.online?.unbundledFilesSha256 !== provenance?.builds?.offline?.unbundledFilesSha256 ||
-    provenance?.builds?.online?.unbundledFileCount !== provenance?.builds?.offline?.unbundledFileCount ||
-    provenance?.builds?.online?.unbundledTotalBytes !== provenance?.builds?.offline?.unbundledTotalBytes ||
-    provenance?.builds?.online?.unbundledZeroByteFileCount !==
-      provenance?.builds?.offline?.unbundledZeroByteFileCount ||
-    provenance?.builds?.online?.unbundledLargestFileBytes !==
-      provenance?.builds?.offline?.unbundledLargestFileBytes
+    provenance?.builds?.primary?.rawEszipSha256 !== provenance?.builds?.rebuild?.rawEszipSha256 ||
+    provenance?.builds?.primary?.rawEszipBytes !== provenance?.builds?.rebuild?.rawEszipBytes ||
+    provenance?.builds?.primary?.unbundledFilesSha256 !== provenance?.builds?.rebuild?.unbundledFilesSha256 ||
+    provenance?.builds?.primary?.unbundledFileCount !== provenance?.builds?.rebuild?.unbundledFileCount ||
+    provenance?.builds?.primary?.unbundledTotalBytes !== provenance?.builds?.rebuild?.unbundledTotalBytes ||
+    provenance?.builds?.primary?.unbundledZeroByteFileCount !==
+      provenance?.builds?.rebuild?.unbundledZeroByteFileCount ||
+    provenance?.builds?.primary?.unbundledLargestFileBytes !==
+      provenance?.builds?.rebuild?.unbundledLargestFileBytes
   )
     violations.push("candidate_provenance_reproducibility_invalid");
   if (rawEszip !== undefined) {
@@ -791,15 +835,18 @@ export function validateCandidateBuildEvidenceFiles(provenance, evidence) {
     "UNBUNDLED_TOTAL_BYTES",
     "UNBUNDLED_ZERO_BYTE_FILE_COUNT",
   ].sort();
-  for (const mode of ["online", "offline"]) {
-    const build = provenance?.builds?.[mode];
+  for (const [key, mode] of [
+    ["primary", "online-primary"],
+    ["rebuild", "online-rebuild"],
+  ]) {
+    const build = provenance?.builds?.[key];
     let attestation;
     let unbundledFiles;
     try {
-      attestation = Buffer.from(evidence?.[mode]?.attestation);
-      unbundledFiles = Buffer.from(evidence?.[mode]?.unbundledFiles);
+      attestation = Buffer.from(evidence?.[key]?.attestation);
+      unbundledFiles = Buffer.from(evidence?.[key]?.unbundledFiles);
     } catch {
-      violations.push(`candidate_evidence_${mode}_missing`);
+      violations.push(`candidate_evidence_${key}_missing`);
       continue;
     }
     let attestationValues;
@@ -815,7 +862,7 @@ export function validateCandidateBuildEvidenceFiles(provenance, evidence) {
     } catch {
       attestationValues = null;
     }
-    const network = mode === "online" ? "default" : "none";
+    const network = "default";
     const expectedAttestation = {
       BUNDLE_COMMAND_SHA256: provenance?.builder?.bundleCommandSha256,
       BUILDER_SCRIPT_SHA256: provenance?.builder?.builderScriptSha256,
@@ -846,7 +893,7 @@ export function validateCandidateBuildEvidenceFiles(provenance, evidence) {
       PLATFORM: provenance?.builder?.platform,
       RAW_ESZIP_BYTES: String(build?.rawEszipBytes),
       RAW_ESZIP_SHA256: build?.rawEszipSha256,
-      SCHEMA_VERSION: "1",
+      SCHEMA_VERSION: "2",
       SOURCE_SHA256: STAGING_CMS_PUBLIC_HOTFIX.candidateSourceSha256,
       SOURCE_DENO_LOCK_SHA256: provenance?.input?.sourceDenoLockSha256,
       UNBUNDLED_COMMAND_SHA256: provenance?.builder?.unbundleCommandSha256,
@@ -865,7 +912,7 @@ export function validateCandidateBuildEvidenceFiles(provenance, evidence) {
       JSON.stringify(Object.keys(attestationValues).sort()) !== JSON.stringify(expectedAttestationKeys) ||
       !sameCanonical(attestationValues, expectedAttestation)
     )
-      violations.push(`candidate_evidence_${mode}_attestation_invalid`);
+      violations.push(`candidate_evidence_${key}_attestation_invalid`);
     let manifestLines = [];
     let manifestStructureValid = true;
     try {
@@ -896,7 +943,7 @@ export function validateCandidateBuildEvidenceFiles(provenance, evidence) {
       manifestLines.length > STAGING_CMS_PUBLIC_HOTFIX.maximumArtifactFileCount ||
       !manifestStructureValid
     )
-      violations.push(`candidate_evidence_${mode}_unbundled_invalid`);
+      violations.push(`candidate_evidence_${key}_unbundled_invalid`);
   }
   return { valid: violations.length === 0, violations: [...new Set(violations)] };
 }
@@ -1247,7 +1294,7 @@ export function validateTrustedBaselineEvidence({ run, jobs, artifact, probe, in
     Number(run?.run_attempt) !== expected.runAttempt ||
     run?.name !== "Deploy staging" ||
     run?.path !== ".github/workflows/deploy-staging.yml" ||
-    run?.event !== "workflow_dispatch" ||
+    run?.event !== expected.event ||
     run?.status !== "completed" ||
     run?.conclusion !== "failure" ||
     run?.head_branch !== "main" ||
@@ -1334,13 +1381,14 @@ export function validateRecoveredBaselineEvidence({
   const expected = STAGING_CMS_PUBLIC_HOTFIX.recoveredBaseline;
   const currentBaseline = STAGING_CMS_PUBLIC_HOTFIX.baselineFunction;
   const sourceBaseline = STAGING_CMS_PUBLIC_HOTFIX.sourceBaselineFunction;
+  const recoverySourceBaseline = STAGING_CMS_PUBLIC_HOTFIX.recoverySourceBaselineFunction;
   const violations = [];
   if (
     String(run?.id ?? "") !== expected.runId ||
     Number(run?.run_attempt) !== expected.runAttempt ||
     run?.name !== expected.workflowName ||
     run?.path !== expected.workflowPath ||
-    run?.event !== "workflow_dispatch" ||
+    run?.event !== expected.event ||
     run?.status !== "completed" ||
     run?.conclusion !== "success" ||
     run?.head_branch !== "main" ||
@@ -1412,6 +1460,14 @@ export function validateRecoveredBaselineEvidence({
     !sameFunctionTuple(source.target, sourceBaseline)
   )
     violations.push("recovered_source_snapshot_invalid");
+  const recoverySourceRecords = source.records.map((record) =>
+    record.name === STAGING_CMS_PUBLIC_HOTFIX.functionSlug
+      ? normalizeFunctionTuple(recoverySourceBaseline)
+      : record,
+  );
+  const recoverySource = functionInventorySnapshot(recoverySourceRecords);
+  if (!recoverySource.valid || !sameFunctionTuple(recoverySource.target, recoverySourceBaseline))
+    violations.push("recovered_transition_source_invalid");
   const recoveredRecords = source.records.map((record) =>
     record.name === STAGING_CMS_PUBLIC_HOTFIX.functionSlug ? normalizeFunctionTuple(currentBaseline) : record,
   );
@@ -1429,7 +1485,7 @@ export function validateRecoveredBaselineEvidence({
   const receiptResult = verifyHotfixReceipt(receipt, key, {
     action: "rollback",
     completedBy: executor,
-    stateBaselineFunction: sourceBaseline,
+    stateBaselineFunction: recoverySourceBaseline,
   });
   violations.push(...receiptResult.violations.map((item) => `recovered_${item}`));
   const state = receiptResult.receipt?.state;
@@ -1440,6 +1496,8 @@ export function validateRecoveredBaselineEvidence({
       STAGING_CMS_PUBLIC_HOTFIX.recoveryIncident.parentRunAttempt ||
     receiptResult.receipt?.workflow?.controlSha !==
       STAGING_CMS_PUBLIC_HOTFIX.recoveryIncident.parentControlSha ||
+    state?.baseline?.inventorySha256 !== recoverySource.inventorySha256 ||
+    state?.baseline?.nonTargetSha256 !== recoverySource.nonTargetSha256 ||
     !sameFunctionTuple(receiptResult.receipt?.after, currentBaseline) ||
     receiptResult.receipt?.nonTargetSha256 !== snapshot.nonTargetSha256
   )
@@ -1491,7 +1549,7 @@ export function validateRecoveredBaselineEvidence({
     violations.push("recovered_terminal_order_invalid");
   const terminalResult = validateHotfixTerminalEvidence(terminal, {
     state,
-    stateBaselineFunction: sourceBaseline,
+    stateBaselineFunction: recoverySourceBaseline,
     outcome: "restored",
     packageManifestSha256: state?.recoveryArtifact?.packageManifestSha256,
     probeSha256: fileDigests?.probe,

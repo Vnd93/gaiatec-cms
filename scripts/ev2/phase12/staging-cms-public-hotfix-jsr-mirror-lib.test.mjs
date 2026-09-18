@@ -136,7 +136,7 @@ test("materializes only the fixed JSR origin and seals the complete verified tre
       assert.equal(options.redirect, "manual");
     }
     assert.equal(mirror.manifest.registryUrl, "https://jsr.io/");
-    assert.equal(mirror.manifest.runtimeUrl, "file:///workspace/.g12-jsr/");
+    assert.equal(mirror.manifest.runtimeUrl, "https://jsr.io/");
     assert.equal(mirror.manifest.packages.length, 2);
     assert.equal(mirror.manifest.fileCount, 6);
     assert.equal(mirror.manifest.treeSha256, mirror.filesManifestSha256);

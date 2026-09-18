@@ -96,6 +96,8 @@ const requiredCspFragments = [
   "https://brasilapi.com.br",
   "https://nominatim.openstreetmap.org",
 ];
+const readinessDiagnostics = [];
+const readinessOrdinals = new Map();
 
 function boundaryHeadersValid(response) {
   const activePolicy = response.headers.get(
@@ -116,24 +118,33 @@ function boundaryHeadersValid(response) {
 
 async function previewReady() {
   const expectations = [
-    { path: "/healthz", status: 200 },
-    { path: "/release-manifest.json", status: 200 },
-    ...routes,
+    { path: "/healthz", status: 200, category: "contract" },
+    { path: "/release-manifest.json", status: 200, category: "contract" },
+    ...routes.map((route) => ({ ...route, category: "route" })),
   ];
   const responses = await Promise.all(
-    expectations.map(async ({ path, status }) => {
-      try {
-        const response = await fetch(`${origin}${path}`, {
-          cache: "no-store",
-          redirect: "manual",
-          signal: AbortSignal.timeout(requestTimeoutMs),
-        });
-        const boundaryValid = response.status === status && boundaryHeadersValid(response);
-        await response.arrayBuffer();
-        return boundaryValid;
-      } catch {
-        return false;
-      }
+    expectations.map(async ({ path, status, category }) => {
+      const ordinalKey = `${category}:${path}`;
+      const ordinal = (readinessOrdinals.get(ordinalKey) ?? 0) + 1;
+      readinessOrdinals.set(ordinalKey, ordinal);
+      const measurement = await observeProbeRequest({
+        route: path,
+        category,
+        ordinal,
+        expectedStatus: status,
+        fetchResponse: () =>
+          fetch(`${origin}${path}`, {
+            cache: "no-store",
+            redirect: "manual",
+            signal: AbortSignal.timeout(requestTimeoutMs),
+          }),
+      });
+      readinessDiagnostics.push(measurement.diagnostic);
+      return (
+        measurement.body !== null &&
+        measurement.response?.status === status &&
+        boundaryHeadersValid(measurement.response)
+      );
     }),
   );
   return responses.every(Boolean);
@@ -145,7 +156,19 @@ for (let attempt = 1; attempt <= readinessAttempts; attempt += 1) {
   if (ready) break;
   if (attempt < readinessAttempts) await new Promise((resolve) => setTimeout(resolve, readinessIntervalMs));
 }
-if (!ready) throw new Error("G12_PROBE_NOT_READY: target did not reach a stable measurable boundary.");
+if (!ready) {
+  const diagnosticReport = buildFailureProbeDiagnostics({
+    violations: ["readiness_not_reached"],
+    candidateSha: expectedSha,
+    environment,
+    probeProfile,
+    diagnostics: readinessDiagnostics,
+  });
+  if (diagnosticsPath && diagnosticReport)
+    await writeFile(diagnosticsPath, `${JSON.stringify(diagnosticReport, null, 2)}\n`, "utf8");
+  if (diagnosticReport) console.error(JSON.stringify(diagnosticReport));
+  throw new Error("G12_PROBE_NOT_READY: target did not reach a stable measurable boundary.");
+}
 
 async function warmRoutes() {
   for (let sample = 0; sample < warmupSamplesPerRoute; sample += 1) {

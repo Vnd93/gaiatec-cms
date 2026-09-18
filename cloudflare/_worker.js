@@ -5,6 +5,9 @@ const STATIC_PUBLIC_ROUTES = [
 
 const CMS_PUBLIC_API = "__CMS_PUBLIC_API__";
 const CMS_PUBLIC_ANON_KEY = "__CMS_PUBLIC_ANON_KEY__";
+const CMS_PUBLIC_TOTAL_TIMEOUT_MS = 5_000;
+const CMS_PUBLIC_ATTEMPT_TIMEOUT_MS = 2_200;
+const CMS_PUBLIC_MAX_ATTEMPTS = 2;
 
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
@@ -328,24 +331,38 @@ async function spaResponse(request, env, status, options = {}) {
   return new Response(html, { status, headers });
 }
 
-async function cmsPublic(params, env = {}) {
+async function cmsPublic(params, env = {}, { retryTransport = false } = {}) {
   const endpoint = env.CMS_PUBLIC_API ?? CMS_PUBLIC_API;
   const anonKey = env.CMS_PUBLIC_ANON_KEY ?? CMS_PUBLIC_ANON_KEY;
   if (endpoint.startsWith("__") || anonKey.startsWith("__")) return null;
   const target = new URL(endpoint);
   for (const [key, value] of Object.entries(params)) target.searchParams.set(key, value);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5_000);
-  try {
-    return await fetch(target, {
-      headers: { apikey: anonKey },
-      signal: controller.signal,
-    });
-  } catch {
-    return new Response(null, { status: 503 });
-  } finally {
-    clearTimeout(timeout);
+
+  // Selected metadata lookups can recover one transient platform stall. Large media/document
+  // responses retain their original single 5 s attempt, and received HTTP failures never retry.
+  const deadline = Date.now() + CMS_PUBLIC_TOTAL_TIMEOUT_MS;
+  const maxAttempts = retryTransport ? CMS_PUBLIC_MAX_ATTEMPTS : 1;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) break;
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(),
+      retryTransport ? Math.min(CMS_PUBLIC_ATTEMPT_TIMEOUT_MS, remainingMs) : remainingMs,
+    );
+    try {
+      return await fetch(target, {
+        headers: { apikey: anonKey },
+        signal: controller.signal,
+      });
+    } catch {
+      // Only transport failures reach this branch. A received 4xx/5xx response returns above and
+      // remains fail-closed; a second transport failure falls through to the synthetic 503.
+    } finally {
+      clearTimeout(timeout);
+    }
   }
+  return new Response(null, { status: 503 });
 }
 
 const PUBLIC_ASSET_BRIDGE_PATH = "/__cms-public-asset";
@@ -746,7 +763,7 @@ async function handleRequest(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
   const stagingHost = url.hostname.endsWith(".pages.dev");
-  const fetchCmsPublic = (params) => cmsPublic(params, env);
+  const fetchCmsPublic = (params, options) => cmsPublic(params, env, options);
   const publicApiEndpoint = env.CMS_PUBLIC_API ?? CMS_PUBLIC_API;
 
   if (path === "/healthz") return healthResponse(request, env);
@@ -932,7 +949,7 @@ async function handleRequest(request, env) {
     return spaResponse(request, env, 200, { noindex: true, privateRoute: true });
   }
 
-  const managed = await fetchCmsPublic({ type: "page-by-path", path });
+  const managed = await fetchCmsPublic({ type: "page-by-path", path }, { retryTransport: true });
   if (managed?.ok) {
     const resolution = await managed.json();
     if (resolution.kind === "page") {

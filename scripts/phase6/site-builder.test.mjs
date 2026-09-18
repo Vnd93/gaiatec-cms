@@ -104,7 +104,11 @@ test("retired routes and scheduled placements are resolved by the public integra
   assert.match(worker, /paginas/);
   assert.match(worker, /site/);
   assert.match(worker, /new AbortController\(\)/);
-  assert.match(worker, /setTimeout\(\(\) => controller\.abort\(\), 5_000\)/);
+  assert.match(worker, /CMS_PUBLIC_TOTAL_TIMEOUT_MS = 5_000/);
+  assert.match(worker, /CMS_PUBLIC_ATTEMPT_TIMEOUT_MS = 2_200/);
+  assert.match(worker, /CMS_PUBLIC_MAX_ATTEMPTS = 2/);
+  assert.match(worker, /Math\.min\(CMS_PUBLIC_ATTEMPT_TIMEOUT_MS, remainingMs\)/);
+  assert.match(worker, /\{ type: "page-by-path", path \}, \{ retryTransport: true \}/);
   assert.match(worker, /signal: controller\.signal/);
   assert.match(worker, /clearTimeout\(timeout\)/);
 });

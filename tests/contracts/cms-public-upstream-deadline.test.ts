@@ -9,9 +9,22 @@ const adminAuth = readFileSync("src/admin/auth/AdminAuthContext.tsx", "utf8");
 
 describe("public upstream deadline", () => {
   it("gives up well before the caller does", () => {
-    // The worker aborts its call to this function at five seconds and synthesises a 503, so a read
-    // that takes longer than that is never useful: the request it answers has already been abandoned.
-    expect(worker).toContain("setTimeout(() => controller.abort(), 5_000)");
+    const callerBudget = Number(
+      /CMS_PUBLIC_TOTAL_TIMEOUT_MS = ([\d_]+);/.exec(worker)?.[1].replace(/_/g, ""),
+    );
+    const callerAttemptBudget = Number(
+      /CMS_PUBLIC_ATTEMPT_TIMEOUT_MS = ([\d_]+);/.exec(worker)?.[1].replace(/_/g, ""),
+    );
+    const callerAttempts = Number(/CMS_PUBLIC_MAX_ATTEMPTS = (\d+);/.exec(worker)?.[1]);
+    // Two transport attempts stay inside the original five-second caller ceiling, including room
+    // for the Worker to synthesize and return its fail-closed response.
+    expect(callerBudget).toBe(5000);
+    expect(callerAttemptBudget * callerAttempts).toBeLessThan(callerBudget);
+    expect(callerBudget - callerAttemptBudget * callerAttempts).toBeGreaterThanOrEqual(500);
+    expect(worker).toContain('fetchCmsPublic({ type: "page-by-path", path }, { retryTransport: true })');
+    expect(worker).toContain(
+      "retryTransport ? Math.min(CMS_PUBLIC_ATTEMPT_TIMEOUT_MS, remainingMs) : remainingMs",
+    );
     expect(fn).toContain("const PUBLIC_UPSTREAM_TIMEOUT_MS = 900;");
     const budget = Number(/PUBLIC_UPSTREAM_TIMEOUT_MS = ([\d_]+);/.exec(fn)?.[1].replace(/_/g, ""));
     // Two attempts have to fit inside the caller's ceiling with room for the rest of the request,

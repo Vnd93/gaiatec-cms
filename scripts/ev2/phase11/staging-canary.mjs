@@ -1109,22 +1109,30 @@ try {
   const adminReadWarmups = adminReadSamples;
   const snapshotWarmupDurations = [];
   const snapshotWarmupRpcDurations = [];
+  const snapshotWarmupRateLimitDurations = [];
+  const snapshotWarmupDbDurations = [];
   const snapshotWarmupWallDurations = [];
   for (let warmup = 0; warmup < adminReadWarmups; warmup += 1) {
     const response = await system(context, operator, "snapshot");
     snapshotWarmupDurations.push(serverTimingDuration(response.headers, "admin-read"));
     snapshotWarmupRpcDurations.push(serverTimingDuration(response.headers, "admin-rpc"));
+    snapshotWarmupRateLimitDurations.push(serverTimingDuration(response.headers, "admin-rate-limit"));
+    snapshotWarmupDbDurations.push(serverTimingDuration(response.headers, "admin-snapshot-db"));
     snapshotWarmupWallDurations.push(response.durationMs);
   }
 
   const snapshotDurations = [];
   const snapshotRpcDurations = [];
+  const snapshotRateLimitDurations = [];
+  const snapshotDbDurations = [];
   const snapshotWallDurations = [];
   let latestSnapshot;
   for (let index = 0; index < adminReadSamples; index += 1) {
     const response = await system(context, operator, "snapshot");
     snapshotDurations.push(serverTimingDuration(response.headers, "admin-read"));
     snapshotRpcDurations.push(serverTimingDuration(response.headers, "admin-rpc"));
+    snapshotRateLimitDurations.push(serverTimingDuration(response.headers, "admin-rate-limit"));
+    snapshotDbDurations.push(serverTimingDuration(response.headers, "admin-snapshot-db"));
     snapshotWallDurations.push(response.durationMs);
     latestSnapshot = response.json;
   }
@@ -1150,9 +1158,13 @@ try {
     vectors: {
       adminReadWarmupServerMs: sanitizeTimingVector(snapshotWarmupDurations),
       adminReadWarmupRpcMs: sanitizeTimingVector(snapshotWarmupRpcDurations),
+      adminReadWarmupRateLimitMs: sanitizeTimingVector(snapshotWarmupRateLimitDurations),
+      adminReadWarmupSnapshotDbMs: sanitizeTimingVector(snapshotWarmupDbDurations),
       adminReadWarmupWallMs: sanitizeTimingVector(snapshotWarmupWallDurations),
       adminReadMeasuredServerMs: sanitizeTimingVector(snapshotDurations),
       adminReadMeasuredRpcMs: sanitizeTimingVector(snapshotRpcDurations),
+      adminReadMeasuredRateLimitMs: sanitizeTimingVector(snapshotRateLimitDurations),
+      adminReadMeasuredSnapshotDbMs: sanitizeTimingVector(snapshotDbDurations),
       adminReadMeasuredWallMs: sanitizeTimingVector(snapshotWallDurations),
       commandMeasuredServerMs: sanitizeTimingVector(commandDurations),
       commandMeasuredWallMs: sanitizeTimingVector(commandWallDurations),
@@ -1170,12 +1182,20 @@ try {
       snapshotDurations.every(Number.isFinite) &&
       snapshotWarmupDurations.every(Number.isFinite) &&
       snapshotWarmupRpcDurations.every(Number.isFinite) &&
-      snapshotRpcDurations.every(Number.isFinite),
+      snapshotWarmupRateLimitDurations.every(Number.isFinite) &&
+      snapshotWarmupDbDurations.every(Number.isFinite) &&
+      snapshotRpcDurations.every(Number.isFinite) &&
+      snapshotRateLimitDurations.every(Number.isFinite) &&
+      snapshotDbDurations.every(Number.isFinite),
     JSON.stringify({
       commandSamples: commandDurations.length,
       adminReadSamples: snapshotDurations.length,
       adminRpcWarmups: snapshotWarmupRpcDurations.length,
       adminRpcSamples: snapshotRpcDurations.length,
+      adminRateLimitWarmups: snapshotWarmupRateLimitDurations.length,
+      adminRateLimitSamples: snapshotRateLimitDurations.length,
+      adminSnapshotDbWarmups: snapshotWarmupDbDurations.length,
+      adminSnapshotDbSamples: snapshotDbDurations.length,
     }),
   );
   check("database_snapshot_ready", latestSnapshot.gateReady === true, JSON.stringify(latestSnapshot.metrics));

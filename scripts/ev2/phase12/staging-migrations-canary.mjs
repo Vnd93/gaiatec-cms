@@ -38,6 +38,7 @@ import {
   sourceMigrationManifest,
   systemSnapshotLeadReadScaleSemanticSql,
   systemSnapshotOpenCriticalScaleSemanticSql,
+  systemSnapshotSubphaseTimingSemanticSql,
 } from "./migration-manifest-lib.mjs";
 
 const TARGET = {
@@ -104,6 +105,7 @@ const scenarioCoverage = [
   "0091",
   "0092",
   "0101",
+  "0102",
 ];
 const accessToken = process.env.SUPABASE_ACCESS_TOKEN ?? "";
 const expectedSha = process.env.G12_MIGRATION_CANARY_EXPECTED_SHA ?? "";
@@ -754,6 +756,7 @@ async function preflightMigrations() {
     ${systemSnapshotOpenCriticalScaleSemanticSql("system_snapshot_open_critical_scale_0099_semantics_exact")},
     ${systemSnapshotLeadReadScaleSemanticSql("system_snapshot_lead_read_scale_0100_semantics_exact")},
     ${releaseStabilityFollowupSemanticSql("release_stability_followup_0101_semantics_exact")},
+    ${systemSnapshotSubphaseTimingSemanticSql("system_snapshot_subphase_timing_0102_semantics_exact")},
     ${ownerOnlyFunctionContractSql(
       "release_stability_followup_0101_functions_locked",
       CMS_RELEASE_STABILITY_FOLLOWUP_0101_OWNER_ONLY_FUNCTIONS,
@@ -970,6 +973,10 @@ async function preflightMigrations() {
   check(
     "release_stability_followup_0101_semantics_exact",
     row?.release_stability_followup_0101_semantics_exact === true,
+  );
+  check(
+    "system_snapshot_subphase_timing_0102_semantics_exact",
+    row?.system_snapshot_subphase_timing_0102_semantics_exact === true,
   );
   check(
     "release_stability_followup_0101_functions_locked",

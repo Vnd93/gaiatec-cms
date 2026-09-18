@@ -105,6 +105,11 @@ export const G12_PINNED_MIGRATION_TAIL = Object.freeze([
     file: "0101_cms_release_stability_followup.sql",
     sha256: "19f38be0b861b50dca33dd97c9e4efd0cd825c7b906e9a6b76a7a5210fbbbe54",
   }),
+  Object.freeze({
+    version: "0102",
+    file: "0102_cms_system_snapshot_subphase_timing.sql",
+    sha256: "5f92ae851a090e5e44f4e0dbc9fc7c36b8a2068c24b0795f4455f122c30a47c7",
+  }),
 ]);
 
 export const CMS_MEDIA_UPLOAD_ABORT_0082_RPCS = Object.freeze([
@@ -1330,5 +1335,84 @@ export function releaseStabilityFollowupSemanticSql(alias) {
           and installed.tgenabled='O'
           and not installed.tgisinternal
       )
+    , false) as ${alias}`;
+}
+
+// The 0102 boundary is additive so a previous Edge bundle can keep calling
+// the untouched 0095 RPC after a rollback. The remote contract proves the
+// new RPC derives identity, preserves rate-limit ordering and exposes only an
+// authenticated envelope with coarse non-negative database timings.
+export function systemSnapshotSubphaseTimingSemanticSql(alias) {
+  if (!/^[a-z][a-z0-9_]*$/.test(alias)) fail("system-snapshot-subphase-timing-alias");
+  const timed = "public.cms_get_system_snapshot_authenticated_timed(text,text,uuid)";
+  const authenticated = "public.cms_get_system_snapshot_authenticated(text,text,uuid)";
+  const limited =
+    "public.cms_get_system_snapshot_limited(uuid,text,text,text,text,timestamp with time zone,uuid,text)";
+  const core = "public.cms_get_system_snapshot(uuid,text,text,text,text,timestamp with time zone,uuid)";
+  const definition = `regexp_replace(lower(pg_get_functiondef(to_regprocedure('${timed}'))), '[[:space:]]+', '', 'g')`;
+  const consumeCall = "public.consume_rate_limit(";
+  const snapshotCall = "v_snapshot:=public.cms_get_system_snapshot(";
+  return `coalesce(
+      to_regprocedure('${timed}') is not null
+      and (
+        select procedure.prosecdef and procedure.provolatile = 'v'
+          and 'search_path=pg_catalog, public, private, extensions, auth, pg_temp'
+            = any(coalesce(procedure.proconfig, array[]::text[]))
+        from pg_catalog.pg_proc procedure
+        where procedure.oid = to_regprocedure('${timed}')
+      )
+      and pg_get_function_identity_arguments(to_regprocedure('${timed}'))
+        = 'p_environment text, p_site_key text, p_correlation_id uuid'
+      and ${definition} like '%v_actor_iduuid:=auth.uid()%'
+      and ${definition} like '%v_session_idtext:=auth.jwt()->>''session_id''%'
+      and ${definition} like '%v_issued_rawtext:=auth.jwt()->>''iat''%'
+      and ${definition} like '%extensions.digest(convert_to(v_actor_id::text,''utf8''),''sha256'')%'
+      and ${definition} like '%public.consume_rate_limit(v_rate_limit_key_hash,''cms_system_snapshot'',120,900)%'
+      and (
+        length(${definition}) - length(replace(${definition}, '${consumeCall}', ''))
+      ) / length('${consumeCall}') = 1
+      and (
+        length(${definition}) - length(replace(${definition}, '${snapshotCall}', ''))
+      ) / length('${snapshotCall}') = 1
+      and position('${consumeCall}' in ${definition})
+        < position('${snapshotCall}' in ${definition})
+      and ${definition} like '%v_rate_limit_msbigint%'
+      and ${definition} like '%v_snapshot_core_msbigint%'
+      and ${definition} like '%greatest(0::bigint,round(extract(epochfromclock_timestamp()-%'
+      and ${definition} like '%''schemaversion'',1%'
+      and ${definition} like '%''snapshot'',v_snapshot%'
+      and ${definition} like '%''ratelimitms'',v_rate_limit_ms%'
+      and ${definition} like '%''snapshotcorems'',v_snapshot_core_ms%'
+      and has_function_privilege('authenticated','${timed}','EXECUTE')
+      and not has_function_privilege('anon','${timed}','EXECUTE')
+      and not has_function_privilege('service_role','${timed}','EXECUTE')
+      and not exists (
+        select 1
+        from pg_catalog.pg_proc procedure
+        cross join lateral pg_catalog.aclexplode(
+          coalesce(procedure.proacl, pg_catalog.acldefault('f', procedure.proowner))
+        ) acl
+        where procedure.oid = to_regprocedure('${timed}')
+          and not (
+            acl.grantee = procedure.proowner
+            or (
+              acl.grantee = (
+                select role.oid from pg_catalog.pg_roles role where role.rolname = 'authenticated'
+              )
+              and acl.grantor = procedure.proowner
+              and acl.privilege_type = 'EXECUTE'
+              and not acl.is_grantable
+            )
+          )
+      )
+      and has_function_privilege('authenticated','${authenticated}','EXECUTE')
+      and not has_function_privilege('anon','${authenticated}','EXECUTE')
+      and not has_function_privilege('service_role','${authenticated}','EXECUTE')
+      and has_function_privilege('service_role','${limited}','EXECUTE')
+      and not has_function_privilege('authenticated','${limited}','EXECUTE')
+      and not has_function_privilege('anon','${limited}','EXECUTE')
+      and has_function_privilege('service_role','${core}','EXECUTE')
+      and not has_function_privilege('authenticated','${core}','EXECUTE')
+      and not has_function_privilege('anon','${core}','EXECUTE')
     , false) as ${alias}`;
 }

@@ -96,6 +96,19 @@ const SystemRequest = z.discriminatedUnion("action", [
     .strict(),
 ]);
 
+const SnapshotTimingEnvelope = z
+  .object({
+    schemaVersion: z.literal(1),
+    snapshot: z.record(z.string(), z.unknown()),
+    timing: z
+      .object({
+        rateLimitMs: z.number().finite().nonnegative().max(300_000),
+        snapshotCoreMs: z.number().finite().nonnegative().max(300_000),
+      })
+      .strict(),
+  })
+  .strict();
+
 type SystemCommand = z.infer<typeof SystemRequest>;
 
 function canonicalize(value: unknown): unknown {
@@ -198,19 +211,32 @@ Deno.serve(async (req) => {
     const caller = authenticatedSystemClient(req);
     if (!caller) return json(req, { error: "Sessão inválida." }, 401);
     const rpcStartedAt = performance.now();
-    const { data, error } = await caller.rpc("cms_get_system_snapshot_authenticated", {
+    const { data, error } = await caller.rpc("cms_get_system_snapshot_authenticated_timed", {
       p_environment: environment,
       p_site_key: siteKey,
       p_correlation_id: correlationId,
     });
     const rpcDurationMs = performance.now() - rpcStartedAt;
     if (error) return errorResponse(req, error, correlationId);
-    return json(req, data, 200, {
-      // admin-read remains the normative end-to-end server measurement. admin-rpc only separates
-      // the Edge wrapper from the PostgREST/RPC path without changing the gate.
+    const timedSnapshot = SnapshotTimingEnvelope.safeParse(data);
+    if (!timedSnapshot.success)
+      return json(
+        req,
+        {
+          error: "Telemetria do snapshot inválida.",
+          code: "CMS_SYSTEM_TIMING_INVALID",
+          correlationId,
+        },
+        500,
+      );
+    return json(req, timedSnapshot.data.snapshot, 200, {
+      // admin-read remains the normative end-to-end server measurement. The other entries only
+      // split the PostgREST/RPC path and its database subphases without changing the gate.
       "Server-Timing":
         `admin-read;dur=${Math.round(performance.now() - requestStartedAt)}, ` +
-        `admin-rpc;dur=${Math.round(rpcDurationMs)}`,
+        `admin-rpc;dur=${Math.round(rpcDurationMs)}, ` +
+        `admin-rate-limit;dur=${Math.round(timedSnapshot.data.timing.rateLimitMs)}, ` +
+        `admin-snapshot-db;dur=${Math.round(timedSnapshot.data.timing.snapshotCoreMs)}`,
     });
   }
 

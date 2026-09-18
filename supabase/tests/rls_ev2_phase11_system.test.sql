@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
-select plan(54);
+select plan(57);
 
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -211,6 +211,59 @@ select is(
 select is((select jsonb_array_length(payload -> 'queues') from g11_snapshot), 3, 'snapshot reconciles all three queues');
 select is((select jsonb_array_length(payload -> 'checks') from g11_snapshot), 6, 'snapshot exposes six database checks');
 select is((select (payload ->> 'containsPersonalData')::boolean from g11_snapshot), false, 'snapshot never exposes personal data');
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  jsonb_build_object(
+    'sub', '51100000-0000-4000-8000-000000000101',
+    'role', 'authenticated',
+    'aal', 'aal2',
+    'session_id', 'g11-operator-session',
+    'iat', floor(extract(epoch from clock_timestamp()))::bigint
+  )::text,
+  true
+);
+select is(
+  (
+    with response as materialized (
+      select public.cms_get_system_snapshot_authenticated_timed(
+        'local', 'main', '51100000-0000-4000-8000-000000000223'
+      ) as payload
+    )
+    select (payload ->> 'schemaVersion')::integer from response
+  ),
+  1,
+  'timed authenticated snapshot returns the versioned internal envelope'
+);
+select is(
+  (
+    with response as materialized (
+      select public.cms_get_system_snapshot_authenticated_timed(
+        'local', 'main', '51100000-0000-4000-8000-000000000224'
+      ) as payload
+    )
+    select (payload #>> '{snapshot,containsPersonalData}')::boolean from response
+  ),
+  false,
+  'timed authenticated snapshot nests the unchanged personal-data-safe payload'
+);
+select ok(
+  (
+    with response as materialized (
+      select public.cms_get_system_snapshot_authenticated_timed(
+        'local', 'main', '51100000-0000-4000-8000-000000000225'
+      ) as payload
+    )
+    select jsonb_typeof(payload #> '{timing,rateLimitMs}') = 'number'
+      and (payload #>> '{timing,rateLimitMs}')::bigint >= 0
+      and jsonb_typeof(payload #> '{timing,snapshotCoreMs}') = 'number'
+      and (payload #>> '{timing,snapshotCoreMs}')::bigint >= 0
+    from response
+  ),
+  'timed authenticated snapshot reports only non-negative numeric subphase durations'
+);
+reset role;
 
 update public.cms_content_items
 set workflow_status = 'draft', archived_at = null

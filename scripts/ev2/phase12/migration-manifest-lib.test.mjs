@@ -38,6 +38,7 @@ import {
   sourceMigrationManifest,
   systemSnapshotLeadReadScaleSemanticSql,
   systemSnapshotOpenCriticalScaleSemanticSql,
+  systemSnapshotSubphaseTimingSemanticSql,
 } from "./migration-manifest-lib.mjs";
 
 function fixture(files) {
@@ -91,9 +92,9 @@ test("the repository migration history is contiguous", () => {
   // digest dos bytes. E o que impede que alguem acrescente migration sem revisao: nao basta criar
   // o arquivo, e preciso declarar o conteudo dele aqui.
   assert.deepEqual(G12_PINNED_MIGRATION_TAIL.at(-1), {
-    version: "0101",
-    file: "0101_cms_release_stability_followup.sql",
-    sha256: "19f38be0b861b50dca33dd97c9e4efd0cd825c7b906e9a6b76a7a5210fbbbe54",
+    version: "0102",
+    file: "0102_cms_system_snapshot_subphase_timing.sql",
+    sha256: "5f92ae851a090e5e44f4e0dbc9fc7c36b8a2068c24b0795f4455f122c30a47c7",
   });
   assert.deepEqual(manifest.slice(-G12_PINNED_MIGRATION_TAIL.length), G12_PINNED_MIGRATION_TAIL);
   for (const migration of manifest.slice(-G12_PINNED_MIGRATION_TAIL.length)) {
@@ -734,6 +735,35 @@ test("0101 semantic preflight proves optimized paths without widening access", (
     "private.cms_cleanup_terminal_product_shared_options_0078()",
     "private.cms_system_rbac_terminal_cleanup()",
   ]);
+});
+
+test("0102 semantic preflight proves additive snapshot timing without widening access", () => {
+  const contract = systemSnapshotSubphaseTimingSemanticSql(
+    "system_snapshot_subphase_timing_0102_semantics_exact",
+  );
+
+  for (const marker of [
+    "cms_get_system_snapshot_authenticated_timed",
+    "cms_get_system_snapshot_authenticated",
+    "cms_get_system_snapshot_limited",
+    "v_actor_iduuid:=auth.uid()",
+    "auth.jwt()",
+    "extensions.digest",
+    "public.consume_rate_limit(",
+    "''cms_system_snapshot'',120,900",
+    "v_snapshot:=public.cms_get_system_snapshot(",
+    "v_rate_limit_msbigint",
+    "v_snapshot_core_msbigint",
+    "'ratelimitms'",
+    "'snapshotcorems'",
+    "aclexplode",
+    "has_function_privilege",
+  ])
+    assert.ok(contract.includes(marker), marker);
+
+  assert.match(contract, /^coalesce\(/);
+  assert.match(contract, /, false\) as system_snapshot_subphase_timing_0102_semantics_exact$/);
+  assert.throws(() => systemSnapshotSubphaseTimingSemanticSql("Bad Alias"));
 });
 
 test("0090 semantic preflight proves the lease accepts only the state the fence imposes", () => {

@@ -45,7 +45,7 @@ describe("CMS system snapshot read scale", () => {
   });
 
   it("uses the fused authenticated boundary only for the measured snapshot", () => {
-    expect(edge).toContain('rpc("cms_get_system_snapshot_authenticated"');
+    expect(edge).toContain('rpc("cms_get_system_snapshot_authenticated_timed"');
     expect(edge).toContain('rpc("cms_system_capability_limited"');
     expect(edge).toContain('rpc("cms_execute_system_command_limited"');
     expect(edge).toContain("authenticateCms(req)");

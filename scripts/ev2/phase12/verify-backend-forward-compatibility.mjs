@@ -228,6 +228,11 @@ const compatibilityTests = {
     "supabase/tests/rls_cms_system_rbac_scope.test.sql",
     "tests/contracts/cms-release-stability-followup.test.ts",
   ],
+  "0102": [
+    "supabase/tests/rls_cms_system_snapshot_subphase_timing.test.sql",
+    "supabase/tests/rls_ev2_phase11_system.test.sql",
+    "tests/contracts/cms-system-snapshot-subphase-timing.test.ts",
+  ],
 };
 for (const migration of additions) {
   const version = migration.version;

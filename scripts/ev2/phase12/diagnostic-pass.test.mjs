@@ -105,6 +105,10 @@ test("G11 latency samples stay sanitized and diagnostic-only", () => {
   );
   assert.match(reportShape, /containsPersonalData: false/);
   assert.match(reportShape, /syntheticOnly: true/);
+  assert.match(reportShape, /adminReadWarmupRateLimitMs/);
+  assert.match(reportShape, /adminReadWarmupSnapshotDbMs/);
+  assert.match(reportShape, /adminReadMeasuredRateLimitMs/);
+  assert.match(reportShape, /adminReadMeasuredSnapshotDbMs/);
   assert.doesNotMatch(
     reportShape,
     /email|token|secret|cookie|totp|correlation|idempotency|payload|headers|actor/i,

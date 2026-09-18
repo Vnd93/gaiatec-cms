@@ -90,7 +90,7 @@ test("EV2.11 migration is additive, default-off, RLS protected and production ga
   assert.doesNotMatch(sql, /drop table|truncate|default_enabled\s*=\s*true/i);
   assert.match(sql, /create trigger cms_assurance_runs_guard/);
   assert.match(sql, /create trigger cms_system_command_receipts_guard/);
-  assert.match(rls, /select plan\(54\)/);
+  assert.match(rls, /select plan\(57\)/);
 });
 
 test("F-017 exposes delivery state and a controlled, durable replay path", async () => {
@@ -147,7 +147,7 @@ test("F-018 exposes a read-only snapshot and two-person Gate G11 evidence", asyn
   );
   assert.match(
     snapshotBranch,
-    /const rpcStartedAt = performance\.now\(\)[\s\S]*caller\.rpc\("cms_get_system_snapshot_authenticated"[\s\S]*const rpcDurationMs = performance\.now\(\) - rpcStartedAt[\s\S]*admin-read;dur=[\s\S]*admin-rpc;dur=\$\{Math\.round\(rpcDurationMs\)\}/,
+    /const rpcStartedAt = performance\.now\(\)[\s\S]*caller\.rpc\("cms_get_system_snapshot_authenticated_timed"[\s\S]*const rpcDurationMs = performance\.now\(\) - rpcStartedAt[\s\S]*SnapshotTimingEnvelope\.safeParse\(data\)[\s\S]*admin-read;dur=[\s\S]*admin-rpc;dur=\$\{Math\.round\(rpcDurationMs\)\}[\s\S]*admin-rate-limit;dur=[\s\S]*admin-snapshot-db;dur=/,
   );
   assert.match(edge, /identity\.claims\.aal !== "aal2"/);
   assert.match(edge, /cms_system_capability_limited/);
@@ -250,17 +250,43 @@ test("load statistics use nearest-rank percentiles and strict evidence evaluatio
   });
   assert.equal(
     serverTimingDuration(
-      new Headers({ "Server-Timing": "db;dur=4, admin-read;dur=123.5, admin-rpc;dur=119" }),
+      new Headers({
+        "Server-Timing":
+          "db;dur=4, admin-read;dur=123.5, admin-rpc;dur=119, admin-rate-limit;dur=2, admin-snapshot-db;dur=87",
+      }),
       "admin-read",
     ),
     123.5,
   );
   assert.equal(
     serverTimingDuration(
-      new Headers({ "Server-Timing": "db;dur=4, admin-read;dur=123.5, admin-rpc;dur=119" }),
+      new Headers({
+        "Server-Timing":
+          "db;dur=4, admin-read;dur=123.5, admin-rpc;dur=119, admin-rate-limit;dur=2, admin-snapshot-db;dur=87",
+      }),
       "admin-rpc",
     ),
     119,
+  );
+  assert.equal(
+    serverTimingDuration(
+      new Headers({
+        "Server-Timing":
+          "admin-read;dur=123.5, admin-rpc;dur=119, admin-rate-limit;dur=2, admin-snapshot-db;dur=87",
+      }),
+      "admin-rate-limit",
+    ),
+    2,
+  );
+  assert.equal(
+    serverTimingDuration(
+      new Headers({
+        "Server-Timing":
+          "admin-read;dur=123.5, admin-rpc;dur=119, admin-rate-limit;dur=2, admin-snapshot-db;dur=87",
+      }),
+      "admin-snapshot-db",
+    ),
+    87,
   );
   assert.equal(Number.isNaN(serverTimingDuration(new Headers(), "command")), true);
   const result = evaluateSystemEvidence({
@@ -326,10 +352,18 @@ test("G11 executable controls remain reproducible and fail-closed", async () => 
   assert.match(canary, /servedReleaseSha/);
   assert.match(canary, /adminReadWarmupServerMs/);
   assert.match(canary, /adminReadWarmupRpcMs/);
+  assert.match(canary, /adminReadWarmupRateLimitMs/);
+  assert.match(canary, /adminReadWarmupSnapshotDbMs/);
   assert.match(canary, /adminReadMeasuredRpcMs/);
+  assert.match(canary, /adminReadMeasuredRateLimitMs/);
+  assert.match(canary, /adminReadMeasuredSnapshotDbMs/);
   assert.match(canary, /snapshotWarmupDurations\.every\(Number\.isFinite\)/);
   assert.match(canary, /snapshotWarmupRpcDurations\.every\(Number\.isFinite\)/);
+  assert.match(canary, /snapshotWarmupRateLimitDurations\.every\(Number\.isFinite\)/);
+  assert.match(canary, /snapshotWarmupDbDurations\.every\(Number\.isFinite\)/);
   assert.match(canary, /snapshotRpcDurations\.every\(Number\.isFinite\)/);
+  assert.match(canary, /snapshotRateLimitDurations\.every\(Number\.isFinite\)/);
+  assert.match(canary, /snapshotDbDurations\.every\(Number\.isFinite\)/);
   assert.match(canary, /adminReadP95Ms: Math\.round\(percentile\(snapshotDurations, 95\)\)/);
   assert.doesNotMatch(canary, /adminReadP95Ms:.*snapshotRpcDurations/);
   assert.match(canary, /commandMutationSamples: 1/);

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
@@ -19,6 +20,12 @@ import {
   LEGACY_BRIDGE_RECOVERY_KIND,
   LEGACY_FORM_CONTRACT_KEYS,
   legacyBridgeMarkers,
+  probePublicV2RestoreConvergence,
+  probePublicV2RestoreSentinelConvergence,
+  PUBLIC_V2_RESTORE_PROBE_ATTEMPTS,
+  PUBLIC_V2_RESTORE_PROBE_INTERVAL_MS,
+  PUBLIC_V2_RESTORE_REQUIRED_CONSECUTIVE_SUCCESSES,
+  PUBLIC_V2_RESTORE_SENTINEL_VERSION,
   PUBLIC_V2_FORM_CONTRACT_KEYS,
   restoredVersionAdvanced,
 } from "./cms-public-legacy-bridge-lib.mjs";
@@ -30,6 +37,12 @@ const CANDIDATE_DIGEST = "1".repeat(64);
 const LEGACY_DIGEST = "2".repeat(64);
 const FORM_ID = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
 const VERSION_ID = "3f2504e0-4f89-41d3-9a0c-0305e82c3302";
+const PROBE_EXPECTED = Object.freeze({
+  formId: FORM_ID,
+  versionId: VERSION_ID,
+  version: 1,
+  key: "ponte-qa",
+});
 
 function legacyForm(overrides = {}) {
   return {
@@ -114,6 +127,287 @@ test("public-v2 detection refuses any leaked identifier or operational field", (
   assert.equal(isPublicV2FormContract(publicV2Form({ title: `Ponte ${FORM_ID}` }), expected), false);
   assert.equal(containsUuid(publicV2Form()), false);
   assert.equal(containsUuid(legacyForm()), true);
+});
+
+test("restore convergence requires three consecutive exact public-v2 contracts", async () => {
+  let reads = 0;
+  let waits = 0;
+  const result = await probePublicV2RestoreConvergence({
+    expected: PROBE_EXPECTED,
+    read: async () => {
+      reads += 1;
+      return { status: 200, body: publicV2Form() };
+    },
+    pause: async () => {
+      waits += 1;
+    },
+  });
+
+  assert.deepEqual(result, {
+    contractProbe: "public-v2",
+    attemptsUsed: 3,
+    maximumAttempts: 20,
+    intervalMs: 4_000,
+    consecutiveSuccessesRequired: 3,
+    consecutiveSuccessesObserved: 3,
+    lastHttpStatus: 200,
+    lastClassification: "public-v2",
+    incompatibleContractObserved: false,
+  });
+  assert.equal(reads, 3);
+  assert.equal(waits, 2);
+  assert.equal(PUBLIC_V2_RESTORE_REQUIRED_CONSECUTIVE_SUCCESSES, 3);
+});
+
+test("restore convergence retries transport and non-200 propagation states", async () => {
+  const waits = [];
+  let reads = 0;
+  const result = await probePublicV2RestoreConvergence({
+    expected: PROBE_EXPECTED,
+    read: async () => {
+      reads += 1;
+      if (reads === 1) throw new Error("temporary transport failure");
+      if (reads === 2) return { status: 503, body: null };
+      return { status: 200, body: publicV2Form() };
+    },
+    pause: async (milliseconds) => waits.push(milliseconds),
+  });
+
+  assert.equal(result.contractProbe, "public-v2");
+  assert.equal(result.attemptsUsed, 5);
+  assert.equal(reads, 5);
+  assert.deepEqual(waits, [4_000, 4_000, 4_000, 4_000]);
+});
+
+test("restore convergence permits only the exact legacy contract while isolates converge", async () => {
+  const waits = [];
+  let reads = 0;
+  const result = await probePublicV2RestoreConvergence({
+    expected: PROBE_EXPECTED,
+    read: async () => {
+      reads += 1;
+      return { status: 200, body: reads === 1 ? legacyForm() : publicV2Form() };
+    },
+    pause: async (milliseconds) => waits.push(milliseconds),
+  });
+
+  assert.equal(result.contractProbe, "public-v2");
+  assert.equal(result.attemptsUsed, 4);
+  assert.equal(result.incompatibleContractObserved, true);
+  assert.equal(reads, 4);
+  assert.deepEqual(waits, Array(3).fill(PUBLIC_V2_RESTORE_PROBE_INTERVAL_MS));
+});
+
+test("restore convergence resets stability after one stale isolate", async () => {
+  const observations = [
+    publicV2Form(),
+    publicV2Form(),
+    legacyForm(),
+    publicV2Form(),
+    publicV2Form(),
+    publicV2Form(),
+  ];
+  let reads = 0;
+  const result = await probePublicV2RestoreConvergence({
+    expected: PROBE_EXPECTED,
+    read: async () => ({ status: 200, body: observations[reads++] }),
+    pause: async () => {},
+  });
+
+  assert.equal(result.contractProbe, "public-v2");
+  assert.equal(result.attemptsUsed, 6);
+  assert.equal(result.consecutiveSuccessesObserved, 3);
+  assert.equal(result.incompatibleContractObserved, true);
+  assert.equal(reads, 6);
+});
+
+test("restore convergence exhausts exactly twenty unavailable reads and fails closed", async () => {
+  const waits = [];
+  let reads = 0;
+  const result = await probePublicV2RestoreConvergence({
+    expected: PROBE_EXPECTED,
+    read: async () => {
+      reads += 1;
+      return { status: 503, body: null };
+    },
+    pause: async (milliseconds) => waits.push(milliseconds),
+  });
+
+  assert.equal(result.contractProbe, "unavailable");
+  assert.equal(result.lastClassification, "unavailable");
+  assert.equal(result.lastHttpStatus, 503);
+  assert.equal(result.incompatibleContractObserved, false);
+  assert.equal(result.consecutiveSuccessesObserved, 0);
+  assert.equal(result.attemptsUsed, PUBLIC_V2_RESTORE_PROBE_ATTEMPTS);
+  assert.equal(reads, PUBLIC_V2_RESTORE_PROBE_ATTEMPTS);
+  assert.deepEqual(
+    waits,
+    Array(PUBLIC_V2_RESTORE_PROBE_ATTEMPTS - 1).fill(PUBLIC_V2_RESTORE_PROBE_INTERVAL_MS),
+  );
+});
+
+test("restore convergence reports a legacy contract that remains live at the bound", async () => {
+  const waits = [];
+  let reads = 0;
+  const result = await probePublicV2RestoreConvergence({
+    expected: PROBE_EXPECTED,
+    read: async () => {
+      reads += 1;
+      return { status: 200, body: legacyForm() };
+    },
+    pause: async (milliseconds) => waits.push(milliseconds),
+  });
+
+  assert.equal(result.contractProbe, "violated");
+  assert.equal(result.lastClassification, "legacy");
+  assert.equal(result.consecutiveSuccessesObserved, 0);
+  assert.equal(result.attemptsUsed, PUBLIC_V2_RESTORE_PROBE_ATTEMPTS);
+  assert.equal(reads, PUBLIC_V2_RESTORE_PROBE_ATTEMPTS);
+  assert.equal(waits.length, PUBLIC_V2_RESTORE_PROBE_ATTEMPTS - 1);
+});
+
+test("restore convergence never accepts an unknown successful payload", async () => {
+  let reads = 0;
+  let waits = 0;
+  const result = await probePublicV2RestoreConvergence({
+    expected: PROBE_EXPECTED,
+    read: async () => {
+      reads += 1;
+      return { status: 200, body: publicV2Form({ unexpected: true }) };
+    },
+    pause: async () => {
+      waits += 1;
+    },
+  });
+
+  assert.equal(result.contractProbe, "violated");
+  assert.equal(result.lastClassification, "violated");
+  assert.equal(result.incompatibleContractObserved, true);
+  assert.equal(result.consecutiveSuccessesObserved, 0);
+  assert.equal(result.attemptsUsed, PUBLIC_V2_RESTORE_PROBE_ATTEMPTS);
+  assert.equal(reads, PUBLIC_V2_RESTORE_PROBE_ATTEMPTS);
+  assert.equal(waits, PUBLIC_V2_RESTORE_PROBE_ATTEMPTS - 1);
+});
+
+test("restore convergence preserves an incompatible 200 even if the last read is unavailable", async () => {
+  let reads = 0;
+  const result = await probePublicV2RestoreConvergence({
+    expected: PROBE_EXPECTED,
+    read: async () => {
+      reads += 1;
+      return reads === 1 ? { status: 200, body: legacyForm() } : { status: 503, body: null };
+    },
+    pause: async () => {},
+  });
+
+  assert.equal(result.contractProbe, "violated");
+  assert.equal(result.lastClassification, "unavailable");
+  assert.equal(result.lastHttpStatus, 503);
+  assert.equal(result.incompatibleContractObserved, true);
+  assert.equal(result.consecutiveSuccessesObserved, 0);
+  assert.equal(reads, PUBLIC_V2_RESTORE_PROBE_ATTEMPTS);
+});
+
+test("the fixture-free restore sentinel proves a stable candidate dataplane", async () => {
+  let reads = 0;
+  let waits = 0;
+  const result = await probePublicV2RestoreSentinelConvergence({
+    read: async () => {
+      reads += 1;
+      return { status: 404, body: { error: "Não encontrado." } };
+    },
+    pause: async () => {
+      waits += 1;
+    },
+  });
+
+  assert.deepEqual(result, {
+    contractProbe: "public-v2",
+    attemptsUsed: 3,
+    maximumAttempts: 20,
+    intervalMs: 4_000,
+    consecutiveSuccessesRequired: 3,
+    consecutiveSuccessesObserved: 3,
+    lastHttpStatus: 404,
+    lastClassification: "public-v2",
+    incompatibleContractObserved: false,
+  });
+  assert.equal(reads, 3);
+  assert.equal(waits, 2);
+  assert.equal(PUBLIC_V2_RESTORE_SENTINEL_VERSION, "0");
+});
+
+test("the fixture-free sentinel waits through legacy and unavailable isolates", async () => {
+  const observations = [
+    { status: 204, body: null },
+    { status: 503, body: null },
+    { status: 404, body: { error: "Não encontrado." } },
+    { status: 404, body: { error: "Não encontrado." } },
+    { status: 404, body: { error: "Não encontrado." } },
+  ];
+  const waits = [];
+  let reads = 0;
+  const result = await probePublicV2RestoreSentinelConvergence({
+    read: async () => observations[reads++],
+    pause: async (milliseconds) => waits.push(milliseconds),
+  });
+
+  assert.equal(result.contractProbe, "public-v2");
+  assert.equal(result.attemptsUsed, 5);
+  assert.equal(result.incompatibleContractObserved, true);
+  assert.equal(reads, 5);
+  assert.deepEqual(waits, [4_000, 4_000, 4_000, 4_000]);
+});
+
+test("the fixture-free sentinel does not accept only two terminal successes", async () => {
+  let reads = 0;
+  const result = await probePublicV2RestoreSentinelConvergence({
+    read: async () => {
+      reads += 1;
+      return reads > PUBLIC_V2_RESTORE_PROBE_ATTEMPTS - 2
+        ? { status: 404, body: { error: "Não encontrado." } }
+        : { status: 503, body: null };
+    },
+    pause: async () => {},
+  });
+
+  assert.equal(result.contractProbe, "unavailable");
+  assert.equal(result.lastClassification, "public-v2");
+  assert.equal(result.consecutiveSuccessesObserved, 2);
+  assert.equal(reads, PUBLIC_V2_RESTORE_PROBE_ATTEMPTS);
+});
+
+test("the fixture-free sentinel fails closed on persistent legacy or altered 404 contracts", async () => {
+  for (const response of [
+    { status: 204, body: null },
+    { status: 404, body: { error: "altered" } },
+    { status: 404, body: { error: "Não encontrado.", extra: true } },
+  ]) {
+    let reads = 0;
+    const result = await probePublicV2RestoreSentinelConvergence({
+      read: async () => {
+        reads += 1;
+        return response;
+      },
+      pause: async () => {},
+    });
+    assert.equal(result.contractProbe, "violated");
+    assert.equal(result.incompatibleContractObserved, true);
+    assert.equal(result.consecutiveSuccessesObserved, 0);
+    assert.equal(reads, PUBLIC_V2_RESTORE_PROBE_ATTEMPTS);
+  }
+});
+
+test("the candidate sentinel rejects version zero before any database dependency", async () => {
+  const source = await readFile("supabase/functions/cms-public/index.ts", "utf8");
+  const start = source.indexOf('if (type === "form")');
+  const end = source.indexOf('if (type === "campaign-by-path")', start);
+  const block = source.slice(start, end);
+  assert.ok(start >= 0 && end > start);
+  assert.match(block, /const requestedVersion = url\.searchParams\.get\("version"\)/);
+  assert.match(block, /version < 1/);
+  assert.ok(block.indexOf("version < 1") < block.indexOf("if (!service)"));
+  assert.match(block, /return json\(\{ error: "Não encontrado\." \}, 404/);
 });
 
 test("engage state binds environment, project, both SHAs and both source digests", () => {

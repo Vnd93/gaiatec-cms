@@ -9,12 +9,14 @@ import {
   assertEngagePlan,
   assertRestorePlan,
   buildLegacyBridgeState,
-  isPublicV2FormContract,
   LEGACY_BRIDGE_ENVIRONMENT,
   LEGACY_BRIDGE_FUNCTION_SLUG,
   LEGACY_BRIDGE_PROJECT_REF,
   legacyBridgeMarkers,
   legacyBridgeRefusal,
+  probePublicV2RestoreConvergence,
+  probePublicV2RestoreSentinelConvergence,
+  PUBLIC_V2_RESTORE_SENTINEL_VERSION,
   restoredVersionAdvanced,
 } from "./cms-public-legacy-bridge-lib.mjs";
 
@@ -125,19 +127,23 @@ function anonKey() {
   return value;
 }
 
-async function readPublicForm(key) {
+async function readPublicForm(key, publicAnonKey, version = null, probeOrdinal = null) {
   const endpoint = new URL(
     `/functions/v1/${LEGACY_BRIDGE_FUNCTION_SLUG}`,
     `https://${LEGACY_BRIDGE_PROJECT_REF}.supabase.co`,
   );
   endpoint.searchParams.set("type", "form");
   endpoint.searchParams.set("key", key);
+  if (version !== null) endpoint.searchParams.set("version", version);
+  if (probeOrdinal !== null) endpoint.searchParams.set("restoreProbe", String(probeOrdinal));
   const response = await fetch(endpoint, {
-    headers: { apikey: anonKey() },
+    headers: { apikey: publicAnonKey },
     signal: AbortSignal.timeout(20_000),
   });
-  if (response.status !== 200) return { status: response.status, body: null };
-  return { status: 200, body: await response.json().catch(() => null) };
+  return {
+    status: response.status,
+    body: response.status === 204 ? null : await response.json().catch(() => null),
+  };
 }
 
 function writeJson(path, value) {
@@ -248,7 +254,7 @@ async function restore() {
   const statePath = argument("--state");
   const reportPath = argument("--report");
   const probeStatePath = argument("--probe-state", { required: false });
-  const requireContractProbe = process.argv.includes("--require-contract-probe");
+  const requireFixtureContractProbe = process.argv.includes("--require-contract-probe");
   assertContained(statePath);
   assertContained(reportPath);
   if (!existsSync(resolve(statePath))) refuse("STATE_MISSING");
@@ -266,33 +272,41 @@ async function restore() {
   if (after.version < before.version || !restoredVersionAdvanced(state, after.version))
     refuse("RESTORE_NOT_APPLIED");
 
-  let contractProbe = "skipped";
   let probedKey = null;
+  let probeState = null;
   if (probeStatePath && existsSync(resolve(probeStatePath))) {
-    const probeState = readJson(probeStatePath);
+    probeState = readJson(probeStatePath);
     probedKey = typeof probeState?.form?.key === "string" ? probeState.form.key : null;
-    if (probedKey) {
-      const result = await readPublicForm(probedKey);
-      if (result.status === 200) {
-        contractProbe = isPublicV2FormContract(result.body, {
-          key: probedKey,
-          version: result.body?.version,
-        })
-          ? "public-v2"
-          : "violated";
-      } else {
-        contractProbe = "unavailable";
-      }
-    }
   }
-  if (contractProbe === "violated") refuse("PUBLIC_V2_CONTRACT_NOT_RESTORED");
-  if (requireContractProbe && contractProbe !== "public-v2") refuse("PUBLIC_V2_CONTRACT_UNPROVEN");
-
+  const publicAnonKey = anonKey();
+  const contractProbeKind = probedKey ? "fixture-form" : "candidate-sentinel";
+  const contractProbeResult = probedKey
+    ? await probePublicV2RestoreConvergence({
+        expected: {
+          formId: probeState.form?.id,
+          versionId: probeState.form?.versionId,
+          key: probedKey,
+          version: 1,
+        },
+        read: (attempt) => readPublicForm(probedKey, publicAnonKey, null, attempt),
+      })
+    : await probePublicV2RestoreSentinelConvergence({
+        read: (attempt) =>
+          readPublicForm(
+            `g12-restore-${candidateSha.slice(0, 12)}-${workflowRunId}-${workflowRunAttempt}`,
+            publicAnonKey,
+            PUBLIC_V2_RESTORE_SENTINEL_VERSION,
+            attempt,
+          ),
+      });
+  const contractProbe = contractProbeResult.contractProbe;
+  const restoreProven =
+    contractProbe === "public-v2" && (!requireFixtureContractProbe || contractProbeKind === "fixture-form");
   writeJson(reportPath, {
     schemaVersion: 1,
     event: "g12.staging.cms_public_legacy",
     phase: "restore",
-    status: "restored",
+    status: restoreProven ? "restored" : "restore-unproven",
     environment,
     projectRef: plan.projectRef,
     functionSlug: plan.slug,
@@ -303,12 +317,24 @@ async function restore() {
     restoredVersion: after.version,
     candidateSourceSha256: plan.sourceSha256,
     contractProbe,
+    contractProbeKind,
+    fixtureContractRequired: requireFixtureContractProbe,
     contractProbeFormKey: probedKey,
+    contractProbeAttempts: contractProbeResult.attemptsUsed,
+    contractProbeMaximumAttempts: contractProbeResult.maximumAttempts,
+    contractProbeIntervalMs: contractProbeResult.intervalMs,
+    contractProbeConsecutiveSuccessesRequired: contractProbeResult.consecutiveSuccessesRequired,
+    contractProbeConsecutiveSuccessesObserved: contractProbeResult.consecutiveSuccessesObserved,
+    contractProbeLastHttpStatus: contractProbeResult.lastHttpStatus,
+    contractProbeLastClassification: contractProbeResult.lastClassification,
+    contractProbeIncompatibleContractObserved: contractProbeResult.incompatibleContractObserved,
     internalIdentifiersExposed: false,
     productionTouched: false,
     secretsPersisted: false,
     ...legacyBridgeMarkers(workflowRunId, workflowRunAttempt),
   });
+  if (contractProbe === "violated") refuse("PUBLIC_V2_CONTRACT_NOT_RESTORED");
+  if (!restoreProven) refuse("PUBLIC_V2_CONTRACT_UNPROVEN");
 }
 
 export async function main() {

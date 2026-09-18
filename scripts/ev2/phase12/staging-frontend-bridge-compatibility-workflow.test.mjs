@@ -508,9 +508,12 @@ test("the legacy public backend is swapped in under an exclusive lease and alway
   assert.match(workflow, /^\s+staging-bridge-canonical-convergence-\*\.json$/m);
   assert.match(workflow, /^\s+staging-bridge-canonical-probe\.json$/m);
 
-  // A run that engaged the legacy backend and did not restore it must fail, and the lease is only
-  // released once the restore itself succeeded.
-  assert.match(workflow, /The legacy public backend stayed engaged on staging\./);
+  // A run that engaged the legacy backend without proving the candidate restore must fail without
+  // overstating the remote state, and the lease is only released once the restore itself succeeded.
+  assert.match(
+    workflow,
+    /The candidate public backend restore was not proven; the recovery lease remains armed\./,
+  );
   assert.match(workflow, /if \[ "\$LEGACY_ENGAGE" = success \] && \[ "\$LEGACY_RESTORE" != success \]; then/);
   assert.match(
     workflow,
@@ -623,6 +626,7 @@ test("every staging probe warms the routes before it measures them", async () =>
 
 test("a lost bridge runner cannot leave the legacy public backend live on staging", async () => {
   const watchdog = await readFile(".github/workflows/promote-staging-frontend-bridge-watchdog.yml", "utf8");
+  const restore = await readFile("scripts/qa/cms-public-legacy-bridge.mjs", "utf8");
 
   // The legacy restore owns its own job so it cannot be skipped by the frontend compensation path.
   assert.match(watchdog, /^ {2}restore-legacy-public-backend:$/m);
@@ -644,6 +648,12 @@ test("a lost bridge runner cannot leave the legacy public backend live on stagin
   assert.match(job, /test "\$RESTORE" = skipped/);
   assert.match(job, /if: steps\.legacy_restore\.outcome == 'success'/);
   assert.equal(job.includes("chfuhctnhqgyjowkvllv"), false);
+  // With no fixture artifact, the watchdog still proves the candidate contract from the public dataplane;
+  // inventory/version advancement alone can never make restore exit successfully.
+  assert.match(restore, /probePublicV2RestoreSentinelConvergence/);
+  assert.match(restore, /endpoint\.searchParams\.set\("restoreProbe", String\(probeOrdinal\)\)/);
+  assert.match(restore, /const restoreProven =\s*contractProbe === "public-v2"/);
+  assert.match(restore, /if \(!restoreProven\) refuse\("PUBLIC_V2_CONTRACT_UNPROVEN"\)/);
 
   const programs = nodeHeredocs(watchdog);
   for (const [index, program] of programs.entries()) {

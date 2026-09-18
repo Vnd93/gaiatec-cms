@@ -1,6 +1,7 @@
 const FULL_SHA = /^[a-f0-9]{40}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
 const POSITIVE_INTEGER = /^[1-9]\d*$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const UUID_ANYWHERE = /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i;
 
 // The bridge only ever swaps the public read surface, and only in staging. Widening either constant
@@ -10,6 +11,12 @@ export const LEGACY_BRIDGE_ENVIRONMENT = "staging";
 export const LEGACY_BRIDGE_PROJECT_REF = "glcqsosxwgmlhzgcsnzv";
 export const LEGACY_BRIDGE_RECOVERY_KIND = "staging-cms-public-legacy";
 export const LEGACY_BRIDGE_STATE_EVENT = "g12.staging.cms_public_legacy.engaged";
+// Edge Function inventory can advance before every dataplane isolate serves the new bytes. Keep the
+// verification window fixed and bounded: only idempotent reads are retried, never the deployment.
+export const PUBLIC_V2_RESTORE_PROBE_ATTEMPTS = 20;
+export const PUBLIC_V2_RESTORE_PROBE_INTERVAL_MS = 4_000;
+export const PUBLIC_V2_RESTORE_REQUIRED_CONSECUTIVE_SUCCESSES = 3;
+export const PUBLIC_V2_RESTORE_SENTINEL_VERSION = "0";
 
 // Exact wire shape served by the f48 release that production still runs.
 export const LEGACY_FORM_CONTRACT_KEYS = Object.freeze([
@@ -95,6 +102,113 @@ export function isPublicV2FormContract(value, expected) {
     isRecord(value.consent) &&
     value.consent.required === true
   );
+}
+
+const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+async function probeRestoreConvergence({ read, classify, pause }) {
+  if (typeof read !== "function" || typeof classify !== "function" || typeof pause !== "function")
+    throw legacyBridgeRefusal("CONTRACT_PROBE_INPUT_INVALID");
+
+  let lastHttpStatus = null;
+  let lastClassification = "unavailable";
+  let incompatibleContractObserved = false;
+  let consecutiveSuccesses = 0;
+  for (let attempt = 1; attempt <= PUBLIC_V2_RESTORE_PROBE_ATTEMPTS; attempt += 1) {
+    let result;
+    try {
+      result = await read(attempt);
+    } catch {
+      result = null;
+    }
+    lastHttpStatus = Number.isInteger(result?.status) ? result.status : null;
+    lastClassification = classify(result);
+    if (!new Set(["public-v2", "legacy", "violated", "unavailable"]).has(lastClassification))
+      throw legacyBridgeRefusal("CONTRACT_PROBE_CLASSIFICATION_INVALID");
+    if (lastClassification === "public-v2") {
+      consecutiveSuccesses += 1;
+      if (consecutiveSuccesses === PUBLIC_V2_RESTORE_REQUIRED_CONSECUTIVE_SUCCESSES) {
+        return {
+          contractProbe: "public-v2",
+          attemptsUsed: attempt,
+          maximumAttempts: PUBLIC_V2_RESTORE_PROBE_ATTEMPTS,
+          intervalMs: PUBLIC_V2_RESTORE_PROBE_INTERVAL_MS,
+          consecutiveSuccessesRequired: PUBLIC_V2_RESTORE_REQUIRED_CONSECUTIVE_SUCCESSES,
+          consecutiveSuccessesObserved: consecutiveSuccesses,
+          lastHttpStatus,
+          lastClassification,
+          incompatibleContractObserved,
+        };
+      }
+    } else {
+      consecutiveSuccesses = 0;
+      if (lastClassification === "legacy" || lastClassification === "violated") {
+        incompatibleContractObserved = true;
+      }
+    }
+
+    if (attempt < PUBLIC_V2_RESTORE_PROBE_ATTEMPTS) await pause(PUBLIC_V2_RESTORE_PROBE_INTERVAL_MS);
+  }
+
+  return {
+    contractProbe: incompatibleContractObserved ? "violated" : "unavailable",
+    attemptsUsed: PUBLIC_V2_RESTORE_PROBE_ATTEMPTS,
+    maximumAttempts: PUBLIC_V2_RESTORE_PROBE_ATTEMPTS,
+    intervalMs: PUBLIC_V2_RESTORE_PROBE_INTERVAL_MS,
+    consecutiveSuccessesRequired: PUBLIC_V2_RESTORE_REQUIRED_CONSECUTIVE_SUCCESSES,
+    consecutiveSuccessesObserved: consecutiveSuccesses,
+    lastHttpStatus,
+    lastClassification,
+    incompatibleContractObserved,
+  };
+}
+
+export async function probePublicV2RestoreConvergence({ read, expected, pause = wait }) {
+  if (
+    !isRecord(expected) ||
+    typeof expected.key !== "string" ||
+    expected.key.length < 1 ||
+    !UUID.test(String(expected.formId ?? "")) ||
+    !UUID.test(String(expected.versionId ?? "")) ||
+    !Number.isSafeInteger(expected.version) ||
+    expected.version < 1
+  )
+    throw legacyBridgeRefusal("CONTRACT_PROBE_INPUT_INVALID");
+
+  return probeRestoreConvergence({
+    read,
+    pause,
+    classify: (result) => {
+      if (result?.status !== 200) return "unavailable";
+      if (isPublicV2FormContract(result.body, expected)) return "public-v2";
+      if (isLegacyFormContract(result.body, expected)) return "legacy";
+      // An unknown successful payload is never accepted. It remains retryable only inside this
+      // fixed propagation window, and any observation is preserved as a terminal violation.
+      return "violated";
+    },
+  });
+}
+
+export function isPublicV2RestoreSentinelContract(result) {
+  return (
+    result?.status === 404 && exactKeys(result.body, ["error"]) && result.body.error === "Não encontrado."
+  );
+}
+
+// Candidate cms-public rejects version=0 before any database read. The legacy f48 implementation
+// ignores that parameter and returns 204 for the per-run missing key, so this proves the candidate
+// dataplane even when an interrupted run left no fixture state for the watchdog.
+export async function probePublicV2RestoreSentinelConvergence({ read, pause = wait }) {
+  return probeRestoreConvergence({
+    read,
+    pause,
+    classify: (result) => {
+      if (isPublicV2RestoreSentinelContract(result)) return "public-v2";
+      if (result?.status === 204) return "legacy";
+      if (!Number.isInteger(result?.status) || result.status >= 500) return "unavailable";
+      return "violated";
+    },
+  });
 }
 
 export function legacyBridgeMarkers(runId, runAttempt) {

@@ -702,7 +702,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$LEGACY_ENGAGE" = success ] && [ "$LEGACY_RESTORE" != success ]; then
-            echo "::error::The legacy public backend stayed engaged on staging."
+            echo "::error::The candidate public backend restore was not proven; the recovery lease remains armed."
             exit 1
           fi
           if [ "$LEGACY_ENGAGE" != success ]; then test "$LEGACY_RESTORE" = skipped; fi

@@ -141,6 +141,14 @@ test("F-018 exposes a read-only snapshot and two-person Gate G11 evidence", asyn
   assert.match(sql, /restoreRtoMinutes/);
   assert.match(edge, /CMS_SYSTEM_PRODUCTION_GATED/);
   assert.match(edge, /Server-Timing.*admin-read/);
+  const snapshotBranch = edge.slice(
+    edge.indexOf('if (command.action === "snapshot")'),
+    edge.indexOf("const identity = await authenticateCms(req)"),
+  );
+  assert.match(
+    snapshotBranch,
+    /const rpcStartedAt = performance\.now\(\)[\s\S]*caller\.rpc\("cms_get_system_snapshot_authenticated"[\s\S]*const rpcDurationMs = performance\.now\(\) - rpcStartedAt[\s\S]*admin-read;dur=[\s\S]*admin-rpc;dur=\$\{Math\.round\(rpcDurationMs\)\}/,
+  );
   assert.match(edge, /identity\.claims\.aal !== "aal2"/);
   assert.match(edge, /cms_system_capability_limited/);
   assert.match(edge, /cms_get_system_snapshot_authenticated/);
@@ -241,8 +249,18 @@ test("load statistics use nearest-rank percentiles and strict evidence evaluatio
     maxMs: 4,
   });
   assert.equal(
-    serverTimingDuration(new Headers({ "Server-Timing": "db;dur=4, admin-read;dur=123.5" }), "admin-read"),
+    serverTimingDuration(
+      new Headers({ "Server-Timing": "db;dur=4, admin-read;dur=123.5, admin-rpc;dur=119" }),
+      "admin-read",
+    ),
     123.5,
+  );
+  assert.equal(
+    serverTimingDuration(
+      new Headers({ "Server-Timing": "db;dur=4, admin-read;dur=123.5, admin-rpc;dur=119" }),
+      "admin-rpc",
+    ),
+    119,
   );
   assert.equal(Number.isNaN(serverTimingDuration(new Headers(), "command")), true);
   const result = evaluateSystemEvidence({
@@ -307,6 +325,13 @@ test("G11 executable controls remain reproducible and fail-closed", async () => 
   assert.match(canary, /sourceSha/);
   assert.match(canary, /servedReleaseSha/);
   assert.match(canary, /adminReadWarmupServerMs/);
+  assert.match(canary, /adminReadWarmupRpcMs/);
+  assert.match(canary, /adminReadMeasuredRpcMs/);
+  assert.match(canary, /snapshotWarmupDurations\.every\(Number\.isFinite\)/);
+  assert.match(canary, /snapshotWarmupRpcDurations\.every\(Number\.isFinite\)/);
+  assert.match(canary, /snapshotRpcDurations\.every\(Number\.isFinite\)/);
+  assert.match(canary, /adminReadP95Ms: Math\.round\(percentile\(snapshotDurations, 95\)\)/);
+  assert.doesNotMatch(canary, /adminReadP95Ms:.*snapshotRpcDurations/);
   assert.match(canary, /commandMutationSamples: 1/);
   assert.match(canary, /commandReplaySamples: 9/);
   assert.match(canary, /commandMeasuredWallMs/);

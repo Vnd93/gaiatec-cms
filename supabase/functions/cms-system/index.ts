@@ -197,14 +197,20 @@ Deno.serve(async (req) => {
   if (command.action === "snapshot") {
     const caller = authenticatedSystemClient(req);
     if (!caller) return json(req, { error: "Sessão inválida." }, 401);
+    const rpcStartedAt = performance.now();
     const { data, error } = await caller.rpc("cms_get_system_snapshot_authenticated", {
       p_environment: environment,
       p_site_key: siteKey,
       p_correlation_id: correlationId,
     });
+    const rpcDurationMs = performance.now() - rpcStartedAt;
     if (error) return errorResponse(req, error, correlationId);
     return json(req, data, 200, {
-      "Server-Timing": `admin-read;dur=${Math.round(performance.now() - requestStartedAt)}`,
+      // admin-read remains the normative end-to-end server measurement. admin-rpc only separates
+      // the Edge wrapper from the PostgREST/RPC path without changing the gate.
+      "Server-Timing":
+        `admin-read;dur=${Math.round(performance.now() - requestStartedAt)}, ` +
+        `admin-rpc;dur=${Math.round(rpcDurationMs)}`,
     });
   }
 

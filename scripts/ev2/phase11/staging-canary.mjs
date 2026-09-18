@@ -1108,19 +1108,23 @@ try {
   const adminReadSamples = 20;
   const adminReadWarmups = adminReadSamples;
   const snapshotWarmupDurations = [];
+  const snapshotWarmupRpcDurations = [];
   const snapshotWarmupWallDurations = [];
   for (let warmup = 0; warmup < adminReadWarmups; warmup += 1) {
     const response = await system(context, operator, "snapshot");
     snapshotWarmupDurations.push(serverTimingDuration(response.headers, "admin-read"));
+    snapshotWarmupRpcDurations.push(serverTimingDuration(response.headers, "admin-rpc"));
     snapshotWarmupWallDurations.push(response.durationMs);
   }
 
   const snapshotDurations = [];
+  const snapshotRpcDurations = [];
   const snapshotWallDurations = [];
   let latestSnapshot;
   for (let index = 0; index < adminReadSamples; index += 1) {
     const response = await system(context, operator, "snapshot");
     snapshotDurations.push(serverTimingDuration(response.headers, "admin-read"));
+    snapshotRpcDurations.push(serverTimingDuration(response.headers, "admin-rpc"));
     snapshotWallDurations.push(response.durationMs);
     latestSnapshot = response.json;
   }
@@ -1145,8 +1149,10 @@ try {
     },
     vectors: {
       adminReadWarmupServerMs: sanitizeTimingVector(snapshotWarmupDurations),
+      adminReadWarmupRpcMs: sanitizeTimingVector(snapshotWarmupRpcDurations),
       adminReadWarmupWallMs: sanitizeTimingVector(snapshotWarmupWallDurations),
       adminReadMeasuredServerMs: sanitizeTimingVector(snapshotDurations),
+      adminReadMeasuredRpcMs: sanitizeTimingVector(snapshotRpcDurations),
       adminReadMeasuredWallMs: sanitizeTimingVector(snapshotWallDurations),
       commandMeasuredServerMs: sanitizeTimingVector(commandDurations),
       commandMeasuredWallMs: sanitizeTimingVector(commandWallDurations),
@@ -1160,8 +1166,17 @@ try {
   console.log(JSON.stringify(timingSamples));
   check(
     "backend_server_timing_available",
-    commandDurations.every(Number.isFinite) && snapshotDurations.every(Number.isFinite),
-    JSON.stringify({ commandSamples: commandDurations.length, adminReadSamples: snapshotDurations.length }),
+    commandDurations.every(Number.isFinite) &&
+      snapshotDurations.every(Number.isFinite) &&
+      snapshotWarmupDurations.every(Number.isFinite) &&
+      snapshotWarmupRpcDurations.every(Number.isFinite) &&
+      snapshotRpcDurations.every(Number.isFinite),
+    JSON.stringify({
+      commandSamples: commandDurations.length,
+      adminReadSamples: snapshotDurations.length,
+      adminRpcWarmups: snapshotWarmupRpcDurations.length,
+      adminRpcSamples: snapshotRpcDurations.length,
+    }),
   );
   check("database_snapshot_ready", latestSnapshot.gateReady === true, JSON.stringify(latestSnapshot.metrics));
   check(

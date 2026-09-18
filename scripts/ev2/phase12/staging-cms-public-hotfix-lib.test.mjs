@@ -727,6 +727,7 @@ test("pre-probe allows only a clean pass or the single known contato tail and fu
 });
 
 test("trusted failed baseline is accepted only with the exact successful finalizer and artifact", () => {
+  assert.equal(Object.hasOwn(STAGING_CMS_PUBLIC_HOTFIX.trustedBaseline, "event"), false);
   const inventory = baselineInventory(STAGING_CMS_PUBLIC_HOTFIX.sourceBaselineFunction);
   const snapshot = functionInventorySnapshot(inventory);
   const target = snapshot.target;
@@ -783,6 +784,9 @@ test("trusted failed baseline is accepted only with the exact successful finaliz
     },
   };
   assert.equal(validateTrustedBaselineEvidence(input).valid, true);
+  const wrongEvent = structuredClone(input);
+  wrongEvent.run.event = "workflow_run";
+  assert.match(validateTrustedBaselineEvidence(wrongEvent).violations.join(","), /trusted_run_invalid/);
   const noFinalizer = structuredClone(input);
   noFinalizer.jobs.jobs[2].conclusion = "failure";
   assert.match(validateTrustedBaselineEvidence(noFinalizer).violations.join(","), /trusted_jobs_invalid/);

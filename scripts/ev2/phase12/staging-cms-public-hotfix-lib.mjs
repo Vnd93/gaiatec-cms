@@ -68,7 +68,6 @@ export const STAGING_CMS_PUBLIC_HOTFIX = Object.freeze({
   trustedBaseline: Object.freeze({
     runId: "34908383307",
     runAttempt: 1,
-    event: "workflow_dispatch",
     artifactId: "10373653337",
     artifactName: "staging-terminal-34908383307-1",
     artifactDigest: "sha256:7899884c96e7a8bb2048d00ef5dd47b5c1c151e2f439768addd0ce4ae3d0b8cb",
@@ -1294,7 +1293,7 @@ export function validateTrustedBaselineEvidence({ run, jobs, artifact, probe, in
     Number(run?.run_attempt) !== expected.runAttempt ||
     run?.name !== "Deploy staging" ||
     run?.path !== ".github/workflows/deploy-staging.yml" ||
-    run?.event !== expected.event ||
+    run?.event !== "workflow_dispatch" ||
     run?.status !== "completed" ||
     run?.conclusion !== "failure" ||
     run?.head_branch !== "main" ||

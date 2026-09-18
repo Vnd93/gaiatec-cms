@@ -80,10 +80,103 @@ test("main workflow refuses every rerun before checkout, artifacts, state, or mu
     runner,
     /workflowPath === STAGING_CMS_PUBLIC_HOTFIX\.workflowPath && executor\.runAttempt !== 1/,
   );
-  assert.match(watchdogWorkflow, /if: >-\s+github\.event\.workflow_run\.run_attempt == 1 &&/);
   assert.match(
     watchdogWorkflow,
-    /group: \$\{\{ github\.event\.workflow_run\.run_attempt == 1 && 'staging' \|\| format\('staging-hotfix-watchdog-refused-\{0\}-\{1\}', github\.event\.workflow_run\.id, github\.event\.workflow_run\.run_attempt\) \}\}/,
+    /if: >-[\s\S]*github\.event_name == 'workflow_run' &&\s+github\.event\.workflow_run\.run_attempt == 1 &&/,
+  );
+  assert.match(
+    watchdogWorkflow,
+    /github\.event\.workflow_run\.run_attempt == 1 && 'staging' \|\| format\('staging-hotfix-watchdog-refused-\{0\}-\{1\}', github\.event\.workflow_run\.id, github\.event\.workflow_run\.run_attempt\)/,
+  );
+});
+
+test("manual watchdog recovery is exact, CI-bound, rollback-only and uses fixed controls", () => {
+  assert.match(watchdogWorkflow, /workflow_dispatch:\s+inputs:/);
+  assert.match(watchdogWorkflow, /group: \$\{\{ github\.event_name == 'workflow_dispatch' && 'staging'/);
+  const gate = stepBody(watchdogWorkflow, "Validate the exact manual rollback authorization before checkout");
+  assertOrdered(gate, [
+    'test "$GITHUB_EVENT_NAME" = workflow_dispatch',
+    'test "$GITHUB_ACTOR" = Vnd93',
+    'test "$GITHUB_TRIGGERING_ACTOR" = Vnd93',
+    'test "$GITHUB_REF" = refs/heads/main',
+    "grep -E '^[1-9][0-9]*$'",
+    'test "$PARENT_RUN_ID" = 35295119905',
+    'test "$PARENT_RUN_ATTEMPT" = 1',
+    'test "$PARENT_CONTROL_SHA" = 33a626ca0ef17c96686c8bbea9a71b326724ec0c',
+    'expected="RECOVER_STAGING_CMS_PUBLIC_PARENT_RUN_${PARENT_RUN_ID}',
+    'test "$AUTHORIZATION" = "$expected"',
+  ]);
+  assert.match(gate, /RECOVERY_CONTROL_\$\{GITHUB_SHA\}_CI_\$\{RECOVERY_CI_RUN_ID\}_ROLLBACK_c8aec5/);
+
+  const ciGate = stepBody(
+    watchdogWorkflow,
+    "Verify the exact successful CI run bound to the recovery control",
+  );
+  assert.match(ciGate, /verify-recovery-dispatch/);
+  assert.match(ciGate, /--control-sha "\$GITHUB_SHA"/);
+  assert.match(ciGate, /--ci-run-id "\$RECOVERY_CI_RUN_ID"/);
+
+  const executorCheckout = stepBody(watchdogWorkflow, "Checkout the exact executor control revision");
+  assert.match(executorCheckout, /github\.event_name == 'workflow_dispatch' && github\.sha/);
+  const parentCheckout = stepBody(
+    watchdogWorkflow,
+    "Checkout the exact parent control revision for manual evidence",
+  );
+  assert.match(parentCheckout, /if: github\.event_name == 'workflow_dispatch'/);
+  assert.match(parentCheckout, /path: parent-control/);
+
+  assert.doesNotMatch(watchdogWorkflow, /staging-cms-public-hotfix\.mjs apply-candidate/);
+  assert.match(runner, /G12_STAGING_CMS_PUBLIC_HOTFIX_RECOVERY_AUTHORIZATION_REFUSED/);
+  assert.match(runner, /G12_STAGING_CMS_PUBLIC_HOTFIX_RECOVERY_CI_REFUSED/);
+  assert.match(runner, /run\.event === "workflow_dispatch"/);
+  assert.match(runner, /await verifiedRecoveryCi\(fields\.ciRunId, fields\.controlSha\)/);
+});
+
+test("manual watchdog retries reuse one run, require durable intent and cannot issue a second PATCH", () => {
+  const jobGate = watchdogWorkflow.slice(
+    watchdogWorkflow.indexOf("  recover-incomplete-hotfix:"),
+    watchdogWorkflow.indexOf("    steps:"),
+  );
+  assert.doesNotMatch(jobGate, /github\.run_attempt == 1/);
+  const retryGate = stepBody(watchdogWorkflow, "Refuse a manual retry without the durable rollback intent");
+  assert.match(retryGate, /github\.run_attempt != 1/);
+  assert.match(retryGate, /steps\.rollback_variable\.outputs\.state_present != 'true'/);
+  const ownerGate = stepBody(watchdogWorkflow, "Refuse a manual dispatch adopting another recovery run");
+  assertOrdered(ownerGate, [
+    'test "$INTENT_OWNER_RUN_ID" = "$GITHUB_RUN_ID"',
+    'test "$INTENT_OWNER_RUN_ATTEMPT" = 1',
+    'test "$INTENT_OWNER_RUN_SHA" = "$GITHUB_SHA"',
+    'test "$INTENT_OWNER_CONTROL_SHA" = "$PARENT_CONTROL_SHA"',
+    'test "$INTENT_OWNER_WORKFLOW_PATH" = .github/workflows/promote-staging-cms-public-hotfix-watchdog.yml',
+  ]);
+  assert.ok(
+    watchdogWorkflow.indexOf("Refuse a manual dispatch adopting another recovery run") <
+      watchdogWorkflow.indexOf("Download the predecessor rollback-intent artifact"),
+  );
+  for (const laterStep of [
+    "Restore or reconcile the exact baseline transition",
+    "Upload the new rollback receipt immediately after observation",
+    "Run the bound full probe for the selected terminal state",
+    "Upload terminal recovery evidence before clearing any state",
+  ])
+    assert.ok(
+      watchdogWorkflow.indexOf("Refuse a manual dispatch adopting another recovery run") <
+        watchdogWorkflow.indexOf(laterStep),
+      laterStep,
+    );
+  const prepare = stepBody(
+    watchdogWorkflow,
+    "Prepare a rollback intent only while the exact candidate is live",
+  );
+  assert.match(prepare, /github\.event_name != 'workflow_dispatch' \|\| github\.run_attempt == 1/);
+  const restoreStep = stepBody(watchdogWorkflow, "Restore or reconcile the exact baseline transition");
+  assert.match(restoreStep, /ROLLBACK_INTENT_PREPARED: \$\{\{ steps\.prepare_rollback\.outcome \}\}/);
+  assert.match(restoreStep, /if \[ "\$ROLLBACK_INTENT_PREPARED" = success \]; then/);
+  assert.match(restoreStep, /test "\$RECOVERY_RUN_ATTEMPT" = 1/);
+  assert.match(restoreStep, /args\+=\(--allow-patch true\)/);
+  assert.match(
+    runner,
+    /if \(!allowPatch \|\| !patchAuthorization\.valid\)[\s\S]*ROLLBACK_PATCH_REPLAY_REFUSED/,
   );
 });
 
@@ -676,7 +769,7 @@ test("rollback PATCH remains single-owner and later watchdog attempts only recon
   assert.match(restoreStep, /ROLLBACK_INTENT_PREPARED: \$\{\{ steps\.prepare_rollback\.outcome \}\}/);
   assert.match(
     restoreStep,
-    /if \[ "\$ROLLBACK_INTENT_PREPARED" = success \]; then\s+args\+=\(--allow-patch true\)/,
+    /if \[ "\$ROLLBACK_INTENT_PREPARED" = success \]; then[\s\S]*test "\$RECOVERY_RUN_ATTEMPT" = 1[\s\S]*args\+=\(--allow-patch true\)/,
   );
   const restore = runner.slice(
     runner.indexOf("async function restoreBaseline()"),

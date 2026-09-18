@@ -1,6 +1,28 @@
 name: Promote staging cms-public hotfix watchdog
 
 on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Exact incident-bound rollback authorization literal
+        required: true
+        type: string
+      parent_run_id:
+        description: Failed promotion run id
+        required: true
+        type: string
+      parent_run_attempt:
+        description: Failed promotion run attempt
+        required: true
+        type: string
+      parent_control_sha:
+        description: Failed promotion control SHA
+        required: true
+        type: string
+      recovery_ci_run_id:
+        description: Successful CI run for the recovery control SHA
+        required: true
+        type: string
   workflow_run:
     workflows: ["Promote staging cms-public hotfix"]
     types: [completed]
@@ -11,28 +33,70 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.event.workflow_run.run_attempt == 1 && 'staging' || format('staging-hotfix-watchdog-refused-{0}-{1}', github.event.workflow_run.id, github.event.workflow_run.run_attempt) }}
+  group: ${{ github.event_name == 'workflow_dispatch' && 'staging' || (github.event.workflow_run.run_attempt == 1 && 'staging' || format('staging-hotfix-watchdog-refused-{0}-{1}', github.event.workflow_run.id, github.event.workflow_run.run_attempt)) }}
   cancel-in-progress: false
 
 jobs:
   recover-incomplete-hotfix:
     if: >-
+      (github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'Vnd93' &&
+      github.triggering_actor == 'Vnd93') ||
+      (github.event_name == 'workflow_run' &&
       github.event.workflow_run.run_attempt == 1 &&
       github.event.workflow_run.conclusion != 'success' &&
       github.event.workflow_run.event == 'workflow_dispatch' &&
       github.event.workflow_run.head_branch == 'main' &&
       github.event.workflow_run.path == '.github/workflows/promote-staging-cms-public-hotfix.yml' &&
-      github.event.workflow_run.head_repository.full_name == github.repository
+      github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 90
     environment: staging
+    env:
+      PARENT_RUN_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.parent_run_id || github.event.workflow_run.id }}
+      PARENT_RUN_ATTEMPT: ${{ github.event_name == 'workflow_dispatch' && inputs.parent_run_attempt || github.event.workflow_run.run_attempt }}
+      PARENT_CONTROL_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.parent_control_sha || github.event.workflow_run.head_sha }}
+      G12_RECOVERY_PARENT_RUN_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.parent_run_id || '' }}
+      G12_RECOVERY_PARENT_RUN_ATTEMPT: ${{ github.event_name == 'workflow_dispatch' && inputs.parent_run_attempt || '' }}
+      G12_RECOVERY_PARENT_CONTROL_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.parent_control_sha || '' }}
+      G12_RECOVERY_CONTROL_SHA: ${{ github.event_name == 'workflow_dispatch' && github.sha || '' }}
+      G12_RECOVERY_CI_RUN_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.recovery_ci_run_id || '' }}
+      G12_RECOVERY_CONFIRMATION: ${{ github.event_name == 'workflow_dispatch' && inputs.confirmation || '' }}
     steps:
-      - name: Checkout the exact parent control revision
+      - name: Validate the exact manual rollback authorization before checkout
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          AUTHORIZATION: ${{ inputs.confirmation }}
+          RECOVERY_CI_RUN_ID: ${{ inputs.recovery_ci_run_id }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$GITHUB_ACTOR" = Vnd93
+          test "$GITHUB_TRIGGERING_ACTOR" = Vnd93
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(printf '%s' "$GITHUB_RUN_ATTEMPT" | grep -E '^[1-9][0-9]*$')" = "$GITHUB_RUN_ATTEMPT"
+          test "$PARENT_RUN_ID" = 35295119905
+          test "$PARENT_RUN_ATTEMPT" = 1
+          test "$PARENT_CONTROL_SHA" = 33a626ca0ef17c96686c8bbea9a71b326724ec0c
+          test "$(printf '%s' "$GITHUB_SHA" | grep -E '^[a-f0-9]{40}$')" = "$GITHUB_SHA"
+          test "$(printf '%s' "$RECOVERY_CI_RUN_ID" | grep -E '^[1-9][0-9]*$')" = "$RECOVERY_CI_RUN_ID"
+          expected="RECOVER_STAGING_CMS_PUBLIC_PARENT_RUN_${PARENT_RUN_ID}_ATTEMPT_${PARENT_RUN_ATTEMPT}_PARENT_CONTROL_${PARENT_CONTROL_SHA}_RECOVERY_CONTROL_${GITHUB_SHA}_CI_${RECOVERY_CI_RUN_ID}_ROLLBACK_c8aec5cad25830580bf9ca8a89594ebce1aa3570"
+          test "$AUTHORIZATION" = "$expected"
+      - name: Checkout the exact executor control revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.workflow_run.head_sha }}
           fetch-depth: 0
           path: control
+          persist-credentials: false
+      - name: Checkout the exact parent control revision for manual evidence
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.parent_control_sha }}
+          fetch-depth: 0
+          path: parent-control
           persist-credentials: false
       - name: Checkout current main controls for the cross-workflow fence
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -45,15 +109,36 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: control/.nvmrc
+      - name: Verify the exact successful CI run bound to the recovery control
+        if: github.event_name == 'workflow_dispatch'
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          AUTHORIZATION: ${{ inputs.confirmation }}
+          RECOVERY_CI_RUN_ID: ${{ inputs.recovery_ci_run_id }}
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs verify-recovery-dispatch
+          --parent-run-id "$PARENT_RUN_ID"
+          --parent-run-attempt "$PARENT_RUN_ATTEMPT"
+          --parent-control-sha "$PARENT_CONTROL_SHA"
+          --control-sha "$GITHUB_SHA"
+          --ci-run-id "$RECOVERY_CI_RUN_ID"
+          --confirmation "$AUTHORIZATION"
+          --output ../recovery-dispatch-verification.json
       - name: Validate parent and watchdog identities before recovery
         env:
-          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
-          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
-          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+          PARENT_RUN_ID: ${{ env.PARENT_RUN_ID }}
+          PARENT_RUN_ATTEMPT: ${{ env.PARENT_RUN_ATTEMPT }}
+          PARENT_CONTROL_SHA: ${{ env.PARENT_CONTROL_SHA }}
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = refs/heads/main
-          test "$(git -C control rev-parse HEAD)" = "$PARENT_CONTROL_SHA"
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            test "$(git -C control rev-parse HEAD)" = "$GITHUB_SHA"
+            test "$(git -C parent-control rev-parse HEAD)" = "$PARENT_CONTROL_SHA"
+          else
+            test "$(git -C control rev-parse HEAD)" = "$PARENT_CONTROL_SHA"
+          fi
           test "$(git -C fence-control rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(printf '%s' "$PARENT_RUN_ID" | grep -E '^[1-9][0-9]*$')" = "$PARENT_RUN_ID"
           test "$(printf '%s' "$PARENT_RUN_ATTEMPT" | grep -E '^[1-9][0-9]*$')" = "$PARENT_RUN_ATTEMPT"
@@ -64,9 +149,9 @@ jobs:
         env:
           RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
           RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
-          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
-          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
-          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+          PARENT_RUN_ID: ${{ env.PARENT_RUN_ID }}
+          PARENT_RUN_ATTEMPT: ${{ env.PARENT_RUN_ATTEMPT }}
+          PARENT_CONTROL_SHA: ${{ env.PARENT_CONTROL_SHA }}
         run: >-
           node scripts/ev2/phase12/recovery-state-store.mjs get
           --allow-missing
@@ -81,9 +166,9 @@ jobs:
         env:
           RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
           RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
-          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
-          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
-          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+          PARENT_RUN_ID: ${{ env.PARENT_RUN_ID }}
+          PARENT_RUN_ATTEMPT: ${{ env.PARENT_RUN_ATTEMPT }}
+          PARENT_CONTROL_SHA: ${{ env.PARENT_CONTROL_SHA }}
         run: >-
           node scripts/ev2/phase12/recovery-state-store.mjs get
           --allow-missing
@@ -98,9 +183,9 @@ jobs:
         env:
           RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
           RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
-          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
-          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
-          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+          PARENT_RUN_ID: ${{ env.PARENT_RUN_ID }}
+          PARENT_RUN_ATTEMPT: ${{ env.PARENT_RUN_ATTEMPT }}
+          PARENT_CONTROL_SHA: ${{ env.PARENT_CONTROL_SHA }}
         run: >-
           node scripts/ev2/phase12/recovery-state-store.mjs get
           --allow-missing
@@ -134,15 +219,24 @@ jobs:
           fi
           echo 'required=true' >> "$GITHUB_OUTPUT"
           echo 'mode=recovery' >> "$GITHUB_OUTPUT"
+      - name: Refuse a manual retry without the durable rollback intent
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          github.run_attempt != 1 &&
+          steps.marker_context.outputs.required == 'true' &&
+          steps.rollback_variable.outputs.state_present != 'true'
+        run: |
+          echo '::error::A manual recovery retry may only reconcile a rollback intent sealed by attempt 1.'
+          exit 1
       - name: Resolve the complete exact parent artifact inventory
         if: steps.marker_context.outputs.required == 'true'
         id: parent_artifacts
         working-directory: control
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
-          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
-          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
-          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+          PARENT_RUN_ID: ${{ env.PARENT_RUN_ID }}
+          PARENT_RUN_ATTEMPT: ${{ env.PARENT_RUN_ATTEMPT }}
+          PARENT_CONTROL_SHA: ${{ env.PARENT_CONTROL_SHA }}
         run: >-
           node scripts/ev2/phase12/staging-cms-public-hotfix.mjs resolve-run-artifacts
           --run-id "$PARENT_RUN_ID"
@@ -162,7 +256,7 @@ jobs:
           merge-multiple: true
           github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
           repository: ${{ github.repository }}
-          run-id: ${{ github.event.workflow_run.id }}
+          run-id: ${{ env.PARENT_RUN_ID }}
       - name: Verify and reconcile the parent main state
         if: steps.marker_context.outputs.required == 'true'
         id: recovery_context
@@ -176,9 +270,9 @@ jobs:
           CANDIDATE_VARIABLE_PRESENT: ${{ steps.candidate_variable.outputs.state_present }}
           ROLLBACK_VARIABLE_PRESENT: ${{ steps.rollback_variable.outputs.state_present }}
           PROMOTED_TERMINAL_PRESENT: ${{ steps.parent_artifacts.outputs.promoted_terminal_present }}
-          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
-          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
-          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+          PARENT_RUN_ID: ${{ env.PARENT_RUN_ID }}
+          PARENT_RUN_ATTEMPT: ${{ env.PARENT_RUN_ATTEMPT }}
+          PARENT_CONTROL_SHA: ${{ env.PARENT_CONTROL_SHA }}
         run: |
           set -euo pipefail
           test "$STATE_ARTIFACT_PRESENT" = true
@@ -213,15 +307,15 @@ jobs:
           merge-multiple: true
           github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
           repository: ${{ github.repository }}
-          run-id: ${{ github.event.workflow_run.id }}
+          run-id: ${{ env.PARENT_RUN_ID }}
       - name: Revalidate the recovery package against its exact parent artifact
         if: steps.recovery_context.outputs.required == 'true'
         working-directory: control
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
-          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
-          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
-          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+          PARENT_RUN_ID: ${{ env.PARENT_RUN_ID }}
+          PARENT_RUN_ATTEMPT: ${{ env.PARENT_RUN_ATTEMPT }}
+          PARENT_CONTROL_SHA: ${{ env.PARENT_CONTROL_SHA }}
         run: >-
           node scripts/ev2/phase12/staging-cms-public-hotfix.mjs verify-artifact
           --state ../recovered-state/hotfix-state.json
@@ -241,7 +335,7 @@ jobs:
           merge-multiple: true
           github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
           repository: ${{ github.repository }}
-          run-id: ${{ github.event.workflow_run.id }}
+          run-id: ${{ env.PARENT_RUN_ID }}
       - name: Verify and reconcile the exact parent candidate intent
         if: steps.recovery_context.outputs.required == 'true'
         id: candidate_context
@@ -251,9 +345,9 @@ jobs:
           RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
           INTENT_ARTIFACT_PRESENT: ${{ steps.parent_artifacts.outputs.candidate_intent_present }}
           INTENT_VARIABLE_PRESENT: ${{ steps.candidate_variable.outputs.state_present }}
-          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
-          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
-          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+          PARENT_RUN_ID: ${{ env.PARENT_RUN_ID }}
+          PARENT_RUN_ATTEMPT: ${{ env.PARENT_RUN_ATTEMPT }}
+          PARENT_CONTROL_SHA: ${{ env.PARENT_CONTROL_SHA }}
         run: |
           set -euo pipefail
           if [ "$INTENT_ARTIFACT_PRESENT" != true ]; then
@@ -290,7 +384,7 @@ jobs:
           merge-multiple: true
           github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
           repository: ${{ github.repository }}
-          run-id: ${{ github.event.workflow_run.id }}
+          run-id: ${{ env.PARENT_RUN_ID }}
       - name: Refuse unsupported rollback evidence attributed to the main run
         if: steps.recovery_context.outputs.required == 'true'
         env:
@@ -329,6 +423,23 @@ jobs:
           --state ../recovered-state/hotfix-state.json
           --rollback-intent ../rollback-variable/rollback-intent.json
           --output ../watchdog-artifacts-predecessor.json
+      - name: Refuse a manual dispatch adopting another recovery run
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          steps.rollback_variable.outputs.state_present == 'true'
+        env:
+          INTENT_OWNER_RUN_ID: ${{ steps.predecessor_watchdog_artifacts.outputs.rollback_intent_owner_run_id }}
+          INTENT_OWNER_RUN_ATTEMPT: ${{ steps.predecessor_watchdog_artifacts.outputs.rollback_intent_owner_run_attempt }}
+          INTENT_OWNER_RUN_SHA: ${{ steps.predecessor_watchdog_artifacts.outputs.rollback_intent_owner_run_sha }}
+          INTENT_OWNER_CONTROL_SHA: ${{ steps.predecessor_watchdog_artifacts.outputs.rollback_intent_owner_control_sha }}
+          INTENT_OWNER_WORKFLOW_PATH: ${{ steps.predecessor_watchdog_artifacts.outputs.rollback_intent_owner_workflow_path }}
+        run: |
+          set -euo pipefail
+          test "$INTENT_OWNER_RUN_ID" = "$GITHUB_RUN_ID"
+          test "$INTENT_OWNER_RUN_ATTEMPT" = 1
+          test "$INTENT_OWNER_RUN_SHA" = "$GITHUB_SHA"
+          test "$INTENT_OWNER_CONTROL_SHA" = "$PARENT_CONTROL_SHA"
+          test "$INTENT_OWNER_WORKFLOW_PATH" = .github/workflows/promote-staging-cms-public-hotfix-watchdog.yml
       - name: Select recovery or certified terminal cleanup
         if: steps.recovery_context.outputs.required == 'true'
         id: execution_context
@@ -367,9 +478,9 @@ jobs:
         working-directory: fence-control
         env:
           RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
-          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
-          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
-          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+          PARENT_RUN_ID: ${{ env.PARENT_RUN_ID }}
+          PARENT_RUN_ATTEMPT: ${{ env.PARENT_RUN_ATTEMPT }}
+          PARENT_CONTROL_SHA: ${{ env.PARENT_CONTROL_SHA }}
         run: |
           set -euo pipefail
           node scripts/ev2/phase12/recovery-state-store.mjs verify \
@@ -403,7 +514,7 @@ jobs:
           merge-multiple: true
           github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
           repository: ${{ github.repository }}
-          run-id: ${{ github.event.workflow_run.id }}
+          run-id: ${{ env.PARENT_RUN_ID }}
       - name: Download the exact predecessor restored terminal certificate
         if: steps.execution_context.outputs.mode == 'restored-cleanup'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -461,9 +572,9 @@ jobs:
           RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
           RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
           CLEANUP_MODE: ${{ steps.execution_context.outputs.mode }}
-          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
-          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
-          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+          PARENT_RUN_ID: ${{ env.PARENT_RUN_ID }}
+          PARENT_RUN_ATTEMPT: ${{ env.PARENT_RUN_ATTEMPT }}
+          PARENT_CONTROL_SHA: ${{ env.PARENT_CONTROL_SHA }}
         run: |
           set -euo pipefail
           if [ "$CLEANUP_MODE" = restored-cleanup ]; then
@@ -497,9 +608,9 @@ jobs:
         env:
           RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
           RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
-          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
-          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
-          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+          PARENT_RUN_ID: ${{ env.PARENT_RUN_ID }}
+          PARENT_RUN_ATTEMPT: ${{ env.PARENT_RUN_ATTEMPT }}
+          PARENT_CONTROL_SHA: ${{ env.PARENT_CONTROL_SHA }}
         run: >-
           node scripts/ev2/phase12/recovery-state-store.mjs fence
           --owner-kind staging-cms-public-hotfix
@@ -570,6 +681,7 @@ jobs:
       - name: Prepare a rollback intent only while the exact candidate is live
         if: >-
           steps.execution_context.outputs.mode == 'recovery' &&
+          (github.event_name != 'workflow_dispatch' || github.run_attempt == 1) &&
           steps.rollback_variable.outputs.state_present != 'true' &&
           (steps.initial_observation.outputs.classification == 'candidate-intended' ||
           steps.initial_observation.outputs.classification == 'candidate-receipted')
@@ -601,9 +713,9 @@ jobs:
         working-directory: fence-control
         env:
           RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
-          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
-          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
-          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+          PARENT_RUN_ID: ${{ env.PARENT_RUN_ID }}
+          PARENT_RUN_ATTEMPT: ${{ env.PARENT_RUN_ATTEMPT }}
+          PARENT_CONTROL_SHA: ${{ env.PARENT_CONTROL_SHA }}
         run: >-
           node scripts/ev2/phase12/recovery-state-store.mjs seal
           --kind staging-cms-public-hotfix-rollback-intent
@@ -629,9 +741,9 @@ jobs:
         env:
           RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
           RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
-          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
-          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
-          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+          PARENT_RUN_ID: ${{ env.PARENT_RUN_ID }}
+          PARENT_RUN_ATTEMPT: ${{ env.PARENT_RUN_ATTEMPT }}
+          PARENT_CONTROL_SHA: ${{ env.PARENT_CONTROL_SHA }}
         run: >-
           node scripts/ev2/phase12/recovery-state-store.mjs put
           --kind staging-cms-public-hotfix-rollback-intent
@@ -676,9 +788,9 @@ jobs:
         working-directory: fence-control
         env:
           RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
-          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
-          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
-          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+          PARENT_RUN_ID: ${{ env.PARENT_RUN_ID }}
+          PARENT_RUN_ATTEMPT: ${{ env.PARENT_RUN_ATTEMPT }}
+          PARENT_CONTROL_SHA: ${{ env.PARENT_CONTROL_SHA }}
         run: |
           set -euo pipefail
           node scripts/ev2/phase12/recovery-state-store.mjs verify \
@@ -712,9 +824,9 @@ jobs:
         env:
           RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
           RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
-          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
-          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
-          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+          PARENT_RUN_ID: ${{ env.PARENT_RUN_ID }}
+          PARENT_RUN_ATTEMPT: ${{ env.PARENT_RUN_ATTEMPT }}
+          PARENT_CONTROL_SHA: ${{ env.PARENT_CONTROL_SHA }}
         run: >-
           node scripts/ev2/phase12/recovery-state-store.mjs fence
           --owner-kind staging-cms-public-hotfix
@@ -763,6 +875,8 @@ jobs:
           RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
           CANDIDATE_RECEIPT_PRESENT: ${{ steps.parent_artifacts.outputs.candidate_receipt_present }}
           ROLLBACK_INTENT_PREPARED: ${{ steps.prepare_rollback.outcome }}
+          RECOVERY_EVENT_NAME: ${{ github.event_name }}
+          RECOVERY_RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
           args=(
@@ -779,6 +893,9 @@ jobs:
             args+=(--candidate-receipt ../candidate-receipt-roundtrip/candidate-receipt.json)
           fi
           if [ "$ROLLBACK_INTENT_PREPARED" = success ]; then
+            if [ "$RECOVERY_EVENT_NAME" = workflow_dispatch ]; then
+              test "$RECOVERY_RUN_ATTEMPT" = 1
+            fi
             args+=(--allow-patch true)
           fi
           node scripts/ev2/phase12/staging-cms-public-hotfix.mjs restore-baseline "${args[@]}"
@@ -965,9 +1082,9 @@ jobs:
         env:
           RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
           RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
-          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
-          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
-          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+          PARENT_RUN_ID: ${{ env.PARENT_RUN_ID }}
+          PARENT_RUN_ATTEMPT: ${{ env.PARENT_RUN_ATTEMPT }}
+          PARENT_CONTROL_SHA: ${{ env.PARENT_CONTROL_SHA }}
         run: >-
           node scripts/ev2/phase12/recovery-state-store.mjs fence
           --owner-kind staging-cms-public-hotfix
@@ -981,9 +1098,9 @@ jobs:
           RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
           RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
           TERMINAL_OUTCOME: ${{ steps.terminal_mode.outputs.outcome }}
-          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
-          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
-          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+          PARENT_RUN_ID: ${{ env.PARENT_RUN_ID }}
+          PARENT_RUN_ATTEMPT: ${{ env.PARENT_RUN_ATTEMPT }}
+          PARENT_CONTROL_SHA: ${{ env.PARENT_CONTROL_SHA }}
         run: |
           set -euo pipefail
           if [ "$TERMINAL_OUTCOME" = restored ]; then
@@ -1015,9 +1132,9 @@ jobs:
         env:
           RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
           RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
-          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
-          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
-          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+          PARENT_RUN_ID: ${{ env.PARENT_RUN_ID }}
+          PARENT_RUN_ATTEMPT: ${{ env.PARENT_RUN_ATTEMPT }}
+          PARENT_CONTROL_SHA: ${{ env.PARENT_CONTROL_SHA }}
         run: >-
           node scripts/ev2/phase12/recovery-state-store.mjs fence
           --owner-kind staging-cms-public-hotfix

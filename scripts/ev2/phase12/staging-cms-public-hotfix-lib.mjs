@@ -19,6 +19,14 @@ export const STAGING_CMS_PUBLIC_HOTFIX = Object.freeze({
   workflowPath: ".github/workflows/promote-staging-cms-public-hotfix.yml",
   watchdogName: "Promote staging cms-public hotfix watchdog",
   watchdogPath: ".github/workflows/promote-staging-cms-public-hotfix-watchdog.yml",
+  recoveryIncident: Object.freeze({
+    parentRunId: "35295119905",
+    parentRunAttempt: 1,
+    parentControlSha: "33a626ca0ef17c96686c8bbea9a71b326724ec0c",
+    ciWorkflowName: "CI",
+    ciWorkflowPath: ".github/workflows/ci.yml",
+    ciJobs: Object.freeze(["browser", "database", "hotfix-bundle-smoke", "quality"]),
+  }),
   projectRef: "glcqsosxwgmlhzgcsnzv",
   functionSlug: "cms-public",
   origin: "https://ev2-g17-canary.gaiatec-cms-staging.pages.dev",
@@ -81,6 +89,21 @@ export const STAGING_CMS_PUBLIC_HOTFIX = Object.freeze({
       "file:///home/runner/work/gaiatec-cms/gaiatec-cms/candidate-recovery/supabase/functions/import_map.json",
   }),
 });
+
+export function stagingCmsPublicRecoveryConfirmation({ controlSha, ciRunId }) {
+  if (!FULL_SHA.test(controlSha) || !POSITIVE_INTEGER.test(String(ciRunId)))
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_RECOVERY_CONFIRMATION_INPUT_REFUSED");
+  const incident = STAGING_CMS_PUBLIC_HOTFIX.recoveryIncident;
+  return [
+    "RECOVER_STAGING_CMS_PUBLIC",
+    `PARENT_RUN_${incident.parentRunId}`,
+    `ATTEMPT_${incident.parentRunAttempt}`,
+    `PARENT_CONTROL_${incident.parentControlSha}`,
+    `RECOVERY_CONTROL_${controlSha}`,
+    `CI_${ciRunId}`,
+    `ROLLBACK_${STAGING_CMS_PUBLIC_HOTFIX.rollbackSha}`,
+  ].join("_");
+}
 
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);

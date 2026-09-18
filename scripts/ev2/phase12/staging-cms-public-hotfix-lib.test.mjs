@@ -32,6 +32,7 @@ import {
   sealHotfixProbeProof,
   sealHotfixReceipt,
   sha256Bytes,
+  stagingCmsPublicRecoveryConfirmation,
   STAGING_CMS_PUBLIC_HOTFIX,
   validateCmsPublicHotfixCanary,
   validateCandidateBuildProvenance,
@@ -48,6 +49,23 @@ import {
 } from "./staging-cms-public-hotfix-lib.mjs";
 
 const key = "9".repeat(64);
+
+test("manual recovery authorization is bound to the incident, fixed control, CI and rollback", () => {
+  const controlSha = "7".repeat(40);
+  const ciRunId = "35295987041";
+  assert.equal(
+    stagingCmsPublicRecoveryConfirmation({ controlSha, ciRunId }),
+    `RECOVER_STAGING_CMS_PUBLIC_PARENT_RUN_35295119905_ATTEMPT_1_PARENT_CONTROL_33a626ca0ef17c96686c8bbea9a71b326724ec0c_RECOVERY_CONTROL_${controlSha}_CI_${ciRunId}_ROLLBACK_c8aec5cad25830580bf9ca8a89594ebce1aa3570`,
+  );
+  assert.throws(
+    () => stagingCmsPublicRecoveryConfirmation({ controlSha: "bad", ciRunId }),
+    /RECOVERY_CONFIRMATION_INPUT_REFUSED/,
+  );
+  assert.throws(
+    () => stagingCmsPublicRecoveryConfirmation({ controlSha, ciRunId: "0" }),
+    /RECOVERY_CONFIRMATION_INPUT_REFUSED/,
+  );
+});
 
 function be32(value) {
   const bytes = Buffer.alloc(4);
@@ -973,6 +991,53 @@ test("watchdog terminals select the exact receipt artifact id across retries", (
     assert.equal(invalid.valid, false);
     assert.equal(invalid.rollbackReceipt, null);
   }
+});
+
+test("manual recovery attempt 1 patches once and attempt 2 reconciles the same run chain", async () => {
+  let patchCalls = 0;
+  const attempt1 = await executeHotfixRollbackTransition({
+    allowPatch: true,
+    intentOwnedByExecutor: true,
+    patch: async () => {
+      patchCalls += 1;
+    },
+    observe: async () => ({ classification: "rollback-intended" }),
+  });
+  const attempt2 = await executeHotfixRollbackTransition({
+    allowPatch: false,
+    intentOwnedByExecutor: false,
+    patch: async () => {
+      patchCalls += 1;
+    },
+    observe: async () => ({ classification: "rollback-receipted" }),
+  });
+  assert.equal(patchCalls, 1);
+  assert.equal(attempt1.patchAttempted, true);
+  assert.equal(attempt1.completionMode, "patched");
+  assert.equal(attempt2.patchAttempted, false);
+  assert.equal(attempt2.completionMode, "reconciled");
+
+  const runId = "35000000002";
+  const receipt = { id: "5101", owner: { runId, runAttempt: 2 } };
+  const terminal = {
+    id: "5201",
+    owner: { runId, runAttempt: 2 },
+    receiptArtifactId: receipt.id,
+  };
+  const resolved = selectHotfixWatchdogArtifactChain({
+    rollbackReceipts: [receipt],
+    recoveryTerminals: [terminal],
+  });
+  assert.equal(resolved.valid, true, resolved.violations.join(","));
+  assert.equal(resolved.rollbackReceipt.id, receipt.id);
+  assert.equal(resolved.recoveryTerminal.id, terminal.id);
+
+  const orphanedCrossRun = selectHotfixWatchdogArtifactChain({
+    rollbackReceipts: [{ ...receipt, owner: { runId: "35000000003", runAttempt: 1 } }],
+    recoveryTerminals: [terminal],
+  });
+  assert.equal(orphanedCrossRun.valid, false);
+  assert.match(orphanedCrossRun.violations.join(","), /watchdog_terminal_receipt_binding_invalid/);
 });
 
 test("rollback transition permits exactly one PATCH only for the intent owner", async () => {

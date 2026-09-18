@@ -44,6 +44,7 @@ import {
   sealHotfixProbeProof,
   sealHotfixReceipt,
   sha256Bytes,
+  stagingCmsPublicRecoveryConfirmation,
   STAGING_CMS_PUBLIC_HOTFIX,
   validateCmsPublicHotfixCanary,
   validateCandidateBuildProvenance,
@@ -867,7 +868,9 @@ function workflowName(path) {
 function validateControlRun(run, { runId, runAttempt, controlSha, workflowPath }) {
   const name = workflowName(workflowPath);
   const allowedEvents =
-    workflowPath === STAGING_CMS_PUBLIC_HOTFIX.workflowPath ? ["workflow_dispatch"] : ["workflow_run"];
+    workflowPath === STAGING_CMS_PUBLIC_HOTFIX.workflowPath
+      ? ["workflow_dispatch"]
+      : ["workflow_run", "workflow_dispatch"];
   return (
     Boolean(name) &&
     (workflowPath !== STAGING_CMS_PUBLIC_HOTFIX.workflowPath || Number(runAttempt) === 1) &&
@@ -1925,6 +1928,137 @@ async function verifyCandidateCi() {
   publicEvent(report.event, { runId: report.run.id, jobCount: report.jobs.length });
 }
 
+async function verifiedRecoveryCi(runId, controlSha) {
+  const expected = STAGING_CMS_PUBLIC_HOTFIX.recoveryIncident;
+  const [run, jobs] = await Promise.all([
+    github(`/repos/${STAGING_CMS_PUBLIC_HOTFIX.repository}/actions/runs/${runId}/attempts/1`),
+    github(
+      `/repos/${STAGING_CMS_PUBLIC_HOTFIX.repository}/actions/runs/${runId}/attempts/1/jobs?per_page=100`,
+    ),
+  ]);
+  const actualJobs = Array.isArray(jobs?.jobs) ? jobs.jobs : [];
+  const names = actualJobs.map((job) => job?.name).sort();
+  const expectedNames = [...expected.ciJobs].sort();
+  const runStartedAt = Date.parse(run?.run_started_at ?? "");
+  const runUpdatedAt = Date.parse(run?.updated_at ?? "");
+  if (
+    String(run?.id ?? "") !== String(runId) ||
+    Number(run?.run_attempt) !== 1 ||
+    run?.name !== expected.ciWorkflowName ||
+    run?.path !== expected.ciWorkflowPath ||
+    run?.event !== "push" ||
+    run?.head_branch !== "main" ||
+    run?.head_sha !== controlSha ||
+    run?.status !== "completed" ||
+    run?.conclusion !== "success" ||
+    run?.actor?.login?.toLowerCase() !== "vnd93" ||
+    run?.triggering_actor?.login?.toLowerCase() !== "vnd93" ||
+    run?.repository?.full_name !== STAGING_CMS_PUBLIC_HOTFIX.repository ||
+    run?.head_repository?.full_name !== STAGING_CMS_PUBLIC_HOTFIX.repository ||
+    !Number.isFinite(runStartedAt) ||
+    !Number.isFinite(runUpdatedAt) ||
+    runUpdatedAt < runStartedAt ||
+    Number(jobs?.total_count) !== expectedNames.length ||
+    JSON.stringify(names) !== JSON.stringify(expectedNames) ||
+    actualJobs.some((job) => {
+      const startedAt = Date.parse(job?.started_at ?? "");
+      const completedAt = Date.parse(job?.completed_at ?? "");
+      return (
+        job?.status !== "completed" ||
+        job?.conclusion !== "success" ||
+        Number(job?.run_attempt) !== 1 ||
+        !Number.isFinite(startedAt) ||
+        !Number.isFinite(completedAt) ||
+        startedAt < runStartedAt ||
+        completedAt < startedAt ||
+        completedAt > runUpdatedAt
+      );
+    })
+  )
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_RECOVERY_CI_REFUSED");
+  return { run, jobs: actualJobs };
+}
+
+function recoveryDispatchFields(source = (name) => argument(name)) {
+  return {
+    parentRunId: String(source("parent-run-id")),
+    parentRunAttempt: Number(source("parent-run-attempt")),
+    parentControlSha: String(source("parent-control-sha")),
+    controlSha: String(source("control-sha")),
+    ciRunId: String(source("ci-run-id")),
+    confirmation: String(source("confirmation")),
+  };
+}
+
+function validateRecoveryDispatchFields(fields) {
+  const incident = STAGING_CMS_PUBLIC_HOTFIX.recoveryIncident;
+  const expectedConfirmation = stagingCmsPublicRecoveryConfirmation({
+    controlSha: fields.controlSha,
+    ciRunId: fields.ciRunId,
+  });
+  if (
+    fields.parentRunId !== incident.parentRunId ||
+    fields.parentRunAttempt !== incident.parentRunAttempt ||
+    fields.parentControlSha !== incident.parentControlSha ||
+    fields.confirmation !== expectedConfirmation
+  )
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_RECOVERY_AUTHORIZATION_REFUSED");
+  return expectedConfirmation;
+}
+
+async function verifyRecoveryDispatch() {
+  const fields = recoveryDispatchFields();
+  validateRecoveryDispatchFields(fields);
+  const executor = currentExecutor(STAGING_CMS_PUBLIC_HOTFIX.watchdogPath, fields.parentControlSha);
+  const [executorRun, parentRun, ci] = await Promise.all([
+    github(
+      `/repos/${STAGING_CMS_PUBLIC_HOTFIX.repository}/actions/runs/${executor.runId}/attempts/${executor.runAttempt}`,
+    ),
+    github(
+      `/repos/${STAGING_CMS_PUBLIC_HOTFIX.repository}/actions/runs/${fields.parentRunId}/attempts/${fields.parentRunAttempt}`,
+    ),
+    verifiedRecoveryCi(fields.ciRunId, fields.controlSha),
+  ]);
+  if (
+    !validateControlRun(executorRun, { ...executor, controlSha: fields.controlSha }) ||
+    executorRun?.event !== "workflow_dispatch" ||
+    executorRun?.actor?.login?.toLowerCase() !== "vnd93" ||
+    executorRun?.triggering_actor?.login?.toLowerCase() !== "vnd93" ||
+    (await checkoutHead()) !== fields.controlSha
+  )
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_RECOVERY_EXECUTOR_REFUSED");
+  if (
+    !validateControlRun(parentRun, {
+      runId: fields.parentRunId,
+      runAttempt: fields.parentRunAttempt,
+      controlSha: fields.parentControlSha,
+      workflowPath: STAGING_CMS_PUBLIC_HOTFIX.workflowPath,
+    }) ||
+    parentRun?.status !== "completed" ||
+    parentRun?.conclusion === "success" ||
+    parentRun?.actor?.login?.toLowerCase() !== "vnd93" ||
+    parentRun?.triggering_actor?.login?.toLowerCase() !== "vnd93"
+  )
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_RECOVERY_PARENT_RUN_REFUSED");
+  const report = {
+    schemaVersion: 1,
+    event: "g12.staging.cms_public_hotfix.recovery_dispatch_verified",
+    action: "rollback",
+    parent: {
+      runId: fields.parentRunId,
+      runAttempt: fields.parentRunAttempt,
+      controlSha: fields.parentControlSha,
+    },
+    recovery: {
+      controlSha: fields.controlSha,
+      ciRunId: fields.ciRunId,
+      ciConclusion: ci.run.conclusion,
+    },
+  };
+  await writeJson(argument("output"), report);
+  publicEvent(report.event, { parentRunId: fields.parentRunId, ciRunId: fields.ciRunId });
+}
+
 async function verifyTrustedBaseline() {
   const evidenceRoot = exactRoot(argument("evidence"));
   const expected = STAGING_CMS_PUBLIC_HOTFIX.trustedBaseline;
@@ -2188,13 +2322,32 @@ async function verifiedCurrentExecutor(state, workflowPath = argument("executor-
     executor.runSha !== state?.workflow?.controlSha
   )
     throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_EXECUTOR_RELEASE_SHA_REFUSED");
-  if ((await checkoutHead()) !== state?.workflow?.controlSha)
-    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_EXECUTOR_CONTROL_SHA_REFUSED");
   const run = await github(
     `/repos/${STAGING_CMS_PUBLIC_HOTFIX.repository}/actions/runs/${executor.runId}/attempts/${executor.runAttempt}`,
   );
   if (!validateControlRun(run, { ...executor, controlSha: executor.runSha }))
     throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_EXECUTOR_RUN_REFUSED");
+  const checkedOutSha = await checkoutHead();
+  if (workflowPath === STAGING_CMS_PUBLIC_HOTFIX.watchdogPath && run.event === "workflow_dispatch") {
+    const fields = recoveryDispatchFields((name) => {
+      const key = `G12_RECOVERY_${name.toUpperCase().replaceAll("-", "_")}`;
+      return process.env[key] ?? "";
+    });
+    validateRecoveryDispatchFields(fields);
+    if (
+      checkedOutSha !== executor.runSha ||
+      fields.controlSha !== executor.runSha ||
+      fields.parentRunId !== String(state?.workflow?.runId ?? "") ||
+      fields.parentRunAttempt !== Number(state?.workflow?.runAttempt) ||
+      fields.parentControlSha !== state?.workflow?.controlSha ||
+      run?.actor?.login?.toLowerCase() !== "vnd93" ||
+      run?.triggering_actor?.login?.toLowerCase() !== "vnd93"
+    )
+      throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_RECOVERY_EXECUTOR_REFUSED");
+    await verifiedRecoveryCi(fields.ciRunId, fields.controlSha);
+  } else if (checkedOutSha !== state?.workflow?.controlSha) {
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_EXECUTOR_CONTROL_SHA_REFUSED");
+  }
   return executor;
 }
 
@@ -3519,6 +3672,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     "materialize-candidate-eszip": materializeCandidateEszip,
     "verify-runtime-unbundle": verifyRuntimeUnbundle,
     "verify-candidate-ci": verifyCandidateCi,
+    "verify-recovery-dispatch": verifyRecoveryDispatch,
     "verify-trusted-baseline": verifyTrustedBaseline,
     "capture-baseline": captureBaseline,
     "build-state": buildState,

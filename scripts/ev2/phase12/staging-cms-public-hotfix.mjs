@@ -44,6 +44,7 @@ import {
   sealHotfixProbeProof,
   sealHotfixReceipt,
   sha256Bytes,
+  stagingCmsPublicPromotionConfirmation,
   stagingCmsPublicRecoveryConfirmation,
   STAGING_CMS_PUBLIC_HOTFIX,
   validateCmsPublicHotfixCanary,
@@ -54,6 +55,7 @@ import {
   validateHotfixRecoveryState,
   validateHotfixTerminalEvidence,
   validateRecoveryPackage,
+  validateRecoveredBaselineEvidence,
   validateTrustedBaselineEvidence,
   verifyHotfixIntent,
   verifyHotfixProbeProof,
@@ -1928,7 +1930,11 @@ async function verifyCandidateCi() {
   publicEvent(report.event, { runId: report.run.id, jobCount: report.jobs.length });
 }
 
-async function verifiedRecoveryCi(runId, controlSha) {
+async function verifiedControlCi(
+  runId,
+  controlSha,
+  refusal = "G12_STAGING_CMS_PUBLIC_HOTFIX_CONTROL_CI_REFUSED",
+) {
   const expected = STAGING_CMS_PUBLIC_HOTFIX.recoveryIncident;
   const [run, jobs] = await Promise.all([
     github(`/repos/${STAGING_CMS_PUBLIC_HOTFIX.repository}/actions/runs/${runId}/attempts/1`),
@@ -1975,8 +1981,72 @@ async function verifiedRecoveryCi(runId, controlSha) {
       );
     })
   )
-    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_RECOVERY_CI_REFUSED");
+    throw new Error(refusal);
   return { run, jobs: actualJobs };
+}
+
+async function verifiedRecoveryCi(runId, controlSha) {
+  return verifiedControlCi(runId, controlSha, "G12_STAGING_CMS_PUBLIC_HOTFIX_RECOVERY_CI_REFUSED");
+}
+
+function promotionDispatchFields(source = (name) => argument(name)) {
+  return {
+    controlSha: String(source("control-sha")),
+    ciRunId: String(source("ci-run-id")),
+    confirmation: String(source("confirmation")),
+  };
+}
+
+function validatePromotionDispatchFields(fields) {
+  const expectedConfirmation = stagingCmsPublicPromotionConfirmation({
+    controlSha: fields.controlSha,
+    ciRunId: fields.ciRunId,
+  });
+  if (fields.confirmation !== expectedConfirmation)
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_PROMOTION_AUTHORIZATION_REFUSED");
+  return expectedConfirmation;
+}
+
+async function verifyPromotionDispatch() {
+  const fields = promotionDispatchFields();
+  validatePromotionDispatchFields(fields);
+  const executor = currentExecutor(STAGING_CMS_PUBLIC_HOTFIX.workflowPath, fields.controlSha);
+  const [executorRun, ci] = await Promise.all([
+    github(
+      `/repos/${STAGING_CMS_PUBLIC_HOTFIX.repository}/actions/runs/${executor.runId}/attempts/${executor.runAttempt}`,
+    ),
+    verifiedControlCi(
+      fields.ciRunId,
+      fields.controlSha,
+      "G12_STAGING_CMS_PUBLIC_HOTFIX_PROMOTION_CI_REFUSED",
+    ),
+  ]);
+  if (
+    !validateControlRun(executorRun, executor) ||
+    executorRun?.event !== "workflow_dispatch" ||
+    executorRun?.actor?.login?.toLowerCase() !== "vnd93" ||
+    executorRun?.triggering_actor?.login?.toLowerCase() !== "vnd93" ||
+    (await checkoutHead()) !== fields.controlSha
+  )
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_PROMOTION_EXECUTOR_REFUSED");
+  const report = {
+    schemaVersion: 1,
+    event: "g12.staging.cms_public_hotfix.promotion_dispatch_verified",
+    executor,
+    authorization: {
+      controlSha: fields.controlSha,
+      ciRunId: fields.ciRunId,
+      confirmation: validatePromotionDispatchFields(fields),
+    },
+    ci: {
+      runId: String(ci.run.id),
+      conclusion: ci.run.conclusion,
+      jobs: ci.jobs.map((job) => ({ name: job.name, conclusion: job.conclusion })),
+    },
+    recoveredBaseline: STAGING_CMS_PUBLIC_HOTFIX.recoveredBaseline,
+  };
+  await writeJson(argument("output"), report);
+  publicEvent(report.event, { runId: executor.runId, ciRunId: fields.ciRunId });
 }
 
 function recoveryDispatchFields(source = (name) => argument(name)) {
@@ -2061,8 +2131,27 @@ async function verifyRecoveryDispatch() {
 
 async function verifyTrustedBaseline() {
   const evidenceRoot = exactRoot(argument("evidence"));
+  const recoveredTerminalRoot = exactRoot(argument("recovered-terminal"));
+  const recoveredReceiptRoot = exactRoot(argument("recovered-receipt"));
   const expected = STAGING_CMS_PUBLIC_HOTFIX.trustedBaseline;
-  const [run, jobs, artifact, probePath, inventoryPath, receiptPath] = await Promise.all([
+  const recovered = STAGING_CMS_PUBLIC_HOTFIX.recoveredBaseline;
+  const [
+    run,
+    jobs,
+    artifact,
+    recoveredRun,
+    recoveredJobs,
+    recoveredTerminalArtifact,
+    recoveredReceiptArtifact,
+    probePath,
+    inventoryPath,
+    receiptPath,
+    recoveredTerminalPath,
+    recoveredProbePath,
+    recoveredCanaryPath,
+    recoveredProofPath,
+    recoveredReceiptPath,
+  ] = await Promise.all([
     github(
       `/repos/${STAGING_CMS_PUBLIC_HOTFIX.repository}/actions/runs/${expected.runId}/attempts/${expected.runAttempt}`,
     ),
@@ -2070,32 +2159,93 @@ async function verifyTrustedBaseline() {
       `/repos/${STAGING_CMS_PUBLIC_HOTFIX.repository}/actions/runs/${expected.runId}/attempts/${expected.runAttempt}/jobs?per_page=100`,
     ),
     github(`/repos/${STAGING_CMS_PUBLIC_HOTFIX.repository}/actions/artifacts/${expected.artifactId}`),
+    github(
+      `/repos/${STAGING_CMS_PUBLIC_HOTFIX.repository}/actions/runs/${recovered.runId}/attempts/${recovered.runAttempt}`,
+    ),
+    github(
+      `/repos/${STAGING_CMS_PUBLIC_HOTFIX.repository}/actions/runs/${recovered.runId}/attempts/${recovered.runAttempt}/jobs?per_page=100`,
+    ),
+    github(
+      `/repos/${STAGING_CMS_PUBLIC_HOTFIX.repository}/actions/artifacts/${recovered.terminalArtifactId}`,
+    ),
+    github(`/repos/${STAGING_CMS_PUBLIC_HOTFIX.repository}/actions/artifacts/${recovered.receiptArtifactId}`),
     findUnique(evidenceRoot, "g12-staging-terminal-probe.json"),
     findUnique(evidenceRoot, "g12-staging-functions-finalizer-recovery.json"),
     findUnique(evidenceRoot, "g12-staging-function-finalizer-recovery.json"),
+    findUnique(recoveredTerminalRoot, "g12-hotfix-terminal.json"),
+    findUnique(recoveredTerminalRoot, "g12-hotfix-full-probe.json"),
+    findUnique(recoveredTerminalRoot, "g12-hotfix-cms-public-canary.json"),
+    findUnique(recoveredTerminalRoot, "g12-hotfix-probe-proof.json"),
+    findUnique(recoveredReceiptRoot, "rollback-receipt.json"),
   ]);
-  const [probe, inventory, receipt] = await Promise.all([
+  const [
+    probe,
+    inventory,
+    receipt,
+    recoveredTerminal,
+    recoveredProbe,
+    recoveredCanary,
+    recoveredProof,
+    recoveredReceipt,
+  ] = await Promise.all([
     readJson(probePath),
     readJson(inventoryPath),
     readJson(receiptPath),
+    readJson(recoveredTerminalPath),
+    readJson(recoveredProbePath),
+    readJson(recoveredCanaryPath),
+    readJson(recoveredProofPath),
+    readJson(recoveredReceiptPath),
   ]);
-  const result = validateTrustedBaselineEvidence({ run, jobs, artifact, probe, inventory, receipt });
+  const source = validateTrustedBaselineEvidence({ run, jobs, artifact, probe, inventory, receipt });
+  if (!source.valid)
+    throw new Error(`G12_STAGING_CMS_PUBLIC_HOTFIX_TRUSTED_BASELINE_REFUSED:${source.violations.join(",")}`);
+  const fileDigests = {
+    terminal: await fileSha256(recoveredTerminalPath),
+    probe: await fileSha256(recoveredProbePath),
+    canary: await fileSha256(recoveredCanaryPath),
+    probeProof: await fileSha256(recoveredProofPath),
+    receipt: await fileSha256(recoveredReceiptPath),
+  };
+  const result = validateRecoveredBaselineEvidence({
+    run: recoveredRun,
+    jobs: recoveredJobs,
+    terminalArtifact: recoveredTerminalArtifact,
+    receiptArtifact: recoveredReceiptArtifact,
+    terminal: recoveredTerminal,
+    probe: recoveredProbe,
+    canary: recoveredCanary,
+    probeProof: recoveredProof,
+    receipt: recoveredReceipt,
+    sourceSnapshot: source.snapshot,
+    fileDigests,
+    key: process.env.RECOVERY_STATE_HMAC_KEY,
+  });
   if (!result.valid)
-    throw new Error(`G12_STAGING_CMS_PUBLIC_HOTFIX_TRUSTED_BASELINE_REFUSED:${result.violations.join(",")}`);
+    throw new Error(
+      `G12_STAGING_CMS_PUBLIC_HOTFIX_RECOVERED_BASELINE_REFUSED:${result.violations.join(",")}`,
+    );
   const report = {
     schemaVersion: 1,
     event: "g12.staging.cms_public_hotfix.trusted_baseline_verified",
     trustedRun: expected,
-    inventory,
+    trustedRecovery: recovered,
+    inventory: result.snapshot.records,
     inventorySha256: result.snapshot.inventorySha256,
     nonTargetSha256: result.snapshot.nonTargetSha256,
     target: result.snapshot.target,
     probeSha256: await fileSha256(probePath),
     receiptSha256: await fileSha256(receiptPath),
+    recoveryEvidence: fileDigests,
     verifiedAt: new Date().toISOString(),
   };
   await writeJson(argument("output"), report);
-  publicEvent(report.event, { runId: expected.runId, artifactId: expected.artifactId });
+  publicEvent(report.event, {
+    runId: expected.runId,
+    artifactId: expected.artifactId,
+    recoveryRunId: recovered.runId,
+    recoveryArtifactId: recovered.terminalArtifactId,
+  });
 }
 
 async function captureBaseline() {
@@ -2103,7 +2253,8 @@ async function captureBaseline() {
   if (
     trusted?.schemaVersion !== 1 ||
     trusted?.event !== "g12.staging.cms_public_hotfix.trusted_baseline_verified" ||
-    JSON.stringify(trusted?.trustedRun) !== JSON.stringify(STAGING_CMS_PUBLIC_HOTFIX.trustedBaseline)
+    JSON.stringify(trusted?.trustedRun) !== JSON.stringify(STAGING_CMS_PUBLIC_HOTFIX.trustedBaseline) ||
+    JSON.stringify(trusted?.trustedRecovery) !== JSON.stringify(STAGING_CMS_PUBLIC_HOTFIX.recoveredBaseline)
   )
     throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_TRUSTED_SUMMARY_REFUSED");
   const live = await liveInventory();
@@ -3672,6 +3823,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     "materialize-candidate-eszip": materializeCandidateEszip,
     "verify-runtime-unbundle": verifyRuntimeUnbundle,
     "verify-candidate-ci": verifyCandidateCi,
+    "verify-promotion-dispatch": verifyPromotionDispatch,
     "verify-recovery-dispatch": verifyRecoveryDispatch,
     "verify-trusted-baseline": verifyTrustedBaseline,
     "capture-baseline": captureBaseline,

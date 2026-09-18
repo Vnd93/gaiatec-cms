@@ -68,6 +68,13 @@ test("main workflow refuses every rerun before checkout, artifacts, state, or mu
   const firstStep = stepBody(mainWorkflow, "Validate the exact operator, branch and literal authorization");
   assert.match(firstStep, /RUN_ATTEMPT: \$\{\{ github\.run_attempt \}\}/);
   assert.match(firstStep, /test "\$RUN_ATTEMPT" = 1/);
+  assert.match(firstStep, /CONTROL_SHA: \$\{\{ github\.sha \}\}/);
+  assert.match(firstStep, /PROMOTION_CI_RUN_ID: \$\{\{ inputs\.promotion_ci_run_id \}\}/);
+  assert.match(firstStep, /\[\[ "\$PROMOTION_CI_RUN_ID" =~ \^\[1-9\]\[0-9\]\*\$ \]\]/);
+  assert.match(firstStep, /CONTROL_\$\{CONTROL_SHA\}_CI_\$\{PROMOTION_CI_RUN_ID\}/);
+  assert.match(firstStep, /RECOVERY_RUN_\$\{RECOVERED_BASELINE_RUN_ID\}_ATTEMPT_/);
+  assert.match(firstStep, /TERMINAL_\$\{RECOVERED_BASELINE_TERMINAL_ARTIFACT_ID\}/);
+  assert.match(firstStep, /RECEIPT_\$\{RECOVERED_BASELINE_RECEIPT_ARTIFACT_ID\}/);
   assert.doesNotMatch(firstStep, /continue-on-error:/);
   assert.ok(
     mainWorkflow.indexOf('test "$RUN_ATTEMPT" = 1') < mainWorkflow.indexOf("uses: actions/checkout@"),
@@ -75,6 +82,8 @@ test("main workflow refuses every rerun before checkout, artifacts, state, or mu
   const promotionGate = stepBody(mainWorkflow, "Validate the exact promotion identity");
   assert.match(promotionGate, /RUN_ATTEMPT: \$\{\{ github\.run_attempt \}\}/);
   assert.match(promotionGate, /test "\$RUN_ATTEMPT" = 1/);
+  assert.match(promotionGate, /\[\[ "\$PROMOTION_CI_RUN_ID" =~ \^\[1-9\]\[0-9\]\*\$ \]\]/);
+  assert.match(promotionGate, /CONTROL_\$\{CONTROL_SHA\}_CI_\$\{PROMOTION_CI_RUN_ID\}/);
   assert.match(runner, /if \(runAttempt !== 1\)[\s\S]*G12_STAGING_CMS_PUBLIC_HOTFIX_RERUN_REFUSED/);
   assert.match(
     runner,
@@ -188,9 +197,10 @@ test("candidate build uses only the read-only job token without environment secr
   const buildCandidate = mainWorkflow.slice(buildStart, promoteStart);
   assert.doesNotMatch(buildCandidate, /\$\{\{\s*secrets\./);
   assert.doesNotMatch(buildCandidate, /^\s+environment:/m);
-  assert.equal((buildCandidate.match(/GITHUB_TOKEN: \$\{\{ github\.token \}\}/g) ?? []).length, 2);
+  assert.equal((buildCandidate.match(/GITHUB_TOKEN: \$\{\{ github\.token \}\}/g) ?? []).length, 3);
 
   for (const name of [
+    "Verify the fresh promotion control and its exact successful CI",
     "Verify the exact successful CI run bound to the hotfix bytes",
     "Verify candidate artifact metadata against this exact run",
   ]) {
@@ -204,6 +214,47 @@ test("candidate build uses only the read-only job token without environment secr
   assert.equal(
     mainWorkflow.slice(permissionsStart, concurrencyStart).replaceAll("\r\n", "\n"),
     "permissions:\n  actions: read\n  contents: read\n",
+  );
+});
+
+test("promotion control CI and recovered baseline are verified before every staging mutation", () => {
+  assert.match(mainWorkflow, /promotion_ci_run_id:\s+[\s\S]*required: true/);
+  const controlGate = stepBody(
+    mainWorkflow,
+    "Verify the fresh promotion control and its exact successful CI",
+  );
+  assert.match(controlGate, /verify-promotion-dispatch/);
+  assert.match(controlGate, /CONTROL_SHA: \$\{\{ github\.sha \}\}/);
+  assert.match(controlGate, /PROMOTION_CI_RUN_ID: \$\{\{ inputs\.promotion_ci_run_id \}\}/);
+  assert.match(controlGate, /CONFIRMATION: \$\{\{ inputs\.confirmation \}\}/);
+  assert.match(controlGate, /--control-sha "\$CONTROL_SHA"/);
+  assert.match(controlGate, /--ci-run-id "\$PROMOTION_CI_RUN_ID"/);
+  assert.match(controlGate, /--confirmation "\$CONFIRMATION"/);
+  assert.doesNotMatch(controlGate, /--(?:ci-run-id|confirmation) "\$\{\{/);
+  assertOrdered(mainWorkflow, [
+    "Checkout the exact workflow control revision",
+    "Use the repository-pinned Node runtime",
+    "Verify the fresh promotion control and its exact successful CI",
+    "Checkout the immutable cms-public hotfix",
+    "Checkout the immutable hotfix parent",
+    "Checkout the immutable rollback baseline",
+  ]);
+  const recoveredGate = stepBody(
+    mainWorkflow,
+    "Verify the source baseline and exact recovered live baseline",
+  );
+  assert.match(recoveredGate, /--recovered-terminal \.\.\/trusted-recovery-terminal/);
+  assert.match(recoveredGate, /--recovered-receipt \.\.\/trusted-recovery-receipt/);
+  assert.match(recoveredGate, /RECOVERY_STATE_HMAC_KEY: \$\{\{ secrets\.EVIDENCE_SALT \}\}/);
+  for (const token of ['artifact-ids: "10529465038"', 'artifact-ids: "10528643032"', 'run-id: "35298567582"'])
+    assert.match(mainWorkflow, new RegExp(token.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  const firstMutation = mainWorkflow.indexOf("staging-cms-public-hotfix.mjs apply-candidate");
+  assert.ok(firstMutation > 0);
+  assert.ok(
+    mainWorkflow.indexOf("Verify the source baseline and exact recovered live baseline") < firstMutation,
+  );
+  assert.ok(
+    mainWorkflow.indexOf("Capture exact live baseline and candidate bytes before mutation") < firstMutation,
   );
 });
 

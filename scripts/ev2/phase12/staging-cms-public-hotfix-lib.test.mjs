@@ -32,6 +32,7 @@ import {
   sealHotfixProbeProof,
   sealHotfixReceipt,
   sha256Bytes,
+  stagingCmsPublicPromotionConfirmation,
   stagingCmsPublicRecoveryConfirmation,
   STAGING_CMS_PUBLIC_HOTFIX,
   validateCmsPublicHotfixCanary,
@@ -42,6 +43,7 @@ import {
   validateHotfixRecoveryState,
   validateHotfixTerminalEvidence,
   validateRecoveryPackage,
+  validateRecoveredBaselineEvidence,
   validateTrustedBaselineEvidence,
   verifyHotfixIntent,
   verifyHotfixProbeProof,
@@ -64,6 +66,25 @@ test("manual recovery authorization is bound to the incident, fixed control, CI 
   assert.throws(
     () => stagingCmsPublicRecoveryConfirmation({ controlSha, ciRunId: "0" }),
     /RECOVERY_CONFIRMATION_INPUT_REFUSED/,
+  );
+});
+
+test("promotion authorization is freshly bound to control, CI and recovered baseline artifacts", () => {
+  const controlSha = "6".repeat(40);
+  const ciRunId = "35300000001";
+  const recovered = STAGING_CMS_PUBLIC_HOTFIX.recoveredBaseline;
+  assert.equal(Object.hasOwn(STAGING_CMS_PUBLIC_HOTFIX, "confirmation"), false);
+  const expected =
+    `PROMOTE_STAGING_CMS_PUBLIC_${STAGING_CMS_PUBLIC_HOTFIX.hotfixSha}` +
+    `_CONTROL_${controlSha}_CI_${ciRunId}_RECOVERY_RUN_${recovered.runId}` +
+    `_ATTEMPT_${recovered.runAttempt}_TERMINAL_${recovered.terminalArtifactId}` +
+    `_RECEIPT_${recovered.receiptArtifactId}_ROLLBACK_${STAGING_CMS_PUBLIC_HOTFIX.rollbackSha}`;
+  assert.equal(stagingCmsPublicPromotionConfirmation({ controlSha, ciRunId }), expected);
+  assert.notEqual(stagingCmsPublicPromotionConfirmation({ controlSha: "7".repeat(40), ciRunId }), expected);
+  assert.notEqual(stagingCmsPublicPromotionConfirmation({ controlSha, ciRunId: "35300000002" }), expected);
+  assert.throws(
+    () => stagingCmsPublicPromotionConfirmation({ controlSha: "bad", ciRunId }),
+    /PROMOTION_CONFIRMATION_INPUT_REFUSED/,
   );
 });
 
@@ -274,19 +295,19 @@ function remoteRecord(name, index) {
   };
 }
 
-function baselineInventory() {
+function baselineInventory(baseline = STAGING_CMS_PUBLIC_HOTFIX.baselineFunction) {
   const records = PRODUCTION_FUNCTIONS.map(remoteRecord);
   const target = records.find((record) => record.name === "cms-public");
   Object.assign(target, {
-    id: STAGING_CMS_PUBLIC_HOTFIX.baselineFunction.id,
-    version: STAGING_CMS_PUBLIC_HOTFIX.baselineFunction.version,
-    ezbr_sha256: STAGING_CMS_PUBLIC_HOTFIX.baselineFunction.bundleSha256,
-    created_at: STAGING_CMS_PUBLIC_HOTFIX.baselineFunction.createdAt,
-    updated_at: STAGING_CMS_PUBLIC_HOTFIX.baselineFunction.updatedAt,
+    id: baseline.id,
+    version: baseline.version,
+    ezbr_sha256: baseline.bundleSha256,
+    created_at: baseline.createdAt,
+    updated_at: baseline.updatedAt,
     verify_jwt: false,
-    entrypoint_path: STAGING_CMS_PUBLIC_HOTFIX.baselineFunction.entrypointPath,
-    import_map: STAGING_CMS_PUBLIC_HOTFIX.baselineFunction.importMap,
-    import_map_path: STAGING_CMS_PUBLIC_HOTFIX.baselineFunction.importMapPath,
+    entrypoint_path: baseline.entrypointPath,
+    import_map: baseline.importMap,
+    import_map_path: baseline.importMapPath,
   });
   return records;
 }
@@ -404,7 +425,7 @@ function liveCandidate(fixture) {
   Object.assign(target, {
     version: fixture.target.version + 1,
     ezbr_sha256: fixture.state.candidate.bodySha256,
-    updated_at: "2026-09-15T12:00:00.000Z",
+    updated_at: "2026-09-18T03:00:00.000Z",
     entrypoint_path: STAGING_CMS_PUBLIC_HOTFIX.candidateEntrypointPath,
     import_map_path: STAGING_CMS_PUBLIC_HOTFIX.candidateImportMapPath,
     import_map: true,
@@ -446,7 +467,7 @@ function intent(action, state, before) {
       state,
       before,
       expected,
-      preparedAt: action === "candidate" ? "2026-09-15T11:59:00.000Z" : "2026-09-15T12:01:30.000Z",
+      preparedAt: action === "candidate" ? "2026-09-18T02:59:00.000Z" : "2026-09-18T03:01:30.000Z",
     },
     key,
   );
@@ -470,7 +491,7 @@ function receipt(action, state, boundIntent, before, after) {
     before,
     after,
     nonTargetSha256: state.baseline.nonTargetSha256,
-    appliedAt: action === "candidate" ? "2026-09-15T12:01:00.000Z" : "2026-09-15T12:03:00.000Z",
+    appliedAt: action === "candidate" ? "2026-09-18T03:01:00.000Z" : "2026-09-18T03:03:00.000Z",
   };
 }
 
@@ -663,7 +684,7 @@ test("pre-probe allows only a clean pass or the single known contato tail and fu
 });
 
 test("trusted failed baseline is accepted only with the exact successful finalizer and artifact", () => {
-  const inventory = baselineInventory();
+  const inventory = baselineInventory(STAGING_CMS_PUBLIC_HOTFIX.sourceBaselineFunction);
   const snapshot = functionInventorySnapshot(inventory);
   const target = snapshot.target;
   const input = {
@@ -730,6 +751,253 @@ test("trusted failed baseline is accepted only with the exact successful finaliz
   );
 });
 
+test("recovered baseline requires the exact successful recovery, artifacts, receipt and v285 tuple", () => {
+  const expected = STAGING_CMS_PUBLIC_HOTFIX.recoveredBaseline;
+  const sourceBaseline = STAGING_CMS_PUBLIC_HOTFIX.sourceBaselineFunction;
+  const sourceSnapshot = functionInventorySnapshot(baselineInventory(sourceBaseline));
+  const fixture = packageAndState();
+  const state = structuredClone(fixture.state);
+  state.workflow = {
+    runId: STAGING_CMS_PUBLIC_HOTFIX.recoveryIncident.parentRunId,
+    runAttempt: STAGING_CMS_PUBLIC_HOTFIX.recoveryIncident.parentRunAttempt,
+    controlSha: STAGING_CMS_PUBLIC_HOTFIX.recoveryIncident.parentControlSha,
+    path: STAGING_CMS_PUBLIC_HOTFIX.workflowPath,
+  };
+  state.recoveryArtifact = {
+    id: "10528426197",
+    name: `staging-cms-public-hotfix-recovery-${state.workflow.runId}-${state.workflow.runAttempt}`,
+    digest: `sha256:${"e".repeat(64)}`,
+    packageManifestSha256: "7".repeat(64),
+  };
+  state.baseline.tuple = sourceSnapshot.target;
+  state.baseline.inventorySha256 = sourceSnapshot.inventorySha256;
+  state.baseline.nonTargetSha256 = sourceSnapshot.nonTargetSha256;
+  assert.equal(validateHotfixRecoveryState(state, { baselineFunction: sourceBaseline }).valid, true);
+  const executor = {
+    runId: expected.runId,
+    runAttempt: expected.runAttempt,
+    runSha: expected.controlSha,
+    controlSha: state.workflow.controlSha,
+    workflowPath: expected.workflowPath,
+  };
+  const before = {
+    ...sourceSnapshot.target,
+    version: sourceBaseline.version + 1,
+    bundleSha256: state.candidate.bodySha256,
+    updatedAt: "2026-09-18T01:26:12.690Z",
+    entrypointPath: state.candidate.entrypointPath,
+    importMap: true,
+    importMapPath: state.candidate.importMapPath,
+    verifyJwt: false,
+  };
+  const receiptPayload = {
+    schemaVersion: 1,
+    event: "g12.staging.cms_public_hotfix.rollback_applied",
+    action: "rollback",
+    workflow: state.workflow,
+    projectRef: STAGING_CMS_PUBLIC_HOTFIX.projectRef,
+    slug: STAGING_CMS_PUBLIC_HOTFIX.functionSlug,
+    intentSha256: "9".repeat(64),
+    preparedBy: executor,
+    intentPreparedAt: "2026-09-18T02:15:36.008Z",
+    completedBy: executor,
+    completionMode: "patched",
+    state,
+    before,
+    after: STAGING_CMS_PUBLIC_HOTFIX.baselineFunction,
+    nonTargetSha256: sourceSnapshot.nonTargetSha256,
+    appliedAt: "2026-09-18T02:15:54.108Z",
+  };
+  const recoveredReceipt = sealHotfixReceipt(receiptPayload, key, {
+    stateBaselineFunction: sourceBaseline,
+  });
+  const fileDigests = {
+    terminal: "3".repeat(64),
+    probe: "4".repeat(64),
+    canary: "5".repeat(64),
+    probeProof: "6".repeat(64),
+    receipt: "7".repeat(64),
+  };
+  const recoveredCanary = {
+    schemaVersion: 1,
+    event: "g12.staging.cms_public_hotfix.cms_public_canary",
+    projectRef: STAGING_CMS_PUBLIC_HOTFIX.projectRef,
+    functionUrl: `https://${STAGING_CMS_PUBLIC_HOTFIX.projectRef}.supabase.co/functions/v1/cms-public`,
+    origin: STAGING_CMS_PUBLIC_HOTFIX.origin,
+    outcome: "restored",
+    stateSha256: canonicalSha256(state),
+    classification: "rollback-receipted",
+    target: STAGING_CMS_PUBLIC_HOTFIX.baselineFunction,
+    warmupSamples: 20,
+    measuredSamples: 20,
+    managedPath: "/contato",
+    managedLatency: { samples: 20, p50Ms: 300, p95Ms: 600, maxMs: 700 },
+    scenarios: {
+      managed: { status: 200, kind: "page", cache: "private, no-store", cors: "*", json: true },
+      fallback: {
+        status: 200,
+        kind: "fallback",
+        cache: "public, max-age=0, must-revalidate",
+        cors: "*",
+        json: true,
+      },
+      managedRoute: {
+        status: 200,
+        kind: "route",
+        cache: "public, max-age=0, must-revalidate",
+        cors: "*",
+        json: true,
+      },
+      legacyHit: {
+        status: 200,
+        kind: "route",
+        cache: "public, max-age=0, must-revalidate",
+        cors: "*",
+        json: true,
+      },
+      legacyMiss: { status: 404, kind: "not-found", cache: "no-store", cors: "*", json: true },
+      options: { status: 200, kind: "empty", cache: "no-store", cors: "*", json: false },
+    },
+    startedAt: "2026-09-18T02:17:03.841Z",
+    completedAt: "2026-09-18T02:17:22.463Z",
+  };
+  const receiptSha256 = canonicalSha256(recoveredReceipt);
+  const recoveredProof = sealHotfixProbeProof(
+    {
+      schemaVersion: 1,
+      event: "g12.staging.cms_public_hotfix.probe_verified",
+      mode: "full",
+      outcome: "restored",
+      workflow: state.workflow,
+      executor,
+      stateSha256: canonicalSha256(state),
+      packageManifestSha256: state.recoveryArtifact.packageManifestSha256,
+      classification: "rollback-receipted",
+      target: STAGING_CMS_PUBLIC_HOTFIX.baselineFunction,
+      nonTargetSha256: sourceSnapshot.nonTargetSha256,
+      candidateIntentSha256: "8".repeat(64),
+      rollbackIntentSha256: "9".repeat(64),
+      receiptSha256,
+      startedAt: "2026-09-18T02:15:56.000Z",
+      completedAt: "2026-09-18T02:17:23.000Z",
+      probeSha256: fileDigests.probe,
+      cmsPublicCanarySha256: fileDigests.canary,
+    },
+    key,
+  );
+  const recoveredTerminal = {
+    schemaVersion: 1,
+    event: "g12.staging.cms_public_hotfix.terminal",
+    outcome: "restored",
+    workflow: state.workflow,
+    release: state.release,
+    target: state.target,
+    recoveryArtifact: state.recoveryArtifact,
+    packageManifestSha256: state.recoveryArtifact.packageManifestSha256,
+    probeSha256: fileDigests.probe,
+    cmsPublicCanarySha256: fileDigests.canary,
+    probeProofSha256: fileDigests.probeProof,
+    liveObservation: {
+      classification: "rollback-receipted",
+      target: STAGING_CMS_PUBLIC_HOTFIX.baselineFunction,
+      nonTargetSha256: sourceSnapshot.nonTargetSha256,
+      bodySha256: STAGING_CMS_PUBLIC_HOTFIX.baselineFunction.bundleSha256,
+      observedAt: "2026-09-18T02:17:29.055Z",
+    },
+    receiptSha256,
+    completedAt: "2026-09-18T02:17:29.055Z",
+    productionMutations: 0,
+    nonTargetFunctionMutations: 0,
+  };
+  const artifact = (kind) => ({
+    id: Number(expected[`${kind}ArtifactId`]),
+    name: expected[`${kind}ArtifactName`],
+    digest: expected[`${kind}ArtifactDigest`],
+    expired: false,
+    expires_at: "2099-12-17T02:14:37Z",
+    size_in_bytes: 9_218,
+    workflow_run: { id: Number(expected.runId), head_branch: "main", head_sha: expected.controlSha },
+  });
+  const input = {
+    run: {
+      id: Number(expected.runId),
+      run_attempt: expected.runAttempt,
+      name: expected.workflowName,
+      path: expected.workflowPath,
+      event: "workflow_dispatch",
+      status: "completed",
+      conclusion: "success",
+      head_branch: "main",
+      head_sha: expected.controlSha,
+      repository: { full_name: STAGING_CMS_PUBLIC_HOTFIX.repository },
+      head_repository: { full_name: STAGING_CMS_PUBLIC_HOTFIX.repository },
+      actor: { login: "Vnd93" },
+      triggering_actor: { login: "Vnd93" },
+    },
+    jobs: {
+      jobs: [
+        {
+          name: expected.jobName,
+          status: "completed",
+          conclusion: "success",
+          run_attempt: expected.runAttempt,
+        },
+      ],
+    },
+    terminalArtifact: artifact("terminal"),
+    receiptArtifact: artifact("receipt"),
+    terminal: recoveredTerminal,
+    probe: probe(),
+    canary: recoveredCanary,
+    probeProof: recoveredProof,
+    receipt: recoveredReceipt,
+    sourceSnapshot,
+    fileDigests,
+    key,
+  };
+  const result = validateRecoveredBaselineEvidence(input);
+  assert.equal(result.valid, true, result.violations.join(","));
+  assert.equal(result.snapshot.target.version, 285);
+
+  const mismatchedIntent = structuredClone(input);
+  mismatchedIntent.receipt = sealHotfixReceipt({ ...receiptPayload, intentSha256: "1".repeat(64) }, key, {
+    stateBaselineFunction: sourceBaseline,
+  });
+  const mismatchedReceiptSha256 = canonicalSha256(mismatchedIntent.receipt);
+  mismatchedIntent.probeProof = sealHotfixProbeProof(
+    { ...recoveredProof.proof, receiptSha256: mismatchedReceiptSha256 },
+    key,
+  );
+  mismatchedIntent.terminal.receiptSha256 = mismatchedReceiptSha256;
+  assert.match(
+    validateRecoveredBaselineEvidence(mismatchedIntent).violations.join(","),
+    /recovered_probe_proof_rollback_intent_sha256_mismatch/,
+  );
+  const wrongTerminalOrder = structuredClone(input);
+  wrongTerminalOrder.terminal.liveObservation.observedAt = "2026-09-18T02:17:22.999Z";
+  wrongTerminalOrder.terminal.completedAt = "2026-09-18T02:17:23.500Z";
+  assert.match(
+    validateRecoveredBaselineEvidence(wrongTerminalOrder).violations.join(","),
+    /recovered_terminal_order_invalid/,
+  );
+
+  const wrongVersion = structuredClone(input);
+  wrongVersion.terminal.liveObservation.target.version = 286;
+  assert.match(
+    validateRecoveredBaselineEvidence(wrongVersion).violations.join(","),
+    /terminal_live_target_mismatch/,
+  );
+  const wrongArtifact = structuredClone(input);
+  wrongArtifact.terminalArtifact.digest = `sha256:${"0".repeat(64)}`;
+  assert.match(
+    validateRecoveredBaselineEvidence(wrongArtifact).violations.join(","),
+    /recovered_terminal_artifact_invalid/,
+  );
+  const wrongRun = structuredClone(input);
+  wrongRun.run.id += 1;
+  assert.match(validateRecoveredBaselineEvidence(wrongRun).violations.join(","), /recovered_run_invalid/);
+});
+
 test("state machine requires durable intents and receipts for every owned transition", () => {
   const fixture = packageAndState();
   assert.equal(validateHotfixRecoveryState(fixture.state).valid, true);
@@ -784,7 +1052,7 @@ test("state machine requires durable intents and receipts for every owned transi
   const rollbackInventory = structuredClone(fixture.inventory);
   const rollbackTargetRaw = rollbackInventory.find((record) => record.name === "cms-public");
   rollbackTargetRaw.version = fixture.target.version + 2;
-  rollbackTargetRaw.updated_at = "2026-09-15T12:02:00.000Z";
+  rollbackTargetRaw.updated_at = "2026-09-18T03:02:00.000Z";
   const rollbackTarget = functionInventorySnapshot(rollbackInventory).target;
   const rollbackIntent = intent("rollback", fixture.state, candidateTarget);
   assert.equal(
@@ -880,7 +1148,7 @@ test("a verified watchdog can complete a predecessor rollback intent without era
   const rollbackInventory = structuredClone(fixture.inventory);
   const rollbackTargetRaw = rollbackInventory.find((record) => record.name === "cms-public");
   rollbackTargetRaw.version = fixture.target.version + 2;
-  rollbackTargetRaw.updated_at = "2026-09-15T12:02:00.000Z";
+  rollbackTargetRaw.updated_at = "2026-09-18T03:02:00.000Z";
   const rollbackTarget = functionInventorySnapshot(rollbackInventory).target;
   const predecessorIntent = intent("rollback", fixture.state, candidateTarget);
   const watchdog = {
@@ -1140,8 +1408,8 @@ test("probe proof binds the post-transition window to state, intent, receipt, ta
     candidateIntentSha256: canonicalSha256(candidateIntent),
     rollbackIntentSha256: null,
     receiptSha256: canonicalSha256(candidateReceipt),
-    startedAt: "2026-09-15T12:01:30.000Z",
-    completedAt: "2026-09-15T12:02:00.000Z",
+    startedAt: "2026-09-18T03:01:30.000Z",
+    completedAt: "2026-09-18T03:02:00.000Z",
     probeSha256: "4".repeat(64),
     cmsPublicCanarySha256: "5".repeat(64),
   };
@@ -1165,8 +1433,8 @@ test("probe proof binds the post-transition window to state, intent, receipt, ta
   assert.match(wrongExecutor.violations.join(","), /probe_proof_executor_mismatch/);
   const staleProof = {
     ...proof,
-    startedAt: "2026-09-15T12:00:00.000Z",
-    completedAt: "2026-09-15T12:00:30.000Z",
+    startedAt: "2026-09-18T03:00:00.000Z",
+    completedAt: "2026-09-18T03:00:30.000Z",
   };
   const stale = sealHotfixProbeProof(staleProof, key);
   const staleResult = verifyHotfixProbeProof(stale, key, {
@@ -1268,16 +1536,16 @@ test("cms-public canary evidence binds exact scenarios, managed latency, and the
       legacyMiss: { status: 404, kind: "not-found", cache: "no-store", cors: "*", json: true },
       options: { status: 200, kind: "empty", cache: "no-store", cors: "*", json: false },
     },
-    startedAt: "2026-09-15T12:01:30.000Z",
-    completedAt: "2026-09-15T12:02:30.000Z",
+    startedAt: "2026-09-18T03:01:30.000Z",
+    completedAt: "2026-09-18T03:02:30.000Z",
   };
   const result = validateCmsPublicHotfixCanary(report, {
     state: fixture.state,
     outcome: "promoted",
     classification: "candidate-receipted",
     target,
-    minimumStartedAt: "2026-09-15T12:01:00.000Z",
-    maximumCompletedAt: "2026-09-15T12:03:00.000Z",
+    minimumStartedAt: "2026-09-18T03:01:00.000Z",
+    maximumCompletedAt: "2026-09-18T03:03:00.000Z",
   });
   assert.equal(result.valid, true, result.violations.join(","));
   const slow = structuredClone(report);

@@ -7,6 +7,9 @@ on:
         description: >-
           Digite a autorizacao literal vinculada ao hotfix e ao rollback imutaveis.
         required: true
+      promotion_ci_run_id:
+        description: Successful CI run bound to this exact promotion control SHA
+        required: true
 
 permissions:
   actions: read
@@ -24,8 +27,10 @@ env:
     ghcr.io/supabase/edge-runtime:v1.74.3@sha256:c52405002a890ca9fcf77978671c57f3a988e03174afb277f84ac65bc917013c
   EDGE_RUNTIME_INDEX_DIGEST: sha256:c52405002a890ca9fcf77978671c57f3a988e03174afb277f84ac65bc917013c
   EDGE_RUNTIME_AMD64_DIGEST: sha256:cc355c3d0e9c063a351cad56d1c4c52a3c4d85aff4e1fad9d91688e75f9aad09
-  HOTFIX_CONFIRMATION: >-
-    PROMOTE_STAGING_CMS_PUBLIC_e40eb0c2cc81c27fbf8f23e8671136f9dfc6f282_ROLLBACK_c8aec5cad25830580bf9ca8a89594ebce1aa3570
+  RECOVERED_BASELINE_RUN_ID: "35298567582"
+  RECOVERED_BASELINE_RUN_ATTEMPT: "1"
+  RECOVERED_BASELINE_TERMINAL_ARTIFACT_ID: "10529465038"
+  RECOVERED_BASELINE_RECEIPT_ARTIFACT_ID: "10528643032"
 
 jobs:
   build-candidate:
@@ -42,6 +47,8 @@ jobs:
           DISPATCH_ACTOR: ${{ github.actor }}
           TRIGGERING_ACTOR: ${{ github.triggering_actor }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
+          CONTROL_SHA: ${{ github.sha }}
+          PROMOTION_CI_RUN_ID: ${{ inputs.promotion_ci_run_id }}
           CONFIRMATION: ${{ inputs.confirmation }}
         run: |
           set -euo pipefail
@@ -49,7 +56,9 @@ jobs:
           test "$DISPATCH_REF" = refs/heads/main
           test "${DISPATCH_ACTOR,,}" = vnd93
           test "${TRIGGERING_ACTOR,,}" = vnd93
-          test "$CONFIRMATION" = "$HOTFIX_CONFIRMATION"
+          [[ "$PROMOTION_CI_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          expected="PROMOTE_STAGING_CMS_PUBLIC_${HOTFIX_SHA}_CONTROL_${CONTROL_SHA}_CI_${PROMOTION_CI_RUN_ID}_RECOVERY_RUN_${RECOVERED_BASELINE_RUN_ID}_ATTEMPT_${RECOVERED_BASELINE_RUN_ATTEMPT}_TERMINAL_${RECOVERED_BASELINE_TERMINAL_ARTIFACT_ID}_RECEIPT_${RECOVERED_BASELINE_RECEIPT_ARTIFACT_ID}_ROLLBACK_${ROLLBACK_SHA}"
+          test "$CONFIRMATION" = "$expected"
       - name: Checkout the exact workflow control revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -57,6 +66,23 @@ jobs:
           fetch-depth: 0
           path: control
           persist-credentials: false
+      - name: Use the repository-pinned Node runtime
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: control/.nvmrc
+      - name: Verify the fresh promotion control and its exact successful CI
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CONTROL_SHA: ${{ github.sha }}
+          PROMOTION_CI_RUN_ID: ${{ inputs.promotion_ci_run_id }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: >-
+          node scripts/ev2/phase12/staging-cms-public-hotfix.mjs verify-promotion-dispatch
+          --control-sha "$CONTROL_SHA"
+          --ci-run-id "$PROMOTION_CI_RUN_ID"
+          --confirmation "$CONFIRMATION"
+          --output ../promotion-dispatch-evidence.json
       - name: Checkout the immutable cms-public hotfix
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -78,10 +104,6 @@ jobs:
           fetch-depth: 0
           path: rollback-source
           persist-credentials: false
-      - name: Use the repository-pinned Node runtime
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version-file: control/.nvmrc
       - name: Verify the exact successful CI run bound to the hotfix bytes
         working-directory: control
         env:
@@ -318,16 +340,22 @@ jobs:
           DISPATCH_ACTOR: ${{ github.actor }}
           TRIGGERING_ACTOR: ${{ github.triggering_actor }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
+          CONTROL_SHA: ${{ github.sha }}
+          PROMOTION_CI_RUN_ID: ${{ inputs.promotion_ci_run_id }}
           CONFIRMATION: ${{ inputs.confirmation }}
+          CANDIDATE_ARTIFACT_ID: ${{ needs.build-candidate.outputs.artifact_id }}
+          CANDIDATE_ARTIFACT_NAME: ${{ needs.build-candidate.outputs.artifact_name }}
         run: |
           set -euo pipefail
           test "$RUN_ATTEMPT" = 1
           test "$DISPATCH_REF" = refs/heads/main
           test "${DISPATCH_ACTOR,,}" = vnd93
           test "${TRIGGERING_ACTOR,,}" = vnd93
-          test "$CONFIRMATION" = "$HOTFIX_CONFIRMATION"
-          test -n "${{ needs.build-candidate.outputs.artifact_id }}"
-          test "${{ needs.build-candidate.outputs.artifact_name }}" = \
+          [[ "$PROMOTION_CI_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          expected="PROMOTE_STAGING_CMS_PUBLIC_${HOTFIX_SHA}_CONTROL_${CONTROL_SHA}_CI_${PROMOTION_CI_RUN_ID}_RECOVERY_RUN_${RECOVERED_BASELINE_RUN_ID}_ATTEMPT_${RECOVERED_BASELINE_RUN_ATTEMPT}_TERMINAL_${RECOVERED_BASELINE_TERMINAL_ARTIFACT_ID}_RECEIPT_${RECOVERED_BASELINE_RECEIPT_ARTIFACT_ID}_ROLLBACK_${ROLLBACK_SHA}"
+          test "$CONFIRMATION" = "$expected"
+          test -n "$CANDIDATE_ARTIFACT_ID"
+          test "$CANDIDATE_ARTIFACT_NAME" = \
             "staging-cms-public-hotfix-candidate-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
       - name: Checkout the exact trusted control revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -414,13 +442,36 @@ jobs:
           github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
           repository: ${{ github.repository }}
           run-id: "34908383307"
-      - name: Verify the failed run had a successful exact baseline finalizer
+      - name: Download the immutable recovered baseline terminal
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: "10529465038"
+          digest-mismatch: error
+          path: trusted-recovery-terminal
+          merge-multiple: true
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: "35298567582"
+      - name: Download the immutable recovered baseline receipt
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: "10528643032"
+          digest-mismatch: error
+          path: trusted-recovery-receipt
+          merge-multiple: true
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: "35298567582"
+      - name: Verify the source baseline and exact recovered live baseline
         working-directory: control
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
         run: >-
           node scripts/ev2/phase12/staging-cms-public-hotfix.mjs verify-trusted-baseline
           --evidence ../trusted-baseline
+          --recovered-terminal ../trusted-recovery-terminal
+          --recovered-receipt ../trusted-recovery-receipt
           --output ../trusted-baseline-verified.json
       - name: Prove the live staging baseline before capture
         working-directory: control

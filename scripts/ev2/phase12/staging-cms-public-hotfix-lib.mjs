@@ -33,8 +33,6 @@ export const STAGING_CMS_PUBLIC_HOTFIX = Object.freeze({
   hotfixSha: "e40eb0c2cc81c27fbf8f23e8671136f9dfc6f282",
   hotfixParentSha: "4f96e78bad1d29fbee245a11c7536986f2bf79c6",
   rollbackSha: "c8aec5cad25830580bf9ca8a89594ebce1aa3570",
-  confirmation:
-    "PROMOTE_STAGING_CMS_PUBLIC_e40eb0c2cc81c27fbf8f23e8671136f9dfc6f282_ROLLBACK_c8aec5cad25830580bf9ca8a89594ebce1aa3570",
   candidateCi: Object.freeze({
     runId: "34989099615",
     runAttempt: 1,
@@ -74,12 +72,44 @@ export const STAGING_CMS_PUBLIC_HOTFIX = Object.freeze({
     artifactName: "staging-terminal-34908383307-1",
     artifactDigest: "sha256:7899884c96e7a8bb2048d00ef5dd47b5c1c151e2f439768addd0ce4ae3d0b8cb",
   }),
-  baselineFunction: Object.freeze({
+  sourceBaselineFunction: Object.freeze({
     id: "9da3b9be-6ac5-4393-aa57-b550fe549e7f",
+    name: "cms-public",
+    slug: "cms-public",
     version: 283,
     bundleSha256: "1960d5302b5aede36aaed5fb309f0645c2334d687cdf6e76760936257a6049f7",
     createdAt: "2026-08-28T22:17:33.542Z",
     updatedAt: "2026-09-14T23:39:47.148Z",
+    status: "ACTIVE",
+    verifyJwt: false,
+    importMap: true,
+    entrypointPath:
+      "file:///home/runner/work/gaiatec-cms/gaiatec-cms/candidate-recovery/supabase/functions/cms-public/index.ts",
+    importMapPath:
+      "file:///home/runner/work/gaiatec-cms/gaiatec-cms/candidate-recovery/supabase/functions/import_map.json",
+  }),
+  recoveredBaseline: Object.freeze({
+    runId: "35298567582",
+    runAttempt: 1,
+    controlSha: "6fc1577bc5a7de23fc0ee5e6802b0bfd29ba1303",
+    workflowName: "Promote staging cms-public hotfix watchdog",
+    workflowPath: ".github/workflows/promote-staging-cms-public-hotfix-watchdog.yml",
+    jobName: "recover-incomplete-hotfix",
+    terminalArtifactId: "10529465038",
+    terminalArtifactName: "staging-cms-public-hotfix-recovered-35298567582-1-receipt-10528643032",
+    terminalArtifactDigest: "sha256:dece0085b04cb6acc028163ec0bc164cd7385b1657a053a2e4946b52bbb660c2",
+    receiptArtifactId: "10528643032",
+    receiptArtifactName: "staging-cms-public-hotfix-rollback-receipt-35298567582-1",
+    receiptArtifactDigest: "sha256:023d87ad4465601f4150dc80b1ba6e064d67ab52eee3be9ab72f1815ec38a637",
+  }),
+  baselineFunction: Object.freeze({
+    id: "9da3b9be-6ac5-4393-aa57-b550fe549e7f",
+    name: "cms-public",
+    slug: "cms-public",
+    version: 285,
+    bundleSha256: "1960d5302b5aede36aaed5fb309f0645c2334d687cdf6e76760936257a6049f7",
+    createdAt: "2026-08-28T22:17:33.542Z",
+    updatedAt: "2026-09-18T02:15:50.806Z",
     status: "ACTIVE",
     verifyJwt: false,
     importMap: true,
@@ -101,6 +131,23 @@ export function stagingCmsPublicRecoveryConfirmation({ controlSha, ciRunId }) {
     `PARENT_CONTROL_${incident.parentControlSha}`,
     `RECOVERY_CONTROL_${controlSha}`,
     `CI_${ciRunId}`,
+    `ROLLBACK_${STAGING_CMS_PUBLIC_HOTFIX.rollbackSha}`,
+  ].join("_");
+}
+
+export function stagingCmsPublicPromotionConfirmation({ controlSha, ciRunId }) {
+  if (!FULL_SHA.test(controlSha) || !POSITIVE_INTEGER.test(String(ciRunId)))
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_PROMOTION_CONFIRMATION_INPUT_REFUSED");
+  const recovered = STAGING_CMS_PUBLIC_HOTFIX.recoveredBaseline;
+  return [
+    "PROMOTE_STAGING_CMS_PUBLIC",
+    STAGING_CMS_PUBLIC_HOTFIX.hotfixSha,
+    `CONTROL_${controlSha}`,
+    `CI_${ciRunId}`,
+    `RECOVERY_RUN_${recovered.runId}`,
+    `ATTEMPT_${recovered.runAttempt}`,
+    `TERMINAL_${recovered.terminalArtifactId}`,
+    `RECEIPT_${recovered.receiptArtifactId}`,
     `ROLLBACK_${STAGING_CMS_PUBLIC_HOTFIX.rollbackSha}`,
   ].join("_");
 }
@@ -981,9 +1028,8 @@ export function sameFunctionTuple(left, right, { ignoreVersion = false, ignoreUp
   return canonicalBytes(leftTuple).equals(canonicalBytes(rightTuple));
 }
 
-export function assertTrustedBaselineTuple(tuple) {
+export function assertTrustedBaselineTuple(tuple, expected = STAGING_CMS_PUBLIC_HOTFIX.baselineFunction) {
   const value = normalizeFunctionTuple(tuple);
-  const expected = STAGING_CMS_PUBLIC_HOTFIX.baselineFunction;
   const violations = [];
   for (const [key, expectedValue] of Object.entries(expected))
     if (value[key] !== expectedValue) violations.push(`baseline_${key}_mismatch`);
@@ -1193,6 +1239,7 @@ export function validateCmsPublicHotfixCanary(report, expected = {}) {
 
 export function validateTrustedBaselineEvidence({ run, jobs, artifact, probe, inventory, receipt }) {
   const expected = STAGING_CMS_PUBLIC_HOTFIX.trustedBaseline;
+  const sourceBaseline = STAGING_CMS_PUBLIC_HOTFIX.sourceBaselineFunction;
   const violations = [];
   const artifactExpiry = normalizedTimestamp(artifact?.expires_at);
   if (
@@ -1247,7 +1294,7 @@ export function validateTrustedBaselineEvidence({ run, jobs, artifact, probe, in
   const snapshot = functionInventorySnapshot(inventory);
   if (!snapshot.valid) violations.push(...snapshot.violations.map((item) => `trusted_${item}`));
   try {
-    assertTrustedBaselineTuple(snapshot.target);
+    assertTrustedBaselineTuple(snapshot.target, sourceBaseline);
   } catch {
     violations.push("trusted_baseline_tuple_invalid");
   }
@@ -1261,12 +1308,199 @@ export function validateTrustedBaselineEvidence({ run, jobs, artifact, probe, in
     receipt?.target !== "candidate" ||
     targetReceipt.length !== 1 ||
     targetReceipt[0]?.sourceSha256 !== STAGING_CMS_PUBLIC_HOTFIX.baselineSourceSha256 ||
-    targetReceipt[0]?.bundleSha256 !== STAGING_CMS_PUBLIC_HOTFIX.baselineFunction.bundleSha256 ||
-    targetReceipt[0]?.version !== STAGING_CMS_PUBLIC_HOTFIX.baselineFunction.version ||
-    targetReceipt[0]?.updatedAt !== STAGING_CMS_PUBLIC_HOTFIX.baselineFunction.updatedAt ||
+    targetReceipt[0]?.bundleSha256 !== sourceBaseline.bundleSha256 ||
+    targetReceipt[0]?.version !== sourceBaseline.version ||
+    targetReceipt[0]?.updatedAt !== sourceBaseline.updatedAt ||
     targetReceipt[0]?.verifyJwt !== false
   )
     violations.push("trusted_function_receipt_invalid");
+  return { valid: violations.length === 0, violations: [...new Set(violations)], snapshot };
+}
+
+export function validateRecoveredBaselineEvidence({
+  run,
+  jobs,
+  terminalArtifact,
+  receiptArtifact,
+  terminal,
+  probe,
+  canary,
+  probeProof,
+  receipt,
+  sourceSnapshot,
+  fileDigests,
+  key,
+}) {
+  const expected = STAGING_CMS_PUBLIC_HOTFIX.recoveredBaseline;
+  const currentBaseline = STAGING_CMS_PUBLIC_HOTFIX.baselineFunction;
+  const sourceBaseline = STAGING_CMS_PUBLIC_HOTFIX.sourceBaselineFunction;
+  const violations = [];
+  if (
+    String(run?.id ?? "") !== expected.runId ||
+    Number(run?.run_attempt) !== expected.runAttempt ||
+    run?.name !== expected.workflowName ||
+    run?.path !== expected.workflowPath ||
+    run?.event !== "workflow_dispatch" ||
+    run?.status !== "completed" ||
+    run?.conclusion !== "success" ||
+    run?.head_branch !== "main" ||
+    run?.head_sha !== expected.controlSha ||
+    run?.repository?.full_name !== STAGING_CMS_PUBLIC_HOTFIX.repository ||
+    run?.head_repository?.full_name !== STAGING_CMS_PUBLIC_HOTFIX.repository ||
+    String(run?.actor?.login ?? "").toLowerCase() !== "vnd93" ||
+    String(run?.triggering_actor?.login ?? "").toLowerCase() !== "vnd93"
+  )
+    violations.push("recovered_run_invalid");
+  const normalizedJobs = (jobs?.jobs ?? jobs ?? [])
+    .map((job) => ({
+      name: job.name,
+      status: job.status,
+      conclusion: job.conclusion,
+      runAttempt: job.run_attempt,
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+  if (
+    JSON.stringify(normalizedJobs) !==
+    JSON.stringify([
+      {
+        name: expected.jobName,
+        status: "completed",
+        conclusion: "success",
+        runAttempt: expected.runAttempt,
+      },
+    ])
+  )
+    violations.push("recovered_jobs_invalid");
+  const artifactValid = (artifact, { id, name, digest }) => {
+    const expiresAt = normalizedTimestamp(artifact?.expires_at);
+    return (
+      String(artifact?.id ?? "") === id &&
+      artifact?.name === name &&
+      artifact?.digest === digest &&
+      artifact?.expired === false &&
+      Number.isSafeInteger(artifact?.size_in_bytes) &&
+      artifact.size_in_bytes > 0 &&
+      expiresAt &&
+      Date.parse(expiresAt) > Date.now() &&
+      String(artifact?.workflow_run?.id ?? "") === expected.runId &&
+      artifact?.workflow_run?.head_branch === "main" &&
+      artifact?.workflow_run?.head_sha === expected.controlSha
+    );
+  };
+  if (
+    !artifactValid(terminalArtifact, {
+      id: expected.terminalArtifactId,
+      name: expected.terminalArtifactName,
+      digest: expected.terminalArtifactDigest,
+    })
+  )
+    violations.push("recovered_terminal_artifact_invalid");
+  if (
+    !artifactValid(receiptArtifact, {
+      id: expected.receiptArtifactId,
+      name: expected.receiptArtifactName,
+      digest: expected.receiptArtifactDigest,
+    })
+  )
+    violations.push("recovered_receipt_artifact_invalid");
+
+  const source = functionInventorySnapshot(sourceSnapshot?.records ?? []);
+  if (
+    !source.valid ||
+    source.inventorySha256 !== sourceSnapshot?.inventorySha256 ||
+    source.nonTargetSha256 !== sourceSnapshot?.nonTargetSha256 ||
+    !sameFunctionTuple(source.target, sourceBaseline)
+  )
+    violations.push("recovered_source_snapshot_invalid");
+  const recoveredRecords = source.records.map((record) =>
+    record.name === STAGING_CMS_PUBLIC_HOTFIX.functionSlug ? normalizeFunctionTuple(currentBaseline) : record,
+  );
+  const snapshot = functionInventorySnapshot(recoveredRecords);
+  if (!snapshot.valid || !sameFunctionTuple(snapshot.target, currentBaseline))
+    violations.push("recovered_inventory_invalid");
+
+  const executor = {
+    runId: expected.runId,
+    runAttempt: expected.runAttempt,
+    runSha: expected.controlSha,
+    controlSha: STAGING_CMS_PUBLIC_HOTFIX.recoveryIncident.parentControlSha,
+    workflowPath: expected.workflowPath,
+  };
+  const receiptResult = verifyHotfixReceipt(receipt, key, {
+    action: "rollback",
+    completedBy: executor,
+    stateBaselineFunction: sourceBaseline,
+  });
+  violations.push(...receiptResult.violations.map((item) => `recovered_${item}`));
+  const state = receiptResult.receipt?.state;
+  const appliedAt = receiptResult.receipt?.appliedAt;
+  if (
+    receiptResult.receipt?.workflow?.runId !== STAGING_CMS_PUBLIC_HOTFIX.recoveryIncident.parentRunId ||
+    receiptResult.receipt?.workflow?.runAttempt !==
+      STAGING_CMS_PUBLIC_HOTFIX.recoveryIncident.parentRunAttempt ||
+    receiptResult.receipt?.workflow?.controlSha !==
+      STAGING_CMS_PUBLIC_HOTFIX.recoveryIncident.parentControlSha ||
+    !sameFunctionTuple(receiptResult.receipt?.after, currentBaseline) ||
+    receiptResult.receipt?.nonTargetSha256 !== snapshot.nonTargetSha256
+  )
+    violations.push("recovered_receipt_identity_invalid");
+
+  for (const [name, value] of Object.entries(fileDigests ?? {}))
+    if (!SHA256.test(value ?? "")) violations.push(`recovered_${name}_digest_invalid`);
+  const receiptSha256 = safeCanonicalSha256(receipt);
+  if (
+    terminal?.probeSha256 !== fileDigests?.probe ||
+    terminal?.cmsPublicCanarySha256 !== fileDigests?.canary ||
+    terminal?.probeProofSha256 !== fileDigests?.probeProof ||
+    terminal?.receiptSha256 !== receiptSha256 ||
+    terminal?.liveObservation?.nonTargetSha256 !== snapshot.nonTargetSha256
+  )
+    violations.push("recovered_terminal_chain_invalid");
+  const probeResult = validateHotfixFullProbe(probe);
+  violations.push(...probeResult.violations.map((item) => `recovered_${item}`));
+  const canaryResult = validateCmsPublicHotfixCanary(canary, {
+    state,
+    outcome: "restored",
+    target: currentBaseline,
+    minimumStartedAt: appliedAt,
+    maximumCompletedAt: terminal?.completedAt,
+  });
+  violations.push(...canaryResult.violations.map((item) => `recovered_${item}`));
+  const proofResult = verifyHotfixProbeProof(probeProof, key, {
+    state,
+    executor,
+    outcome: "restored",
+    packageManifestSha256: terminal?.packageManifestSha256,
+    probeSha256: fileDigests?.probe,
+    cmsPublicCanarySha256: fileDigests?.canary,
+    classification: "rollback-receipted",
+    nonTargetSha256: snapshot.nonTargetSha256,
+    rollbackIntentSha256: receiptResult.receipt?.intentSha256,
+    receiptSha256,
+    target: currentBaseline,
+    minimumStartedAt: appliedAt,
+  });
+  violations.push(...proofResult.violations.map((item) => `recovered_${item}`));
+  const proofCompletedAt = normalizedTimestamp(proofResult.proof?.completedAt);
+  const terminalObservedAt = normalizedTimestamp(terminal?.liveObservation?.observedAt);
+  if (
+    !proofCompletedAt ||
+    !terminalObservedAt ||
+    Date.parse(terminalObservedAt) < Date.parse(proofCompletedAt)
+  )
+    violations.push("recovered_terminal_order_invalid");
+  const terminalResult = validateHotfixTerminalEvidence(terminal, {
+    state,
+    stateBaselineFunction: sourceBaseline,
+    outcome: "restored",
+    packageManifestSha256: state?.recoveryArtifact?.packageManifestSha256,
+    probeSha256: fileDigests?.probe,
+    cmsPublicCanarySha256: fileDigests?.canary,
+    probeProofSha256: fileDigests?.probeProof,
+    receiptSha256,
+    live: currentBaseline,
+  });
+  violations.push(...terminalResult.violations.map((item) => `recovered_${item}`));
   return { valid: violations.length === 0, violations: [...new Set(violations)], snapshot };
 }
 
@@ -1477,6 +1711,7 @@ export function buildHotfixRecoveryState({ workflow, artifact, manifest }) {
 
 export function validateHotfixRecoveryState(state, expected = {}) {
   const violations = [];
+  const baselineFunction = expected.baselineFunction ?? STAGING_CMS_PUBLIC_HOTFIX.baselineFunction;
   if (
     state?.schemaVersion !== 1 ||
     state?.event !== "g12.staging.cms_public_hotfix.prepared" ||
@@ -1500,7 +1735,7 @@ export function validateHotfixRecoveryState(state, expected = {}) {
     !/^sha256:[a-f0-9]{64}$/.test(state?.recoveryArtifact?.digest ?? "") ||
     !SHA256.test(state?.recoveryArtifact?.packageManifestSha256 ?? "") ||
     state?.baseline?.sourceSha256 !== STAGING_CMS_PUBLIC_HOTFIX.baselineSourceSha256 ||
-    state?.baseline?.bodySha256 !== STAGING_CMS_PUBLIC_HOTFIX.baselineFunction.bundleSha256 ||
+    state?.baseline?.bodySha256 !== baselineFunction.bundleSha256 ||
     state?.candidate?.sourceSha256 !== STAGING_CMS_PUBLIC_HOTFIX.candidateSourceSha256 ||
     !SHA256.test(state?.candidate?.bodySha256 ?? "") ||
     state?.candidate?.bodySha256 === state?.baseline?.bodySha256 ||
@@ -1512,7 +1747,7 @@ export function validateHotfixRecoveryState(state, expected = {}) {
   )
     violations.push("state_identity_invalid");
   try {
-    assertTrustedBaselineTuple(state?.baseline?.tuple);
+    assertTrustedBaselineTuple(state?.baseline?.tuple, baselineFunction);
   } catch {
     violations.push("state_baseline_invalid");
   }
@@ -1812,9 +2047,14 @@ export function classifyHotfixLiveState({
   return { classification: "external-drift", violations: ["target_tuple_unowned"], snapshot };
 }
 
-function validateReceiptPayload(receipt, { state, action, intent, live, completedBy } = {}) {
+function validateReceiptPayload(
+  receipt,
+  { state, action, intent, live, completedBy, stateBaselineFunction } = {},
+) {
   const violations = [];
-  const stateResult = validateHotfixRecoveryState(receipt?.state ?? state);
+  const stateResult = validateHotfixRecoveryState(receipt?.state ?? state, {
+    baselineFunction: stateBaselineFunction,
+  });
   if (!stateResult.valid) violations.push(...stateResult.violations.map((item) => `receipt_${item}`));
   const boundState = receipt?.state ?? state;
   if (state && (!receipt?.state || !sameCanonical(receipt.state, state)))
@@ -1934,8 +2174,8 @@ function validateReceiptPayload(receipt, { state, action, intent, live, complete
   return { valid: violations.length === 0, violations: [...new Set(violations)] };
 }
 
-export function sealHotfixReceipt(receipt, key) {
-  const result = validateReceiptPayload(receipt);
+export function sealHotfixReceipt(receipt, key, expected = {}) {
+  const result = validateReceiptPayload(receipt, expected);
   if (!result.valid)
     throw new Error(`G12_STAGING_CMS_PUBLIC_HOTFIX_RECEIPT_REFUSED:${result.violations.join(",")}`);
   const unsigned = {
@@ -2050,6 +2290,7 @@ function validateProbeProofPayload(proof, expected = {}) {
   if (expected.executor && !sameCanonical(proof?.executor, expected.executor))
     violations.push("probe_proof_executor_mismatch");
   for (const [name, value] of [
+    ["outcome", expected.outcome],
     ["packageManifestSha256", expected.packageManifestSha256],
     ["probeSha256", expected.probeSha256],
     ["cmsPublicCanarySha256", expected.cmsPublicCanarySha256],
@@ -2146,7 +2387,9 @@ export function validateHotfixTerminalEvidence(report, expected = {}) {
   if (["promoted", "restored"].includes(outcome) && !SHA256.test(report?.receiptSha256 ?? ""))
     violations.push("terminal_receipt_invalid");
   if (state) {
-    const stateResult = validateHotfixRecoveryState(state);
+    const stateResult = validateHotfixRecoveryState(state, {
+      baselineFunction: expected.stateBaselineFunction,
+    });
     if (!stateResult.valid) violations.push(...stateResult.violations.map((item) => `terminal_${item}`));
     if (
       !sameCanonical(report?.workflow, state.workflow) ||

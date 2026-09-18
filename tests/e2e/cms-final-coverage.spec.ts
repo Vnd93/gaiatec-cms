@@ -2549,20 +2549,52 @@ async function expectEditorialUnavailable(
 
 async function assertNewDraftsStartIncomplete(page: Page, expectedApiOrigin: string) {
   const drafts = [
-    { route: "/admin/conteudo/novo", title: "Título", action: "Criar rascunho" },
+    {
+      route: "/admin/conteudo/novo",
+      title: "Título",
+      action: "Criar rascunho",
+      expectedState: {
+        selector: '.admin-notice.admin-notice--error[role="alert"]',
+        text: "Revise os campos obrigatórios.",
+      },
+    },
     {
       route: "/admin/produtos/novo",
       title: "Nome comercial do produto",
       action: "Salvar e continuar",
       progressive: true,
+      expectedState: {
+        selector: '.admin-notice.admin-notice--success[role="status"]',
+        text: "Rascunho incompleto salvo de forma privada. Continue quando estiver pronto.",
+      },
     },
     {
       route: "/admin/descoberta/service/novo",
       title: "Título público",
       action: "Criar rascunho",
+      expectedState: {
+        selector: '.admin-contract-status.is-invalid[role="status"]',
+        text: "Cadastro precisa de ajustes",
+      },
     },
-    { route: "/admin/paginas/novo", title: "Título administrativo e público", action: "Criar página" },
-    { route: "/admin/marketing/campanhas/novo", title: "Título", action: "Salvar" },
+    {
+      route: "/admin/paginas/novo",
+      title: "Título administrativo e público",
+      action: "Criar página",
+      expectedState: {
+        selector: ".admin-builder-status",
+        text: /Contrato:\s*\d+\s+pendência\(s\)/i,
+      },
+    },
+    {
+      route: "/admin/marketing/campanhas/novo",
+      title: "Título",
+      action: "Salvar",
+      expectedState: {
+        selector: '.admin-notice.admin-notice--error[role="status"]',
+        text: /Pendência:/i,
+      },
+    },
   ];
   for (const draft of drafts) {
     let mutationRequests = 0;
@@ -2608,12 +2640,16 @@ async function assertNewDraftsStartIncomplete(page: Page, expectedApiOrigin: str
     if (draft.progressive) await expect(action).toBeEnabled({ timeout: 20_000 });
     if (await action.isEnabled().catch(() => false)) {
       await action.click();
-      if (draft.progressive) {
-        await expect(
-          page.getByText("Rascunho incompleto salvo de forma privada. Continue quando estiver pronto."),
-        ).toBeVisible({ timeout: 20_000 });
-      } else await page.waitForTimeout(100);
+      if (!draft.progressive) await page.waitForTimeout(100);
     }
+    const expectedStateDeadline = Date.now() + 20_000;
+    const expectedState = page.locator(draft.expectedState.selector, {
+      hasText: draft.expectedState.text,
+    });
+    await expect(expectedState).toHaveCount(1, { timeout: 20_000 });
+    await expect(expectedState).toBeVisible({
+      timeout: Math.max(1, expectedStateDeadline - Date.now()),
+    });
     page.off("request", listener);
     if (draft.progressive) {
       if (!progressiveActions.some((candidate) => candidate === "create" || candidate === "resume")) {
@@ -2627,12 +2663,6 @@ async function assertNewDraftsStartIncomplete(page: Page, expectedApiOrigin: str
     } else if (mutationRequests !== 0) {
       throw new Error(`${safePath(draft.route)} tentou persistir um rascunho novo incompleto.`);
     }
-    const invalidState = page.locator(
-      '[role="alert"], .admin-contract-status.is-invalid, .admin-builder-status, .admin-notice--error',
-    );
-    await expect(
-      invalidState.filter({ hasText: /incomplet|inválid|ajuste|obrigat|pendente/i }).first(),
-    ).toBeVisible();
   }
 }
 

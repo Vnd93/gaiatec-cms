@@ -691,6 +691,67 @@ describe("matriz final de cobertura do CMS", () => {
     expect(progressiveState).not.toContain("toContainText");
   });
 
+  it("prova a incompletude pelo estado semântico específico de cada editor", () => {
+    const source = readFileSync(e2eSpec, "utf8");
+    const start = source.indexOf("async function assertNewDraftsStartIncomplete");
+    const end = source.indexOf("\nasync function archiveEditorialSurface", start);
+    expect(start).toBeGreaterThan(0);
+    expect(end).toBeGreaterThan(start);
+    const helper = source.slice(start, end);
+    const expectedStates = [
+      {
+        route: "/admin/conteudo/novo",
+        selector: '.admin-notice.admin-notice--error[role="alert"]',
+        text: "Revise os campos obrigatórios.",
+      },
+      {
+        route: "/admin/produtos/novo",
+        selector: '.admin-notice.admin-notice--success[role="status"]',
+        text: "Rascunho incompleto salvo de forma privada. Continue quando estiver pronto.",
+      },
+      {
+        route: "/admin/descoberta/service/novo",
+        selector: '.admin-contract-status.is-invalid[role="status"]',
+        text: "Cadastro precisa de ajustes",
+      },
+      {
+        route: "/admin/paginas/novo",
+        selector: ".admin-builder-status",
+        text: "Contrato:\\s*\\d+\\s+pendência\\(s\\)",
+      },
+      {
+        route: "/admin/marketing/campanhas/novo",
+        selector: '.admin-notice.admin-notice--error[role="status"]',
+        text: "Pendência:",
+      },
+    ];
+    for (const [index, expected] of expectedStates.entries()) {
+      const routeStart = helper.indexOf(`route: "${expected.route}"`);
+      const nextRoute = expectedStates[index + 1]?.route;
+      const routeEnd = nextRoute
+        ? helper.indexOf(`route: "${nextRoute}"`, routeStart)
+        : helper.indexOf("  ];", routeStart);
+      expect(routeStart).toBeGreaterThan(0);
+      expect(routeEnd).toBeGreaterThan(routeStart);
+      const routeContract = helper.slice(routeStart, routeEnd);
+      expect(routeContract).toContain(expected.selector);
+      expect(routeContract).toContain(expected.text);
+    }
+    expect(helper).toContain("const expectedStateDeadline = Date.now() + 20_000");
+    expect(helper).toContain("await expect(expectedState).toHaveCount(1");
+    expect(helper).toContain("await expect(expectedState).toBeVisible");
+    expect(helper).toContain("expectedStateDeadline - Date.now()");
+    expect(helper).toContain('candidate === "create"');
+    expect(helper).toContain("unexpectedMutations.length");
+    expect(helper).toContain("mutationRequests !== 0");
+    expect(helper).not.toContain("const invalidState");
+    const expectedStateStart = helper.indexOf("const expectedStateDeadline = Date.now() + 20_000");
+    const expectedStateEnd = helper.indexOf('page.off("request", listener)', expectedStateStart);
+    expect(expectedStateStart).toBeGreaterThan(0);
+    expect(expectedStateEnd).toBeGreaterThan(expectedStateStart);
+    expect(helper.slice(expectedStateStart, expectedStateEnd)).not.toContain(".first()");
+  });
+
   it("exige controles reais e ciclos editoriais mutantes fail-closed pela interface", () => {
     const source = readFileSync(e2eSpec, "utf8");
     for (const marker of [

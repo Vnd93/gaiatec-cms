@@ -2593,11 +2593,14 @@ async function assertNewDraftsStartIncomplete(page: Page, expectedApiOrigin: str
     const title = page.getByLabel(draft.title, { exact: true }).first();
     await expect(title).toHaveValue("");
     if (draft.progressive) {
-      const progressiveState = page.locator(".admin-draft-indicator, .admin-draft-recovery");
-      await expect(progressiveState).toContainText(
-        /rascunho progressivo pronto|rascunho salvo no servidor|rascunho recuperável no servidor/i,
-        { timeout: 20_000 },
-      );
+      const progressiveStateDeadline = Date.now() + 20_000;
+      const progressiveState = page.locator(".admin-draft-indicator, .admin-draft-recovery", {
+        hasText: /rascunho progressivo pronto|rascunho salvo no servidor|rascunho recuperável no servidor/i,
+      });
+      await expect(progressiveState).toHaveCount(1, { timeout: 20_000 });
+      await expect(progressiveState).toBeVisible({
+        timeout: Math.max(1, progressiveStateDeadline - Date.now()),
+      });
       const keepLocal = page.getByRole("button", { name: "Manter versão deste navegador" });
       if (await keepLocal.isVisible().catch(() => false)) await keepLocal.click();
     }

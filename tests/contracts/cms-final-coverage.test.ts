@@ -667,6 +667,30 @@ describe("matriz final de cobertura do CMS", () => {
     expect(source).not.toMatch(/console\.(?:log|error|warn)\s*\(/);
   });
 
+  it("aguarda um único estado progressivo permitido sem escolher um locator ambíguo", () => {
+    const source = readFileSync(e2eSpec, "utf8");
+    const start = source.indexOf("const progressiveStateDeadline = Date.now() + 20_000");
+    const end = source.indexOf("const keepLocal =", start);
+    expect(start).toBeGreaterThan(0);
+    expect(end).toBeGreaterThan(start);
+    const progressiveState = source.slice(start, end);
+    expect(progressiveState).toContain("const progressiveStateDeadline = Date.now() + 20_000");
+    expect(progressiveState).toContain('page.locator(".admin-draft-indicator, .admin-draft-recovery", {');
+    expect(progressiveState).toContain("hasText:");
+    for (const state of [
+      "rascunho progressivo pronto",
+      "rascunho salvo no servidor",
+      "rascunho recuperável no servidor",
+    ]) {
+      expect(progressiveState).toContain(state);
+    }
+    expect(progressiveState).toContain("await expect(progressiveState).toHaveCount(1");
+    expect(progressiveState).toContain("await expect(progressiveState).toBeVisible");
+    expect(progressiveState).toContain("progressiveStateDeadline - Date.now()");
+    expect(progressiveState).not.toContain(".first()");
+    expect(progressiveState).not.toContain("toContainText");
+  });
+
   it("exige controles reais e ciclos editoriais mutantes fail-closed pela interface", () => {
     const source = readFileSync(e2eSpec, "utf8");
     for (const marker of [

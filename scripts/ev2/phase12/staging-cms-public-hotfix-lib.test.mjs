@@ -12,6 +12,7 @@ import {
   assertArtifactTreeFileCount,
   assertArtifactTreePath,
   assertExactSourceIdentity,
+  assertLiveBodyByteLength,
   assertRawEszipByteLength,
   assertWireBundleByteLength,
   buildHotfixRecoveryState,
@@ -484,6 +485,14 @@ test("raw and wire bundle limits remain finite, closed and independently enforce
     () => assertWireBundleByteLength(STAGING_CMS_PUBLIC_HOTFIX.maximumWireBundleBytes + 1),
     /G12_STAGING_CMS_PUBLIC_HOTFIX_BUNDLE_SIZE_REFUSED/,
   );
+  assert.equal(
+    assertLiveBodyByteLength(STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes),
+    STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes,
+  );
+  assert.throws(
+    () => assertLiveBodyByteLength(STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes + 1),
+    /G12_STAGING_CMS_PUBLIC_HOTFIX_LIVE_BODY_SIZE_REFUSED/,
+  );
 });
 
 test("artifact tree count, byte, path and depth helpers enforce exact caps", () => {
@@ -577,6 +586,20 @@ test("EZBR framing is deterministic and downloaded raw or framed bodies reconcil
   assert.deepEqual(fromFramed.rawEszip, raw);
   assert.throws(() => reconcileDownloadedBundleBody(Buffer.alloc(32, 7), digest), /ESZIP_VERSION_REFUSED/);
   assert.throws(() => reconcileDownloadedBundleBody(raw, "0".repeat(64)), /BASELINE_BODY_MISMATCH/);
+});
+
+test("downloaded raw ESZIP may exceed the wire cap without relaxing the framed EZBR cap", () => {
+  const raw = validEszip("raw-over-wire", {
+    entrypointSource: Buffer.alloc(STAGING_CMS_PUBLIC_HOTFIX.maximumWireBundleBytes, 65),
+  });
+  assert.ok(raw.byteLength > STAGING_CMS_PUBLIC_HOTFIX.maximumWireBundleBytes);
+  assert.ok(raw.byteLength < STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes);
+  const framed = frameRawEszip(raw);
+  assert.ok(framed.byteLength <= STAGING_CMS_PUBLIC_HOTFIX.maximumWireBundleBytes);
+  const reconciled = reconcileDownloadedBundleBody(raw, sha256Bytes(framed));
+  assert.deepEqual(reconciled.rawEszip, raw);
+  assert.deepEqual(reconciled.deploymentBody, framed);
+  assert.equal(reconciled.deploymentSha256, sha256Bytes(framed));
 });
 
 test("inventory snapshots preserve the complete target tuple and detect every non-target drift", () => {

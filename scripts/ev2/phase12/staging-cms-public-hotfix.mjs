@@ -23,6 +23,7 @@ import {
   assertArtifactTreePath,
   assertBoundedFileByteLength,
   assertExactSourceIdentity,
+  assertLiveBodyByteLength,
   assertTrustedBaselineTuple,
   buildHotfixRecoveryState,
   buildRecoveryPackageManifest,
@@ -1425,12 +1426,11 @@ async function downloadedLiveBody() {
     // Management API returns the raw body. Structure plus the trusted SHA are checked afterwards.
     accept: "*/*",
   });
-  const maximum = STAGING_CMS_PUBLIC_HOTFIX.maximumWireBundleBytes;
+  const maximum = STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes;
   const contentLengthHeader = response.headers.get("content-length");
   if (contentLengthHeader !== null) {
     const contentLength = Number(contentLengthHeader);
-    if (!Number.isSafeInteger(contentLength) || contentLength < 1 || contentLength > maximum)
-      throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_LIVE_BODY_SIZE_REFUSED");
+    assertLiveBodyByteLength(contentLength);
   }
   if (!response.body) throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_LIVE_BODY_MISSING");
   const reader = response.body.getReader();
@@ -1446,7 +1446,7 @@ async function downloadedLiveBody() {
     }
     chunks.push(Buffer.from(value));
   }
-  if (total < 1) throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_LIVE_BODY_SIZE_REFUSED");
+  assertLiveBodyByteLength(total);
   return Buffer.concat(chunks, total);
 }
 

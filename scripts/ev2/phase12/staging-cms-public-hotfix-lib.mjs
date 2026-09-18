@@ -117,6 +117,12 @@ export function assertWireBundleByteLength(value) {
   return value;
 }
 
+export function assertLiveBodyByteLength(value) {
+  if (!Number.isSafeInteger(value) || value < 1 || value > STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes)
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_LIVE_BODY_SIZE_REFUSED");
+  return value;
+}
+
 export function assertBoundedFileByteLength(value, maximumBytes, { allowEmpty = false } = {}) {
   if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 1)
     throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_FILE_LIMIT_REFUSED");
@@ -845,10 +851,12 @@ export function reconcileDownloadedBundleBody(downloadedBody, expectedSha256) {
   if (!SHA256.test(String(expectedSha256 ?? "")))
     throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_BASELINE_DIGEST_REFUSED");
   const downloaded = Buffer.from(downloadedBody);
-  assertWireBundleByteLength(downloaded.byteLength);
+  const framed = downloaded.subarray(0, EZBR_MAGIC.byteLength).equals(EZBR_MAGIC);
+  if (framed) assertWireBundleByteLength(downloaded.byteLength);
+  else assertRawEszipByteLength(downloaded.byteLength);
   let rawEszip;
   let deploymentBody;
-  if (downloaded.subarray(0, EZBR_MAGIC.byteLength).equals(EZBR_MAGIC)) {
+  if (framed) {
     if (!exactDigest(sha256Bytes(downloaded), expectedSha256))
       throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_BASELINE_BODY_MISMATCH");
     try {

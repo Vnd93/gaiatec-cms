@@ -90,6 +90,26 @@ describe("real invite and password-recovery browser lifecycle", () => {
     expect(spec).toContain('await codeField.fill("12345")');
     expect(spec).toContain('await codeField.fill("1234567")');
 
+    const revocationHelper = spec.slice(
+      spec.indexOf("async function revokeSessionsThroughUi"),
+      spec.indexOf("async function expireSessionWithServerRejectedRefresh"),
+    );
+    expect(revocationHelper).toContain("observer: CmsBrowserObserver");
+    expect(revocationHelper).toContain("await observer.waitForTrackedRequestsToSettle()");
+    expect(revocationHelper).toContain(
+      'const navigation = await administrator.goto("/admin/usuarios", { waitUntil: "domcontentloaded" })',
+    );
+    expect(revocationHelper).toContain("expect(navigation?.status()).toBe(200)");
+    expect(revocationHelper).toContain('expect(navigation?.headers()["x-release"]).toBe(config.expectedSha)');
+    expect(revocationHelper).toContain("await expect(administrator).toHaveURL(/\\/admin\\/usuarios$/)");
+    expect(revocationHelper).toContain(
+      'await waitForAdminDataToSettle(administrator, "Usuários e acessos", "Carregando usuários")',
+    );
+    expect(revocationHelper.indexOf("waitForTrackedRequestsToSettle")).toBeLessThan(
+      revocationHelper.indexOf("administrator.goto"),
+    );
+    expect(spec).toContain("revokeSessionsThroughUi(recoveryPage, invitePage, config, observer)");
+
     const sanitizeActionHelper = spec.slice(
       spec.indexOf("async function sanitizeActionAddress"),
       spec.indexOf("async function openActionSession"),

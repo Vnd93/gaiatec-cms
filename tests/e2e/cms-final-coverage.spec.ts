@@ -1465,7 +1465,7 @@ async function fillSyntheticPostForCreate(page: Page, runTag: string) {
   await page
     .getByLabel("Corpo do artigo")
     .fill(`${runTag} corpo editorial sintético sem conteúdo comercial real.`);
-  await page.getByLabel("Autor").fill("Equipe QA GAIATEC");
+  await page.getByLabel("Autor", { exact: true }).fill("Equipe QA GAIATEC");
   await page.getByLabel("Categoria").fill("Homologação");
   await page.getByLabel("Tags separadas por vírgula").fill("qa, homologacao, sintetico");
   await page.getByLabel("Tempo de leitura (minutos)").fill("3");

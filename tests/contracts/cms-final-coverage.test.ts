@@ -667,6 +667,12 @@ describe("matriz final de cobertura do CMS", () => {
     expect(source).not.toMatch(/console\.(?:log|error|warn)\s*\(/);
   });
 
+  it("seleciona o autor do post pelo rótulo exato", () => {
+    const source = readFileSync(e2eSpec, "utf8");
+    expect(source).toContain('page.getByLabel("Autor", { exact: true }).fill("Equipe QA GAIATEC")');
+    expect(source).not.toContain('page.getByLabel("Autor").fill("Equipe QA GAIATEC")');
+  });
+
   it("aguarda um único estado progressivo permitido sem escolher um locator ambíguo", () => {
     const source = readFileSync(e2eSpec, "utf8");
     const start = source.indexOf("const progressiveStateDeadline = Date.now() + 20_000");

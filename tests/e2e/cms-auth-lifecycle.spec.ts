@@ -1880,9 +1880,18 @@ async function forceRealSilentRefresh(page: Page, expectedSha: string) {
   expect(state).toEqual({ accessTokenRotated: true, expiresInFuture: true });
 }
 
-async function revokeSessionsThroughUi(administrator: Page, revokedPage: Page, config: Configuration) {
-  await administrator.goto("/admin/usuarios", { waitUntil: "domcontentloaded" });
-  await expect(administrator.getByRole("heading", { name: "Usuários e acessos" })).toBeVisible();
+async function revokeSessionsThroughUi(
+  administrator: Page,
+  revokedPage: Page,
+  config: Configuration,
+  observer: CmsBrowserObserver,
+) {
+  await observer.waitForTrackedRequestsToSettle();
+  const navigation = await administrator.goto("/admin/usuarios", { waitUntil: "domcontentloaded" });
+  expect(navigation?.status()).toBe(200);
+  expect(navigation?.headers()["x-release"]).toBe(config.expectedSha);
+  await expect(administrator).toHaveURL(/\/admin\/usuarios$/);
+  await waitForAdminDataToSettle(administrator, "Usuários e acessos", "Carregando usuários");
   const row = administrator
     .getByRole("row")
     .filter({ hasText: `Convite CMS QA ${config.runTag}` })
@@ -2671,7 +2680,7 @@ test.describe("CMS Auth invite and recovery lifecycle", () => {
       semanticStructures.push(...semanticScenarioEvidence.structures);
 
       await createUnobservedAuthSession(invitePage, config, config.invitee, "unobserved-revocation");
-      await revokeSessionsThroughUi(recoveryPage, invitePage, config);
+      await revokeSessionsThroughUi(recoveryPage, invitePage, config, observer);
       await refreshAndProveCmsDenied(invitePage, config, config.invitee, "unobserved-revocation");
       // Provada a negativa, a aba sai do painel. Enquanto ela permanece na tela administrativa, o
       // painel reconsulta /functions/v1/cms-session a cada 30 s (AdminAuthContext, setInterval de

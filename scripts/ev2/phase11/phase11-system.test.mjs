@@ -291,7 +291,17 @@ test("G11 executable controls remain reproducible and fail-closed", async () => 
   assert.match(canary, /exact_candidate_sha/);
   assert.match(canary, /lead_preserved_after_delivery_failure/);
   assert.match(canary, /backend_server_timing_available/);
-  assert.match(canary, /for \(let warmup = 0; warmup < 5; warmup \+= 1\)/);
+  assert.match(canary, /const adminReadSamples = 20;/);
+  assert.match(canary, /const adminReadWarmups = adminReadSamples;/);
+  const adminReadSampling = canary.slice(
+    canary.indexOf("const adminReadSamples = 20;"),
+    canary.indexOf("const timingSamples = {"),
+  );
+  assert.match(adminReadSampling, /for \(let warmup = 0; warmup < adminReadWarmups; warmup \+= 1\) \{/);
+  assert.match(adminReadSampling, /for \(let index = 0; index < adminReadSamples; index \+= 1\) \{/);
+  assert.equal((adminReadSampling.match(/await system\(context, operator, "snapshot"\)/g) ?? []).length, 2);
+  assert.doesNotMatch(adminReadSampling, /\b(?:break|continue|while)\b/);
+  assert.match(canary, /adminReadWarmups,\s+adminReadSamples,/);
   assert.match(canary, /EV2_G11_TIMING_REPORT_PATH/);
   assert.match(canary, /g11\.timing\.samples/);
   assert.match(canary, /sourceSha/);

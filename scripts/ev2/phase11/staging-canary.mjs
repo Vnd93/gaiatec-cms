@@ -1101,9 +1101,15 @@ try {
   await rest(context, "cms_feature_flag_overrides", { method: "DELETE", query: "id=eq." + broadOverrideId });
   broadOverrideId = undefined;
 
+  // O snapshot autenticado pode atravessar runtime e cache frios logo depois do deploy. Cinco
+  // aquecimentos deixaram essa cauda entrar na janela medida mesmo quando todos ainda estavam acima
+  // do budget. Aqueça uma janela completa, como o probe G12, mas mantenha uma unica janela medida:
+  // isto evita tanto falso negativo por inicializacao quanto retry-until-green.
+  const adminReadSamples = 20;
+  const adminReadWarmups = adminReadSamples;
   const snapshotWarmupDurations = [];
   const snapshotWarmupWallDurations = [];
-  for (let warmup = 0; warmup < 5; warmup += 1) {
+  for (let warmup = 0; warmup < adminReadWarmups; warmup += 1) {
     const response = await system(context, operator, "snapshot");
     snapshotWarmupDurations.push(serverTimingDuration(response.headers, "admin-read"));
     snapshotWarmupWallDurations.push(response.durationMs);
@@ -1112,7 +1118,7 @@ try {
   const snapshotDurations = [];
   const snapshotWallDurations = [];
   let latestSnapshot;
-  for (let index = 0; index < 20; index += 1) {
+  for (let index = 0; index < adminReadSamples; index += 1) {
     const response = await system(context, operator, "snapshot");
     snapshotDurations.push(serverTimingDuration(response.headers, "admin-read"));
     snapshotWallDurations.push(response.durationMs);
@@ -1130,8 +1136,8 @@ try {
       estimator: "nearest-rank",
       percentile: 95,
       sequence: "serial",
-      adminReadWarmups: 5,
-      adminReadSamples: 20,
+      adminReadWarmups,
+      adminReadSamples,
       commandSamples: 10,
       commandMutationSamples: 1,
       commandReplaySamples: 9,

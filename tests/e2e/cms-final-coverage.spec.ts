@@ -1372,10 +1372,10 @@ function editorialSurfacePlans(ids: Omit<SyntheticIds, "pageId">): EditorialSurf
       publicQueryType: "post-detail",
       titleLabel: "Título",
       summaryLabel: "Resumo",
-      seoLabel: "Meta title",
+      seoLabel: "Título nos resultados de busca",
       saveButton: "Salvar com controle de versão",
       publishedSaveButton: "Abrir nova versão e salvar",
-      previewButton: "Preview do rascunho",
+      previewButton: "Visualizar rascunho",
       submitButton: "Enviar para revisão",
       approveButton: "Aprovar revisão",
       publishButton: "Publicar agora",
@@ -1467,11 +1467,23 @@ async function fillSyntheticPostForCreate(page: Page, runTag: string) {
     .fill(`${runTag} corpo editorial sintético sem conteúdo comercial real.`);
   await page.getByLabel("Autor", { exact: true }).fill("Equipe QA GAIATEC");
   await page.getByLabel("Categoria").fill("Homologação");
-  await page.getByLabel("Tags separadas por vírgula").fill("qa, homologacao, sintetico");
+  const tagInput = page.getByLabel("Nova tag", { exact: true });
+  const addTagButton = page.getByRole("button", { name: "Adicionar tag", exact: true });
+  for (const tag of ["qa", "homologacao", "sintetico"]) {
+    await tagInput.fill(tag, { timeout: 20_000 });
+    await expect(addTagButton).toBeEnabled({ timeout: 20_000 });
+    await addTagButton.click({ timeout: 20_000 });
+    await expect(page.getByRole("button", { name: `Remover tag ${tag}`, exact: true })).toBeVisible({
+      timeout: 20_000,
+    });
+  }
+  await expect(
+    page.getByRole("list", { name: "Tags adicionadas", exact: true }).getByRole("listitem"),
+  ).toHaveCount(3);
   await page.getByLabel("Tempo de leitura (minutos)").fill("3");
-  await page.getByLabel("Meta title").fill(`${runTag} POST | GAIATEC`);
+  await page.getByLabel("Título nos resultados de busca", { exact: true }).fill(`${runTag} POST | GAIATEC`);
   await page
-    .getByLabel("Meta description")
+    .getByLabel("Descrição nos resultados de busca", { exact: true })
     .fill(`${runTag} conteúdo temporário e não indexável para homologação integral.`);
   await page.getByLabel("Permitir indexação após publicação").setChecked(false);
   await page.getByLabel("Referência de autorização").fill(runTag);
@@ -2180,7 +2192,7 @@ async function fillEditorialRevision(
   await page.getByLabel(plan.summaryLabel, { exact: true }).fill(input.summary);
   if (plan.kind === "post") {
     await page.getByLabel("Corpo do artigo").fill(`${input.summary}\n\n${input.title}`);
-    await page.getByLabel("Meta description").fill(input.summary);
+    await page.getByLabel("Descrição nos resultados de busca", { exact: true }).fill(input.summary);
     await page.getByLabel("Permitir indexação após publicação").setChecked(false);
   } else if (plan.kind === "product") {
     await page.getByLabel("Texto", { exact: true }).first().fill(`${input.summary}\n\n${input.title}`);
@@ -5081,6 +5093,7 @@ test.describe.serial("homologação final CMS source-backed", () => {
     // validacao de binding. Logo e o envelope que precisa cobrir o rendezvous MAIS o ciclo editorial,
     // em vez de deixar ~10 minutos para tudo o que vem depois da espera.
     test.setTimeout(40 * 60_000);
+    page.setDefaultTimeout(20_000);
     const { environment, auth, runTag, supabaseOrigin } = configuration;
     const source = inventory();
     let plans: EditorialSurfacePlan[] = [];
@@ -5438,6 +5451,7 @@ test.describe.serial("homologação final CMS source-backed", () => {
     if (!configuration.enabled) throw new Error("Gate mutante inconsistente após o opt-in.");
 
     test.setTimeout(20 * 60_000);
+    page.setDefaultTimeout(20_000);
     const { environment, auth, runTag, supabaseOrigin } = configuration;
     const source = inventory();
     const slug = `qa-cms-final-gone-${auth.expectedSha.slice(0, 8)}`;

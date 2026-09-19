@@ -673,6 +673,46 @@ describe("matriz final de cobertura do CMS", () => {
     expect(source).not.toContain('page.getByLabel("Autor").fill("Equipe QA GAIATEC")');
   });
 
+  it("acompanha os controles estruturados e os rótulos editoriais atuais do artigo", () => {
+    const source = readFileSync(e2eSpec, "utf8");
+    const createStart = source.indexOf("async function fillSyntheticPostForCreate");
+    const createEnd = source.indexOf("\nasync function fillSyntheticProductForCreate", createStart);
+    expect(createStart).toBeGreaterThan(0);
+    expect(createEnd).toBeGreaterThan(createStart);
+    const createPost = source.slice(createStart, createEnd);
+
+    expect(createPost).toContain('page.getByLabel("Nova tag", { exact: true })');
+    expect(createPost).toContain('name: "Adicionar tag", exact: true');
+    expect(createPost).toContain("name: `Remover tag ${tag}`, exact: true");
+    expect(createPost).toContain('name: "Tags adicionadas", exact: true');
+    expect(createPost).toContain('getByLabel("Título nos resultados de busca", { exact: true })');
+    expect(createPost).toContain('getByLabel("Descrição nos resultados de busca", { exact: true })');
+    expect(createPost).not.toMatch(/Tags separadas por vírgula|Meta title|Meta description/);
+
+    const plansStart = source.indexOf("function editorialSurfacePlans");
+    const postPlanStart = source.indexOf('kind: "post"', plansStart);
+    const productPlanStart = source.indexOf('kind: "product"', postPlanStart);
+    expect(plansStart).toBeGreaterThan(0);
+    expect(postPlanStart).toBeGreaterThan(plansStart);
+    expect(productPlanStart).toBeGreaterThan(postPlanStart);
+    const postPlan = source.slice(postPlanStart, productPlanStart);
+    expect(postPlan).toContain('seoLabel: "Título nos resultados de busca"');
+    expect(postPlan).toContain('previewButton: "Visualizar rascunho"');
+    expect(postPlan).not.toMatch(/Meta title|Preview do rascunho/);
+
+    const revisionStart = source.indexOf("async function fillEditorialRevision");
+    const postRevisionStart = source.indexOf('if (plan.kind === "post")', revisionStart);
+    const productRevisionStart = source.indexOf('} else if (plan.kind === "product")', postRevisionStart);
+    expect(revisionStart).toBeGreaterThan(0);
+    expect(postRevisionStart).toBeGreaterThan(revisionStart);
+    expect(productRevisionStart).toBeGreaterThan(postRevisionStart);
+    const postRevision = source.slice(postRevisionStart, productRevisionStart);
+    expect(postRevision).toContain('getByLabel("Descrição nos resultados de busca", { exact: true })');
+    expect(postRevision).not.toContain('getByLabel("Meta description")');
+
+    expect(source.match(/page\.setDefaultTimeout\(20_000\)/g)).toHaveLength(2);
+  });
+
   it("aguarda um único estado progressivo permitido sem escolher um locator ambíguo", () => {
     const source = readFileSync(e2eSpec, "utf8");
     const start = source.indexOf("const progressiveStateDeadline = Date.now() + 20_000");

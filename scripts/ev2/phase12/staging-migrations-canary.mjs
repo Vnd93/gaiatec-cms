@@ -25,6 +25,7 @@ import {
   CMS_SESSION_REFRESH_REVOCATION_0083_RPCS,
   auditLogReadScaleSemanticSql,
   exactMigrationHistorySql,
+  leadRetrySubphaseTimingSemanticSql,
   leadOriginBindingSemanticSql,
   mediaUploadAbortSchemaContractSql,
   ownerOnlyFunctionContractSql,
@@ -106,6 +107,7 @@ const scenarioCoverage = [
   "0092",
   "0101",
   "0102",
+  "0103",
 ];
 const accessToken = process.env.SUPABASE_ACCESS_TOKEN ?? "";
 const expectedSha = process.env.G12_MIGRATION_CANARY_EXPECTED_SHA ?? "";
@@ -757,6 +759,7 @@ async function preflightMigrations() {
     ${systemSnapshotLeadReadScaleSemanticSql("system_snapshot_lead_read_scale_0100_semantics_exact")},
     ${releaseStabilityFollowupSemanticSql("release_stability_followup_0101_semantics_exact")},
     ${systemSnapshotSubphaseTimingSemanticSql("system_snapshot_subphase_timing_0102_semantics_exact")},
+    ${leadRetrySubphaseTimingSemanticSql("lead_retry_subphase_timing_0103_semantics_exact")},
     ${ownerOnlyFunctionContractSql(
       "release_stability_followup_0101_functions_locked",
       CMS_RELEASE_STABILITY_FOLLOWUP_0101_OWNER_ONLY_FUNCTIONS,
@@ -977,6 +980,10 @@ async function preflightMigrations() {
   check(
     "system_snapshot_subphase_timing_0102_semantics_exact",
     row?.system_snapshot_subphase_timing_0102_semantics_exact === true,
+  );
+  check(
+    "lead_retry_subphase_timing_0103_semantics_exact",
+    row?.lead_retry_subphase_timing_0103_semantics_exact === true,
   );
   check(
     "release_stability_followup_0101_functions_locked",

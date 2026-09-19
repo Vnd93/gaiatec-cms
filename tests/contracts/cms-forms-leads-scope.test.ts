@@ -84,7 +84,7 @@ describe("authoritative forms and leads QA scope", () => {
       "cms_manage_lead_scoped",
       "cms_anonymize_lead_scoped",
       "cms_export_leads_scoped",
-      "cms_retry_lead_delivery_limited",
+      "cms_retry_lead_delivery_limited_timed",
     ]) {
       expect(leadsEdge).toContain(`rpc("${rpc}"`);
     }

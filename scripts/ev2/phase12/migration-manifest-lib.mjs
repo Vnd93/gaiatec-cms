@@ -110,6 +110,11 @@ export const G12_PINNED_MIGRATION_TAIL = Object.freeze([
     file: "0102_cms_system_snapshot_subphase_timing.sql",
     sha256: "5f92ae851a090e5e44f4e0dbc9fc7c36b8a2068c24b0795f4455f122c30a47c7",
   }),
+  Object.freeze({
+    version: "0103",
+    file: "0103_cms_lead_retry_subphase_timing.sql",
+    sha256: "dd5ca29f9eebcce77be354f0f524baac1c4dc5ecfe35b5bef71e930f553e8979",
+  }),
 ]);
 
 export const CMS_MEDIA_UPLOAD_ABORT_0082_RPCS = Object.freeze([
@@ -1414,5 +1419,79 @@ export function systemSnapshotSubphaseTimingSemanticSql(alias) {
       and has_function_privilege('service_role','${core}','EXECUTE')
       and not has_function_privilege('authenticated','${core}','EXECUTE')
       and not has_function_privilege('anon','${core}','EXECUTE')
+    , false) as ${alias}`;
+}
+
+// The 0103 boundary is additive so rollback bundles keep the untouched limited
+// retry RPC. The remote contract proves that the timed service-only envelope
+// consumes one budget and executes one guarded retry in the same transaction.
+export function leadRetrySubphaseTimingSemanticSql(alias) {
+  if (!/^[a-z][a-z0-9_]*$/.test(alias)) fail("lead-retry-subphase-timing-alias");
+  const timed =
+    "public.cms_retry_lead_delivery_limited_timed(uuid,uuid,text,text,text,text,text,timestamp with time zone,uuid,uuid,text,text)";
+  const limited =
+    "public.cms_retry_lead_delivery_limited(uuid,uuid,text,text,text,text,text,timestamp with time zone,uuid,uuid,text,text)";
+  const scoped =
+    "public.cms_retry_lead_delivery_scoped(uuid,uuid,text,text,text,text,text,timestamp with time zone,uuid,uuid,text)";
+  const definition = `regexp_replace(lower(pg_get_functiondef(to_regprocedure('${timed}'))), '[[:space:]]+', '', 'g')`;
+  const consumeCall = "public.consume_rate_limit(";
+  const retryCall = "v_result:=public.cms_retry_lead_delivery_scoped(";
+  return `coalesce(
+      to_regprocedure('${timed}') is not null
+      and (
+        select not procedure.prosecdef and procedure.provolatile = 'v'
+          and 'search_path=pg_catalog, public, private, pg_temp'
+            = any(coalesce(procedure.proconfig, array[]::text[]))
+        from pg_catalog.pg_proc procedure
+        where procedure.oid = to_regprocedure('${timed}')
+      )
+      and pg_get_function_identity_arguments(to_regprocedure('${timed}'))
+        = 'p_actor_id uuid, p_event_id uuid, p_justification text, p_environment text, p_site_key text, p_aal text, p_session_id text, p_issued_at timestamp with time zone, p_correlation_id uuid, p_idempotency_key uuid, p_request_hash text, p_rate_limit_key_hash text'
+      and ${definition} like '%p_rate_limit_key_hash!~''^[0-9a-f]{64}$''%'
+      and ${definition} like '%public.consume_rate_limit(p_rate_limit_key_hash,''cms_leads_retry_delivery'',60,900)%'
+      and (
+        length(${definition}) - length(replace(${definition}, '${consumeCall}', ''))
+      ) / length('${consumeCall}') = 1
+      and (
+        length(${definition}) - length(replace(${definition}, '${retryCall}', ''))
+      ) / length('${retryCall}') = 1
+      and position('${consumeCall}' in ${definition})
+        < position('${retryCall}' in ${definition})
+      and ${definition} like '%v_rate_limit_msbigint%'
+      and ${definition} like '%v_command_core_msbigint%'
+      and ${definition} like '%greatest(0::bigint,round(extract(epochfromclock_timestamp()-%'
+      and ${definition} like '%''schemaversion'',1%'
+      and ${definition} like '%''result'',v_result%'
+      and ${definition} like '%''ratelimitms'',v_rate_limit_ms%'
+      and ${definition} like '%''commandcorems'',v_command_core_ms%'
+      and ${definition} like '%''timing'',jsonb_build_object(''ratelimitms'',v_rate_limit_ms,''commandcorems'',v_command_core_ms)%'
+      and has_function_privilege('service_role','${timed}','EXECUTE')
+      and not has_function_privilege('authenticated','${timed}','EXECUTE')
+      and not has_function_privilege('anon','${timed}','EXECUTE')
+      and not exists (
+        select 1
+        from pg_catalog.pg_proc procedure
+        cross join lateral pg_catalog.aclexplode(
+          coalesce(procedure.proacl, pg_catalog.acldefault('f', procedure.proowner))
+        ) acl
+        where procedure.oid = to_regprocedure('${timed}')
+          and not (
+            acl.grantee = procedure.proowner
+            or (
+              acl.grantee = (
+                select role.oid from pg_catalog.pg_roles role where role.rolname = 'service_role'
+              )
+              and acl.grantor = procedure.proowner
+              and acl.privilege_type = 'EXECUTE'
+              and not acl.is_grantable
+            )
+          )
+      )
+      and has_function_privilege('service_role','${limited}','EXECUTE')
+      and not has_function_privilege('authenticated','${limited}','EXECUTE')
+      and not has_function_privilege('anon','${limited}','EXECUTE')
+      and has_function_privilege('service_role','${scoped}','EXECUTE')
+      and not has_function_privilege('authenticated','${scoped}','EXECUTE')
+      and not has_function_privilege('anon','${scoped}','EXECUTE')
     , false) as ${alias}`;
 }

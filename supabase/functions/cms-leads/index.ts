@@ -19,13 +19,27 @@ const Command=z.discriminatedUnion("action",[
   z.object({action:z.literal("export_leads"),status:z.enum(["new","assigned","in_service","responded","converted","disqualified","archived"]).nullish(),justification:z.string().trim().min(3).max(500)}).strict(),
   z.object({action:z.literal("retry_delivery"),eventId:Uuid,justification:z.string().trim().min(3).max(500)}).strict(),
 ]);
+const RetryTimingEnvelope=z.object({
+  schemaVersion:z.literal(1),
+  result:z.object({
+    schemaVersion:z.literal(1),eventId:Uuid,leadId:Uuid,status:z.literal("pending"),
+    replayed:z.literal(true),duplicate:z.boolean(),correlationId:Uuid,
+  }).strict(),
+  timing:z.object({
+    rateLimitMs:z.number().finite().nonnegative().max(300_000),
+    commandCoreMs:z.number().finite().nonnegative().max(300_000),
+  }).strict(),
+}).strict();
 
 const handleRequest = async(req: Request) => {
   const requestStartedAt=performance.now();
   if(req.method==="OPTIONS") return new Response(null,{headers:corsHeaders(req)});
   if(!isAllowedOrigin(req)) return json(req,{error:"Origem não autorizada."},403);
   if(req.method!=="POST") return json(req,{error:"Método não permitido."},405);
-  const identity=await authenticateCms(req); if(!identity) return json(req,{error:"Sessão inválida."},401);
+  const authStartedAt=performance.now();
+  const identity=await authenticateCms(req);
+  const authDurationMs=performance.now()-authStartedAt;
+  if(!identity) return json(req,{error:"Sessão inválida."},401);
   const environment=Deno.env.get("CMS_ENVIRONMENT");
   if(!isConfiguredCmsEnvironment(environment)) return json(req,{error:"Ambiente CMS inválido."},503);
   const idempotencyKey=req.headers.get("X-Idempotency-Key"); if(!idempotencyKey||!Uuid.safeParse(idempotencyKey).success) return json(req,{error:"Chave idempotente obrigatória."},400);
@@ -55,12 +69,24 @@ const handleRequest = async(req: Request) => {
     command=identity.admin.rpc("cms_anonymize_lead_scoped",{p_actor_id:identity.user.id,p_environment:environment,p_lead_id:input.leadId,p_reason:input.reason,p_aal:identity.claims.aal,p_session_id:identity.claims.sessionId,p_issued_at:identity.claims.issuedAt,p_correlation_id:correlationId});
   }else if(input.action==="retry_delivery"){
     if(!isConfiguredCmsEnvironment(environment)||(environment==="production"&&!isProductionOperationEnabled(environment))) return json(req,{error:"O reprocessamento não está autorizado neste ambiente.",code:"CMS_SYSTEM_PRODUCTION_GATED",correlationId,preserved:true},403);
-    command=identity.admin.rpc("cms_retry_lead_delivery_limited",{p_actor_id:identity.user.id,p_event_id:input.eventId,p_justification:input.justification,p_environment:environment,p_site_key:"main",p_aal:identity.claims.aal,p_session_id:identity.claims.sessionId,p_issued_at:identity.claims.issuedAt,p_correlation_id:correlationId,p_idempotency_key:idempotencyKey,p_request_hash:await sha256(JSON.stringify(input)),p_rate_limit_key_hash:fusedRateLimitHash});
+    command=identity.admin.rpc("cms_retry_lead_delivery_limited_timed",{p_actor_id:identity.user.id,p_event_id:input.eventId,p_justification:input.justification,p_environment:environment,p_site_key:"main",p_aal:identity.claims.aal,p_session_id:identity.claims.sessionId,p_issued_at:identity.claims.issuedAt,p_correlation_id:correlationId,p_idempotency_key:idempotencyKey,p_request_hash:await sha256(JSON.stringify(input)),p_rate_limit_key_hash:fusedRateLimitHash});
   }else{
     command=identity.admin.rpc("cms_export_leads_scoped",{p_actor_id:identity.user.id,p_environment:environment,p_status:input.status??null,p_justification:input.justification,p_aal:identity.claims.aal,p_session_id:identity.claims.sessionId,p_issued_at:identity.claims.issuedAt,p_correlation_id:correlationId});
   }
+  const rpcStartedAt=performance.now();
   const {data,error}=await command;
+  const rpcDurationMs=performance.now()-rpcStartedAt;
   if(error){const marker=error.message.match(/CMS_[A-Z0-9_]+/)?.[0],forbidden=error.message.includes("FORBIDDEN")||error.message.includes("FEATURE_DISABLED")||error.code==="42501",notFound=error.message.includes("NOT_FOUND")||error.code==="PT404",conflict=error.message.includes("CONFLICT")||error.message.includes("NOT_RETRYABLE")||error.code==="PT409",rateLimited=marker==="CMS_RATE_LIMIT_EXCEEDED"||error.code==="PT429",invalid=error.message.includes("INVALID")||error.code==="23514"||error.code==="22023",formLifecycle=input.action==="archive_form"||input.action==="restore_form",currentVersion=marker==="CMS_FORM_VERSION_CONFLICT"?Number(error.message.match(/CMS_FORM_VERSION_CONFLICT:(\d+)/)?.[1]):undefined;return json(req,{error:forbidden?"Permissão insuficiente ou recurso não habilitado.":notFound?"Registro não encontrado.":conflict?(formLifecycle?"O formulário foi alterado por outra sessão. Recarregue e tente novamente.":"A entrega não pode ser reprocessada no estado atual."):rateLimited?"Muitas operações. Aguarde.":invalid?"Dados ou transição inválidos.":"Serviço temporariamente indisponível.",code:marker,correlationId,currentVersion:Number.isSafeInteger(currentVersion)?currentVersion:undefined,preserved:input.action==="retry_delivery"},forbidden?403:notFound?404:conflict?409:rateLimited?429:invalid?422:503);}
+  if(input.action==="retry_delivery"){
+    const timedRetry=RetryTimingEnvelope.safeParse(data);
+    if(!timedRetry.success) return json(req,{error:"Telemetria do reprocessamento inválida.",code:"CMS_LEAD_RETRY_TIMING_INVALID",correlationId,preserved:true},500);
+    return json(req,{...timedRetry.data.result,correlationId},200,{"Server-Timing":
+      `command;dur=${Math.round(performance.now()-requestStartedAt)}, `+
+      `command-auth;dur=${Math.round(authDurationMs)}, `+
+      `command-rpc;dur=${Math.round(rpcDurationMs)}, `+
+      `command-rate-limit;dur=${Math.round(timedRetry.data.timing.rateLimitMs)}, `+
+      `command-core;dur=${Math.round(timedRetry.data.timing.commandCoreMs)}`});
+  }
   return json(req,{...data,correlationId},200,{"Server-Timing":`command;dur=${Math.round(performance.now()-requestStartedAt)}`});
 };
 

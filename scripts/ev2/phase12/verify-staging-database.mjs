@@ -13,6 +13,7 @@ import {
   CMS_SESSION_REFRESH_REVOCATION_0083_RPCS,
   auditLogReadScaleSemanticSql,
   exactMigrationHistorySql,
+  leadRetrySubphaseTimingSemanticSql,
   leadOriginBindingSemanticSql,
   mediaUploadAbortSchemaContractSql,
   ownerOnlyFunctionContractSql,
@@ -168,6 +169,7 @@ const [result] = await managementRequest(`/v1/projects/${STAGING_PROJECT_REF}/da
       ${systemSnapshotLeadReadScaleSemanticSql("system_snapshot_lead_read_scale_0100_semantics_exact")},
       ${releaseStabilityFollowupSemanticSql("release_stability_followup_0101_semantics_exact")},
       ${systemSnapshotSubphaseTimingSemanticSql("system_snapshot_subphase_timing_0102_semantics_exact")},
+      ${leadRetrySubphaseTimingSemanticSql("lead_retry_subphase_timing_0103_semantics_exact")},
       ${ownerOnlyFunctionContractSql(
         "release_stability_followup_0101_functions_locked",
         CMS_RELEASE_STABILITY_FOLLOWUP_0101_OWNER_ONLY_FUNCTIONS,
@@ -262,6 +264,7 @@ const checks = [
   "system_snapshot_lead_read_scale_0100_semantics_exact",
   "release_stability_followup_0101_semantics_exact",
   "system_snapshot_subphase_timing_0102_semantics_exact",
+  "lead_retry_subphase_timing_0103_semantics_exact",
   "release_stability_followup_0101_functions_locked",
   "qa_rate_limit_proof_cleanup_present",
   "qa_actor_auth_trigger_present",

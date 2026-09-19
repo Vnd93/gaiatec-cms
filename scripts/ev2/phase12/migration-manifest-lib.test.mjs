@@ -20,6 +20,7 @@ import {
   G12_PINNED_MIGRATION_TAIL,
   auditLogReadScaleSemanticSql,
   exactMigrationHistorySql,
+  leadRetrySubphaseTimingSemanticSql,
   leadOriginBindingSemanticSql,
   mediaUploadAbortSchemaContractSql,
   migrationVersionSqlArray,
@@ -92,9 +93,9 @@ test("the repository migration history is contiguous", () => {
   // digest dos bytes. E o que impede que alguem acrescente migration sem revisao: nao basta criar
   // o arquivo, e preciso declarar o conteudo dele aqui.
   assert.deepEqual(G12_PINNED_MIGRATION_TAIL.at(-1), {
-    version: "0102",
-    file: "0102_cms_system_snapshot_subphase_timing.sql",
-    sha256: "5f92ae851a090e5e44f4e0dbc9fc7c36b8a2068c24b0795f4455f122c30a47c7",
+    version: "0103",
+    file: "0103_cms_lead_retry_subphase_timing.sql",
+    sha256: "dd5ca29f9eebcce77be354f0f524baac1c4dc5ecfe35b5bef71e930f553e8979",
   });
   assert.deepEqual(manifest.slice(-G12_PINNED_MIGRATION_TAIL.length), G12_PINNED_MIGRATION_TAIL);
   for (const migration of manifest.slice(-G12_PINNED_MIGRATION_TAIL.length)) {
@@ -764,6 +765,31 @@ test("0102 semantic preflight proves additive snapshot timing without widening a
   assert.match(contract, /^coalesce\(/);
   assert.match(contract, /, false\) as system_snapshot_subphase_timing_0102_semantics_exact$/);
   assert.throws(() => systemSnapshotSubphaseTimingSemanticSql("Bad Alias"));
+});
+
+test("0103 semantic preflight proves additive retry timing without widening access", () => {
+  const contract = leadRetrySubphaseTimingSemanticSql("lead_retry_subphase_timing_0103_semantics_exact");
+
+  for (const marker of [
+    "cms_retry_lead_delivery_limited_timed",
+    "cms_retry_lead_delivery_limited",
+    "cms_retry_lead_delivery_scoped",
+    "public.consume_rate_limit(",
+    "''cms_leads_retry_delivery'',60,900",
+    "v_result:=public.cms_retry_lead_delivery_scoped(",
+    "v_rate_limit_msbigint",
+    "v_command_core_msbigint",
+    "'ratelimitms'",
+    "'commandcorems'",
+    "''timing'',jsonb_build_object(''ratelimitms'',v_rate_limit_ms,''commandcorems'',v_command_core_ms)",
+    "aclexplode",
+    "has_function_privilege",
+  ])
+    assert.ok(contract.includes(marker), marker);
+
+  assert.match(contract, /^coalesce\(/);
+  assert.match(contract, /, false\) as lead_retry_subphase_timing_0103_semantics_exact$/);
+  assert.throws(() => leadRetrySubphaseTimingSemanticSql("Bad Alias"));
 });
 
 test("0090 semantic preflight proves the lease accepts only the state the fence imposes", () => {

@@ -90,7 +90,10 @@ test("EV2.11 migration is additive, default-off, RLS protected and production ga
   assert.doesNotMatch(sql, /drop table|truncate|default_enabled\s*=\s*true/i);
   assert.match(sql, /create trigger cms_assurance_runs_guard/);
   assert.match(sql, /create trigger cms_system_command_receipts_guard/);
-  assert.match(rls, /select plan\(57\)/);
+  assert.match(rls, /select plan\(60\)/);
+  assert.match(rls, /set local role service_role;/);
+  assert.match(rls, /insert into g11_timed_retry[\s\S]+cms_retry_lead_delivery_limited_timed/);
+  assert.match(rls, /insert into g11_legacy_retry[\s\S]+cms_retry_lead_delivery_limited\(/);
 });
 
 test("F-017 exposes delivery state and a controlled, durable replay path", async () => {
@@ -111,7 +114,12 @@ test("F-017 exposes delivery state and a controlled, durable replay path", async
   assert.match(edge, /retry_delivery/);
   assert.match(edge, /CMS_ENVIRONMENT/);
   assert.match(edge, /p_request_hash:await sha256/);
-  assert.match(edge, /cms_retry_lead_delivery_limited/);
+  assert.match(edge, /cms_retry_lead_delivery_limited_timed/);
+  assert.match(edge, /RetryTimingEnvelope\.safeParse\(data\)/);
+  assert.match(edge, /command-auth;dur=/);
+  assert.match(edge, /command-rpc;dur=/);
+  assert.match(edge, /command-rate-limit;dur=/);
+  assert.match(edge, /command-core;dur=/);
   assert.match(edge, /rateLimitKeyHash/);
   assert.match(edge, /Server-Timing.*command/);
   assert.match(edge, /cms_leads_list_scoped/);
@@ -288,6 +296,24 @@ test("load statistics use nearest-rank percentiles and strict evidence evaluatio
     ),
     87,
   );
+  for (const [metric, expected] of [
+    ["command", 640],
+    ["command-auth", 81],
+    ["command-rpc", 510],
+    ["command-rate-limit", 3],
+    ["command-core", 421],
+  ])
+    assert.equal(
+      serverTimingDuration(
+        new Headers({
+          "Server-Timing":
+            "command;dur=640, command-auth;dur=81, command-rpc;dur=510, " +
+            "command-rate-limit;dur=3, command-core;dur=421",
+        }),
+        metric,
+      ),
+      expected,
+    );
   assert.equal(Number.isNaN(serverTimingDuration(new Headers(), "command")), true);
   const result = evaluateSystemEvidence({
     totalChecks: 1,
@@ -368,7 +394,13 @@ test("G11 executable controls remain reproducible and fail-closed", async () => 
   assert.doesNotMatch(canary, /adminReadP95Ms:.*snapshotRpcDurations/);
   assert.match(canary, /commandMutationSamples: 1/);
   assert.match(canary, /commandReplaySamples: 9/);
+  assert.match(canary, /commandMeasuredAuthMs/);
+  assert.match(canary, /commandMeasuredRpcMs/);
+  assert.match(canary, /commandMeasuredRateLimitMs/);
+  assert.match(canary, /commandMeasuredCoreMs/);
   assert.match(canary, /commandMeasuredWallMs/);
+  assert.match(canary, /commandP95Ms: Math\.round\(percentile\(commandDurations, 95\)\)/);
+  assert.doesNotMatch(canary, /commandP95Ms:.*(?:Auth|Rpc|RateLimit|Core)/);
   assert.doesNotMatch(
     canary.slice(
       canary.indexOf("const timingSamples = {"),

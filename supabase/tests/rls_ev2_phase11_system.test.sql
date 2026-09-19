@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
-select plan(57);
+select plan(60);
 
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -330,15 +330,52 @@ insert into public.cms_lead_outbox (
   'synthetic_provider_failure', '51100000-0000-4000-8000-000000000207'
 );
 
-select is(
-  public.cms_retry_lead_delivery_limited(
+create temporary table g11_timed_retry(response jsonb) on commit drop;
+create temporary table g11_legacy_retry(response jsonb) on commit drop;
+grant insert on g11_timed_retry, g11_legacy_retry to service_role;
+set local role service_role;
+insert into g11_timed_retry
+select public.cms_retry_lead_delivery_limited_timed(
     '51100000-0000-4000-8000-000000000101', '51100000-0000-4000-8000-000000000205',
     'Dependência sintética recuperada', 'local', 'main', 'aal2', 'g11-operator-session',
     now() - interval '1 minute', '51100000-0000-4000-8000-000000000208',
     '51100000-0000-4000-8000-000000000209', repeat('d', 64), repeat('c', 64)
-  ) ->> 'status',
+  );
+insert into g11_legacy_retry
+select public.cms_retry_lead_delivery_limited(
+    '51100000-0000-4000-8000-000000000101', '51100000-0000-4000-8000-000000000205',
+    'Dependência sintética recuperada', 'local', 'main', 'aal2', 'g11-operator-session',
+    now() - interval '1 minute', '51100000-0000-4000-8000-000000000208',
+    '51100000-0000-4000-8000-000000000209', repeat('d', 64), repeat('f', 64)
+  );
+reset role;
+select is(
+  (select response -> 'result' ->> 'status' from g11_timed_retry),
   'pending',
-  'failed lead delivery can be requeued explicitly'
+  'failed lead delivery can be requeued explicitly through the timed boundary'
+);
+select ok(
+  (select
+     jsonb_typeof(response -> 'timing' -> 'rateLimitMs') = 'number'
+     and jsonb_typeof(response -> 'timing' -> 'commandCoreMs') = 'number'
+     and (response -> 'timing' ->> 'rateLimitMs')::numeric >= 0
+     and (response -> 'timing' ->> 'commandCoreMs')::numeric >= 0
+   from g11_timed_retry),
+  'timed retry exposes finite non-negative database subphases'
+);
+select ok(
+  (select response ->> 'status' = 'pending'
+     and (response ->> 'duplicate')::boolean
+   from g11_legacy_retry),
+  'rollback-compatible limited retry still executes as service role and returns its legacy payload'
+);
+select is(
+  (select request_count
+   from public.request_rate_limits
+   where key_hash = repeat('c', 64)
+     and action = 'cms_leads_retry_delivery'),
+  1,
+  'the accepted timed retry consumes its fused rate-limit bucket exactly once'
 );
 select ok(
   (select status = 'pending' and attempts = 0 and last_error_code is null

@@ -2568,6 +2568,10 @@ test("release workflows and reduced canary are immutable, staged and production 
     backendCompatibility,
     /"0102": \[\s*"supabase\/tests\/rls_cms_system_snapshot_subphase_timing\.test\.sql",\s*"supabase\/tests\/rls_ev2_phase11_system\.test\.sql",\s*"tests\/contracts\/cms-system-snapshot-subphase-timing\.test\.ts"/,
   );
+  assert.match(
+    backendCompatibility,
+    /"0103": \[\s*"supabase\/tests\/rls_cms_lead_retry_subphase_timing\.test\.sql",\s*"supabase\/tests\/rls_ev2_phase11_system\.test\.sql",\s*"tests\/contracts\/cms-lead-retry-subphase-timing\.test\.ts"/,
+  );
   // A travessia autenticada do frontend de rollback le o handoff das entidades nascidas na UI, que so
   // existem entre a criacao e a revogacao do ator mutante. Ela roda, portanto, depois do ciclo do
   // candidato e antes da revogacao, e nada dentro do bloco de rollback pode mutar, porque o ciclo
@@ -2627,6 +2631,8 @@ test("release workflows and reduced canary are immutable, staged and production 
   assert.match(stagingDatabaseVerify, /release_stability_followup_0101_functions_locked/);
   assert.match(stagingDatabaseVerify, /system_snapshot_subphase_timing_0102_semantics_exact/);
   assert.match(stagingDatabaseVerify, /systemSnapshotSubphaseTimingSemanticSql/);
+  assert.match(stagingDatabaseVerify, /lead_retry_subphase_timing_0103_semantics_exact/);
+  assert.match(stagingDatabaseVerify, /leadRetrySubphaseTimingSemanticSql/);
   assert.match(backendCompatibility, /compatibilityEvidenceExecutionVerified: true/);
   assert.match(production, /probe-supabase-boundary\.mjs/);
   assert.match(deployStaging, /probe-supabase-boundary\.mjs/);
@@ -2721,6 +2727,8 @@ test("release workflows and reduced canary are immutable, staged and production 
   assert.match(databaseVerify, /release_stability_followup_0101_functions_locked/);
   assert.match(databaseVerify, /system_snapshot_subphase_timing_0102_semantics_exact/);
   assert.match(databaseVerify, /systemSnapshotSubphaseTimingSemanticSql/);
+  assert.match(databaseVerify, /lead_retry_subphase_timing_0103_semantics_exact/);
+  assert.match(databaseVerify, /leadRetrySubphaseTimingSemanticSql/);
   assert.match(authConfig, /disable_signup: true/);
   assert.match(vaultConfig, /cms_outbox_worker_secret/);
   const approvalTemplate = JSON.parse(template);

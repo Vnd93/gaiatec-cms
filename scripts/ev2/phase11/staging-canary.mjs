@@ -1010,11 +1010,19 @@ try {
     justification: "Dependência sintética recuperada no canary G11",
   };
   const commandDurations = [];
+  const commandAuthDurations = [];
+  const commandRpcDurations = [];
+  const commandRateLimitDurations = [];
+  const commandCoreDurations = [];
   const commandWallDurations = [];
   let retryCorrelationId;
   for (let index = 0; index < 10; index += 1) {
     const replay = await leads(context, operator, retryBody, { idempotencyKey: retryIdempotency });
     commandDurations.push(serverTimingDuration(replay.headers, "command"));
+    commandAuthDurations.push(serverTimingDuration(replay.headers, "command-auth"));
+    commandRpcDurations.push(serverTimingDuration(replay.headers, "command-rpc"));
+    commandRateLimitDurations.push(serverTimingDuration(replay.headers, "command-rate-limit"));
+    commandCoreDurations.push(serverTimingDuration(replay.headers, "command-core"));
     commandWallDurations.push(replay.durationMs);
     if (index === 0) {
       retryCorrelationId = replay.json.correlationId;
@@ -1167,6 +1175,10 @@ try {
       adminReadMeasuredSnapshotDbMs: sanitizeTimingVector(snapshotDbDurations),
       adminReadMeasuredWallMs: sanitizeTimingVector(snapshotWallDurations),
       commandMeasuredServerMs: sanitizeTimingVector(commandDurations),
+      commandMeasuredAuthMs: sanitizeTimingVector(commandAuthDurations),
+      commandMeasuredRpcMs: sanitizeTimingVector(commandRpcDurations),
+      commandMeasuredRateLimitMs: sanitizeTimingVector(commandRateLimitDurations),
+      commandMeasuredCoreMs: sanitizeTimingVector(commandCoreDurations),
       commandMeasuredWallMs: sanitizeTimingVector(commandWallDurations),
     },
   };

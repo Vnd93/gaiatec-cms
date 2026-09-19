@@ -30,6 +30,7 @@ test("staging migration canary is fail-closed on the one authorized project and 
   assert.match(source, /scenarioCoverage/);
   assert.match(source, /"0101"/);
   assert.match(source, /"0102"/);
+  assert.match(source, /"0103"/);
   assert.match(source, /"form_lifecycle_0058_present"/);
   assert.match(source, /"qa_actor_lease_0061_present"/);
   assert.match(source, /"qa_actor_watchdog_cron_0061_active"/);
@@ -197,6 +198,8 @@ test("database preflights require every 0082-0088 contract, exact ACL and semant
     assert.match(verifier, /CMS_RELEASE_STABILITY_FOLLOWUP_0101_OWNER_ONLY_FUNCTIONS/);
     assert.match(verifier, /system_snapshot_subphase_timing_0102_semantics_exact/);
     assert.match(verifier, /systemSnapshotSubphaseTimingSemanticSql/);
+    assert.match(verifier, /lead_retry_subphase_timing_0103_semantics_exact/);
+    assert.match(verifier, /leadRetrySubphaseTimingSemanticSql/);
   }
   assert.match(contracts, /has_function_privilege\('service_role'/);
   assert.match(contracts, /has_function_privilege\('authenticated'/);

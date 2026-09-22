@@ -123,7 +123,7 @@ export const G12_PINNED_MIGRATION_TAIL = Object.freeze([
   Object.freeze({
     version: "0105",
     file: "0105_cms_session_logout_fast_path.sql",
-    sha256: "cb3c8abb10ae3f0dca2b8eed399af5ec381a293479601a7d23df1c19f9372f0f",
+    sha256: "d926d3d158ca9f86d5d268607164258749bb8420c04ee90f858d75ce1f6e6c3a",
   }),
 ]);
 

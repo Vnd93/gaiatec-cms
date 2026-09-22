@@ -79,6 +79,12 @@ describe("CMS session logout fast path", () => {
     );
   });
 
+  it("uses PostgreSQL POSITION special syntax in the migration drift probe", () => {
+    expect(migration).not.toContain("pg_catalog.position(");
+    expect(migration).toContain("position('cms_system_lock_actor_scope' in v_logout_definition)");
+    expect(migration).toContain("position('cms_resolve_logout_core_0105' in v_wrapper_definition)");
+  });
+
   it("executes the non-reusable receipt, immutable event and atomic revocation in pgTAP", () => {
     expect(sessionSecuritySql).toContain("select plan(44);");
     expect(sessionSecuritySql).toContain("CMS logout returns a non-reusable receipt");

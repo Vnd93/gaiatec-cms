@@ -218,16 +218,16 @@ begin
     'public.cms_resolve_session_scoped(uuid,text,text,text,text,timestamp with time zone,uuid)'::regprocedure
   ) into v_wrapper_definition;
 
-  if pg_catalog.position('cms_system_lock_actor_scope' in v_logout_definition) = 0
-     or pg_catalog.position('for update' in pg_catalog.lower(v_logout_definition)) = 0
-     or pg_catalog.position('cms_login_events' in v_logout_definition) = 0
-     or pg_catalog.position('cms_session_revocations' in v_logout_definition) = 0
-     or pg_catalog.position('cms_rbac_scope_capability' in v_logout_definition) <> 0
-     or pg_catalog.position('cms_resolve_scoped_access' in v_logout_definition) <> 0 then
+  if position('cms_system_lock_actor_scope' in v_logout_definition) = 0
+     or position('for update' in pg_catalog.lower(v_logout_definition)) = 0
+     or position('cms_login_events' in v_logout_definition) = 0
+     or position('cms_session_revocations' in v_logout_definition) = 0
+     or position('cms_rbac_scope_capability' in v_logout_definition) <> 0
+     or position('cms_resolve_scoped_access' in v_logout_definition) <> 0 then
     raise exception 'CMS_SESSION_LOGOUT_FAST_PATH_DRIFT' using errcode = '55000';
   end if;
-  if pg_catalog.position('cms_resolve_logout_core_0105' in v_wrapper_definition) = 0
-     or pg_catalog.position('cms_resolve_session_core_0087' in v_wrapper_definition) = 0 then
+  if position('cms_resolve_logout_core_0105' in v_wrapper_definition) = 0
+     or position('cms_resolve_session_core_0087' in v_wrapper_definition) = 0 then
     raise exception 'CMS_SESSION_LOGOUT_WRAPPER_DRIFT' using errcode = '55000';
   end if;
   if pg_catalog.has_function_privilege(

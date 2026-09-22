@@ -717,6 +717,7 @@ jobs:
           QA_CMS_TARGET_ENVIRONMENT: production
           QA_CMS_PRODUCTION_AUTHORIZATION: ${{ inputs.confirmation }}
           QA_CMS_PROVISION_AUTH_LIFECYCLE: "true"
+          QA_CMS_PROVISION_PIM_CATALOG: "true"
           QA_CMS_FIXTURE_STATE_PATH: outputs/cms-browser-production-state.json
           QA_CMS_FIXTURE_REPORT_PATH: outputs/cms-browser-production-setup.json
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}

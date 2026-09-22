@@ -209,6 +209,12 @@ function assertSetupReport(value, candidateSha, environment, runTag) {
     report.environment !== environment ||
     report.runTag !== runTag ||
     report.fixtureProvisioning !== "actors-and-prerequisites-only" ||
+    report.pimPrerequisites?.controlledOptions !== 5 ||
+    report.pimPrerequisites?.masterEntities !== 5 ||
+    report.pimPrerequisites?.attributeDefinitions !== 1 ||
+    report.pimPrerequisites?.attributeSets !== 1 ||
+    report.pimPrerequisites?.catalogVerified !== true ||
+    report.pimPrerequisites?.actorNamespaced !== true ||
     report.editorialEntitiesCreatedByFixture !== 0 ||
     report.formsCreatedByFixture !== 0 ||
     report.leadsCreatedByFixture !== 0 ||

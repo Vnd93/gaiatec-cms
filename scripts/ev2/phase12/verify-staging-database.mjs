@@ -2,6 +2,7 @@ import { managementRequest } from "./production-backend-lib.mjs";
 import {
   CMS_LEAD_ORIGIN_BINDING_0084_OWNER_ONLY_HELPERS,
   CMS_PUBLIC_RELATION_LIMIT_0085_OWNER_ONLY_HELPERS,
+  CMS_PROGRESSIVE_DRAFT_TERMINAL_CLEANUP_0104_OWNER_ONLY_FUNCTIONS,
   CMS_QA_ACTOR_RUNTIME_REPAIRS_0086_OWNER_ONLY_FUNCTIONS,
   CMS_RELEASE_STABILITY_FOLLOWUP_0101_OWNER_ONLY_FUNCTIONS,
   CMS_RUNTIME_INTEGRITY_REPAIRS_0087_OWNER_ONLY_FUNCTIONS,
@@ -17,6 +18,7 @@ import {
   leadOriginBindingSemanticSql,
   mediaUploadAbortSchemaContractSql,
   ownerOnlyFunctionContractSql,
+  progressiveDraftTerminalCleanupSemanticSql,
   publicRelationLimitSemanticSql,
   qaActorRuntimeRepairsSemanticSql,
   releaseStabilityFollowupSemanticSql,
@@ -171,6 +173,13 @@ const [result] = await managementRequest(`/v1/projects/${STAGING_PROJECT_REF}/da
       ${systemSnapshotSubphaseTimingSemanticSql("system_snapshot_subphase_timing_0102_semantics_exact")},
       ${leadRetrySubphaseTimingSemanticSql("lead_retry_subphase_timing_0103_semantics_exact")},
       ${ownerOnlyFunctionContractSql(
+        "progressive_draft_terminal_cleanup_0104_functions_locked",
+        CMS_PROGRESSIVE_DRAFT_TERMINAL_CLEANUP_0104_OWNER_ONLY_FUNCTIONS,
+      )},
+      ${progressiveDraftTerminalCleanupSemanticSql(
+        "progressive_draft_terminal_cleanup_0104_semantics_exact",
+      )},
+      ${ownerOnlyFunctionContractSql(
         "release_stability_followup_0101_functions_locked",
         CMS_RELEASE_STABILITY_FOLLOWUP_0101_OWNER_ONLY_FUNCTIONS,
       )},
@@ -265,6 +274,8 @@ const checks = [
   "release_stability_followup_0101_semantics_exact",
   "system_snapshot_subphase_timing_0102_semantics_exact",
   "lead_retry_subphase_timing_0103_semantics_exact",
+  "progressive_draft_terminal_cleanup_0104_functions_locked",
+  "progressive_draft_terminal_cleanup_0104_semantics_exact",
   "release_stability_followup_0101_functions_locked",
   "qa_rate_limit_proof_cleanup_present",
   "qa_actor_auth_trigger_present",

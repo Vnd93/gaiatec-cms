@@ -683,6 +683,7 @@ jobs:
           QA_CMS_EXPECTED_SHA: ${{ steps.candidate.outputs.sha }}
           QA_CMS_TARGET_ENVIRONMENT: staging
           QA_CMS_PROVISION_AUTH_LIFECYCLE: "true"
+          QA_CMS_PROVISION_PIM_CATALOG: "true"
           QA_CMS_FIXTURE_STATE_PATH: outputs/cms-browser-mutating-state.json
           QA_CMS_FIXTURE_REPORT_PATH: outputs/cms-browser-mutating-setup.json
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}

@@ -163,6 +163,19 @@ describe("authoritative forms and leads QA scope", () => {
     expect(leadsPage).not.toMatch(/\.from\("cms_lead/);
   });
 
+  it("archives the synthetic form through the localized action actually rendered", () => {
+    const archiveStart = finalCoverage.indexOf("async function archiveSyntheticForm(");
+    const archiveEnd = finalCoverage.indexOf("function editorialSurfacePlans", archiveStart);
+    const archiveSource = finalCoverage.slice(archiveStart, archiveEnd);
+
+    expect(archiveSource).toContain('definition.locator("small")');
+    expect(archiveSource).toContain("/^Retirado\\s*·/");
+    expect(archiveSource).toContain("/^(?:Despublicar e arquivar|Arquivar) formulário$/");
+    expect(archiveSource).toContain("() => archiveAction.click()");
+    expect(archiveSource).not.toContain('.includes("published")');
+    expect(archiveSource).not.toContain('.includes("retired")');
+  });
+
   it("covers direct RLS, IDOR, expiration, assignment, delivery and cleanup in pgTAP", () => {
     expect(pgTap).toContain("select plan(");
     expect(pgTap).toContain("corporate cannot read the QA form by UUID");

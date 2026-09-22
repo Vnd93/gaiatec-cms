@@ -115,6 +115,11 @@ export const G12_PINNED_MIGRATION_TAIL = Object.freeze([
     file: "0103_cms_lead_retry_subphase_timing.sql",
     sha256: "dd5ca29f9eebcce77be354f0f524baac1c4dc5ecfe35b5bef71e930f553e8979",
   }),
+  Object.freeze({
+    version: "0104",
+    file: "0104_cms_progressive_draft_terminal_cleanup.sql",
+    sha256: "63d6532628aacf8141b5f4619a8420fee38bc3423499efb7c32d52a18f9407d7",
+  }),
 ]);
 
 export const CMS_MEDIA_UPLOAD_ABORT_0082_RPCS = Object.freeze([
@@ -192,6 +197,11 @@ export const CMS_RELEASE_STABILITY_FOLLOWUP_0101_OWNER_ONLY_FUNCTIONS = Object.f
   "private.cms_qa_archived_product_reference_exact_0101(uuid,text,text,text,uuid,uuid,timestamptz)",
   "private.cms_cleanup_terminal_product_shared_options_0078()",
   "private.cms_system_rbac_terminal_cleanup()",
+]);
+
+export const CMS_PROGRESSIVE_DRAFT_TERMINAL_CLEANUP_0104_OWNER_ONLY_FUNCTIONS = Object.freeze([
+  "private.cms_compensate_qa_progressive_drafts_0104(uuid,text,text,text,text)",
+  "private.cms_cleanup_terminal_progressive_drafts_0104()",
 ]);
 
 export const CMS_MEDIA_UPLOAD_ABORT_0082_OWNER_ONLY_HELPERS = Object.freeze([
@@ -1493,5 +1503,69 @@ export function leadRetrySubphaseTimingSemanticSql(alias) {
       and has_function_privilege('service_role','${scoped}','EXECUTE')
       and not has_function_privilege('authenticated','${scoped}','EXECUTE')
       and not has_function_privilege('anon','${scoped}','EXECUTE')
+    , false) as ${alias}`;
+}
+
+// The 0104 boundary is an internal, ordered lease compensator. It must keep the
+// progressive history immutable, fail closed on ambiguous ownership, and leave
+// no active draft attached to an exact terminal synthetic lease.
+export function progressiveDraftTerminalCleanupSemanticSql(alias) {
+  if (!/^[a-z][a-z0-9_]*$/.test(alias)) fail("progressive-draft-terminal-cleanup-alias");
+  const compensate = "private.cms_compensate_qa_progressive_drafts_0104(uuid,text,text,text,text)";
+  const triggerFunction = "private.cms_cleanup_terminal_progressive_drafts_0104()";
+  const definition = `regexp_replace(lower(pg_get_functiondef(to_regprocedure('${compensate}'))), '[[:space:]]+', '', 'g')`;
+  const triggerDefinition = `regexp_replace(lower(pg_get_functiondef(to_regprocedure('${triggerFunction}'))), '[[:space:]]+', '', 'g')`;
+  return `coalesce(
+      to_regprocedure('${compensate}') is not null
+      and to_regprocedure('${triggerFunction}') is not null
+      and (
+        select procedure.prosecdef
+          and 'search_path=""' = any(coalesce(procedure.proconfig, array[]::text[]))
+        from pg_catalog.pg_proc procedure
+        where procedure.oid = to_regprocedure('${compensate}')
+      )
+      and (
+        select procedure.prosecdef
+          and 'search_path=""' = any(coalesce(procedure.proconfig, array[]::text[]))
+        from pg_catalog.pg_proc procedure
+        where procedure.oid = to_regprocedure('${triggerFunction}')
+      )
+      and ${definition} like '%fromprivate.cms_qa_actor_leaseslease%'
+      and ${definition} like '%forupdate%'
+      and ${definition} like '%private.cms_qa_actor_marker_is_exact(%'
+      and ${definition} like '%draft.created_atnotbetweenv_lease.created_atandv_lease.expires_at%'
+      and ${definition} like '%draft.promoted_atisnotnull%'
+      and ${definition} like '%updatepublic.cms_content_drafts_v2draftsetstatus=''discarded''%'
+      and ${definition} like '%insertintopublic.cms_draft_v2_events%'
+      and ${definition} like '%insertintopublic.cms_audit_log%'
+      and ${definition} like '%''cms:qa.progressive_drafts.compensated''%'
+      and ${definition} not like '%deletefrompublic.cms_content_drafts_v2%'
+      and ${definition} not like '%deletefrompublic.cms_draft_v2_events%'
+      and ${triggerDefinition} like '%old.status=''active''%'
+      and ${triggerDefinition} like '%new.statusin(''cleaned'',''expired'')%'
+      and ${triggerDefinition} like '%performprivate.cms_compensate_qa_progressive_drafts_0104(%'
+      and (
+        select count(*) = 1
+        from pg_catalog.pg_trigger trigger
+        where trigger.tgrelid = 'private.cms_qa_actor_leases'::regclass
+          and trigger.tgname = 'cms_01_progressive_draft_terminal_cleanup_0104'
+          and trigger.tgfoid = to_regprocedure('${triggerFunction}')
+          and trigger.tgtype = 19
+          and trigger.tgenabled = 'O'
+          and not trigger.tgisinternal
+      )
+      and not exists (
+        select 1
+        from public.cms_content_drafts_v2 draft
+        join private.cms_qa_actor_leases lease on lease.actor_id = draft.created_by
+        where draft.status = 'active'
+          and lease.status in ('cleaned', 'expired')
+          and private.cms_qa_actor_marker_is_exact(
+            lease.actor_id,
+            lease.run_tag,
+            lease.candidate_sha,
+            lease.environment
+          )
+      )
     , false) as ${alias}`;
 }

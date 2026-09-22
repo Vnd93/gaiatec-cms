@@ -14,6 +14,7 @@ import { failurePath, fetchStagingCanaryText, retryAuthUserResidueRead } from ".
 import {
   CMS_LEAD_ORIGIN_BINDING_0084_OWNER_ONLY_HELPERS,
   CMS_PUBLIC_RELATION_LIMIT_0085_OWNER_ONLY_HELPERS,
+  CMS_PROGRESSIVE_DRAFT_TERMINAL_CLEANUP_0104_OWNER_ONLY_FUNCTIONS,
   CMS_QA_ACTOR_RUNTIME_REPAIRS_0086_OWNER_ONLY_FUNCTIONS,
   CMS_RELEASE_STABILITY_FOLLOWUP_0101_OWNER_ONLY_FUNCTIONS,
   CMS_RUNTIME_INTEGRITY_REPAIRS_0087_OWNER_ONLY_FUNCTIONS,
@@ -29,6 +30,7 @@ import {
   leadOriginBindingSemanticSql,
   mediaUploadAbortSchemaContractSql,
   ownerOnlyFunctionContractSql,
+  progressiveDraftTerminalCleanupSemanticSql,
   publicRelationLimitSemanticSql,
   qaActorRuntimeRepairsSemanticSql,
   releaseStabilityFollowupSemanticSql,
@@ -108,6 +110,7 @@ const scenarioCoverage = [
   "0101",
   "0102",
   "0103",
+  "0104",
 ];
 const accessToken = process.env.SUPABASE_ACCESS_TOKEN ?? "";
 const expectedSha = process.env.G12_MIGRATION_CANARY_EXPECTED_SHA ?? "";
@@ -761,6 +764,11 @@ async function preflightMigrations() {
     ${systemSnapshotSubphaseTimingSemanticSql("system_snapshot_subphase_timing_0102_semantics_exact")},
     ${leadRetrySubphaseTimingSemanticSql("lead_retry_subphase_timing_0103_semantics_exact")},
     ${ownerOnlyFunctionContractSql(
+      "progressive_draft_terminal_cleanup_0104_functions_locked",
+      CMS_PROGRESSIVE_DRAFT_TERMINAL_CLEANUP_0104_OWNER_ONLY_FUNCTIONS,
+    )},
+    ${progressiveDraftTerminalCleanupSemanticSql("progressive_draft_terminal_cleanup_0104_semantics_exact")},
+    ${ownerOnlyFunctionContractSql(
       "release_stability_followup_0101_functions_locked",
       CMS_RELEASE_STABILITY_FOLLOWUP_0101_OWNER_ONLY_FUNCTIONS,
     )},
@@ -984,6 +992,14 @@ async function preflightMigrations() {
   check(
     "lead_retry_subphase_timing_0103_semantics_exact",
     row?.lead_retry_subphase_timing_0103_semantics_exact === true,
+  );
+  check(
+    "progressive_draft_terminal_cleanup_0104_functions_locked",
+    row?.progressive_draft_terminal_cleanup_0104_functions_locked === true,
+  );
+  check(
+    "progressive_draft_terminal_cleanup_0104_semantics_exact",
+    row?.progressive_draft_terminal_cleanup_0104_semantics_exact === true,
   );
   check(
     "release_stability_followup_0101_functions_locked",

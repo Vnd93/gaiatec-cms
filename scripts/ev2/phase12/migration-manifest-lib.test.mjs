@@ -7,6 +7,7 @@ import test from "node:test";
 import {
   CMS_LEAD_ORIGIN_BINDING_0084_OWNER_ONLY_HELPERS,
   CMS_PUBLIC_RELATION_LIMIT_0085_OWNER_ONLY_HELPERS,
+  CMS_PROGRESSIVE_DRAFT_TERMINAL_CLEANUP_0104_OWNER_ONLY_FUNCTIONS,
   CMS_QA_ACTOR_RUNTIME_REPAIRS_0086_OWNER_ONLY_FUNCTIONS,
   CMS_RELEASE_STABILITY_FOLLOWUP_0101_OWNER_ONLY_FUNCTIONS,
   CMS_RUNTIME_INTEGRITY_REPAIRS_0087_CRB_PROSRC_SHA256,
@@ -25,6 +26,7 @@ import {
   mediaUploadAbortSchemaContractSql,
   migrationVersionSqlArray,
   ownerOnlyFunctionContractSql,
+  progressiveDraftTerminalCleanupSemanticSql,
   publicRelationLimitSemanticSql,
   qaActorRuntimeRepairsSemanticSql,
   releaseStabilityFollowupSemanticSql,
@@ -93,9 +95,9 @@ test("the repository migration history is contiguous", () => {
   // digest dos bytes. E o que impede que alguem acrescente migration sem revisao: nao basta criar
   // o arquivo, e preciso declarar o conteudo dele aqui.
   assert.deepEqual(G12_PINNED_MIGRATION_TAIL.at(-1), {
-    version: "0103",
-    file: "0103_cms_lead_retry_subphase_timing.sql",
-    sha256: "dd5ca29f9eebcce77be354f0f524baac1c4dc5ecfe35b5bef71e930f553e8979",
+    version: "0104",
+    file: "0104_cms_progressive_draft_terminal_cleanup.sql",
+    sha256: "63d6532628aacf8141b5f4619a8420fee38bc3423499efb7c32d52a18f9407d7",
   });
   assert.deepEqual(manifest.slice(-G12_PINNED_MIGRATION_TAIL.length), G12_PINNED_MIGRATION_TAIL);
   for (const migration of manifest.slice(-G12_PINNED_MIGRATION_TAIL.length)) {
@@ -790,6 +792,37 @@ test("0103 semantic preflight proves additive retry timing without widening acce
   assert.match(contract, /^coalesce\(/);
   assert.match(contract, /, false\) as lead_retry_subphase_timing_0103_semantics_exact$/);
   assert.throws(() => leadRetrySubphaseTimingSemanticSql("Bad Alias"));
+});
+
+test("0104 semantic preflight proves immutable terminal cleanup without public execution", () => {
+  const acl = ownerOnlyFunctionContractSql(
+    "progressive_draft_terminal_cleanup_0104_functions_locked",
+    CMS_PROGRESSIVE_DRAFT_TERMINAL_CLEANUP_0104_OWNER_ONLY_FUNCTIONS,
+  );
+  const contract = progressiveDraftTerminalCleanupSemanticSql(
+    "progressive_draft_terminal_cleanup_0104_semantics_exact",
+  );
+
+  for (const marker of [
+    "cms_compensate_qa_progressive_drafts_0104",
+    "cms_cleanup_terminal_progressive_drafts_0104",
+    'search_path=""',
+    "cms_qa_actor_marker_is_exact",
+    "cms_content_drafts_v2",
+    "cms_draft_v2_events",
+    "cms_audit_log",
+    "cms_01_progressive_draft_terminal_cleanup_0104",
+    "tgtype = 19",
+    "lease.status in ('cleaned', 'expired')",
+  ])
+    assert.ok(contract.includes(marker), marker);
+
+  assert.match(acl, /has_function_privilege\('service_role'/);
+  assert.match(acl, /has_function_privilege\('authenticated'/);
+  assert.match(acl, /has_function_privilege\('anon'/);
+  assert.match(contract, /^coalesce\(/);
+  assert.match(contract, /, false\) as progressive_draft_terminal_cleanup_0104_semantics_exact$/);
+  assert.throws(() => progressiveDraftTerminalCleanupSemanticSql("Bad Alias"));
 });
 
 test("0090 semantic preflight proves the lease accepts only the state the fence imposes", () => {

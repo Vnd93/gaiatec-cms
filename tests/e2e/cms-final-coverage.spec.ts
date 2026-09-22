@@ -1309,7 +1309,8 @@ async function archiveSyntheticForm(
   await expect(page.getByRole("heading", { name: "Formulários versionados" })).toBeVisible();
   const definition = page.locator("aside.admin-workflow button").filter({ hasText: form.title }).first();
   await expect(definition).toBeVisible({ timeout: 20_000 });
-  if ((await definition.textContent())?.includes("retired")) {
+  const definitionStatus = ((await definition.locator("small").textContent()) ?? "").trim();
+  if (/^Retirado\s*·/.test(definitionStatus)) {
     await expectPublishedFormContract(page, {
       expectedApiOrigin,
       formKey: form.formKey,
@@ -1320,24 +1321,27 @@ async function archiveSyntheticForm(
     });
     return { step: "form_cleanup_already_retired", result: "passed", backendStatus: "retired" };
   }
-  const published = (await definition.textContent())?.includes("published") ?? false;
-  const archiveButtonName = published ? "Despublicar e arquivar formulário" : "Arquivar formulário";
   await definition.click();
   await page.getByRole("button", { name: "Ver ficha completa", exact: true }).click();
   await page
     .getByLabel("Motivo da retirada ou restauração")
     .fill(`${runTag} retirada final após homologação`);
+  const archiveAction = page.getByRole("button", {
+    name: /^(?:Despublicar e arquivar|Arquivar) formulário$/,
+  });
+  await expect(
+    archiveAction,
+    "A ficha precisa expor exatamente uma ação terminal de arquivamento.",
+  ).toHaveCount(1);
+  const archiveButtonName = ((await archiveAction.textContent()) ?? "").trim();
+  if (!/^(?:Despublicar e arquivar|Arquivar) formulário$/.test(archiveButtonName)) {
+    throw new Error("A ação terminal do formulário não pôde ser identificada com segurança.");
+  }
   const archived = await clickEdgeAction(
     page,
     "cms-leads",
     "archive_form",
-    () =>
-      page
-        .getByRole("button", {
-          name: archiveButtonName,
-          exact: true,
-        })
-        .click(),
+    () => archiveAction.click(),
     expectedApiOrigin,
     {
       surfaceId: "forms",

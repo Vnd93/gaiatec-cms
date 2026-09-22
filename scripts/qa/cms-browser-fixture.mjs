@@ -36,12 +36,45 @@ const FEATURE_KEYS = Object.freeze([
   "ev2.ai_execute",
   "ev2.system_assurance",
 ]);
+const PRODUCT_CONTROLLED_DIMENSIONS = Object.freeze([
+  Object.freeze({
+    field: "productCategory",
+    listKey: "product.category",
+    masterType: "category",
+    suffix: "categoria",
+  }),
+  Object.freeze({
+    field: "applicationMagnitude",
+    listKey: "product.application_magnitude",
+    masterType: "magnitude",
+    suffix: "grandeza",
+  }),
+  Object.freeze({
+    field: "technology",
+    listKey: "product.technology",
+    masterType: "technology",
+    suffix: "tecnologia",
+  }),
+  Object.freeze({
+    field: "installationOperation",
+    listKey: "product.installation_operation",
+    masterType: "installation",
+    suffix: "instalacao",
+  }),
+  Object.freeze({
+    field: "monitoredElement",
+    listKey: "product.monitored_element",
+    masterType: "monitored_element",
+    suffix: "elemento",
+  }),
+]);
 const mode = process.argv[2];
 const accessToken = process.env.SUPABASE_ACCESS_TOKEN ?? "";
 const expectedSha = process.env.QA_CMS_EXPECTED_SHA ?? "";
 const targetEnvironment = process.env.QA_CMS_TARGET_ENVIRONMENT ?? "";
 const productionAuthorization = process.env.QA_CMS_PRODUCTION_AUTHORIZATION ?? "";
 const authLifecycleProvisioning = process.env.QA_CMS_PROVISION_AUTH_LIFECYCLE ?? "";
+const pimCatalogProvisioning = process.env.QA_CMS_PROVISION_PIM_CATALOG ?? "";
 const statePath = path.resolve(
   process.env.QA_CMS_FIXTURE_STATE_PATH ?? "test-results/cms-browser-fixture-state.json",
 );
@@ -108,6 +141,8 @@ function validateRuntime() {
   if (mode === "setup" && !githubEnvironmentPath) throw new Error("QA_CMS_FIXTURE_GITHUB_ENV_REQUIRED");
   if (!["", "true"].includes(authLifecycleProvisioning))
     throw new Error("QA_CMS_FIXTURE_AUTH_LIFECYCLE_FLAG_INVALID");
+  if (!["", "true"].includes(pimCatalogProvisioning))
+    throw new Error("QA_CMS_FIXTURE_PIM_CATALOG_FLAG_INVALID");
   assertArtifactPath(statePath);
   assertArtifactPath(reportPath);
   assertArtifactPath(adminOpsReportPath);
@@ -192,6 +227,259 @@ async function exactHealth() {
     response.headers.get("x-release") !== expectedSha
   )
     throw new Error("QA_CMS_FIXTURE_RELEASE_MISMATCH");
+}
+
+function cmsCommandEnvelope(environment, expectedVersion) {
+  return {
+    schemaVersion: 1,
+    commandId: randomUUID(),
+    correlationId: randomUUID(),
+    occurredAt: new Date().toISOString(),
+    actorContext: { environment, siteKey: "main" },
+    ...(expectedVersion === undefined ? {} : { expectedVersion }),
+  };
+}
+
+async function invokeAuthenticatedCmsFunction(token, functionName, body, errorCode, { idempotencyKey } = {}) {
+  if (
+    typeof token !== "string" ||
+    token.length < 24 ||
+    !new Set(["cms-controlled-vocabularies", "cms-master-data", "cms-attributes"]).has(functionName) ||
+    !/^QA_CMS_FIXTURE_[A-Z0-9_]+$/.test(errorCode) ||
+    !(idempotencyKey === undefined || uuidPattern.test(idempotencyKey))
+  ) {
+    throw new Error("QA_CMS_FIXTURE_PIM_REQUEST_INVALID");
+  }
+  const response = await fetch(`${context.url}/functions/v1/${functionName}`, {
+    method: "POST",
+    headers: {
+      apikey: context.anonKey,
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      Origin: target.origin,
+      ...(idempotencyKey ? { "X-Idempotency-Key": idempotencyKey } : {}),
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const payload = await response.json().catch(() => null);
+  if (response.status !== 200 || !payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error(errorCode);
+  }
+  return payload;
+}
+
+export function buildPimPrerequisitePlan(
+  runTag,
+  actorId,
+  candidateSha,
+  plannedIds = {
+    optionIds: PRODUCT_CONTROLLED_DIMENSIONS.map(() => randomUUID()),
+    attributeDefinitionId: randomUUID(),
+    attributeSetId: randomUUID(),
+    attributeSetVersionId: randomUUID(),
+  },
+) {
+  const namespace = actorId.replaceAll("-", "").slice(0, 12).toLowerCase();
+  if (
+    !runTagPattern.test(runTag) ||
+    !uuidPattern.test(actorId) ||
+    !/^[0-9a-f]{40}$/.test(candidateSha) ||
+    !/^[0-9a-f]{12}$/.test(namespace) ||
+    !Array.isArray(plannedIds?.optionIds) ||
+    plannedIds.optionIds.length !== PRODUCT_CONTROLLED_DIMENSIONS.length ||
+    plannedIds.optionIds.some((id) => !uuidPattern.test(id)) ||
+    !uuidPattern.test(plannedIds.attributeDefinitionId ?? "") ||
+    !uuidPattern.test(plannedIds.attributeSetId ?? "") ||
+    !uuidPattern.test(plannedIds.attributeSetVersionId ?? "")
+  ) {
+    throw new Error("QA_CMS_FIXTURE_PIM_PLAN_INVALID");
+  }
+  const slugPrefix = `${runTag.toLowerCase()}-${namespace}`;
+  return {
+    status: "planned",
+    namespace,
+    optionIds: [...plannedIds.optionIds],
+    attributeDefinitionId: plannedIds.attributeDefinitionId,
+    attributeSetId: plannedIds.attributeSetId,
+    attributeSetVersionId: plannedIds.attributeSetVersionId,
+    attributeKey: `qa-${candidateSha.slice(0, 8)}-${namespace}`,
+    dimensions: PRODUCT_CONTROLLED_DIMENSIONS.map((dimension, index) => ({
+      ...dimension,
+      optionId: plannedIds.optionIds[index],
+      slug: `${slugPrefix}-${dimension.suffix}`,
+      label: `${runTag} ${namespace} ${dimension.suffix}`,
+    })),
+  };
+}
+
+async function listProductVocabularies(token) {
+  const vocabulary = await invokeAuthenticatedCmsFunction(
+    token,
+    "cms-controlled-vocabularies",
+    { action: "list", entityType: "product", includeInactive: false },
+    "QA_CMS_FIXTURE_PIM_VOCABULARY_LIST_FAILED",
+  );
+  if (!Array.isArray(vocabulary.items)) throw new Error("QA_CMS_FIXTURE_PIM_VOCABULARY_INVALID");
+  return vocabulary.items;
+}
+
+async function provisionPimPrerequisites(actor, plan) {
+  const lists = await listProductVocabularies(actor.token);
+  const listByKey = new Map(lists.map((list) => [list.list_key, list]));
+  if (
+    !plan.dimensions.every((dimension) => {
+      const list = listByKey.get(dimension.listKey);
+      return uuidPattern.test(list?.id ?? "") && list.active === true && list.public_visible === true;
+    })
+  ) {
+    throw new Error("QA_CMS_FIXTURE_PIM_CONTAINERS_UNAVAILABLE");
+  }
+
+  const masterEntityIds = [];
+  for (const dimension of plan.dimensions) {
+    const list = listByKey.get(dimension.listKey);
+    try {
+      const option = await invokeAuthenticatedCmsFunction(
+        actor.token,
+        "cms-controlled-vocabularies",
+        {
+          action: "upsert_option",
+          option: {
+            id: dimension.optionId,
+            listId: list.id,
+            slug: dimension.slug,
+            label: dimension.label,
+            description: `Termo sintético e temporário ${plan.namespace}`,
+            publicVisible: false,
+            active: true,
+            sortOrder: 9999,
+          },
+        },
+        "QA_CMS_FIXTURE_PIM_CONTROLLED_OPTION_FAILED",
+      );
+      if (option.optionId !== dimension.optionId)
+        throw new Error("QA_CMS_FIXTURE_PIM_CONTROLLED_OPTION_FAILED");
+    } catch (error) {
+      // A chamada de vocabulário não possui receipt. Uma resposta ambígua só é aceita quando a
+      // releitura prova o UUID planejado e todos os campos naturais exatos; nunca repetimos a mutação.
+      const relisted = await listProductVocabularies(actor.token).catch(() => []);
+      const observed = relisted
+        .find((candidate) => candidate.list_key === dimension.listKey)
+        ?.options?.find((candidate) => candidate.id === dimension.optionId);
+      if (
+        observed?.slug !== dimension.slug ||
+        observed?.label !== dimension.label ||
+        observed?.active !== true ||
+        observed?.public_visible !== false
+      ) {
+        throw error;
+      }
+    }
+
+    const envelope = cmsCommandEnvelope(target.environment);
+    const master = await invokeAuthenticatedCmsFunction(
+      actor.token,
+      "cms-master-data",
+      {
+        action: "create_entity",
+        envelope,
+        entityType: dimension.masterType,
+        name: dimension.label,
+        description: `Entidade sintética e temporária ${plan.namespace}`,
+        sourceType: "manual",
+        sourceRef: `${plan.namespace}:${dimension.suffix}`,
+      },
+      "QA_CMS_FIXTURE_PIM_MASTER_ENTITY_FAILED",
+      { idempotencyKey: envelope.commandId },
+    );
+    if (!uuidPattern.test(master.entityId ?? "")) throw new Error("QA_CMS_FIXTURE_PIM_MASTER_ENTITY_FAILED");
+    masterEntityIds.push(master.entityId);
+  }
+
+  const categoryMasterId = masterEntityIds[0];
+  const attributeLabel = `${plan.namespace} validação técnica`;
+  const configured = await managementQuery(`begin;
+    select set_config('cms.qa_mutation_actor_id', ${sqlText(actor.actorId)}, true);
+    insert into public.cms_pim_attribute_definitions (
+      id, site_key, attribute_key, label, description, data_type,
+      canonical_unit_code, enum_options, filterable, comparable, searchable,
+      status, created_by, updated_by
+    ) values (
+      ${sqlText(plan.attributeDefinitionId)}::uuid, 'main', ${sqlText(plan.attributeKey)},
+      ${sqlText(attributeLabel)}, ${sqlText(`Definição sintética ${plan.namespace}`)}, 'boolean',
+      null, '[]'::jsonb, false, true, false, 'active',
+      ${sqlText(actor.actorId)}::uuid, ${sqlText(actor.actorId)}::uuid
+    );
+    insert into public.cms_pim_attribute_sets (
+      id, site_key, category_id, name, status, created_by, updated_by
+    ) values (
+      ${sqlText(plan.attributeSetId)}::uuid, 'main', ${sqlText(categoryMasterId)}::uuid,
+      ${sqlText(`${plan.namespace} conjunto técnico`)}, 'active',
+      ${sqlText(actor.actorId)}::uuid, ${sqlText(actor.actorId)}::uuid
+    );
+    insert into public.cms_pim_attribute_set_versions (
+      id, attribute_set_id, version, status, effective_from, created_by
+    ) values (
+      ${sqlText(plan.attributeSetVersionId)}::uuid, ${sqlText(plan.attributeSetId)}::uuid,
+      1, 'active', statement_timestamp(), ${sqlText(actor.actorId)}::uuid
+    );
+    insert into public.cms_pim_attribute_set_definitions (
+      attribute_set_version_id, definition_id, required, inherited, position
+    ) values (
+      ${sqlText(plan.attributeSetVersionId)}::uuid,
+      ${sqlText(plan.attributeDefinitionId)}::uuid, true, true, 0
+    );
+    commit;
+    select true as configured;`);
+  if (configured.at(-1)?.configured !== true) throw new Error("QA_CMS_FIXTURE_PIM_ATTRIBUTE_CATALOG_FAILED");
+
+  const verifiedLists = await listProductVocabularies(actor.token);
+  for (const dimension of plan.dimensions) {
+    const option = verifiedLists
+      .find((list) => list.list_key === dimension.listKey)
+      ?.options?.find((candidate) => candidate.id === dimension.optionId);
+    if (
+      option?.slug !== dimension.slug ||
+      option?.label !== dimension.label ||
+      option?.active !== true ||
+      option?.public_visible !== false
+    ) {
+      throw new Error("QA_CMS_FIXTURE_PIM_CONTROLLED_OPTION_PROOF_FAILED");
+    }
+  }
+
+  const catalogEnvelope = cmsCommandEnvelope(target.environment);
+  const catalog = await invokeAuthenticatedCmsFunction(
+    actor.token,
+    "cms-attributes",
+    { action: "list_catalog", envelope: catalogEnvelope, categoryId: plan.dimensions[0].optionId },
+    "QA_CMS_FIXTURE_PIM_ATTRIBUTE_CATALOG_FAILED",
+  );
+  if (
+    catalog.controlledCategory?.id !== plan.dimensions[0].optionId ||
+    catalog.masterCategory?.id !== categoryMasterId ||
+    catalog.attributeSet?.id !== plan.attributeSetId ||
+    !catalog.definitions?.some(
+      (definition) =>
+        definition.id === plan.attributeDefinitionId &&
+        definition.attributeKey === plan.attributeKey &&
+        definition.dataType === "boolean" &&
+        definition.required === true,
+    )
+  ) {
+    throw new Error("QA_CMS_FIXTURE_PIM_ATTRIBUTE_CATALOG_PROOF_FAILED");
+  }
+  return {
+    ...plan,
+    status: "ready",
+    masterEntityIds,
+    controlledOptions: plan.dimensions.length,
+    masterEntities: masterEntityIds.length,
+    attributeDefinitions: 1,
+    attributeSets: 1,
+    catalogVerified: true,
+  };
 }
 
 async function managementQuery(query, timeoutMs = 30_000) {
@@ -1177,6 +1465,33 @@ export function validateFixtureState(value, environment, projectRef, candidateSh
     documentIds.length <= 20 &&
     new Set(documentIds).size === documentIds.length &&
     documentIds.every((documentId) => uuidPattern.test(documentId));
+  const pim = value?.pimPrerequisites;
+  const validPim =
+    pim === null ||
+    (pim &&
+      typeof pim === "object" &&
+      !Array.isArray(pim) &&
+      ["planned", "ready"].includes(pim.status) &&
+      /^[0-9a-f]{12}$/.test(pim.namespace ?? "") &&
+      Array.isArray(pim.optionIds) &&
+      pim.optionIds.length === PRODUCT_CONTROLLED_DIMENSIONS.length &&
+      new Set(pim.optionIds).size === pim.optionIds.length &&
+      pim.optionIds.every((id) => uuidPattern.test(id)) &&
+      uuidPattern.test(pim.attributeDefinitionId ?? "") &&
+      uuidPattern.test(pim.attributeSetId ?? "") &&
+      uuidPattern.test(pim.attributeSetVersionId ?? "") &&
+      Array.isArray(pim.dimensions) &&
+      pim.dimensions.length === PRODUCT_CONTROLLED_DIMENSIONS.length &&
+      (pim.status !== "ready" ||
+        (Array.isArray(pim.masterEntityIds) &&
+          pim.masterEntityIds.length === PRODUCT_CONTROLLED_DIMENSIONS.length &&
+          new Set(pim.masterEntityIds).size === pim.masterEntityIds.length &&
+          pim.masterEntityIds.every((id) => uuidPattern.test(id)) &&
+          pim.controlledOptions === PRODUCT_CONTROLLED_DIMENSIONS.length &&
+          pim.masterEntities === PRODUCT_CONTROLLED_DIMENSIONS.length &&
+          pim.attributeDefinitions === 1 &&
+          pim.attributeSets === 1 &&
+          pim.catalogVerified === true)));
   if (
     value?.schemaVersion !== 1 ||
     !("terminalArchivedTombstone" in value) ||
@@ -1187,6 +1502,7 @@ export function validateFixtureState(value, environment, projectRef, candidateSh
     !["creating", "ready", "cleaned"].includes(value.status) ||
     typeof value.setupAudited !== "boolean" ||
     typeof value.authLifecycleEnabled !== "boolean" ||
+    typeof value.pimCatalogEnabled !== "boolean" ||
     !(value.actorId === null || uuidPattern.test(value.actorId)) ||
     !(value.managedActorId === null || uuidPattern.test(value.managedActorId)) ||
     !(value.existingIdentityActorId === null || uuidPattern.test(value.existingIdentityActorId)) ||
@@ -1204,6 +1520,9 @@ export function validateFixtureState(value, environment, projectRef, candidateSh
       value.authLifecycleEnabled &&
       [value.recoveryActorId, value.invitedActorId].some((id) => !uuidPattern.test(id ?? ""))) ||
     (!value.authLifecycleEnabled && (value.recoveryActorId !== null || value.invitedActorId !== null)) ||
+    !validPim ||
+    (!value.pimCatalogEnabled && pim !== null) ||
+    (value.status === "ready" && value.pimCatalogEnabled && pim?.status !== "ready") ||
     !(
       value.leadReference === null ||
       (typeof value.leadReference === "string" && /^LD-[A-Z0-9]+$/.test(value.leadReference))
@@ -3038,6 +3357,8 @@ async function setup() {
     itemIds: [],
     terminalArchivedTombstone: null,
     documentIds: [],
+    pimCatalogEnabled: pimCatalogProvisioning === "true",
+    pimPrerequisites: null,
   };
   writeState(state);
   try {
@@ -3094,6 +3415,12 @@ async function setup() {
       (await createFeatureOverrides(managedActor.actorId, runTag));
     await assertReadySession(actor.token);
     await assertReadySession(managedActor.token);
+    if (state.pimCatalogEnabled) {
+      state.pimPrerequisites = buildPimPrerequisitePlan(runTag, actor.actorId, expectedSha);
+      writeState(state);
+      state.pimPrerequisites = await provisionPimPrerequisites(actor, state.pimPrerequisites);
+      writeState(state);
+    }
     if (recoveryLifecycle) {
       const recoverySession = await context.admin.auth.admin.getUserById(recoveryLifecycle.actorId);
       if (recoverySession.error || !recoverySession.data.user)
@@ -3169,6 +3496,16 @@ async function setup() {
       },
       sessionCapabilities: "ready-all-expected",
       fixtureProvisioning: "actors-and-prerequisites-only",
+      pimPrerequisites: state.pimCatalogEnabled
+        ? {
+            controlledOptions: state.pimPrerequisites.controlledOptions,
+            masterEntities: state.pimPrerequisites.masterEntities,
+            attributeDefinitions: state.pimPrerequisites.attributeDefinitions,
+            attributeSets: state.pimPrerequisites.attributeSets,
+            catalogVerified: state.pimPrerequisites.catalogVerified,
+            actorNamespaced: true,
+          }
+        : { status: "not-requested" },
       editorialEntitiesCreatedByFixture: 0,
       formsCreatedByFixture: 0,
       leadsCreatedByFixture: 0,

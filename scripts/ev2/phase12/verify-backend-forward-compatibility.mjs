@@ -238,6 +238,10 @@ const compatibilityTests = {
     "supabase/tests/rls_ev2_phase11_system.test.sql",
     "tests/contracts/cms-lead-retry-subphase-timing.test.ts",
   ],
+  "0104": [
+    "supabase/tests/rls_cms_progressive_draft_terminal_cleanup.test.sql",
+    "tests/contracts/cms-progressive-draft-terminal-cleanup.test.ts",
+  ],
 };
 for (const migration of additions) {
   const version = migration.version;

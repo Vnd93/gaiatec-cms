@@ -7,6 +7,7 @@ import {
   buildEditorialCleanupSql,
   buildFixtureAuditSql,
   buildOwnedContentCleanupSql,
+  buildPimPrerequisitePlan,
   buildRecoveredFormRetirementSql,
   buildRouteDefinitions,
   capabilityManifestReady,
@@ -171,6 +172,51 @@ test("all eight route payloads satisfy the real strict CMS content contract", ()
   }
 });
 
+test("the PIM prerequisite plan is complete, actor-namespaced and deterministic", () => {
+  const actorOne = "10000000-0000-4000-8000-000000000001";
+  const actorTwo = "20000000-0000-4000-8000-000000000002";
+  const plannedIds = {
+    optionIds: Array.from(
+      { length: 5 },
+      (_, index) => `30000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    ),
+    attributeDefinitionId: "30000000-0000-4000-8000-000000000006",
+    attributeSetId: "30000000-0000-4000-8000-000000000007",
+    attributeSetVersionId: "30000000-0000-4000-8000-000000000008",
+  };
+  const first = buildPimPrerequisitePlan(runTag, actorOne, sha, plannedIds);
+  const second = buildPimPrerequisitePlan(runTag, actorTwo, sha, plannedIds);
+
+  assert.equal(first.dimensions.length, 5);
+  assert.deepEqual(
+    first.dimensions.map(({ listKey }) => listKey),
+    [
+      "product.category",
+      "product.application_magnitude",
+      "product.technology",
+      "product.installation_operation",
+      "product.monitored_element",
+    ],
+  );
+  assert.equal(new Set(first.dimensions.map(({ optionId }) => optionId)).size, 5);
+  assert.ok(
+    first.dimensions.every(
+      ({ slug, label }) => slug.includes(first.namespace) && label.includes(first.namespace),
+    ),
+  );
+  assert.notEqual(first.namespace, second.namespace);
+  assert.notEqual(first.attributeKey, second.attributeKey);
+  assert.notEqual(first.dimensions[0].slug, second.dimensions[0].slug);
+  assert.throws(
+    () =>
+      buildPimPrerequisitePlan(runTag, actorOne, sha, {
+        ...plannedIds,
+        optionIds: plannedIds.optionIds.slice(1),
+      }),
+    /QA_CMS_FIXTURE_PIM_PLAN_INVALID/,
+  );
+});
+
 test("the capability gate requires a complete ready override manifest", () => {
   const evaluatedAt = new Date().toISOString();
   const manifest = {
@@ -202,6 +248,8 @@ test("actor-only fixture state is bound to environment, project, SHA and synthet
     status: "ready",
     setupAudited: true,
     authLifecycleEnabled: false,
+    pimCatalogEnabled: false,
+    pimPrerequisites: null,
     actorId: "10000000-0000-4000-8000-000000000001",
     managedActorId: "10000000-0000-4000-8000-000000000002",
     existingIdentityActorId: "10000000-0000-4000-8000-000000000007",
@@ -338,6 +386,47 @@ test("actor-only fixture state is bound to environment, project, SHA and synthet
     ).authLifecycleEnabled,
     true,
   );
+  const pimPlan = buildPimPrerequisitePlan(runTag, state.actorId, sha, {
+    optionIds: Array.from(
+      { length: 5 },
+      (_, index) => `31000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    ),
+    attributeDefinitionId: "31000000-0000-4000-8000-000000000006",
+    attributeSetId: "31000000-0000-4000-8000-000000000007",
+    attributeSetVersionId: "31000000-0000-4000-8000-000000000008",
+  });
+  assert.throws(
+    () =>
+      validateFixtureState(
+        { ...state, pimCatalogEnabled: true, pimPrerequisites: pimPlan },
+        "staging",
+        state.projectRef,
+        sha,
+      ),
+    /QA_CMS_FIXTURE_STATE_REFUSED/,
+  );
+  const readyPim = {
+    ...pimPlan,
+    status: "ready",
+    masterEntityIds: Array.from(
+      { length: 5 },
+      (_, index) => `32000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    ),
+    controlledOptions: 5,
+    masterEntities: 5,
+    attributeDefinitions: 1,
+    attributeSets: 1,
+    catalogVerified: true,
+  };
+  assert.equal(
+    validateFixtureState(
+      { ...state, pimCatalogEnabled: true, pimPrerequisites: readyPim },
+      "staging",
+      state.projectRef,
+      sha,
+    ).pimPrerequisites.status,
+    "ready",
+  );
   assert.throws(
     () =>
       validateFixtureState(
@@ -383,6 +472,8 @@ test("interrupted UI cleanup rediscovers and neutralizes the exact actor-owned f
     status: "ready",
     setupAudited: true,
     authLifecycleEnabled: false,
+    pimCatalogEnabled: false,
+    pimPrerequisites: null,
     actorId,
     managedActorId: "10000000-0000-4000-8000-000000000002",
     existingIdentityActorId: "10000000-0000-4000-8000-000000000003",
@@ -551,6 +642,8 @@ test("interrupted UI recovery refuses ambiguous forms before any mutation", asyn
     status: "ready",
     setupAudited: true,
     authLifecycleEnabled: false,
+    pimCatalogEnabled: false,
+    pimPrerequisites: null,
     actorId,
     managedActorId: "10000000-0000-4000-8000-000000000002",
     existingIdentityActorId: "10000000-0000-4000-8000-000000000003",
@@ -974,6 +1067,13 @@ test("the executable stays fail-closed and leaves no active synthetic surface", 
   assert.match(source, /existingIdentityRevokedAndBanned/);
   assert.match(source, /rdoAccessInactive/);
   assert.match(source, /fixtureProvisioning: "actors-and-prerequisites-only"/);
+  assert.match(source, /const PRODUCT_CONTROLLED_DIMENSIONS = Object\.freeze/);
+  assert.match(source, /action: "upsert_option"/);
+  assert.match(source, /action: "create_entity"/);
+  assert.match(source, /insert into public\.cms_pim_attribute_definitions/);
+  assert.match(source, /insert into public\.cms_pim_attribute_sets/);
+  assert.match(source, /action: "list_catalog"/);
+  assert.match(source, /actorNamespaced: true/);
   assert.match(source, /editorialEntitiesCreatedByFixture: 0/);
   const setupSource = source.slice(
     source.indexOf("async function setup()"),
@@ -981,7 +1081,26 @@ test("the executable stays fail-closed and leaves no active synthetic surface", 
   );
   assert.doesNotMatch(setupSource, /createRouteFixtures|createOperationalFixtures|cms_capture_lead_scoped/);
   assert.doesNotMatch(setupSource, /QA_CMS_SYNTHETIC_IDS|QA_CMS_LEAD_REFERENCE|QA_CMS_LEAD_STATUS/);
+  assert.ok(
+    setupSource.indexOf("await assertReadySession(actor.token)") <
+      setupSource.indexOf("await provisionPimPrerequisites"),
+  );
+  assert.ok(
+    setupSource.indexOf("await provisionPimPrerequisites") < setupSource.indexOf("await recordFixtureAudit"),
+  );
+  assert.ok(setupSource.indexOf("await recordFixtureAudit") < setupSource.indexOf('state.status = "ready"'));
   assert.match(setupSource, /QA_CMS_UI_CREATED_STATE_PATH/);
+  const rollbackFixtureBlock = stagingWorkflow.slice(
+    stagingWorkflow.indexOf("Provision an isolated MFA actor for authenticated rollback compatibility"),
+    stagingWorkflow.indexOf("Build the staging shell from the same SHA"),
+  );
+  const mutatingFixtureBlock = stagingWorkflow.slice(
+    stagingWorkflow.indexOf("Provision the isolated MFA actor for the mutating browser cycle"),
+    stagingWorkflow.indexOf("Run the complete authenticated mutating editorial cycle first"),
+  );
+  assert.doesNotMatch(rollbackFixtureBlock, /QA_CMS_PROVISION_PIM_CATALOG/);
+  assert.match(mutatingFixtureBlock, /QA_CMS_PROVISION_PIM_CATALOG: "true"/);
+  assert.match(productionWorkflow, /QA_CMS_PROVISION_PIM_CATALOG: "true"/);
   assert.match(source, /productionMutations: productionMutationSummary/);
   assert.match(source, /path\.resolve\(process\.argv\[1\]\) === fileURLToPath\(import\.meta\.url\)/);
 });

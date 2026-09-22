@@ -2568,6 +2568,7 @@ async function assertNewDraftsStartIncomplete(page: Page, expectedApiOrigin: str
   const drafts = [
     {
       route: "/admin/conteudo/novo",
+      editorScope: "form.admin-form",
       title: "Título",
       action: "Criar rascunho",
       expectedState: {
@@ -2577,6 +2578,7 @@ async function assertNewDraftsStartIncomplete(page: Page, expectedApiOrigin: str
     },
     {
       route: "/admin/produtos/novo",
+      editorScope: "form.admin-product-form",
       title: "Nome comercial do produto",
       action: "Salvar e continuar",
       progressive: true,
@@ -2587,6 +2589,7 @@ async function assertNewDraftsStartIncomplete(page: Page, expectedApiOrigin: str
     },
     {
       route: "/admin/descoberta/service/novo",
+      editorScope: ".admin-discovery-editor",
       title: "Título público",
       action: "Criar rascunho",
       expectedState: {
@@ -2596,6 +2599,7 @@ async function assertNewDraftsStartIncomplete(page: Page, expectedApiOrigin: str
     },
     {
       route: "/admin/paginas/novo",
+      editorScope: "form.admin-page-builder",
       title: "Título administrativo e público",
       action: "Criar página",
       expectedState: {
@@ -2605,6 +2609,7 @@ async function assertNewDraftsStartIncomplete(page: Page, expectedApiOrigin: str
     },
     {
       route: "/admin/marketing/campanhas/novo",
+      editorScope: '[role="group"][aria-label="Identificação da campanha"]',
       title: "Título",
       action: "Salvar",
       expectedState: {
@@ -2641,8 +2646,18 @@ async function assertNewDraftsStartIncomplete(page: Page, expectedApiOrigin: str
     await page.waitForURL((url) => url.pathname === draft.route, { timeout: 20_000 });
     await expect(page.locator("[data-admin-surface]")).toBeVisible({ timeout: 20_000 });
     const titleReadyDeadline = Date.now() + 20_000;
-    const title = page.getByLabel(draft.title, { exact: true });
-    await expect(title).toHaveCount(1, {
+    const editor = page.locator(draft.editorScope);
+    await expect(editor, `Editor primário ausente ou duplicado em ${draft.route}`).toHaveCount(1, {
+      timeout: Math.max(1, titleReadyDeadline - Date.now()),
+    });
+    await expect(editor, `Editor primário oculto em ${draft.route}`).toBeVisible({
+      timeout: Math.max(1, titleReadyDeadline - Date.now()),
+    });
+    const title = editor.getByLabel(draft.title, { exact: true });
+    await expect(
+      title,
+      `Campo de título ausente ou duplicado no editor primário de ${draft.route}`,
+    ).toHaveCount(1, {
       timeout: Math.max(1, titleReadyDeadline - Date.now()),
     });
     await expect(title).toBeVisible({

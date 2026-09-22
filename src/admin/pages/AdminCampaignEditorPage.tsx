@@ -493,7 +493,7 @@ export default function AdminCampaignEditorPage() {
         </div>
       )}
 
-      <div className="admin-form-grid">
+      <div className="admin-form-grid" role="group" aria-label="Identificação da campanha">
         <label>
           Título
           <input

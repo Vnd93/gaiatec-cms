@@ -286,8 +286,9 @@ describe("retirada e restauração de descoberta e campanhas", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Nova campanha" })).toBeVisible();
-    expect(screen.getByLabelText("Título")).toHaveValue("");
-    expect(screen.getByLabelText("Resumo")).toHaveValue("");
+    const identification = screen.getByRole("group", { name: "Identificação da campanha" });
+    expect(within(identification).getByLabelText("Título")).toHaveValue("");
+    expect(within(identification).getByLabelText("Resumo")).toHaveValue("");
     expect(screen.getByLabelText("Endereço público gerado")).toHaveTextContent("/campanhas/");
     expect(screen.queryByLabelText("Nome personalizado do endereço")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Estado editorial")).toHaveValue("awaiting_owner");

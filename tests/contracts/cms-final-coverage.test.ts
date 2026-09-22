@@ -747,26 +747,31 @@ describe("matriz final de cobertura do CMS", () => {
     const expectedStates = [
       {
         route: "/admin/conteudo/novo",
+        editorScope: "form.admin-form",
         selector: '.admin-notice.admin-notice--error[role="alert"]',
         text: "Revise os campos obrigatórios.",
       },
       {
         route: "/admin/produtos/novo",
+        editorScope: "form.admin-product-form",
         selector: '.admin-notice.admin-notice--success[role="status"]',
         text: "Rascunho incompleto salvo de forma privada. Continue quando estiver pronto.",
       },
       {
         route: "/admin/descoberta/service/novo",
+        editorScope: ".admin-discovery-editor",
         selector: '.admin-contract-status.is-invalid[role="status"]',
         text: "Cadastro precisa de ajustes",
       },
       {
         route: "/admin/paginas/novo",
+        editorScope: "form.admin-page-builder",
         selector: ".admin-builder-status",
         text: "Contrato:\\s*\\d+\\s+pendência\\(s\\)",
       },
       {
         route: "/admin/marketing/campanhas/novo",
+        editorScope: '[role="group"][aria-label="Identificação da campanha"]',
         selector: '.admin-notice.admin-notice--error[role="status"]',
         text: "Pendência:",
       },
@@ -780,6 +785,7 @@ describe("matriz final de cobertura do CMS", () => {
       expect(routeStart).toBeGreaterThan(0);
       expect(routeEnd).toBeGreaterThan(routeStart);
       const routeContract = helper.slice(routeStart, routeEnd);
+      expect(routeContract).toContain(expected.editorScope);
       expect(routeContract).toContain(expected.selector);
       expect(routeContract).toContain(expected.text);
     }
@@ -794,8 +800,27 @@ describe("matriz final de cobertura do CMS", () => {
       "await page.waitForURL((url) => url.pathname === draft.route, { timeout: 20_000 })",
     );
     expect(editorReady).toContain("const titleReadyDeadline = Date.now() + 20_000");
-    expect(editorReady).toContain("const title = page.getByLabel(draft.title, { exact: true });");
-    expect(editorReady).toContain("await expect(title).toHaveCount(1");
+    expect(editorReady).toContain("const editor = page.locator(draft.editorScope);");
+    expect(editorReady).toContain("Editor primário ausente ou duplicado em ${draft.route}");
+    const editorUniquenessStart = editorReady.indexOf("const editor = page.locator");
+    const editorUniquenessEnd = editorReady.indexOf("const title = editor.getByLabel", editorUniquenessStart);
+    expect(editorUniquenessStart).toBeGreaterThan(0);
+    expect(editorUniquenessEnd).toBeGreaterThan(editorUniquenessStart);
+    const editorUniqueness = editorReady.slice(editorUniquenessStart, editorUniquenessEnd);
+    expect(editorUniqueness).toContain("await expect(editor,");
+    expect(editorUniqueness).toContain(").toHaveCount(1");
+    expect(editorUniqueness).toContain(").toBeVisible");
+    expect(editorReady).toContain("const title = editor.getByLabel(draft.title, { exact: true });");
+    expect(editorReady).toContain(
+      "Campo de título ausente ou duplicado no editor primário de ${draft.route}",
+    );
+    const titleUniquenessStart = editorReady.indexOf("const title = editor.getByLabel");
+    const titleUniquenessEnd = editorReady.indexOf("await expect(title).toBeVisible", titleUniquenessStart);
+    expect(titleUniquenessStart).toBeGreaterThan(0);
+    expect(titleUniquenessEnd).toBeGreaterThan(titleUniquenessStart);
+    const titleUniqueness = editorReady.slice(titleUniquenessStart, titleUniquenessEnd);
+    expect(titleUniqueness).toContain("title,");
+    expect(titleUniqueness).toContain(").toHaveCount(1");
     expect(editorReady).toContain("await expect(title).toBeVisible");
     expect(editorReady).toContain('await expect(title).toHaveValue("", {');
     expect(editorReady).toContain("titleReadyDeadline - Date.now()");

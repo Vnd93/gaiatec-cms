@@ -190,6 +190,7 @@ test("0083 semantic preflight covers Auth sessions, administrative actions, logo
 
   for (const marker of [
     "private.cms_resolve_session_core_0087(uuid,text,text,text,text,timestamptz,uuid)",
+    "private.cms_resolve_logout_core_0105(uuid,text,text,text,timestamptz,uuid)",
     "from public.cms_login_events event",
     "from auth.sessions auth_session",
     "extensions.digest(auth_session.id::text,''sha256'')",
@@ -207,6 +208,7 @@ test("0083 semantic preflight covers Auth sessions, administrative actions, logo
     "''CMS_SESSION_REVOKED''",
     "permission.critical",
     "if p_event_type = ''logout'' then",
+    "private.cms_resolve_logout_core_0105(%",
     "''self_logout''",
     "bool_or(permission.critical)",
   ])
@@ -221,40 +223,74 @@ test("0083 semantic preflight covers Auth sessions, administrative actions, logo
   );
 });
 
-test("0083 semantic preflight follows the authoritative 0087 session topology", () => {
-  const migration = readFileSync(
+test("0083 semantic preflight follows the authoritative 0087 and 0105 session topology", () => {
+  const runtimeMigration = readFileSync(
     join(process.cwd(), "supabase", "migrations", "0087_cms_runtime_integrity_repairs.sql"),
     "utf8",
   );
-  const coreStart = migration.indexOf("create or replace function private.cms_resolve_session_core_0087(");
-  const unscopedStart = migration.indexOf(
+  const logoutMigration = readFileSync(
+    join(process.cwd(), "supabase", "migrations", "0105_cms_session_logout_fast_path.sql"),
+    "utf8",
+  );
+  const coreStart = runtimeMigration.indexOf(
+    "create or replace function private.cms_resolve_session_core_0087(",
+  );
+  const unscopedStart = runtimeMigration.indexOf(
     "create or replace function public.cms_resolve_session_unscoped_0070(",
     coreStart,
   );
-  const scopedStart = migration.indexOf(
-    "create or replace function public.cms_resolve_session_scoped(",
+  const accessStart = runtimeMigration.indexOf(
+    "create or replace function public.cms_resolve_scoped_access(",
     unscopedStart,
   );
-  const accessStart = migration.indexOf(
-    "create or replace function public.cms_resolve_scoped_access(",
+  const visualStart = runtimeMigration.indexOf("-- The authoritative visual wrappers", accessStart);
+  const logoutStart = logoutMigration.indexOf(
+    "create or replace function private.cms_resolve_logout_core_0105(",
+  );
+  const logoutEnd = logoutMigration.indexOf(
+    "revoke all on function private.cms_resolve_logout_core_0105(",
+    logoutStart,
+  );
+  const scopedStart = logoutMigration.indexOf(
+    "create or replace function public.cms_resolve_session_scoped(",
+    logoutEnd,
+  );
+  const scopedEnd = logoutMigration.indexOf(
+    "revoke all on function public.cms_resolve_session_scoped(",
     scopedStart,
   );
-  const visualStart = migration.indexOf("-- The authoritative visual wrappers", accessStart);
-  for (const boundary of [coreStart, unscopedStart, scopedStart, accessStart, visualStart])
+  for (const boundary of [
+    coreStart,
+    unscopedStart,
+    accessStart,
+    visualStart,
+    logoutStart,
+    logoutEnd,
+    scopedStart,
+    scopedEnd,
+  ])
     assert.notEqual(boundary, -1);
 
-  const core = migration.slice(coreStart, unscopedStart);
-  const scoped = migration.slice(scopedStart, accessStart);
-  const access = migration.slice(accessStart, visualStart);
+  const core = runtimeMigration.slice(coreStart, unscopedStart);
+  const access = runtimeMigration.slice(accessStart, visualStart);
+  const logout = logoutMigration.slice(logoutStart, logoutEnd);
+  const scoped = logoutMigration.slice(scopedStart, scopedEnd);
   assert.match(core, /extensions\.digest\(p_session_id, 'sha256'\)/);
   assert.match(core, /from public\.cms_session_revocations revocation/);
   assert.match(core, /raise exception 'CMS_SESSION_REVOKED'/);
   assert.match(core, /permission\.critical/);
+  assert.match(logout, /extensions\.digest\(p_session_id, 'sha256'\)/);
+  assert.match(logout, /from public\.cms_session_revocations revocation/);
+  assert.match(logout, /raise exception 'CMS_SESSION_REVOKED'/);
+  assert.match(logout, /insert into public\.cms_session_revocations/);
+  assert.match(logout, /'self_logout'/);
+  assert.doesNotMatch(logout, /permission\.critical/);
   assert.match(scoped, /private\.cms_resolve_session_core_0087\(/);
+  assert.match(scoped, /private\.cms_resolve_logout_core_0105\(/);
   assert.doesNotMatch(scoped, /permission\.critical/);
   assert.match(scoped, /if p_event_type = 'logout' then/);
-  assert.match(scoped, /insert into public\.cms_session_revocations/);
-  assert.match(scoped, /'self_logout'/);
+  assert.doesNotMatch(scoped, /insert into public\.cms_session_revocations/);
+  assert.doesNotMatch(scoped, /'self_logout'/);
   assert.match(access, /bool_or\(permission\.critical\)/);
 
   const contract = sessionRefreshRevocationSemanticSql("session_refresh_revocation_0083_semantics_exact");

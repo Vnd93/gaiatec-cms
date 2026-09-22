@@ -454,12 +454,14 @@ export function sessionRefreshRevocationSemanticSql(alias) {
   const resolveSession = "public.cms_resolve_session_scoped(uuid,text,text,text,text,timestamptz,uuid)";
   const resolveSessionCore =
     "private.cms_resolve_session_core_0087(uuid,text,text,text,text,timestamptz,uuid)";
+  const resolveLogoutCore = "private.cms_resolve_logout_core_0105(uuid,text,text,text,timestamptz,uuid)";
   const resolveScopedAccess = "public.cms_resolve_scoped_access(uuid,text,text,text,text,timestamptz)";
   const normalized = (signature) =>
     `regexp_replace(pg_get_functiondef(to_regprocedure('${signature}')), '[[:space:]]+', ' ', 'g')`;
   const applyCommandDefinition = normalized(applyCommand);
   const resolveSessionDefinition = normalized(resolveSession);
   const resolveSessionCoreDefinition = normalized(resolveSessionCore);
+  const resolveLogoutCoreDefinition = normalized(resolveLogoutCore);
   const resolveScopedAccessDefinition = normalized(resolveScopedAccess);
   return `coalesce(
       ${applyCommandDefinition}
@@ -504,8 +506,16 @@ export function sessionRefreshRevocationSemanticSql(alias) {
       and ${resolveSessionDefinition}
         like '%if p_event_type = ''logout'' then%'
       and ${resolveSessionDefinition}
+        like '%private.cms_resolve_logout_core_0105(%'
+      and ${resolveLogoutCoreDefinition}
+        like '%extensions.digest(p_session_id, ''sha256'')%'
+      and ${resolveLogoutCoreDefinition}
+        like '%from public.cms_session_revocations revocation%'
+      and ${resolveLogoutCoreDefinition}
+        like '%''CMS_SESSION_REVOKED''%'
+      and ${resolveLogoutCoreDefinition}
         like '%insert into public.cms_session_revocations%'
-      and ${resolveSessionDefinition}
+      and ${resolveLogoutCoreDefinition}
         like '%''self_logout''%'
       and ${resolveScopedAccessDefinition}
         like '%bool_or(permission.critical)%',

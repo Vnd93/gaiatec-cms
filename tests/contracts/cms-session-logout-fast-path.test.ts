@@ -103,6 +103,10 @@ describe("CMS session logout fast path", () => {
     expect(backendCompatibility).toContain('"0105": [');
     expect(backendCompatibility).toContain('"supabase/tests/rls_cms_session_security_finalization.test.sql"');
     expect(backendCompatibility).toContain('"tests/contracts/cms-session-logout-fast-path.test.ts"');
+    expect(migrationManifest).toContain(
+      '"private.cms_resolve_logout_core_0105(uuid,text,text,text,timestamptz,uuid)"',
+    );
+    expect(migrationManifest).toContain("like '%private.cms_resolve_logout_core_0105(%'");
     for (const verifier of [migrationCanary, stagingDatabaseVerifier, productionDatabaseVerifier]) {
       expect(verifier).toContain("session_logout_fast_path_0105_helper_locked");
       expect(verifier).toContain("session_logout_fast_path_0105_semantics_exact");

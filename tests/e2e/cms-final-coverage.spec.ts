@@ -2638,9 +2638,19 @@ async function assertNewDraftsStartIncomplete(page: Page, expectedApiOrigin: str
     };
     page.on("request", listener);
     await page.goto(draft.route, { waitUntil: "domcontentloaded" });
+    await page.waitForURL((url) => url.pathname === draft.route, { timeout: 20_000 });
     await expect(page.locator("[data-admin-surface]")).toBeVisible({ timeout: 20_000 });
-    const title = page.getByLabel(draft.title, { exact: true }).first();
-    await expect(title).toHaveValue("");
+    const titleReadyDeadline = Date.now() + 20_000;
+    const title = page.getByLabel(draft.title, { exact: true });
+    await expect(title).toHaveCount(1, {
+      timeout: Math.max(1, titleReadyDeadline - Date.now()),
+    });
+    await expect(title).toBeVisible({
+      timeout: Math.max(1, titleReadyDeadline - Date.now()),
+    });
+    await expect(title).toHaveValue("", {
+      timeout: Math.max(1, titleReadyDeadline - Date.now()),
+    });
     if (draft.progressive) {
       const progressiveStateDeadline = Date.now() + 20_000;
       const progressiveState = page.locator(".admin-draft-indicator, .admin-draft-recovery", {

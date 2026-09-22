@@ -783,6 +783,23 @@ describe("matriz final de cobertura do CMS", () => {
       expect(routeContract).toContain(expected.selector);
       expect(routeContract).toContain(expected.text);
     }
+    const editorReadyStart = helper.indexOf(
+      'await page.goto(draft.route, { waitUntil: "domcontentloaded" });',
+    );
+    const editorReadyEnd = helper.indexOf("if (draft.progressive)", editorReadyStart);
+    expect(editorReadyStart).toBeGreaterThan(0);
+    expect(editorReadyEnd).toBeGreaterThan(editorReadyStart);
+    const editorReady = helper.slice(editorReadyStart, editorReadyEnd);
+    expect(editorReady).toContain(
+      "await page.waitForURL((url) => url.pathname === draft.route, { timeout: 20_000 })",
+    );
+    expect(editorReady).toContain("const titleReadyDeadline = Date.now() + 20_000");
+    expect(editorReady).toContain("const title = page.getByLabel(draft.title, { exact: true });");
+    expect(editorReady).toContain("await expect(title).toHaveCount(1");
+    expect(editorReady).toContain("await expect(title).toBeVisible");
+    expect(editorReady).toContain('await expect(title).toHaveValue("", {');
+    expect(editorReady).toContain("titleReadyDeadline - Date.now()");
+    expect(editorReady).not.toContain(".first()");
     expect(helper).toContain("const expectedStateDeadline = Date.now() + 20_000");
     expect(helper).toContain("await expect(expectedState).toHaveCount(1");
     expect(helper).toContain("await expect(expectedState).toBeVisible");

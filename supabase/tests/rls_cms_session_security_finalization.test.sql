@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(43);
+select plan(44);
 
 insert into auth.users(
   id,instance_id,aud,role,email,encrypted_password,email_confirmed_at,
@@ -289,11 +289,28 @@ select is((public.cms_resolve_session_scoped(
 )->>'accessGranted')::boolean,true,
   'the post-reactivation session can enter the CMS');
 
-select is(public.cms_resolve_session_scoped(
+select ok(public.cms_resolve_session_scoped(
   '83000000-0000-4000-8000-000000000002','logout','local','aal1',
   '83000000-0000-4000-8000-000000000102',clock_timestamp(),gen_random_uuid()
-)->>'userId','83000000-0000-4000-8000-000000000002',
-  'CMS logout resolves while the browser session is still authenticated');
+) @> jsonb_build_object(
+  'userId','83000000-0000-4000-8000-000000000002',
+  'status','active',
+  'roles','[]'::jsonb,
+  'permissions','[]'::jsonb,
+  'mfaRequired',false,
+  'mfaVerified',false,
+  'accessGranted',false,
+  'activated',false,
+  'rbacScoped',false,
+  'rbacScopeReasonCode','logout'
+), 'CMS logout returns a non-reusable receipt while the browser session is still authenticated');
+select is((select count(*)::integer from public.cms_login_events
+  where user_id='83000000-0000-4000-8000-000000000002'
+    and event_type='logout'
+    and session_id_hash=encode(extensions.digest(
+      '83000000-0000-4000-8000-000000000102','sha256'
+    ),'hex')),1,
+  'logout appends exactly one immutable login event');
 select ok(exists(select 1 from public.cms_session_revocations
   where user_id='83000000-0000-4000-8000-000000000002'
     and session_id_hash=encode(extensions.digest(

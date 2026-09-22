@@ -1468,7 +1468,7 @@ async function signOutThroughUi(page: Page, buttonName: "Sair" | "Cancelar e sai
     await expect(page.getByRole("heading", { name: "Entrar no painel", exact: true })).toBeVisible({
       timeout: 20_000,
     });
-    expect(cmsResponse.status()).toBe(200);
+    if (cmsResponse.status() !== 200) throw new Error(`QA_CMS_AUTH_LOGOUT_HTTP_${cmsResponse.status()}`);
     expect(cmsFinishedRequest).toBe(cmsResponse.request());
     expect(authStartedAfterCmsFinished).toBe(true);
     expect(finishedRequest).toBe(startedRequest);

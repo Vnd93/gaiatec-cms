@@ -120,6 +120,11 @@ export const G12_PINNED_MIGRATION_TAIL = Object.freeze([
     file: "0104_cms_progressive_draft_terminal_cleanup.sql",
     sha256: "63d6532628aacf8141b5f4619a8420fee38bc3423499efb7c32d52a18f9407d7",
   }),
+  Object.freeze({
+    version: "0105",
+    file: "0105_cms_session_logout_fast_path.sql",
+    sha256: "cb3c8abb10ae3f0dca2b8eed399af5ec381a293479601a7d23df1c19f9372f0f",
+  }),
 ]);
 
 export const CMS_MEDIA_UPLOAD_ABORT_0082_RPCS = Object.freeze([
@@ -202,6 +207,10 @@ export const CMS_RELEASE_STABILITY_FOLLOWUP_0101_OWNER_ONLY_FUNCTIONS = Object.f
 export const CMS_PROGRESSIVE_DRAFT_TERMINAL_CLEANUP_0104_OWNER_ONLY_FUNCTIONS = Object.freeze([
   "private.cms_compensate_qa_progressive_drafts_0104(uuid,text,text,text,text)",
   "private.cms_cleanup_terminal_progressive_drafts_0104()",
+]);
+
+export const CMS_SESSION_LOGOUT_FAST_PATH_0105_OWNER_ONLY_FUNCTIONS = Object.freeze([
+  "private.cms_resolve_logout_core_0105(uuid,text,text,text,timestamp with time zone,uuid)",
 ]);
 
 export const CMS_MEDIA_UPLOAD_ABORT_0082_OWNER_ONLY_HELPERS = Object.freeze([
@@ -1567,5 +1576,70 @@ export function progressiveDraftTerminalCleanupSemanticSql(alias) {
             lease.environment
           )
       )
+    , false) as ${alias}`;
+}
+
+// The 0105 boundary keeps logout inside the existing trusted service RPC but
+// removes RBAC/capability work from that one action. The remote contract proves
+// the short path is actor-fenced, append-only, revokes atomically, returns no
+// reusable grant, and leaves every non-logout action on the full 0087 resolver.
+export function sessionLogoutFastPathSemanticSql(alias) {
+  if (!/^[a-z][a-z0-9_]*$/.test(alias)) fail("session-logout-fast-path-alias");
+  const helper = "private.cms_resolve_logout_core_0105(uuid,text,text,text,timestamp with time zone,uuid)";
+  const wrapper = "public.cms_resolve_session_scoped(uuid,text,text,text,text,timestamp with time zone,uuid)";
+  const helperDefinition = `regexp_replace(lower(pg_get_functiondef(to_regprocedure('${helper}'))), '[[:space:]]+', '', 'g')`;
+  const wrapperDefinition = `regexp_replace(lower(pg_get_functiondef(to_regprocedure('${wrapper}'))), '[[:space:]]+', '', 'g')`;
+  const actorLock = "private.cms_system_lock_actor_scope(";
+  const profileLock = "forupdate";
+  const loginEvent = "insertintopublic.cms_login_events";
+  const revocation = "insertintopublic.cms_session_revocations";
+  const logoutCore = "returnprivate.cms_resolve_logout_core_0105(";
+  const fullCore = "v_result:=private.cms_resolve_session_core_0087(";
+  return `coalesce(
+      to_regprocedure('${helper}') is not null
+      and to_regprocedure('${wrapper}') is not null
+      and (
+        select procedure.prosecdef
+          and 'search_path=""' = any(coalesce(procedure.proconfig, array[]::text[]))
+        from pg_catalog.pg_proc procedure
+        where procedure.oid = to_regprocedure('${helper}')
+      )
+      and (
+        select procedure.prosecdef
+          and 'search_path=""' = any(coalesce(procedure.proconfig, array[]::text[]))
+        from pg_catalog.pg_proc procedure
+        where procedure.oid = to_regprocedure('${wrapper}')
+      )
+      and ${helperDefinition} like '%${actorLock}%'
+      and ${helperDefinition} like '%${profileLock}%'
+      and ${helperDefinition} like '%${loginEvent}%'
+      and ${helperDefinition} like '%${revocation}%'
+      and position('${actorLock}' in ${helperDefinition})
+        < position('${profileLock}' in ${helperDefinition})
+      and position('${profileLock}' in ${helperDefinition})
+        < position('${loginEvent}' in ${helperDefinition})
+      and position('${loginEvent}' in ${helperDefinition})
+        < position('${revocation}' in ${helperDefinition})
+      and ${helperDefinition} like '%onconflict(session_id_hash)doupdate%'
+      and ${helperDefinition} like '%''self_logout''%'
+      and ${helperDefinition} like '%''accessgranted'',false%'
+      and ${helperDefinition} like '%''rbacscopereasoncode'',''logout''%'
+      and ${helperDefinition} not like '%cms:scoped-super:%'
+      and ${helperDefinition} not like '%cms_rbac_scope_capability%'
+      and ${helperDefinition} not like '%cms_resolve_scoped_access%'
+      and ${helperDefinition} not like '%updatepublic.cms_login_events%'
+      and ${helperDefinition} not like '%deletefrompublic.cms_login_events%'
+      and ${wrapperDefinition} like '%private.cms_user_actor_context_active(%'
+      and ${wrapperDefinition} like '%ifp_event_type=''logout''then%'
+      and ${wrapperDefinition} like '%${logoutCore}%'
+      and ${wrapperDefinition} like '%${fullCore}%'
+      and position('${logoutCore}' in ${wrapperDefinition})
+        < position('${fullCore}' in ${wrapperDefinition})
+      and has_function_privilege('service_role','${wrapper}','EXECUTE')
+      and not has_function_privilege('authenticated','${wrapper}','EXECUTE')
+      and not has_function_privilege('anon','${wrapper}','EXECUTE')
+      and not has_function_privilege('service_role','${helper}','EXECUTE')
+      and not has_function_privilege('authenticated','${helper}','EXECUTE')
+      and not has_function_privilege('anon','${helper}','EXECUTE')
     , false) as ${alias}`;
 }

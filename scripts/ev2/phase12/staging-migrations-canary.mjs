@@ -15,6 +15,7 @@ import {
   CMS_LEAD_ORIGIN_BINDING_0084_OWNER_ONLY_HELPERS,
   CMS_PUBLIC_RELATION_LIMIT_0085_OWNER_ONLY_HELPERS,
   CMS_PROGRESSIVE_DRAFT_TERMINAL_CLEANUP_0104_OWNER_ONLY_FUNCTIONS,
+  CMS_SESSION_LOGOUT_FAST_PATH_0105_OWNER_ONLY_FUNCTIONS,
   CMS_QA_ACTOR_RUNTIME_REPAIRS_0086_OWNER_ONLY_FUNCTIONS,
   CMS_RELEASE_STABILITY_FOLLOWUP_0101_OWNER_ONLY_FUNCTIONS,
   CMS_RUNTIME_INTEGRITY_REPAIRS_0087_OWNER_ONLY_FUNCTIONS,
@@ -37,6 +38,7 @@ import {
   runtimeIntegrityRepairsSemanticSql,
   runtimeIntegrityFollowupSemanticSql,
   sessionRefreshRevocationSemanticSql,
+  sessionLogoutFastPathSemanticSql,
   serviceOnlyRpcContractSql,
   sourceMigrationManifest,
   systemSnapshotLeadReadScaleSemanticSql,
@@ -111,6 +113,7 @@ const scenarioCoverage = [
   "0102",
   "0103",
   "0104",
+  "0105",
 ];
 const accessToken = process.env.SUPABASE_ACCESS_TOKEN ?? "";
 const expectedSha = process.env.G12_MIGRATION_CANARY_EXPECTED_SHA ?? "";
@@ -769,6 +772,11 @@ async function preflightMigrations() {
     )},
     ${progressiveDraftTerminalCleanupSemanticSql("progressive_draft_terminal_cleanup_0104_semantics_exact")},
     ${ownerOnlyFunctionContractSql(
+      "session_logout_fast_path_0105_helper_locked",
+      CMS_SESSION_LOGOUT_FAST_PATH_0105_OWNER_ONLY_FUNCTIONS,
+    )},
+    ${sessionLogoutFastPathSemanticSql("session_logout_fast_path_0105_semantics_exact")},
+    ${ownerOnlyFunctionContractSql(
       "release_stability_followup_0101_functions_locked",
       CMS_RELEASE_STABILITY_FOLLOWUP_0101_OWNER_ONLY_FUNCTIONS,
     )},
@@ -1000,6 +1008,14 @@ async function preflightMigrations() {
   check(
     "progressive_draft_terminal_cleanup_0104_semantics_exact",
     row?.progressive_draft_terminal_cleanup_0104_semantics_exact === true,
+  );
+  check(
+    "session_logout_fast_path_0105_helper_locked",
+    row?.session_logout_fast_path_0105_helper_locked === true,
+  );
+  check(
+    "session_logout_fast_path_0105_semantics_exact",
+    row?.session_logout_fast_path_0105_semantics_exact === true,
   );
   check(
     "release_stability_followup_0101_functions_locked",

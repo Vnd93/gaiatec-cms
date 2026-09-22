@@ -8,6 +8,7 @@ import {
   CMS_LEAD_ORIGIN_BINDING_0084_OWNER_ONLY_HELPERS,
   CMS_PUBLIC_RELATION_LIMIT_0085_OWNER_ONLY_HELPERS,
   CMS_PROGRESSIVE_DRAFT_TERMINAL_CLEANUP_0104_OWNER_ONLY_FUNCTIONS,
+  CMS_SESSION_LOGOUT_FAST_PATH_0105_OWNER_ONLY_FUNCTIONS,
   CMS_QA_ACTOR_RUNTIME_REPAIRS_0086_OWNER_ONLY_FUNCTIONS,
   CMS_RELEASE_STABILITY_FOLLOWUP_0101_OWNER_ONLY_FUNCTIONS,
   CMS_RUNTIME_INTEGRITY_REPAIRS_0087_CRB_PROSRC_SHA256,
@@ -37,6 +38,7 @@ import {
   qaLeaseDocumentCanonicalFenceSemanticSql,
   runtimeIntegrityFollowupSemanticSql,
   sessionRefreshRevocationSemanticSql,
+  sessionLogoutFastPathSemanticSql,
   serviceOnlyRpcContractSql,
   sourceMigrationManifest,
   systemSnapshotLeadReadScaleSemanticSql,
@@ -95,9 +97,9 @@ test("the repository migration history is contiguous", () => {
   // digest dos bytes. E o que impede que alguem acrescente migration sem revisao: nao basta criar
   // o arquivo, e preciso declarar o conteudo dele aqui.
   assert.deepEqual(G12_PINNED_MIGRATION_TAIL.at(-1), {
-    version: "0104",
-    file: "0104_cms_progressive_draft_terminal_cleanup.sql",
-    sha256: "63d6532628aacf8141b5f4619a8420fee38bc3423499efb7c32d52a18f9407d7",
+    version: "0105",
+    file: "0105_cms_session_logout_fast_path.sql",
+    sha256: "cb3c8abb10ae3f0dca2b8eed399af5ec381a293479601a7d23df1c19f9372f0f",
   });
   assert.deepEqual(manifest.slice(-G12_PINNED_MIGRATION_TAIL.length), G12_PINNED_MIGRATION_TAIL);
   for (const migration of manifest.slice(-G12_PINNED_MIGRATION_TAIL.length)) {
@@ -823,6 +825,38 @@ test("0104 semantic preflight proves immutable terminal cleanup without public e
   assert.match(contract, /^coalesce\(/);
   assert.match(contract, /, false\) as progressive_draft_terminal_cleanup_0104_semantics_exact$/);
   assert.throws(() => progressiveDraftTerminalCleanupSemanticSql("Bad Alias"));
+});
+
+test("0105 semantic preflight proves the logout-only short path and preserves full resolution", () => {
+  const acl = ownerOnlyFunctionContractSql(
+    "session_logout_fast_path_0105_helper_locked",
+    CMS_SESSION_LOGOUT_FAST_PATH_0105_OWNER_ONLY_FUNCTIONS,
+  );
+  const contract = sessionLogoutFastPathSemanticSql("session_logout_fast_path_0105_semantics_exact");
+
+  for (const marker of [
+    "cms_resolve_logout_core_0105",
+    "cms_resolve_session_core_0087",
+    "cms_system_lock_actor_scope",
+    "forupdate",
+    "cms_login_events",
+    "cms_session_revocations",
+    "self_logout",
+    "accessgranted",
+    "rbacscopereasoncode",
+    "cms_user_actor_context_active",
+  ])
+    assert.ok(contract.includes(marker), marker);
+
+  assert.match(acl, /has_function_privilege\('service_role'/);
+  assert.match(acl, /has_function_privilege\('authenticated'/);
+  assert.match(acl, /has_function_privilege\('anon'/);
+  assert.match(contract, /not like '%cms:scoped-super:%'/);
+  assert.match(contract, /not like '%cms_rbac_scope_capability%'/);
+  assert.match(contract, /not like '%cms_resolve_scoped_access%'/);
+  assert.match(contract, /^coalesce\(/);
+  assert.match(contract, /, false\) as session_logout_fast_path_0105_semantics_exact$/);
+  assert.throws(() => sessionLogoutFastPathSemanticSql("Bad Alias"));
 });
 
 test("0090 semantic preflight proves the lease accepts only the state the fence imposes", () => {

@@ -198,6 +198,11 @@ Deno.serve(async (req) => {
     );
   }
 
+  // Logout already wrote its immutable event and revocation in one short,
+  // actor-fenced database transaction. It must not reacquire the global RBAC
+  // snapshot or compute an EV2 manifest that the caller will discard.
+  if (action === "logout") return json(req, data);
+
   const ev2DeploymentEnabled =
     configuredEnvironment !== "production" || Deno.env.get("CMS_EV2_PRODUCTION_ENABLED") === "true";
   let resolvedData = data as Record<string, unknown>;

@@ -32,6 +32,7 @@ test("staging migration canary is fail-closed on the one authorized project and 
   assert.match(source, /"0102"/);
   assert.match(source, /"0103"/);
   assert.match(source, /"0104"/);
+  assert.match(source, /"0105"/);
   assert.match(source, /"form_lifecycle_0058_present"/);
   assert.match(source, /"qa_actor_lease_0061_present"/);
   assert.match(source, /"qa_actor_watchdog_cron_0061_active"/);
@@ -152,6 +153,7 @@ test("database preflights require every 0082-0088 contract, exact ACL and semant
     "public.cms_execute_dam_command_core_0088(uuid,text,text,text,text,timestamptz,text,jsonb,uuid,uuid,text,uuid)",
     "private.cms_guard_dam_asset_gc_fence()",
     "private.cms_assert_dam_actor_context(uuid,text,text,text,timestamptz)",
+    "private.cms_resolve_logout_core_0105(uuid,text,text,text,timestamp with time zone,uuid)",
   ])
     assert.ok(contracts.includes(signature), `missing exact RPC contract ${signature}`);
   for (const verifier of [canary, ...verifiers]) {
@@ -204,6 +206,10 @@ test("database preflights require every 0082-0088 contract, exact ACL and semant
     assert.match(verifier, /progressive_draft_terminal_cleanup_0104_functions_locked/);
     assert.match(verifier, /progressive_draft_terminal_cleanup_0104_semantics_exact/);
     assert.match(verifier, /progressiveDraftTerminalCleanupSemanticSql/);
+    assert.match(verifier, /session_logout_fast_path_0105_helper_locked/);
+    assert.match(verifier, /session_logout_fast_path_0105_semantics_exact/);
+    assert.match(verifier, /sessionLogoutFastPathSemanticSql/);
+    assert.match(verifier, /CMS_SESSION_LOGOUT_FAST_PATH_0105_OWNER_ONLY_FUNCTIONS/);
   }
   assert.match(contracts, /has_function_privilege\('service_role'/);
   assert.match(contracts, /has_function_privilege\('authenticated'/);

@@ -242,6 +242,10 @@ const compatibilityTests = {
     "supabase/tests/rls_cms_progressive_draft_terminal_cleanup.test.sql",
     "tests/contracts/cms-progressive-draft-terminal-cleanup.test.ts",
   ],
+  "0105": [
+    "supabase/tests/rls_cms_session_security_finalization.test.sql",
+    "tests/contracts/cms-session-logout-fast-path.test.ts",
+  ],
 };
 for (const migration of additions) {
   const version = migration.version;

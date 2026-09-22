@@ -36,6 +36,7 @@ import {
   loadCmsRealBrowserAttestation,
   selectSingleAttestedLead,
 } from "./cms-real-browser-attestation";
+import { submitCmsMfaAndAwaitReady } from "./cms-mfa-session-gate";
 
 test.use({ trace: "off", screenshot: "off", video: "off", serviceWorkers: "block" });
 test.beforeEach(async ({ context }) => {
@@ -218,7 +219,12 @@ function totp(secret: string): string {
   return String(value % 1_000_000).padStart(6, "0");
 }
 
-async function signInWithAal2(page: Page, credentials: ActorCredentials, expectedSha: string) {
+async function signInWithAal2(
+  page: Page,
+  credentials: ActorCredentials,
+  expectedSha: string,
+  expectedApiOrigin: string,
+) {
   const response = await page.goto("/admin/login", { waitUntil: "domcontentloaded" });
   expect(response?.headers()["x-release"]).toBe(expectedSha);
   await page.getByLabel("E-mail corporativo").fill(credentials.email);
@@ -229,9 +235,9 @@ async function signInWithAal2(page: Page, credentials: ActorCredentials, expecte
   const stepPosition = Date.now() % 30_000;
   if (stepPosition > 27_000) await page.waitForTimeout(31_000 - stepPosition);
   await page.getByLabel("Código de 6 dígitos").fill(totp(credentials.totpSecret));
-  await page.getByRole("button", { name: "Verificar e entrar" }).click();
-  await expect(page.locator("[data-admin-surface]")).toBeVisible({ timeout: 20_000 });
-  await expect(page).toHaveURL(/\/admin(?:\/?|\?.*)$/);
+  await submitCmsMfaAndAwaitReady(page, expectedApiOrigin, () =>
+    page.getByRole("button", { name: "Verificar e entrar" }).click(),
+  );
 }
 
 async function signInWithoutCmsProfile(page: Page, credentials: ActorCredentials, expectedSha: string) {
@@ -783,7 +789,12 @@ test.describe("CMS administrative operational cycles", () => {
       expect(healthBody?.environment).toBe(sealedPreviewDeploymentEnvironment(configuration.environment));
       expect(healthBody?.release).toBe(configuration.expectedSha);
       expect(health.headers()["x-release"]).toBe(configuration.expectedSha);
-      await signInWithAal2(page, configuration.operator, configuration.expectedSha);
+      await signInWithAal2(
+        page,
+        configuration.operator,
+        configuration.expectedSha,
+        configuration.supabaseOrigin,
+      );
 
       await page.goto("/admin/usuarios", { waitUntil: "domcontentloaded" });
       const preInviteContext = await newIsolatedContext(browser, baseURL, observer);
@@ -889,7 +900,12 @@ test.describe("CMS administrative operational cycles", () => {
       const existingContext = await newIsolatedContext(browser, baseURL, observer);
       contexts.push(existingContext);
       const existingPage = await existingContext.newPage();
-      await signInWithAal2(existingPage, configuration.existingIdentity, configuration.expectedSha);
+      await signInWithAal2(
+        existingPage,
+        configuration.existingIdentity,
+        configuration.expectedSha,
+        configuration.supabaseOrigin,
+      );
       const rdoAfterInvite = await ownRdoAccess(existingPage, configuration);
       expect(rdoAfterInvite).toEqual(rdoBaseline);
       await existingPage.goto("/admin/usuarios", { waitUntil: "domcontentloaded" });
@@ -1400,7 +1416,12 @@ test.describe("CMS administrative operational cycles", () => {
       const reviewerContext = await newIsolatedContext(browser, baseURL, observer);
       contexts.push(reviewerContext);
       const reviewerPage = await reviewerContext.newPage();
-      await signInWithAal2(reviewerPage, configuration.reviewer, configuration.expectedSha);
+      await signInWithAal2(
+        reviewerPage,
+        configuration.reviewer,
+        configuration.expectedSha,
+        configuration.supabaseOrigin,
+      );
       await reviewerPage.goto("/admin/usuarios", { waitUntil: "domcontentloaded" });
       await expect(reviewerPage.getByRole("heading", { name: "Acesso negado" })).toBeVisible();
       const idor = await browserApi(reviewerPage, configuration, "/functions/v1/cms-users", {
@@ -2432,7 +2453,12 @@ test.describe("CMS administrative operational cycles", () => {
       const reactivatedContext = await newIsolatedContext(browser, baseURL, observer);
       contexts.push(reactivatedContext);
       const reactivatedPage = await reactivatedContext.newPage();
-      await signInWithAal2(reactivatedPage, configuration.reviewer, configuration.expectedSha);
+      await signInWithAal2(
+        reactivatedPage,
+        configuration.reviewer,
+        configuration.expectedSha,
+        configuration.supabaseOrigin,
+      );
       await reactivatedPage.goto("/admin/assistente", { waitUntil: "domcontentloaded" });
       await expect(reactivatedPage.getByRole("heading", { name: "Assistente controlada" })).toBeVisible();
 

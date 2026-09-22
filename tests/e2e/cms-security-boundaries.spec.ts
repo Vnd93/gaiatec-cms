@@ -15,6 +15,7 @@ import {
   sealedPreviewDeploymentEnvironment,
   sealedPreviewRoutingEvidence,
 } from "./cms-sealed-preview-routing";
+import { submitCmsMfaAndAwaitReady } from "./cms-mfa-session-gate";
 
 type Configuration = {
   environment: "staging" | "production";
@@ -167,8 +168,9 @@ async function signIn(page: Page, config: Configuration, identity: IdentityCrede
   const windowPosition = Date.now() % 30_000;
   if (windowPosition > 27_000) await page.waitForTimeout(31_000 - windowPosition);
   await page.getByLabel("Código de 6 dígitos").fill(totp(identity.totpSecret));
-  await page.getByRole("button", { name: "Verificar e entrar" }).click();
-  await expect(page.locator("[data-admin-surface]")).toBeVisible({ timeout: 20_000 });
+  await submitCmsMfaAndAwaitReady(page, config.supabaseOrigin, () =>
+    page.getByRole("button", { name: "Verificar e entrar" }).click(),
+  );
 }
 
 async function isolatedBrowserContext(

@@ -37,6 +37,7 @@ import {
   type CmsPreparedSemanticField,
 } from "./cms-semantic-scenario-ledger";
 import { loadCmsUiCreatedState } from "./cms-ui-created-state";
+import { submitCmsMfaAndAwaitReady } from "./cms-mfa-session-gate";
 
 test.beforeEach(async ({ context }) => {
   await installSealedPreviewRouting(context);
@@ -525,8 +526,9 @@ async function signInWithAal2(
   const millisecondsInStep = Date.now() % 30_000;
   if (millisecondsInStep > 27_000) await page.waitForTimeout(31_000 - millisecondsInStep);
   await page.getByLabel("Código de 6 dígitos").fill(totp(identity.totpSecret));
-  await page.getByRole("button", { name: "Verificar e entrar" }).click();
-  await expect(page.locator("[data-admin-surface]")).toBeVisible({ timeout: 20_000 });
+  await submitCmsMfaAndAwaitReady(page, configuration.supabaseOrigin, () =>
+    page.getByRole("button", { name: "Verificar e entrar" }).click(),
+  );
 }
 
 async function assertDeployment(

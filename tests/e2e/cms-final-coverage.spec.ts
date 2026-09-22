@@ -56,6 +56,7 @@ import {
   selectSingleAttestedLead,
   waitForCmsRealBrowserAttestation,
 } from "./cms-real-browser-attestation";
+import { submitCmsMfaAndAwaitReady } from "./cms-mfa-session-gate";
 
 type CoverageSurface = {
   id: string;
@@ -653,7 +654,7 @@ async function assertTargetDeployment(
   }
 }
 
-async function signInWithAal2(page: Page, auth: ReadyAuthentication) {
+async function signInWithAal2(page: Page, auth: ReadyAuthentication, expectedApiOrigin: string) {
   const loginResponse = await page.goto("/admin/login", { waitUntil: "domcontentloaded" });
   if (loginResponse?.headers()["x-release"] !== auth.expectedSha) {
     throw new Error("O X-Release implantado difere do SHA exato homologado; valores omitidos.");
@@ -673,9 +674,9 @@ async function signInWithAal2(page: Page, auth: ReadyAuthentication) {
   const millisecondsInStep = Date.now() % 30_000;
   if (millisecondsInStep > 27_000) await page.waitForTimeout(31_000 - millisecondsInStep);
   await page.getByLabel("Código de 6 dígitos").fill(totp(auth.totpSecret));
-  await page.getByRole("button", { name: "Verificar e entrar" }).click();
-  await expect(page.locator("[data-admin-surface]")).toBeVisible({ timeout: 20_000 });
-  await expect(page).toHaveURL(/\/admin(?:\/?|\?.*)$/);
+  await submitCmsMfaAndAwaitReady(page, expectedApiOrigin, () =>
+    page.getByRole("button", { name: "Verificar e entrar" }).click(),
+  );
 }
 
 function isEditorialResponseFor(action: string, responseUrl: string, method: string, body: unknown) {
@@ -4677,6 +4678,7 @@ test.describe.serial("homologação final CMS source-backed", () => {
     const menuResults: Array<Record<string, unknown>> = [];
     const authJourney: Array<Record<string, unknown>> = [];
     const allowedHttp = allowedFailurePatterns();
+    const expectedApiOrigin = mutationTargets[mutationTargetEnvironment()].supabaseOrigin;
     let currentContext = { surfaceId: "authentication", viewport: "1440x900" };
     let expectedNegativeAuth: "password" | "mfa" | null = null;
     let completion: "passed" | "failed" = "failed";
@@ -4812,9 +4814,9 @@ test.describe.serial("homologação final CMS source-backed", () => {
       const millisecondsInStep = Date.now() % 30_000;
       if (millisecondsInStep > 27_000) await page.waitForTimeout(31_000 - millisecondsInStep);
       await page.getByLabel("Código de 6 dígitos").fill(totp(auth.totpSecret));
-      await page.getByRole("button", { name: "Verificar e entrar" }).click();
-      await expect(page.locator("[data-admin-surface]")).toBeVisible({ timeout: 20_000 });
-      await expect(page).toHaveURL(/\/admin(?:\/?|\?.*)$/);
+      await submitCmsMfaAndAwaitReady(page, expectedApiOrigin, () =>
+        page.getByRole("button", { name: "Verificar e entrar" }).click(),
+      );
       authJourney.push({ step: "valid_aal2_login", result: "passed" });
 
       const authenticatedSurfaces = source.matrix.filter(
@@ -5185,7 +5187,7 @@ test.describe.serial("homologação final CMS source-backed", () => {
       }
       await assertTargetDeployment(page, auth.expectedSha, environment);
       steps.push({ step: `${environment}_entity_sha_gate`, result: "passed", httpStatus: 200 });
-      await signInWithAal2(page, auth);
+      await signInWithAal2(page, auth, supabaseOrigin);
       steps.push({ step: "entity_fixture_authenticated_aal2", result: "passed" });
       await assertNewDraftsStartIncomplete(page, supabaseOrigin);
       steps.push({
@@ -5540,7 +5542,7 @@ test.describe.serial("homologação final CMS source-backed", () => {
       }
       await assertTargetDeployment(page, auth.expectedSha, environment);
       steps.push({ step: `${environment}_sha_gate`, result: "passed", httpStatus: 200 });
-      await signInWithAal2(page, auth);
+      await signInWithAal2(page, auth, supabaseOrigin);
       steps.push({ step: "authenticated_aal2", result: "passed" });
 
       const editorResponse = await page.goto("/admin/paginas/novo?type=page&template=institutional", {

@@ -4,6 +4,8 @@ import test from "node:test";
 import { CmsContentPayloadSchema } from "../../src/shared/contracts/cms-content.ts";
 import {
   bindUiCreatedStateToFixture,
+  buildBrowserFixtureRecoveryReport,
+  buildBrowserFixtureRecoverySql,
   buildEditorialCleanupSql,
   buildFixtureAuditSql,
   buildOwnedContentCleanupSql,
@@ -12,6 +14,7 @@ import {
   buildRouteDefinitions,
   capabilityManifestReady,
   recoverInterruptedUiResourceBinding,
+  resolveFixtureRunTag,
   resolveTarget,
   retireRecoveredFormResources,
   validateScopedRoleCleanupAssignments,
@@ -156,6 +159,137 @@ test("the staging and production targets are exact and production is literally S
   });
   assert.throws(() => resolveTarget("local", sha), /QA_CMS_FIXTURE_ENVIRONMENT_INVALID/);
   assert.throws(() => resolveTarget("staging", "short"), /QA_CMS_FIXTURE_SHA_INVALID/);
+});
+
+test("fixture run tags accept only the exact candidate-bound prebinding", () => {
+  const fixed = new Date("2026-09-22T12:00:00.000Z");
+  assert.equal(resolveFixtureRunTag(sha, "", fixed), "QA-CMS-FINAL-20260922-aaaaaaaa");
+  assert.equal(resolveFixtureRunTag(sha, runTag, fixed), runTag);
+  for (const refused of [
+    "QA-CMS-FINAL-20260907-bbbbbbbb",
+    "qa-cms-final-20260907-aaaaaaaa",
+    "QA-CMS-FINAL-2026907-aaaaaaaa",
+    "QA-CMS-FINAL-20260907-AAAAAAAA",
+    `${runTag}\nQA_CMS_PASSWORD=leak`,
+  ]) {
+    assert.throws(() => resolveFixtureRunTag(sha, refused, fixed), /QA_CMS_FIXTURE_RUN_TAG_INVALID/);
+  }
+  assert.throws(() => resolveFixtureRunTag("short", runTag, fixed), /QA_CMS_FIXTURE_SHA_INVALID/);
+  assert.throws(() => resolveFixtureRunTag(sha, "", new Date("invalid")), /QA_CMS_FIXTURE_RUN_TAG_INVALID/);
+});
+
+test("staging recovery SQL is bounded, exact-tuple bound and sweeper-only", () => {
+  const sql = buildBrowserFixtureRecoverySql({
+    runTag,
+    candidateSha: sha,
+    environment: "staging",
+  });
+  const tupleFragments = [
+    `lease.run_tag='${runTag}'`,
+    `lease.candidate_sha='${sha}'`,
+    "lease.environment='staging'",
+  ];
+  for (const fragment of tupleFragments) {
+    assert.ok(sql.split(fragment).length >= 5, `${fragment} must bind every recovery phase`);
+  }
+  assert.match(sql, /lock table private\.cms_qa_actor_leases in share row exclusive mode/);
+  assert.match(sql, /where lease\.status='active' and lease\.run_tag=/);
+  assert.match(sql, /if v_matched > 25 then/);
+  assert.match(sql, /set expires_at=lease\.created_at \+ interval '1 microsecond'/);
+  assert.match(sql, /for v_round in 1\.\.4 loop/);
+  assert.match(sql, /private\.cms_sweep_expired_qa_actor_leases\(100\)/);
+  assert.match(sql, /if v_failed <> 0 then/);
+  assert.match(sql, /if v_remaining <> 0 then/);
+  assert.match(sql, /where lease\.status in \('cleaned','expired'\)/);
+  assert.doesNotMatch(sql, /actor_id\s+as|select\s+actor_id/i);
+  assert.throws(
+    () => buildBrowserFixtureRecoverySql({ runTag, candidateSha: sha, environment: "production" }),
+    /QA_CMS_FIXTURE_RECOVERY_BINDING_INVALID/,
+  );
+  assert.throws(
+    () =>
+      buildBrowserFixtureRecoverySql({
+        runTag: "QA-CMS-FINAL-20260907-bbbbbbbb",
+        candidateSha: sha,
+        environment: "staging",
+      }),
+    /QA_CMS_FIXTURE_RECOVERY_BINDING_INVALID/,
+  );
+});
+
+test("staging recovery report is idempotent, credential-free and rejects residue", () => {
+  const recovered = buildBrowserFixtureRecoveryReport({
+    runTag,
+    candidateSha: sha,
+    environment: "staging",
+    matchedActiveLeases: 5,
+    forcedForSweepLeases: 5,
+    sweeperProcessedLeases: 5,
+    sweeperFailedLeases: 0,
+    remainingActiveLeases: 0,
+    terminalLeases: 5,
+  });
+  assert.equal(recovered.status, "recovered");
+  assert.deepEqual(recovered.recovery.sweeper, {
+    status: "passed",
+    processedLeases: 5,
+    failedLeases: 0,
+  });
+  const serialized = JSON.stringify(recovered);
+  assert.doesNotMatch(serialized, /actorId|password|token|secret|email|cookie/i);
+  assert.equal(recovered.credentialsInStateOrReport, false);
+  assert.equal(recovered.localStateRead, false);
+
+  const replayed = buildBrowserFixtureRecoveryReport({
+    runTag,
+    candidateSha: sha,
+    environment: "staging",
+    matchedActiveLeases: 0,
+    forcedForSweepLeases: 0,
+    sweeperProcessedLeases: 0,
+    sweeperFailedLeases: 0,
+    remainingActiveLeases: 0,
+    terminalLeases: 5,
+  });
+  assert.equal(replayed.status, "already-terminal");
+  for (const invalid of [
+    { matchedActiveLeases: 1, forcedForSweepLeases: 0 },
+    { sweeperFailedLeases: 1 },
+    { remainingActiveLeases: 1 },
+    { terminalLeases: -1 },
+  ]) {
+    assert.throws(
+      () =>
+        buildBrowserFixtureRecoveryReport({
+          runTag,
+          candidateSha: sha,
+          environment: "staging",
+          matchedActiveLeases: 0,
+          forcedForSweepLeases: 0,
+          sweeperProcessedLeases: 0,
+          sweeperFailedLeases: 0,
+          remainingActiveLeases: 0,
+          terminalLeases: 0,
+          ...invalid,
+        }),
+      /QA_CMS_FIXTURE_RECOVERY_RESULT_INVALID/,
+    );
+  }
+});
+
+test("recover bypasses secret local state and writes only a private redacted report", () => {
+  const recoverStart = source.indexOf("async function recover()");
+  const recoverEnd = source.indexOf("async function cleanup()", recoverStart);
+  assert.ok(recoverStart >= 0 && recoverEnd > recoverStart);
+  const recoverSource = source.slice(recoverStart, recoverEnd);
+  assert.doesNotMatch(recoverSource, /readState|writeState|statePath|existsSync|loadContext|api-keys/);
+  assert.match(recoverSource, /buildBrowserFixtureRecoverySql/);
+  assert.match(recoverSource, /credentialsInStateOrReport: false/);
+  assert.match(source, /writeFileSync\([^;]+mode: 0o600[^;]+;\s*chmodSync\(file, 0o600\)/s);
+  assert.match(
+    source,
+    /validateRuntime\(\);\s*if \(mode === "recover"\) \{\s*await recover\(\);\s*return;\s*\}\s*\(\{ createClient \} = await import\("@supabase\/supabase-js"\)\);\s*context = await loadContext\(\)/,
+  );
 });
 
 test("all eight route payloads satisfy the real strict CMS content contract", () => {
@@ -948,7 +1082,10 @@ test("fixture audit receipt is deterministic, locked and insertion-idempotent", 
 });
 
 test("the executable stays fail-closed and leaves no active synthetic surface", () => {
-  assert.match(source, /validateRuntime\(\);\s*context = await loadContext\(\)/);
+  assert.match(
+    source,
+    /validateRuntime\(\);[\s\S]*if \(mode === "recover"\)[\s\S]*context = await loadContext\(\)/,
+  );
   assert.match(source, /project\.name !== target\.name/);
   assert.match(source, /projects", "api-keys", "--project-ref", target\.ref, "--reveal"/);
   assert.match(source, /health\?\.environment !== target\.environment/);
@@ -1072,7 +1209,7 @@ test("the executable stays fail-closed and leaves no active synthetic surface", 
   assert.match(source, /cms:qa\.fixture_setup/);
   assert.match(source, /cms:qa\.fixture_cleanup/);
   assert.match(source, /credentialsInStateOrReport: false/);
-  assert.match(source, /\["setup", "cleanup", "residue"\]\.includes\(mode\)/);
+  assert.match(source, /\["setup", "cleanup", "residue", "recover"\]\.includes\(mode\)/);
   assert.match(source, /state\.status !== "cleaned"/);
   const terminalLeaseCompletion = source.indexOf(
     'for (const actorId of actorIds) {\n    await runStep("QA_CMS_FIXTURE_LEASE_COMPLETION_FAILED"',
@@ -1136,7 +1273,7 @@ test("the executable stays fail-closed and leaves no active synthetic surface", 
   assert.match(setupSource, /QA_CMS_UI_CREATED_STATE_PATH/);
   const rollbackFixtureBlock = stagingWorkflow.slice(
     stagingWorkflow.indexOf("Provision an isolated MFA actor for authenticated rollback compatibility"),
-    stagingWorkflow.indexOf("Build the staging shell from the same SHA"),
+    stagingWorkflow.indexOf("Provision the isolated MFA actor for the mutating browser cycle"),
   );
   const mutatingFixtureBlock = stagingWorkflow.slice(
     stagingWorkflow.indexOf("Provision the isolated MFA actor for the mutating browser cycle"),

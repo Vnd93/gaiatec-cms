@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "target": {
+    "scope": "ci-critical-path-plus-staging-bridge-plus-staging-deploy",
+    "happyPathMinimumSeconds": 2400,
+    "happyPathMaximumSeconds": 3600,
+    "policy": "report-bottleneck-without-relaxing-gates"
+  },
+  "capturedAt": "2026-09-22T14:45:00Z",
+  "sourceRepository": "Vnd93/gaiatec-cms",
+  "observations": [
+    {
+      "runId": 35731735256,
+      "workflow": "CI",
+      "headSha": "30ae8eeb31c803795ceae30dda7c0ef5e20ec620",
+      "conclusion": "success",
+      "rawRunConclusion": "success",
+      "startedAt": "2026-09-22T13:10:20Z",
+      "completedAt": "2026-09-22T13:15:27Z",
+      "durationSeconds": 307,
+      "criticalJob": "quality",
+      "criticalJobConclusion": "success",
+      "criticalJobStartedAt": "2026-09-22T13:10:24Z",
+      "criticalJobCompletedAt": "2026-09-22T13:15:26Z",
+      "criticalJobDurationSeconds": 302,
+      "recoveryEvidence": null
+    },
+    {
+      "runId": 35697577361,
+      "workflow": "Promote staging frontend bridge",
+      "headSha": "424e48d09304fae130d732a65bebb73388172ef0",
+      "conclusion": "success",
+      "rawRunConclusion": "success",
+      "startedAt": "2026-09-22T07:01:56Z",
+      "completedAt": "2026-09-22T07:15:33Z",
+      "durationSeconds": 817,
+      "criticalJob": "promote",
+      "criticalJobConclusion": "success",
+      "criticalJobStartedAt": "2026-09-22T07:02:00Z",
+      "criticalJobCompletedAt": "2026-09-22T07:15:32Z",
+      "criticalJobDurationSeconds": 812,
+      "recoveryEvidence": null
+    },
+    {
+      "runId": 35347256421,
+      "workflow": "Deploy staging",
+      "headSha": "5c01b68f7449064a3daf97350e82fe3e5e863e80",
+      "conclusion": "failure-recovered",
+      "rawRunConclusion": "failure",
+      "startedAt": "2026-09-18T12:55:33Z",
+      "completedAt": "2026-09-18T13:16:36Z",
+      "durationSeconds": 1263,
+      "criticalJob": "deploy",
+      "criticalJobConclusion": "failure",
+      "criticalJobStartedAt": "2026-09-18T12:55:37Z",
+      "criticalJobCompletedAt": "2026-09-18T13:12:47Z",
+      "criticalJobDurationSeconds": 1030,
+      "recoveryEvidence": {
+        "finalizerJob": "finalize",
+        "finalizerConclusion": "success",
+        "terminalArtifactId": 10548731444,
+        "terminalArtifactDigest": "sha256:79eda2ec578168cc9f5a64a19b3503fce893b8a11f38317d486d0449b401d439"
+      }
+    },
+    {
+      "runId": 35720047261,
+      "workflow": "Deploy staging",
+      "headSha": "e00e05ec696d206a046925281d9c2f06d060df5d",
+      "conclusion": "failure-recovered",
+      "rawRunConclusion": "failure",
+      "startedAt": "2026-09-22T11:11:16Z",
+      "completedAt": "2026-09-22T11:38:31Z",
+      "durationSeconds": 1635,
+      "criticalJob": "deploy",
+      "criticalJobConclusion": "failure",
+      "criticalJobStartedAt": "2026-09-22T11:11:20Z",
+      "criticalJobCompletedAt": "2026-09-22T11:34:28Z",
+      "criticalJobDurationSeconds": 1388,
+      "recoveryEvidence": {
+        "finalizerJob": "finalize",
+        "finalizerConclusion": "success",
+        "terminalArtifactId": 10691708156,
+        "terminalArtifactDigest": "sha256:eac3c83aa852c3d4cc748037eb13fe45f3c3fd77cd11fd651addb37c27da4fb7"
+      }
+    },
+    {
+      "runId": 35407855378,
+      "workflow": "Deploy staging",
+      "headSha": "3649b26405f645560f4827d5938386fcc1e91da5",
+      "conclusion": "failure-recovered",
+      "rawRunConclusion": "failure",
+      "startedAt": "2026-09-19T00:01:03Z",
+      "completedAt": "2026-09-19T01:04:43Z",
+      "durationSeconds": 3820,
+      "criticalJob": "deploy",
+      "criticalJobConclusion": "failure",
+      "criticalJobStartedAt": "2026-09-19T00:01:08Z",
+      "criticalJobCompletedAt": "2026-09-19T01:00:31Z",
+      "criticalJobDurationSeconds": 3563,
+      "recoveryEvidence": {
+        "finalizerJob": "finalize",
+        "finalizerConclusion": "success",
+        "terminalArtifactId": 10574118376,
+        "terminalArtifactDigest": "sha256:209913a6d15fc18089928f762413ef37285790be52f6f91a357b370694e6d5f0"
+      }
+    }
+  ],
+  "derivedBaseline": {
+    "representativeSeconds": 2759,
+    "representativeMinutes": 45.98,
+    "components": {
+      "ciCriticalPathSeconds": 307,
+      "stagingBridgeSeconds": 817,
+      "stagingDeploySeconds": 1635
+    },
+    "sourceObservationRunIds": {
+      "ciCriticalPathSeconds": 35731735256,
+      "stagingBridgeSeconds": 35697577361,
+      "stagingDeploySeconds": 35720047261
+    },
+    "successfulFullReleaseSamples": 0,
+    "confidence": "provisional-until-first-green-full-release",
+    "knownBottleneck": "staging-deploy"
+  }
+}

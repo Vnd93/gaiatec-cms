@@ -1,10 +1,11 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createClient } from "@supabase/supabase-js";
 import { QA_ACTOR_LEASE_MAX_MINUTES, QA_ACTOR_LEASE_TTL_MINUTES } from "./qa-actor-lease.mjs";
+
+let createClient;
 
 const TARGETS = Object.freeze({
   staging: Object.freeze({
@@ -75,6 +76,7 @@ const targetEnvironment = process.env.QA_CMS_TARGET_ENVIRONMENT ?? "";
 const productionAuthorization = process.env.QA_CMS_PRODUCTION_AUTHORIZATION ?? "";
 const authLifecycleProvisioning = process.env.QA_CMS_PROVISION_AUTH_LIFECYCLE ?? "";
 const pimCatalogProvisioning = process.env.QA_CMS_PROVISION_PIM_CATALOG ?? "";
+const preboundRunTag = process.env.QA_CMS_RUN_TAG ?? "";
 const statePath = path.resolve(
   process.env.QA_CMS_FIXTURE_STATE_PATH ?? "test-results/cms-browser-fixture-state.json",
 );
@@ -118,6 +120,19 @@ export function resolveTarget(environment, candidateSha, authorization = "") {
   return TARGETS[environment];
 }
 
+export function resolveFixtureRunTag(candidateSha, configuredRunTag = "", now = new Date()) {
+  if (!/^[a-f0-9]{40}$/.test(candidateSha)) throw new Error("QA_CMS_FIXTURE_SHA_INVALID");
+  if (configuredRunTag !== "") {
+    if (!runTagPattern.test(configuredRunTag) || !configuredRunTag.endsWith(`-${candidateSha.slice(0, 8)}`)) {
+      throw new Error("QA_CMS_FIXTURE_RUN_TAG_INVALID");
+    }
+    return configuredRunTag;
+  }
+  if (!(now instanceof Date) || Number.isNaN(now.getTime()))
+    throw new Error("QA_CMS_FIXTURE_RUN_TAG_INVALID");
+  return `QA-CMS-FINAL-${now.toISOString().slice(0, 10).replaceAll("-", "")}-${candidateSha.slice(0, 8)}`;
+}
+
 function assertArtifactPath(file) {
   const workspace = path.resolve(process.cwd());
   const relative = path.relative(workspace, file);
@@ -133,20 +148,31 @@ function assertArtifactPath(file) {
 }
 
 function validateRuntime() {
-  if (!["setup", "cleanup", "residue"].includes(mode)) throw new Error("QA_CMS_FIXTURE_MODE_INVALID");
+  if (!["setup", "cleanup", "residue", "recover"].includes(mode))
+    throw new Error("QA_CMS_FIXTURE_MODE_INVALID");
   if (!/^[a-f0-9]{40}$/.test(expectedSha)) throw new Error("QA_CMS_FIXTURE_SHA_INVALID");
+  if (mode === "recover" && targetEnvironment !== "staging")
+    throw new Error("QA_CMS_FIXTURE_RECOVERY_ENVIRONMENT_INVALID");
   target = resolveTarget(targetEnvironment, expectedSha, productionAuthorization);
   if (!accessToken.startsWith("sbp_") || accessToken.length < 24)
     throw new Error("QA_CMS_FIXTURE_ACCESS_TOKEN_INVALID");
+  if (mode === "recover") {
+    if (preboundRunTag === "") throw new Error("QA_CMS_FIXTURE_RECOVERY_RUN_TAG_REQUIRED");
+    resolveFixtureRunTag(expectedSha, preboundRunTag);
+    assertArtifactPath(reportPath);
+  }
   if (mode === "setup" && !githubEnvironmentPath) throw new Error("QA_CMS_FIXTURE_GITHUB_ENV_REQUIRED");
-  if (!["", "true"].includes(authLifecycleProvisioning))
+  if (mode !== "recover" && !["", "true"].includes(authLifecycleProvisioning))
     throw new Error("QA_CMS_FIXTURE_AUTH_LIFECYCLE_FLAG_INVALID");
-  if (!["", "true"].includes(pimCatalogProvisioning))
+  if (mode !== "recover" && !["", "true"].includes(pimCatalogProvisioning))
     throw new Error("QA_CMS_FIXTURE_PIM_CATALOG_FLAG_INVALID");
-  assertArtifactPath(statePath);
-  assertArtifactPath(reportPath);
-  assertArtifactPath(adminOpsReportPath);
-  assertArtifactPath(uiCreatedStatePath);
+  if (mode !== "recover") {
+    if (mode === "setup" && preboundRunTag !== "") resolveFixtureRunTag(expectedSha, preboundRunTag);
+    assertArtifactPath(statePath);
+    assertArtifactPath(reportPath);
+    assertArtifactPath(adminOpsReportPath);
+    assertArtifactPath(uiCreatedStatePath);
+  }
   const checkout = spawnSync("git", ["rev-parse", "HEAD"], {
     cwd: process.cwd(),
     encoding: "utf8",
@@ -507,6 +533,163 @@ async function managementQuery(query, timeoutMs = 30_000) {
 function sqlText(value) {
   if (typeof value !== "string" || /\0/.test(value)) throw new Error("QA_CMS_FIXTURE_SQL_TEXT_INVALID");
   return `'${value.replaceAll("'", "''")}'`;
+}
+
+export function buildBrowserFixtureRecoverySql({ runTag, candidateSha, environment }) {
+  if (
+    environment !== "staging" ||
+    !/^[a-f0-9]{40}$/.test(candidateSha ?? "") ||
+    !runTagPattern.test(runTag ?? "") ||
+    !runTag.endsWith(`-${candidateSha.slice(0, 8)}`)
+  ) {
+    throw new Error("QA_CMS_FIXTURE_RECOVERY_BINDING_INVALID");
+  }
+  const exactTuple = [
+    `lease.run_tag=${sqlText(runTag)}`,
+    `lease.candidate_sha=${sqlText(candidateSha)}`,
+    `lease.environment=${sqlText(environment)}`,
+  ].join(" and ");
+  return `begin;
+set local statement_timeout = '240000ms';
+lock table private.cms_qa_actor_leases in share row exclusive mode;
+drop table if exists pg_temp.cms_fixture_recovery_result;
+create temporary table pg_temp.cms_fixture_recovery_result (
+  matched_active_leases integer not null,
+  forced_for_sweep_leases integer not null,
+  sweeper_processed_leases integer not null,
+  sweeper_failed_leases integer not null,
+  remaining_active_leases integer not null,
+  terminal_leases integer not null
+);
+do $qa_fixture_recovery$
+declare
+  v_matched integer;
+  v_forced integer;
+  v_processed integer := 0;
+  v_failed integer := 0;
+  v_remaining integer;
+  v_terminal integer;
+  v_sweep jsonb;
+  v_round integer;
+begin
+  select count(*) into v_matched
+  from private.cms_qa_actor_leases lease
+  where lease.status='active' and ${exactTuple};
+
+  if v_matched > 25 then
+    raise exception 'CMS_QA_FIXTURE_RECOVERY_BOUND_EXCEEDED' using errcode = '54000';
+  end if;
+
+  update private.cms_qa_actor_leases lease
+  set expires_at=lease.created_at + interval '1 microsecond'
+  where lease.status='active' and ${exactTuple};
+  get diagnostics v_forced = row_count;
+
+  if v_forced <> v_matched then
+    raise exception 'CMS_QA_FIXTURE_RECOVERY_SET_CHANGED' using errcode = '40001';
+  end if;
+
+  -- The installed private sweeper is the only recovery writer. Four bounded
+  -- batches also tolerate older expired leases without turning recovery into
+  -- an unbounded database drain.
+  for v_round in 1..4 loop
+    select private.cms_sweep_expired_qa_actor_leases(100) into v_sweep;
+    if v_sweep is null
+       or v_sweep->>'schemaVersion' <> '1'
+       or jsonb_typeof(v_sweep->'processed') <> 'number'
+       or jsonb_typeof(v_sweep->'failed') <> 'number' then
+      raise exception 'CMS_QA_FIXTURE_RECOVERY_SWEEPER_INVALID' using errcode = '55000';
+    end if;
+    v_processed := v_processed + (v_sweep->>'processed')::integer;
+    v_failed := v_failed + (v_sweep->>'failed')::integer;
+    exit when not exists (
+      select 1 from private.cms_qa_actor_leases lease
+      where lease.status='active' and ${exactTuple}
+    );
+  end loop;
+
+  select count(*) into v_remaining
+  from private.cms_qa_actor_leases lease
+  where lease.status='active' and ${exactTuple};
+  select count(*) into v_terminal
+  from private.cms_qa_actor_leases lease
+  where lease.status in ('cleaned','expired') and ${exactTuple};
+
+  if v_failed <> 0 then
+    raise exception 'CMS_QA_FIXTURE_RECOVERY_SWEEPER_FAILED' using errcode = '55000';
+  end if;
+  if v_remaining <> 0 then
+    raise exception 'CMS_QA_FIXTURE_RECOVERY_RESIDUE' using errcode = '55000';
+  end if;
+
+  insert into pg_temp.cms_fixture_recovery_result values (
+    v_matched, v_forced, v_processed, v_failed, v_remaining, v_terminal
+  );
+end;
+$qa_fixture_recovery$;
+commit;
+select
+  matched_active_leases as "matchedActiveLeases",
+  forced_for_sweep_leases as "forcedForSweepLeases",
+  sweeper_processed_leases as "sweeperProcessedLeases",
+  sweeper_failed_leases as "sweeperFailedLeases",
+  remaining_active_leases as "remainingActiveLeases",
+  terminal_leases as "terminalLeases"
+from pg_temp.cms_fixture_recovery_result;`;
+}
+
+export function buildBrowserFixtureRecoveryReport({
+  runTag,
+  candidateSha,
+  environment,
+  matchedActiveLeases,
+  forcedForSweepLeases,
+  sweeperProcessedLeases,
+  sweeperFailedLeases,
+  remainingActiveLeases,
+  terminalLeases,
+}) {
+  const counts = [
+    matchedActiveLeases,
+    forcedForSweepLeases,
+    sweeperProcessedLeases,
+    sweeperFailedLeases,
+    remainingActiveLeases,
+    terminalLeases,
+  ];
+  if (
+    environment !== "staging" ||
+    !/^[a-f0-9]{40}$/.test(candidateSha ?? "") ||
+    !runTagPattern.test(runTag ?? "") ||
+    !runTag.endsWith(`-${candidateSha.slice(0, 8)}`) ||
+    counts.some((count) => !Number.isInteger(count) || count < 0) ||
+    forcedForSweepLeases !== matchedActiveLeases ||
+    sweeperFailedLeases !== 0 ||
+    remainingActiveLeases !== 0
+  ) {
+    throw new Error("QA_CMS_FIXTURE_RECOVERY_RESULT_INVALID");
+  }
+  return {
+    schemaVersion: 1,
+    mode: "recover",
+    status: matchedActiveLeases === 0 ? "already-terminal" : "recovered",
+    environment,
+    candidateSha,
+    runTag,
+    recovery: {
+      matchedActiveLeases,
+      forcedForSweepLeases,
+      terminalLeases,
+      remainingActiveLeases,
+      sweeper: {
+        status: "passed",
+        processedLeases: sweeperProcessedLeases,
+        failedLeases: sweeperFailedLeases,
+      },
+    },
+    localStateRead: false,
+    credentialsInStateOrReport: false,
+  };
 }
 
 function base32Bytes(value) {
@@ -1319,6 +1502,7 @@ function writeState(state) {
 function writePrivateJson(file, value) {
   mkdirSync(path.dirname(file), { recursive: true });
   writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  chmodSync(file, 0o600);
 }
 
 function finalizeAdminOpsEvidence(state, residue) {
@@ -3367,7 +3551,7 @@ async function cleanupState(state) {
 
 async function setup() {
   await exactHealth();
-  const runTag = `QA-CMS-FINAL-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${expectedSha.slice(0, 8)}`;
+  const runTag = resolveFixtureRunTag(expectedSha, preboundRunTag);
   if (existsSync(statePath)) {
     const previous = readState();
     if (previous.status !== "cleaned") throw new Error("QA_CMS_FIXTURE_ACTIVE_STATE_EXISTS");
@@ -3627,6 +3811,41 @@ async function setup() {
   }
 }
 
+async function recover() {
+  const runTag = resolveFixtureRunTag(expectedSha, preboundRunTag);
+  try {
+    const rows = await managementQuery(
+      buildBrowserFixtureRecoverySql({
+        runTag,
+        candidateSha: expectedSha,
+        environment: target.environment,
+      }),
+      5 * 60_000,
+    );
+    const report = buildBrowserFixtureRecoveryReport({
+      runTag,
+      candidateSha: expectedSha,
+      environment: target.environment,
+      ...(rows.at(-1) ?? {}),
+    });
+    writeReport(report);
+  } catch (error) {
+    writeReport({
+      schemaVersion: 1,
+      mode: "recover",
+      status: "failed",
+      environment: target.environment,
+      candidateSha: expectedSha,
+      runTag,
+      errorCode: "QA_CMS_FIXTURE_RECOVERY_FAILED",
+      recovery: { status: "failed", countsAvailable: false },
+      localStateRead: false,
+      credentialsInStateOrReport: false,
+    });
+    throw new Error("QA_CMS_FIXTURE_RECOVERY_FAILED", { cause: error });
+  }
+}
+
 async function cleanup() {
   if (!existsSync(statePath)) {
     writeReport({
@@ -3750,6 +3969,11 @@ async function verifyResidue() {
 
 export async function main() {
   validateRuntime();
+  if (mode === "recover") {
+    await recover();
+    return;
+  }
+  ({ createClient } = await import("@supabase/supabase-js"));
   context = await loadContext();
   if (mode === "setup") await setup();
   else if (mode === "cleanup") await cleanup();

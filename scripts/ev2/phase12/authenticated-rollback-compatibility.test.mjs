@@ -21,7 +21,9 @@ test("staging proves the approved rollback frontend through an isolated AAL2 bro
   );
   const cleanup = workflow.indexOf("Revoke the rollback compatibility actor and verify zero active residue");
   const candidateCycle = workflow.indexOf("Run the complete authenticated mutating editorial cycle first");
-  const evidence = workflow.indexOf("Bind staging evidence to mandatory artifact IDs and digests");
+  const evidence = workflow.indexOf(
+    "Require terminal browser evidence and seal its immutable source binding",
+  );
   assert.ok(rollbackDeploy >= 0 && rollbackDeploy < fixture);
   assert.ok(fixture < traversal && traversal < cleanup);
   // A travessia le o handoff das entidades nascidas na UI, e elas so existem entre a criacao e a
@@ -31,8 +33,8 @@ test("staging proves the approved rollback frontend through an isolated AAL2 bro
   // entidades reais que o candidato acabou de percorrer.
   assert.ok(candidateCycle > 0 && candidateCycle < traversal);
   assert.ok(evidence > 0 && cleanup < evidence);
-  assert.match(workflow, /QA_CMS_FRONTEND_EXPECTED_SHA: \$\{\{ inputs\.rollback_ref \}\}/);
-  assert.match(workflow, /QA_CMS_EXPECTED_SHA: \$\{\{ steps\.candidate\.outputs\.sha \}\}/);
+  assert.match(workflow, /QA_CMS_FRONTEND_EXPECTED_SHA: \$\{\{ needs\.deploy\.outputs\.rollback_sha \}\}/);
+  assert.match(workflow, /QA_CMS_EXPECTED_SHA: \$\{\{ needs\.deploy\.outputs\.candidate_sha \}\}/);
   assert.match(workflow, /QA_CMS_ROLLBACK_COMPATIBILITY: "true"/);
   assert.match(
     workflow,

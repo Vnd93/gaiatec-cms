@@ -354,7 +354,7 @@ jobs:
           RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
         run: >-
           node scripts/ev2/phase12/recovery-state-store.mjs fence
-          --owner-kind staging-cms-public-hotfix
+          --owner-kind staging-cms-public-hotfix --require-empty
           --file ../initial-recovery-fence.json
           --run-id "$GITHUB_RUN_ID"
           --run-attempt "$GITHUB_RUN_ATTEMPT"
@@ -455,6 +455,18 @@ jobs:
           --recovered-terminal ../trusted-recovery-terminal
           --recovered-receipt ../trusted-recovery-receipt
           --output ../trusted-baseline-verified.json
+      - name: Reconfirm the empty recovery fence immediately before authoritative hotfix capture
+        working-directory: control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs fence
+          --owner-kind staging-cms-public-hotfix --require-empty
+          --file ../hotfix-capture-recovery-fence.json
+          --run-id "$GITHUB_RUN_ID"
+          --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --control-sha "$GITHUB_SHA"
       - name: Prove the live staging baseline before capture
         working-directory: control
         env:

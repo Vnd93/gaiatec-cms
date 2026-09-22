@@ -87,19 +87,22 @@ describe("private zero-cost AI model transition", () => {
       [stagingWatchdog, "watchdog"],
     ] as const) {
       const decision = workflow.indexOf(`id: ${prefix}_decision`);
-      const checkout = workflow.indexOf("Checkout the exact candidate for", decision);
-      const database = workflow.indexOf("Converge exact candidate staging migrations", checkout);
-      const secrets = workflow.indexOf("configure-staging-ai-provider-secrets.mjs", database);
-      const functions = workflow.indexOf("Converge exact candidate Edge Functions", secrets);
+      const releaseSource = workflow.indexOf(`id: ${prefix}_release_source`, decision);
+      const database = workflow.indexOf(`id: ${prefix}_recovery_database`, releaseSource);
+      const edgeConfiguration = workflow.indexOf(`id: ${prefix}_recovery_edge_configuration`, database);
+      const functions = workflow.indexOf(`id: ${prefix}_recovery_functions`, edgeConfiguration);
       const compensation = workflow.indexOf("staging-pages-state.mjs compensate", functions);
       expect(decision).toBeGreaterThan(-1);
-      expect(checkout).toBeGreaterThan(decision);
-      expect(database).toBeGreaterThan(checkout);
-      expect(secrets).toBeGreaterThan(database);
-      expect(functions).toBeGreaterThan(secrets);
+      expect(releaseSource).toBeGreaterThan(decision);
+      expect(database).toBeGreaterThan(releaseSource);
+      expect(edgeConfiguration).toBeGreaterThan(database);
+      expect(functions).toBeGreaterThan(edgeConfiguration);
       expect(compensation).toBeGreaterThan(functions);
-      expect(workflow.slice(checkout, compensation)).toContain("--rollback-source .");
-      expect(workflow.slice(checkout, compensation)).toContain("version: 2.116.0");
+      expect(workflow.slice(releaseSource, compensation)).toContain(
+        "--baseline-artifact ../recovery/edge-baseline",
+      );
+      expect(workflow.slice(releaseSource, compensation)).not.toContain("--rollback-source");
+      expect(workflow.slice(releaseSource, compensation)).toContain("version: 2.116.0");
     }
   });
 });

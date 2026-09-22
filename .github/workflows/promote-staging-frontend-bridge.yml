@@ -9,6 +9,15 @@ on:
       expected_baseline_sha:
         description: SHA exato atualmente servido pelo alias staging antes do bootstrap
         required: true
+      source_ci_run_id:
+        description: Run CI que contem o attempt verde e o produtor original do pacote do SHA A
+        required: true
+      gate_ci_run_attempt:
+        description: Attempt CI verde atual que selecionou e verificou o pacote original
+        required: true
+      source_ci_run_attempt:
+        description: Attempt produtor original do unico pacote frontend staging
+        required: true
       same_release_rebind:
         description: >-
           Reemitir a identidade canonica para o mesmo SHA apos uma compensacao. Deve permanecer
@@ -35,6 +44,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     environment: staging
+    outputs:
+      release_profile: ${{ steps.candidate_selection.outputs.release_profile }}
+      matrix_sha256: ${{ steps.candidate_selection.outputs.matrix_sha256 }}
+      policy_sha256: ${{ steps.candidate_selection.outputs.policy_sha256 }}
     steps:
       - name: Validate trusted staging bridge dispatch
         env:
@@ -43,6 +56,9 @@ jobs:
           TRIGGERING_ACTOR: ${{ github.triggering_actor }}
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
           BASELINE_SHA: ${{ inputs.expected_baseline_sha }}
+          SOURCE_CI_RUN_ID: ${{ inputs.source_ci_run_id }}
+          GATE_CI_RUN_ATTEMPT: ${{ inputs.gate_ci_run_attempt }}
+          SOURCE_CI_RUN_ATTEMPT: ${{ inputs.source_ci_run_attempt }}
           SAME_RELEASE_REBIND: ${{ inputs.same_release_rebind }}
         run: |
           set -euo pipefail
@@ -51,6 +67,10 @@ jobs:
           test "${TRIGGERING_ACTOR,,}" = vnd93
           test "$(printf '%s' "$CANDIDATE_SHA" | grep -E '^[a-f0-9]{40}$')" = "$CANDIDATE_SHA"
           test "$(printf '%s' "$BASELINE_SHA" | grep -E '^[a-f0-9]{40}$')" = "$BASELINE_SHA"
+          test "$(printf '%s' "$SOURCE_CI_RUN_ID" | grep -E '^[1-9][0-9]*$')" = "$SOURCE_CI_RUN_ID"
+          test "$(printf '%s' "$GATE_CI_RUN_ATTEMPT" | grep -E '^[1-9][0-9]*$')" = "$GATE_CI_RUN_ATTEMPT"
+          test "$(printf '%s' "$SOURCE_CI_RUN_ATTEMPT" | grep -E '^[1-9][0-9]*$')" = "$SOURCE_CI_RUN_ATTEMPT"
+          test "$SOURCE_CI_RUN_ATTEMPT" -le "$GATE_CI_RUN_ATTEMPT"
           case "$SAME_RELEASE_REBIND" in
             true) test "$CANDIDATE_SHA" = "$BASELINE_SHA" ;;
             false) test "$CANDIDATE_SHA" != "$BASELINE_SHA" ;;
@@ -58,16 +78,29 @@ jobs:
           esac
       - name: Checkout current control
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with: { fetch-depth: 0, path: control }
+        with: { fetch-depth: 0, path: control, persist-credentials: false }
       - name: Checkout exact bridge A
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with: { ref: "${{ inputs.candidate_sha }}", fetch-depth: 0, path: candidate }
+        with:
+          { ref: "${{ inputs.candidate_sha }}", fetch-depth: 0, path: candidate, persist-credentials: false }
       - name: Checkout exact staging recovery baseline
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with: { ref: "${{ inputs.expected_baseline_sha }}", fetch-depth: 0, path: baseline }
+        with:
+          {
+            ref: "${{ inputs.expected_baseline_sha }}",
+            fetch-depth: 0,
+            path: baseline,
+            persist-credentials: false,
+          }
       - name: Checkout the exact legacy public backend still served by production
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with: { ref: f48bb4530566456a0090a98cd39caf1cacb51b09, fetch-depth: 0, path: legacy }
+        with:
+          {
+            ref: f48bb4530566456a0090a98cd39caf1cacb51b09,
+            fetch-depth: 0,
+            path: legacy,
+            persist-credentials: false,
+          }
       - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3
         with:
           version: 2.116.0
@@ -78,7 +111,6 @@ jobs:
           cache-dependency-path: |
             control/package-lock.json
             candidate/package-lock.json
-            baseline/package-lock.json
       - name: Verify exact ancestry and protected CI
         working-directory: control
         env:
@@ -99,29 +131,35 @@ jobs:
           if [ "$CANDIDATE_SHA" != "$CONTROL_SHA" ]; then
             CANDIDATE_SHA="$CONTROL_SHA" node scripts/ev2/phase12/check-github-controls.mjs
           fi
+      - name: Refuse authoritative bridge capture while any staging recovery is armed
+        working-directory: control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs fence
+          --owner-kind staging-cms-public-legacy --require-empty
+          --file ../staging-bridge-initial-recovery-fence.json
+          --run-id "$GITHUB_RUN_ID"
+          --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --control-sha "$GITHUB_SHA"
       - name: Install and prove bridge contracts
         working-directory: candidate
         run: |
           npm ci
-          npm run check
           npm audit --audit-level=high
           npx vitest run tests/unit/public-bridge-compatibility.test.ts \
             tests/unit/catalog-api-form-binding.test.ts tests/unit/catalog-api-sanitized-content.test.ts \
             tests/unit/lead-api-boundary.test.ts tests/components/cms-page-renderer.test.tsx
           npx playwright install --with-deps chromium
-      - name: Install recovery baseline tooling
-        working-directory: baseline
-        run: npm ci
       - name: Refuse local configuration inputs
         env:
           VITE_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_STAGING_SITE_KEY }}
         run: |
           set -euo pipefail
-          for checkout in candidate baseline; do
-            test ! -e "$checkout/.env.local"
-            test ! -e "$checkout/.env.staging.local"
-            test ! -e "$checkout/.env.production.local"
-          done
+          test ! -e candidate/.env.local
+          test ! -e candidate/.env.staging.local
+          test ! -e candidate/.env.production.local
           test "${#VITE_TURNSTILE_SITE_KEY}" -ge 10
           case "$VITE_TURNSTILE_SITE_KEY" in
             1x00000000000000000000AA|2x00000000000000000000AB|1x00000000000000000000BB|2x00000000000000000000BB|3x00000000000000000000FF)
@@ -129,15 +167,109 @@ jobs:
               exit 1
               ;;
           esac
-      - name: Build frontend-only A for staging
-        working-directory: candidate
+      - name: Resolve the current green CI attempt selection by immutable artifact ID
+        id: candidate_selection_artifact
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SOURCE_CI_RUN_ID: ${{ inputs.source_ci_run_id }}
+          GATE_CI_RUN_ATTEMPT: ${{ inputs.gate_ci_run_attempt }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: >-
+          node scripts/ev2/phase12/resolve-ci-staging-frontend-selection.mjs
+          --run-id "$SOURCE_CI_RUN_ID"
+          --gate-run-attempt "$GATE_CI_RUN_ATTEMPT"
+          --sha "$CANDIDATE_SHA"
+      - name: Download the non-deployable current-attempt package selection
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.candidate_selection_artifact.outputs.selection_artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ inputs.source_ci_run_id }}
+          path: ${{ runner.temp }}/g12-ci-staging-frontend-selection
+      - name: Download the exact trusted release plan bound by the selection
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.candidate_selection_artifact.outputs.release_plan_artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ inputs.source_ci_run_id }}
+          path: ${{ runner.temp }}/g12-ci-release-plan
+      - name: Verify the current gate attempt binds the exact original package
+        id: candidate_selection
+        working-directory: control
+        env:
+          SOURCE_CI_RUN_ID: ${{ inputs.source_ci_run_id }}
+          GATE_CI_RUN_ATTEMPT: ${{ inputs.gate_ci_run_attempt }}
+          SOURCE_CI_RUN_ATTEMPT: ${{ inputs.source_ci_run_attempt }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: >-
+          node scripts/ev2/phase12/verify-ci-staging-frontend-selection.mjs
+          --file "$RUNNER_TEMP/g12-ci-staging-frontend-selection/staging-frontend-selection.json"
+          --control-selector "$RUNNER_TEMP/g12-ci-release-plan/release-control-selector.mjs"
+          --control-library "$RUNNER_TEMP/g12-ci-release-plan/release-control-library.mjs"
+          --control-matrix "$RUNNER_TEMP/g12-ci-release-plan/release-gate-matrix.json"
+          --candidate-matrix ../candidate/.github/release-controls/release-gate-matrix.json
+          --control-checkpoint-policy "$RUNNER_TEMP/g12-ci-release-plan/release-checkpoint-policy.json"
+          --candidate-checkpoint-policy ../candidate/.github/release-controls/release-checkpoint-policy.json
+          --release-plan "$RUNNER_TEMP/g12-ci-release-plan/release-plan.json"
+          --release-plan-artifact-id "${{ steps.candidate_selection_artifact.outputs.release_plan_artifact_id }}"
+          --release-plan-artifact-digest "${{ steps.candidate_selection_artifact.outputs.release_plan_artifact_digest }}"
+          --release-plan-artifact-name "${{ steps.candidate_selection_artifact.outputs.release_plan_artifact_name }}"
+          --candidate "$CANDIDATE_SHA"
+          --run-id "$SOURCE_CI_RUN_ID"
+          --gate-run-attempt "$GATE_CI_RUN_ATTEMPT"
+          --source-run-id "$SOURCE_CI_RUN_ID"
+          --source-run-attempt "$SOURCE_CI_RUN_ATTEMPT"
+      - name: Resolve the only deployable staging package from exact CI producer
+        id: candidate_source
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SOURCE_CI_RUN_ID: ${{ steps.candidate_selection.outputs.source_run_id }}
+          SOURCE_CI_RUN_ATTEMPT: ${{ steps.candidate_selection.outputs.source_run_attempt }}
+          GATE_CI_RUN_ATTEMPT: ${{ steps.candidate_selection.outputs.gate_run_attempt }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: >-
+          node scripts/ev2/phase12/resolve-ci-staging-frontend-artifact.mjs
+          --run-id "$SOURCE_CI_RUN_ID"
+          --run-attempt "$SOURCE_CI_RUN_ATTEMPT"
+          --gate-run-attempt "$GATE_CI_RUN_ATTEMPT"
+          --sha "$CANDIDATE_SHA"
+      - name: Download the exact CI-sealed staging package
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.candidate_source.outputs.artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ steps.candidate_source.outputs.source_run_id }}
+          path: ${{ runner.temp }}/g12-staging-release-package
+      - name: Verify the exact unified release package before reading frontend bytes
+        id: candidate_release_package
+        working-directory: control
         run: |
-          npm run build:staging
-          env -u GITHUB_SHA npm run artifact:manifest
-          node scripts/ev2/phase12/seal-production-dist.mjs \
-            --dist dist --archive outputs/staging-frontend-bridge-dist.tar \
-            --output outputs/staging-frontend-bridge-dist-seal.json \
-            --candidate "${{ inputs.candidate_sha }}"
+          set -euo pipefail
+          node scripts/ev2/phase12/verify-staging-release-package.mjs \
+            --package "$RUNNER_TEMP/g12-staging-release-package" \
+            --candidate "${{ inputs.candidate_sha }}" \
+            --profile "${{ steps.candidate_selection.outputs.release_profile }}" \
+            --run-id "${{ steps.candidate_source.outputs.source_run_id }}" \
+            --run-attempt "${{ steps.candidate_source.outputs.source_run_attempt }}"
+          for file in release-plan.json release-gate-matrix.json release-checkpoint-policy.json; do
+            cmp --silent \
+              "$RUNNER_TEMP/g12-staging-release-package/controls/$file" \
+              "$RUNNER_TEMP/g12-ci-release-plan/$file" || {
+                echo "::error::Unified package control $file is not the trusted selected release plan."
+                exit 1
+              }
+          done
+      - name: Materialize and verify the exact CI-sealed staging frontend bytes
+        id: candidate_package
+        working-directory: control
         env:
           VITE_RELEASE: ${{ inputs.candidate_sha }}
           VITE_CMS_ENVIRONMENT: staging
@@ -147,25 +279,64 @@ jobs:
           VITE_GOOGLE_MAPS_KEY: ${{ vars.GOOGLE_MAPS_BROWSER_KEY }}
           VITE_CONTACT_CAPTCHA_ALWAYS: "true"
           VITE_EV2_DRAFT_V2_CANDIDATE: "false"
-      - name: Build exact pre-bridge recovery frontend
-        working-directory: baseline
         run: |
-          npm run build:staging
-          env -u GITHUB_SHA npm run artifact:manifest
-          mkdir -p outputs
-          node ../control/scripts/ev2/phase12/seal-production-dist.mjs \
-            --dist dist --archive outputs/staging-baseline-dist.tar \
-            --output outputs/staging-baseline-dist-seal.json \
-            --candidate "${{ inputs.expected_baseline_sha }}"
+          set -euo pipefail
+          rm -rf ../candidate/dist
+          node scripts/ev2/phase12/verify-staging-frontend-package.mjs \
+            --package "$RUNNER_TEMP/g12-staging-release-package/frontend" \
+            --output ../candidate/dist \
+            --candidate "${{ inputs.candidate_sha }}" \
+            --run-id "${{ steps.candidate_source.outputs.source_run_id }}" \
+            --run-attempt "${{ steps.candidate_source.outputs.source_run_attempt }}"
+      - name: Bind the materialized bytes to the current-attempt selection
         env:
-          VITE_RELEASE: ${{ inputs.expected_baseline_sha }}
-          VITE_CMS_ENVIRONMENT: staging
-          VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
-          VITE_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_STAGING_SITE_KEY }}
-          VITE_GOOGLE_MAPS_KEY: ${{ vars.GOOGLE_MAPS_BROWSER_KEY }}
-          VITE_CONTACT_CAPTCHA_ALWAYS: "true"
-          VITE_EV2_DRAFT_V2_CANDIDATE: "false"
+          RESOLVED_ID: ${{ steps.candidate_source.outputs.artifact_id }}
+          RESOLVED_DIGEST: ${{ steps.candidate_source.outputs.artifact_digest }}
+          RESOLVED_NAME: ${{ steps.candidate_source.outputs.artifact_name }}
+          SELECTED_ID: ${{ steps.candidate_selection.outputs.artifact_id }}
+          SELECTED_DIGEST: ${{ steps.candidate_selection.outputs.artifact_digest }}
+          SELECTED_NAME: ${{ steps.candidate_selection.outputs.artifact_name }}
+          SELECTED_PROFILE: ${{ steps.candidate_selection.outputs.profile_sha256 }}
+          SELECTED_ARCHIVE: ${{ steps.candidate_selection.outputs.archive_sha256 }}
+          SELECTED_TREE: ${{ steps.candidate_selection.outputs.tree_sha256 }}
+          SELECTED_ARCHIVE_BYTES: ${{ steps.candidate_selection.outputs.archive_bytes }}
+          SELECTED_FILE_COUNT: ${{ steps.candidate_selection.outputs.file_count }}
+          SELECTED_BYTE_COUNT: ${{ steps.candidate_selection.outputs.byte_count }}
+          SELECTED_SEAL: ${{ steps.candidate_selection.outputs.seal_sha256 }}
+          SELECTED_PROVENANCE: ${{ steps.candidate_selection.outputs.provenance_sha256 }}
+          ACTUAL_PROFILE: ${{ steps.candidate_package.outputs.profile_sha256 }}
+          ACTUAL_ARCHIVE: ${{ steps.candidate_package.outputs.archive_sha256 }}
+          ACTUAL_TREE: ${{ steps.candidate_package.outputs.tree_sha256 }}
+          ACTUAL_ARCHIVE_BYTES: ${{ steps.candidate_package.outputs.archive_bytes }}
+          ACTUAL_FILE_COUNT: ${{ steps.candidate_package.outputs.file_count }}
+          ACTUAL_BYTE_COUNT: ${{ steps.candidate_package.outputs.byte_count }}
+          ACTUAL_SEAL: ${{ steps.candidate_package.outputs.seal_sha256 }}
+          ACTUAL_PROVENANCE: ${{ steps.candidate_package.outputs.provenance_sha256 }}
+        run: |
+          set -euo pipefail
+          test "$RESOLVED_ID" = "$SELECTED_ID"
+          test "$RESOLVED_DIGEST" = "$SELECTED_DIGEST"
+          test "$RESOLVED_NAME" = "$SELECTED_NAME"
+          test "$ACTUAL_PROFILE" = "$SELECTED_PROFILE"
+          test "$ACTUAL_ARCHIVE" = "$SELECTED_ARCHIVE"
+          test "$ACTUAL_TREE" = "$SELECTED_TREE"
+          test "$ACTUAL_ARCHIVE_BYTES" = "$SELECTED_ARCHIVE_BYTES"
+          test "$ACTUAL_FILE_COUNT" = "$SELECTED_FILE_COUNT"
+          test "$ACTUAL_BYTE_COUNT" = "$SELECTED_BYTE_COUNT"
+          test "$ACTUAL_SEAL" = "$SELECTED_SEAL"
+          test "$ACTUAL_PROVENANCE" = "$SELECTED_PROVENANCE"
+      - name: Reconfirm the empty recovery fence immediately before authoritative bridge capture
+        working-directory: control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs fence
+          --owner-kind staging-cms-public-legacy --require-empty
+          --file ../staging-bridge-capture-fence.json
+          --run-id "$GITHUB_RUN_ID"
+          --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --control-sha "$GITHUB_SHA"
       - name: Prove live alias is the expected old-backend baseline
         working-directory: control
         run: node scripts/ev2/phase12/rollout-probe.mjs
@@ -213,12 +384,416 @@ jobs:
             promotionMode: process.env.PROMOTION_MODE,
           }));
           NODE
-      - name: Arm durable staging bridge recovery state
+      - name: Classify the exact live baseline provenance
+        id: baseline_source
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/resolve-staging-baseline-source.mjs
+          --record .github/release-controls/staging-baseline-bootstrap.json
+          --candidate "${{ inputs.expected_baseline_sha }}"
+          --deployment-id "${{ steps.baseline_state.outputs.deployment_id }}"
+          --created-on "${{ steps.baseline_state.outputs.created_on }}"
+          --commit-message-b64 "${{ steps.baseline_state.outputs.commit_message_b64 }}"
+      - name: Verify the one-time baseline bootstrap against live GitHub metadata
+        id: baseline_bootstrap
+        if: steps.baseline_source.outputs.mode == 'bootstrap'
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node scripts/ev2/phase12/resolve-staging-baseline-bootstrap.mjs
+          --record .github/release-controls/staging-baseline-bootstrap.json
+      - name: Refuse any baseline classification without mandatory remote verification
+        env:
+          PROVENANCE_TRUSTED: ${{ steps.baseline_source.outputs.provenance_trusted }}
+          REMOTE_VERIFICATION_REQUIRED: ${{ steps.baseline_source.outputs.remote_verification_required }}
+        run: |
+          set -euo pipefail
+          test "$PROVENANCE_TRUSTED" = false
+          test "$REMOTE_VERIFICATION_REQUIRED" = true
+      - name: Resolve the exact failed run and immutable compensation artifacts
+        id: baseline_compensation
+        if: >-
+          steps.baseline_source.outputs.mode == 'deploy-compensation' ||
+          steps.baseline_source.outputs.mode == 'bridge-compensation'
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node scripts/ev2/phase12/resolve-staging-baseline-compensation.mjs
+          --mode "${{ steps.baseline_source.outputs.mode }}"
+          --run-id "${{ steps.baseline_source.outputs.compensation_run_id }}"
+          --run-attempt "${{ steps.baseline_source.outputs.compensation_run_attempt }}"
+      - name: Download the immutable deploy-compensation state by exact artifact ID
+        if: steps.baseline_source.outputs.mode == 'deploy-compensation'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.baseline_compensation.outputs.state_artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ steps.baseline_source.outputs.compensation_run_id }}
+          path: ${{ runner.temp }}/g12-staging-baseline-compensation-state
+      - name: Download the immutable compensation recovery bytes by exact artifact ID
+        if: >-
+          steps.baseline_source.outputs.mode == 'deploy-compensation' ||
+          steps.baseline_source.outputs.mode == 'bridge-compensation'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.baseline_compensation.outputs.recovery_artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ steps.baseline_source.outputs.compensation_run_id }}
+          path: ${{ runner.temp }}/g12-staging-baseline-compensation-recovery
+      - name: Validate compensation state, seal, snapshot, and bytes before materialization
+        id: baseline_compensation_package
+        if: >-
+          steps.baseline_source.outputs.mode == 'deploy-compensation' ||
+          steps.baseline_source.outputs.mode == 'bridge-compensation'
+        working-directory: control
+        env:
+          VITE_RELEASE: ${{ inputs.expected_baseline_sha }}
+          VITE_CMS_ENVIRONMENT: staging
+          VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          VITE_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_STAGING_SITE_KEY }}
+          VITE_GOOGLE_MAPS_KEY: ${{ vars.GOOGLE_MAPS_BROWSER_KEY }}
+          VITE_CONTACT_CAPTCHA_ALWAYS: "true"
+          VITE_EV2_DRAFT_V2_CANDIDATE: "false"
+          COMPENSATION_MODE: ${{ steps.baseline_source.outputs.mode }}
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/g12-staging-baseline-compensation-verified"
+          state_args=()
+          if [ "$COMPENSATION_MODE" = bridge-compensation ]; then
+            output=../baseline/dist
+          else
+            state_args=(--state-dir "$RUNNER_TEMP/g12-staging-baseline-compensation-state")
+          fi
+          test ! -e "$output"
+          node scripts/ev2/phase12/materialize-staging-baseline-compensation.mjs \
+            --mode "$COMPENSATION_MODE" \
+            --record .github/release-controls/staging-baseline-bootstrap.json \
+            --recovery-dir "$RUNNER_TEMP/g12-staging-baseline-compensation-recovery" \
+            "${state_args[@]}" \
+            --candidate "${{ inputs.expected_baseline_sha }}" \
+            --run-id "${{ steps.baseline_source.outputs.compensation_run_id }}" \
+            --run-attempt "${{ steps.baseline_source.outputs.compensation_run_attempt }}" \
+            --control-sha "${{ steps.baseline_compensation.outputs.control_sha }}" \
+            --recovery-artifact-id "${{ steps.baseline_compensation.outputs.recovery_artifact_id }}" \
+            --recovery-artifact-digest "${{ steps.baseline_compensation.outputs.recovery_artifact_digest }}" \
+            --recovery-artifact-name "${{ steps.baseline_compensation.outputs.recovery_artifact_name }}" \
+            --output-dist "$output"
+      - name: Resolve the original CI package attested inside deploy recovery
+        id: baseline_compensation_ci_source
+        if: steps.baseline_source.outputs.mode == 'deploy-compensation'
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node scripts/ev2/phase12/resolve-ci-staging-frontend-artifact.mjs
+          --run-id "${{ steps.baseline_compensation_package.outputs.source_run_id }}"
+          --run-attempt "${{ steps.baseline_compensation_package.outputs.source_run_attempt }}"
+          --sha "${{ inputs.expected_baseline_sha }}"
+      - name: Bind the recovered provenance to the unique original CI artifact
+        if: steps.baseline_source.outputs.mode == 'deploy-compensation'
+        env:
+          RECOVERED_ID: ${{ steps.baseline_compensation_package.outputs.source_artifact_id }}
+          RECOVERED_DIGEST: ${{ steps.baseline_compensation_package.outputs.source_artifact_digest }}
+          RECOVERED_NAME: ${{ steps.baseline_compensation_package.outputs.source_artifact_name }}
+          RESOLVED_ID: ${{ steps.baseline_compensation_ci_source.outputs.artifact_id }}
+          RESOLVED_DIGEST: ${{ steps.baseline_compensation_ci_source.outputs.artifact_digest }}
+          RESOLVED_NAME: ${{ steps.baseline_compensation_ci_source.outputs.artifact_name }}
+        run: |
+          set -euo pipefail
+          test "${{ steps.baseline_compensation_package.outputs.has_ci_source }}" = true
+          test "$RECOVERED_ID" = "$RESOLVED_ID"
+          test "$RECOVERED_DIGEST" = "$RESOLVED_DIGEST"
+          test "$RECOVERED_NAME" = "$RESOLVED_NAME"
+      - name: Download the exact original CI package after deploy compensation
+        if: steps.baseline_source.outputs.mode == 'deploy-compensation'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.baseline_compensation_ci_source.outputs.artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ steps.baseline_compensation_ci_source.outputs.source_run_id }}
+          path: ${{ runner.temp }}/g12-staging-baseline-compensation-ci-package
+      - name: Materialize the exact original CI package after deploy compensation
+        id: baseline_compensation_ci_package
+        if: steps.baseline_source.outputs.mode == 'deploy-compensation'
+        working-directory: control
+        env:
+          VITE_RELEASE: ${{ inputs.expected_baseline_sha }}
+          VITE_CMS_ENVIRONMENT: staging
+          VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          VITE_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_STAGING_SITE_KEY }}
+          VITE_GOOGLE_MAPS_KEY: ${{ vars.GOOGLE_MAPS_BROWSER_KEY }}
+          VITE_CONTACT_CAPTCHA_ALWAYS: "true"
+          VITE_EV2_DRAFT_V2_CANDIDATE: "false"
+        run: |
+          set -euo pipefail
+          test ! -e ../baseline/dist
+          node scripts/ev2/phase12/verify-staging-frontend-package.mjs \
+            --package "$RUNNER_TEMP/g12-staging-baseline-compensation-ci-package" \
+            --output ../baseline/dist \
+            --candidate "${{ inputs.expected_baseline_sha }}" \
+            --run-id "${{ steps.baseline_compensation_ci_source.outputs.source_run_id }}" \
+            --run-attempt "${{ steps.baseline_compensation_ci_source.outputs.source_run_attempt }}"
+          mkdir -p ../baseline/outputs
+          cp "$RUNNER_TEMP/g12-staging-baseline-compensation-ci-package/staging-frontend-dist.tar" \
+            ../baseline/outputs/staging-frontend-dist.tar
+          cp "$RUNNER_TEMP/g12-staging-baseline-compensation-ci-package/staging-frontend-dist-seal.json" \
+            ../baseline/outputs/staging-baseline-dist-seal.json
+          cp "$RUNNER_TEMP/g12-staging-baseline-compensation-ci-package/staging-frontend-dist-seal.json" \
+            ../baseline/outputs/staging-frontend-dist-seal.json
+          cp "$RUNNER_TEMP/g12-staging-baseline-compensation-ci-package/staging-frontend-provenance.json" \
+            ../baseline/outputs/staging-frontend-provenance.json
+      - name: Bind the original CI bytes to the deploy recovery snapshot
+        if: steps.baseline_source.outputs.mode == 'deploy-compensation'
+        env:
+          RECOVERY_ARCHIVE: ${{ steps.baseline_compensation_package.outputs.archive_sha256 }}
+          RECOVERY_TREE: ${{ steps.baseline_compensation_package.outputs.tree_sha256 }}
+          RECOVERY_PROFILE: ${{ steps.baseline_compensation_package.outputs.profile_sha256 }}
+          RECOVERY_ARCHIVE_BYTES: ${{ steps.baseline_compensation_package.outputs.archive_bytes }}
+          RECOVERY_FILE_COUNT: ${{ steps.baseline_compensation_package.outputs.file_count }}
+          RECOVERY_BYTE_COUNT: ${{ steps.baseline_compensation_package.outputs.byte_count }}
+          CI_ARCHIVE: ${{ steps.baseline_compensation_ci_package.outputs.archive_sha256 }}
+          CI_TREE: ${{ steps.baseline_compensation_ci_package.outputs.tree_sha256 }}
+          CI_PROFILE: ${{ steps.baseline_compensation_ci_package.outputs.profile_sha256 }}
+          CI_ARCHIVE_BYTES: ${{ steps.baseline_compensation_ci_package.outputs.archive_bytes }}
+          CI_FILE_COUNT: ${{ steps.baseline_compensation_ci_package.outputs.file_count }}
+          CI_BYTE_COUNT: ${{ steps.baseline_compensation_ci_package.outputs.byte_count }}
+        run: |
+          set -euo pipefail
+          test "$RECOVERY_ARCHIVE" = "$CI_ARCHIVE"
+          test "$RECOVERY_TREE" = "$CI_TREE"
+          test "$RECOVERY_PROFILE" = "$CI_PROFILE"
+          test "$RECOVERY_ARCHIVE_BYTES" = "$CI_ARCHIVE_BYTES"
+          test "$RECOVERY_FILE_COUNT" = "$CI_FILE_COUNT"
+          test "$RECOVERY_BYTE_COUNT" = "$CI_BYTE_COUNT"
+      - name: Preserve exact recovery bytes for future bridge compensation
+        if: steps.baseline_source.outputs.mode == 'bridge-compensation'
+        working-directory: control
+        env:
+          ARCHIVE_PATH: ${{ steps.baseline_compensation_package.outputs.archive_path }}
+          SEAL_PATH: ${{ steps.baseline_compensation_package.outputs.seal_path }}
+          PROVENANCE_PATH: ${{ steps.baseline_compensation_package.outputs.provenance_path }}
+        run: |
+          set -euo pipefail
+          mkdir -p ../baseline/outputs
+          cp "$ARCHIVE_PATH" "../baseline/outputs/$(basename "$ARCHIVE_PATH")"
+          cp "$SEAL_PATH" ../baseline/outputs/staging-baseline-dist-seal.json
+          if [ -n "$PROVENANCE_PATH" ]; then
+            cp "$PROVENANCE_PATH" ../baseline/outputs/staging-frontend-provenance.json
+            cp "$SEAL_PATH" ../baseline/outputs/staging-frontend-dist-seal.json
+          else
+            cp "$SEAL_PATH" ../baseline/outputs/staging-candidate-dist-seal.json
+          fi
+      - name: Download the immutable bootstrap bridge evidence
+        if: steps.baseline_source.outputs.mode == 'bootstrap'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.baseline_bootstrap.outputs.bridge_artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ steps.baseline_bootstrap.outputs.bridge_run_id }}
+          path: ${{ runner.temp }}/g12-staging-baseline-bootstrap-bridge
+      - name: Download the immutable bootstrap baseline bytes
+        if: steps.baseline_source.outputs.mode == 'bootstrap'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.baseline_bootstrap.outputs.source_artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ steps.baseline_bootstrap.outputs.source_run_id }}
+          path: ${{ runner.temp }}/g12-staging-baseline-bootstrap-source
+      - name: Materialize the exact one-time bootstrap baseline
+        id: baseline_bootstrap_package
+        if: steps.baseline_source.outputs.mode == 'bootstrap'
         working-directory: control
         run: |
+          set -euo pipefail
+          test ! -e ../baseline/dist
+          node scripts/ev2/phase12/materialize-staging-baseline-bootstrap.mjs \
+            --record .github/release-controls/staging-baseline-bootstrap.json \
+            --bridge-artifact-dir "$RUNNER_TEMP/g12-staging-baseline-bootstrap-bridge" \
+            --source-artifact-dir "$RUNNER_TEMP/g12-staging-baseline-bootstrap-source" \
+            --output-dist ../baseline/dist
+          mkdir -p ../baseline/outputs
+          cp "$RUNNER_TEMP/g12-staging-baseline-bootstrap-source/staging-candidate-dist.tar" \
+            ../baseline/outputs/staging-candidate-dist.tar
+          cp "$RUNNER_TEMP/g12-staging-baseline-bootstrap-source/staging-candidate-dist-seal.json" \
+            ../baseline/outputs/staging-baseline-dist-seal.json
+          cp "$RUNNER_TEMP/g12-staging-baseline-bootstrap-source/staging-candidate-dist-seal.json" \
+            ../baseline/outputs/staging-candidate-dist-seal.json
+      - name: Resolve the immutable bridge-v5 evidence run for the live baseline
+        id: baseline_bridge_run
+        if: steps.baseline_source.outputs.mode == 'bridge-v5'
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          node scripts/ev2/phase12/verify-staging-frontend-bridge-run.mjs \
+            --run-id "${{ steps.baseline_source.outputs.bridge_run_id }}" \
+            --expected-release "${{ inputs.expected_baseline_sha }}"
+      - name: Bind the bridge-v5 run attempt to the live marker
+        if: steps.baseline_source.outputs.mode == 'bridge-v5'
+        env:
+          MARKER_ATTEMPT: ${{ steps.baseline_source.outputs.bridge_run_attempt }}
+          RESOLVED_ATTEMPT: ${{ steps.baseline_bridge_run.outputs.run_attempt }}
+        run: |
+          set -euo pipefail
+          test "$MARKER_ATTEMPT" = "$RESOLVED_ATTEMPT"
+      - name: Download the immutable bridge-v5 evidence for the live baseline
+        if: steps.baseline_source.outputs.mode == 'bridge-v5'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.baseline_bridge_run.outputs.artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ steps.baseline_source.outputs.bridge_run_id }}
+          path: ${{ runner.temp }}/g12-staging-baseline-bridge-evidence
+      - name: Verify bridge-v5 evidence is the exact live baseline identity
+        id: baseline_bridge
+        if: steps.baseline_source.outputs.mode == 'bridge-v5'
+        working-directory: control
+        env:
+          EXPECTED_RUN_ID: ${{ steps.baseline_source.outputs.bridge_run_id }}
+          EXPECTED_RUN_ATTEMPT: ${{ steps.baseline_source.outputs.bridge_run_attempt }}
+          EXPECTED_CONTROL_SHA: ${{ steps.baseline_bridge_run.outputs.control_sha }}
+          EXPECTED_RELEASE: ${{ inputs.expected_baseline_sha }}
+          EXPECTED_DEPLOYMENT_ID: ${{ steps.baseline_state.outputs.deployment_id }}
+          EXPECTED_CANONICAL_CREATED_ON: ${{ steps.baseline_state.outputs.created_on }}
+        run: >-
+          node scripts/ev2/phase12/verify-staging-frontend-bridge-evidence.mjs
+          --artifact-dir "$RUNNER_TEMP/g12-staging-baseline-bridge-evidence"
+      - name: Resolve the CI package attested by bridge-v5
+        id: baseline_ci_source
+        if: steps.baseline_source.outputs.mode == 'bridge-v5'
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node scripts/ev2/phase12/resolve-ci-staging-frontend-artifact.mjs
+          --run-id "${{ steps.baseline_bridge.outputs.source_run_id }}"
+          --run-attempt "${{ steps.baseline_bridge.outputs.source_run_attempt }}"
+          --sha "${{ inputs.expected_baseline_sha }}"
+      - name: Bind resolved baseline CI artifact to bridge-v5 evidence
+        if: steps.baseline_source.outputs.mode == 'bridge-v5'
+        env:
+          RESOLVED_ID: ${{ steps.baseline_ci_source.outputs.artifact_id }}
+          RESOLVED_DIGEST: ${{ steps.baseline_ci_source.outputs.artifact_digest }}
+          RESOLVED_NAME: ${{ steps.baseline_ci_source.outputs.artifact_name }}
+          ATTESTED_ID: ${{ steps.baseline_bridge.outputs.artifact_id }}
+          ATTESTED_DIGEST: ${{ steps.baseline_bridge.outputs.artifact_digest }}
+          ATTESTED_NAME: ${{ steps.baseline_bridge.outputs.artifact_name }}
+        run: |
+          set -euo pipefail
+          test "$RESOLVED_ID" = "$ATTESTED_ID"
+          test "$RESOLVED_DIGEST" = "$ATTESTED_DIGEST"
+          test "$RESOLVED_NAME" = "$ATTESTED_NAME"
+      - name: Download the exact CI package attested for the live baseline
+        if: steps.baseline_source.outputs.mode == 'bridge-v5'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.baseline_ci_source.outputs.artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ steps.baseline_ci_source.outputs.source_run_id }}
+          path: ${{ runner.temp }}/g12-staging-baseline-package
+      - name: Materialize and verify the exact bridge-v5 baseline bytes
+        id: baseline_package
+        if: steps.baseline_source.outputs.mode == 'bridge-v5'
+        working-directory: control
+        env:
+          VITE_RELEASE: ${{ inputs.expected_baseline_sha }}
+          VITE_CMS_ENVIRONMENT: staging
+          VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          VITE_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_STAGING_SITE_KEY }}
+          VITE_GOOGLE_MAPS_KEY: ${{ vars.GOOGLE_MAPS_BROWSER_KEY }}
+          VITE_CONTACT_CAPTCHA_ALWAYS: "true"
+          VITE_EV2_DRAFT_V2_CANDIDATE: "false"
+        run: |
+          set -euo pipefail
+          test ! -e ../baseline/dist
+          node scripts/ev2/phase12/verify-staging-frontend-package.mjs \
+            --package "$RUNNER_TEMP/g12-staging-baseline-package" \
+            --output ../baseline/dist \
+            --candidate "${{ inputs.expected_baseline_sha }}" \
+            --run-id "${{ steps.baseline_ci_source.outputs.source_run_id }}" \
+            --run-attempt "${{ steps.baseline_ci_source.outputs.source_run_attempt }}"
+          mkdir -p ../baseline/outputs
+          cp "$RUNNER_TEMP/g12-staging-baseline-package/staging-frontend-dist.tar" \
+            ../baseline/outputs/staging-frontend-dist.tar
+          cp "$RUNNER_TEMP/g12-staging-baseline-package/staging-frontend-dist-seal.json" \
+            ../baseline/outputs/staging-baseline-dist-seal.json
+          cp "$RUNNER_TEMP/g12-staging-baseline-package/staging-frontend-dist-seal.json" \
+            ../baseline/outputs/staging-frontend-dist-seal.json
+          cp "$RUNNER_TEMP/g12-staging-baseline-package/staging-frontend-provenance.json" \
+            ../baseline/outputs/staging-frontend-provenance.json
+      - name: Bind materialized baseline bytes to bridge-v5 evidence
+        if: steps.baseline_source.outputs.mode == 'bridge-v5'
+        env:
+          ACTUAL_ARCHIVE: ${{ steps.baseline_package.outputs.archive_sha256 }}
+          ACTUAL_TREE: ${{ steps.baseline_package.outputs.tree_sha256 }}
+          ACTUAL_PROFILE: ${{ steps.baseline_package.outputs.profile_sha256 }}
+          ACTUAL_ARCHIVE_BYTES: ${{ steps.baseline_package.outputs.archive_bytes }}
+          ACTUAL_FILE_COUNT: ${{ steps.baseline_package.outputs.file_count }}
+          ACTUAL_BYTE_COUNT: ${{ steps.baseline_package.outputs.byte_count }}
+          ATTESTED_ARCHIVE: ${{ steps.baseline_bridge.outputs.archive_sha256 }}
+          ATTESTED_TREE: ${{ steps.baseline_bridge.outputs.tree_sha256 }}
+          ATTESTED_PROFILE: ${{ steps.baseline_bridge.outputs.profile_sha256 }}
+          ATTESTED_ARCHIVE_BYTES: ${{ steps.baseline_bridge.outputs.archive_bytes }}
+          ATTESTED_FILE_COUNT: ${{ steps.baseline_bridge.outputs.file_count }}
+          ATTESTED_BYTE_COUNT: ${{ steps.baseline_bridge.outputs.byte_count }}
+        run: |
+          set -euo pipefail
+          test "$ACTUAL_ARCHIVE" = "$ATTESTED_ARCHIVE"
+          test "$ACTUAL_TREE" = "$ATTESTED_TREE"
+          test "$ACTUAL_PROFILE" = "$ATTESTED_PROFILE"
+          test "$ACTUAL_ARCHIVE_BYTES" = "$ATTESTED_ARCHIVE_BYTES"
+          test "$ACTUAL_FILE_COUNT" = "$ATTESTED_FILE_COUNT"
+          test "$ACTUAL_BYTE_COUNT" = "$ATTESTED_BYTE_COUNT"
+      - name: Verify the exact recovery baseline before arming mutation
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/verify-production-dist-seal.mjs
+          --dist ../baseline/dist
+          --seal ../baseline/outputs/staging-baseline-dist-seal.json
+          --candidate "${{ inputs.expected_baseline_sha }}"
+      - name: Upload mandatory exact bridge recovery bytes before state or mutation
+        id: recovery_upload
+        timeout-minutes: 10
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: staging-frontend-bridge-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            baseline/dist
+            baseline/outputs/*.tar
+            baseline/outputs/staging-baseline-dist-seal.json
+            baseline/outputs/staging-*-dist-seal.json
+            baseline/outputs/staging-frontend-provenance.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 90
+      - name: Bind durable staging bridge recovery state to immutable baseline bytes
+        id: bridge_recovery_state
+        working-directory: control
+        run: |
+          set -euo pipefail
           mkdir -p outputs
           node <<'NODE'
-          const { writeFileSync } = require("node:fs");
+          const { readFileSync, writeFileSync } = require("node:fs");
           const decodeCommitMessage = (encoded) => {
             if (typeof encoded !== "string" || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded))
               throw new Error("G12_STAGING_BRIDGE_COMMIT_MESSAGE_ENCODING_REFUSED");
@@ -227,16 +802,49 @@ jobs:
               throw new Error("G12_STAGING_BRIDGE_COMMIT_MESSAGE_ENCODING_REFUSED");
             return value;
           };
+          const artifactId = process.env.RECOVERY_ARTIFACT_ID;
+          const rawArtifactDigest = process.env.RECOVERY_ARTIFACT_DIGEST || "";
+          const artifactDigest = rawArtifactDigest.startsWith("sha256:")
+            ? rawArtifactDigest
+            : `sha256:${rawArtifactDigest}`;
+          if (!/^[1-9]\d*$/.test(artifactId || "") || !/^sha256:[a-f0-9]{64}$/.test(artifactDigest))
+            throw new Error("G12_STAGING_BRIDGE_RECOVERY_ARTIFACT_IDENTITY_REFUSED");
+          const seal = JSON.parse(readFileSync("../baseline/outputs/staging-baseline-dist-seal.json", "utf8"));
+          const sealIdentity = {
+            schemaVersion: seal.schemaVersion,
+            candidateSha: seal.candidateSha,
+            fileCount: seal.fileCount,
+            byteCount: seal.byteCount,
+            treeSha256: seal.treeSha256,
+            archiveFile: seal.archiveFile,
+            archiveBytes: seal.archiveBytes,
+            archiveSha256: seal.archiveSha256,
+          };
+          if (sealIdentity.candidateSha !== process.env.BASELINE_SHA)
+            throw new Error("G12_STAGING_BRIDGE_RECOVERY_SEAL_RELEASE_REFUSED");
           const state = {
-            schemaVersion: 1, event: "g12.staging.deploy.prepared",
+            schemaVersion: 1,
+            event: "g12.staging.deploy.prepared",
             workflow: { runId: process.env.GITHUB_RUN_ID, runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT), controlSha: process.env.GITHUB_SHA },
-            project: "gaiatec-cms-staging", branch: "ev2-g17-canary",
+            project: "gaiatec-cms-staging",
+            branch: "ev2-g17-canary",
             runMarker: `g12-staging-bridge-run-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`,
             compensationMarker: `g12-staging-bridge-compensation-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`,
             candidateRelease: process.env.CANDIDATE_SHA,
-            original: { deploymentId: process.env.BASELINE_ID, release: process.env.BASELINE_SHA,
+            original: {
+              deploymentId: process.env.BASELINE_ID,
+              release: process.env.BASELINE_SHA,
               createdOn: process.env.BASELINE_CREATED,
-              commitMessage: decodeCommitMessage(process.env.BASELINE_COMMIT_MESSAGE_B64) },
+              commitMessage: decodeCommitMessage(process.env.BASELINE_COMMIT_MESSAGE_B64),
+            },
+            recovery: {
+              artifact: {
+                id: artifactId,
+                digest: artifactDigest,
+                name: process.env.RECOVERY_ARTIFACT_NAME,
+              },
+              seal: sealIdentity,
+            },
           };
           writeFileSync("outputs/staging-frontend-bridge-state.json", JSON.stringify(state, null, 2) + "\n", { mode: 0o600 });
           NODE
@@ -246,7 +854,118 @@ jobs:
           BASELINE_ID: ${{ steps.baseline_state.outputs.deployment_id }}
           BASELINE_CREATED: ${{ steps.baseline_state.outputs.created_on }}
           BASELINE_COMMIT_MESSAGE_B64: ${{ steps.baseline_state.outputs.commit_message_b64 }}
-      - name: Persist redundant HMAC recovery state before any remote mutation
+          RECOVERY_ARTIFACT_ID: ${{ steps.recovery_upload.outputs.artifact-id }}
+          RECOVERY_ARTIFACT_DIGEST: ${{ steps.recovery_upload.outputs.artifact-digest }}
+          RECOVERY_ARTIFACT_NAME: staging-frontend-bridge-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Upload immutable bridge recovery state after binding exact baseline identity
+        id: recovery_state_upload
+        timeout-minutes: 5
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: staging-frontend-bridge-state-${{ github.run_id }}-${{ github.run_attempt }}
+          path: control/outputs/staging-frontend-bridge-state.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 90
+      - name: Download just-uploaded bridge recovery state by immutable artifact ID
+        id: recovery_state_download
+        timeout-minutes: 5
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.recovery_state_upload.outputs.artifact-id }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.run_id }}
+          path: ${{ runner.temp }}/g12-staging-bridge-state-pre-mutation
+      - name: Download just-uploaded exact bridge recovery bytes by immutable artifact ID
+        id: recovery_download
+        timeout-minutes: 10
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.recovery_upload.outputs.artifact-id }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.run_id }}
+          path: ${{ runner.temp }}/g12-staging-bridge-recovery-pre-mutation
+      - name: Reverify remote bridge state and exact recovery bytes before mutation
+        id: durable_recovery_remote
+        timeout-minutes: 10
+        working-directory: control
+        env:
+          STATE_ARTIFACT_ID: ${{ steps.recovery_state_upload.outputs.artifact-id }}
+          STATE_ARTIFACT_DIGEST: ${{ steps.recovery_state_upload.outputs.artifact-digest }}
+          RECOVERY_ARTIFACT_ID: ${{ steps.recovery_upload.outputs.artifact-id }}
+          RECOVERY_ARTIFACT_DIGEST: ${{ steps.recovery_upload.outputs.artifact-digest }}
+          BASELINE_SHA: ${{ inputs.expected_baseline_sha }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const { appendFileSync, readFileSync } = require("node:fs");
+          const { join } = require("node:path");
+          const id = /^[1-9]\d*$/;
+          const digest = /^sha256:[a-f0-9]{64}$/;
+          const normalizeDigest = (value) => {
+            const text = value || "";
+            return text.startsWith("sha256:") ? text : `sha256:${text}`;
+          };
+          const stateArtifactDigest = normalizeDigest(process.env.STATE_ARTIFACT_DIGEST);
+          const recoveryArtifactDigest = normalizeDigest(process.env.RECOVERY_ARTIFACT_DIGEST);
+          if (!id.test(process.env.STATE_ARTIFACT_ID || "") ||
+              !id.test(process.env.RECOVERY_ARTIFACT_ID || "") ||
+              !digest.test(stateArtifactDigest) || !digest.test(recoveryArtifactDigest))
+            throw new Error("G12_STAGING_BRIDGE_REMOTE_ARTIFACT_IDENTITY_REFUSED");
+          const localStatePath = "outputs/staging-frontend-bridge-state.json";
+          const remoteStatePath = join(process.env.RUNNER_TEMP, "g12-staging-bridge-state-pre-mutation", "staging-frontend-bridge-state.json");
+          const localStateBytes = readFileSync(localStatePath);
+          const remoteStateBytes = readFileSync(remoteStatePath);
+          if (!localStateBytes.equals(remoteStateBytes))
+            throw new Error("G12_STAGING_BRIDGE_REMOTE_STATE_BYTES_REFUSED");
+          const state = JSON.parse(remoteStateBytes.toString("utf8"));
+          const recoveryRoot = join(process.env.RUNNER_TEMP, "g12-staging-bridge-recovery-pre-mutation");
+          const localSealBytes = readFileSync("../baseline/outputs/staging-baseline-dist-seal.json");
+          const remoteSealBytes = readFileSync(join(recoveryRoot, "outputs", "staging-baseline-dist-seal.json"));
+          if (!localSealBytes.equals(remoteSealBytes))
+            throw new Error("G12_STAGING_BRIDGE_REMOTE_SEAL_BYTES_REFUSED");
+          const seal = JSON.parse(remoteSealBytes.toString("utf8"));
+          const localArchive = readFileSync(join("../baseline/outputs", seal.archiveFile));
+          const remoteArchive = readFileSync(join(recoveryRoot, "outputs", seal.archiveFile));
+          if (!localArchive.equals(remoteArchive))
+            throw new Error("G12_STAGING_BRIDGE_REMOTE_ARCHIVE_BYTES_REFUSED");
+          const localProvenance = readFileSync("../baseline/outputs/staging-frontend-provenance.json");
+          const remoteProvenance = readFileSync(join(recoveryRoot, "outputs", "staging-frontend-provenance.json"));
+          if (!localProvenance.equals(remoteProvenance))
+            throw new Error("G12_STAGING_BRIDGE_REMOTE_PROVENANCE_BYTES_REFUSED");
+          const expectedArtifact = {
+            id: process.env.RECOVERY_ARTIFACT_ID,
+            digest: recoveryArtifactDigest,
+            name: `staging-frontend-bridge-recovery-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`,
+          };
+          const expectedSeal = {
+            schemaVersion: seal.schemaVersion,
+            candidateSha: seal.candidateSha,
+            fileCount: seal.fileCount,
+            byteCount: seal.byteCount,
+            treeSha256: seal.treeSha256,
+            archiveFile: seal.archiveFile,
+            archiveBytes: seal.archiveBytes,
+            archiveSha256: seal.archiveSha256,
+          };
+          if (JSON.stringify(state.recovery?.artifact) !== JSON.stringify(expectedArtifact) ||
+              JSON.stringify(state.recovery?.seal) !== JSON.stringify(expectedSeal) ||
+              state.original?.release !== process.env.BASELINE_SHA)
+            throw new Error("G12_STAGING_BRIDGE_REMOTE_STATE_BINDING_REFUSED");
+          appendFileSync(process.env.GITHUB_OUTPUT,
+            `verified=true\nstate_artifact_digest=${stateArtifactDigest}\nartifact_id=${expectedArtifact.id}\nartifact_digest=${expectedArtifact.digest}\narchive_sha256=${seal.archiveSha256}\ntree_sha256=${seal.treeSha256}\n`);
+          NODE
+          node scripts/ev2/phase12/verify-production-dist-seal.mjs \
+            --dist "$RUNNER_TEMP/g12-staging-bridge-recovery-pre-mutation/dist" \
+            --seal "$RUNNER_TEMP/g12-staging-bridge-recovery-pre-mutation/outputs/staging-baseline-dist-seal.json" \
+            --candidate "${{ inputs.expected_baseline_sha }}"
+      - name: Persist redundant HMAC bridge state only after remote recovery proof
+        id: hmac_state
+        timeout-minutes: 5
         working-directory: control
         run: >-
           node scripts/ev2/phase12/recovery-state-store.mjs put --kind staging-deploy
@@ -255,25 +974,16 @@ jobs:
           RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
           RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
           CONTROL_SHA: ${{ github.sha }}
-      - name: Upload recovery state and exact baseline bytes
-        id: recovery_upload
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: staging-frontend-bridge-recovery-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            control/outputs/staging-frontend-bridge-state.json
-            baseline/dist
-            baseline/outputs/staging-baseline-dist.tar
-            baseline/outputs/staging-baseline-dist-seal.json
-          if-no-files-found: error
-          retention-days: 30
       - name: Deploy sealed A to isolated staging preview branch
         id: preview
+        if: >-
+          steps.durable_recovery_remote.outcome == 'success' &&
+          steps.hmac_state.outcome == 'success'
         working-directory: control
         run: >-
           node scripts/ev2/phase12/deploy-sealed-staging-dist.mjs
-          --archive ../candidate/outputs/staging-frontend-bridge-dist.tar
-          --seal ../candidate/outputs/staging-frontend-bridge-dist-seal.json
+          --archive "$RUNNER_TEMP/g12-staging-release-package/frontend/staging-frontend-dist.tar"
+          --seal "$RUNNER_TEMP/g12-staging-release-package/frontend/staging-frontend-dist-seal.json"
           --candidate "${{ inputs.candidate_sha }}" --branch ev2-g12-canary
           --commit-message "g12-staging-bridge-preview-run-${{ github.run_id }}-${{ github.run_attempt }}"
           --wrangler-script ../candidate/node_modules/wrangler/bin/wrangler.js
@@ -345,12 +1055,17 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          for attempt in 1 2; do
+          maximum_attempts=3
+          for attempt in $(seq 1 "$maximum_attempts"); do
             if EV2_G12_REPORT_PATH="../staging-bridge-preview-convergence-${attempt}.json" \
               node scripts/ev2/phase12/rollout-probe.mjs; then
               exit 0
             fi
-            if [ "$attempt" -lt 2 ]; then sleep 10; fi
+            if [ "$attempt" -lt "$maximum_attempts" ]; then
+              backoff_seconds=$((5 * 2 ** (attempt - 1)))
+              sleep "$backoff_seconds" &
+              wait $!
+            fi
           done
           exit 1
         env:
@@ -446,8 +1161,8 @@ jobs:
         working-directory: control
         run: >-
           node scripts/ev2/phase12/deploy-sealed-staging-dist.mjs
-          --archive ../candidate/outputs/staging-frontend-bridge-dist.tar
-          --seal ../candidate/outputs/staging-frontend-bridge-dist-seal.json
+          --archive "$RUNNER_TEMP/g12-staging-release-package/frontend/staging-frontend-dist.tar"
+          --seal "$RUNNER_TEMP/g12-staging-release-package/frontend/staging-frontend-dist-seal.json"
           --candidate "${{ inputs.candidate_sha }}" --branch ev2-g17-canary
           --commit-message "g12-staging-bridge-run-${{ github.run_id }}-${{ github.run_attempt }}"
           --wrangler-script ../candidate/node_modules/wrangler/bin/wrangler.js
@@ -468,12 +1183,17 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          for attempt in 1 2; do
+          maximum_attempts=3
+          for attempt in $(seq 1 "$maximum_attempts"); do
             if EV2_G12_REPORT_PATH="../staging-bridge-canonical-convergence-${attempt}.json" \
               node scripts/ev2/phase12/rollout-probe.mjs; then
               exit 0
             fi
-            if [ "$attempt" -lt 2 ]; then sleep 10; fi
+            if [ "$attempt" -lt "$maximum_attempts" ]; then
+              backoff_seconds=$((5 * 2 ** (attempt - 1)))
+              sleep "$backoff_seconds" &
+              wait $!
+            fi
           done
           exit 1
         env:
@@ -590,7 +1310,7 @@ jobs:
         working-directory: control
         run: >-
           node scripts/ev2/phase12/write-staging-frontend-bridge-evidence.mjs
-          --seal ../candidate/outputs/staging-frontend-bridge-dist-seal.json
+          --seal "$RUNNER_TEMP/g12-staging-release-package/frontend/staging-frontend-dist-seal.json"
           --preview-probe ../staging-bridge-preview-probe.json --canonical-probe ../staging-bridge-canonical-probe.json
           --preview-headless ../candidate/outputs/staging-bridge-preview-headless.json
           --preview-cleanup ../candidate/outputs/staging-bridge-preview-cleanup.json
@@ -602,6 +1322,16 @@ jobs:
         env:
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
           CONTROL_SHA: ${{ github.sha }}
+          SOURCE_RUN_ID: ${{ steps.candidate_source.outputs.source_run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ steps.candidate_source.outputs.source_run_attempt }}
+          SOURCE_GATE_RUN_ATTEMPT: ${{ steps.candidate_selection.outputs.gate_run_attempt }}
+          SOURCE_ARTIFACT_ID: ${{ steps.candidate_source.outputs.artifact_id }}
+          SOURCE_ARTIFACT_DIGEST: ${{ steps.candidate_source.outputs.artifact_digest }}
+          SOURCE_ARTIFACT_NAME: ${{ steps.candidate_source.outputs.artifact_name }}
+          SOURCE_RELEASE_PROFILE: ${{ steps.candidate_selection.outputs.release_profile }}
+          SOURCE_MATRIX_SHA256: ${{ steps.candidate_selection.outputs.matrix_sha256 }}
+          SOURCE_POLICY_SHA256: ${{ steps.candidate_selection.outputs.policy_sha256 }}
+          SOURCE_PROFILE_SHA256: ${{ steps.candidate_package.outputs.profile_sha256 }}
           PROMOTION_MODE: ${{ inputs.same_release_rebind && 'same-release-rebind' || 'forward' }}
           PREVIEW_ORIGIN: https://ev2-g12-canary.gaiatec-cms-staging.pages.dev
           CANONICAL_ORIGIN: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
@@ -631,13 +1361,16 @@ jobs:
           retention-days: 90
       - name: Automatically restore old staging frontend on failure
         id: recover
-        if: always() && steps.recovery_upload.outcome == 'success' && steps.evidence_upload.outcome != 'success'
+        if: >-
+          always() && steps.durable_recovery_remote.outcome == 'success' &&
+          steps.hmac_state.outcome == 'success' && steps.evidence_upload.outcome != 'success'
         continue-on-error: true
         working-directory: control
         run: >-
           node scripts/ev2/phase12/staging-pages-state.mjs compensate
-          --dist ../baseline/dist --seal ../baseline/outputs/staging-baseline-dist-seal.json
-          --wrangler-script ../baseline/node_modules/wrangler/bin/wrangler.js
+          --dist "$RUNNER_TEMP/g12-staging-bridge-recovery-pre-mutation/dist"
+          --seal "$RUNNER_TEMP/g12-staging-bridge-recovery-pre-mutation/outputs/staging-baseline-dist-seal.json"
+          --wrangler-script ../candidate/node_modules/wrangler/bin/wrangler.js
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -650,8 +1383,121 @@ jobs:
           STAGING_CANDIDATE_RELEASE: ${{ inputs.candidate_sha }}
           STAGING_RUN_MARKER: g12-staging-bridge-run-${{ github.run_id }}-${{ github.run_attempt }}
           STAGING_COMPENSATION_MARKER: g12-staging-bridge-compensation-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Reconfirm compensated canonical staging before clearing recovery state
+        id: recover_canonical_recheck
+        if: always() && steps.recover.outcome == 'success'
+        continue-on-error: true
+        working-directory: control
+        run: node scripts/ev2/phase12/staging-pages-state.mjs assert-original
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: gaiatec-cms-staging
+          CLOUDFLARE_PAGES_BRANCH: ev2-g17-canary
+          STAGING_ORIGINAL_DEPLOYMENT: ${{ steps.baseline_state.outputs.deployment_id }}
+          STAGING_ORIGINAL_RELEASE: ${{ inputs.expected_baseline_sha }}
+          STAGING_ORIGINAL_CREATED_ON: ${{ steps.baseline_state.outputs.created_on }}
+          STAGING_ORIGINAL_COMMIT_MESSAGE_B64: ${{ steps.baseline_state.outputs.commit_message_b64 }}
+          STAGING_CANDIDATE_RELEASE: ${{ inputs.candidate_sha }}
+          STAGING_RUN_MARKER: g12-staging-bridge-run-${{ github.run_id }}-${{ github.run_attempt }}
+          STAGING_COMPENSATION_MARKER: g12-staging-bridge-compensation-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Probe compensated canonical staging before clearing recovery state
+        id: recover_probe
+        if: always() && steps.recover_canonical_recheck.outcome == 'success'
+        continue-on-error: true
+        working-directory: control
+        run: node scripts/ev2/phase12/rollout-probe.mjs
+        env:
+          EV2_G12_ORIGIN: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
+          EV2_G12_EXPECTED_SHA: ${{ inputs.expected_baseline_sha }}
+          EV2_G12_ENVIRONMENT: staging
+          EV2_G12_PROBE_PROFILE: full
+          EV2_G12_SAMPLE_COUNT: "20"
+          EV2_G12_WARMUP_SAMPLES_PER_ROUTE: "20"
+          EV2_G12_REPORT_PATH: outputs/staging-frontend-bridge-compensation-probe.json
+      - name: Seal non-sensitive automatic bridge compensation evidence
+        id: recover_evidence
+        if: always() && steps.recover_probe.outcome == 'success'
+        continue-on-error: true
+        working-directory: control
+        env:
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          CONTROL_SHA: ${{ github.sha }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          ORIGINAL_DEPLOYMENT_ID: ${{ steps.baseline_state.outputs.deployment_id }}
+          ORIGINAL_RELEASE: ${{ inputs.expected_baseline_sha }}
+        run: |
+          node <<'NODE'
+          const { createHash } = require("node:crypto");
+          const { readFileSync, writeFileSync } = require("node:fs");
+          const stateBytes = readFileSync("outputs/staging-frontend-bridge-state.json");
+          const probeBytes = readFileSync("outputs/staging-frontend-bridge-compensation-probe.json");
+          const state = JSON.parse(stateBytes.toString("utf8"));
+          JSON.parse(probeBytes.toString("utf8"));
+          if (
+            String(state.workflow?.runId) !== process.env.RUN_ID ||
+            Number(state.workflow?.runAttempt) !== Number(process.env.RUN_ATTEMPT) ||
+            state.workflow?.controlSha !== process.env.CONTROL_SHA ||
+            state.candidateRelease !== process.env.CANDIDATE_SHA ||
+            state.original?.deploymentId !== process.env.ORIGINAL_DEPLOYMENT_ID ||
+            state.original?.release !== process.env.ORIGINAL_RELEASE
+          ) throw new Error("G12_STAGING_BRIDGE_COMPENSATION_STATE_REFUSED");
+          const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+          writeFileSync("outputs/staging-frontend-bridge-compensation-evidence.json", JSON.stringify({
+            schemaVersion: 1,
+            event: "g12.staging.frontend_bridge.compensation.terminal",
+            workflow: {
+              runId: process.env.RUN_ID,
+              runAttempt: Number(process.env.RUN_ATTEMPT),
+              controlSha: process.env.CONTROL_SHA,
+            },
+            candidateRelease: process.env.CANDIDATE_SHA,
+            original: {
+              deploymentId: process.env.ORIGINAL_DEPLOYMENT_ID,
+              release: process.env.ORIGINAL_RELEASE,
+            },
+            stateSha256: sha256(stateBytes),
+            probeSha256: sha256(probeBytes),
+            terminalState: "restored",
+            productionTouched: false,
+            sensitiveValuesLogged: false,
+            recordedAt: new Date().toISOString(),
+          }, null, 2) + "\n", { mode: 0o600 });
+          NODE
+      - name: Upload mandatory automatic bridge compensation evidence
+        id: recover_evidence_upload
+        if: always() && steps.recover_evidence.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: staging-frontend-bridge-compensation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            control/outputs/staging-frontend-bridge-compensation-evidence.json
+            control/outputs/staging-frontend-bridge-compensation-probe.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Verify automatic bridge compensation artifact identity
+        id: recover_evidence_identity
+        if: always() && steps.recover_evidence_upload.outcome == 'success'
+        continue-on-error: true
+        env:
+          ARTIFACT_ID: ${{ steps.recover_evidence_upload.outputs.artifact-id }}
+          ARTIFACT_DIGEST: ${{ steps.recover_evidence_upload.outputs.artifact-digest }}
+        run: |
+          set -euo pipefail
+          [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$ARTIFACT_DIGEST" =~ ^(sha256:)?[a-f0-9]{64}$ ]]
       - name: Clear redundant recovery state only after success or proven compensation
-        if: always() && (steps.evidence_upload.outcome == 'success' || steps.recover.outcome == 'success')
+        id: clear_recovery_state
+        if: >-
+          always() && (steps.evidence_upload.outcome == 'success' ||
+          (steps.recover.outcome == 'success' &&
+          steps.recover_canonical_recheck.outcome == 'success' &&
+          steps.recover_probe.outcome == 'success' &&
+          steps.recover_evidence.outcome == 'success' &&
+          steps.recover_evidence_upload.outcome == 'success' &&
+          steps.recover_evidence_identity.outcome == 'success'))
         working-directory: control
         run: >-
           node scripts/ev2/phase12/recovery-state-store.mjs clear --kind staging-deploy
@@ -660,10 +1506,36 @@ jobs:
         env:
           RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
           RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
-      - name: Release the legacy backend lease only after a proven restore
+      - name: Upload mandatory legacy backend restore evidence before lease release
+        id: legacy_restore_evidence_upload
         if: >-
           always() && steps.legacy_lease.outcome == 'success' &&
           steps.legacy_restore.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: staging-cms-public-legacy-restore-${{ github.run_id }}-${{ github.run_attempt }}
+          path: candidate/outputs/staging-cms-public-legacy-restore.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Verify mandatory legacy backend restore artifact identity
+        id: legacy_restore_evidence_identity
+        if: always() && steps.legacy_restore_evidence_upload.outcome == 'success'
+        continue-on-error: true
+        env:
+          ARTIFACT_ID: ${{ steps.legacy_restore_evidence_upload.outputs.artifact-id }}
+          ARTIFACT_DIGEST: ${{ steps.legacy_restore_evidence_upload.outputs.artifact-digest }}
+        run: |
+          set -euo pipefail
+          [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$ARTIFACT_DIGEST" =~ ^(sha256:)?[a-f0-9]{64}$ ]]
+      - name: Release the legacy backend lease only after a proven restore
+        id: clear_legacy_state
+        if: >-
+          always() && steps.legacy_lease.outcome == 'success' &&
+          steps.legacy_restore.outcome == 'success' &&
+          steps.legacy_restore_evidence_upload.outcome == 'success' &&
+          steps.legacy_restore_evidence_identity.outcome == 'success'
         working-directory: control
         run: >-
           node scripts/ev2/phase12/recovery-state-store.mjs clear --kind staging-cms-public-legacy
@@ -697,15 +1569,88 @@ jobs:
         env:
           EVIDENCE: ${{ steps.evidence_upload.outcome }}
           RECOVER: ${{ steps.recover.outcome }}
+          RECOVER_RECHECK: ${{ steps.recover_canonical_recheck.outcome }}
+          RECOVER_PROBE: ${{ steps.recover_probe.outcome }}
+          RECOVER_EVIDENCE: ${{ steps.recover_evidence.outcome }}
+          RECOVER_EVIDENCE_UPLOAD: ${{ steps.recover_evidence_upload.outcome }}
+          RECOVER_EVIDENCE_IDENTITY: ${{ steps.recover_evidence_identity.outcome }}
+          CLEAR_RECOVERY: ${{ steps.clear_recovery_state.outcome }}
+          LEGACY_LEASE: ${{ steps.legacy_lease.outcome }}
           LEGACY_ENGAGE: ${{ steps.legacy_engage.outcome }}
           LEGACY_RESTORE: ${{ steps.legacy_restore.outcome }}
+          LEGACY_RESTORE_EVIDENCE: ${{ steps.legacy_restore_evidence_upload.outcome }}
+          LEGACY_RESTORE_EVIDENCE_IDENTITY: ${{ steps.legacy_restore_evidence_identity.outcome }}
+          LEGACY_CLEAR: ${{ steps.clear_legacy_state.outcome }}
         run: |
           set -euo pipefail
           if [ "$LEGACY_ENGAGE" = success ] && [ "$LEGACY_RESTORE" != success ]; then
             echo "::error::The candidate public backend restore was not proven; the recovery lease remains armed."
             exit 1
           fi
+          if [ "$LEGACY_RESTORE" = success ]; then
+            test "$LEGACY_RESTORE_EVIDENCE" = success
+            test "$LEGACY_RESTORE_EVIDENCE_IDENTITY" = success
+            test "$LEGACY_CLEAR" = success
+          fi
           if [ "$LEGACY_ENGAGE" != success ]; then test "$LEGACY_RESTORE" = skipped; fi
-          if [ "$EVIDENCE" = success ]; then test "$RECOVER" = skipped; exit 0; fi
+          if [ "$EVIDENCE" = success ]; then
+            test "$RECOVER" = skipped
+            test "$CLEAR_RECOVERY" = success
+            exit 0
+          fi
           test "$RECOVER" = success
+          test "$RECOVER_RECHECK" = success
+          test "$RECOVER_PROBE" = success
+          test "$RECOVER_EVIDENCE" = success
+          test "$RECOVER_EVIDENCE_UPLOAD" = success
+          test "$RECOVER_EVIDENCE_IDENTITY" = success
+          test "$CLEAR_RECOVERY" = success
           exit 1
+
+  pipeline-metrics:
+    needs: promote
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .nvmrc
+      - name: Capture bridge duration and its actual bottleneck
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_PROFILE: ${{ needs.promote.outputs.release_profile }}
+        run: |
+          set -euo pipefail
+          case "$RELEASE_PROFILE" in
+            frontend-only|edge-only|database-auth|full-release) ;;
+            *)
+              echo "::error::The bridge evidence did not expose a supported release profile."
+              exit 1
+              ;;
+          esac
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > "$RUNNER_TEMP/pipeline-run.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" \
+            > "$RUNNER_TEMP/pipeline-jobs.json"
+          captured_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          node scripts/ev2/phase12/write-pipeline-duration-report.mjs \
+            --run "$RUNNER_TEMP/pipeline-run.json" \
+            --jobs "$RUNNER_TEMP/pipeline-jobs.json" \
+            --baseline .github/release-controls/pipeline-slo-baseline.json \
+            --profile "$RELEASE_PROFILE" \
+            --scope component \
+            --expected-stages promote \
+            --candidate-sha "${{ inputs.candidate_sha }}" \
+            --captured-at "$captured_at" \
+            --output "$RUNNER_TEMP/pipeline-duration-report.json"
+      - name: Preserve bridge duration evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pipeline-duration-bridge-${{ inputs.candidate_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pipeline-duration-report.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 90

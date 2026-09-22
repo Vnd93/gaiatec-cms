@@ -2,11 +2,14 @@ import { createHash } from "node:crypto";
 
 import { isDeploymentCommitMessage } from "./deployment-commit-message.mjs";
 import { FULL_SHA_PATTERN, UUID_PATTERN } from "./release-guard-lib.mjs";
+import { RELEASE_PROFILE_NAMES } from "./release-profile-lib.mjs";
 
 export const STAGING_FRONTEND_BRIDGE_WORKFLOW_NAME = "Promote staging frontend bridge";
 export const STAGING_FRONTEND_BRIDGE_WORKFLOW_PATH = ".github/workflows/promote-staging-frontend-bridge.yml";
 export const STAGING_FRONTEND_BRIDGE_REPOSITORY = "Vnd93/gaiatec-cms";
 const SHA256 = /^(?:sha256:)?[a-f0-9]{64}$/;
+const HEX_SHA256 = /^[a-f0-9]{64}$/;
+const PREFIXED_SHA256 = /^sha256:[a-f0-9]{64}$/;
 const POSITIVE = /^[1-9]\d*$/;
 const PREVIEW_ORIGIN = "https://ev2-g12-canary.gaiatec-cms-staging.pages.dev";
 const CANONICAL_ORIGIN = "https://ev2-g17-canary.gaiatec-cms-staging.pages.dev";
@@ -109,6 +112,81 @@ function compatibilityScope(value) {
   );
 }
 
+function expectedMatches(actual, expected) {
+  return expected === undefined || expected === "" || String(actual) === String(expected);
+}
+
+function expectedInstantMatches(actual, expected) {
+  if (expected === undefined || expected === "") return true;
+  const actualTime = Date.parse(actual ?? "");
+  const expectedTime = Date.parse(expected);
+  return Number.isFinite(actualTime) && Number.isFinite(expectedTime) && actualTime === expectedTime;
+}
+
+function artifact(value, candidateSha, expected) {
+  return (
+    exactKeys(value, [
+      "sourceRunId",
+      "sourceRunAttempt",
+      "gateRunAttempt",
+      "artifactId",
+      "artifactDigest",
+      "artifactName",
+      "environment",
+      "releaseProfile",
+      "matrixSha256",
+      "policySha256",
+      "profileSha256",
+    ]) &&
+    typeof value.sourceRunId === "string" &&
+    POSITIVE.test(value.sourceRunId) &&
+    Number.isSafeInteger(value.sourceRunAttempt) &&
+    value.sourceRunAttempt >= 1 &&
+    Number.isSafeInteger(value.gateRunAttempt) &&
+    value.gateRunAttempt >= value.sourceRunAttempt &&
+    typeof value.artifactId === "string" &&
+    POSITIVE.test(value.artifactId) &&
+    PREFIXED_SHA256.test(value.artifactDigest ?? "") &&
+    value.artifactName ===
+      `staging-frontend-${candidateSha}-${value.sourceRunId}-${value.sourceRunAttempt}` &&
+    value.environment === "staging" &&
+    RELEASE_PROFILE_NAMES.includes(value.releaseProfile) &&
+    HEX_SHA256.test(value.matrixSha256 ?? "") &&
+    HEX_SHA256.test(value.policySha256 ?? "") &&
+    HEX_SHA256.test(value.profileSha256 ?? "") &&
+    expectedMatches(value.sourceRunId, expected.sourceRunId) &&
+    expectedMatches(value.sourceRunAttempt, expected.sourceRunAttempt) &&
+    expectedMatches(value.gateRunAttempt, expected.gateRunAttempt) &&
+    expectedMatches(value.artifactId, expected.artifactId) &&
+    expectedMatches(value.artifactDigest, expected.artifactDigest) &&
+    expectedMatches(value.artifactName, expected.artifactName) &&
+    expectedMatches(value.environment, expected.artifactEnvironment) &&
+    expectedMatches(value.releaseProfile, expected.releaseProfile) &&
+    expectedMatches(value.matrixSha256, expected.matrixSha256) &&
+    expectedMatches(value.policySha256, expected.policySha256) &&
+    expectedMatches(value.profileSha256, expected.profileSha256)
+  );
+}
+
+function dist(value, expected) {
+  return (
+    exactKeys(value, ["archiveSha256", "treeSha256", "archiveBytes", "fileCount", "byteCount"]) &&
+    SHA256.test(value.archiveSha256 ?? "") &&
+    SHA256.test(value.treeSha256 ?? "") &&
+    Number.isSafeInteger(value.archiveBytes) &&
+    value.archiveBytes > 0 &&
+    Number.isSafeInteger(value.fileCount) &&
+    value.fileCount > 0 &&
+    Number.isSafeInteger(value.byteCount) &&
+    value.byteCount > 0 &&
+    expectedMatches(value.archiveSha256, expected.archiveSha256) &&
+    expectedMatches(value.treeSha256, expected.treeSha256) &&
+    expectedMatches(value.archiveBytes, expected.archiveBytes) &&
+    expectedMatches(value.fileCount, expected.fileCount) &&
+    expectedMatches(value.byteCount, expected.byteCount)
+  );
+}
+
 export function validateStagingFrontendBridgeEvidence(value, expected = {}) {
   const violations = [];
   if (
@@ -122,6 +200,7 @@ export function validateStagingFrontendBridgeEvidence(value, expected = {}) {
       "baseline",
       "preview",
       "canonical",
+      "artifact",
       "dist",
       "probes",
       "headlessCanaries",
@@ -130,7 +209,7 @@ export function validateStagingFrontendBridgeEvidence(value, expected = {}) {
       "backendMutation",
       "rollbackReady",
     ]) ||
-    value?.schemaVersion !== 4 ||
+    value?.schemaVersion !== 5 ||
     value?.event !== "g12.staging.frontend_bridge.promoted" ||
     value?.repository !== STAGING_FRONTEND_BRIDGE_REPOSITORY
   )
@@ -172,15 +251,12 @@ export function validateStagingFrontendBridgeEvidence(value, expected = {}) {
     !identity(value?.canonical) ||
     value?.canonical?.release !== value?.candidateSha ||
     value?.canonical?.commitMessage !== marker ||
-    (expected.deploymentId && value.canonical.deploymentId !== expected.deploymentId)
+    (expected.deploymentId && value.canonical.deploymentId !== expected.deploymentId) ||
+    !expectedInstantMatches(value?.canonical?.createdOn, expected.canonicalCreatedOn)
   )
     violations.push("canonical_invalid");
-  if (
-    !exactKeys(value?.dist, ["archiveSha256", "treeSha256"]) ||
-    !SHA256.test(value?.dist?.archiveSha256 ?? "") ||
-    !SHA256.test(value?.dist?.treeSha256 ?? "")
-  )
-    violations.push("dist_invalid");
+  if (!artifact(value?.artifact, value?.candidateSha, expected)) violations.push("artifact_invalid");
+  if (!dist(value?.dist, expected)) violations.push("dist_invalid");
   if (
     !exactKeys(value?.probes, ["previewSha256", "canonicalSha256"]) ||
     !SHA256.test(value?.probes?.previewSha256 ?? "") ||

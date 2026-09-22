@@ -97,7 +97,7 @@ test("main workflow refuses every rerun before checkout, artifacts, state, or mu
   );
   assert.match(
     watchdogWorkflow,
-    /github\.event\.workflow_run\.run_attempt == 1 && 'staging' \|\| format\('staging-hotfix-watchdog-refused-\{0\}-\{1\}', github\.event\.workflow_run\.id, github\.event\.workflow_run\.run_attempt\)/,
+    /github\.event_name == 'workflow_dispatch' && 'staging' \|\| format\('staging-recovery-\{0\}-\{1\}',\s*github\.event\.workflow_run\.id,\s*github\.event\.workflow_run\.run_attempt\)/,
   );
 });
 
@@ -613,9 +613,13 @@ test("CI executes the real hardened Docker bundle twice and seals the result", (
   assert.notEqual(jobStart, -1, "missing hotfix-bundle-smoke job");
   assert.notEqual(databaseStart, -1, "missing hotfix-bundle-smoke boundary");
   const job = ciWorkflow.slice(jobStart, databaseStart);
-  assert.match(job, /timeout-minutes: 20/);
+  assert.match(job, /timeout-minutes: 35/);
+  assert.doesNotMatch(job, /^\s+HOTFIX_SHA:/m);
+  assert.match(job, /- name: Checkout the exact CI candidate for the Docker smoke/);
+  assert.match(job, /ref: \$\{\{ github\.sha \}\}/);
+  assert.doesNotMatch(job, /ref: \$\{\{ env\.HOTFIX_SHA \}\}/);
+  assert.equal(exactEnvValue(mainWorkflow, "HOTFIX_SHA"), "e40eb0c2cc81c27fbf8f23e8671136f9dfc6f282");
   for (const [key, immutableValue] of Object.entries({
-    HOTFIX_SHA: "e40eb0c2cc81c27fbf8f23e8671136f9dfc6f282",
     EDGE_RUNTIME_IMAGE:
       "ghcr.io/supabase/edge-runtime:v1.74.3@sha256:c52405002a890ca9fcf77978671c57f3a988e03174afb277f84ac65bc917013c",
     EDGE_RUNTIME_INDEX_DIGEST: "sha256:c52405002a890ca9fcf77978671c57f3a988e03174afb277f84ac65bc917013c",
@@ -633,11 +637,11 @@ test("CI executes the real hardened Docker bundle twice and seals the result", (
     "Cold-boot the exact Docker smoke candidate without external egress",
     "Seal the byte-identical Docker smoke builds",
   ]);
-  assert.equal((job.match(/--user "\$\(id -u\):\$\(id -g\)"/g) ?? []).length, 2);
-  assert.equal((job.match(/--cap-drop ALL --security-opt no-new-privileges/g) ?? []).length, 2);
-  assert.equal((job.match(/--env HOME=\/tmp --env DENO_DIR=\/deno-cache/g) ?? []).length, 2);
-  assert.equal((job.match(/--env JSR_URL=https:\/\/jsr\.io\//g) ?? []).length, 2);
-  assert.equal((job.match(/--network bridge/g) ?? []).length, 2);
+  assert.equal((job.match(/--user "\$\(id -u\):\$\(id -g\)"/g) ?? []).length, 3);
+  assert.equal((job.match(/--cap-drop ALL --security-opt no-new-privileges/g) ?? []).length, 3);
+  assert.equal((job.match(/--env HOME=\/tmp --env DENO_DIR=\/deno-cache/g) ?? []).length, 3);
+  assert.equal((job.match(/--env JSR_URL=https:\/\/jsr\.io\//g) ?? []).length, 3);
+  assert.equal((job.match(/--network bridge/g) ?? []).length, 3);
   assert.match(job, /staging-cms-public-hotfix\.mjs seal-candidate/);
   assert.doesNotMatch(job, /\$\{\{\s*secrets\.|environment:/);
 
@@ -870,6 +874,27 @@ test("watchdog artifact resolution tolerates retry receipts without mixing termi
     runner.indexOf("async function fetchWatchdogArtifacts("),
     runner.indexOf("async function resolveWatchdogArtifacts()"),
   );
+  const predecessor = stepBody(watchdogWorkflow, "Resolve a predecessor watchdog evidence chain");
+  assert.match(predecessor, /--require-owner-terminal true/);
+  assertOrdered(resolver, [
+    "const ownerRun = await github(",
+    "if (requireOwnerTerminal && !validateCompletedWatchdogOwnerRun(ownerRun))",
+    "const artifacts = [];",
+  ]);
+  assert.match(resolver, /requireOwnerTerminal && !validateCompletedWatchdogOwnerRun\(run\)/);
+  assert.match(
+    resolver,
+    /Date\.parse\(artifact\?\.created_at \?\? ""\) > Date\.parse\(run\?\.updated_at \?\? ""\)/,
+  );
+  assert.match(resolver, /ownerTerminalRequired: requireOwnerTerminal/);
+  const inventoryReload = runner.slice(
+    runner.indexOf("async function loadWatchdogArtifactInventory("),
+    runner.indexOf("async function loadResolvedArtifactInventory("),
+  );
+  assert.match(inventoryReload, /report\?\.ownerTerminalRequired\s+\? undefined/);
+  assert.match(inventoryReload, /currentExecutor\([\s\S]*STAGING_CMS_PUBLIC_HOTFIX\.watchdogPath/);
+  assert.match(inventoryReload, /validateWatchdogArtifactOwnerPolicy\(report, executor\)/);
+  assert.match(inventoryReload, /requireOwnerTerminal: report\.ownerTerminalRequired/);
   assert.doesNotMatch(resolver, /receiptMatches\.length > 1/);
   assert.match(
     resolver,

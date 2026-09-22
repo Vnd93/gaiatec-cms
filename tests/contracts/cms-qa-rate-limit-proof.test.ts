@@ -65,9 +65,28 @@ describe("staging-only isolated rate-limit proof", () => {
   });
 
   it("configures the exact candidate release and makes the browser proof mandatory", () => {
-    expect(workflow).toContain('CMS_RELEASE_SHA="${{ steps.candidate.outputs.sha }}"');
-    expect(workflow).toContain("tests/e2e/cms-security-boundaries.spec.ts");
-    expect(workflow).toContain("candidate/outputs/cms-security-boundaries.json");
+    const deployJobStart = workflow.indexOf("\n  deploy:\n");
+    const deployJobEnd = workflow.indexOf("\n  preflight:\n", deployJobStart);
+    const browserJobStart = workflow.indexOf("\n  browser_attestation:\n");
+    const browserJobEnd = workflow.indexOf("\n  evidence:\n", browserJobStart);
+    expect(deployJobStart).toBeGreaterThanOrEqual(0);
+    expect(deployJobEnd).toBeGreaterThan(deployJobStart);
+    expect(browserJobStart).toBeGreaterThanOrEqual(0);
+    expect(browserJobEnd).toBeGreaterThan(browserJobStart);
+    const deploy = workflow.slice(deployJobStart, deployJobEnd);
+    const browserAttestation = workflow.slice(browserJobStart, browserJobEnd);
+
+    expect(deploy).toContain("STAGING_CANDIDATE_SHA: ${{ steps.candidate.outputs.sha }}");
+    expect(deploy).toContain(
+      "$RUNNER_TEMP/g12-staging-release-package/edge/source/scripts/ev2/phase12/configure-staging-edge-public-secrets.mjs",
+    );
+    expect(browserAttestation).toContain("ref: ${{ needs.deploy.outputs.candidate_sha }}");
+    expect(browserAttestation).toContain("QA_CMS_EXPECTED_SHA: ${{ needs.deploy.outputs.candidate_sha }}");
+    expect(browserAttestation).toContain("QA_CMS_TARGET_ENVIRONMENT: staging");
+    expect(browserAttestation).toContain('QA_CMS_SECURITY_REQUIRED: "true"');
+    expect(browserAttestation).toContain("tests/e2e/cms-security-boundaries.spec.ts");
+    expect(browserAttestation.match(/candidate\/outputs\/cms-security-boundaries\.json/g)).toHaveLength(2);
+    expect(browserAttestation).not.toContain("steps.candidate.outputs.sha");
   });
 
   it("defines a separate production security profile without consuming the QA proof bucket", () => {

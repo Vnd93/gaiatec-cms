@@ -38,6 +38,7 @@ import {
   validateCmsPublicHotfixCanary,
   validateCandidateBuildProvenance,
   validateCandidateBuildEvidenceFiles,
+  validateCompletedWatchdogOwnerRun,
   validateHotfixFullProbe,
   validateHotfixPreProbe,
   validateHotfixRecoveryState,
@@ -45,12 +46,80 @@ import {
   validateRecoveryPackage,
   validateRecoveredBaselineEvidence,
   validateTrustedBaselineEvidence,
+  validateWatchdogArtifactOwnerPolicy,
   verifyHotfixIntent,
   verifyHotfixProbeProof,
   verifyHotfixReceipt,
 } from "./staging-cms-public-hotfix-lib.mjs";
 
 const key = "9".repeat(64);
+
+test("foreign watchdog evidence is adoptable only after its exact owner attempt is terminal", () => {
+  const completedRun = {
+    status: "completed",
+    conclusion: "success",
+    run_started_at: "2026-09-22T10:00:00Z",
+    completed_at: null,
+    updated_at: "2026-09-22T10:05:00Z",
+  };
+  for (const conclusion of ["success", "failure", "cancelled", "timed_out"]) {
+    assert.equal(validateCompletedWatchdogOwnerRun({ ...completedRun, conclusion }), true);
+  }
+  for (const status of ["in_progress", "queued", "waiting", "pending"]) {
+    assert.equal(
+      validateCompletedWatchdogOwnerRun({ ...completedRun, status, conclusion: null }),
+      false,
+      `status ${status} must not adopt a visible terminal artifact`,
+    );
+  }
+  for (const conclusion of ["action_required", "neutral", "skipped", "stale", "startup_failure"]) {
+    assert.equal(validateCompletedWatchdogOwnerRun({ ...completedRun, conclusion }), false);
+  }
+  assert.equal(validateCompletedWatchdogOwnerRun({ ...completedRun, updated_at: "invalid" }), false);
+  assert.equal(validateCompletedWatchdogOwnerRun({ ...completedRun, updated_at: undefined }), false);
+  assert.equal(
+    validateCompletedWatchdogOwnerRun({
+      ...completedRun,
+      updated_at: "2026-09-22T09:59:59Z",
+    }),
+    false,
+  );
+});
+
+test("an in-progress watchdog may reload only its own artifact inventory policy", () => {
+  const executor = {
+    runId: "35740000001",
+    runAttempt: 1,
+    runSha: "a".repeat(40),
+    controlSha: "b".repeat(40),
+    workflowPath: STAGING_CMS_PUBLIC_HOTFIX.watchdogPath,
+  };
+  assert.equal(
+    validateWatchdogArtifactOwnerPolicy(
+      { ownerTerminalRequired: false, preparedBy: structuredClone(executor) },
+      executor,
+    ),
+    true,
+  );
+  assert.equal(
+    validateWatchdogArtifactOwnerPolicy(
+      {
+        ownerTerminalRequired: false,
+        preparedBy: { ...executor, runId: "35740000002" },
+      },
+      executor,
+    ),
+    false,
+  );
+  assert.equal(
+    validateWatchdogArtifactOwnerPolicy(
+      { ownerTerminalRequired: true, preparedBy: { ...executor, runId: "35740000002" } },
+      undefined,
+    ),
+    true,
+  );
+  assert.equal(validateWatchdogArtifactOwnerPolicy({ preparedBy: executor }, executor), false);
+});
 
 test("manual recovery authorization is bound to the incident, fixed control, CI and rollback", () => {
   const controlSha = "7".repeat(40);

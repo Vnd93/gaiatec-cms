@@ -100,7 +100,7 @@ const identity = (prefix) => ({
   commitMessage: decodeDeploymentCommitMessage(process.env[`${prefix}_COMMIT_MESSAGE_B64`] ?? ""),
 });
 const evidence = {
-  schemaVersion: 4,
+  schemaVersion: 5,
   event: "g12.staging.frontend_bridge.promoted",
   repository: "Vnd93/gaiatec-cms",
   workflow: {
@@ -115,7 +115,26 @@ const evidence = {
   baseline: identity("BASELINE"),
   preview: identity("PREVIEW"),
   canonical: identity("CANONICAL"),
-  dist: { archiveSha256: seal.archiveSha256, treeSha256: seal.treeSha256 },
+  artifact: {
+    sourceRunId: process.env.SOURCE_RUN_ID ?? "",
+    sourceRunAttempt: Number(process.env.SOURCE_RUN_ATTEMPT),
+    gateRunAttempt: Number(process.env.SOURCE_GATE_RUN_ATTEMPT),
+    artifactId: process.env.SOURCE_ARTIFACT_ID ?? "",
+    artifactDigest: process.env.SOURCE_ARTIFACT_DIGEST ?? "",
+    artifactName: process.env.SOURCE_ARTIFACT_NAME ?? "",
+    environment: "staging",
+    releaseProfile: process.env.SOURCE_RELEASE_PROFILE ?? "",
+    matrixSha256: process.env.SOURCE_MATRIX_SHA256 ?? "",
+    policySha256: process.env.SOURCE_POLICY_SHA256 ?? "",
+    profileSha256: process.env.SOURCE_PROFILE_SHA256 ?? "",
+  },
+  dist: {
+    archiveSha256: seal.archiveSha256,
+    treeSha256: seal.treeSha256,
+    archiveBytes: seal.archiveBytes,
+    fileCount: seal.fileCount,
+    byteCount: seal.byteCount,
+  },
   probes: {
     previewSha256: sha256Bytes(bytes["preview-probe"]),
     canonicalSha256: sha256Bytes(bytes["canonical-probe"]),
@@ -143,6 +162,22 @@ const result = validateStagingFrontendBridgeEvidence(evidence, {
   runAttempt: process.env.GITHUB_RUN_ATTEMPT,
   controlSha: process.env.CONTROL_SHA,
   deploymentId: process.env.CANONICAL_DEPLOYMENT_ID,
+  sourceRunId: process.env.SOURCE_RUN_ID,
+  sourceRunAttempt: process.env.SOURCE_RUN_ATTEMPT,
+  gateRunAttempt: process.env.SOURCE_GATE_RUN_ATTEMPT,
+  artifactId: process.env.SOURCE_ARTIFACT_ID,
+  artifactDigest: process.env.SOURCE_ARTIFACT_DIGEST,
+  artifactName: process.env.SOURCE_ARTIFACT_NAME,
+  artifactEnvironment: "staging",
+  releaseProfile: process.env.SOURCE_RELEASE_PROFILE,
+  matrixSha256: process.env.SOURCE_MATRIX_SHA256,
+  policySha256: process.env.SOURCE_POLICY_SHA256,
+  profileSha256: process.env.SOURCE_PROFILE_SHA256,
+  archiveSha256: seal.archiveSha256,
+  treeSha256: seal.treeSha256,
+  archiveBytes: seal.archiveBytes,
+  fileCount: seal.fileCount,
+  byteCount: seal.byteCount,
 });
 if (!result.valid)
   throw new Error(`G12_STAGING_FRONTEND_BRIDGE_EVIDENCE_REFUSED:${result.violations.join(",")}`);

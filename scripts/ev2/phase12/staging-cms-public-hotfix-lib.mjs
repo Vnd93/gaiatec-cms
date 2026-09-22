@@ -10,6 +10,7 @@ const FULL_SHA = /^[a-f0-9]{40}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const POSITIVE_INTEGER = /^[1-9]\d*$/;
+const WATCHDOG_OWNER_TERMINAL_CONCLUSIONS = new Set(["success", "failure", "cancelled", "timed_out"]);
 const EZBR_MAGIC = Buffer.from("EZBR", "ascii");
 const ESZIP_V2_3_MAGIC = Buffer.from("ESZIP2.3", "ascii");
 
@@ -136,6 +137,25 @@ export const STAGING_CMS_PUBLIC_HOTFIX = Object.freeze({
       "file:///home/runner/work/gaiatec-cms/gaiatec-cms/candidate-recovery/supabase/functions/import_map.json",
   }),
 });
+
+export function validateCompletedWatchdogOwnerRun(run) {
+  const startedAt = Date.parse(run?.run_started_at ?? "");
+  const updatedAt = Date.parse(run?.updated_at ?? "");
+  return (
+    run?.status === "completed" &&
+    WATCHDOG_OWNER_TERMINAL_CONCLUSIONS.has(String(run?.conclusion ?? "")) &&
+    Number.isFinite(startedAt) &&
+    Number.isFinite(updatedAt) &&
+    updatedAt >= startedAt
+  );
+}
+
+export function validateWatchdogArtifactOwnerPolicy(report, executor) {
+  if (typeof report?.ownerTerminalRequired !== "boolean") return false;
+  if (report.ownerTerminalRequired) return true;
+  if (!executor || !report.preparedBy) return false;
+  return canonicalSha256(report.preparedBy) === canonicalSha256(executor);
+}
 
 export function stagingCmsPublicRecoveryConfirmation({ controlSha, ciRunId }) {
   if (!FULL_SHA.test(controlSha) || !POSITIVE_INTEGER.test(String(ciRunId)))

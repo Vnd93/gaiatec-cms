@@ -127,17 +127,29 @@ test("critical permissions, unpublishing and governed forms are fail-closed", as
 });
 
 test("lead CAPTCHA separates frontend build flags from Edge Function secrets", async () => {
-  const [capture, contact, security, challenge, production, staging, productionBridge, stagingBridge] =
-    await Promise.all([
-      read("supabase/functions/lead-capture/index.ts"),
-      read("supabase/functions/submit-contact/index.ts"),
-      read("supabase/functions/_shared/security.ts"),
-      read("src/app/components/TurnstileChallenge.tsx"),
-      read(".github/workflows/deploy-production.yml"),
-      read(".github/workflows/deploy-staging.yml"),
-      read(".github/workflows/promote-production-frontend-bridge.yml"),
-      read(".github/workflows/promote-staging-frontend-bridge.yml"),
-    ]);
+  const [
+    capture,
+    contact,
+    security,
+    challenge,
+    production,
+    ci,
+    staging,
+    productionBridge,
+    stagingBridge,
+    stagingEdgeSecrets,
+  ] = await Promise.all([
+    read("supabase/functions/lead-capture/index.ts"),
+    read("supabase/functions/submit-contact/index.ts"),
+    read("supabase/functions/_shared/security.ts"),
+    read("src/app/components/TurnstileChallenge.tsx"),
+    read(".github/workflows/deploy-production.yml"),
+    read(".github/workflows/ci.yml"),
+    read(".github/workflows/deploy-staging.yml"),
+    read(".github/workflows/promote-production-frontend-bridge.yml"),
+    read(".github/workflows/promote-staging-frontend-bridge.yml"),
+    read("scripts/ev2/phase12/staging-edge-public-secrets-lib.mjs"),
+  ]);
   assert.match(capture, /CONTACT_CAPTCHA_ALWAYS/);
   assert.match(capture, /TURNSTILE_EXPECTED_ACTION/);
   assert.match(
@@ -160,8 +172,11 @@ test("lead CAPTCHA separates frontend build flags from Edge Function secrets", a
   assert.match(production, /CONTACT_CAPTCHA_ALWAYS: "true"/);
   assert.match(production, /TURNSTILE_SECRET_KEY:/);
   assert.doesNotMatch(production, /VITE_(?:CONTACT_CAPTCHA_ALWAYS|TURNSTILE_SITE_KEY):/);
+  assert.match(ci, /VITE_CONTACT_CAPTCHA_ALWAYS: "true"/);
   assert.match(staging, /VITE_CONTACT_CAPTCHA_ALWAYS: "true"/);
-  assert.match(staging, /CONTACT_CAPTCHA_ALWAYS=true/);
+  assert.match(staging, /configure-staging-edge-public-secrets\.mjs/);
+  assert.match(stagingEdgeSecrets, /CONTACT_CAPTCHA_ALWAYS: "true"/);
+  assert.match(stagingEdgeSecrets, /TURNSTILE_EXPECTED_ACTION: "lead_capture"/);
   for (const bridge of [productionBridge, stagingBridge]) {
     assert.match(bridge, /VITE_CONTACT_CAPTCHA_ALWAYS: "true"/);
     assert.match(bridge, /VITE_TURNSTILE_SITE_KEY:/);

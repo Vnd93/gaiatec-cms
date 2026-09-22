@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: staging
+  group: staging-recovery-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
   cancel-in-progress: false
 
 jobs:
@@ -47,6 +47,7 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
+          persist-credentials: false
           path: control
       - name: Use the parent repository-pinned Node runtime for classification
         id: parent_control_node
@@ -108,6 +109,7 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
+          persist-credentials: false
           path: control
       - name: Use the parent repository-pinned Node runtime for watchdog recovery
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
@@ -128,81 +130,34 @@ jobs:
           --run-id "${{ github.event.workflow_run.id }}"
           --run-attempt "${{ github.event.workflow_run.run_attempt }}"
           --control-sha "${{ github.event.workflow_run.head_sha }}"
-      - name: Download mandatory pre-mutation state from the incomplete run
-        id: artifact_state
-        if: >-
-          always() && needs.classify-parent-run.outputs.mutation_mode != 'pre-mutation' &&
-          (steps.variable_state.outcome != 'success' ||
-          steps.variable_state.outputs.state_present != 'true')
-        continue-on-error: true
-        timeout-minutes: 5
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: staging-deploy-state-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
-          digest-mismatch: error
-          path: state
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          run-id: ${{ github.event.workflow_run.id }}
       - name: Validate incomplete-run state and immutable ancestry
         id: watchdog_state
         if: >-
-          always() && (needs.classify-parent-run.outputs.mutation_mode != 'pre-mutation' ||
-          steps.variable_state.outputs.state_present == 'true')
+          always() && steps.variable_state.outcome == 'success' &&
+          steps.variable_state.outputs.state_present == 'true'
         working-directory: control
         env:
           VARIABLE_STATE_OUTCOME: ${{ steps.variable_state.outcome }}
           VARIABLE_STATE_PRESENT: ${{ steps.variable_state.outputs.state_present }}
-          ARTIFACT_STATE_OUTCOME: ${{ steps.artifact_state.outcome }}
           TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
           TRIGGER_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
           TRIGGER_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           TRIGGER_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
         run: |
           set -euo pipefail
-          node <<'NODE'
-          const { appendFileSync, readFileSync } = require("node:fs");
-          const statePath = process.env.VARIABLE_STATE_PRESENT === "true"
-            ? "../state-variable/staging-deploy-state.json"
-            : "../state/staging-deploy-state.json";
-          if (process.env.VARIABLE_STATE_PRESENT !== "true" && process.env.ARTIFACT_STATE_OUTCOME !== "success")
-            throw new Error("G12_STAGING_WATCHDOG_STATE_UNAVAILABLE");
-          const state = JSON.parse(readFileSync(statePath, "utf8"));
-          const sha = /^[a-f0-9]{40}$/;
-          const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-          if (
-            !["cancelled", "failure", "timed_out"].includes(process.env.TRIGGER_CONCLUSION) ||
-            state.schemaVersion !== 1 || state.event !== "g12.staging.deploy.prepared" ||
-            state.workflow?.runId !== process.env.TRIGGER_RUN_ID ||
-            Number(state.workflow?.runAttempt) !== Number(process.env.TRIGGER_RUN_ATTEMPT) ||
-            state.workflow?.controlSha !== process.env.TRIGGER_HEAD_SHA ||
-            state.project !== "gaiatec-cms-staging" || state.branch !== "ev2-g17-canary" ||
-            !sha.test(state.candidateRelease || "") || !sha.test(state.original?.release || "") ||
-            !uuid.test(state.original?.deploymentId || "") ||
-            !Number.isFinite(Date.parse(state.original?.createdOn || "")) ||
-            typeof state.original?.commitMessage !== "string" || state.original.commitMessage.includes("\0") ||
-            Buffer.byteLength(state.original.commitMessage, "utf8") > 4096 ||
-            Buffer.from(state.original.commitMessage, "utf8").toString("utf8") !== state.original.commitMessage ||
-            state.runMarker !== `g12-staging-run-${process.env.TRIGGER_RUN_ID}-${process.env.TRIGGER_RUN_ATTEMPT}` ||
-            state.compensationMarker !== `g12-staging-deploy-compensation-${process.env.TRIGGER_RUN_ID}-${process.env.TRIGGER_RUN_ATTEMPT}`
-          ) throw new Error("G12_STAGING_WATCHDOG_STATE_REFUSED");
-          appendFileSync(process.env.GITHUB_OUTPUT, [
-            `candidate_release=${state.candidateRelease}`,
-            `original_release=${state.original.release}`,
-            `original_deployment=${state.original.deploymentId}`,
-            `original_created_on=${new Date(state.original.createdOn).toISOString()}`,
-            `original_commit_message_b64=${Buffer.from(state.original.commitMessage, "utf8").toString("base64")}`,
-            `run_marker=${state.runMarker}`,
-            `compensation_marker=${state.compensationMarker}`,
-            `state_path=${statePath}`,
-          ].join("\n") + "\n");
-          NODE
+          case "$TRIGGER_CONCLUSION" in
+            cancelled|failure|timed_out) ;;
+            *) exit 1 ;;
+          esac
+          test "$VARIABLE_STATE_OUTCOME" = success
+          test "$VARIABLE_STATE_PRESENT" = true
+          state_file=../state-variable/staging-deploy-state.json
+          node scripts/ev2/phase12/verify-staging-deploy-recovery-state.mjs \
+            --file "$state_file" \
+            --run-id "$TRIGGER_RUN_ID" \
+            --run-attempt "$TRIGGER_RUN_ATTEMPT" \
+            --control-sha "$TRIGGER_HEAD_SHA"
           git cat-file -e "${{ github.event.workflow_run.head_sha }}^{commit}"
-          if [ "$VARIABLE_STATE_PRESENT" = true ]; then
-            state_file=../state-variable/staging-deploy-state.json
-          else
-            state_file=../state/staging-deploy-state.json
-          fi
           original_release="$(node -p "require('$state_file').original.release")"
           candidate_release="$(node -p "require('$state_file').candidateRelease")"
           git cat-file -e "$original_release^{commit}"
@@ -235,32 +190,232 @@ jobs:
             --control-sha "${{ github.event.workflow_run.head_sha }}" \
             --allow-missing || cleanup_status=1
           exit "$cleanup_status"
+      - name: Recover the persisted staging browser fixture from validated state
+        id: watchdog_browser_fixture_recovery
+        if: always() && steps.watchdog_state.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 10
+        working-directory: control
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          QA_CMS_EXPECTED_SHA: ${{ steps.watchdog_state.outputs.candidate_release }}
+          QA_CMS_TARGET_ENVIRONMENT: ${{ steps.watchdog_state.outputs.browser_environment }}
+          QA_CMS_RUN_TAG: ${{ steps.watchdog_state.outputs.browser_run_tag }}
+          QA_CMS_FIXTURE_REPORT_PATH: outputs/g12-staging-browser-fixture-watchdog-recovery.json
+        run: |
+          set -euo pipefail
+          test "$QA_CMS_TARGET_ENVIRONMENT" = staging
+          report="$QA_CMS_FIXTURE_REPORT_PATH"
+          node scripts/qa/cms-browser-fixture.mjs recover
+          REPORT_PATH="$report" node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const report = JSON.parse(readFileSync(process.env.REPORT_PATH, "utf8"));
+          const valid =
+            report.schemaVersion === 1 &&
+            report.mode === "recover" &&
+            ["already-terminal", "recovered"].includes(report.status) &&
+            report.environment === process.env.QA_CMS_TARGET_ENVIRONMENT &&
+            report.candidateSha === process.env.QA_CMS_EXPECTED_SHA &&
+            report.runTag === process.env.QA_CMS_RUN_TAG &&
+            report.recovery?.remainingActiveLeases === 0 &&
+            report.recovery?.sweeper?.status === "passed" &&
+            report.recovery?.sweeper?.failedLeases === 0 &&
+            report.localStateRead === false &&
+            report.credentialsInStateOrReport === false;
+          if (!valid) throw new Error("G12_STAGING_WATCHDOG_BROWSER_FIXTURE_RECOVERY_REFUSED");
+          NODE
+          mkdir -p "$RUNNER_TEMP/g12-staging-watchdog-evidence"
+          install -m 0600 \
+            "$report" \
+            "$RUNNER_TEMP/g12-staging-watchdog-evidence/g12-staging-browser-fixture-watchdog-recovery.json"
       - name: Prove a pre-mutation parent is safe before clearing its recovery state
         id: pre_mutation_ready
         if: always() && needs.classify-parent-run.outputs.mutation_mode == 'pre-mutation'
         env:
           VARIABLE_STATE_OUTCOME: ${{ steps.variable_state.outcome }}
           VARIABLE_STATE_PRESENT: ${{ steps.variable_state.outputs.state_present }}
-          ARTIFACT_STATE_OUTCOME: ${{ steps.artifact_state.outcome }}
           STATE_VALIDATION_OUTCOME: ${{ steps.watchdog_state.outcome }}
           BROWSER_CLEANUP_OUTCOME: ${{ steps.watchdog_real_browser_rendezvous_cleanup.outcome }}
+          BROWSER_FIXTURE_RECOVERY_OUTCOME: ${{ steps.watchdog_browser_fixture_recovery.outcome }}
         run: |
           set -euo pipefail
           test "$VARIABLE_STATE_OUTCOME" = success
-          test "$ARTIFACT_STATE_OUTCOME" = skipped
           if [ "$VARIABLE_STATE_PRESENT" = true ]; then
             test "$STATE_VALIDATION_OUTCOME" = success
             test "$BROWSER_CLEANUP_OUTCOME" = success
+            test "$BROWSER_FIXTURE_RECOVERY_OUTCOME" = success
           else
             test "$VARIABLE_STATE_PRESENT" = false
             test "$STATE_VALIDATION_OUTCOME" = skipped
             test "$BROWSER_CLEANUP_OUTCOME" = skipped
+            test "$BROWSER_FIXTURE_RECOVERY_OUTCOME" = skipped
           fi
+      - name: Write mandatory watchdog evidence for a pre-mutation parent
+        id: pre_mutation_evidence
+        if: >-
+          always() && needs.classify-parent-run.outputs.mutation_mode == 'pre-mutation' &&
+          steps.pre_mutation_ready.outcome == 'success'
+        working-directory: control
+        env:
+          EVIDENCE_DIRECTORY: ${{ runner.temp }}/g12-staging-watchdog-pre-mutation-evidence
+          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          PARENT_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          PARENT_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
+          PRODUCER_RUN_ID: ${{ github.run_id }}
+          PRODUCER_RUN_ATTEMPT: ${{ github.run_attempt }}
+          STATE_PRESENT: ${{ steps.variable_state.outputs.state_present }}
+          STATE_PATH: ${{ steps.watchdog_state.outputs.state_path }}
+          RENDEZVOUS_OUTCOME: ${{ steps.watchdog_real_browser_rendezvous_cleanup.outcome }}
+          BROWSER_FIXTURE_OUTCOME: ${{ steps.watchdog_browser_fixture_recovery.outcome }}
+          BROWSER_FIXTURE_REPORT: outputs/g12-staging-browser-fixture-watchdog-recovery.json
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { createHash } from "node:crypto";
+          import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+          import { join } from "node:path";
+
+          const fullSha = /^[a-f0-9]{40}$/;
+          const positiveInteger = /^[1-9][0-9]*$/;
+          const parentRunId = process.env.PARENT_RUN_ID ?? "";
+          const parentRunAttempt = Number(process.env.PARENT_RUN_ATTEMPT);
+          const parentControlSha = process.env.PARENT_CONTROL_SHA ?? "";
+          const producerRunId = process.env.PRODUCER_RUN_ID ?? "";
+          const producerRunAttempt = Number(process.env.PRODUCER_RUN_ATTEMPT);
+          if (
+            !positiveInteger.test(parentRunId) ||
+            !Number.isSafeInteger(parentRunAttempt) ||
+            parentRunAttempt < 1 ||
+            !fullSha.test(parentControlSha) ||
+            !positiveInteger.test(producerRunId) ||
+            !Number.isSafeInteger(producerRunAttempt) ||
+            producerRunAttempt < 1
+          ) {
+            throw new Error("G12_STAGING_WATCHDOG_PRE_MUTATION_EVIDENCE_IDENTITY_REFUSED");
+          }
+
+          const statePresent = process.env.STATE_PRESENT === "true";
+          const rendezvousOutcome = process.env.RENDEZVOUS_OUTCOME ?? "";
+          const browserFixtureOutcome = process.env.BROWSER_FIXTURE_OUTCOME ?? "";
+          if (
+            rendezvousOutcome !== (statePresent ? "success" : "skipped") ||
+            browserFixtureOutcome !== (statePresent ? "success" : "skipped")
+          ) {
+            throw new Error("G12_STAGING_WATCHDOG_PRE_MUTATION_EVIDENCE_CLEANUP_REFUSED");
+          }
+
+          const outputDirectory = process.env.EVIDENCE_DIRECTORY ?? "";
+          mkdirSync(outputDirectory, { recursive: true, mode: 0o700 });
+          let stateSha256 = null;
+          let candidateSha = null;
+          let remainingActiveLeases = null;
+          let failedLeases = null;
+          if (statePresent) {
+            const stateBytes = readFileSync(process.env.STATE_PATH ?? "");
+            const state = JSON.parse(stateBytes.toString("utf8"));
+            if (
+              state?.schemaVersion !== 4 ||
+              state?.workflow?.runId !== parentRunId ||
+              state?.workflow?.attempt !== parentRunAttempt ||
+              state?.workflow?.controlSha !== parentControlSha ||
+              !fullSha.test(state?.candidateRelease ?? "") ||
+              state?.browserRecovery?.environment !== "staging"
+            ) {
+              throw new Error("G12_STAGING_WATCHDOG_PRE_MUTATION_EVIDENCE_STATE_REFUSED");
+            }
+            candidateSha = state.candidateRelease;
+            stateSha256 = createHash("sha256").update(stateBytes).digest("hex");
+
+            const reportBytes = readFileSync(process.env.BROWSER_FIXTURE_REPORT ?? "");
+            const report = JSON.parse(reportBytes.toString("utf8"));
+            remainingActiveLeases = report?.recovery?.remainingActiveLeases;
+            failedLeases = report?.recovery?.sweeper?.failedLeases;
+            if (
+              report?.schemaVersion !== 1 ||
+              report?.mode !== "recover" ||
+              !["already-terminal", "recovered"].includes(report?.status) ||
+              report?.environment !== "staging" ||
+              report?.candidateSha !== candidateSha ||
+              report?.runTag !== state.browserRecovery.runTag ||
+              remainingActiveLeases !== 0 ||
+              report?.recovery?.sweeper?.status !== "passed" ||
+              failedLeases !== 0 ||
+              report?.localStateRead !== false ||
+              report?.credentialsInStateOrReport !== false
+            ) {
+              throw new Error("G12_STAGING_WATCHDOG_PRE_MUTATION_EVIDENCE_BROWSER_RECOVERY_REFUSED");
+            }
+            writeFileSync(join(outputDirectory, "browser-fixture-recovery.json"), reportBytes, {
+              mode: 0o600,
+              flag: "wx",
+            });
+          }
+
+          const evidence = {
+            schemaVersion: 1,
+            event: "g12.staging.watchdog.pre_mutation.terminal",
+            environment: "staging",
+            mutationMode: "pre-mutation",
+            runId: parentRunId,
+            runAttempt: parentRunAttempt,
+            controlSha: parentControlSha,
+            candidateSha,
+            producer: { runId: producerRunId, runAttempt: producerRunAttempt },
+            state: {
+              present: statePresent,
+              source: statePresent ? "variable" : "absent",
+              sha256: stateSha256,
+              artifactId: null,
+              artifactDigest: null,
+            },
+            cleanup: {
+              rendezvous: rendezvousOutcome,
+              browserFixture: browserFixtureOutcome,
+              remainingActiveLeases,
+              failedLeases,
+            },
+            stagingMutationArmed: false,
+            productionTouched: false,
+            zeroResidue: true,
+            secretsDisclosed: false,
+          };
+          writeFileSync(
+            join(outputDirectory, "staging-watchdog-pre-mutation-terminal.json"),
+            `${JSON.stringify(evidence, null, 2)}\n`,
+            { encoding: "utf8", mode: 0o600, flag: "wx" },
+          );
+          NODE
+      - name: Upload mandatory watchdog evidence for a pre-mutation parent
+        id: pre_mutation_evidence_upload
+        if: always() && steps.pre_mutation_evidence.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: staging-watchdog-pre-mutation-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+          path: ${{ runner.temp }}/g12-staging-watchdog-pre-mutation-evidence
+          if-no-files-found: error
+          retention-days: 30
+      - name: Verify watchdog pre-mutation evidence artifact identity
+        id: pre_mutation_evidence_identity
+        if: always() && steps.pre_mutation_evidence_upload.outcome == 'success'
+        continue-on-error: true
+        env:
+          ARTIFACT_ID: ${{ steps.pre_mutation_evidence_upload.outputs.artifact-id }}
+          ARTIFACT_DIGEST: ${{ steps.pre_mutation_evidence_upload.outputs.artifact-digest }}
+        run: |
+          set -euo pipefail
+          test "$(printf '%s' "$ARTIFACT_ID" | grep -E '^[1-9][0-9]*$')" = "$ARTIFACT_ID"
+          test "$(printf '%s' "$ARTIFACT_DIGEST" | grep -E '^(sha256:)?[a-f0-9]{64}$')" = "$ARTIFACT_DIGEST"
       - name: Clear redundant state after proving a pre-mutation parent is safe
         id: clear_pre_mutation_recovery_state
         if: >-
           always() && needs.classify-parent-run.outputs.mutation_mode == 'pre-mutation' &&
-          steps.pre_mutation_ready.outcome == 'success'
+          steps.pre_mutation_ready.outcome == 'success' &&
+          steps.pre_mutation_evidence.outcome == 'success' &&
+          steps.pre_mutation_evidence_upload.outcome == 'success' &&
+          steps.pre_mutation_evidence_identity.outcome == 'success'
         continue-on-error: true
         timeout-minutes: 5
         working-directory: control
@@ -284,10 +439,16 @@ jobs:
         if: always() && needs.classify-parent-run.outputs.mutation_mode == 'pre-mutation'
         env:
           PRE_MUTATION_READY_OUTCOME: ${{ steps.pre_mutation_ready.outcome }}
+          PRE_MUTATION_EVIDENCE_OUTCOME: ${{ steps.pre_mutation_evidence.outcome }}
+          PRE_MUTATION_EVIDENCE_UPLOAD_OUTCOME: ${{ steps.pre_mutation_evidence_upload.outcome }}
+          PRE_MUTATION_EVIDENCE_IDENTITY_OUTCOME: ${{ steps.pre_mutation_evidence_identity.outcome }}
           STATE_CLEAR_OUTCOME: ${{ steps.clear_pre_mutation_recovery_state.outcome }}
         run: |
           set -euo pipefail
           test "$PRE_MUTATION_READY_OUTCOME" = success
+          test "$PRE_MUTATION_EVIDENCE_OUTCOME" = success
+          test "$PRE_MUTATION_EVIDENCE_UPLOAD_OUTCOME" = success
+          test "$PRE_MUTATION_EVIDENCE_IDENTITY_OUTCOME" = success
           test "$STATE_CLEAR_OUTCOME" = success
       - name: Recheck the canonical alias before any watchdog compensation
         id: watchdog_decision
@@ -310,23 +471,245 @@ jobs:
           STAGING_RUN_MARKER: ${{ steps.watchdog_state.outputs.run_marker }}
           STAGING_COMPENSATION_MARKER: ${{ steps.watchdog_state.outputs.compensation_marker }}
         run: node scripts/ev2/phase12/staging-pages-state.mjs decide
-      - name: Checkout the exact candidate for watchdog forward-backend recovery
-        id: watchdog_backend_checkout
+      - name: Download the exact sealed recovery artifact before any watchdog mutation
+        id: recovery_artifact
+        if: >-
+          always() && steps.watchdog_decision.outcome == 'success' &&
+          (steps.watchdog_decision.outputs.action == 'restore-original' ||
+          steps.watchdog_decision.outputs.action == 'already-original')
+        continue-on-error: true
+        timeout-minutes: 10
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.watchdog_state.outputs.recovery_artifact_id }}
+          digest-mismatch: error
+          path: recovery
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+      - name: Verify recovery metadata, seal, provenance, snapshot and bytes before any watchdog mutation
+        id: recovery_artifact_verification
+        if: >-
+          always() && steps.watchdog_decision.outcome == 'success' &&
+          (steps.watchdog_decision.outputs.action == 'restore-original' ||
+          steps.watchdog_decision.outputs.action == 'already-original') &&
+          steps.recovery_artifact.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 10
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: Vnd93/gaiatec-cms
+        run: >-
+          node scripts/ev2/phase12/verify-staging-deploy-recovery-artifact.mjs
+          --state "${{ steps.watchdog_state.outputs.state_path }}"
+          --artifact-dir ../recovery
+      - name: Resolve the persisted unified release package for watchdog recovery
+        id: watchdog_release_source
         if: >-
           always() && steps.watchdog_state.outcome == 'success' &&
           steps.watchdog_decision.outcome == 'success' &&
           (steps.watchdog_decision.outputs.action == 'already-original' ||
-          steps.watchdog_decision.outputs.action == 'restore-original')
+          steps.watchdog_decision.outputs.action == 'restore-original') &&
+          steps.recovery_artifact_verification.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 10
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node scripts/ev2/phase12/resolve-ci-staging-frontend-artifact.mjs
+          --run-id "${{ steps.watchdog_state.outputs.source_ci_run_id }}"
+          --run-attempt "${{ steps.watchdog_state.outputs.source_ci_run_attempt }}"
+          --gate-run-attempt "${{ steps.watchdog_state.outputs.gate_ci_run_attempt }}"
+          --sha "${{ steps.watchdog_state.outputs.candidate_release }}"
+      - name: Bind the watchdog to the persisted unified package identity
+        id: watchdog_release_contract
+        if: always() && steps.watchdog_release_source.outcome == 'success'
         continue-on-error: true
         timeout-minutes: 5
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        env:
+          STATE_CANDIDATE_SHA: ${{ steps.watchdog_state.outputs.candidate_release }}
+          RESOLVED_CONTROL_SHA: ${{ steps.watchdog_release_source.outputs.control_sha }}
+          STATE_RUN_ID: ${{ steps.watchdog_state.outputs.source_ci_run_id }}
+          RESOLVED_RUN_ID: ${{ steps.watchdog_release_source.outputs.source_run_id }}
+          STATE_RUN_ATTEMPT: ${{ steps.watchdog_state.outputs.source_ci_run_attempt }}
+          RESOLVED_RUN_ATTEMPT: ${{ steps.watchdog_release_source.outputs.source_run_attempt }}
+          STATE_GATE_RUN_ATTEMPT: ${{ steps.watchdog_state.outputs.gate_ci_run_attempt }}
+          RESOLVED_GATE_RUN_ATTEMPT: ${{ steps.watchdog_release_source.outputs.gate_run_attempt }}
+          STATE_ARTIFACT_ID: ${{ steps.watchdog_state.outputs.source_artifact_id }}
+          RESOLVED_ARTIFACT_ID: ${{ steps.watchdog_release_source.outputs.artifact_id }}
+          STATE_ARTIFACT_DIGEST: ${{ steps.watchdog_state.outputs.source_artifact_digest }}
+          RESOLVED_ARTIFACT_DIGEST: ${{ steps.watchdog_release_source.outputs.artifact_digest }}
+          STATE_ARTIFACT_NAME: ${{ steps.watchdog_state.outputs.source_artifact_name }}
+          RESOLVED_ARTIFACT_NAME: ${{ steps.watchdog_release_source.outputs.artifact_name }}
+        run: |
+          set -euo pipefail
+          normalize_digest() {
+            case "$1" in
+              sha256:*) printf '%s\n' "$1" ;;
+              *) printf 'sha256:%s\n' "$1" ;;
+            esac
+          }
+          test "$(printf '%s' "$STATE_CANDIDATE_SHA" | grep -E '^[a-f0-9]{40}$')" = "$STATE_CANDIDATE_SHA"
+          test "$RESOLVED_CONTROL_SHA" = "$STATE_CANDIDATE_SHA"
+          test "$(printf '%s' "$STATE_RUN_ID" | grep -E '^[1-9][0-9]*$')" = "$STATE_RUN_ID"
+          test "$RESOLVED_RUN_ID" = "$STATE_RUN_ID"
+          test "$(printf '%s' "$STATE_RUN_ATTEMPT" | grep -E '^[1-9][0-9]*$')" = "$STATE_RUN_ATTEMPT"
+          test "$RESOLVED_RUN_ATTEMPT" = "$STATE_RUN_ATTEMPT"
+          test "$(printf '%s' "$STATE_GATE_RUN_ATTEMPT" | grep -E '^[1-9][0-9]*$')" = "$STATE_GATE_RUN_ATTEMPT"
+          test "$RESOLVED_GATE_RUN_ATTEMPT" = "$STATE_GATE_RUN_ATTEMPT"
+          test "$(printf '%s' "$STATE_ARTIFACT_ID" | grep -E '^[1-9][0-9]*$')" = "$STATE_ARTIFACT_ID"
+          test "$RESOLVED_ARTIFACT_ID" = "$STATE_ARTIFACT_ID"
+          state_digest="$(normalize_digest "$STATE_ARTIFACT_DIGEST")"
+          test "$(printf '%s' "$state_digest" | grep -E '^sha256:[a-f0-9]{64}$')" = "$state_digest"
+          test "$(normalize_digest "$RESOLVED_ARTIFACT_DIGEST")" = "$state_digest"
+          test -n "$STATE_ARTIFACT_NAME"
+          test "$RESOLVED_ARTIFACT_NAME" = "$STATE_ARTIFACT_NAME"
+      - name: Download the persisted unified release package by immutable artifact ID
+        id: watchdog_release_download
+        if: always() && steps.watchdog_release_contract.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 10
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          ref: ${{ steps.watchdog_state.outputs.candidate_release }}
-          fetch-depth: 0
-          path: candidate-recovery
+          artifact-ids: ${{ steps.watchdog_state.outputs.source_artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ steps.watchdog_state.outputs.source_ci_run_id }}
+          path: ${{ runner.temp }}/g12-staging-watchdog-release-package
+      - name: Derive the fail-closed recovery profile from the exact sealed package
+        id: watchdog_release_profile
+        if: always() && steps.watchdog_release_download.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 5
+        working-directory: control
+        env:
+          CANDIDATE_SHA: ${{ steps.watchdog_state.outputs.candidate_release }}
+          SOURCE_RUN_ID: ${{ steps.watchdog_state.outputs.source_ci_run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ steps.watchdog_state.outputs.source_ci_run_attempt }}
+          SOURCE_ARTIFACT_NAME: ${{ steps.watchdog_state.outputs.source_artifact_name }}
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { readFile } from "node:fs/promises";
+          import { join } from "node:path";
+          import { appendFile } from "node:fs/promises";
+          import {
+            evaluateStagingReleasePackageManifest,
+          } from "./scripts/ev2/phase12/staging-release-package-lib.mjs";
+          import {
+            readCiStagingFrontendSelectionControls,
+            validateCiReleasePlan,
+          } from "./scripts/ev2/phase12/ci-staging-frontend-selection-lib.mjs";
+
+          const root = join(process.env.RUNNER_TEMP, "g12-staging-watchdog-release-package");
+          const manifestPath = join(root, "staging-release-package.json");
+          const planPath = join(root, "controls", "release-plan.json");
+          const matrixPath = join(root, "controls", "release-gate-matrix.json");
+          const policyPath = join(root, "controls", "release-checkpoint-policy.json");
+          const [manifest, plan] = await Promise.all(
+            [manifestPath, planPath].map(async (path) => JSON.parse(await readFile(path, "utf8"))),
+          );
+          const manifestResult = evaluateStagingReleasePackageManifest(manifest, {
+            candidateSha: process.env.CANDIDATE_SHA,
+            runId: process.env.SOURCE_RUN_ID,
+            runAttempt: Number(process.env.SOURCE_RUN_ATTEMPT),
+            artifactName: process.env.SOURCE_ARTIFACT_NAME,
+          });
+          if (!manifestResult.valid) {
+            throw new Error(
+              `G12_STAGING_WATCHDOG_PACKAGE_MANIFEST_REFUSED:${manifestResult.violations.join(",")}`,
+            );
+          }
+          if (plan?.selectedProfile !== manifest.releaseProfile) {
+            throw new Error("G12_STAGING_WATCHDOG_RELEASE_PROFILE_BINDING_REFUSED");
+          }
+          const controls = await readCiStagingFrontendSelectionControls({
+            matrixPath,
+            policyPath,
+            profile: manifest.releaseProfile,
+            expectedMatrixSha256: plan?.controlMatrixSha256,
+            expectedPolicySha256: plan?.controlCheckpointPolicySha256,
+          });
+          const planResult = validateCiReleasePlan(plan, {
+            matrix: controls.matrix,
+            candidateSha: process.env.CANDIDATE_SHA,
+            profile: manifest.releaseProfile,
+            matrixSha256: controls.matrixSha256,
+            checkpointPolicySha256: controls.policySha256,
+            actualControlImplementationSha256: plan?.controlImplementationSha256,
+            actualControlMatrixSha256: controls.matrixSha256,
+            actualControlCheckpointPolicySha256: controls.policySha256,
+          });
+          if (!planResult.valid) {
+            throw new Error(`G12_STAGING_WATCHDOG_RELEASE_PLAN_REFUSED:${planResult.violations.join(",")}`);
+          }
+          const requirements = {
+            "frontend-only": [false, false],
+            "edge-only": [false, true],
+            "database-auth": [true, false],
+            "full-release": [true, true],
+          }[manifest.releaseProfile];
+          if (!requirements) throw new Error("G12_STAGING_WATCHDOG_RELEASE_PROFILE_REFUSED");
+          await appendFile(
+            process.env.GITHUB_OUTPUT,
+            [
+              `release_profile=${manifest.releaseProfile}`,
+              `database_required=${requirements[0]}`,
+              `edge_required=${requirements[1]}`,
+              "",
+            ].join("\n"),
+            "utf8",
+          );
+          NODE
+      - name: Verify the persisted unified release package before watchdog mutation
+        id: watchdog_release_package
+        if: always() && steps.watchdog_release_profile.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 10
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/verify-staging-release-package.mjs
+          --package "$RUNNER_TEMP/g12-staging-watchdog-release-package"
+          --candidate "${{ steps.watchdog_state.outputs.candidate_release }}"
+          --profile "${{ steps.watchdog_release_profile.outputs.release_profile }}"
+          --run-id "${{ steps.watchdog_state.outputs.source_ci_run_id }}"
+          --run-attempt "${{ steps.watchdog_state.outputs.source_ci_run_attempt }}"
+      - name: Materialize the persisted database payload only when the watchdog profile requires it
+        id: watchdog_database_payload
+        if: >-
+          always() && steps.watchdog_release_package.outcome == 'success' &&
+          steps.watchdog_release_profile.outputs.database_required == 'true'
+        continue-on-error: true
+        timeout-minutes: 10
+        working-directory: control
+        env:
+          RELEASE_PROFILE: ${{ steps.watchdog_release_profile.outputs.release_profile }}
+          CANDIDATE_SHA: ${{ steps.watchdog_state.outputs.candidate_release }}
+        run: |
+          set -euo pipefail
+          manifest="$RUNNER_TEMP/g12-staging-watchdog-release-package/staging-release-package.json"
+          test "$(jq -er '.components.database.files | length' "$manifest")" = 1
+          payload_name="$(jq -er '.components.database.files[0].path' "$manifest")"
+          payload_sha256="$(jq -er '.components.database.files[0].sha256' "$manifest")"
+          expected_name="database-release-staging-${CANDIDATE_SHA}-${RELEASE_PROFILE}.g12db"
+          test "$payload_name" = "$expected_name"
+          test "$(printf '%s' "$payload_sha256" | grep -E '^[a-f0-9]{64}$')" = "$payload_sha256"
+          node scripts/ev2/phase12/verify-database-release-payload.mjs \
+            --payload "$RUNNER_TEMP/g12-staging-watchdog-release-package/database/$payload_name" \
+            --output "$RUNNER_TEMP/g12-staging-watchdog-database-project" \
+            --candidate "$CANDIDATE_SHA" \
+            --environment staging \
+            --profile "$RELEASE_PROFILE" \
+            --expected-payload-sha256 "$payload_sha256"
       - name: Install pinned Supabase CLI for watchdog forward-backend recovery
         id: watchdog_supabase_cli
-        if: always() && steps.watchdog_backend_checkout.outcome == 'success'
+        if: >-
+          always() && steps.watchdog_release_package.outcome == 'success' &&
+          (steps.watchdog_release_profile.outputs.database_required == 'true' ||
+          steps.watchdog_release_profile.outputs.edge_required == 'true')
         continue-on-error: true
         timeout-minutes: 5
         uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3
@@ -334,101 +717,163 @@ jobs:
           version: 2.116.0
       - name: Converge exact candidate staging migrations in the watchdog
         id: watchdog_recovery_database
-        if: always() && steps.watchdog_supabase_cli.outcome == 'success'
+        if: >-
+          always() && steps.watchdog_release_profile.outputs.database_required == 'true' &&
+          steps.watchdog_database_payload.outcome == 'success' &&
+          steps.watchdog_supabase_cli.outcome == 'success'
         continue-on-error: true
         timeout-minutes: 15
-        working-directory: candidate-recovery
+        working-directory: ${{ steps.watchdog_database_payload.outputs.project_directory }}
         env:
           STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
-          mkdir -p outputs
           test "$STAGING_SUPABASE_PROJECT_REF" = "glcqsosxwgmlhzgcsnzv"
-          test "$(git rev-parse HEAD)" = "${{ steps.watchdog_state.outputs.candidate_release }}"
+          mkdir -p "$RUNNER_TEMP/g12-staging-watchdog-evidence"
           supabase link --project-ref "$STAGING_SUPABASE_PROJECT_REF" --yes
           supabase db push --linked --include-all --dry-run
           supabase db push --linked --include-all --yes
-          node scripts/ev2/phase12/verify-staging-database.mjs --source . |
-            tee outputs/g12-staging-database-watchdog-recovery.json
-      - name: Converge exact candidate staging configuration in the watchdog
-        id: watchdog_recovery_configuration
-        if: always() && steps.watchdog_recovery_database.outcome == 'success'
+          node "$GITHUB_WORKSPACE/control/scripts/ev2/phase12/verify-staging-database.mjs" --source . |
+            tee "$RUNNER_TEMP/g12-staging-watchdog-evidence/g12-staging-database-watchdog-recovery.json"
+      - name: Converge exact candidate staging Auth in the watchdog
+        id: watchdog_recovery_auth
+        if: >-
+          always() && steps.watchdog_release_profile.outputs.database_required == 'true' &&
+          steps.watchdog_recovery_database.outcome == 'success'
         continue-on-error: true
         timeout-minutes: 10
-        working-directory: candidate-recovery
+        working-directory: ${{ steps.watchdog_database_payload.outputs.project_directory }}
         env:
           STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          STAGING_ALLOWED_ORIGINS: >-
-            https://gaiatec-cms-staging.pages.dev,
-            https://ev2-g17-canary.gaiatec-cms-staging.pages.dev,
-            https://ev2-g12-canary.gaiatec-cms-staging.pages.dev,
-            https://ev2-g16-csp-canary.gaiatec-cms-staging.pages.dev,
-            https://ev2-g12-rollback-compat.gaiatec-cms-staging.pages.dev
-          STAGING_ALLOWED_HOSTNAMES: >-
-            gaiatec-cms-staging.pages.dev,
-            ev2-g17-canary.gaiatec-cms-staging.pages.dev,
-            ev2-g12-canary.gaiatec-cms-staging.pages.dev,
-            ev2-g16-csp-canary.gaiatec-cms-staging.pages.dev,
-            ev2-g12-rollback-compat.gaiatec-cms-staging.pages.dev
         run: |
           set -euo pipefail
-          supabase secrets set --project-ref "$STAGING_SUPABASE_PROJECT_REF" \
-            ALLOWED_ORIGINS="$STAGING_ALLOWED_ORIGINS" \
-            TURNSTILE_ALLOWED_HOSTNAMES="$STAGING_ALLOWED_HOSTNAMES" \
-            PUBLIC_SITE_ORIGIN=https://ev2-g17-canary.gaiatec-cms-staging.pages.dev \
-            CMS_ENVIRONMENT=staging \
-            CMS_RELEASE_SHA="${{ steps.watchdog_state.outputs.candidate_release }}" \
-            CMS_ADMIN_ORIGIN=https://ev2-g17-canary.gaiatec-cms-staging.pages.dev \
-            CMS_ADMIN_URL=https://ev2-g17-canary.gaiatec-cms-staging.pages.dev/admin \
-            CONTACT_CAPTCHA_ALWAYS=true \
-            TURNSTILE_EXPECTED_ACTION=lead_capture
-          node scripts/ev2/phase12/configure-staging-auth.mjs
-          node scripts/ev2/phase12/configure-staging-ai-provider-secrets.mjs |
-            tee outputs/g12-staging-ai-provider-watchdog-recovery.json
+          mkdir -p "$RUNNER_TEMP/g12-staging-watchdog-evidence"
+          node scripts/ev2/phase12/configure-staging-auth.mjs |
+            tee "$RUNNER_TEMP/g12-staging-watchdog-evidence/g12-staging-auth-watchdog-recovery.json"
+      - name: Converge exact candidate staging Edge configuration in the watchdog
+        id: watchdog_recovery_edge_configuration
+        if: >-
+          always() && steps.watchdog_release_profile.outputs.edge_required == 'true' &&
+          steps.watchdog_supabase_cli.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 10
+        working-directory: control
+        env:
+          STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          STAGING_CANDIDATE_SHA: ${{ steps.watchdog_state.outputs.candidate_release }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/g12-staging-watchdog-evidence"
+          node "$RUNNER_TEMP/g12-staging-watchdog-release-package/edge/source/scripts/ev2/phase12/configure-staging-edge-public-secrets.mjs" |
+            tee "$RUNNER_TEMP/g12-staging-watchdog-evidence/g12-staging-edge-public-secrets-watchdog-recovery.json"
+          node "$RUNNER_TEMP/g12-staging-watchdog-release-package/edge/source/scripts/ev2/phase12/configure-staging-ai-provider-secrets.mjs" |
+            tee "$RUNNER_TEMP/g12-staging-watchdog-evidence/g12-staging-ai-provider-watchdog-recovery.json"
       - name: Converge exact candidate Edge Functions in the watchdog
         id: watchdog_recovery_functions
-        if: always() && steps.watchdog_recovery_configuration.outcome == 'success'
+        if: >-
+          always() && steps.watchdog_release_profile.outputs.edge_required == 'true' &&
+          steps.watchdog_recovery_edge_configuration.outcome == 'success'
         continue-on-error: true
         timeout-minutes: 90
-        working-directory: candidate-recovery
+        working-directory: control
         env:
           STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
-          mkdir -p outputs
+          package="$RUNNER_TEMP/g12-staging-watchdog-release-package"
+          release_manifest="$package/staging-release-package.json"
+          edge_manifest_sha256="$(jq -er '.components.edge.files[] | select(.path == "manifest.json") | .sha256' "$release_manifest")"
+          test "$(printf '%s' "$edge_manifest_sha256" | grep -E '^[a-f0-9]{64}$')" = "$edge_manifest_sha256"
+          mkdir -p "$RUNNER_TEMP/g12-staging-watchdog-evidence"
           node scripts/ev2/phase12/deploy-staging-functions.mjs \
-            --source . --rollback-source . \
+            --candidate-artifact "$package/edge" \
+            --artifact-manifest-sha256 "$edge_manifest_sha256" \
+            --baseline-artifact ../recovery/edge-baseline \
+            --baseline-manifest-sha256 "${{ steps.watchdog_state.outputs.edge_baseline_manifest_sha256 }}" \
             --candidate "${{ steps.watchdog_state.outputs.candidate_release }}" \
-            --report outputs/g12-staging-function-watchdog-recovery.json
+            --mode reconcile-candidate \
+            --report "$RUNNER_TEMP/g12-staging-watchdog-evidence/g12-staging-function-watchdog-recovery.json"
           supabase functions list --project-ref "$STAGING_SUPABASE_PROJECT_REF" --output json > \
-            outputs/g12-staging-functions-watchdog-recovery.json
+            "$RUNNER_TEMP/g12-staging-watchdog-evidence/g12-staging-functions-watchdog-recovery.json"
           node scripts/ev2/phase12/verify-production-functions.mjs \
-            --file outputs/g12-staging-functions-watchdog-recovery.json \
-            --receipt outputs/g12-staging-function-watchdog-recovery.json \
-            --source . --candidate "${{ steps.watchdog_state.outputs.candidate_release }}" \
+            --file "$RUNNER_TEMP/g12-staging-watchdog-evidence/g12-staging-functions-watchdog-recovery.json" \
+            --receipt "$RUNNER_TEMP/g12-staging-watchdog-evidence/g12-staging-function-watchdog-recovery.json" \
+            --source "$package/edge/source" \
+            --candidate "${{ steps.watchdog_state.outputs.candidate_release }}" \
             --environment staging --project-ref "$STAGING_SUPABASE_PROJECT_REF"
-      - name: Download the exact sealed recovery artifact when the owned candidate remains active
-        id: recovery_artifact
+      - name: Prove required watchdog backend domains recovered and omitted domains stayed skipped
+        id: watchdog_backend_recovery
         if: >-
-          always() && steps.watchdog_decision.outputs.action == 'restore-original' &&
-          steps.watchdog_recovery_functions.outcome == 'success'
+          always() && steps.watchdog_state.outcome == 'success' &&
+          steps.watchdog_decision.outcome == 'success' &&
+          steps.recovery_artifact_verification.outcome == 'success'
         continue-on-error: true
-        timeout-minutes: 10
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: staging-recovery-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
-          digest-mismatch: error
-          path: recovery
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          run-id: ${{ github.event.workflow_run.id }}
+        timeout-minutes: 5
+        env:
+          RELEASE_SOURCE_OUTCOME: ${{ steps.watchdog_release_source.outcome }}
+          RELEASE_CONTRACT_OUTCOME: ${{ steps.watchdog_release_contract.outcome }}
+          RELEASE_DOWNLOAD_OUTCOME: ${{ steps.watchdog_release_download.outcome }}
+          RELEASE_PROFILE_OUTCOME: ${{ steps.watchdog_release_profile.outcome }}
+          RELEASE_PACKAGE_OUTCOME: ${{ steps.watchdog_release_package.outcome }}
+          RELEASE_PACKAGE_NAME: ${{ steps.watchdog_release_package.outputs.artifact_name }}
+          STATE_ARTIFACT_NAME: ${{ steps.watchdog_state.outputs.source_artifact_name }}
+          DATABASE_REQUIRED: ${{ steps.watchdog_release_profile.outputs.database_required }}
+          EDGE_REQUIRED: ${{ steps.watchdog_release_profile.outputs.edge_required }}
+          DATABASE_PAYLOAD_OUTCOME: ${{ steps.watchdog_database_payload.outcome }}
+          SUPABASE_CLI_OUTCOME: ${{ steps.watchdog_supabase_cli.outcome }}
+          DATABASE_OUTCOME: ${{ steps.watchdog_recovery_database.outcome }}
+          AUTH_OUTCOME: ${{ steps.watchdog_recovery_auth.outcome }}
+          EDGE_CONFIGURATION_OUTCOME: ${{ steps.watchdog_recovery_edge_configuration.outcome }}
+          EDGE_FUNCTIONS_OUTCOME: ${{ steps.watchdog_recovery_functions.outcome }}
+        run: |
+          set -euo pipefail
+          for outcome in \
+            "$RELEASE_SOURCE_OUTCOME" \
+            "$RELEASE_CONTRACT_OUTCOME" \
+            "$RELEASE_DOWNLOAD_OUTCOME" \
+            "$RELEASE_PROFILE_OUTCOME" \
+            "$RELEASE_PACKAGE_OUTCOME"
+          do
+            test "$outcome" = success
+          done
+          test -n "$STATE_ARTIFACT_NAME"
+          test "$RELEASE_PACKAGE_NAME" = "$STATE_ARTIFACT_NAME"
+          case "$DATABASE_REQUIRED:$EDGE_REQUIRED" in
+            false:false|false:true|true:false|true:true) ;;
+            *) echo G12_STAGING_WATCHDOG_DOMAIN_REQUIREMENTS_REFUSED >&2; exit 1 ;;
+          esac
+          if [ "$DATABASE_REQUIRED" = true ]; then
+            test "$DATABASE_PAYLOAD_OUTCOME" = success
+            test "$DATABASE_OUTCOME" = success
+            test "$AUTH_OUTCOME" = success
+          else
+            test "$DATABASE_PAYLOAD_OUTCOME" = skipped
+            test "$DATABASE_OUTCOME" = skipped
+            test "$AUTH_OUTCOME" = skipped
+          fi
+          if [ "$EDGE_REQUIRED" = true ]; then
+            test "$EDGE_CONFIGURATION_OUTCOME" = success
+            test "$EDGE_FUNCTIONS_OUTCOME" = success
+          else
+            test "$EDGE_CONFIGURATION_OUTCOME" = skipped
+            test "$EDGE_FUNCTIONS_OUTCOME" = skipped
+          fi
+          if [ "$DATABASE_REQUIRED" = true ] || [ "$EDGE_REQUIRED" = true ]; then
+            test "$SUPABASE_CLI_OUTCOME" = success
+          else
+            test "$SUPABASE_CLI_OUTCOME" = skipped
+          fi
+          printf 'recovered=true\n' >> "$GITHUB_OUTPUT"
       - name: Install the exact locked Wrangler only when compensation is required
+        id: watchdog_wrangler_install
         if: >-
           always() && steps.watchdog_decision.outputs.action == 'restore-original' &&
-          steps.recovery_artifact.outcome == 'success'
+          steps.recovery_artifact_verification.outcome == 'success'
+        continue-on-error: true
         timeout-minutes: 10
         working-directory: control
         run: npm ci --ignore-scripts
@@ -436,7 +881,9 @@ jobs:
         id: watchdog_compensation
         if: >-
           always() && steps.watchdog_decision.outputs.action == 'restore-original' &&
-          steps.watchdog_recovery_functions.outcome == 'success'
+          steps.watchdog_backend_recovery.outcome == 'success' &&
+          steps.recovery_artifact_verification.outcome == 'success' &&
+          steps.watchdog_wrangler_install.outcome == 'success'
         timeout-minutes: 15
         continue-on-error: true
         working-directory: control
@@ -449,8 +896,9 @@ jobs:
         id: watchdog_compensation_retry
         if: >-
           always() && steps.watchdog_decision.outputs.action == 'restore-original' &&
-          steps.watchdog_recovery_functions.outcome == 'success' &&
-          steps.recovery_artifact.outcome == 'success' &&
+          steps.watchdog_backend_recovery.outcome == 'success' &&
+          steps.recovery_artifact_verification.outcome == 'success' &&
+          steps.watchdog_wrangler_install.outcome == 'success' &&
           steps.watchdog_compensation.outcome != 'success'
         timeout-minutes: 15
         continue-on-error: true
@@ -464,7 +912,7 @@ jobs:
         id: watchdog_terminal_canonical
         if: >-
           always() &&
-          steps.watchdog_recovery_functions.outcome == 'success' &&
+          steps.watchdog_backend_recovery.outcome == 'success' &&
           (steps.watchdog_decision.outputs.action == 'already-original' ||
           steps.watchdog_compensation.outcome == 'success' ||
           steps.watchdog_compensation_retry.outcome == 'success')
@@ -477,11 +925,7 @@ jobs:
         id: watchdog_probe
         if: >-
           always() &&
-          steps.watchdog_backend_checkout.outcome == 'success' &&
-          steps.watchdog_supabase_cli.outcome == 'success' &&
-          steps.watchdog_recovery_database.outcome == 'success' &&
-          steps.watchdog_recovery_configuration.outcome == 'success' &&
-          steps.watchdog_recovery_functions.outcome == 'success' &&
+          steps.watchdog_backend_recovery.outcome == 'success' &&
           steps.watchdog_terminal_canonical.outcome == 'success' &&
           (steps.watchdog_decision.outputs.action == 'already-original' ||
           steps.watchdog_compensation.outcome == 'success' ||
@@ -514,10 +958,7 @@ jobs:
           name: staging-watchdog-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
           path: |
             g12-staging-watchdog-probe.json
-            candidate-recovery/outputs/g12-staging-database-watchdog-recovery.json
-            candidate-recovery/outputs/g12-staging-ai-provider-watchdog-recovery.json
-            candidate-recovery/outputs/g12-staging-function-watchdog-recovery.json
-            candidate-recovery/outputs/g12-staging-functions-watchdog-recovery.json
+            ${{ runner.temp }}/g12-staging-watchdog-evidence/*.json
           if-no-files-found: error
           retention-days: 30
       - name: Compare and clear redundant deploy state after watchdog evidence
@@ -525,15 +966,15 @@ jobs:
         if: >-
           always() && steps.watchdog_state.outcome == 'success' &&
           steps.watchdog_decision.outcome == 'success' &&
-          steps.watchdog_backend_checkout.outcome == 'success' &&
-          steps.watchdog_supabase_cli.outcome == 'success' &&
-          steps.watchdog_recovery_database.outcome == 'success' &&
-          steps.watchdog_recovery_configuration.outcome == 'success' &&
-          steps.watchdog_recovery_functions.outcome == 'success' &&
+          steps.watchdog_backend_recovery.outcome == 'success' &&
           steps.watchdog_real_browser_rendezvous_cleanup.outcome == 'success' &&
+          steps.watchdog_browser_fixture_recovery.outcome == 'success' &&
           steps.watchdog_terminal_canonical.outcome == 'success' &&
           steps.watchdog_probe.outcome == 'success' &&
-          steps.watchdog_evidence_upload.outcome == 'success'
+          steps.watchdog_evidence_upload.outcome == 'success' &&
+          (steps.watchdog_decision.outputs.action != 'restore-original' ||
+          (steps.recovery_artifact_verification.outcome == 'success' &&
+          steps.watchdog_wrangler_install.outcome == 'success'))
         timeout-minutes: 5
         working-directory: control
         env:
@@ -558,16 +999,15 @@ jobs:
           steps.watchdog_state.outcome != 'success' ||
           steps.watchdog_decision.outcome != 'success' ||
           steps.watchdog_real_browser_rendezvous_cleanup.outcome != 'success' ||
+          steps.watchdog_browser_fixture_recovery.outcome != 'success' ||
           steps.watchdog_probe.outcome != 'success' ||
           steps.watchdog_evidence_upload.outcome != 'success' ||
           steps.clear_recovery_state.outcome != 'success' ||
-          steps.watchdog_backend_checkout.outcome != 'success' ||
-          steps.watchdog_supabase_cli.outcome != 'success' ||
-          steps.watchdog_recovery_database.outcome != 'success' ||
-          steps.watchdog_recovery_configuration.outcome != 'success' ||
-          steps.watchdog_recovery_functions.outcome != 'success' ||
+          steps.watchdog_backend_recovery.outcome != 'success' ||
           steps.watchdog_terminal_canonical.outcome != 'success' ||
           (steps.watchdog_decision.outputs.action == 'restore-original' &&
+          (steps.recovery_artifact_verification.outcome != 'success' ||
+          steps.watchdog_wrangler_install.outcome != 'success' ||
           steps.watchdog_compensation.outcome != 'success' &&
-          steps.watchdog_compensation_retry.outcome != 'success'))
+          steps.watchdog_compensation_retry.outcome != 'success')))
         run: exit 1

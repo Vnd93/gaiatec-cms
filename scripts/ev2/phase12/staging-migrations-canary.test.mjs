@@ -832,20 +832,58 @@ test("management SQL accepts the documented created response without relaxing ot
 
 test("staging workflow runs the canary only after migrations/functions and uploads its report", async () => {
   const workflow = await read(".github/workflows/deploy-staging.yml");
+  const payload = workflow.indexOf(
+    "Materialize the exact database payload only for database mutation profiles",
+  );
   const migrations = workflow.indexOf("Apply the exact candidate migrations to staging");
   const functions = workflow.indexOf(
     "Deploy the complete exact-candidate Edge Function inventory to staging",
   );
-  const verification = workflow.indexOf("Verify staging migrations, RLS, Storage, Vault and Function modes");
+  const functionVerification = workflow.indexOf("Verify the exact deployed staging Function modes");
+  const databaseVerification = workflow.indexOf(
+    "Verify staging migrations, RLS, Storage and Vault read-only",
+  );
   const canary = workflow.indexOf("staging-migrations-canary.mjs");
-  const build = workflow.indexOf("Build the staging shell from the same SHA");
+  const recoveryHandoff = workflow.indexOf(
+    "Upload mandatory sealed staging recovery artifact before mutation",
+  );
 
-  assert.ok(migrations >= 0 && migrations < functions);
-  assert.ok(functions < verification && verification < canary);
-  assert.ok(canary < build);
+  assert.ok(payload >= 0 && payload < recoveryHandoff && recoveryHandoff < migrations);
+  assert.ok(migrations < functions);
+  assert.ok(
+    functions < functionVerification &&
+      functionVerification < databaseVerification &&
+      databaseVerification < canary,
+  );
+  assert.match(workflow, /verify-database-release-payload\.mjs/);
+  assert.match(workflow, /--expected-payload-sha256 "\$payload_sha256"/);
+  assert.match(
+    workflow,
+    /working-directory: \$\{\{ steps\.database_payload\.outputs\.project_directory \}\}/,
+  );
+  assert.doesNotMatch(workflow, /Build the staging shell from the same SHA|npm run build:staging/);
   assert.match(workflow, /Exercise post-baseline migration scenarios with isolated synthetic data/);
   assert.match(workflow, /G12_MIGRATION_CANARY_EXPECTED_SHA: \$\{\{ steps\.candidate\.outputs\.sha \}\}/);
   assert.match(workflow, /G12_MIGRATION_CANARY_REPORT_PATH: \.\.\/g12-staging-migrations-canary\.json/);
   assert.match(workflow, /SUPABASE_ACCESS_TOKEN: \$\{\{ secrets\.SUPABASE_ACCESS_TOKEN \}\}/);
   assert.match(workflow, /^\s+g12-staging-migrations-canary\.json$/m);
+
+  const migrationMutation = workflow.slice(
+    migrations,
+    workflow.indexOf("Configure the exact staging browser origins without wildcard trust", migrations),
+  );
+  assert.match(migrationMutation, /release_profile == 'database-auth'/);
+  assert.match(migrationMutation, /release_profile == 'full-release'/);
+  assert.match(
+    migrationMutation,
+    /working-directory: \$\{\{ steps\.database_payload\.outputs\.project_directory \}\}/,
+  );
+  assert.doesNotMatch(migrationMutation, /working-directory: candidate/);
+
+  const edgeMutation = workflow.slice(functions, functionVerification);
+  assert.match(edgeMutation, /release_profile == 'edge-only'/);
+  assert.match(edgeMutation, /release_profile == 'full-release'/);
+  assert.match(edgeMutation, /--candidate-artifact "\$RUNNER_TEMP\/g12-staging-release-package\/edge"/);
+  assert.match(edgeMutation, /--artifact-manifest-sha256 "\$edge_manifest_sha256"/);
+  assert.doesNotMatch(edgeMutation, /--source\s/);
 });

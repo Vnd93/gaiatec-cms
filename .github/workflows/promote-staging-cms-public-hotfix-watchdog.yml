@@ -33,7 +33,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.event_name == 'workflow_dispatch' && 'staging' || (github.event.workflow_run.run_attempt == 1 && 'staging' || format('staging-hotfix-watchdog-refused-{0}-{1}', github.event.workflow_run.id, github.event.workflow_run.run_attempt)) }}
+  group: ${{ github.event_name == 'workflow_dispatch' && 'staging' || format('staging-recovery-{0}-{1}', github.event.workflow_run.id, github.event.workflow_run.run_attempt) }}
   cancel-in-progress: false
 
 jobs:
@@ -422,6 +422,7 @@ jobs:
           node scripts/ev2/phase12/staging-cms-public-hotfix.mjs resolve-watchdog-artifacts
           --state ../recovered-state/hotfix-state.json
           --rollback-intent ../rollback-variable/rollback-intent.json
+          --require-owner-terminal true
           --output ../watchdog-artifacts-predecessor.json
       - name: Refuse a manual dispatch adopting another recovery run
         if: >-

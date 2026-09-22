@@ -14,8 +14,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: ev2-g16-csp-canary
-  cancel-in-progress: true
+  group: staging
+  cancel-in-progress: false
 
 jobs:
   preview:
@@ -46,6 +46,7 @@ jobs:
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           ref: ${{ inputs.expected_sha }}
           fetch-depth: 0
       - name: Validate immutable candidate
@@ -85,6 +86,31 @@ jobs:
           path: dist
           if-no-files-found: error
           retention-days: 14
+      - name: Checkout trusted staging fence controls just in time
+        if: env.CANARY_DEPLOY_CONFIGURED == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: refs/heads/main
+          path: control
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Use the trusted pinned Node runtime for the staging fence
+        if: env.CANARY_DEPLOY_CONFIGURED == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: control/.nvmrc
+      - name: Refuse staging preview while durable recovery is armed
+        if: env.CANARY_DEPLOY_CONFIGURED == 'true'
+        run: >-
+          node control/scripts/ev2/phase12/recovery-state-store.mjs fence
+          --owner-kind staging-preview --require-empty
+          --file outputs/staging-preview-fence.json
+          --run-id "${{ github.run_id }}"
+          --run-attempt "${{ github.run_attempt }}"
+          --control-sha "$(git -C control rev-parse HEAD)"
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
       - if: env.CANARY_DEPLOY_CONFIGURED == 'true'
         id: deploy
         uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3

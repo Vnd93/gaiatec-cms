@@ -9,8 +9,11 @@ import {
   claimChallengeVariable,
   clearExactBrokerAttestation,
   createRealBrowserBrokerGitHubClient,
+  parentJobNameForEnvironment,
   runRealBrowserAttestationConsumer,
   runRealBrowserStoreChild,
+  validateRealBrowserConsumerReadiness,
+  verifyRealBrowserConsumerReadiness,
 } from "./run-real-browser-attestation-consumer.mjs";
 import {
   buildRealBrowserAttestationVariable,
@@ -89,6 +92,13 @@ function argsFor(challengePath, suffix) {
   ];
 }
 
+function argsForReadiness(challengePath, readinessPath, suffix) {
+  const args = argsFor(challengePath, suffix);
+  args[args.indexOf("--challenge-wait-seconds") + 1] = "3";
+  args.push("--readiness-file", readinessPath);
+  return args;
+}
+
 function reportFor(value, observedAt) {
   return {
     schemaVersion: 1,
@@ -136,7 +146,7 @@ function parentJobsPayload({
         run_attempt: runAttempt,
         head_branch: "main",
         head_sha: controlSha,
-        name: "deploy",
+        name: "browser_attestation",
         status: active ? "in_progress" : "completed",
         conclusion: active ? null : completedSuccess ? "success" : "cancelled",
         steps: [
@@ -202,11 +212,17 @@ function parentStateValue() {
     runId,
     runAttempt,
     jobId: "445566",
-    jobName: "deploy",
+    jobName: "browser_attestation",
     stepNumber: 17,
     stepName: "Run the complete authenticated mutating editorial cycle first",
   };
 }
+
+test("the parent browser job binding is environment-specific and fail-closed", () => {
+  assert.equal(parentJobNameForEnvironment("staging"), "browser_attestation");
+  assert.equal(parentJobNameForEnvironment("production"), "deploy");
+  assert.throws(() => parentJobNameForEnvironment("preview"), /G12_REAL_BROWSER_PARENT_ENVIRONMENT_REFUSED/);
+});
 
 function attestationRecord(report, observedNow) {
   const environment = brokerEnvironment();
@@ -284,6 +300,26 @@ test("the broker workflow claims, stores, handshakes, and always clears without 
   assert.match(cleanup, /--report runner-temp-real-browser-report\.json/);
   assert.doesNotMatch(cleanup, /real-browser-attestation-store\.mjs clear/);
   assert.doesNotMatch(cleanup.slice(cleanup.indexOf("run: |")), /\$\{\{\s*inputs\./);
+});
+
+test("staging waits for the exact watcher readiness before generating the just-in-time challenge", async () => {
+  const workflow = await readFile(resolve(repositoryRoot, ".github/workflows/deploy-staging.yml"), "utf8");
+  const stepStart = workflow.indexOf("- name: Run the complete authenticated mutating editorial cycle first");
+  const stepEnd = workflow.indexOf("\n      - name:", stepStart + 1);
+  assert.notEqual(stepStart, -1);
+  assert.notEqual(stepEnd, -1);
+  const step = workflow.slice(stepStart, stepEnd);
+  const startConsumer = step.indexOf("run-real-browser-attestation-consumer.mjs \\");
+  const verifyReadiness = step.indexOf("run-real-browser-attestation-consumer.mjs verify-readiness");
+  const uiBootstrap = step.indexOf("--grep @ui-bootstrap");
+  assert.ok(startConsumer >= 0 && startConsumer < verifyReadiness && verifyReadiness < uiBootstrap);
+  assert.match(step, /--readiness-file "\$real_browser_readiness_file"/);
+  assert.match(step, /for readiness_backoff in 1 1 2 3 5 8 10 10 10 10/);
+  assert.match(step, /wait -n -p completed_pid "\$real_browser_consumer_pid"/);
+  assert.match(step, /kill -0 "\$real_browser_consumer_pid"/);
+  assert.match(step, /G12_REAL_BROWSER_CONSUMER_READINESS_TIMEOUT/);
+  assert.match(step, /rm -f -- "\$real_browser_readiness_file"/);
+  assert.doesNotMatch(step, /sleep 5/);
 });
 
 test("the broker claims the exact challenge once and blocks replay before attestation creation", async () => {
@@ -1126,6 +1162,115 @@ test("the always-finalizer compare-clears the exact attestation after a lost put
     assert.equal(deleteCalls, 1);
   } finally {
     await rm(absoluteReport, { force: true });
+  }
+});
+
+test("the watcher publishes exclusive bound readiness before waiting for the challenge and removes it on completion", async () => {
+  const suffix = `consumer-ready-${process.pid}-${randomBytes(4).toString("hex")}`;
+  const relativeChallenge = `outputs/${suffix}-challenge.json`;
+  const relativeReadiness = `outputs/${suffix}-ready.json`;
+  const relativeOutputJson = `outputs/${suffix}-attestation.json`;
+  const relativeOutputPng = `outputs/${suffix}-attestation.png`;
+  const absoluteChallenge = resolve(repositoryRoot, relativeChallenge);
+  const absoluteReadiness = resolve(repositoryRoot, relativeReadiness);
+  const absoluteOutputJson = resolve(repositoryRoot, relativeOutputJson);
+  const absoluteOutputPng = resolve(repositoryRoot, relativeOutputPng);
+  const fixture = challenge(relativeChallenge);
+  const originalToken = process.env.RELEASE_GUARD_TOKEN;
+  const originalSalt = process.env.EVIDENCE_SALT;
+  let clearCalls = 0;
+  const githubRequest = async (path) =>
+    path === "/user"
+      ? { found: true, status: 200, payload: { login: "Vnd93" } }
+      : { found: false, status: 404, payload: null };
+  const readinessInput = {
+    environment: "staging",
+    candidateSha,
+    controlSha,
+    runId,
+    runAttempt,
+    runTag,
+    challengeFile: absoluteChallenge,
+    outputJson: absoluteOutputJson,
+    outputPng: absoluteOutputPng,
+    readinessFile: absoluteReadiness,
+  };
+  try {
+    await mkdir(dirname(absoluteChallenge), { recursive: true });
+    process.env.RELEASE_GUARD_TOKEN = "release-guard-token-long-enough-for-test";
+    process.env.EVIDENCE_SALT = "evidence-salt-long-enough-for-test-value";
+    const consumer = runRealBrowserAttestationConsumer(
+      argsForReadiness(relativeChallenge, relativeReadiness, suffix),
+      {
+        githubRequest,
+        publishChallengeVariable: async () => undefined,
+        runStoreChild: async () => undefined,
+        clearChallengeVariable: async () => {
+          clearCalls += 1;
+        },
+      },
+    );
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      try {
+        await access(absoluteReadiness);
+        break;
+      } catch {
+        await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
+      }
+    }
+    const stored = JSON.parse(await readFile(absoluteReadiness, "utf8"));
+    assert.equal(validateRealBrowserConsumerReadiness(stored, readinessInput), stored);
+    assert.deepEqual(await verifyRealBrowserConsumerReadiness(readinessInput), stored);
+    assert.throws(
+      () => validateRealBrowserConsumerReadiness({ ...stored, unexpected: true }, readinessInput),
+      /G12_REAL_BROWSER_CONSUMER_READINESS_REFUSED/,
+    );
+    await writeFile(absoluteChallenge, `${JSON.stringify(fixture.value)}\n`, { mode: 0o600, flag: "wx" });
+    await consumer;
+    assert.equal(clearCalls, 1);
+    await assert.rejects(access(absoluteReadiness), /ENOENT/);
+  } finally {
+    if (originalToken === undefined) delete process.env.RELEASE_GUARD_TOKEN;
+    else process.env.RELEASE_GUARD_TOKEN = originalToken;
+    if (originalSalt === undefined) delete process.env.EVIDENCE_SALT;
+    else process.env.EVIDENCE_SALT = originalSalt;
+    await Promise.all(
+      [absoluteChallenge, absoluteReadiness, absoluteOutputJson, absoluteOutputPng].map((path) =>
+        rm(path, { force: true }),
+      ),
+    );
+  }
+});
+
+test("the watcher refuses a pre-existing local challenge before publishing readiness", async () => {
+  const suffix = `consumer-ready-stale-${process.pid}-${randomBytes(4).toString("hex")}`;
+  const relativeChallenge = `outputs/${suffix}-challenge.json`;
+  const relativeReadiness = `outputs/${suffix}-ready.json`;
+  const absoluteChallenge = resolve(repositoryRoot, relativeChallenge);
+  const absoluteReadiness = resolve(repositoryRoot, relativeReadiness);
+  const fixture = challenge(relativeChallenge);
+  const originalToken = process.env.RELEASE_GUARD_TOKEN;
+  const originalSalt = process.env.EVIDENCE_SALT;
+  try {
+    await mkdir(dirname(absoluteChallenge), { recursive: true });
+    await writeFile(absoluteChallenge, `${JSON.stringify(fixture.value)}\n`, { mode: 0o600, flag: "wx" });
+    process.env.RELEASE_GUARD_TOKEN = "release-guard-token-long-enough-for-test";
+    process.env.EVIDENCE_SALT = "evidence-salt-long-enough-for-test-value";
+    await assert.rejects(
+      runRealBrowserAttestationConsumer(argsForReadiness(relativeChallenge, relativeReadiness, suffix), {
+        githubRequest: async () => {
+          throw new Error("remote preflight must not run after a stale local challenge");
+        },
+      }),
+      /G12_REAL_BROWSER_CONSUMER_CHALLENGE:already_exists/,
+    );
+    await assert.rejects(access(absoluteReadiness), /ENOENT/);
+  } finally {
+    if (originalToken === undefined) delete process.env.RELEASE_GUARD_TOKEN;
+    else process.env.RELEASE_GUARD_TOKEN = originalToken;
+    if (originalSalt === undefined) delete process.env.EVIDENCE_SALT;
+    else process.env.EVIDENCE_SALT = originalSalt;
+    await Promise.all([absoluteChallenge, absoluteReadiness].map((path) => rm(path, { force: true })));
   }
 });
 

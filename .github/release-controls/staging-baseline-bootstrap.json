@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "event": "g12.staging.baseline.bootstrap",
+  "repository": "Vnd93/gaiatec-cms",
+  "candidateSha": "e00e05ec696d206a046925281d9c2f06d060df5d",
+  "canonical": {
+    "deploymentId": "848be723-25d4-4d3a-ae00-907e77fd98b6",
+    "createdOn": "2026-09-22T11:05:24.028Z",
+    "commitMessage": "g12-staging-bridge-run-35718428183-1"
+  },
+  "bridge": {
+    "runId": "35718428183",
+    "runAttempt": 1,
+    "controlSha": "e00e05ec696d206a046925281d9c2f06d060df5d",
+    "artifactId": "10691211586",
+    "artifactDigest": "sha256:ec74b8115e14b61b44e065b961d9c01443a838e817c2f85c8995aaa2f890511e",
+    "artifactName": "staging-frontend-bridge-e00e05ec696d206a046925281d9c2f06d060df5d",
+    "evidenceSha256": "577ea1c751b634164d6ecdff6d1085f32c4d65b763e7c0e73ba2fb01b672f5bf"
+  },
+  "source": {
+    "runId": "35720047261",
+    "runAttempt": 1,
+    "controlSha": "e00e05ec696d206a046925281d9c2f06d060df5d",
+    "artifactId": "10690709611",
+    "artifactDigest": "sha256:592605d16d5a9c7b0035b941ea7851d94cf4bf8816a21486a7057e558f1e5301",
+    "artifactName": "staging-candidate-e00e05ec696d206a046925281d9c2f06d060df5d-35720047261-1",
+    "sealFile": "staging-candidate-dist-seal.json",
+    "archiveFile": "staging-candidate-dist.tar",
+    "sealSha256": "4b068c285a008be9a7c770b77fc541749d9ce738741954634c44613fda699d7a"
+  },
+  "dist": {
+    "archiveSha256": "7dc01db5632f91ca83a303953f4ce24cf227e6422d4965d4f7a435a44ab702a0",
+    "treeSha256": "095260c56b8690b936459be150927d6c303fd09d6ea8f3f42d43b662a5f4733f",
+    "archiveBytes": 168744960,
+    "fileCount": 1486,
+    "byteCount": 167572085
+  }
+}

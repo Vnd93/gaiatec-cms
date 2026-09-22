@@ -6,6 +6,7 @@ on:
     branches: [main, Remodelagem, "ev2/**"]
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -13,13 +14,302 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  release-plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      profile: ${{ steps.plan.outputs.profile }}
+      fail_closed: ${{ steps.plan.outputs.fail_closed }}
+      base_sha: ${{ steps.plan.outputs.base_sha }}
+      control_sha: ${{ steps.plan.outputs.control_sha }}
+      trust_mode: ${{ steps.plan.outputs.trust_mode }}
+      control_implementation_sha256: ${{ steps.plan.outputs.control_implementation_sha256 }}
+      control_matrix_sha256: ${{ steps.plan.outputs.control_matrix_sha256 }}
+      control_checkpoint_policy_sha256: ${{ steps.plan.outputs.control_checkpoint_policy_sha256 }}
+      matrix_sha256: ${{ steps.plan.outputs.matrix_sha256 }}
+      checkpoint_policy_sha256: ${{ steps.plan.outputs.checkpoint_policy_sha256 }}
+      plan_sha256: ${{ steps.plan.outputs.plan_sha256 }}
+      run_quality: ${{ steps.plan.outputs.run_quality }}
+      run_package_staging: ${{ steps.plan.outputs.run_package_staging }}
+      run_edge: ${{ steps.plan.outputs.run_edge }}
+      run_database_auth: ${{ steps.plan.outputs.run_database_auth }}
+      run_browser: ${{ steps.plan.outputs.run_browser }}
+      artifact_id: ${{ steps.release-plan-source.outputs.artifact_id }}
+      artifact_digest: ${{ steps.release-plan-source.outputs.artifact_digest }}
+      artifact_name: ${{ steps.release-plan-source.outputs.artifact_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .nvmrc
+      - name: Resolve the last terminal-green staging checkpoint for cumulative classification
+        id: staging-baseline
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EVENT_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          trusted_dir="$RUNNER_TEMP/g12-staging-baseline-resolver"
+          test ! -e "$trusted_dir"
+          mkdir -m 700 "$trusted_dir"
+          emit_unproved() {
+            {
+              echo "baseline_sha=0000000000000000000000000000000000000000"
+              echo "baseline_proven=false"
+              echo "baseline_violation=staging_baseline_unproved"
+            } >> "$GITHUB_OUTPUT"
+          }
+          if [ "$(printf '%s' "$EVENT_BASE_SHA" | grep -E '^[a-f0-9]{40}$')" != "$EVENT_BASE_SHA" ]; then
+            emit_unproved
+            exit 0
+          fi
+          resolver_controls=(
+            scripts/ev2/phase12/resolve-staging-release-baseline.mjs
+            scripts/ev2/phase12/staging-release-baseline-lib.mjs
+          )
+          present=0
+          for control in "${resolver_controls[@]}"; do
+            if git cat-file -e "${EVENT_BASE_SHA}:${control}" 2>/dev/null; then
+              present=$((present + 1))
+            fi
+          done
+          if [ "$present" -ne 2 ]; then
+            echo "::warning::A complete trusted staging-baseline resolver is unavailable; selecting full-release."
+            emit_unproved
+            exit 0
+          fi
+          git show "${EVENT_BASE_SHA}:scripts/ev2/phase12/resolve-staging-release-baseline.mjs" \
+            > "$trusted_dir/resolve-staging-release-baseline.mjs"
+          git show "${EVENT_BASE_SHA}:scripts/ev2/phase12/staging-release-baseline-lib.mjs" \
+            > "$trusted_dir/staging-release-baseline-lib.mjs"
+          node "$trusted_dir/resolve-staging-release-baseline.mjs" --candidate-sha "$GITHUB_SHA"
+      - name: Select the fail-closed release profile from the versioned gate matrix
+        id: plan
+        env:
+          BASE_SHA: ${{ steps.staging-baseline.outputs.baseline_sha }}
+          BASELINE_PROVEN: ${{ steps.staging-baseline.outputs.baseline_proven }}
+        run: |
+          set -euo pipefail
+          plan_dir="$RUNNER_TEMP/g12-release-plan"
+          trusted_dir="$RUNNER_TEMP/g12-release-plan-selector"
+          test ! -e "$plan_dir"
+          test ! -e "$trusted_dir"
+          mkdir -m 700 "$plan_dir" "$trusted_dir"
+          test "$(printf '%s' "$BASE_SHA" | grep -E '^[a-f0-9]{40}$')" = "$BASE_SHA"
+          test "$(printf '%s' "$GITHUB_SHA" | grep -E '^[a-f0-9]{40}$')" = "$GITHUB_SHA"
+          case "$BASELINE_PROVEN" in
+            true) test "$BASE_SHA" != 0000000000000000000000000000000000000000 ;;
+            false) test "$BASE_SHA" = 0000000000000000000000000000000000000000 ;;
+            *) echo "::error::The staging classification baseline proof is invalid."; exit 1 ;;
+          esac
+
+          controls=(
+            scripts/ev2/phase12/select-release-profile.mjs
+            scripts/ev2/phase12/release-profile-lib.mjs
+            .github/release-controls/release-gate-matrix.json
+            .github/release-controls/release-checkpoint-policy.json
+          )
+          present=0
+          for control in "${controls[@]}"; do
+            if git cat-file -e "${BASE_SHA}:${control}" 2>/dev/null; then
+              present=$((present + 1))
+            fi
+          done
+
+          if [ "$present" -eq 4 ]; then
+            git show "${BASE_SHA}:scripts/ev2/phase12/select-release-profile.mjs" > "$trusted_dir/select-release-profile.mjs"
+            git show "${BASE_SHA}:scripts/ev2/phase12/release-profile-lib.mjs" > "$trusted_dir/release-profile-lib.mjs"
+            selector="$trusted_dir/select-release-profile.mjs"
+            trust_route=base-controls
+            bootstrap=()
+          elif [ "$present" -eq 0 ]; then
+            selector="scripts/ev2/phase12/select-release-profile.mjs"
+            trust_route=bootstrap-full
+            bootstrap=(--bootstrap-mode full-release)
+          else
+            echo "::error::The base release-control bundle is incomplete; refusing candidate-controlled fallback."
+            exit 1
+          fi
+
+          node "$selector" \
+            --repository "$GITHUB_WORKSPACE" \
+            --matrix "$GITHUB_WORKSPACE/.github/release-controls/release-gate-matrix.json" \
+            --base "$BASE_SHA" \
+            --head "$GITHUB_SHA" \
+            --output "$plan_dir/release-plan.json" \
+            --control-selector-output "$plan_dir/release-control-selector.mjs" \
+            --control-library-output "$plan_dir/release-control-library.mjs" \
+            --control-matrix-output "$plan_dir/release-gate-matrix.json" \
+            --control-checkpoint-policy-output "$plan_dir/release-checkpoint-policy.json" \
+            "${bootstrap[@]}"
+
+          PLAN_DIR="$plan_dir" EXPECTED_TRUST_ROUTE="$trust_route" \
+            EXPECTED_BASELINE_PROVEN="$BASELINE_PROVEN" node --input-type=module <<'NODE'
+          import { createHash } from "node:crypto";
+          import { appendFileSync, lstatSync, readFileSync, readdirSync } from "node:fs";
+          import path from "node:path";
+
+          const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+          const directory = process.env.PLAN_DIR;
+          const expectedFiles = [
+            "release-checkpoint-policy.json",
+            "release-control-library.mjs",
+            "release-control-selector.mjs",
+            "release-gate-matrix.json",
+            "release-plan.json",
+          ];
+          const actualFiles = readdirSync(directory).sort();
+          if (JSON.stringify(actualFiles) !== JSON.stringify(expectedFiles)) {
+            throw new Error("release plan artifact contents are not exact");
+          }
+          for (const name of expectedFiles) {
+            const metadata = lstatSync(path.join(directory, name));
+            if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size < 1 || metadata.size > 1_048_576) {
+              throw new Error(`release plan artifact file refused: ${name}`);
+            }
+          }
+          const bytes = Object.fromEntries(
+            expectedFiles.map((name) => [name, readFileSync(path.join(directory, name))]),
+          );
+          const plan = JSON.parse(bytes["release-plan.json"].toString("utf8"));
+          const matrix = JSON.parse(bytes["release-gate-matrix.json"].toString("utf8"));
+          const policy = JSON.parse(bytes["release-checkpoint-policy.json"].toString("utf8"));
+          const implementationHash = createHash("sha256");
+          for (const [label, file] of [
+            ["scripts/ev2/phase12/select-release-profile.mjs", "release-control-selector.mjs"],
+            ["scripts/ev2/phase12/release-profile-lib.mjs", "release-control-library.mjs"],
+          ]) {
+            implementationHash.update(`${label}\0${bytes[file].length}\0`, "utf8");
+            implementationHash.update(bytes[file]);
+          }
+          const matrixHash = sha256(bytes["release-gate-matrix.json"]);
+          const policyHash = sha256(bytes["release-checkpoint-policy.json"]);
+          const planHash = sha256(bytes["release-plan.json"]);
+          const profiles = ["frontend-only", "edge-only", "database-auth", "full-release"];
+          if (
+            plan.schemaVersion !== 2 ||
+            plan.baseSha !== process.env.BASE_SHA ||
+            plan.candidateSha !== process.env.GITHUB_SHA ||
+            plan.controlSha !== process.env.BASE_SHA ||
+            !profiles.includes(plan.selectedProfile) ||
+            plan.controlImplementationSha256 !== implementationHash.digest("hex") ||
+            plan.controlMatrixSha256 !== matrixHash ||
+            plan.matrixSha256 !== matrixHash ||
+            plan.controlCheckpointPolicySha256 !== policyHash ||
+            plan.checkpointPolicySha256 !== policyHash ||
+            matrix.profiles?.[plan.selectedProfile] === undefined ||
+            policy.environment !== "staging"
+          ) {
+            throw new Error("release plan identity or trusted controls are inconsistent");
+          }
+          let runJobs;
+          if (process.env.EXPECTED_TRUST_ROUTE === "bootstrap-full") {
+            const requiredJobs = ["quality", "package-staging", "hotfix-bundle-smoke", "database", "browser"];
+            const requiredGates = [
+              "artifact-seal",
+              "immutable-provenance",
+              "recovery-ready",
+              "rollback-compatibility",
+              "security-regression",
+              "serial-exclusive-mutation",
+              "real-chrome-authenticated",
+              "audit-terminal",
+              "cleanup-zero",
+            ];
+            if (
+              plan.trustMode !== "bootstrap-full" ||
+              plan.selectedProfile !== "full-release" ||
+              plan.failClosed !== true ||
+              !plan.violations?.includes("control_bootstrap_required") ||
+              !plan.violations?.includes("control_bundle_absent") ||
+              process.env.EXPECTED_BASELINE_PROVEN !== "false" ||
+              !requiredJobs.every((job) => plan.jobs?.includes(job)) ||
+              !requiredGates.every((gate) => plan.gates?.includes(gate))
+            ) {
+              throw new Error("bootstrap must be a complete fail-closed full release");
+            }
+            runJobs = new Set(requiredJobs);
+          } else {
+            if (
+              plan.trustMode !== "base-controls" ||
+              process.env.EXPECTED_BASELINE_PROVEN !== "true"
+            ) {
+              throw new Error("base-controlled plan did not preserve its trust mode");
+            }
+            const definition = matrix.profiles[plan.selectedProfile];
+            if (
+              JSON.stringify(plan.jobs) !== JSON.stringify(definition.jobs) ||
+              JSON.stringify(plan.gates) !== JSON.stringify(definition.gates)
+            ) {
+              throw new Error("base-controlled plan does not match its trusted matrix");
+            }
+            runJobs = new Set(plan.jobs);
+          }
+          const output = [
+            `profile=${plan.selectedProfile}`,
+            `fail_closed=${String(plan.failClosed)}`,
+            `base_sha=${plan.baseSha}`,
+            `control_sha=${plan.controlSha}`,
+            `trust_mode=${plan.trustMode}`,
+            `control_implementation_sha256=${plan.controlImplementationSha256}`,
+            `control_matrix_sha256=${plan.controlMatrixSha256}`,
+            `control_checkpoint_policy_sha256=${plan.controlCheckpointPolicySha256}`,
+            `matrix_sha256=${plan.matrixSha256}`,
+            `checkpoint_policy_sha256=${plan.checkpointPolicySha256}`,
+            `plan_sha256=${planHash}`,
+            `run_quality=${String(runJobs.has("quality"))}`,
+            `run_package_staging=${String(runJobs.has("package-staging"))}`,
+            `run_edge=${String(runJobs.has("hotfix-bundle-smoke"))}`,
+            `run_database_auth=${String(runJobs.has("database"))}`,
+            `run_browser=${String(runJobs.has("browser"))}`,
+            "",
+          ].join("\n");
+          appendFileSync(process.env.GITHUB_OUTPUT, output, "utf8");
+          NODE
+      - name: Preserve the exact release plan as CI evidence
+        id: upload-release-plan
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-plan-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/g12-release-plan
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 90
+          overwrite: false
+      - name: Expose the immutable release plan artifact identity
+        id: release-plan-source
+        env:
+          UPLOADED_ARTIFACT_ID: ${{ steps.upload-release-plan.outputs.artifact-id }}
+          UPLOADED_ARTIFACT_DIGEST: ${{ steps.upload-release-plan.outputs.artifact-digest }}
+        run: |
+          set -euo pipefail
+          artifact_digest="$UPLOADED_ARTIFACT_DIGEST"
+          case "$artifact_digest" in
+            sha256:[a-f0-9][a-f0-9]*) ;;
+            [a-f0-9][a-f0-9]*) artifact_digest="sha256:${artifact_digest}" ;;
+            *) exit 1 ;;
+          esac
+          test "$(printf '%s' "$UPLOADED_ARTIFACT_ID" | grep -E '^[1-9][0-9]*$')" = "$UPLOADED_ARTIFACT_ID"
+          test "$(printf '%s' "$artifact_digest" | grep -E '^sha256:[a-f0-9]{64}$')" = "$artifact_digest"
+          {
+            echo "artifact_id=$UPLOADED_ARTIFACT_ID"
+            echo "artifact_digest=$artifact_digest"
+            echo "artifact_name=release-plan-${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          } >> "$GITHUB_OUTPUT"
+
   quality:
+    needs: release-plan
+    if: needs.release-plan.outputs.run_quality == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .nvmrc
@@ -33,18 +323,427 @@ jobs:
       - run: npm run artifact:manifest
         env:
           GITHUB_SHA: ${{ github.sha }}
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: site-${{ github.sha }}
-          path: dist
-          if-no-files-found: error
-          retention-days: 30
 
-  hotfix-bundle-smoke:
+  package-staging:
+    needs: [release-plan, quality, hotfix-bundle-smoke, database, browser]
+    if: >-
+      always() &&
+      needs.release-plan.result == 'success' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.release-plan.outputs.run_package_staging == 'true'
+    environment: staging
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    outputs:
+      package_mode: ${{ steps.package-source.outputs.mode }}
+      source_run_id: ${{ steps.package-source.outputs.source_run_id }}
+      source_run_attempt: ${{ steps.package-source.outputs.source_run_attempt }}
+      artifact_id: ${{ steps.package-source.outputs.artifact_id }}
+      artifact_digest: ${{ steps.package-source.outputs.artifact_digest }}
+      artifact_name: ${{ steps.package-source.outputs.artifact_name }}
+      profile_sha256: ${{ steps.package-source.outputs.profile_sha256 }}
+      archive_sha256: ${{ steps.package-source.outputs.archive_sha256 }}
+      tree_sha256: ${{ steps.package-source.outputs.tree_sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Require every selected independent validation lane before packaging
+        env:
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          EDGE_REQUIRED: ${{ needs.release-plan.outputs.run_edge }}
+          EDGE_RESULT: ${{ needs.hotfix-bundle-smoke.result }}
+          DATABASE_REQUIRED: ${{ needs.release-plan.outputs.run_database_auth }}
+          DATABASE_RESULT: ${{ needs.database.result }}
+          BROWSER_REQUIRED: ${{ needs.release-plan.outputs.run_browser }}
+          BROWSER_RESULT: ${{ needs.browser.result }}
+        run: |
+          set -euo pipefail
+          test "$QUALITY_RESULT" = success
+          require_lane() {
+            case "$1:$2" in
+              true:success|false:skipped) ;;
+              *)
+                echo "::error::Selected validation lane did not converge: required=$1 result=$2"
+                exit 1
+                ;;
+            esac
+          }
+          require_lane "$EDGE_REQUIRED" "$EDGE_RESULT"
+          require_lane "$DATABASE_REQUIRED" "$DATABASE_RESULT"
+          require_lane "$BROWSER_REQUIRED" "$BROWSER_RESULT"
+      - name: Refuse local environment files and test Turnstile profiles
+        env:
+          VITE_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_STAGING_SITE_KEY }}
+        run: |
+          set -euo pipefail
+          unexpected_env="$(find . -maxdepth 1 \( -type f -o -type l \) -name '.env*' ! -name '.env.example' -print -quit)"
+          if [ -n "$unexpected_env" ]; then
+            echo "::error::Local environment files are forbidden in the staging package checkout."
+            exit 1
+          fi
+          test "${#VITE_TURNSTILE_SITE_KEY}" -ge 10
+          case "$VITE_TURNSTILE_SITE_KEY" in
+            1x00000000000000000000AA|2x00000000000000000000AB|1x00000000000000000000BB|2x00000000000000000000BB|3x00000000000000000000FF)
+              echo "::error::The staging package requires the configured real Turnstile widget."
+              exit 1
+              ;;
+          esac
+      - name: Download the exact trusted release plan by immutable artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.release-plan.outputs.artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ github.run_id }}
+          path: ${{ runner.temp }}/g12-release-plan-current
+      - name: Select the only deployable package before any build
+        id: select-package
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node scripts/ev2/phase12/select-ci-staging-frontend-package.mjs
+          --run-id "${{ github.run_id }}"
+          --run-attempt "${{ github.run_attempt }}"
+          --sha "${{ github.sha }}"
+      - name: Download the previously sealed package by immutable artifact ID
+        if: steps.select-package.outputs.mode == 'reuse'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.select-package.outputs.artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ steps.select-package.outputs.source_run_id }}
+          path: outputs/staging-release-package
+      - name: Verify the previously sealed package against the current staging profile
+        if: steps.select-package.outputs.mode == 'reuse'
+        id: verify-reused-package
+        env:
+          VITE_RELEASE: ${{ github.sha }}
+          VITE_CMS_ENVIRONMENT: staging
+          VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          VITE_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_STAGING_SITE_KEY }}
+          VITE_GOOGLE_MAPS_KEY: ${{ vars.GOOGLE_MAPS_BROWSER_KEY }}
+          VITE_CONTACT_CAPTCHA_ALWAYS: "true"
+          VITE_EV2_DRAFT_V2_CANDIDATE: "false"
+        run: |
+          set -euo pipefail
+          node scripts/ev2/phase12/verify-staging-release-package.mjs \
+            --package outputs/staging-release-package \
+            --candidate "${{ github.sha }}" \
+            --profile "${{ needs.release-plan.outputs.profile }}" \
+            --run-id "${{ steps.select-package.outputs.source_run_id }}" \
+            --run-attempt "${{ steps.select-package.outputs.source_run_attempt }}"
+          for file in release-plan.json release-gate-matrix.json release-checkpoint-policy.json; do
+            cmp --silent \
+              "outputs/staging-release-package/controls/$file" \
+              "$RUNNER_TEMP/g12-release-plan-current/$file" || {
+                echo "::error::Reused package control $file differs from the current trusted release plan."
+                exit 1
+              }
+          done
+          node scripts/ev2/phase12/verify-staging-frontend-package.mjs \
+            --package outputs/staging-release-package/frontend \
+            --output "$RUNNER_TEMP/staging-frontend-dist-${{ github.run_id }}-${{ steps.select-package.outputs.source_run_attempt }}" \
+            --candidate "${{ github.sha }}" \
+            --run-id "${{ steps.select-package.outputs.source_run_id }}" \
+            --run-attempt "${{ steps.select-package.outputs.source_run_attempt }}"
+          case "${{ needs.release-plan.outputs.profile }}" in
+            edge-only|full-release)
+              edge_manifest_sha256="$(jq -er '[.components.edge.files[] | select(.path == "manifest.json")] | if length == 1 then .[0].sha256 else error("edge manifest identity missing") end' outputs/staging-release-package/staging-release-package.json)"
+              node scripts/ev2/phase12/verify-all-edge-runtime-artifact.mjs \
+                --root outputs/staging-release-package/edge \
+                --candidate-sha "${{ github.sha }}" \
+                --manifest-sha256 "$edge_manifest_sha256"
+              ;;
+          esac
+          case "${{ needs.release-plan.outputs.profile }}" in
+            database-auth|full-release)
+              database_path="$(jq -er '[.components.database.files[] | select(.path | endswith(".g12db"))] | if length == 1 then .[0].path else error("database payload identity missing") end' outputs/staging-release-package/staging-release-package.json)"
+              database_sha256="$(jq -er --arg path "$database_path" '.components.database.files[] | select(.path == $path) | .sha256' outputs/staging-release-package/staging-release-package.json)"
+              node scripts/ev2/phase12/verify-database-release-payload.mjs \
+                --payload "outputs/staging-release-package/database/$database_path" \
+                --output "$RUNNER_TEMP/g12-database-release-reused" \
+                --candidate "${{ github.sha }}" \
+                --environment staging \
+                --profile "${{ needs.release-plan.outputs.profile }}" \
+                --expected-payload-sha256 "$database_sha256"
+              ;;
+          esac
+      - name: Download the exact Edge artifact selected by the runtime gates
+        if: >-
+          steps.select-package.outputs.mode == 'create' &&
+          (needs.release-plan.outputs.profile == 'edge-only' ||
+          needs.release-plan.outputs.profile == 'full-release')
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.hotfix-bundle-smoke.outputs.artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ github.run_id }}
+          path: ${{ runner.temp }}/g12-edge-runtime-artifact
+      - name: Download the exact database payload selected by the database gates
+        if: >-
+          steps.select-package.outputs.mode == 'create' &&
+          (needs.release-plan.outputs.profile == 'database-auth' ||
+          needs.release-plan.outputs.profile == 'full-release')
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.database.outputs.artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ github.run_id }}
+          path: ${{ runner.temp }}/g12-database-release-artifact
+      - run: npm ci
+        if: steps.select-package.outputs.mode == 'create'
+      - name: Build, seal and verify the immutable staging frontend package
+        if: steps.select-package.outputs.mode == 'create'
+        id: verify-package
+        env:
+          VITE_RELEASE: ${{ github.sha }}
+          VITE_CMS_ENVIRONMENT: staging
+          VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          VITE_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_STAGING_SITE_KEY }}
+          VITE_GOOGLE_MAPS_KEY: ${{ vars.GOOGLE_MAPS_BROWSER_KEY }}
+          VITE_CONTACT_CAPTCHA_ALWAYS: "true"
+          VITE_EV2_DRAFT_V2_CANDIDATE: "false"
+        run: |
+          set -euo pipefail
+          npm run build:staging
+          npm run artifact:manifest
+          mkdir -p outputs
+          node scripts/ev2/phase12/seal-production-dist.mjs \
+            --dist dist \
+            --archive outputs/staging-frontend-dist.tar \
+            --output outputs/staging-frontend-dist-seal.json \
+            --candidate "${{ github.sha }}"
+          node scripts/ev2/phase12/write-staging-frontend-package.mjs \
+            --archive outputs/staging-frontend-dist.tar \
+            --seal outputs/staging-frontend-dist-seal.json \
+            --output outputs/staging-frontend-component \
+            --candidate "${{ github.sha }}" \
+            --run-id "${{ github.run_id }}" \
+            --run-attempt "${{ github.run_attempt }}"
+          node scripts/ev2/phase12/verify-staging-frontend-package.mjs \
+            --package outputs/staging-frontend-component \
+            --output "$RUNNER_TEMP/staging-frontend-dist-${{ github.run_id }}-${{ github.run_attempt }}" \
+            --candidate "${{ github.sha }}" \
+            --run-id "${{ github.run_id }}" \
+            --run-attempt "${{ github.run_attempt }}"
+          controls="$RUNNER_TEMP/g12-release-package-controls"
+          test ! -e "$controls"
+          mkdir -m 700 "$controls"
+          for file in release-plan.json release-gate-matrix.json release-checkpoint-policy.json; do
+            install -m 400 "$RUNNER_TEMP/g12-release-plan-current/$file" "$controls/$file"
+          done
+          release_args=(
+            --frontend outputs/staging-frontend-component
+            --controls "$controls"
+            --output outputs/staging-release-package
+            --candidate "${{ github.sha }}"
+            --profile "${{ needs.release-plan.outputs.profile }}"
+            --run-id "${{ github.run_id }}"
+            --run-attempt "${{ github.run_attempt }}"
+          )
+          case "${{ needs.release-plan.outputs.profile }}" in
+            edge-only|full-release)
+              node scripts/ev2/phase12/verify-all-edge-runtime-artifact.mjs \
+                --root "$RUNNER_TEMP/g12-edge-runtime-artifact" \
+                --candidate-sha "${{ github.sha }}" \
+                --manifest-sha256 "${{ needs.hotfix-bundle-smoke.outputs.manifest_sha256 }}"
+              release_args+=(--edge "$RUNNER_TEMP/g12-edge-runtime-artifact")
+              ;;
+          esac
+          case "${{ needs.release-plan.outputs.profile }}" in
+            database-auth|full-release)
+              database_payload="$RUNNER_TEMP/g12-database-release-artifact/${{ needs.database.outputs.payload_file_name }}"
+              test -f "$database_payload" && test ! -L "$database_payload"
+              node scripts/ev2/phase12/verify-database-release-payload.mjs \
+                --payload "$database_payload" \
+                --output "$RUNNER_TEMP/g12-database-release-create" \
+                --candidate "${{ github.sha }}" \
+                --environment staging \
+                --profile "${{ needs.release-plan.outputs.profile }}" \
+                --expected-payload-sha256 "${{ needs.database.outputs.payload_sha256 }}"
+              release_args+=(--database "$RUNNER_TEMP/g12-database-release-artifact")
+              ;;
+          esac
+          node scripts/ev2/phase12/write-staging-release-package.mjs "${release_args[@]}"
+          node scripts/ev2/phase12/verify-staging-release-package.mjs \
+            --package outputs/staging-release-package \
+            --candidate "${{ github.sha }}" \
+            --profile "${{ needs.release-plan.outputs.profile }}" \
+            --run-id "${{ github.run_id }}" \
+            --run-attempt "${{ github.run_attempt }}"
+      - name: Upload the only deployable staging frontend package
+        if: steps.select-package.outputs.mode == 'create'
+        id: upload-package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: staging-frontend-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: outputs/staging-release-package
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 90
+          overwrite: false
+      - name: Expose the exact original package producer without aliases
+        id: package-source
+        env:
+          MODE: ${{ steps.select-package.outputs.mode }}
+          SELECTED_RUN_ID: ${{ steps.select-package.outputs.source_run_id }}
+          SELECTED_RUN_ATTEMPT: ${{ steps.select-package.outputs.source_run_attempt }}
+          SELECTED_ARTIFACT_ID: ${{ steps.select-package.outputs.artifact_id }}
+          SELECTED_ARTIFACT_DIGEST: ${{ steps.select-package.outputs.artifact_digest }}
+          SELECTED_ARTIFACT_NAME: ${{ steps.select-package.outputs.artifact_name }}
+          UPLOADED_ARTIFACT_ID: ${{ steps.upload-package.outputs.artifact-id }}
+          UPLOADED_ARTIFACT_DIGEST: ${{ steps.upload-package.outputs.artifact-digest }}
+          CREATE_PROFILE_SHA256: ${{ steps.verify-package.outputs.profile_sha256 }}
+          CREATE_ARCHIVE_SHA256: ${{ steps.verify-package.outputs.archive_sha256 }}
+          CREATE_TREE_SHA256: ${{ steps.verify-package.outputs.tree_sha256 }}
+          CREATE_ARCHIVE_BYTES: ${{ steps.verify-package.outputs.archive_bytes }}
+          CREATE_FILE_COUNT: ${{ steps.verify-package.outputs.file_count }}
+          CREATE_BYTE_COUNT: ${{ steps.verify-package.outputs.byte_count }}
+          CREATE_SEAL_SHA256: ${{ steps.verify-package.outputs.seal_sha256 }}
+          CREATE_PROVENANCE_SHA256: ${{ steps.verify-package.outputs.provenance_sha256 }}
+          REUSE_PROFILE_SHA256: ${{ steps.verify-reused-package.outputs.profile_sha256 }}
+          REUSE_ARCHIVE_SHA256: ${{ steps.verify-reused-package.outputs.archive_sha256 }}
+          REUSE_TREE_SHA256: ${{ steps.verify-reused-package.outputs.tree_sha256 }}
+          REUSE_ARCHIVE_BYTES: ${{ steps.verify-reused-package.outputs.archive_bytes }}
+          REUSE_FILE_COUNT: ${{ steps.verify-reused-package.outputs.file_count }}
+          REUSE_BYTE_COUNT: ${{ steps.verify-reused-package.outputs.byte_count }}
+          REUSE_SEAL_SHA256: ${{ steps.verify-reused-package.outputs.seal_sha256 }}
+          REUSE_PROVENANCE_SHA256: ${{ steps.verify-reused-package.outputs.provenance_sha256 }}
+        run: |
+          set -euo pipefail
+          test "$SELECTED_RUN_ID" = "$GITHUB_RUN_ID"
+          case "$MODE" in
+            create)
+              test "$SELECTED_RUN_ATTEMPT" = "$GITHUB_RUN_ATTEMPT"
+              artifact_id="$UPLOADED_ARTIFACT_ID"
+              artifact_digest="$UPLOADED_ARTIFACT_DIGEST"
+              artifact_name="staging-frontend-${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+              profile_sha256="$CREATE_PROFILE_SHA256"
+              archive_sha256="$CREATE_ARCHIVE_SHA256"
+              tree_sha256="$CREATE_TREE_SHA256"
+              archive_bytes="$CREATE_ARCHIVE_BYTES"
+              file_count="$CREATE_FILE_COUNT"
+              byte_count="$CREATE_BYTE_COUNT"
+              seal_sha256="$CREATE_SEAL_SHA256"
+              provenance_sha256="$CREATE_PROVENANCE_SHA256"
+              ;;
+            reuse)
+              test "$SELECTED_RUN_ATTEMPT" -lt "$GITHUB_RUN_ATTEMPT"
+              artifact_id="$SELECTED_ARTIFACT_ID"
+              artifact_digest="$SELECTED_ARTIFACT_DIGEST"
+              artifact_name="$SELECTED_ARTIFACT_NAME"
+              profile_sha256="$REUSE_PROFILE_SHA256"
+              archive_sha256="$REUSE_ARCHIVE_SHA256"
+              tree_sha256="$REUSE_TREE_SHA256"
+              archive_bytes="$REUSE_ARCHIVE_BYTES"
+              file_count="$REUSE_FILE_COUNT"
+              byte_count="$REUSE_BYTE_COUNT"
+              seal_sha256="$REUSE_SEAL_SHA256"
+              provenance_sha256="$REUSE_PROVENANCE_SHA256"
+              ;;
+            *) exit 1 ;;
+          esac
+          case "$artifact_digest" in
+            sha256:[a-f0-9][a-f0-9]*) ;;
+            [a-f0-9][a-f0-9]*) artifact_digest="sha256:${artifact_digest}" ;;
+            *) exit 1 ;;
+          esac
+          test "$(printf '%s' "$artifact_id" | grep -E '^[1-9][0-9]*$')" = "$artifact_id"
+          test "$(printf '%s' "$artifact_digest" | grep -E '^sha256:[a-f0-9]{64}$')" = "$artifact_digest"
+          test "$(printf '%s' "$profile_sha256" | grep -E '^[a-f0-9]{64}$')" = "$profile_sha256"
+          test "$(printf '%s' "$archive_sha256" | grep -E '^[a-f0-9]{64}$')" = "$archive_sha256"
+          test "$(printf '%s' "$tree_sha256" | grep -E '^[a-f0-9]{64}$')" = "$tree_sha256"
+          test "$(printf '%s' "$seal_sha256" | grep -E '^[a-f0-9]{64}$')" = "$seal_sha256"
+          test "$(printf '%s' "$provenance_sha256" | grep -E '^[a-f0-9]{64}$')" = "$provenance_sha256"
+          for value in "$archive_bytes" "$file_count" "$byte_count"; do
+            test "$(printf '%s' "$value" | grep -E '^[1-9][0-9]*$')" = "$value"
+          done
+          {
+            echo "mode=$MODE"
+            echo "source_run_id=$SELECTED_RUN_ID"
+            echo "source_run_attempt=$SELECTED_RUN_ATTEMPT"
+            echo "artifact_id=$artifact_id"
+            echo "artifact_digest=$artifact_digest"
+            echo "artifact_name=$artifact_name"
+            echo "profile_sha256=$profile_sha256"
+            echo "archive_sha256=$archive_sha256"
+            echo "tree_sha256=$tree_sha256"
+            echo "archive_bytes=$archive_bytes"
+            echo "file_count=$file_count"
+            echo "byte_count=$byte_count"
+            echo "seal_sha256=$seal_sha256"
+            echo "provenance_sha256=$provenance_sha256"
+          } >> "$GITHUB_OUTPUT"
+      - name: Seal the current gate attempt to the exact original package
+        run: >-
+          node scripts/ev2/phase12/write-ci-staging-frontend-selection.mjs
+          --output "$RUNNER_TEMP/staging-frontend-selection.json"
+          --profile "${{ needs.release-plan.outputs.profile }}"
+          --control-selector "$RUNNER_TEMP/g12-release-plan-current/release-control-selector.mjs"
+          --control-library "$RUNNER_TEMP/g12-release-plan-current/release-control-library.mjs"
+          --control-matrix "$RUNNER_TEMP/g12-release-plan-current/release-gate-matrix.json"
+          --candidate-matrix .github/release-controls/release-gate-matrix.json
+          --control-checkpoint-policy "$RUNNER_TEMP/g12-release-plan-current/release-checkpoint-policy.json"
+          --candidate-checkpoint-policy .github/release-controls/release-checkpoint-policy.json
+          --release-plan "$RUNNER_TEMP/g12-release-plan-current/release-plan.json"
+          --expected-base-sha "${{ needs.release-plan.outputs.base_sha }}"
+          --expected-plan-sha256 "${{ needs.release-plan.outputs.plan_sha256 }}"
+          --expected-matrix-sha256 "${{ needs.release-plan.outputs.matrix_sha256 }}"
+          --release-plan-artifact-id "${{ needs.release-plan.outputs.artifact_id }}"
+          --release-plan-artifact-digest "${{ needs.release-plan.outputs.artifact_digest }}"
+          --release-plan-artifact-name "${{ needs.release-plan.outputs.artifact_name }}"
+          --candidate "${{ github.sha }}"
+          --run-id "${{ github.run_id }}"
+          --gate-run-attempt "${{ github.run_attempt }}"
+          --source-run-id "${{ steps.package-source.outputs.source_run_id }}"
+          --source-run-attempt "${{ steps.package-source.outputs.source_run_attempt }}"
+          --artifact-id "${{ steps.package-source.outputs.artifact_id }}"
+          --artifact-digest "${{ steps.package-source.outputs.artifact_digest }}"
+          --artifact-name "${{ steps.package-source.outputs.artifact_name }}"
+          --profile-sha256 "${{ steps.package-source.outputs.profile_sha256 }}"
+          --archive-sha256 "${{ steps.package-source.outputs.archive_sha256 }}"
+          --tree-sha256 "${{ steps.package-source.outputs.tree_sha256 }}"
+          --archive-bytes "${{ steps.package-source.outputs.archive_bytes }}"
+          --file-count "${{ steps.package-source.outputs.file_count }}"
+          --byte-count "${{ steps.package-source.outputs.byte_count }}"
+          --seal-sha256 "${{ steps.package-source.outputs.seal_sha256 }}"
+          --provenance-sha256 "${{ steps.package-source.outputs.provenance_sha256 }}"
+      - name: Preserve the non-deployable current-attempt package selection
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: staging-frontend-selection-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/staging-frontend-selection.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 90
+          overwrite: false
+
+  hotfix-bundle-smoke:
+    needs: release-plan
+    if: needs.release-plan.outputs.run_edge == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    outputs:
+      artifact_id: ${{ steps.upload-edge-runtime-artifact.outputs.artifact-id }}
+      artifact_digest: ${{ steps.upload-edge-runtime-artifact.outputs.artifact-digest }}
+      artifact_name: ${{ steps.seal-edge-runtime-artifact.outputs.artifact_name }}
+      manifest_sha256: ${{ steps.seal-edge-runtime-artifact.outputs.manifest_sha256 }}
     env:
-      HOTFIX_SHA: e40eb0c2cc81c27fbf8f23e8671136f9dfc6f282
       EDGE_RUNTIME_IMAGE: >-
         ghcr.io/supabase/edge-runtime:v1.74.3@sha256:c52405002a890ca9fcf77978671c57f3a988e03174afb277f84ac65bc917013c
       EDGE_RUNTIME_INDEX_DIGEST: sha256:c52405002a890ca9fcf77978671c57f3a988e03174afb277f84ac65bc917013c
@@ -56,10 +755,10 @@ jobs:
           fetch-depth: 0
           path: control
           persist-credentials: false
-      - name: Checkout the immutable cms-public hotfix for the Docker smoke
+      - name: Checkout the exact CI candidate for the Docker smoke
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ env.HOTFIX_SHA }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
           path: candidate-source
           persist-credentials: false
@@ -67,12 +766,24 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: control/.nvmrc
+      - name: Verify the exact clean CI candidate before runtime smoke
+        run: |
+          set -euo pipefail
+          test "$(git -C candidate-source rev-parse HEAD)" = "${{ github.sha }}"
+          test -z "$(git -C candidate-source status --short)"
       - name: Prepare the production-mode candidate input for the Docker smoke
         working-directory: control
         run: >-
           node scripts/ev2/phase12/staging-cms-public-hotfix.mjs prepare-bundle-input
           --source ../candidate-source
           --output ../bundle-input
+      - name: Materialize the complete candidate Edge Function inventory
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/prepare-all-edge-runtime-smoke-input.mjs
+          --source ../candidate-source
+          --output ../all-edge-runtime-input
+          --candidate-sha "${{ github.sha }}"
       - name: Verify and pull the immutable runtime for the Docker smoke
         env:
           INDEX_MANIFEST: ${{ runner.temp }}/g12-smoke-edge-runtime-index.json
@@ -223,16 +934,98 @@ jobs:
           --primary "$RUNNER_TEMP/g12-smoke-primary"
           --rebuild "$RUNNER_TEMP/g12-smoke-rebuild"
           --output ../candidate-smoke-sealed
+      - name: Bundle and unbundle every candidate Edge Function in the pinned runtime
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$RUNNER_TEMP/g12-all-edge-output" "$RUNNER_TEMP/g12-all-edge-cache"
+          input_manifest="all-edge-runtime-input/all-edge-runtime-smoke-input.json"
+          test "$(jq -r .candidateSha "$input_manifest")" = "${{ github.sha }}"
+          test "$(jq -r .functionCount "$input_manifest")" = 34
+          test "$(jq -r .runtime.image "$input_manifest")" = "$EDGE_RUNTIME_IMAGE"
+          test "$(jq -r .runtime.indexDigest "$input_manifest")" = "$EDGE_RUNTIME_INDEX_DIGEST"
+          test "$(jq -r .runtime.amd64Digest "$input_manifest")" = "$EDGE_RUNTIME_AMD64_DIGEST"
+          inventory_sha256="$(jq -r .inventorySha256 "$input_manifest")"
+          input_manifest_sha256="$(sha256sum "$input_manifest" | awk '{print $1}')"
+          docker run --rm --platform linux/amd64 --network bridge --read-only \
+            --user "$(id -u):$(id -g)" \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --tmpfs /tmp:rw,nosuid,nodev,size=67108864,mode=1777 \
+            --volume "$GITHUB_WORKSPACE/all-edge-runtime-input:/workspace:ro" \
+            --volume "$RUNNER_TEMP/g12-all-edge-output:/output:rw" \
+            --volume "$RUNNER_TEMP/g12-all-edge-cache:/deno-cache:rw" \
+            --volume "$GITHUB_WORKSPACE/control/scripts/ev2/phase12/all-edge-runtime-smoke-bundle.sh:/g12-all-edge-builder.sh:ro" \
+            --env HOME=/tmp --env DENO_DIR=/deno-cache --env DENO_NO_PACKAGE_JSON=1 \
+            --env JSR_URL=https://jsr.io/ \
+            --env G12_CANDIDATE_SHA="${{ github.sha }}" \
+            --env G12_INVENTORY_SHA256="$inventory_sha256" \
+            --env G12_INPUT_MANIFEST_SHA256="$input_manifest_sha256" \
+            --env G12_EDGE_RUNTIME_INDEX_DIGEST="$EDGE_RUNTIME_INDEX_DIGEST" \
+            --env G12_EDGE_RUNTIME_AMD64_DIGEST="$EDGE_RUNTIME_AMD64_DIGEST" \
+            --env G12_PLATFORM=linux/amd64 \
+            --entrypoint /bin/sh "$EDGE_RUNTIME_IMAGE" /g12-all-edge-builder.sh candidate
+      - name: Cold-boot every candidate Edge Function without external egress
+        env:
+          G12_CANDIDATE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          export G12_INVENTORY_SHA256="$(jq -r .inventorySha256 all-edge-runtime-input/all-edge-runtime-smoke-input.json)"
+          sh control/scripts/ev2/phase12/all-edge-runtime-smoke-boot.sh \
+            "$RUNNER_TEMP/g12-all-edge-output/bundles" \
+            all-edge-runtime-input/edge-functions.txt \
+            "$RUNNER_TEMP/g12-all-edge-output/boot-attestation.env"
+      - name: Seal the complete Edge Function candidate artifact
+        id: seal-edge-runtime-artifact
+        run: |
+          set -euo pipefail
+          artifact_root="$RUNNER_TEMP/g12-all-edge-artifact"
+          node control/scripts/ev2/phase12/seal-all-edge-runtime-artifact.mjs \
+            --input all-edge-runtime-input \
+            --bundles "$RUNNER_TEMP/g12-all-edge-output/bundles" \
+            --build-attestation "$RUNNER_TEMP/g12-all-edge-output/build-attestation.env" \
+            --boot-attestation "$RUNNER_TEMP/g12-all-edge-output/boot-attestation.env" \
+            --boot-records "$RUNNER_TEMP/g12-all-edge-output/boot-records.tsv" \
+            --checksums "$RUNNER_TEMP/g12-all-edge-output/runtime-bundles.sha256" \
+            --sizes "$RUNNER_TEMP/g12-all-edge-output/runtime-bundles.bytes" \
+            --candidate-sha "${{ github.sha }}" \
+            --output "$artifact_root"
+          test "$(jq -r .candidateSha "$artifact_root/manifest.json")" = "${{ github.sha }}"
+          test "$(jq -r .functionCount "$artifact_root/manifest.json")" = 34
+          test "$(jq -r '.bundles | length' "$artifact_root/manifest.json")" = 34
+          manifest_sha256="$(sha256sum "$artifact_root/manifest.json" | awk '{print $1}')"
+          test "$(printf '%s' "$manifest_sha256" | grep -E '^[a-f0-9]{64}$')" = "$manifest_sha256"
+          echo "artifact_name=all-edge-runtime-smoke-${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+          echo "manifest_sha256=$manifest_sha256" >> "$GITHUB_OUTPUT"
+      - name: Preserve the complete deployable Edge Function candidate artifact
+        id: upload-edge-runtime-artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ steps.seal-edge-runtime-artifact.outputs.artifact_name }}
+          path: ${{ runner.temp }}/g12-all-edge-artifact
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 90
+          overwrite: false
 
   database:
+    needs: release-plan
+    if: needs.release-plan.outputs.run_database_auth == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    outputs:
+      artifact_id: ${{ steps.upload-database-payload.outputs.artifact-id }}
+      artifact_digest: ${{ steps.upload-database-payload.outputs.artifact-digest }}
+      artifact_name: database-release-payload-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+      payload_file_name: ${{ steps.database-payload.outputs.artifact_name }}
+      payload_sha256: ${{ steps.database-payload.outputs.payload_sha256 }}
+      manifest_sha256: ${{ steps.database-payload.outputs.manifest_sha256 }}
+      tree_sha256: ${{ steps.database-payload.outputs.tree_sha256 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           # A regra de acoplamento entre migration e fixture resolve o intervalo de diff, entao
           # precisa da historia completa.
           fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .nvmrc
@@ -250,12 +1043,44 @@ jobs:
       - run: supabase test db
       - if: always()
         run: supabase stop --no-backup
+      - name: Seal the exact database release payload after every database gate passes
+        id: database-payload
+        run: >-
+          node scripts/ev2/phase12/write-database-release-payload.mjs
+          --source .
+          --output "$RUNNER_TEMP/g12-database-release/database-release-staging-${{ github.sha }}-${{ needs.release-plan.outputs.profile }}.g12db"
+          --candidate "${{ github.sha }}"
+          --environment staging
+          --profile "${{ needs.release-plan.outputs.profile }}"
+      - name: Independently verify and materialize the exact database payload before upload
+        run: >-
+          node scripts/ev2/phase12/verify-database-release-payload.mjs
+          --payload "${{ steps.database-payload.outputs.payload_path }}"
+          --output "$RUNNER_TEMP/g12-database-release-verified"
+          --candidate "${{ github.sha }}"
+          --environment staging
+          --profile "${{ needs.release-plan.outputs.profile }}"
+          --expected-payload-sha256 "${{ steps.database-payload.outputs.payload_sha256 }}"
+      - name: Preserve the exact deployable database release payload
+        id: upload-database-payload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: database-release-payload-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.database-payload.outputs.payload_path }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 90
+          overwrite: false
 
   browser:
+    needs: release-plan
+    if: needs.release-plan.outputs.run_browser == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .nvmrc
@@ -274,3 +1099,67 @@ jobs:
             playwright-report
             test-results
           retention-days: 14
+
+  pipeline-metrics:
+    needs: [release-plan, quality, package-staging, hotfix-bundle-smoke, database, browser]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .nvmrc
+      - name: Fail closed on exact release-profile job outcomes
+        run: >-
+          node scripts/ev2/phase12/verify-ci-profile-needs.mjs
+          --profile "${{ needs.release-plan.outputs.profile }}"
+          --event-name "${{ github.event_name }}"
+          --ref "${{ github.ref }}"
+          --release-plan "${{ needs.release-plan.result }}"
+          --quality "${{ needs.quality.result }}"
+          --package-staging "${{ needs.package-staging.result }}"
+          --hotfix-bundle-smoke "${{ needs.hotfix-bundle-smoke.result }}"
+          --database "${{ needs.database.result }}"
+          --browser "${{ needs.browser.result }}"
+      - name: Capture every completed CI stage and identify the component bottleneck
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_PROFILE: ${{ needs.release-plan.outputs.profile }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > "$RUNNER_TEMP/pipeline-run.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" \
+            > "$RUNNER_TEMP/pipeline-jobs.json"
+          case "$RELEASE_PROFILE" in
+            frontend-only) expected_stages="release-plan,quality,package-staging,browser" ;;
+            edge-only) expected_stages="release-plan,quality,package-staging,hotfix-bundle-smoke,browser" ;;
+            database-auth) expected_stages="release-plan,quality,package-staging,database,browser" ;;
+            full-release) expected_stages="release-plan,quality,package-staging,hotfix-bundle-smoke,database,browser" ;;
+            *)
+              echo "::error::Unknown release profile while selecting exact CI timing stages."
+              exit 1
+              ;;
+          esac
+          captured_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          node scripts/ev2/phase12/write-pipeline-duration-report.mjs \
+            --run "$RUNNER_TEMP/pipeline-run.json" \
+            --jobs "$RUNNER_TEMP/pipeline-jobs.json" \
+            --baseline .github/release-controls/pipeline-slo-baseline.json \
+            --profile "$RELEASE_PROFILE" \
+            --scope component \
+            --expected-stages "$expected_stages" \
+            --captured-at "$captured_at" \
+            --output "$RUNNER_TEMP/pipeline-duration-report.json"
+      - name: Preserve CI duration evidence
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pipeline-duration-ci-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pipeline-duration-report.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 90

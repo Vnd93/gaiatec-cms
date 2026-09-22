@@ -154,18 +154,19 @@ jobs:
           github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
           repository: ${{ github.repository }}
           run-id: ${{ inputs.source_run_id }}
-      - name: Verify the downloaded target archive and seal before any mutation
+      - name: Materialize the exact target package with bounded legacy read-only compatibility
+        id: target_package
         working-directory: control
-        run: |
-          node scripts/ev2/phase12/verify-production-dist-seal.mjs \
-            --dist ../target-artifact/dist \
-            --seal ../target-artifact/outputs/staging-candidate-dist-seal.json \
-            --candidate "${{ steps.candidate.outputs.sha }}"
+        run: >-
+          node scripts/ev2/phase12/materialize-staging-candidate-artifact.mjs
+          --artifact-dir ../target-artifact
+          --output-dist ../target-artifact-verified-dist
+          --candidate "${{ steps.candidate.outputs.sha }}"
       - name: Prove the sealed rollback frontend accepts the retained AI model
         working-directory: control
         run: >-
           node scripts/ev2/phase12/verify-ai-model-rollback-compatibility.mjs
-          --source ../frontend --dist ../target-artifact/dist
+          --source ../frontend --dist "${{ steps.target_package.outputs.dist_path }}"
           --report ../g12-staging-rollback-ai-model-compatibility.json
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
@@ -175,11 +176,35 @@ jobs:
       - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3
         with:
           version: 2.116.0
+      - name: Refuse authoritative rollback capture while any staging recovery is armed
+        working-directory: control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs fence
+          --owner-kind staging-rollback --require-empty
+          --file ../staging-rollback-initial-recovery-fence.json
+          --run-id "$GITHUB_RUN_ID"
+          --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --control-sha "$GITHUB_SHA"
       - name: Verify rollback target against the retained backend
         working-directory: backend
         run: >-
           node scripts/ev2/phase12/verify-backend-forward-compatibility.mjs
           --candidate . --baseline ../frontend --report g12-backend-compatibility.json
+      - name: Reconfirm the empty recovery fence immediately before authoritative rollback capture
+        working-directory: control
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+        run: >-
+          node scripts/ev2/phase12/recovery-state-store.mjs fence
+          --owner-kind staging-rollback --require-empty
+          --file ../staging-rollback-capture-fence.json
+          --run-id "$GITHUB_RUN_ID"
+          --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --control-sha "$GITHUB_SHA"
       - name: Capture immutable live staging state before any remote mutation
         id: original_staging
         timeout-minutes: 3
@@ -201,27 +226,163 @@ jobs:
           EV2_G12_PROBE_PROFILE: full
           EV2_G12_SAMPLE_COUNT: "20"
           EV2_G12_REPORT_PATH: ../g12-staging-rollback-original-probe.json
-      - name: Checkout exact live baseline for deterministic recovery fallback
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Classify the exact immutable producer of the live staging deployment
+        id: baseline_source
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/classify-staging-rollback-baseline.mjs
+          --record .github/release-controls/staging-baseline-bootstrap.json
+          --deployment-id "${{ steps.original_staging.outputs.deployment_id }}"
+          --release "${{ steps.original_staging.outputs.release }}"
+          --created-on "${{ steps.original_staging.outputs.created_on }}"
+          --commit-message-b64 "${{ steps.original_staging.outputs.commit_message_b64 }}"
+      - name: Resolve the deploy artifact tuple bound to the live deployment marker
+        id: baseline_deploy_source
+        if: steps.baseline_source.outputs.mode == 'deploy-v4'
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+        run: >-
+          node scripts/ev2/phase12/resolve-staging-rollback-deploy-artifact.mjs
+          --run-id "${{ steps.baseline_source.outputs.producer_run_id }}"
+          --run-attempt "${{ steps.baseline_source.outputs.producer_run_attempt }}"
+          --candidate "${{ steps.original_staging.outputs.release }}"
+          --deployment-id "${{ steps.original_staging.outputs.deployment_id }}"
+          --created-on "${{ steps.original_staging.outputs.created_on }}"
+          --commit-message-b64 "${{ steps.original_staging.outputs.commit_message_b64 }}"
+      - name: Download deploy evidence that attests the candidate artifact tuple
+        if: steps.baseline_source.outputs.mode == 'deploy-v4'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          ref: ${{ steps.original_staging.outputs.release }}
-          fetch-depth: 0
-          path: recovery-source
-      - name: Seal deterministic original recovery bytes before mutation
-        working-directory: recovery-source
+          artifact-ids: ${{ steps.baseline_deploy_source.outputs.evidence_artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ steps.baseline_deploy_source.outputs.source_run_id }}
+          path: ${{ runner.temp }}/g12-staging-rollback-deploy-evidence
+      - name: Verify deploy evidence binds the exact candidate ID digest and SHA
+        id: baseline_deploy_evidence
+        if: steps.baseline_source.outputs.mode == 'deploy-v4'
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/verify-staging-rollback-deploy-evidence.mjs
+          --file "$RUNNER_TEMP/g12-staging-rollback-deploy-evidence/candidate/outputs/staging-artifact-bindings.json"
+          --candidate "${{ steps.original_staging.outputs.release }}"
+          --artifact-id "${{ steps.baseline_deploy_source.outputs.artifact_id }}"
+          --artifact-digest "${{ steps.baseline_deploy_source.outputs.artifact_digest }}"
+      - name: Download exact deploy bytes by immutable artifact ID and digest
+        if: steps.baseline_source.outputs.mode == 'deploy-v4'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.baseline_deploy_source.outputs.artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ steps.baseline_deploy_source.outputs.source_run_id }}
+          path: ${{ runner.temp }}/g12-staging-rollback-deploy-source
+      - name: Materialize exact deploy bytes without rebuilding
+        id: baseline_deploy_package
+        if: steps.baseline_source.outputs.mode == 'deploy-v4'
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/materialize-staging-candidate-artifact.mjs
+          --artifact-dir "$RUNNER_TEMP/g12-staging-rollback-deploy-source"
+          --output-dist ../recovery-source/dist
+          --candidate "${{ steps.original_staging.outputs.release }}"
+      - name: Bind materialized deploy bytes to the deployment run evidence
+        if: steps.baseline_source.outputs.mode == 'deploy-v4'
+        env:
+          ACTUAL_ARCHIVE: ${{ steps.baseline_deploy_package.outputs.archive_sha256 }}
+          ACTUAL_TREE: ${{ steps.baseline_deploy_package.outputs.tree_sha256 }}
+          ATTESTED_ARCHIVE: ${{ steps.baseline_deploy_evidence.outputs.archive_sha256 }}
+          ATTESTED_TREE: ${{ steps.baseline_deploy_evidence.outputs.tree_sha256 }}
         run: |
           set -euo pipefail
-          git merge-base --is-ancestor HEAD "${{ inputs.backend_ref }}"
-          npm ci
-          npm run build:staging
-          env -u GITHUB_SHA npm run artifact:manifest
-          mkdir -p outputs
-          node ../control/scripts/ev2/phase12/seal-production-dist.mjs \
-            --dist dist \
-            --archive outputs/staging-rollback-recovery-dist.tar \
-            --output outputs/staging-rollback-recovery-dist-seal.json \
-            --candidate "${{ steps.original_staging.outputs.release }}"
+          test "$ACTUAL_ARCHIVE" = "$ATTESTED_ARCHIVE"
+          test "$ACTUAL_TREE" = "$ATTESTED_TREE"
+      - name: Resolve immutable bridge evidence for the live deployment
+        id: baseline_bridge_run
+        if: steps.baseline_source.outputs.mode == 'bridge-v5'
+        working-directory: control
         env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+        run: >-
+          node scripts/ev2/phase12/verify-staging-frontend-bridge-run.mjs
+          --run-id "${{ steps.baseline_source.outputs.producer_run_id }}"
+          --expected-release "${{ steps.original_staging.outputs.release }}"
+      - name: Bind bridge evidence attempt to the live deployment marker
+        if: steps.baseline_source.outputs.mode == 'bridge-v5'
+        env:
+          MARKER_ATTEMPT: ${{ steps.baseline_source.outputs.producer_run_attempt }}
+          RESOLVED_ATTEMPT: ${{ steps.baseline_bridge_run.outputs.run_attempt }}
+        run: |
+          set -euo pipefail
+          test "$MARKER_ATTEMPT" = "$RESOLVED_ATTEMPT"
+      - name: Download immutable bridge evidence by artifact ID and digest
+        if: steps.baseline_source.outputs.mode == 'bridge-v5'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.baseline_bridge_run.outputs.artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ steps.baseline_source.outputs.producer_run_id }}
+          path: ${{ runner.temp }}/g12-staging-rollback-bridge-evidence
+      - name: Verify bridge evidence against the exact live deployment identity
+        id: baseline_bridge
+        if: steps.baseline_source.outputs.mode == 'bridge-v5'
+        working-directory: control
+        env:
+          EXPECTED_RUN_ID: ${{ steps.baseline_source.outputs.producer_run_id }}
+          EXPECTED_RUN_ATTEMPT: ${{ steps.baseline_source.outputs.producer_run_attempt }}
+          EXPECTED_CONTROL_SHA: ${{ steps.baseline_bridge_run.outputs.control_sha }}
+          EXPECTED_RELEASE: ${{ steps.original_staging.outputs.release }}
+          EXPECTED_DEPLOYMENT_ID: ${{ steps.original_staging.outputs.deployment_id }}
+          EXPECTED_CANONICAL_CREATED_ON: ${{ steps.original_staging.outputs.created_on }}
+        run: >-
+          node scripts/ev2/phase12/verify-staging-frontend-bridge-evidence.mjs
+          --artifact-dir "$RUNNER_TEMP/g12-staging-rollback-bridge-evidence"
+      - name: Resolve the exact CI package attested by bridge evidence
+        id: baseline_bridge_ci_source
+        if: steps.baseline_source.outputs.mode == 'bridge-v5'
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+        run: >-
+          node scripts/ev2/phase12/resolve-ci-staging-frontend-artifact.mjs
+          --run-id "${{ steps.baseline_bridge.outputs.source_run_id }}"
+          --run-attempt "${{ steps.baseline_bridge.outputs.source_run_attempt }}"
+          --gate-run-attempt "${{ steps.baseline_bridge.outputs.gate_run_attempt }}"
+          --sha "${{ steps.original_staging.outputs.release }}"
+      - name: Bind the resolved CI tuple to bridge evidence
+        if: steps.baseline_source.outputs.mode == 'bridge-v5'
+        env:
+          RESOLVED_ID: ${{ steps.baseline_bridge_ci_source.outputs.artifact_id }}
+          RESOLVED_DIGEST: ${{ steps.baseline_bridge_ci_source.outputs.artifact_digest }}
+          RESOLVED_NAME: ${{ steps.baseline_bridge_ci_source.outputs.artifact_name }}
+          ATTESTED_ID: ${{ steps.baseline_bridge.outputs.artifact_id }}
+          ATTESTED_DIGEST: ${{ steps.baseline_bridge.outputs.artifact_digest }}
+          ATTESTED_NAME: ${{ steps.baseline_bridge.outputs.artifact_name }}
+        run: |
+          set -euo pipefail
+          test "$RESOLVED_ID" = "$ATTESTED_ID"
+          test "$RESOLVED_DIGEST" = "$ATTESTED_DIGEST"
+          test "$RESOLVED_NAME" = "$ATTESTED_NAME"
+      - name: Download exact bridge source bytes by immutable artifact ID and digest
+        if: steps.baseline_source.outputs.mode == 'bridge-v5'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.baseline_bridge_ci_source.outputs.artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ steps.baseline_bridge_ci_source.outputs.source_run_id }}
+          path: ${{ runner.temp }}/g12-staging-rollback-bridge-source
+      - name: Materialize and verify exact bridge source bytes without rebuilding
+        id: baseline_bridge_package
+        if: steps.baseline_source.outputs.mode == 'bridge-v5'
+        working-directory: control
+        env: &staging_rollback_build_identity
           VITE_RELEASE: ${{ steps.original_staging.outputs.release }}
           VITE_CMS_ENVIRONMENT: staging
           VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
@@ -230,6 +391,209 @@ jobs:
           VITE_GOOGLE_MAPS_KEY: ${{ vars.GOOGLE_MAPS_BROWSER_KEY }}
           VITE_CONTACT_CAPTCHA_ALWAYS: "true"
           VITE_EV2_DRAFT_V2_CANDIDATE: "false"
+        run: >-
+          node scripts/ev2/phase12/verify-staging-frontend-package.mjs
+          --package "$RUNNER_TEMP/g12-staging-rollback-bridge-source"
+          --output ../recovery-source/dist
+          --candidate "${{ steps.original_staging.outputs.release }}"
+          --run-id "${{ steps.baseline_bridge_ci_source.outputs.source_run_id }}"
+          --run-attempt "${{ steps.baseline_bridge_ci_source.outputs.source_run_attempt }}"
+      - name: Bind materialized bridge bytes to the deployment evidence
+        if: steps.baseline_source.outputs.mode == 'bridge-v5'
+        env:
+          ACTUAL_ARCHIVE: ${{ steps.baseline_bridge_package.outputs.archive_sha256 }}
+          ACTUAL_TREE: ${{ steps.baseline_bridge_package.outputs.tree_sha256 }}
+          ACTUAL_PROFILE: ${{ steps.baseline_bridge_package.outputs.profile_sha256 }}
+          ACTUAL_ARCHIVE_BYTES: ${{ steps.baseline_bridge_package.outputs.archive_bytes }}
+          ACTUAL_FILE_COUNT: ${{ steps.baseline_bridge_package.outputs.file_count }}
+          ACTUAL_BYTE_COUNT: ${{ steps.baseline_bridge_package.outputs.byte_count }}
+          ATTESTED_ARCHIVE: ${{ steps.baseline_bridge.outputs.archive_sha256 }}
+          ATTESTED_TREE: ${{ steps.baseline_bridge.outputs.tree_sha256 }}
+          ATTESTED_PROFILE: ${{ steps.baseline_bridge.outputs.profile_sha256 }}
+          ATTESTED_ARCHIVE_BYTES: ${{ steps.baseline_bridge.outputs.archive_bytes }}
+          ATTESTED_FILE_COUNT: ${{ steps.baseline_bridge.outputs.file_count }}
+          ATTESTED_BYTE_COUNT: ${{ steps.baseline_bridge.outputs.byte_count }}
+        run: |
+          set -euo pipefail
+          test "$ACTUAL_ARCHIVE" = "$ATTESTED_ARCHIVE"
+          test "$ACTUAL_TREE" = "$ATTESTED_TREE"
+          test "$ACTUAL_PROFILE" = "$ATTESTED_PROFILE"
+          test "$ACTUAL_ARCHIVE_BYTES" = "$ATTESTED_ARCHIVE_BYTES"
+          test "$ACTUAL_FILE_COUNT" = "$ATTESTED_FILE_COUNT"
+          test "$ACTUAL_BYTE_COUNT" = "$ATTESTED_BYTE_COUNT"
+      - name: Verify one-time bootstrap provenance against live GitHub metadata
+        id: baseline_bootstrap
+        if: steps.baseline_source.outputs.mode == 'bootstrap'
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+        run: >-
+          node scripts/ev2/phase12/resolve-staging-baseline-bootstrap.mjs
+          --record .github/release-controls/staging-baseline-bootstrap.json
+      - name: Download exact bootstrap bridge evidence by ID and digest
+        if: steps.baseline_source.outputs.mode == 'bootstrap'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.baseline_bootstrap.outputs.bridge_artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ steps.baseline_bootstrap.outputs.bridge_run_id }}
+          path: ${{ runner.temp }}/g12-staging-rollback-bootstrap-bridge
+      - name: Download exact bootstrap source bytes by ID and digest
+        if: steps.baseline_source.outputs.mode == 'bootstrap'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.baseline_bootstrap.outputs.source_artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ steps.baseline_bootstrap.outputs.source_run_id }}
+          path: ${{ runner.temp }}/g12-staging-rollback-bootstrap-source
+      - name: Materialize exact bootstrap bytes without rebuilding
+        id: baseline_bootstrap_package
+        if: steps.baseline_source.outputs.mode == 'bootstrap'
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/materialize-staging-baseline-bootstrap.mjs
+          --record .github/release-controls/staging-baseline-bootstrap.json
+          --bridge-artifact-dir "$RUNNER_TEMP/g12-staging-rollback-bootstrap-bridge"
+          --source-artifact-dir "$RUNNER_TEMP/g12-staging-rollback-bootstrap-source"
+          --output-dist ../recovery-source/dist
+      - name: Resolve exact failed run and immutable compensation artifacts
+        id: baseline_compensation
+        if: >-
+          steps.baseline_source.outputs.mode == 'deploy-compensation' ||
+          steps.baseline_source.outputs.mode == 'bridge-compensation'
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+        run: >-
+          node scripts/ev2/phase12/resolve-staging-baseline-compensation.mjs
+          --mode "${{ steps.baseline_source.outputs.mode }}"
+          --run-id "${{ steps.baseline_source.outputs.producer_run_id }}"
+          --run-attempt "${{ steps.baseline_source.outputs.producer_run_attempt }}"
+      - name: Download exact deploy-compensation state by ID and digest
+        if: steps.baseline_source.outputs.mode == 'deploy-compensation'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.baseline_compensation.outputs.state_artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ steps.baseline_source.outputs.producer_run_id }}
+          path: ${{ runner.temp }}/g12-staging-rollback-compensation-state
+      - name: Download exact compensation recovery bytes by ID and digest
+        if: >-
+          steps.baseline_source.outputs.mode == 'deploy-compensation' ||
+          steps.baseline_source.outputs.mode == 'bridge-compensation'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.baseline_compensation.outputs.recovery_artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ steps.baseline_source.outputs.producer_run_id }}
+          path: ${{ runner.temp }}/g12-staging-rollback-compensation-recovery
+      - name: Verify compensation state and materialize exact recovery bytes
+        id: baseline_compensation_package
+        if: >-
+          steps.baseline_source.outputs.mode == 'deploy-compensation' ||
+          steps.baseline_source.outputs.mode == 'bridge-compensation'
+        working-directory: control
+        env: *staging_rollback_build_identity
+        run: |
+          set -euo pipefail
+          state_args=()
+          if [ "${{ steps.baseline_source.outputs.mode }}" = deploy-compensation ]; then
+            state_args=(--state-dir "$RUNNER_TEMP/g12-staging-rollback-compensation-state")
+          fi
+          node scripts/ev2/phase12/materialize-staging-baseline-compensation.mjs \
+            --mode "${{ steps.baseline_source.outputs.mode }}" \
+            --record .github/release-controls/staging-baseline-bootstrap.json \
+            --recovery-dir "$RUNNER_TEMP/g12-staging-rollback-compensation-recovery" \
+            "${state_args[@]}" \
+            --candidate "${{ steps.original_staging.outputs.release }}" \
+            --run-id "${{ steps.baseline_source.outputs.producer_run_id }}" \
+            --run-attempt "${{ steps.baseline_source.outputs.producer_run_attempt }}" \
+            --control-sha "${{ steps.baseline_compensation.outputs.control_sha }}" \
+            --recovery-artifact-id "${{ steps.baseline_compensation.outputs.recovery_artifact_id }}" \
+            --recovery-artifact-digest "${{ steps.baseline_compensation.outputs.recovery_artifact_digest }}" \
+            --recovery-artifact-name "${{ steps.baseline_compensation.outputs.recovery_artifact_name }}" \
+            --output-dist ../recovery-source/dist
+      - name: Resolve original CI tuple attested by deploy compensation
+        id: baseline_compensation_ci_source
+        if: steps.baseline_source.outputs.mode == 'deploy-compensation'
+        working-directory: control
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+        run: >-
+          node scripts/ev2/phase12/resolve-ci-staging-frontend-artifact.mjs
+          --run-id "${{ steps.baseline_compensation_package.outputs.source_run_id }}"
+          --run-attempt "${{ steps.baseline_compensation_package.outputs.source_run_attempt }}"
+          --gate-run-attempt "${{ steps.baseline_compensation_package.outputs.source_gate_run_attempt }}"
+          --sha "${{ steps.original_staging.outputs.release }}"
+      - name: Bind compensation recovery bytes to the original CI artifact tuple
+        if: steps.baseline_source.outputs.mode == 'deploy-compensation'
+        env:
+          RECOVERED_ID: ${{ steps.baseline_compensation_package.outputs.source_artifact_id }}
+          RECOVERED_DIGEST: ${{ steps.baseline_compensation_package.outputs.source_artifact_digest }}
+          RECOVERED_NAME: ${{ steps.baseline_compensation_package.outputs.source_artifact_name }}
+          RESOLVED_ID: ${{ steps.baseline_compensation_ci_source.outputs.artifact_id }}
+          RESOLVED_DIGEST: ${{ steps.baseline_compensation_ci_source.outputs.artifact_digest }}
+          RESOLVED_NAME: ${{ steps.baseline_compensation_ci_source.outputs.artifact_name }}
+        run: |
+          set -euo pipefail
+          test "$RECOVERED_ID" = "$RESOLVED_ID"
+          test "$RECOVERED_DIGEST" = "$RESOLVED_DIGEST"
+          test "$RECOVERED_NAME" = "$RESOLVED_NAME"
+      - name: Normalize only the selected immutable recovery archive and seal
+        working-directory: control
+        env:
+          BASELINE_MODE: ${{ steps.baseline_source.outputs.mode }}
+          DEPLOY_ARCHIVE: ${{ steps.baseline_deploy_package.outputs.archive_path }}
+          DEPLOY_SEAL: ${{ steps.baseline_deploy_package.outputs.seal_path }}
+          BRIDGE_ARCHIVE: ${{ runner.temp }}/g12-staging-rollback-bridge-source/staging-frontend-dist.tar
+          BRIDGE_SEAL: ${{ runner.temp }}/g12-staging-rollback-bridge-source/staging-frontend-dist-seal.json
+          BOOTSTRAP_ARCHIVE: ${{ steps.baseline_bootstrap_package.outputs.archive_path }}
+          BOOTSTRAP_SEAL: ${{ steps.baseline_bootstrap_package.outputs.seal_path }}
+          COMPENSATION_ARCHIVE: ${{ steps.baseline_compensation_package.outputs.archive_path }}
+          COMPENSATION_SEAL: ${{ steps.baseline_compensation_package.outputs.seal_path }}
+        run: |
+          set -euo pipefail
+          case "$BASELINE_MODE" in
+            deploy-v4) archive="$DEPLOY_ARCHIVE"; seal="$DEPLOY_SEAL" ;;
+            bridge-v5) archive="$BRIDGE_ARCHIVE"; seal="$BRIDGE_SEAL" ;;
+            bootstrap) archive="$BOOTSTRAP_ARCHIVE"; seal="$BOOTSTRAP_SEAL" ;;
+            deploy-compensation|bridge-compensation)
+              archive="$COMPENSATION_ARCHIVE"; seal="$COMPENSATION_SEAL" ;;
+            *) echo G12_STAGING_ROLLBACK_BASELINE_MODE_REFUSED >&2; exit 1 ;;
+          esac
+          test -f "$archive"
+          test -f "$seal"
+          mkdir -p ../recovery-source/outputs
+          cp "$archive" ../recovery-source/outputs/staging-rollback-recovery-dist.tar
+          cp "$seal" ../recovery-source/outputs/staging-rollback-recovery-dist-seal.json
+      - name: Verify exact recovered bytes before durable upload or mutation
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/verify-production-dist-seal.mjs
+          --dist ../recovery-source/dist
+          --seal ../recovery-source/outputs/staging-rollback-recovery-dist-seal.json
+          --candidate "${{ steps.original_staging.outputs.release }}"
+      - name: Upload mandatory exact rollback recovery bytes before state or mutation
+        id: recovery_artifact_upload
+        timeout-minutes: 10
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: staging-rollback-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            recovery-source/dist
+            recovery-source/outputs/staging-rollback-recovery-dist.tar
+            recovery-source/outputs/staging-rollback-recovery-dist-seal.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 90
       - name: Persist credential-free staging rollback state
         id: rollback_state
         working-directory: control
@@ -245,11 +609,15 @@ jobs:
           TARGET_ARTIFACT_ID: ${{ steps.target_artifact.outputs.artifact_id }}
           TARGET_ARTIFACT_DIGEST: ${{ steps.target_artifact.outputs.artifact_digest }}
           TARGET_ARTIFACT_NAME: ${{ steps.target_artifact.outputs.artifact_name }}
+          TARGET_SEAL_PATH: ${{ steps.target_package.outputs.seal_path }}
+          RECOVERY_ARTIFACT_ID: ${{ steps.recovery_artifact_upload.outputs.artifact-id }}
+          RECOVERY_ARTIFACT_DIGEST: ${{ steps.recovery_artifact_upload.outputs.artifact-digest }}
+          RECOVERY_ARTIFACT_NAME: staging-rollback-recovery-${{ github.run_id }}-${{ github.run_attempt }}
           CONTROL_SHA: ${{ github.sha }}
         run: |
           node <<'NODE'
           const { appendFileSync, readFileSync, writeFileSync } = require("node:fs");
-          const targetSeal = JSON.parse(readFileSync("../target-artifact/outputs/staging-candidate-dist-seal.json", "utf8"));
+          const targetSeal = JSON.parse(readFileSync(process.env.TARGET_SEAL_PATH, "utf8"));
           const recoverySeal = JSON.parse(readFileSync("../recovery-source/outputs/staging-rollback-recovery-dist-seal.json", "utf8"));
           const identity = (seal) => ({
             schemaVersion: seal.schemaVersion, candidateSha: seal.candidateSha,
@@ -287,14 +655,103 @@ jobs:
               artifact: { id: process.env.TARGET_ARTIFACT_ID, digest: process.env.TARGET_ARTIFACT_DIGEST, name: process.env.TARGET_ARTIFACT_NAME },
               seal: identity(targetSeal),
             },
-            recovery: { release: process.env.ORIGINAL_RELEASE, seal: identity(recoverySeal) },
+            recovery: {
+              release: process.env.ORIGINAL_RELEASE,
+              seal: identity(recoverySeal),
+              artifact: {
+                id: process.env.RECOVERY_ARTIFACT_ID,
+                digest: process.env.RECOVERY_ARTIFACT_DIGEST,
+                name: process.env.RECOVERY_ARTIFACT_NAME,
+              },
+            },
             retainedBackend: { release: process.env.BACKEND_RELEASE },
             recordedAt: new Date().toISOString(), sensitiveValuesLogged: false,
           };
           writeFileSync("../rollback-staging-state.json", JSON.stringify(state, null, 2) + "\n", { mode: 0o600 });
           appendFileSync(process.env.GITHUB_OUTPUT, `run_marker=${state.runMarker}\ncompensation_marker=${state.compensationMarker}\n`);
           NODE
-      - name: Persist redundant HMAC rollback state before the first remote mutation
+      - name: Upload redundant staging rollback state
+        id: rollback_state_upload
+        timeout-minutes: 5
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: staging-rollback-state-${{ github.run_id }}-${{ github.run_attempt }}
+          path: rollback-staging-state.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Download the just-uploaded rollback state by immutable artifact ID
+        id: rollback_state_download
+        timeout-minutes: 5
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.rollback_state_upload.outputs.artifact-id }}
+          digest-mismatch: error
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.run_id }}
+          path: ${{ runner.temp }}/g12-staging-rollback-state-pre-mutation
+      - name: Download the just-uploaded recovery bytes by immutable artifact ID
+        id: recovery_artifact_download
+        timeout-minutes: 10
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.recovery_artifact_upload.outputs.artifact-id }}
+          digest-mismatch: error
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.run_id }}
+          path: ${{ runner.temp }}/g12-staging-rollback-recovery-pre-mutation
+      - name: Reverify downloaded state and exact recovery bytes before mutation
+        id: durable_recovery_remote
+        working-directory: control
+        env:
+          STATE_ARTIFACT_ID: ${{ steps.rollback_state_upload.outputs.artifact-id }}
+          STATE_ARTIFACT_DIGEST: ${{ steps.rollback_state_upload.outputs.artifact-digest }}
+          RECOVERY_ARTIFACT_ID: ${{ steps.recovery_artifact_upload.outputs.artifact-id }}
+          RECOVERY_ARTIFACT_DIGEST: ${{ steps.recovery_artifact_upload.outputs.artifact-digest }}
+        run: |
+          set -euo pipefail
+          id='^[1-9][0-9]*$'
+          digest='^sha256:[a-f0-9]{64}$'
+          [[ "$STATE_ARTIFACT_ID" =~ $id ]]
+          [[ "$RECOVERY_ARTIFACT_ID" =~ $id ]]
+          [[ "$STATE_ARTIFACT_DIGEST" =~ $digest ]]
+          [[ "$RECOVERY_ARTIFACT_DIGEST" =~ $digest ]]
+          cmp -s ../rollback-staging-state.json \
+            "$RUNNER_TEMP/g12-staging-rollback-state-pre-mutation/rollback-staging-state.json"
+          local_archive=../recovery-source/outputs/staging-rollback-recovery-dist.tar
+          remote_archive="$RUNNER_TEMP/g12-staging-rollback-recovery-pre-mutation/outputs/staging-rollback-recovery-dist.tar"
+          local_seal=../recovery-source/outputs/staging-rollback-recovery-dist-seal.json
+          remote_seal="$RUNNER_TEMP/g12-staging-rollback-recovery-pre-mutation/outputs/staging-rollback-recovery-dist-seal.json"
+          cmp -s "$local_archive" "$remote_archive"
+          cmp -s "$local_seal" "$remote_seal"
+          node <<'NODE'
+          const { createHash } = require("node:crypto");
+          const { readFileSync, statSync } = require("node:fs");
+          const root = process.env.RUNNER_TEMP + "/g12-staging-rollback-recovery-pre-mutation";
+          const seal = JSON.parse(readFileSync(`${root}/outputs/staging-rollback-recovery-dist-seal.json`, "utf8"));
+          const archive = readFileSync(`${root}/outputs/staging-rollback-recovery-dist.tar`);
+          if (createHash("sha256").update(archive).digest("hex") !== seal.archiveSha256 ||
+              statSync(`${root}/outputs/staging-rollback-recovery-dist.tar`).size !== seal.archiveBytes)
+            throw new Error("G12_STAGING_ROLLBACK_REMOTE_ARCHIVE_REFUSED");
+          const state = JSON.parse(readFileSync(`${process.env.RUNNER_TEMP}/g12-staging-rollback-state-pre-mutation/rollback-staging-state.json`, "utf8"));
+          if (state.recovery?.artifact?.id !== process.env.RECOVERY_ARTIFACT_ID ||
+              state.recovery?.artifact?.digest !== process.env.RECOVERY_ARTIFACT_DIGEST ||
+              state.recovery?.artifact?.name !== `staging-rollback-recovery-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}` ||
+              state.recovery?.seal?.archiveSha256 !== seal.archiveSha256 ||
+              state.recovery?.seal?.treeSha256 !== seal.treeSha256)
+            throw new Error("G12_STAGING_ROLLBACK_REMOTE_STATE_BINDING_REFUSED");
+          NODE
+          node scripts/ev2/phase12/verify-staging-recovery-seal.mjs \
+            --state "$RUNNER_TEMP/g12-staging-rollback-state-pre-mutation/rollback-staging-state.json" \
+            --seal "$remote_seal" \
+            --role recovery
+          node scripts/ev2/phase12/verify-production-dist-seal.mjs \
+            --dist "$RUNNER_TEMP/g12-staging-rollback-recovery-pre-mutation/dist" \
+            --seal "$remote_seal" \
+            --candidate "${{ steps.original_staging.outputs.release }}"
+      - name: Persist redundant HMAC rollback state after both durable uploads are verified
+        id: hmac_state
         timeout-minutes: 5
         working-directory: control
         env:
@@ -304,61 +761,38 @@ jobs:
         run: >-
           node scripts/ev2/phase12/recovery-state-store.mjs put
           --kind staging-rollback --file ../rollback-staging-state.json
-      - name: Upload redundant staging rollback state
-        continue-on-error: true
-        timeout-minutes: 5
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: staging-rollback-state-${{ github.run_id }}-${{ github.run_attempt }}
-          path: rollback-staging-state.json
-          if-no-files-found: error
-          retention-days: 30
-      - name: Upload sealed rollback recovery bytes
-        continue-on-error: true
-        timeout-minutes: 10
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: staging-rollback-recovery-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            recovery-source/dist
-            recovery-source/outputs/staging-rollback-recovery-dist.tar
-            recovery-source/outputs/staging-rollback-recovery-dist-seal.json
-          if-no-files-found: error
-          retention-days: 30
-      - name: Converge the retained staging schema and Edge Functions
+      - name: Verify the retained staging backend without mutation
         id: backend_convergence
         continue-on-error: true
         working-directory: backend
         env:
-          BACKEND_REF: ${{ inputs.backend_ref }}
           STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
+          set -euo pipefail
           test "$STAGING_SUPABASE_PROJECT_REF" = "glcqsosxwgmlhzgcsnzv"
-          supabase link --project-ref "$STAGING_SUPABASE_PROJECT_REF" --yes
-          supabase db push --linked --include-all --dry-run
-          supabase db push --linked --include-all --yes
-          if test -f scripts/ev2/phase12/configure-staging-ai-provider-secrets.mjs; then
-            node scripts/ev2/phase12/configure-staging-ai-provider-secrets.mjs
-          fi
-          node scripts/ev2/phase12/deploy-staging-functions.mjs \
-            --source . --rollback-source . --candidate "$BACKEND_REF" \
-            --report ../g12-staging-rollback-function-deployment.json
           supabase functions list --project-ref "$STAGING_SUPABASE_PROJECT_REF" --output json > ../g12-staging-rollback-functions.json
           node scripts/ev2/phase12/verify-production-functions.mjs \
             --file ../g12-staging-rollback-functions.json \
-            --receipt ../g12-staging-rollback-function-deployment.json \
-            --source . --candidate "$BACKEND_REF" \
-            --environment staging --project-ref "$STAGING_SUPABASE_PROJECT_REF"
+            --environment staging --project-ref "$STAGING_SUPABASE_PROJECT_REF" \
+            | tee ../g12-staging-rollback-functions-verification.json
           node scripts/ev2/phase12/verify-staging-database.mjs --source . | tee ../g12-staging-rollback-database.json
       - name: Install exact locked Wrangler after durable pre-state
-        if: always() && steps.backend_convergence.outcome == 'success'
+        id: install_wrangler
+        if: >-
+          always() && steps.durable_recovery_remote.outcome == 'success' &&
+          steps.hmac_state.outcome == 'success' &&
+          steps.backend_convergence.outcome == 'success'
         timeout-minutes: 10
         working-directory: control
         run: npm ci --ignore-scripts
       - name: Reconfirm original staging immediately before Pages mutation
         id: original_recheck
-        if: always() && steps.backend_convergence.outcome == 'success'
+        if: >-
+          always() && steps.durable_recovery_remote.outcome == 'success' &&
+          steps.hmac_state.outcome == 'success' &&
+          steps.backend_convergence.outcome == 'success' &&
+          steps.install_wrangler.outcome == 'success'
         timeout-minutes: 3
         continue-on-error: true
         working-directory: control
@@ -377,15 +811,20 @@ jobs:
         run: node scripts/ev2/phase12/staging-pages-state.mjs assert-original
       - name: Restore only the exact retained and sealed staging-candidate bytes
         id: deploy
-        if: always() && steps.backend_convergence.outcome == 'success' && steps.original_recheck.outcome == 'success'
+        if: >-
+          always() && steps.durable_recovery_remote.outcome == 'success' &&
+          steps.hmac_state.outcome == 'success' &&
+          steps.backend_convergence.outcome == 'success' &&
+          steps.install_wrangler.outcome == 'success' &&
+          steps.original_recheck.outcome == 'success'
         timeout-minutes: 20
         continue-on-error: true
         working-directory: control
         env: *staging_rollback_environment
         run: >-
           node scripts/ev2/phase12/deploy-sealed-staging-dist.mjs
-          --archive ../target-artifact/outputs/staging-candidate-dist.tar
-          --seal ../target-artifact/outputs/staging-candidate-dist-seal.json
+          --archive "${{ steps.target_package.outputs.archive_path }}"
+          --seal "${{ steps.target_package.outputs.seal_path }}"
           --candidate "${{ steps.candidate.outputs.sha }}"
           --branch ev2-g17-canary
           --commit-message "${{ steps.rollback_state.outputs.run_marker }}"
@@ -461,8 +900,8 @@ jobs:
             g12-staging-rollback-ai-model-compatibility.json
             g12-staging-rollback-database.json
             g12-staging-rollback-boundary.json
-            g12-staging-rollback-function-deployment.json
             g12-staging-rollback-functions.json
+            g12-staging-rollback-functions-verification.json
             g12-staging-rollback-original-probe.json
             g12-staging-rollback-probe.json
             g12-staging-rollback-evidence.json
@@ -471,7 +910,8 @@ jobs:
       - name: Decide compensation without overwriting an external deployment
         id: compensation_decision
         if: >-
-          always() &&
+          always() && steps.durable_recovery_remote.outcome == 'success' &&
+          steps.hmac_state.outcome == 'success' &&
           (steps.backend_convergence.outcome != 'success' || steps.deploy.outcome != 'success' ||
           steps.target_canonical.outcome != 'success' || steps.target_probe.outcome != 'success' ||
           steps.target_boundary.outcome != 'success' || steps.target_evidence.outcome != 'success' ||
@@ -483,7 +923,10 @@ jobs:
         run: node scripts/ev2/phase12/staging-pages-state.mjs decide
       - name: Compensate only the still-canonical rollback target
         id: compensation
-        if: always() && steps.compensation_decision.outputs.action == 'restore-original'
+        if: >-
+          always() && steps.durable_recovery_remote.outcome == 'success' &&
+          steps.hmac_state.outcome == 'success' &&
+          steps.compensation_decision.outputs.action == 'restore-original'
         timeout-minutes: 20
         continue-on-error: true
         working-directory: control
@@ -494,7 +937,11 @@ jobs:
           --seal ../recovery-source/outputs/staging-rollback-recovery-dist-seal.json
       - name: Retry ambiguous rollback compensation safely
         id: compensation_retry
-        if: always() && steps.compensation_decision.outputs.action == 'restore-original' && steps.compensation.outcome != 'success'
+        if: >-
+          always() && steps.durable_recovery_remote.outcome == 'success' &&
+          steps.hmac_state.outcome == 'success' &&
+          steps.compensation_decision.outputs.action == 'restore-original' &&
+          steps.compensation.outcome != 'success'
         timeout-minutes: 20
         continue-on-error: true
         working-directory: control

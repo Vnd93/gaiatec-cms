@@ -15,9 +15,24 @@ const expected = {
   artifactId: argument("artifact-id"),
   artifactDigest: argument("artifact-digest"),
   candidateSha: argument("candidate"),
+  controlSha: argument("control-sha"),
 };
 if (repository !== "Vnd93/gaiatec-cms" || token.length < 30)
   throw new Error("G12_STAGING_ARTIFACT_RESOLUTION_INPUT_REFUSED");
+if (
+  !/^[1-9]\d*$/.test(expected.runId) ||
+  !Number.isSafeInteger(Number(expected.runId)) ||
+  !Number.isSafeInteger(Number(expected.runAttempt)) ||
+  Number(expected.runAttempt) < 1 ||
+  Number(expected.runAttempt) > 100 ||
+  !/^[1-9]\d*$/.test(expected.artifactId) ||
+  !Number.isSafeInteger(Number(expected.artifactId)) ||
+  !/^(?:sha256:)?[a-f0-9]{64}$/.test(expected.artifactDigest) ||
+  !/^[a-f0-9]{40}$/.test(expected.candidateSha) ||
+  (expected.controlSha && !/^[a-f0-9]{40}$/.test(expected.controlSha))
+) {
+  throw new Error("G12_STAGING_ARTIFACT_RESOLUTION_INPUT_REFUSED");
+}
 
 async function github(path) {
   let lastFailure = "transport";
@@ -65,7 +80,7 @@ const [run, artifacts] = await Promise.all([
   github(`/repos/${repository}/actions/runs/${expected.runId}`),
   runArtifacts(),
 ]);
-const result = evaluateStagingCandidateArtifact({ run, artifacts, expected });
+const result = evaluateStagingCandidateArtifact({ repository, run, artifacts, expected });
 if (!result.valid) throw new Error(`G12_STAGING_ARTIFACT_IDENTITY_REFUSED:${result.violations.join(",")}`);
 if (process.env.GITHUB_OUTPUT)
   await appendFile(
@@ -74,7 +89,7 @@ if (process.env.GITHUB_OUTPUT)
       `artifact_id=${result.artifact.id}`,
       `artifact_digest=${result.normalizedDigest}`,
       `artifact_name=${result.expectedName}`,
-      `control_sha=${run.head_sha}`,
+      `control_sha=${result.controlSha}`,
       "",
     ].join("\n"),
     "utf8",

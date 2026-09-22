@@ -100,7 +100,10 @@ test("staging canary is explicit and rollback reuses the exact sealed candidate"
   assert.match(deploy, /VITE_RELEASE: \$\{\{ steps\.candidate\.outputs\.sha \}\}/);
   assert.match(deploy, /--commit-hash \$\{\{ steps\.candidate\.outputs\.sha \}\}/);
   assert.doesNotMatch(deploy, /VITE_RELEASE: \$\{\{ github\.sha \}\}/);
-  assert.match(deploy, /VITE_EV2_DRAFT_V2_CANDIDATE: \$\{\{ inputs\.ev2_draft_v2_candidate \}\}/);
+  assert.match(deploy, /EV2_DRAFT_V2_CANDIDATE: \$\{\{ inputs\.ev2_draft_v2_candidate \}\}/);
+  assert.match(deploy, /test "\$EV2_DRAFT_V2_CANDIDATE" = false/);
+  assert.match(deploy, /VITE_EV2_DRAFT_V2_CANDIDATE: "false"/);
+  assert.doesNotMatch(deploy, /VITE_EV2_DRAFT_V2_CANDIDATE: \$\{\{ inputs\.ev2_draft_v2_candidate \}\}/);
   assert.match(preview, /VITE_CMS_ENVIRONMENT: staging/);
   assert.match(preview, /workflow_dispatch:[\s\S]+expected_sha:[\s\S]+ev2_draft_v2_candidate:/);
   assert.match(preview, /github\.ref_name == 'ev2\/desenvolvimento-fases-1-a-12'/);
@@ -111,11 +114,11 @@ test("staging canary is explicit and rollback reuses the exact sealed candidate"
   assert.match(preview, /git rev-parse HEAD.+inputs\.expected_sha/);
   assert.match(preview, /--branch \$\{\{ github\.event_name == 'workflow_dispatch' && 'ev2-g2-canary'/);
   assert.match(rollback, /Download only the resolved immutable staging-candidate artifact/);
-  assert.match(rollback, /verify-production-dist-seal\.mjs/);
-  assert.match(rollback, /--dist \.\.\/target-artifact\/dist/);
+  assert.match(rollback, /materialize-staging-candidate-artifact\.mjs/);
+  assert.match(rollback, /--output-dist \.\.\/target-artifact-verified-dist/);
   assert.match(rollback, /deploy-sealed-staging-dist\.mjs/);
-  assert.match(rollback, /--archive \.\.\/target-artifact\/outputs\/staging-candidate-dist\.tar/);
-  assert.match(rollback, /--seal \.\.\/target-artifact\/outputs\/staging-candidate-dist-seal\.json/);
+  assert.match(rollback, /--archive "\$\{\{ steps\.target_package\.outputs\.archive_path \}\}"/);
+  assert.match(rollback, /--seal "\$\{\{ steps\.target_package\.outputs\.seal_path \}\}"/);
   assert.match(rollback, /--candidate "\$\{\{ steps\.candidate\.outputs\.sha \}\}"/);
   assert.match(rollback, /EV2_G12_EXPECTED_SHA: \$\{\{ steps\.candidate\.outputs\.sha \}\}/);
   assert.doesNotMatch(rollback, /VITE_RELEASE: \$\{\{ steps\.candidate\.outputs\.sha \}\}/);

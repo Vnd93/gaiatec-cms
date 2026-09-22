@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   corsResponseOrigin,
@@ -11,6 +11,22 @@ import {
   isTurnstileVerificationAccepted,
   TURNSTILE_STAGING_ALWAYS_PASS_SECRET,
 } from "../../supabase/functions/_shared/exact-origin-allowlist";
+
+interface StagingEdgePublicSecretsModule {
+  STAGING_EDGE_PUBLIC_HOSTNAMES: readonly string[];
+  STAGING_EDGE_PUBLIC_ORIGINS: readonly string[];
+  STAGING_EDGE_PUBLIC_SECRET_NAMES: readonly string[];
+  expectedStagingEdgePublicSecrets(candidateSha: string): Readonly<Record<string, string>>;
+}
+
+const {
+  STAGING_EDGE_PUBLIC_HOSTNAMES,
+  STAGING_EDGE_PUBLIC_ORIGINS,
+  STAGING_EDGE_PUBLIC_SECRET_NAMES,
+  expectedStagingEdgePublicSecrets,
+} = await vi.importActual<StagingEdgePublicSecretsModule>(
+  "../../scripts/ev2/phase12/staging-edge-public-secrets-lib.mjs",
+);
 
 const allowedOrigins = [
   "https://gaiatec-cms-staging.pages.dev",
@@ -24,20 +40,6 @@ const configuredOrigins = allowedOrigins.join(",");
 const configuredHostnames = allowedHostnames.join(",");
 const productionOrigins = ["https://gaiatecsistemas.com.br", "https://www.gaiatecsistemas.com.br"];
 const productionHostnames = ["gaiatecsistemas.com.br", "www.gaiatecsistemas.com.br"];
-
-function foldedYamlValues(source: string, key: string): string[] {
-  const lines = source.split(/\r?\n/);
-  const keyIndex = lines.findIndex((line) => line.trim() === `${key}: >-`);
-  expect(keyIndex).toBeGreaterThanOrEqual(0);
-  const keyIndent = lines[keyIndex].search(/\S/);
-  const values: string[] = [];
-  for (const line of lines.slice(keyIndex + 1)) {
-    if (!line.trim()) continue;
-    if (line.search(/\S/) <= keyIndent) break;
-    values.push(line.trim().replace(/,$/, ""));
-  }
-  return values;
-}
 
 describe("exact Edge Function origin allowlist", () => {
   it("allows only the declared staging aliases and never an arbitrary Pages branch", () => {
@@ -175,17 +177,24 @@ describe("exact Edge Function origin allowlist", () => {
     expect(new Set(documentedStagingHostnames)).toEqual(new Set(allowedHostnames));
   });
 
-  it("keeps the staging workflow sets exact, complete and free of extra Pages branches", () => {
-    const workflow = readFileSync(resolve(process.cwd(), ".github/workflows/deploy-staging.yml"), "utf8");
-    const workflowOrigins = foldedYamlValues(workflow, "STAGING_ALLOWED_ORIGINS");
-    const workflowHostnames = foldedYamlValues(workflow, "STAGING_ALLOWED_HOSTNAMES");
+  it("keeps the canonical staging Edge public config exact, complete and free of extra Pages branches", () => {
+    const candidateSha = "a".repeat(40);
+    const configuration = expectedStagingEdgePublicSecrets(candidateSha);
+    const configuredPublicOrigins = configuration.ALLOWED_ORIGINS.split(",");
+    const configuredPublicHostnames = configuration.TURNSTILE_ALLOWED_HOSTNAMES.split(",");
 
-    expect(workflowOrigins).toHaveLength(allowedOrigins.length);
-    expect(new Set(workflowOrigins)).toEqual(new Set(allowedOrigins));
-    expect(workflowHostnames).toHaveLength(allowedHostnames.length);
-    expect(new Set(workflowHostnames)).toEqual(new Set(allowedHostnames));
-    expect(workflowOrigins.some((origin) => origin.includes("*"))).toBe(false);
-    expect(workflowHostnames.some((hostname) => hostname.includes("*"))).toBe(false);
+    expect(STAGING_EDGE_PUBLIC_ORIGINS).toEqual(allowedOrigins);
+    expect(STAGING_EDGE_PUBLIC_HOSTNAMES).toEqual(allowedHostnames);
+    expect(configuredPublicOrigins).toHaveLength(allowedOrigins.length);
+    expect(new Set(configuredPublicOrigins)).toEqual(new Set(allowedOrigins));
+    expect(configuredPublicHostnames).toHaveLength(allowedHostnames.length);
+    expect(new Set(configuredPublicHostnames)).toEqual(new Set(allowedHostnames));
+    expect(configuredPublicOrigins.some((origin) => origin.includes("*"))).toBe(false);
+    expect(configuredPublicHostnames.some((hostname) => hostname.includes("*"))).toBe(false);
+    expect(configuration.CMS_ENVIRONMENT).toBe("staging");
+    expect(configuration.CMS_RELEASE_SHA).toBe(candidateSha);
+    expect(configuration.CONTACT_CAPTCHA_ALWAYS).toBe("true");
+    expect(Object.keys(configuration).sort()).toEqual([...STAGING_EDGE_PUBLIC_SECRET_NAMES].sort());
   });
 
   it("keeps every production workflow allowlist isolated from staging", () => {

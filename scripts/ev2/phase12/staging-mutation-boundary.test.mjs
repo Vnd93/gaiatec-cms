@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
@@ -6,6 +7,15 @@ import {
   classifyStagingWatchdogParent,
   STAGING_MUTATION_BOUNDARY_STEP_NAME,
 } from "./staging-mutation-boundary.mjs";
+
+test("staging watchdog classifier uses the exact workflow mutation boundary name", async () => {
+  const workflow = await readFile(
+    new URL("../../../.github/workflows/deploy-staging.yml", import.meta.url),
+    "utf8",
+  );
+  const marker = `- name: ${STAGING_MUTATION_BOUNDARY_STEP_NAME}`;
+  assert.equal(workflow.split(marker).length - 1, 1);
+});
 
 test("staging mutation boundary accepts only consistent armed and pre-mutation states", () => {
   for (const deployResult of ["success", "failure", "cancelled"])

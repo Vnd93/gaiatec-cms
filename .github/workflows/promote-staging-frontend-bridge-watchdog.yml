@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: staging
+  group: staging-recovery-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
   cancel-in-progress: false
 
 jobs:
@@ -32,6 +32,7 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
           path: control
+          persist-credentials: false
       - name: Recover HMAC state independently of workflow artifacts
         id: variable_state
         continue-on-error: true
@@ -46,7 +47,7 @@ jobs:
         env:
           RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
           RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
-      - name: Prove whether the immutable recovery artifact exists
+      - name: Inventory exact immutable recovery state and baseline artifacts
         id: recovery_inventory
         working-directory: control
         env:
@@ -64,7 +65,10 @@ jobs:
             if (repository !== "Vnd93/gaiatec-cms" || !/^[1-9]\d*$/.test(runId || "") ||
                 !/^[1-9]\d*$/.test(runAttempt || "") || token.length < 30)
               throw new Error("G12_STAGING_BRIDGE_WATCHDOG_ARTIFACT_INPUT_REFUSED");
-            const expectedName = `staging-frontend-bridge-recovery-${runId}-${runAttempt}`;
+            const expectedNames = {
+              state: `staging-frontend-bridge-state-${runId}-${runAttempt}`,
+              recovery: `staging-frontend-bridge-recovery-${runId}-${runAttempt}`,
+            };
             const response = await fetch(
               `https://api.github.com/repos/${repository}/actions/runs/${runId}/artifacts?per_page=100`,
               {
@@ -83,12 +87,33 @@ jobs:
                 payload.total_count > 100 || !Array.isArray(payload.artifacts) ||
                 payload.artifacts.length !== payload.total_count)
               throw new Error("G12_STAGING_BRIDGE_WATCHDOG_ARTIFACT_RESPONSE_REFUSED");
-            const matches = payload.artifacts.filter((artifact) => artifact?.name === expectedName);
-            if (matches.length > 1 || (matches.length === 1 &&
-                (!Number.isSafeInteger(matches[0].id) || matches[0].id < 1 || matches[0].expired !== false)))
-              throw new Error("G12_STAGING_BRIDGE_WATCHDOG_ARTIFACT_IDENTITY_REFUSED");
-            appendFileSync(process.env.GITHUB_OUTPUT,
-              `artifact_present=${matches.length === 1}\nartifact_name=${expectedName}\n`);
+            const resolve = (role) => {
+              const matches = payload.artifacts.filter((artifact) => artifact?.name === expectedNames[role]);
+              if (matches.length > 1) throw new Error("G12_STAGING_BRIDGE_WATCHDOG_ARTIFACT_AMBIGUOUS");
+              if (matches.length === 0)
+                return { present: false, id: "", digest: "", name: expectedNames[role] };
+              const artifact = matches[0];
+              const rawDigest = artifact.digest || "";
+              const normalizedDigest = rawDigest.startsWith("sha256:")
+                ? rawDigest
+                : `sha256:${rawDigest}`;
+              if (!Number.isSafeInteger(artifact.id) || artifact.id < 1 || artifact.expired !== false ||
+                  !/^sha256:[a-f0-9]{64}$/.test(normalizedDigest))
+                throw new Error("G12_STAGING_BRIDGE_WATCHDOG_ARTIFACT_IDENTITY_REFUSED");
+              return { present: true, id: String(artifact.id), digest: normalizedDigest, name: artifact.name };
+            };
+            const state = resolve("state");
+            const recovery = resolve("recovery");
+            appendFileSync(process.env.GITHUB_OUTPUT, [
+              `state_present=${state.present}`,
+              `state_id=${state.id}`,
+              `state_digest=${state.digest}`,
+              `state_name=${state.name}`,
+              `recovery_present=${recovery.present}`,
+              `recovery_id=${recovery.id}`,
+              `recovery_digest=${recovery.digest}`,
+              `recovery_name=${recovery.name}`,
+            ].join("\n") + "\n");
           }
           main().catch((error) => {
             const message = error instanceof Error && error.message.startsWith("G12_")
@@ -98,13 +123,25 @@ jobs:
             process.exitCode = 1;
           });
           NODE
-      - name: Download immutable pre-mutation state and baseline bytes
-        id: recovery_artifact
-        if: steps.recovery_inventory.outputs.artifact_present == 'true'
+      - name: Download immutable pre-mutation state by exact artifact ID
+        id: recovery_state_artifact
+        if: steps.recovery_inventory.outputs.state_present == 'true'
         continue-on-error: true
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: staging-frontend-bridge-recovery-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+          artifact-ids: ${{ steps.recovery_inventory.outputs.state_id }}
+          digest-mismatch: error
+          path: state-artifact
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+      - name: Download immutable pre-mutation baseline by exact artifact ID
+        id: recovery_artifact
+        if: steps.recovery_inventory.outputs.recovery_present == 'true'
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.recovery_inventory.outputs.recovery_id }}
           digest-mismatch: error
           path: recovery
           github-token: ${{ github.token }}
@@ -117,8 +154,16 @@ jobs:
           VARIABLE_STATE_OUTCOME: ${{ steps.variable_state.outcome }}
           VARIABLE_STATE_PRESENT: ${{ steps.variable_state.outputs.state_present }}
           ARTIFACT_INVENTORY_OUTCOME: ${{ steps.recovery_inventory.outcome }}
-          ARTIFACT_PRESENT: ${{ steps.recovery_inventory.outputs.artifact_present }}
-          ARTIFACT_STATE_OUTCOME: ${{ steps.recovery_artifact.outcome }}
+          STATE_ARTIFACT_PRESENT: ${{ steps.recovery_inventory.outputs.state_present }}
+          STATE_ARTIFACT_ID: ${{ steps.recovery_inventory.outputs.state_id }}
+          STATE_ARTIFACT_DIGEST: ${{ steps.recovery_inventory.outputs.state_digest }}
+          STATE_ARTIFACT_NAME: ${{ steps.recovery_inventory.outputs.state_name }}
+          STATE_ARTIFACT_OUTCOME: ${{ steps.recovery_state_artifact.outcome }}
+          RECOVERY_ARTIFACT_PRESENT: ${{ steps.recovery_inventory.outputs.recovery_present }}
+          RECOVERY_ARTIFACT_ID: ${{ steps.recovery_inventory.outputs.recovery_id }}
+          RECOVERY_ARTIFACT_DIGEST: ${{ steps.recovery_inventory.outputs.recovery_digest }}
+          RECOVERY_ARTIFACT_NAME: ${{ steps.recovery_inventory.outputs.recovery_name }}
+          RECOVERY_ARTIFACT_OUTCOME: ${{ steps.recovery_artifact.outcome }}
           TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
           TRIGGER_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
           TRIGGER_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
@@ -126,50 +171,60 @@ jobs:
         run: |
           set -euo pipefail
           node <<'NODE'
-          const { appendFileSync, existsSync, readFileSync } = require("node:fs");
+          const { appendFileSync, readFileSync } = require("node:fs");
           if (!process.env.TRIGGER_CONCLUSION || process.env.TRIGGER_CONCLUSION === "success")
             throw new Error("G12_STAGING_BRIDGE_WATCHDOG_CONCLUSION_REFUSED");
           const variablePresent = process.env.VARIABLE_STATE_OUTCOME === "success" &&
             process.env.VARIABLE_STATE_PRESENT === "true";
           const variableAbsent = process.env.VARIABLE_STATE_OUTCOME === "success" &&
             process.env.VARIABLE_STATE_PRESENT === "false";
-          const artifactPresent = process.env.ARTIFACT_INVENTORY_OUTCOME === "success" &&
-            process.env.ARTIFACT_PRESENT === "true";
-          const artifactAbsent = process.env.ARTIFACT_INVENTORY_OUTCOME === "success" &&
-            process.env.ARTIFACT_PRESENT === "false";
-          if ((!variablePresent && !variableAbsent) || (!artifactPresent && !artifactAbsent))
+          const inventoryValid = process.env.ARTIFACT_INVENTORY_OUTCOME === "success";
+          const stateArtifactPresent = inventoryValid && process.env.STATE_ARTIFACT_PRESENT === "true";
+          const stateArtifactAbsent = inventoryValid && process.env.STATE_ARTIFACT_PRESENT === "false";
+          const recoveryArtifactPresent = inventoryValid && process.env.RECOVERY_ARTIFACT_PRESENT === "true";
+          const recoveryArtifactAbsent = inventoryValid && process.env.RECOVERY_ARTIFACT_PRESENT === "false";
+          if ((!variablePresent && !variableAbsent) ||
+              (!stateArtifactPresent && !stateArtifactAbsent) ||
+              (!recoveryArtifactPresent && !recoveryArtifactAbsent))
             throw new Error("G12_STAGING_BRIDGE_WATCHDOG_STATE_SOURCE_REFUSED");
-          if (variablePresent && artifactAbsent)
+          if (stateArtifactPresent !== recoveryArtifactPresent)
+            throw new Error("G12_STAGING_BRIDGE_WATCHDOG_ARTIFACT_PAIR_REFUSED");
+          if (variablePresent && (!stateArtifactPresent || !recoveryArtifactPresent))
             throw new Error("G12_STAGING_BRIDGE_WATCHDOG_ARTIFACT_MISSING_WITH_STATE");
-          const candidates = variablePresent
-            ? ["../state-variable/staging-frontend-bridge-state.json"]
-            : [
-                "../recovery/control/outputs/staging-frontend-bridge-state.json",
-                "../recovery/outputs/staging-frontend-bridge-state.json",
-                "../recovery/staging-frontend-bridge-state.json",
-              ];
-          const statePath = candidates.find((entry) => existsSync(entry));
-          if (!statePath) {
-            if (variableAbsent && artifactAbsent) {
-              appendFileSync(process.env.GITHUB_OUTPUT,
-                "recovery_required=false\nclear_required=false\nstate_absence=confirmed\nartifact_present=false\n");
-              process.exit(0);
-            }
-            throw new Error("G12_STAGING_BRIDGE_WATCHDOG_STATE_UNAVAILABLE");
+          if (variableAbsent) {
+            appendFileSync(process.env.GITHUB_OUTPUT,
+              `recovery_required=false\nclear_required=false\nstate_absence=confirmed\nartifact_present=${stateArtifactPresent}\n`);
+            process.exit(0);
           }
-          if (!variablePresent && (!artifactPresent || process.env.ARTIFACT_STATE_OUTCOME !== "success"))
-            throw new Error("G12_STAGING_BRIDGE_WATCHDOG_STATE_SOURCE_REFUSED");
-          const state = JSON.parse(readFileSync(statePath, "utf8"));
+          if (process.env.STATE_ARTIFACT_OUTCOME !== "success" ||
+              process.env.RECOVERY_ARTIFACT_OUTCOME !== "success")
+            throw new Error("G12_STAGING_BRIDGE_WATCHDOG_ARTIFACT_DOWNLOAD_REFUSED");
+          const artifactStatePath = "../state-artifact/staging-frontend-bridge-state.json";
+          const artifactStateBytes = readFileSync(artifactStatePath);
+          if (variablePresent) {
+            const variableStateBytes = readFileSync("../state-variable/staging-frontend-bridge-state.json");
+            if (!variableStateBytes.equals(artifactStateBytes))
+              throw new Error("G12_STAGING_BRIDGE_WATCHDOG_STATE_REDUNDANCY_REFUSED");
+          }
+          const statePath = "../state-variable/staging-frontend-bridge-state.json";
+          const state = JSON.parse(artifactStateBytes.toString("utf8"));
           const sha = /^[a-f0-9]{40}$/;
+          const sha256 = /^[a-f0-9]{64}$/;
+          const artifactDigest = /^sha256:[a-f0-9]{64}$/;
+          const positiveInteger = /^[1-9]\d*$/;
           const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
           const compensationMarker = /^g12-staging-(?:deploy|rollback|bridge)-compensation-[1-9]\d*-[1-9]\d*$/;
           const exact = (value, keys) => value && typeof value === "object" && !Array.isArray(value) &&
             JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...keys].sort());
           if (
             !exact(state, ["schemaVersion", "event", "workflow", "project", "branch", "runMarker",
-              "compensationMarker", "candidateRelease", "original"]) ||
+              "compensationMarker", "candidateRelease", "original", "recovery"]) ||
             !exact(state.workflow, ["runId", "runAttempt", "controlSha"]) ||
             !exact(state.original, ["deploymentId", "release", "createdOn", "commitMessage"]) ||
+            !exact(state.recovery, ["artifact", "seal"]) ||
+            !exact(state.recovery?.artifact, ["id", "digest", "name"]) ||
+            !exact(state.recovery?.seal, ["schemaVersion", "candidateSha", "fileCount", "byteCount",
+              "treeSha256", "archiveFile", "archiveBytes", "archiveSha256"]) ||
             state.schemaVersion !== 1 || state.event !== "g12.staging.deploy.prepared" ||
             String(state.workflow.runId) !== process.env.TRIGGER_RUN_ID ||
             Number(state.workflow.runAttempt) !== Number(process.env.TRIGGER_RUN_ATTEMPT) ||
@@ -183,14 +238,30 @@ jobs:
             typeof state.original.commitMessage !== "string" || state.original.commitMessage.includes("\0") ||
             Buffer.byteLength(state.original.commitMessage, "utf8") > 4096 ||
             Buffer.from(state.original.commitMessage, "utf8").toString("utf8") !== state.original.commitMessage ||
+            state.recovery.artifact.id !== process.env.RECOVERY_ARTIFACT_ID ||
+            state.recovery.artifact.digest !== process.env.RECOVERY_ARTIFACT_DIGEST ||
+            state.recovery.artifact.name !== process.env.RECOVERY_ARTIFACT_NAME ||
+            !positiveInteger.test(process.env.STATE_ARTIFACT_ID || "") ||
+            !artifactDigest.test(process.env.STATE_ARTIFACT_DIGEST || "") ||
+            process.env.STATE_ARTIFACT_NAME !== `staging-frontend-bridge-state-${process.env.TRIGGER_RUN_ID}-${process.env.TRIGGER_RUN_ATTEMPT}` ||
+            !positiveInteger.test(state.recovery.artifact.id || "") ||
+            !artifactDigest.test(state.recovery.artifact.digest || "") ||
+            state.recovery.seal.candidateSha !== state.original.release ||
+            !Number.isSafeInteger(state.recovery.seal.fileCount) || state.recovery.seal.fileCount < 1 ||
+            !Number.isSafeInteger(state.recovery.seal.byteCount) || state.recovery.seal.byteCount < 1 ||
+            !Number.isSafeInteger(state.recovery.seal.archiveBytes) || state.recovery.seal.archiveBytes < 1 ||
+            !sha256.test(state.recovery.seal.treeSha256 || "") ||
+            !sha256.test(state.recovery.seal.archiveSha256 || "") ||
+            typeof state.recovery.seal.archiveFile !== "string" ||
+            !/^[A-Za-z0-9._-]+\.tar$/.test(state.recovery.seal.archiveFile) ||
             state.runMarker !== `g12-staging-bridge-run-${process.env.TRIGGER_RUN_ID}-${process.env.TRIGGER_RUN_ATTEMPT}` ||
             state.compensationMarker !== `g12-staging-bridge-compensation-${process.env.TRIGGER_RUN_ID}-${process.env.TRIGGER_RUN_ATTEMPT}`
           ) throw new Error("G12_STAGING_BRIDGE_WATCHDOG_STATE_REFUSED");
           appendFileSync(process.env.GITHUB_OUTPUT, [
             "recovery_required=true",
-            `clear_required=${variablePresent}`,
+            "clear_required=true",
             "state_absence=false",
-            `artifact_present=${artifactPresent}`,
+            "artifact_present=true",
             `candidate_release=${state.candidateRelease}`,
             `original_release=${state.original.release}`,
             `original_deployment=${state.original.deploymentId}`,
@@ -201,6 +272,35 @@ jobs:
             `state_path=${statePath}`,
           ].join("\n") + "\n");
           NODE
+      - name: Reverify exact immutable recovery bytes before any watchdog mutation
+        id: watchdog_recovery_bytes
+        if: steps.watchdog_state.outputs.recovery_required == 'true'
+        timeout-minutes: 10
+        working-directory: control
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const { readFileSync } = require("node:fs");
+          const state = JSON.parse(readFileSync("../state-artifact/staging-frontend-bridge-state.json", "utf8"));
+          const seal = JSON.parse(readFileSync("../recovery/outputs/staging-baseline-dist-seal.json", "utf8"));
+          const identity = {
+            schemaVersion: seal.schemaVersion,
+            candidateSha: seal.candidateSha,
+            fileCount: seal.fileCount,
+            byteCount: seal.byteCount,
+            treeSha256: seal.treeSha256,
+            archiveFile: seal.archiveFile,
+            archiveBytes: seal.archiveBytes,
+            archiveSha256: seal.archiveSha256,
+          };
+          if (JSON.stringify(state.recovery?.seal) !== JSON.stringify(identity) ||
+              state.original?.release !== identity.candidateSha)
+            throw new Error("G12_STAGING_BRIDGE_WATCHDOG_RECOVERY_BINDING_REFUSED");
+          NODE
+          node scripts/ev2/phase12/verify-production-dist-seal.mjs \
+            --dist ../recovery/dist \
+            --seal ../recovery/outputs/staging-baseline-dist-seal.json \
+            --candidate "${{ steps.watchdog_state.outputs.original_release }}"
       - name: Record a proven pre-arm terminal outcome
         id: no_state_evidence
         if: steps.watchdog_state.outputs.recovery_required == 'false'
@@ -224,7 +324,7 @@ jobs:
               !process.env.TRIGGER_CONCLUSION || process.env.TRIGGER_CONCLUSION === "success" ||
               process.env.STATE_ABSENCE !== "confirmed" ||
               process.env.CLEAR_REQUIRED !== "false" ||
-              process.env.ARTIFACT_PRESENT !== "false")
+              !["true", "false"].includes(process.env.ARTIFACT_PRESENT))
             throw new Error("G12_STAGING_BRIDGE_WATCHDOG_NO_STATE_REFUSED");
           const report = {
             schemaVersion: 1,
@@ -238,7 +338,7 @@ jobs:
             },
             recoveryStateConfirmedAbsent: true,
             recoveryStateClearRequired: false,
-            recoveryArtifactAvailable: false,
+            recoveryArtifactAvailable: process.env.ARTIFACT_PRESENT === "true",
             remoteMutationPossibleByWorkflowOrder: false,
             secretsPersisted: false,
           };
@@ -246,7 +346,9 @@ jobs:
             JSON.stringify(report, null, 2) + "\n", { mode: 0o600, flag: "wx" });
           NODE
       - name: Verify baseline candidate and control ancestry
-        if: steps.watchdog_state.outputs.recovery_required == 'true'
+        if: >-
+          steps.watchdog_state.outputs.recovery_required == 'true' &&
+          steps.watchdog_recovery_bytes.outcome == 'success'
         working-directory: control
         run: |
           set -euo pipefail
@@ -257,12 +359,16 @@ jobs:
           git merge-base --is-ancestor "${{ steps.watchdog_state.outputs.original_release }}" "${{ steps.watchdog_state.outputs.candidate_release }}"
           git merge-base --is-ancestor "${{ steps.watchdog_state.outputs.candidate_release }}" "${{ github.event.workflow_run.head_sha }}"
       - name: Install pinned recovery tooling
-        if: steps.watchdog_state.outputs.recovery_required == 'true'
+        if: >-
+          steps.watchdog_state.outputs.recovery_required == 'true' &&
+          steps.watchdog_recovery_bytes.outcome == 'success'
         working-directory: control
         run: npm ci --ignore-scripts
       - name: Recover any preview fixture owned by the incomplete run
         id: preview_fixture_recovery
-        if: steps.watchdog_state.outputs.recovery_required == 'true'
+        if: >-
+          steps.watchdog_state.outputs.recovery_required == 'true' &&
+          steps.watchdog_recovery_bytes.outcome == 'success'
         continue-on-error: true
         working-directory: control
         run: node scripts/qa/cms-public-bridge-fixture.mjs recover
@@ -277,7 +383,9 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       - name: Recover any canonical fixture owned by the incomplete run
         id: canonical_fixture_recovery
-        if: steps.watchdog_state.outputs.recovery_required == 'true'
+        if: >-
+          steps.watchdog_state.outputs.recovery_required == 'true' &&
+          steps.watchdog_recovery_bytes.outcome == 'success'
         continue-on-error: true
         working-directory: control
         run: node scripts/qa/cms-public-bridge-fixture.mjs recover
@@ -292,7 +400,9 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       - name: Decide canonical staging compensation from a fresh read
         id: watchdog_decision
-        if: steps.watchdog_state.outputs.recovery_required == 'true'
+        if: >-
+          steps.watchdog_state.outputs.recovery_required == 'true' &&
+          steps.watchdog_recovery_bytes.outcome == 'success'
         continue-on-error: true
         working-directory: control
         env:
@@ -327,8 +437,8 @@ jobs:
           STAGING_COMPENSATION_MARKER: ${{ steps.watchdog_state.outputs.compensation_marker }}
         run: >-
           node scripts/ev2/phase12/staging-pages-state.mjs compensate
-          --dist ../recovery/baseline/dist
-          --seal ../recovery/baseline/outputs/staging-baseline-dist-seal.json
+          --dist ../recovery/dist
+          --seal ../recovery/outputs/staging-baseline-dist-seal.json
       - name: Recheck canonical state after reconciliation
         id: canonical_recheck
         if: >-
@@ -364,6 +474,7 @@ jobs:
         id: watchdog_evidence
         if: >-
           always() && ((steps.watchdog_state.outputs.recovery_required == 'true' &&
+          steps.watchdog_recovery_bytes.outcome == 'success' &&
           steps.preview_fixture_recovery.outcome == 'success' &&
           steps.canonical_fixture_recovery.outcome == 'success' &&
           steps.watchdog_probe.outcome == 'success') ||
@@ -399,7 +510,8 @@ jobs:
         if: >-
           always() && (steps.watchdog_state.outcome != 'success' ||
           (steps.watchdog_state.outputs.recovery_required == 'true' &&
-            (steps.preview_fixture_recovery.outcome != 'success' ||
+            (steps.watchdog_recovery_bytes.outcome != 'success' ||
+            steps.preview_fixture_recovery.outcome != 'success' ||
             steps.canonical_fixture_recovery.outcome != 'success' ||
             steps.watchdog_decision.outcome != 'success' ||
             steps.canonical_recheck.outcome != 'success' ||
@@ -439,6 +551,7 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
           path: control
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: control/.nvmrc
@@ -483,6 +596,7 @@ jobs:
           ref: ${{ steps.legacy_plan.outputs.candidate_sha }}
           fetch-depth: 0
           path: candidate
+          persist-credentials: false
       - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3
         if: steps.legacy_state.outputs.state_present == 'true'
         with:
@@ -514,16 +628,32 @@ jobs:
           QA_CMS_LEGACY_BRIDGE_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       - name: Upload the watchdog restore evidence
+        id: legacy_restore_evidence_upload
         if: always() && steps.legacy_restore.outcome != 'skipped'
         continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: staging-cms-public-legacy-watchdog-${{ github.run_id }}-${{ github.run_attempt }}
           path: candidate/outputs/staging-cms-public-legacy-watchdog-restore.json
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 90
+      - name: Verify the watchdog restore artifact identity
+        id: legacy_restore_evidence_identity
+        if: always() && steps.legacy_restore_evidence_upload.outcome == 'success'
+        continue-on-error: true
+        env:
+          ARTIFACT_ID: ${{ steps.legacy_restore_evidence_upload.outputs.artifact-id }}
+          ARTIFACT_DIGEST: ${{ steps.legacy_restore_evidence_upload.outputs.artifact-digest }}
+        run: |
+          set -euo pipefail
+          [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$ARTIFACT_DIGEST" =~ ^(sha256:)?[a-f0-9]{64}$ ]]
       - name: Release the legacy backend lease only after a proven restore
-        if: steps.legacy_restore.outcome == 'success'
+        id: clear_legacy_state
+        if: >-
+          steps.legacy_restore.outcome == 'success' &&
+          steps.legacy_restore_evidence_upload.outcome == 'success' &&
+          steps.legacy_restore_evidence_identity.outcome == 'success'
         working-directory: control
         run: >-
           node scripts/ev2/phase12/recovery-state-store.mjs clear
@@ -541,11 +671,23 @@ jobs:
           STATE_READ: ${{ steps.legacy_state.outcome }}
           STATE_PRESENT: ${{ steps.legacy_state.outputs.state_present }}
           RESTORE: ${{ steps.legacy_restore.outcome }}
+          RESTORE_EVIDENCE: ${{ steps.legacy_restore_evidence_upload.outcome }}
+          RESTORE_EVIDENCE_IDENTITY: ${{ steps.legacy_restore_evidence_identity.outcome }}
+          CLEAR: ${{ steps.clear_legacy_state.outcome }}
         run: |
           set -euo pipefail
           if [ "$STATE_READ" != success ]; then
             echo "::error::The legacy public backend lease could not be read."
             exit 1
           fi
-          if [ "$STATE_PRESENT" = true ]; then test "$RESTORE" = success; exit 0; fi
+          if [ "$STATE_PRESENT" = true ]; then
+            test "$RESTORE" = success
+            test "$RESTORE_EVIDENCE" = success
+            test "$RESTORE_EVIDENCE_IDENTITY" = success
+            test "$CLEAR" = success
+            exit 0
+          fi
           test "$RESTORE" = skipped
+          test "$RESTORE_EVIDENCE" = skipped
+          test "$RESTORE_EVIDENCE_IDENTITY" = skipped
+          test "$CLEAR" = skipped

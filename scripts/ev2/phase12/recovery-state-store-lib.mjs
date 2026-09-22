@@ -38,6 +38,10 @@ const RECOVERY_KINDS = Object.freeze({
     event: "g12.staging.rollback.prepared",
     variable: "G12_STAGING_ROLLBACK_RECOVERY",
   },
+  "staging-preview": {
+    event: "g12.staging.preview.prepared",
+    variable: "G12_STAGING_PREVIEW_RECOVERY",
+  },
 });
 
 export const STAGING_RECOVERY_KINDS = Object.freeze([
@@ -47,6 +51,7 @@ export const STAGING_RECOVERY_KINDS = Object.freeze([
   "staging-deploy",
   "staging-cms-public-legacy",
   "staging-rollback",
+  "staging-preview",
 ]);
 
 function canonical(value) {
@@ -87,17 +92,21 @@ function definition(kind) {
 function validateState(kind, state, expected = {}) {
   const violations = [];
   const config = definition(kind);
+  const runAttempt =
+    kind === "staging-deploy" && [2, 3, 4].includes(state?.schemaVersion)
+      ? state?.workflow?.attempt
+      : state?.workflow?.runAttempt;
   if (!state || typeof state !== "object" || Array.isArray(state)) violations.push("state_invalid");
   if (!Number.isSafeInteger(state?.schemaVersion) || state.schemaVersion < 1)
     violations.push("state_schema_invalid");
   if (state?.event !== config.event) violations.push("state_event_invalid");
   if (!POSITIVE_INTEGER.test(String(state?.workflow?.runId ?? ""))) violations.push("state_run_id_invalid");
-  if (!Number.isSafeInteger(Number(state?.workflow?.runAttempt)) || Number(state?.workflow?.runAttempt) < 1)
+  if (!Number.isSafeInteger(Number(runAttempt)) || Number(runAttempt) < 1)
     violations.push("state_run_attempt_invalid");
   if (!FULL_SHA.test(String(state?.workflow?.controlSha ?? ""))) violations.push("state_control_sha_invalid");
   if (expected.runId && String(state?.workflow?.runId) !== String(expected.runId))
     violations.push("state_run_id_mismatch");
-  if (expected.runAttempt && Number(state?.workflow?.runAttempt) !== Number(expected.runAttempt))
+  if (expected.runAttempt && Number(runAttempt) !== Number(expected.runAttempt))
     violations.push("state_run_attempt_mismatch");
   if (expected.controlSha && state?.workflow?.controlSha !== expected.controlSha)
     violations.push("state_control_sha_mismatch");
@@ -169,9 +178,11 @@ export function serializeRecoveryStateVariable(wrapper) {
 }
 
 function sameWorkflowBinding(left, right) {
+  const leftAttempt = left?.attempt ?? left?.runAttempt;
+  const rightAttempt = right?.attempt ?? right?.runAttempt;
   return (
     String(left?.runId ?? "") === String(right?.runId ?? "") &&
-    Number(left?.runAttempt) === Number(right?.runAttempt) &&
+    Number(leftAttempt) === Number(rightAttempt) &&
     left?.controlSha === right?.controlSha
   );
 }

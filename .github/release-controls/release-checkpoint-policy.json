@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "environment": "staging",
+  "defaultDecision": "rerun",
+  "changeInvalidationOrder": ["source", "artifact", "deployment", "environment"],
+  "reusableGates": {
+    "artifact-seal": {
+      "dependencies": ["source", "artifact"],
+      "maximumAgeSeconds": 604800
+    },
+    "immutable-provenance": {
+      "dependencies": ["source", "artifact"],
+      "maximumAgeSeconds": 604800
+    }
+  },
+  "neverReusable": [
+    "browser-headless",
+    "edge-runtime-smoke",
+    "rls",
+    "mfa-aal2",
+    "recovery-ready",
+    "pages-candidate",
+    "edge-mutation",
+    "database-auth-mutation",
+    "serial-exclusive-mutation",
+    "postdeploy-http",
+    "postdeploy-edge",
+    "postdeploy-database-auth",
+    "real-chrome-authenticated",
+    "audit-terminal",
+    "cleanup-zero"
+  ]
+}

@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: staging
+  group: staging-recovery-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
   cancel-in-progress: false
 
 jobs:
@@ -34,6 +34,7 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
           path: control
+          persist-credentials: false
       - name: Recover HMAC state independently of the artifact service
         id: variable_state
         continue-on-error: true
@@ -48,25 +49,15 @@ jobs:
           --run-id "${{ github.event.workflow_run.id }}"
           --run-attempt "${{ github.event.workflow_run.run_attempt }}"
           --control-sha "${{ github.event.workflow_run.head_sha }}"
-      - name: Fall back to the run state artifact when HMAC storage is unavailable
-        id: artifact_state
-        if: always() && steps.variable_state.outcome != 'success'
-        continue-on-error: true
-        timeout-minutes: 5
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: staging-rollback-state-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
-          digest-mismatch: error
-          path: artifact-state
-          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
-          repository: ${{ github.repository }}
-          run-id: ${{ github.event.workflow_run.id }}
+          --allow-missing
       - name: Validate interrupted rollback state and immutable ancestry
         id: watchdog_state
+        if: >-
+          steps.variable_state.outcome == 'success' &&
+          steps.variable_state.outputs.state_present == 'true'
         working-directory: control
         env:
           VARIABLE_OUTCOME: ${{ steps.variable_state.outcome }}
-          ARTIFACT_OUTCOME: ${{ steps.artifact_state.outcome }}
           TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
           TRIGGER_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
           TRIGGER_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
@@ -75,10 +66,8 @@ jobs:
           set -euo pipefail
           node <<'NODE'
           const { appendFileSync, existsSync, readFileSync } = require("node:fs");
-          const path = process.env.VARIABLE_OUTCOME === "success"
-            ? "../variable-state/rollback-staging-state.json"
-            : "../artifact-state/rollback-staging-state.json";
-          if (!existsSync(path) || (process.env.VARIABLE_OUTCOME !== "success" && process.env.ARTIFACT_OUTCOME !== "success"))
+          const path = "../variable-state/rollback-staging-state.json";
+          if (process.env.VARIABLE_OUTCOME !== "success" || !existsSync(path))
             throw new Error("G12_STAGING_ROLLBACK_WATCHDOG_STATE_MISSING");
           const state = JSON.parse(readFileSync(path, "utf8"));
           const sha = /^[a-f0-9]{40}$/;
@@ -113,11 +102,8 @@ jobs:
             `compensation_marker=${state.compensationMarker}`,
           ].join("\n") + "\n");
           NODE
-          if [ "$VARIABLE_OUTCOME" = success ]; then
-            state_file=../variable-state/rollback-staging-state.json
-          else
-            state_file=../artifact-state/rollback-staging-state.json
-          fi
+          test "$VARIABLE_OUTCOME" = success
+          state_file=../variable-state/rollback-staging-state.json
           original_release="$(node -p "require('$state_file').original.release")"
           target_release="$(node -p "require('$state_file').target.release")"
           backend_release="$(node -p "require('$state_file').retainedBackend.release")"
@@ -128,11 +114,13 @@ jobs:
           git merge-base --is-ancestor "$target_release" "$backend_release"
           git merge-base --is-ancestor "$backend_release" "${{ github.event.workflow_run.head_sha }}"
       - name: Install exact locked Wrangler for watchdog recovery
+        if: steps.watchdog_state.outcome == 'success'
         timeout-minutes: 10
         working-directory: control
         run: npm ci --ignore-scripts
       - name: Reconcile interrupted rollback without overwriting external staging
         id: watchdog_decision
+        if: always() && steps.watchdog_state.outcome == 'success'
         timeout-minutes: 3
         continue-on-error: true
         working-directory: control
@@ -149,7 +137,7 @@ jobs:
           STAGING_RUN_MARKER: ${{ steps.watchdog_state.outputs.run_marker }}
           STAGING_COMPENSATION_MARKER: ${{ steps.watchdog_state.outputs.compensation_marker }}
         run: node scripts/ev2/phase12/staging-pages-state.mjs decide
-      - name: Checkout the exact retained backend for watchdog recovery
+      - name: Checkout the exact retained backend for read-only verification
         id: watchdog_backend_checkout
         if: >-
           always() && steps.watchdog_state.outcome == 'success' &&
@@ -162,8 +150,8 @@ jobs:
         with:
           ref: ${{ steps.watchdog_state.outputs.backend_release }}
           fetch-depth: 0
-          path: backend-recovery
-      - name: Install pinned Supabase CLI for retained-backend recovery
+          path: backend-verification
+      - name: Install pinned Supabase CLI for retained-backend read-only verification
         id: watchdog_supabase_cli
         if: always() && steps.watchdog_backend_checkout.outcome == 'success'
         continue-on-error: true
@@ -171,83 +159,28 @@ jobs:
         uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3
         with:
           version: 2.116.0
-      - name: Converge retained staging migrations in the rollback watchdog
-        id: watchdog_recovery_database
+      - name: Verify the retained staging backend without mutation
+        id: watchdog_backend_verification
         if: always() && steps.watchdog_supabase_cli.outcome == 'success'
         continue-on-error: true
         timeout-minutes: 15
-        working-directory: backend-recovery
+        working-directory: backend-verification
         env:
           STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
-          mkdir -p outputs
           test "$STAGING_SUPABASE_PROJECT_REF" = "glcqsosxwgmlhzgcsnzv"
           test "$(git rev-parse HEAD)" = "${{ steps.watchdog_state.outputs.backend_release }}"
-          supabase link --project-ref "$STAGING_SUPABASE_PROJECT_REF" --yes
-          supabase db push --linked --include-all --dry-run
-          supabase db push --linked --include-all --yes
-          node scripts/ev2/phase12/verify-staging-database.mjs --source . |
-            tee outputs/g12-staging-rollback-database-watchdog-recovery.json
-      - name: Converge retained staging configuration in the rollback watchdog
-        id: watchdog_recovery_configuration
-        if: always() && steps.watchdog_recovery_database.outcome == 'success'
-        continue-on-error: true
-        timeout-minutes: 10
-        working-directory: backend-recovery
-        env:
-          STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          STAGING_ALLOWED_ORIGINS: >-
-            https://gaiatec-cms-staging.pages.dev,
-            https://ev2-g17-canary.gaiatec-cms-staging.pages.dev,
-            https://ev2-g12-canary.gaiatec-cms-staging.pages.dev,
-            https://ev2-g16-csp-canary.gaiatec-cms-staging.pages.dev,
-            https://ev2-g12-rollback-compat.gaiatec-cms-staging.pages.dev
-          STAGING_ALLOWED_HOSTNAMES: >-
-            gaiatec-cms-staging.pages.dev,
-            ev2-g17-canary.gaiatec-cms-staging.pages.dev,
-            ev2-g12-canary.gaiatec-cms-staging.pages.dev,
-            ev2-g16-csp-canary.gaiatec-cms-staging.pages.dev,
-            ev2-g12-rollback-compat.gaiatec-cms-staging.pages.dev
-        run: |
-          set -euo pipefail
-          supabase secrets set --project-ref "$STAGING_SUPABASE_PROJECT_REF" \
-            ALLOWED_ORIGINS="$STAGING_ALLOWED_ORIGINS" \
-            TURNSTILE_ALLOWED_HOSTNAMES="$STAGING_ALLOWED_HOSTNAMES" \
-            PUBLIC_SITE_ORIGIN=https://ev2-g17-canary.gaiatec-cms-staging.pages.dev \
-            CMS_ENVIRONMENT=staging \
-            CMS_RELEASE_SHA="${{ steps.watchdog_state.outputs.backend_release }}" \
-            CMS_ADMIN_ORIGIN=https://ev2-g17-canary.gaiatec-cms-staging.pages.dev \
-            CMS_ADMIN_URL=https://ev2-g17-canary.gaiatec-cms-staging.pages.dev/admin \
-            CONTACT_CAPTCHA_ALWAYS=true \
-            TURNSTILE_EXPECTED_ACTION=lead_capture
-          node scripts/ev2/phase12/configure-staging-auth.mjs
-          node scripts/ev2/phase12/configure-staging-ai-provider-secrets.mjs |
-            tee outputs/g12-staging-rollback-ai-provider-watchdog-recovery.json
-      - name: Converge retained Edge Functions in the rollback watchdog
-        id: watchdog_recovery_functions
-        if: always() && steps.watchdog_recovery_configuration.outcome == 'success'
-        continue-on-error: true
-        timeout-minutes: 90
-        working-directory: backend-recovery
-        env:
-          STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: |
-          set -euo pipefail
-          node scripts/ev2/phase12/deploy-staging-functions.mjs \
-            --source . --rollback-source . \
-            --candidate "${{ steps.watchdog_state.outputs.backend_release }}" \
-            --report outputs/g12-staging-rollback-function-watchdog-recovery.json
+          mkdir -p "$RUNNER_TEMP/g12-staging-rollback-watchdog-evidence"
           supabase functions list --project-ref "$STAGING_SUPABASE_PROJECT_REF" --output json > \
-            outputs/g12-staging-rollback-functions-watchdog-recovery.json
+            "$RUNNER_TEMP/g12-staging-rollback-watchdog-evidence/g12-staging-rollback-functions-watchdog.json"
           node scripts/ev2/phase12/verify-production-functions.mjs \
-            --file outputs/g12-staging-rollback-functions-watchdog-recovery.json \
-            --receipt outputs/g12-staging-rollback-function-watchdog-recovery.json \
-            --source . --candidate "${{ steps.watchdog_state.outputs.backend_release }}" \
-            --environment staging --project-ref "$STAGING_SUPABASE_PROJECT_REF"
+            --file "$RUNNER_TEMP/g12-staging-rollback-watchdog-evidence/g12-staging-rollback-functions-watchdog.json" \
+            --environment staging --project-ref "$STAGING_SUPABASE_PROJECT_REF" \
+            | tee "$RUNNER_TEMP/g12-staging-rollback-watchdog-evidence/g12-staging-rollback-functions-verification-watchdog.json"
+          node scripts/ev2/phase12/verify-staging-database.mjs --source . |
+            tee "$RUNNER_TEMP/g12-staging-rollback-watchdog-evidence/g12-staging-rollback-database-watchdog.json"
       - name: Download sealed original recovery bytes when available
         id: recovery_artifact
         if: always() && steps.watchdog_decision.outputs.action == 'restore-original'
@@ -271,66 +204,28 @@ jobs:
           --state "${{ steps.watchdog_state.outputs.state_path }}"
           --seal ../recovery-artifact/outputs/staging-rollback-recovery-dist-seal.json
           --role recovery
-      - name: Checkout original source when artifact recovery is unavailable
-        if: >-
-          always() && steps.watchdog_decision.outputs.action == 'restore-original' &&
-          (steps.recovery_artifact.outcome != 'success' ||
-          steps.recovery_artifact_seal.outcome != 'success')
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: ${{ steps.watchdog_state.outputs.original_release }}
-          fetch-depth: 0
-          path: recovery-source
-      - name: Rebuild only the original fallback and require its signed seal identity
-        id: recovery_rebuild
-        if: >-
-          always() && steps.watchdog_decision.outputs.action == 'restore-original' &&
-          (steps.recovery_artifact.outcome != 'success' ||
-          steps.recovery_artifact_seal.outcome != 'success')
-        continue-on-error: true
-        working-directory: recovery-source
-        run: |
-          npm ci
-          npm run build:staging
-          env -u GITHUB_SHA npm run artifact:manifest
-          mkdir -p outputs
-          node ../control/scripts/ev2/phase12/seal-production-dist.mjs \
-            --dist dist --archive outputs/staging-rollback-recovery-dist.tar \
-            --output outputs/staging-rollback-recovery-dist-seal.json \
-            --candidate "${{ steps.watchdog_state.outputs.original_release }}"
-          node ../control/scripts/ev2/phase12/verify-staging-recovery-seal.mjs \
-            --state "${{ steps.watchdog_state.outputs.state_path }}" \
-            --seal outputs/staging-rollback-recovery-dist-seal.json --role recovery
-        env:
-          VITE_RELEASE: ${{ steps.watchdog_state.outputs.original_release }}
-          VITE_CMS_ENVIRONMENT: staging
-          VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
-          VITE_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_STAGING_SITE_KEY }}
-          VITE_GOOGLE_MAPS_KEY: ${{ vars.GOOGLE_MAPS_BROWSER_KEY }}
-          VITE_CONTACT_CAPTCHA_ALWAYS: "true"
-          VITE_EV2_DRAFT_V2_CANDIDATE: "false"
       - name: Compensate only the owned rollback target
         id: watchdog_compensation
         if: >-
           always() && steps.watchdog_decision.outputs.action == 'restore-original' &&
-          steps.watchdog_recovery_functions.outcome == 'success' &&
-          ((steps.recovery_artifact.outcome == 'success' &&
-          steps.recovery_artifact_seal.outcome == 'success') ||
-          steps.recovery_rebuild.outcome == 'success')
+          steps.watchdog_backend_verification.outcome == 'success' &&
+          steps.recovery_artifact.outcome == 'success' &&
+          steps.recovery_artifact_seal.outcome == 'success'
         timeout-minutes: 20
         continue-on-error: true
         working-directory: control
         env: *staging_rollback_watchdog_environment
         run: >-
           node scripts/ev2/phase12/staging-pages-state.mjs compensate
-          --dist ${{ steps.recovery_artifact.outcome == 'success' && steps.recovery_artifact_seal.outcome == 'success' && '../recovery-artifact/dist' || '../recovery-source/dist' }}
-          --seal ${{ steps.recovery_artifact.outcome == 'success' && steps.recovery_artifact_seal.outcome == 'success' && '../recovery-artifact/outputs/staging-rollback-recovery-dist-seal.json' || '../recovery-source/outputs/staging-rollback-recovery-dist-seal.json' }}
+          --dist ../recovery-artifact/dist
+          --seal ../recovery-artifact/outputs/staging-rollback-recovery-dist-seal.json
       - name: Retry ambiguous watchdog compensation safely
         id: watchdog_compensation_retry
         if: >-
           always() && steps.watchdog_decision.outputs.action == 'restore-original' &&
-          steps.watchdog_recovery_functions.outcome == 'success' &&
+          steps.watchdog_backend_verification.outcome == 'success' &&
+          steps.recovery_artifact.outcome == 'success' &&
+          steps.recovery_artifact_seal.outcome == 'success' &&
           steps.watchdog_compensation.outcome != 'success'
         timeout-minutes: 20
         continue-on-error: true
@@ -338,12 +233,12 @@ jobs:
         env: *staging_rollback_watchdog_environment
         run: >-
           node scripts/ev2/phase12/staging-pages-state.mjs compensate
-          --dist ${{ steps.recovery_artifact.outcome == 'success' && steps.recovery_artifact_seal.outcome == 'success' && '../recovery-artifact/dist' || '../recovery-source/dist' }}
-          --seal ${{ steps.recovery_artifact.outcome == 'success' && steps.recovery_artifact_seal.outcome == 'success' && '../recovery-artifact/outputs/staging-rollback-recovery-dist-seal.json' || '../recovery-source/outputs/staging-rollback-recovery-dist-seal.json' }}
+          --dist ../recovery-artifact/dist
+          --seal ../recovery-artifact/outputs/staging-rollback-recovery-dist-seal.json
       - name: Terminal canonical recheck after rollback watchdog reconciliation
         id: watchdog_terminal_canonical
         if: >-
-          always() && steps.watchdog_recovery_functions.outcome == 'success' &&
+          always() && steps.watchdog_backend_verification.outcome == 'success' &&
           (steps.watchdog_decision.outputs.action == 'already-original' ||
           steps.watchdog_compensation.outcome == 'success' ||
           steps.watchdog_compensation_retry.outcome == 'success')
@@ -358,9 +253,7 @@ jobs:
           always() && steps.watchdog_decision.outcome == 'success' &&
           steps.watchdog_backend_checkout.outcome == 'success' &&
           steps.watchdog_supabase_cli.outcome == 'success' &&
-          steps.watchdog_recovery_database.outcome == 'success' &&
-          steps.watchdog_recovery_configuration.outcome == 'success' &&
-          steps.watchdog_recovery_functions.outcome == 'success' &&
+          steps.watchdog_backend_verification.outcome == 'success' &&
           steps.watchdog_terminal_canonical.outcome == 'success' &&
           (steps.watchdog_decision.outputs.action == 'already-original' ||
           steps.watchdog_compensation.outcome == 'success' ||
@@ -378,7 +271,7 @@ jobs:
           EV2_G12_REPORT_PATH: ../g12-staging-rollback-watchdog-probe.json
       - name: Seal non-sensitive watchdog evidence
         id: watchdog_evidence
-        if: always()
+        if: always() && steps.watchdog_state.outcome == 'success'
         continue-on-error: true
         working-directory: control
         env:
@@ -386,9 +279,9 @@ jobs:
           DECISION_ACTION: ${{ steps.watchdog_decision.outputs.action }}
           BACKEND_CHECKOUT_OUTCOME: ${{ steps.watchdog_backend_checkout.outcome }}
           SUPABASE_CLI_OUTCOME: ${{ steps.watchdog_supabase_cli.outcome }}
-          DATABASE_OUTCOME: ${{ steps.watchdog_recovery_database.outcome }}
-          CONFIGURATION_OUTCOME: ${{ steps.watchdog_recovery_configuration.outcome }}
-          FUNCTIONS_OUTCOME: ${{ steps.watchdog_recovery_functions.outcome }}
+          BACKEND_VERIFICATION_OUTCOME: ${{ steps.watchdog_backend_verification.outcome }}
+          RECOVERY_ARTIFACT_OUTCOME: ${{ steps.recovery_artifact.outcome }}
+          RECOVERY_SEAL_OUTCOME: ${{ steps.recovery_artifact_seal.outcome }}
           COMPENSATION_OUTCOME: ${{ steps.watchdog_compensation.outcome }}
           COMPENSATION_RETRY_OUTCOME: ${{ steps.watchdog_compensation_retry.outcome }}
           TERMINAL_CANONICAL_OUTCOME: ${{ steps.watchdog_terminal_canonical.outcome }}
@@ -399,22 +292,54 @@ jobs:
           const state = JSON.parse(readFileSync("${{ steps.watchdog_state.outputs.state_path }}", "utf8"));
           writeFileSync("../g12-staging-rollback-watchdog-evidence.json", JSON.stringify({
             schemaVersion: 1, event: "g12.staging.rollback.incomplete.reconciled",
-            workflow: state.workflow, original: state.original, target: state.target,
-            retainedBackend: state.retainedBackend,
-            outcomes: { decision: process.env.DECISION_OUTCOME, action: process.env.DECISION_ACTION || null,
-              backendCheckout: process.env.BACKEND_CHECKOUT_OUTCOME,
-              supabaseCli: process.env.SUPABASE_CLI_OUTCOME,
-              database: process.env.DATABASE_OUTCOME,
-              configuration: process.env.CONFIGURATION_OUTCOME,
-              functions: process.env.FUNCTIONS_OUTCOME,
+             workflow: state.workflow, original: state.original, target: state.target,
+             retainedBackend: state.retainedBackend,
+             outcomes: { decision: process.env.DECISION_OUTCOME, action: process.env.DECISION_ACTION || null,
+               backendCheckout: process.env.BACKEND_CHECKOUT_OUTCOME,
+               supabaseCli: process.env.SUPABASE_CLI_OUTCOME,
+               backendVerification: process.env.BACKEND_VERIFICATION_OUTCOME,
+               recoveryArtifact: process.env.RECOVERY_ARTIFACT_OUTCOME,
+               recoverySeal: process.env.RECOVERY_SEAL_OUTCOME,
               compensation: process.env.COMPENSATION_OUTCOME, compensationRetry: process.env.COMPENSATION_RETRY_OUTCOME,
               terminalCanonical: process.env.TERMINAL_CANONICAL_OUTCOME,
               probe: process.env.PROBE_OUTCOME }, recordedAt: new Date().toISOString(), sensitiveValuesLogged: false,
+           }, null, 2) + "\n", { mode: 0o600 });
+           NODE
+      - name: Record confirmed no-state watchdog evidence without mutation
+        id: rollback_no_state_evidence
+        if: >-
+          always() && steps.variable_state.outcome == 'success' &&
+          steps.variable_state.outputs.state_present == 'false'
+        working-directory: control
+        env:
+          TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
+          TRIGGER_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          TRIGGER_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          TRIGGER_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          node <<'NODE'
+          const { writeFileSync } = require("node:fs");
+          writeFileSync("../g12-staging-rollback-watchdog-evidence.json", JSON.stringify({
+            schemaVersion: 1,
+            event: "g12.staging.rollback.incomplete.no-state",
+            workflow: {
+              runId: process.env.TRIGGER_RUN_ID,
+              runAttempt: Number(process.env.TRIGGER_RUN_ATTEMPT),
+              controlSha: process.env.TRIGGER_HEAD_SHA,
+              conclusion: process.env.TRIGGER_CONCLUSION,
+            },
+            stateAbsent: true,
+            recoveryAttempted: false,
+            mutationsAttempted: false,
+            recordedAt: new Date().toISOString(),
+            sensitiveValuesLogged: false,
           }, null, 2) + "\n", { mode: 0o600 });
           NODE
       - name: Upload mandatory watchdog rollback evidence
         id: watchdog_evidence_upload
-        if: always() && steps.watchdog_evidence.outcome == 'success'
+        if: >-
+          always() && (steps.watchdog_evidence.outcome == 'success' ||
+          steps.rollback_no_state_evidence.outcome == 'success')
         continue-on-error: true
         timeout-minutes: 5
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -423,10 +348,7 @@ jobs:
           path: |
             g12-staging-rollback-watchdog-evidence.json
             g12-staging-rollback-watchdog-probe.json
-            backend-recovery/outputs/g12-staging-rollback-database-watchdog-recovery.json
-            backend-recovery/outputs/g12-staging-rollback-ai-provider-watchdog-recovery.json
-            backend-recovery/outputs/g12-staging-rollback-function-watchdog-recovery.json
-            backend-recovery/outputs/g12-staging-rollback-functions-watchdog-recovery.json
+            ${{ runner.temp }}/g12-staging-rollback-watchdog-evidence/*.json
           if-no-files-found: error
           retention-days: 30
       - name: Compare and clear HMAC state after terminal recovery evidence
@@ -436,13 +358,16 @@ jobs:
           steps.watchdog_decision.outcome == 'success' &&
           steps.watchdog_backend_checkout.outcome == 'success' &&
           steps.watchdog_supabase_cli.outcome == 'success' &&
-          steps.watchdog_recovery_database.outcome == 'success' &&
-          steps.watchdog_recovery_configuration.outcome == 'success' &&
-          steps.watchdog_recovery_functions.outcome == 'success' &&
+          steps.watchdog_backend_verification.outcome == 'success' &&
           steps.watchdog_terminal_canonical.outcome == 'success' &&
           steps.watchdog_probe.outcome == 'success' &&
           steps.watchdog_evidence.outcome == 'success' &&
-          steps.watchdog_evidence_upload.outcome == 'success'
+          steps.watchdog_evidence_upload.outcome == 'success' &&
+          (steps.watchdog_decision.outputs.action != 'restore-original' ||
+          (steps.recovery_artifact.outcome == 'success' &&
+          steps.recovery_artifact_seal.outcome == 'success' &&
+          (steps.watchdog_compensation.outcome == 'success' ||
+          steps.watchdog_compensation_retry.outcome == 'success')))
         timeout-minutes: 5
         working-directory: control
         env:
@@ -457,13 +382,17 @@ jobs:
       - name: Enforce interrupted rollback terminal recovery
         if: always()
         env:
+          VARIABLE_OUTCOME: ${{ steps.variable_state.outcome }}
+          STATE_PRESENT: ${{ steps.variable_state.outputs.state_present }}
+          STATE_VALIDATION_OUTCOME: ${{ steps.watchdog_state.outcome }}
+          NO_STATE_EVIDENCE_OUTCOME: ${{ steps.rollback_no_state_evidence.outcome }}
           DECISION_OUTCOME: ${{ steps.watchdog_decision.outcome }}
           DECISION_ACTION: ${{ steps.watchdog_decision.outputs.action }}
           BACKEND_CHECKOUT_OUTCOME: ${{ steps.watchdog_backend_checkout.outcome }}
           SUPABASE_CLI_OUTCOME: ${{ steps.watchdog_supabase_cli.outcome }}
-          DATABASE_OUTCOME: ${{ steps.watchdog_recovery_database.outcome }}
-          CONFIGURATION_OUTCOME: ${{ steps.watchdog_recovery_configuration.outcome }}
-          FUNCTIONS_OUTCOME: ${{ steps.watchdog_recovery_functions.outcome }}
+          BACKEND_VERIFICATION_OUTCOME: ${{ steps.watchdog_backend_verification.outcome }}
+          RECOVERY_ARTIFACT_OUTCOME: ${{ steps.recovery_artifact.outcome }}
+          RECOVERY_SEAL_OUTCOME: ${{ steps.recovery_artifact_seal.outcome }}
           COMPENSATION_OUTCOME: ${{ steps.watchdog_compensation.outcome }}
           COMPENSATION_RETRY_OUTCOME: ${{ steps.watchdog_compensation_retry.outcome }}
           TERMINAL_CANONICAL_OUTCOME: ${{ steps.watchdog_terminal_canonical.outcome }}
@@ -473,15 +402,40 @@ jobs:
           CLEAR_OUTCOME: ${{ steps.clear_recovery_state.outcome }}
         run: |
           set -euo pipefail
+          test "$VARIABLE_OUTCOME" = success
+          if [ "$STATE_PRESENT" = false ]; then
+            test "$STATE_VALIDATION_OUTCOME" = skipped
+            test "$NO_STATE_EVIDENCE_OUTCOME" = success
+            test "$DECISION_OUTCOME" = skipped
+            test "$BACKEND_CHECKOUT_OUTCOME" = skipped
+            test "$SUPABASE_CLI_OUTCOME" = skipped
+            test "$BACKEND_VERIFICATION_OUTCOME" = skipped
+            test "$RECOVERY_ARTIFACT_OUTCOME" = skipped
+            test "$RECOVERY_SEAL_OUTCOME" = skipped
+            test "$COMPENSATION_OUTCOME" = skipped
+            test "$COMPENSATION_RETRY_OUTCOME" = skipped
+            test "$TERMINAL_CANONICAL_OUTCOME" = skipped
+            test "$PROBE_OUTCOME" = skipped
+            test "$EVIDENCE_OUTCOME" = skipped
+            test "$EVIDENCE_UPLOAD_OUTCOME" = success
+            test "$CLEAR_OUTCOME" = skipped
+            exit 0
+          fi
+          test "$STATE_PRESENT" = true
+          test "$STATE_VALIDATION_OUTCOME" = success
+          test "$NO_STATE_EVIDENCE_OUTCOME" = skipped
           test "$DECISION_OUTCOME" = success
           test "$DECISION_ACTION" = already-original -o "$DECISION_ACTION" = restore-original
           test "$BACKEND_CHECKOUT_OUTCOME" = success
           test "$SUPABASE_CLI_OUTCOME" = success
-          test "$DATABASE_OUTCOME" = success
-          test "$CONFIGURATION_OUTCOME" = success
-          test "$FUNCTIONS_OUTCOME" = success
+          test "$BACKEND_VERIFICATION_OUTCOME" = success
           if [ "$DECISION_ACTION" = restore-original ]; then
+            test "$RECOVERY_ARTIFACT_OUTCOME" = success
+            test "$RECOVERY_SEAL_OUTCOME" = success
             test "$COMPENSATION_OUTCOME" = success -o "$COMPENSATION_RETRY_OUTCOME" = success
+          else
+            test "$RECOVERY_ARTIFACT_OUTCOME" = skipped
+            test "$RECOVERY_SEAL_OUTCOME" = skipped
           fi
           test "$TERMINAL_CANONICAL_OUTCOME" = success
           test "$PROBE_OUTCOME" = success

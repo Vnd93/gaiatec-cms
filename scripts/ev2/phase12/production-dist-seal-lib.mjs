@@ -100,6 +100,19 @@ function runTar(args) {
   return result.stdout;
 }
 
+let gnuTar;
+
+function isGnuTar() {
+  if (gnuTar !== undefined) return gnuTar;
+  const result = spawnSync("tar", ["--version"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout: 30 * 1000,
+  });
+  gnuTar = !result.error && result.status === 0 && /GNU tar/.test(result.stdout);
+  return gnuTar;
+}
+
 async function stableFileDigest(path) {
   const metadata = await lstat(path);
   if (!metadata.isFile() || metadata.isSymbolicLink())
@@ -145,7 +158,7 @@ async function extractArchive(archivePath, targetDirectory) {
   if (entryTypes.length !== entries.length || entryTypes.some((type) => type !== "-" && type !== "d"))
     throw new Error("G12_PRODUCTION_DIST_ARCHIVE_REFUSED:link_or_special_entry");
   await mkdir(targetDirectory, { recursive: true });
-  runTar(["--no-same-owner", "--no-same-permissions", "-xf", archivePath, "-C", targetDirectory]);
+  runTar(["-xf", archivePath, "--no-same-owner", "--no-same-permissions", "-C", targetDirectory]);
 }
 
 async function setTreeMode(root, { fileMode, directoryMode }) {
@@ -200,20 +213,12 @@ export async function sealProductionDistArchive(distDirectory, archivePath, cand
   const source = resolve(distDirectory);
   const archive = resolve(archivePath);
   await rm(archive, { force: true });
-  runTar([
-    "--sort=name",
-    "--mtime=@0",
-    "--owner=0",
-    "--group=0",
-    "--numeric-owner",
-    "--format=posix",
-    "--pax-option=delete=atime,delete=ctime",
-    "-cf",
-    archive,
-    "-C",
-    source,
-    ".",
-  ]);
+  if ((await collectFiles(source)).length === 0)
+    throw new Error("G12_PRODUCTION_DIST_SEAL_REFUSED:dist_empty");
+  const normalization = isGnuTar()
+    ? ["--sort=name", "--owner=0", "--group=0", "--numeric-owner", "--pax-option=delete=atime,delete=ctime"]
+    : [];
+  runTar(["-cf", archive, ...normalization, "--mtime=@0", "--format=posix", "-C", source, "."]);
   const archiveIdentity = await stableFileDigest(archive);
   const temporary = `${archive}.verify-${process.pid}`;
   await rm(temporary, { recursive: true, force: true });

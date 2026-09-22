@@ -100,6 +100,10 @@ function expectedBinding() {
   };
 }
 
+function workflowAttempt(state) {
+  return Number(state?.workflow?.attempt ?? state?.workflow?.runAttempt);
+}
+
 function stagingFenceOwner(name) {
   return [
     "staging-cms-public-hotfix",
@@ -185,7 +189,7 @@ async function put() {
       event: "g12.recovery_state.redundancy_verified",
       kind,
       runId: state.workflow.runId,
-      runAttempt: state.workflow.runAttempt,
+      runAttempt: workflowAttempt(state),
       secretsDisclosed: false,
     }),
   );
@@ -211,7 +215,7 @@ async function seal() {
       event: "g12.recovery_state.artifact_wrapper_sealed",
       kind,
       runId: state.workflow.runId,
-      runAttempt: state.workflow.runAttempt,
+      runAttempt: workflowAttempt(state),
       secretsDisclosed: false,
     }),
   );
@@ -238,7 +242,7 @@ async function verify() {
       event: "g12.recovery_state.wrapper_verified",
       kind,
       runId: result.state.workflow.runId,
-      runAttempt: result.state.workflow.runAttempt,
+      runAttempt: workflowAttempt(result.state),
       secretsDisclosed: false,
     }),
   );
@@ -284,7 +288,7 @@ async function get() {
       event: "g12.recovery_state.recovered",
       kind,
       runId: result.state.workflow.runId,
-      runAttempt: result.state.workflow.runAttempt,
+      runAttempt: workflowAttempt(result.state),
       secretsDisclosed: false,
     }),
   );

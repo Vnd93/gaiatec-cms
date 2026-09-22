@@ -6,7 +6,7 @@ const PRE_MUTATION_OUTCOMES = new Set(["skipped", "failure", "cancelled"]);
 const TERMINAL_DEPLOY_RESULTS = new Set(["success", "failure", "cancelled"]);
 const WATCHDOG_DEPLOY_RESULTS = new Set(["success", "failure", "cancelled", "timed_out"]);
 export const STAGING_MUTATION_BOUNDARY_STEP_NAME =
-  "Arm staging mutation only after both durable recovery copies exist";
+  "Arm staging mutation only after every durable recovery proof exists";
 
 export function classifyStagingMutationBoundary({ deployResult, armed, boundaryOutcome }) {
   if (!TERMINAL_DEPLOY_RESULTS.has(deployResult)) throw new Error("G12_STAGING_MUTATION_BOUNDARY_AMBIGUOUS");

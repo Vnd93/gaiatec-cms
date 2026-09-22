@@ -50,6 +50,7 @@ import {
   validateCmsPublicHotfixCanary,
   validateCandidateBuildProvenance,
   validateCandidateBuildEvidenceFiles,
+  validateCompletedWatchdogOwnerRun,
   validateHotfixFullProbe,
   validateHotfixPreProbe,
   validateHotfixRecoveryState,
@@ -57,6 +58,7 @@ import {
   validateRecoveryPackage,
   validateRecoveredBaselineEvidence,
   validateTrustedBaselineEvidence,
+  validateWatchdogArtifactOwnerPolicy,
   verifyHotfixIntent,
   verifyHotfixProbeProof,
   verifyHotfixReceipt,
@@ -1079,7 +1081,7 @@ async function resolveRunArtifacts() {
   });
 }
 
-async function fetchWatchdogArtifacts(state, rollbackIntentWrapper) {
+async function fetchWatchdogArtifacts(state, rollbackIntentWrapper, { requireOwnerTerminal = false } = {}) {
   const stateResult = validateHotfixRecoveryState(state);
   if (!stateResult.valid)
     throw new Error(`G12_STAGING_CMS_PUBLIC_HOTFIX_STATE_REFUSED:${stateResult.violations.join(",")}`);
@@ -1099,6 +1101,8 @@ async function fetchWatchdogArtifacts(state, rollbackIntentWrapper) {
   );
   if (!validateControlRun(ownerRun, { ...owner, controlSha: owner.runSha }))
     throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_WATCHDOG_RUN_REFUSED");
+  if (requireOwnerTerminal && !validateCompletedWatchdogOwnerRun(ownerRun))
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_WATCHDOG_OWNER_NOT_TERMINAL");
   const artifacts = [];
   let totalCount;
   for (let page = 1; page <= 100; page += 1) {
@@ -1159,9 +1163,15 @@ async function fetchWatchdogArtifacts(state, rollbackIntentWrapper) {
       !/^[1-9]\d*$/.test(expected.id) ||
       !/^sha256:[a-f0-9]{64}$/.test(expected.digest ?? "") ||
       !validateControlRun(run, expected) ||
+      (requireOwnerTerminal && !validateCompletedWatchdogOwnerRun(run)) ||
+      (requireOwnerTerminal && Date.parse(artifact?.created_at ?? "") > Date.parse(run?.updated_at ?? "")) ||
       !validateRunArtifact(artifact, expected, run)
     )
-      throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_WATCHDOG_ARTIFACT_REFUSED");
+      throw new Error(
+        requireOwnerTerminal && !validateCompletedWatchdogOwnerRun(run)
+          ? "G12_STAGING_CMS_PUBLIC_HOTFIX_WATCHDOG_OWNER_NOT_TERMINAL"
+          : "G12_STAGING_CMS_PUBLIC_HOTFIX_WATCHDOG_ARTIFACT_REFUSED",
+      );
     return {
       id: expected.id,
       name,
@@ -1196,6 +1206,7 @@ async function fetchWatchdogArtifacts(state, rollbackIntentWrapper) {
   return {
     schemaVersion: 1,
     event: "g12.staging.cms_public_hotfix.watchdog_artifacts_resolved",
+    ownerTerminalRequired: requireOwnerTerminal,
     stateSha256: canonicalSha256(state),
     rollbackIntentSha256: canonicalSha256(rollbackIntentWrapper),
     preparedBy: owner,
@@ -1206,8 +1217,13 @@ async function fetchWatchdogArtifacts(state, rollbackIntentWrapper) {
 async function resolveWatchdogArtifacts() {
   const state = await readJson(argument("state"));
   const rollbackIntent = await readJson(argument("rollback-intent"));
+  const requireOwnerTerminalValue = argument("require-owner-terminal", { required: false });
+  if (!["", "true"].includes(requireOwnerTerminalValue))
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_REQUIRE_OWNER_TERMINAL_REFUSED");
   const report = {
-    ...(await fetchWatchdogArtifacts(state, rollbackIntent)),
+    ...(await fetchWatchdogArtifacts(state, rollbackIntent, {
+      requireOwnerTerminal: requireOwnerTerminalValue === "true",
+    })),
     resolvedAt: new Date().toISOString(),
   };
   await writeJson(argument("output"), report);
@@ -1256,10 +1272,18 @@ async function resolveWatchdogArtifacts() {
 
 async function loadWatchdogArtifactInventory(path, state, rollbackIntentPath) {
   const [report, rollbackIntent] = await Promise.all([readJson(path), readJson(rollbackIntentPath)]);
-  const fresh = await fetchWatchdogArtifacts(state, rollbackIntent);
+  const executor = report?.ownerTerminalRequired
+    ? undefined
+    : currentExecutor(STAGING_CMS_PUBLIC_HOTFIX.watchdogPath, state?.workflow?.controlSha);
+  if (!validateWatchdogArtifactOwnerPolicy(report, executor))
+    throw new Error("G12_STAGING_CMS_PUBLIC_HOTFIX_WATCHDOG_OWNER_POLICY_REFUSED");
+  const fresh = await fetchWatchdogArtifacts(state, rollbackIntent, {
+    requireOwnerTerminal: report.ownerTerminalRequired,
+  });
   if (
     report?.schemaVersion !== 1 ||
     report?.event !== "g12.staging.cms_public_hotfix.watchdog_artifacts_resolved" ||
+    report?.ownerTerminalRequired !== fresh.ownerTerminalRequired ||
     report?.stateSha256 !== fresh.stateSha256 ||
     report?.rollbackIntentSha256 !== fresh.rollbackIntentSha256 ||
     canonicalSha256(report?.preparedBy) !== canonicalSha256(fresh.preparedBy) ||

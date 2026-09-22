@@ -1,8 +1,8 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { constants } from "node:fs";
-import { access, lstat, open, realpath, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { access, link, lstat, mkdir, open, realpath, rm, writeFile } from "node:fs/promises";
+import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -19,7 +19,10 @@ const sha256Pattern = /^[0-9a-f]{64}$/;
 const POSITIVE_INTEGER = /^[1-9]\d*$/;
 const repository = "Vnd93/gaiatec-cms";
 const apiRoot = "https://api.github.com";
-const PARENT_JOB_NAME = "deploy";
+const PARENT_JOB_NAME = Object.freeze({
+  staging: "browser_attestation",
+  production: "deploy",
+});
 const PARENT_WAIT_STEP = Object.freeze({
   staging: "Run the complete authenticated mutating editorial cycle first",
   production: "Create the complete UI-owned production fixture on the exact sealed preview",
@@ -38,10 +41,50 @@ const PARENT_STATE_KEYS = Object.freeze([
   "stepNumber",
   "stepName",
 ]);
+const CONSUMER_READINESS_KEYS = Object.freeze([
+  "schemaVersion",
+  "event",
+  "repository",
+  "environment",
+  "candidateSha",
+  "controlSha",
+  "runId",
+  "runAttempt",
+  "runTag",
+  "challengeFile",
+  "outputJson",
+  "outputPng",
+  "readinessFile",
+  "challengeVariable",
+  "attestationVariable",
+  "githubIdentity",
+  "challengeAbsent",
+  "attestationAbsent",
+  "outputsAbsent",
+  "preconditionsValidated",
+  "secretsDisclosed",
+]);
+
+export function parentJobNameForEnvironment(environment) {
+  const jobName = PARENT_JOB_NAME[environment];
+  if (!jobName) {
+    throw new Error("G12_REAL_BROWSER_PARENT_ENVIRONMENT_REFUSED");
+  }
+  return jobName;
+}
 
 function option(args, name) {
   const index = args.indexOf(`--${name}`);
   if (index < 0 || !args[index + 1] || args[index + 1].startsWith("--")) {
+    throw new Error(`G12_REAL_BROWSER_CONSUMER_OPTION_REQUIRED:${name}`);
+  }
+  return args[index + 1];
+}
+
+function optionalOption(args, name) {
+  const index = args.indexOf(`--${name}`);
+  if (index < 0) return null;
+  if (!args[index + 1] || args[index + 1].startsWith("--")) {
     throw new Error(`G12_REAL_BROWSER_CONSUMER_OPTION_REQUIRED:${name}`);
   }
   return args[index + 1];
@@ -354,7 +397,8 @@ function observeParentWaitStep(payload, expected, previous = null) {
   ) {
     throw new Error("G12_REAL_BROWSER_PARENT_JOBS_CARDINALITY_REFUSED");
   }
-  const matchingJobs = payload.jobs.filter((job) => job?.name === PARENT_JOB_NAME);
+  const expectedJobName = parentJobNameForEnvironment(expected.environment);
+  const matchingJobs = payload.jobs.filter((job) => job?.name === expectedJobName);
   if (matchingJobs.length !== 1) {
     throw new Error("G12_REAL_BROWSER_PARENT_DEPLOY_JOB_CARDINALITY_REFUSED");
   }
@@ -451,6 +495,137 @@ async function writeExclusiveJson(path, value, code) {
   } catch (error) {
     throw new Error(`${code}:write_refused`, { cause: error });
   }
+}
+
+function repositoryRelativePath(path) {
+  return relative(repositoryRoot, path).split("\\").join("/");
+}
+
+async function writeExclusiveCanonicalJson(path, value, code) {
+  await assertPathAbsent(path, code);
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  const temporary = resolve(dirname(path), `.${basename(path)}.${process.pid}-${randomUUID()}.tmp`);
+  try {
+    const serialized = `${JSON.stringify(value)}\n`;
+    await writeFile(temporary, serialized, { encoding: "utf8", mode: 0o600, flag: "wx" });
+    const staged = await securelyReadJson(temporary, code);
+    if (JSON.stringify(staged) !== JSON.stringify(value)) {
+      throw new Error(`${code}:canonicalization_refused`);
+    }
+    try {
+      await link(temporary, path);
+    } catch (error) {
+      throw new Error(`${code}:publish_refused`, { cause: error });
+    }
+    const published = await securelyReadJson(path, code);
+    if (JSON.stringify(published) !== JSON.stringify(value)) {
+      throw new Error(`${code}:publication_verification_refused`);
+    }
+  } finally {
+    await rm(temporary, { force: true }).catch(() => undefined);
+  }
+}
+
+function consumerReadinessExpected({
+  environment,
+  candidateSha,
+  controlSha,
+  runId,
+  runAttempt,
+  runTag,
+  challengeFile,
+  outputJson,
+  outputPng,
+  readinessFile,
+}) {
+  return {
+    schemaVersion: 1,
+    event: "g12.real_browser.consumer.ready",
+    repository,
+    environment,
+    candidateSha,
+    controlSha,
+    runId,
+    runAttempt,
+    runTag,
+    challengeFile: repositoryRelativePath(challengeFile),
+    outputJson: repositoryRelativePath(outputJson),
+    outputPng: repositoryRelativePath(outputPng),
+    readinessFile: repositoryRelativePath(readinessFile),
+    challengeVariable: challengeVariableName(environment, runId, runAttempt),
+    attestationVariable: realBrowserAttestationVariableName({ environment, runId, runAttempt }),
+    githubIdentity: "Vnd93",
+    challengeAbsent: true,
+    attestationAbsent: true,
+    outputsAbsent: true,
+    preconditionsValidated: true,
+    secretsDisclosed: false,
+  };
+}
+
+export function validateRealBrowserConsumerReadiness(value, expected) {
+  const canonical = consumerReadinessExpected(expected);
+  if (
+    !exactKeys(value, CONSUMER_READINESS_KEYS) ||
+    CONSUMER_READINESS_KEYS.some((key) => value[key] !== canonical[key])
+  ) {
+    throw new Error("G12_REAL_BROWSER_CONSUMER_READINESS_REFUSED");
+  }
+  return value;
+}
+
+async function assertGitHubVariableAbsent(request, variable, code) {
+  const path = `/repos/${repository}/actions/variables/${encodeURIComponent(variable)}`;
+  const current = await request(path, { allowNotFound: true });
+  if (current.found) throw new Error(`${code}:occupied`);
+  if (current.status !== 404) throw new Error(`${code}:status_refused`);
+}
+
+async function publishConsumerReadiness(input, dependencies = {}) {
+  const { challengeFile, outputJson, outputPng, readinessFile } = input;
+  if (new Set([challengeFile, outputJson, outputPng, readinessFile]).size !== 4) {
+    throw new Error("G12_REAL_BROWSER_CONSUMER_READINESS_PATHS_REFUSED");
+  }
+  await assertPathAbsent(readinessFile, "G12_REAL_BROWSER_CONSUMER_READINESS");
+  await assertPathAbsent(challengeFile, "G12_REAL_BROWSER_CONSUMER_CHALLENGE");
+  await assertPathAbsent(outputJson, "G12_REAL_BROWSER_CONSUMER_OUTPUT_JSON");
+  await assertPathAbsent(outputPng, "G12_REAL_BROWSER_CONSUMER_OUTPUT_PNG");
+
+  const request = dependencies.githubRequest ?? githubRequest;
+  await confirmGitHubIdentity(request);
+  const readiness = consumerReadinessExpected(input);
+  await assertGitHubVariableAbsent(
+    request,
+    readiness.challengeVariable,
+    "G12_REAL_BROWSER_CONSUMER_CHALLENGE_VARIABLE",
+  );
+  await assertGitHubVariableAbsent(
+    request,
+    readiness.attestationVariable,
+    "G12_REAL_BROWSER_CONSUMER_ATTESTATION_VARIABLE",
+  );
+  await writeExclusiveCanonicalJson(readinessFile, readiness, "G12_REAL_BROWSER_CONSUMER_READINESS");
+  process.stdout.write(
+    `${JSON.stringify({ event: readiness.event, environment: readiness.environment, candidateSha: readiness.candidateSha, runId: readiness.runId, runAttempt: readiness.runAttempt, preconditionsValidated: true, secretsDisclosed: false })}\n`,
+  );
+  return readiness;
+}
+
+export async function verifyRealBrowserConsumerReadiness(input) {
+  const readiness = validateRealBrowserConsumerReadiness(
+    await securelyReadJson(input.readinessFile, "G12_REAL_BROWSER_CONSUMER_READINESS_VERIFY"),
+    input,
+  );
+  process.stdout.write(
+    `${JSON.stringify({ event: "g12.real_browser.consumer.readiness_verified", environment: readiness.environment, candidateSha: readiness.candidateSha, runId: readiness.runId, runAttempt: readiness.runAttempt, preconditionsValidated: true, secretsDisclosed: false })}\n`,
+  );
+  return readiness;
+}
+
+async function clearConsumerReadiness(input) {
+  await verifyRealBrowserConsumerReadiness(input);
+  await rm(input.readinessFile);
+  await assertPathAbsent(input.readinessFile, "G12_REAL_BROWSER_CONSUMER_READINESS_CLEANUP");
 }
 
 function sameChallengeSnapshot(left, right) {
@@ -581,7 +756,7 @@ function validateParentState(value, expected) {
     value.runId !== expected.runId ||
     value.runAttempt !== expected.runAttempt ||
     !POSITIVE_INTEGER.test(String(value.jobId ?? "")) ||
-    value.jobName !== PARENT_JOB_NAME ||
+    value.jobName !== parentJobNameForEnvironment(expected.environment) ||
     !Number.isSafeInteger(value.stepNumber) ||
     value.stepNumber < 1 ||
     value.stepName !== PARENT_WAIT_STEP[expected.environment]
@@ -914,6 +1089,10 @@ export async function runRealBrowserAttestationConsumer(args, dependencies = {})
   const challengeFile = containedPath(option(args, "challenge-file"), "G12_REAL_BROWSER_CHALLENGE");
   const outputJson = containedPath(option(args, "output-json"), "G12_REAL_BROWSER_OUTPUT_JSON");
   const outputPng = containedPath(option(args, "output-png"), "G12_REAL_BROWSER_OUTPUT_PNG");
+  const readinessFileOption = optionalOption(args, "readiness-file");
+  const readinessFile = readinessFileOption
+    ? containedPath(readinessFileOption, "G12_REAL_BROWSER_CONSUMER_READINESS")
+    : null;
   const waitSeconds = Number(option(args, "challenge-wait-seconds"));
   if (
     !["staging", "production"].includes(environment) ||
@@ -927,99 +1106,161 @@ export async function runRealBrowserAttestationConsumer(args, dependencies = {})
     !Number.isSafeInteger(waitSeconds) ||
     waitSeconds < 1 ||
     waitSeconds > 35 * 60 ||
-    !process.env.RELEASE_GUARD_TOKEN ||
-    !process.env.EVIDENCE_SALT
+    typeof process.env.RELEASE_GUARD_TOKEN !== "string" ||
+    process.env.RELEASE_GUARD_TOKEN.length < 30 ||
+    typeof process.env.EVIDENCE_SALT !== "string" ||
+    Buffer.byteLength(process.env.EVIDENCE_SALT, "utf8") < 32
   ) {
     throw new Error("G12_REAL_BROWSER_CONSUMER_CONFIGURATION_REFUSED");
   }
-  const deadline = Date.now() + waitSeconds * 1_000;
-  while (Date.now() < deadline) {
+  const readinessInput = readinessFile
+    ? {
+        environment,
+        candidateSha,
+        controlSha,
+        runId,
+        runAttempt,
+        runTag,
+        challengeFile,
+        outputJson,
+        outputPng,
+        readinessFile,
+      }
+    : null;
+  let readinessPublished = false;
+  try {
+    if (readinessInput) {
+      await publishConsumerReadiness(readinessInput, dependencies);
+      readinessPublished = true;
+    }
+    const deadline = Date.now() + waitSeconds * 1_000;
+    while (Date.now() < deadline) {
+      try {
+        await access(challengeFile, constants.F_OK);
+        break;
+      } catch {
+        await new Promise((resolvePromise) => setTimeout(resolvePromise, 1_000));
+      }
+    }
     try {
       await access(challengeFile, constants.F_OK);
-      break;
     } catch {
-      await new Promise((resolvePromise) => setTimeout(resolvePromise, 1_000));
+      throw new Error("G12_REAL_BROWSER_CONSUMER_CHALLENGE_TIMEOUT");
     }
+    const challenge = validateChallenge(await securelyReadJson(challengeFile, "G12_REAL_BROWSER_CHALLENGE"), {
+      environment,
+      candidateSha,
+      controlSha,
+      runId,
+      runAttempt,
+      runTag,
+    });
+    const cli = resolve(scriptDirectory, "real-browser-attestation-store.mjs");
+    const abortController = new AbortController();
+    const interrupt = () => abortController.abort();
+    process.once("SIGTERM", interrupt);
+    process.once("SIGINT", interrupt);
+    let challengePublished = false;
+    try {
+      await (dependencies.publishChallengeVariable ?? publishChallengeVariable)(challenge);
+      challengePublished = true;
+      await (dependencies.runStoreChild ?? runRealBrowserStoreChild)(
+        [
+          cli,
+          "consume",
+          "--environment",
+          environment,
+          "--candidate-sha",
+          candidateSha,
+          "--run-id",
+          runId,
+          "--run-attempt",
+          String(runAttempt),
+          "--run-tag",
+          runTag,
+          "--origin",
+          challenge.origin,
+          "--campaign-path",
+          challenge.campaignPath,
+          "--email-sha256",
+          challenge.emailSha256,
+          "--challenge-nonce-sha256",
+          challenge.challengeNonceSha256,
+          "--control-sha",
+          controlSha,
+          "--output-json",
+          repositoryRelativePath(outputJson),
+          "--output-png",
+          repositoryRelativePath(outputPng),
+          "--poll-seconds",
+          "900",
+          "--poll-interval-ms",
+          "5000",
+        ],
+        { signal: abortController.signal },
+      );
+    } finally {
+      process.removeListener("SIGTERM", interrupt);
+      process.removeListener("SIGINT", interrupt);
+      if (challengePublished) {
+        await (dependencies.clearChallengeVariable ?? clearChallengeVariable)({
+          environment,
+          runId,
+          runAttempt,
+          allowMissing: true,
+        });
+      }
+    }
+    process.stdout.write(
+      `${JSON.stringify({ event: "g12.real_browser.consumer.completed", environment, candidateSha, runId, runAttempt })}\n`,
+    );
+  } finally {
+    if (readinessPublished) await clearConsumerReadiness(readinessInput);
   }
-  try {
-    await access(challengeFile, constants.F_OK);
-  } catch {
-    throw new Error("G12_REAL_BROWSER_CONSUMER_CHALLENGE_TIMEOUT");
+}
+
+function readinessInputFromArguments(args) {
+  const environment = option(args, "environment");
+  const candidateSha = option(args, "candidate-sha");
+  const controlSha = option(args, "control-sha");
+  const runId = option(args, "run-id");
+  const runAttempt = Number(option(args, "run-attempt"));
+  const runTag = option(args, "run-tag");
+  if (
+    !["staging", "production"].includes(environment) ||
+    !fullSha.test(candidateSha) ||
+    !fullSha.test(controlSha) ||
+    !POSITIVE_INTEGER.test(runId) ||
+    !Number.isSafeInteger(runAttempt) ||
+    runAttempt < 1 ||
+    !/^QA-CMS-FINAL-[0-9]{8}-[0-9a-f]{8}$/.test(runTag) ||
+    !runTag.endsWith(`-${candidateSha.slice(0, 8)}`)
+  ) {
+    throw new Error("G12_REAL_BROWSER_CONSUMER_READINESS_BINDING_REFUSED");
   }
-  const challenge = validateChallenge(await securelyReadJson(challengeFile, "G12_REAL_BROWSER_CHALLENGE"), {
+  return {
     environment,
     candidateSha,
     controlSha,
     runId,
     runAttempt,
     runTag,
-  });
-  const cli = resolve(scriptDirectory, "real-browser-attestation-store.mjs");
-  const abortController = new AbortController();
-  const interrupt = () => abortController.abort();
-  process.once("SIGTERM", interrupt);
-  process.once("SIGINT", interrupt);
-  let challengePublished = false;
-  try {
-    await (dependencies.publishChallengeVariable ?? publishChallengeVariable)(challenge);
-    challengePublished = true;
-    await (dependencies.runStoreChild ?? runRealBrowserStoreChild)(
-      [
-        cli,
-        "consume",
-        "--environment",
-        environment,
-        "--candidate-sha",
-        candidateSha,
-        "--run-id",
-        runId,
-        "--run-attempt",
-        String(runAttempt),
-        "--run-tag",
-        runTag,
-        "--origin",
-        challenge.origin,
-        "--campaign-path",
-        challenge.campaignPath,
-        "--email-sha256",
-        challenge.emailSha256,
-        "--challenge-nonce-sha256",
-        challenge.challengeNonceSha256,
-        "--control-sha",
-        controlSha,
-        "--output-json",
-        relative(repositoryRoot, outputJson).split("\\").join("/"),
-        "--output-png",
-        relative(repositoryRoot, outputPng).split("\\").join("/"),
-        "--poll-seconds",
-        "900",
-        "--poll-interval-ms",
-        "5000",
-      ],
-      { signal: abortController.signal },
-    );
-  } finally {
-    process.removeListener("SIGTERM", interrupt);
-    process.removeListener("SIGINT", interrupt);
-    if (challengePublished) {
-      await (dependencies.clearChallengeVariable ?? clearChallengeVariable)({
-        environment,
-        runId,
-        runAttempt,
-        allowMissing: true,
-      });
-    }
-  }
-  process.stdout.write(
-    `${JSON.stringify({ event: "g12.real_browser.consumer.completed", environment, candidateSha, runId, runAttempt })}\n`,
-  );
+    challengeFile: containedPath(option(args, "challenge-file"), "G12_REAL_BROWSER_CHALLENGE"),
+    outputJson: containedPath(option(args, "output-json"), "G12_REAL_BROWSER_OUTPUT_JSON"),
+    outputPng: containedPath(option(args, "output-png"), "G12_REAL_BROWSER_OUTPUT_PNG"),
+    readinessFile: containedPath(option(args, "readiness-file"), "G12_REAL_BROWSER_CONSUMER_READINESS"),
+  };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
-  const operation = ["claim-challenge", "await-consumption", "clear-attestation", "clear-challenge"].includes(
-    args[0],
-  )
+  const operation = [
+    "claim-challenge",
+    "await-consumption",
+    "clear-attestation",
+    "clear-challenge",
+    "verify-readiness",
+  ].includes(args[0])
     ? args[0]
     : "consume";
   const operationArgs = operation === "consume" ? args : args.slice(1);
@@ -1062,7 +1303,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
                 runAttempt: option(operationArgs, "run-attempt"),
                 allowMissing: operationArgs.includes("--allow-missing"),
               })
-            : runRealBrowserAttestationConsumer(operationArgs);
+            : operation === "verify-readiness"
+              ? verifyRealBrowserConsumerReadiness(readinessInputFromArguments(operationArgs))
+              : runRealBrowserAttestationConsumer(operationArgs);
   execution.catch((error) => {
     process.stderr.write(`${error instanceof Error ? error.message : "G12_REAL_BROWSER_CONSUMER_FAILED"}\n`);
     process.exitCode = 1;

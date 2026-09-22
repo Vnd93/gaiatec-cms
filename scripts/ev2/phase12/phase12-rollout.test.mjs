@@ -482,15 +482,15 @@ test("staging workflow exercises the exact-SHA governed lifecycle with disposabl
   assert.match(workflow, /QA_CMS_TARGET_ENVIRONMENT: staging/);
   assert.match(workflow, /--workers=1 --retries=0 --grep @ui-bootstrap/);
   assert.match(workflow, /--workers=1 --retries=0 --grep @semantic/);
-  // One independently leased actor proves the retained rollback frontend. One
-  // exact-candidate actor then owns bootstrap, all mutating suites, the semantic
-  // traversal and terminal cleanup/residue under the same SHA/runTag.
-  // A contagem e do job canonico, nao do arquivo. O passe de diagnostico e um job proprio, que nunca
-  // roda no mesmo run que este, e carrega a fixture sintetica dele com ator e run_tag proprios.
+  // The serial deploy lane contains only automatic gates. Both independently leased actors and
+  // their teardown live in the JIT browser job, which cannot start before both read-only post gates.
   const canonical = workflowJob(workflow, "deploy");
-  assert.equal((canonical.match(/cms-browser-fixture\.mjs setup/g) ?? []).length, 2);
-  assert.equal((canonical.match(/cms-browser-fixture\.mjs cleanup/g) ?? []).length, 4);
-  assert.equal((canonical.match(/cms-browser-fixture\.mjs residue/g) ?? []).length, 1);
+  const browserAttestation = workflowJob(workflow, "browser_attestation");
+  assert.equal((canonical.match(/cms-browser-fixture\.mjs (?:setup|cleanup|residue)/g) ?? []).length, 0);
+  assert.doesNotMatch(canonical, /run-real-browser-attestation-consumer\.mjs/);
+  assert.equal((browserAttestation.match(/cms-browser-fixture\.mjs setup/g) ?? []).length, 2);
+  assert.equal((browserAttestation.match(/cms-browser-fixture\.mjs cleanup/g) ?? []).length, 4);
+  assert.equal((browserAttestation.match(/cms-browser-fixture\.mjs residue/g) ?? []).length, 1);
   assert.ok(
     workflow.indexOf("Run the complete authenticated mutating editorial cycle first") <
       workflow.indexOf("Traverse every authenticated route, menu and required viewport on the same lease"),
@@ -525,10 +525,8 @@ test("staging workflow exercises the exact-SHA governed lifecycle with disposabl
     2,
   );
   assert.equal((workflow.match(/^\s+candidate\/outputs\/g11-timing-samples\.json$/gm) ?? []).length, 2);
-  const canonicalUpload = workflow.slice(
-    workflow.indexOf("      - uses: actions/upload-artifact@", workflow.indexOf("          evidence_json=(")),
-    workflow.indexOf("\n  diagnostic:"),
-  );
+  const canonicalJob = workflowJob(workflow, "deploy");
+  const canonicalUpload = canonicalJob.slice(canonicalJob.indexOf("id: staging_evidence_artifact"));
   assert.match(canonicalUpload, /if: always\(\)[\s\S]*candidate\/outputs\/g11-timing-samples\.json/);
   const interpretedEvidence = workflow.slice(
     workflow.indexOf("          evidence_json=("),
@@ -548,7 +546,12 @@ test("staging workflow exercises the exact-SHA governed lifecycle with disposabl
   assert.match(workflow, /candidate\/outputs\/cms-browser-mutating-residue\.json/);
   assert.match(workflow, /candidate\/outputs\/cms-terminal-coverage-matrix\.json/);
   assert.match(workflow, /candidate\/outputs\/g12-cms-coverage-matrix\.json/);
-  assert.match(workflow, /CMS_RELEASE_SHA="\$\{\{ steps\.candidate\.outputs\.sha \}\}"/);
+  assert.match(workflow, /STAGING_CANDIDATE_SHA: \$\{\{ steps\.candidate\.outputs\.sha \}\}/);
+  assert.match(
+    workflow,
+    /g12-staging-release-package\/edge\/source\/scripts\/ev2\/phase12\/configure-staging-edge-public-secrets\.mjs/,
+  );
+  assert.doesNotMatch(workflow, /supabase secrets set --project-ref/);
   const mutatingAuth = workflow.indexOf("cms-auth-lifecycle.spec.ts");
   const uiBootstrap = workflow.indexOf("cms-final-coverage.spec.ts", mutatingAuth);
   const adminOps = workflow.indexOf("cms-admin-ops-cycles.spec.ts", uiBootstrap);
@@ -565,10 +568,19 @@ test("staging workflow exercises the exact-SHA governed lifecycle with disposabl
     /name: staging-deploy-state-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/,
   );
   const stateUpload = workflow.indexOf("Upload mandatory pre-mutation staging state");
+  const snapshot = workflow.indexOf("Capture and verify the exact remote staging snapshot before mutation");
+  const recoveryUpload = workflow.indexOf(
+    "Upload mandatory sealed staging recovery artifact before mutation",
+  );
+  const stateV4 = workflow.indexOf("Persist credential-free staging recovery state v4 before mutation");
+  const recoveryVerify = workflow.indexOf("Prove the remote recovery copy is recoverable before mutation");
+  const hmacState = workflow.indexOf("Persist redundant HMAC staging state before mutation");
   const mutationBoundary = workflow.indexOf(
-    "Arm staging mutation only after both durable recovery copies exist",
+    "Arm staging mutation only after every durable recovery proof exists",
   );
   const firstStagingMutation = workflow.indexOf("Apply the exact candidate migrations to staging");
+  assert.ok(snapshot < recoveryUpload && recoveryUpload < stateV4);
+  assert.ok(stateV4 < recoveryVerify && recoveryVerify < hmacState && hmacState < stateUpload);
   assert.ok(stateUpload < mutationBoundary && mutationBoundary < firstStagingMutation);
   assert.match(workflow, /mutation_armed: \$\{\{ steps\.staging_mutation_boundary\.outputs\.armed \}\}/);
   assert.match(workflow, /mutation_boundary_outcome: \$\{\{ steps\.staging_mutation_boundary\.outcome \}\}/);
@@ -581,7 +593,7 @@ test("staging workflow exercises the exact-SHA governed lifecycle with disposabl
   const beforeMutationBoundary = workflowJob(workflow, "deploy").slice(
     0,
     workflowJob(workflow, "deploy").indexOf(
-      "Arm staging mutation only after both durable recovery copies exist",
+      "Arm staging mutation only after every durable recovery proof exists",
     ),
   );
   for (const stagingMutation of [
@@ -601,27 +613,45 @@ test("staging workflow exercises the exact-SHA governed lifecycle with disposabl
     candidateUploadStart,
   );
   const candidateUpload = workflow.slice(candidateUploadStart, candidateUploadEnd);
-  assert.match(candidateUpload, /candidate\/outputs\/staging-candidate-dist\.tar/);
-  assert.match(candidateUpload, /candidate\/outputs\/staging-candidate-dist-seal\.json/);
+  assert.match(candidateUpload, /staging-candidate-handoff\/staging-frontend-dist\.tar/);
+  assert.match(candidateUpload, /staging-candidate-handoff\/staging-frontend-dist-seal\.json/);
+  assert.match(candidateUpload, /staging-candidate-handoff\/staging-frontend-provenance\.json/);
+  assert.match(candidateUpload, /staging-candidate-handoff\/staging-candidate-handoff\.json/);
+  assert.doesNotMatch(candidateUpload, /staging-candidate-dist(?:-seal)?/);
   assert.doesNotMatch(candidateUpload, /candidate\/dist/);
+  const handoffStart = workflow.indexOf(
+    "Preserve the exact CI package with an external compatibility handoff manifest",
+  );
+  const handoffEnd = workflow.indexOf("Generate the exhaustive source-backed CMS coverage matrix");
+  const handoff = workflow.slice(handoffStart, handoffEnd);
+  assert.ok(handoffStart >= 0 && handoffStart < candidateUploadStart);
+  assert.match(handoff, /write-staging-candidate-handoff\.mjs/);
+  assert.match(handoff, /g12-staging-release-package\/frontend/);
+  assert.match(handoff, /Bind compatibility handoff identity to the verified CI package/);
+  assert.match(workflow, /verify-staging-candidate-handoff\.mjs/);
+  assert.doesNotMatch(handoff, /npm run build|seal-production-dist\.mjs/);
   assert.ok(
     workflow.indexOf("Upload mandatory sealed staging recovery artifact") <
-      workflow.indexOf("Deploy the immutable staging candidate"),
+      workflow.indexOf("Prove the exact bridge deployment remains canonical after backend mutation"),
   );
   assert.ok(
     workflow.indexOf("Upload mandatory immutable staging candidate artifact") <
-      workflow.indexOf("Deploy the immutable staging candidate"),
+      workflow.indexOf("Prove the exact bridge deployment remains canonical after backend mutation"),
   );
-  assert.match(workflow, /--commit-message "\$\{\{ steps\.staging_state\.outputs\.run_marker \}\}"/);
+  assert.doesNotMatch(workflow, /Deploy the immutable staging candidate/);
+  assert.doesNotMatch(workflow, /--branch ev2-g17-canary/);
+  assert.match(workflow, /Bind live staging identity to the frontend-only bridge deployment A/);
+  assert.match(workflow, /test "\$LIVE_MARKER_B64" = "\$BRIDGE_MARKER_B64"/);
   // O finalizador roda mesmo quando o deploy falha, e so nao roda no passe de diagnostico, que
   // nao muta nada para compensar.
-  assert.match(workflow, /needs: deploy\s+if: always\(\) && !inputs\.diagnostic_run/);
+  assert.match(
+    workflow,
+    /needs: \[deploy, browser_attestation, evidence\]\s+if: always\(\) && !inputs\.diagnostic_run/,
+  );
   assert.match(workflow, /staging-pages-state\.mjs compensate/);
-  assert.match(workflow, /staging-pages-state\.mjs assert-owned/);
-  assert.match(workflow, /staging-pages-state\.mjs assert-original/);
+  assert.ok((workflow.match(/staging-pages-state\.mjs assert-original/g) ?? []).length >= 3);
   assert.doesNotMatch(workflow, /if: failure\(\) && steps\.deploy\.outcome == 'success'/);
-  assert.match(workflow, /--branch ev2-g17-canary/);
-  assert.match(workflow, /staging-candidate-dist-seal\.json/);
+  assert.match(workflow, /staging-frontend-dist-seal\.json/);
   assert.match(workflow, /Checkout the trusted staging control revision/);
   const controlNodeSetup = workflow.indexOf("Use the repository-pinned Node runtime for staging controls");
   assert.ok(controlNodeSetup >= 0);
@@ -658,20 +688,20 @@ test("staging workflow exercises the exact-SHA governed lifecycle with disposabl
       workflow.indexOf("Apply the exact candidate migrations to staging"),
   );
   assert.match(workflow, /Configure the exact staging browser origins without wildcard trust/);
-  assert.match(workflow, /CONTACT_CAPTCHA_ALWAYS=true/);
-  assert.match(workflow, /TURNSTILE_EXPECTED_ACTION=lead_capture/);
+  const stagingEdgeSecrets = await read("scripts/ev2/phase12/staging-edge-public-secrets-lib.mjs");
+  assert.match(stagingEdgeSecrets, /CONTACT_CAPTCHA_ALWAYS/);
+  assert.match(stagingEdgeSecrets, /TURNSTILE_EXPECTED_ACTION/);
   assert.match(workflow, /ev2-g17-canary\.gaiatec-cms-staging\.pages\.dev/);
   assert.match(workflow, /ev2-g12-canary\.gaiatec-cms-staging\.pages\.dev/);
   assert.match(workflow, /ev2-g16-csp-canary\.gaiatec-cms-staging\.pages\.dev/);
   assert.doesNotMatch(workflow, /ALLOWED_ORIGINS[^\n]*\*/);
   assert.doesNotMatch(workflow, /candidate\/g12-(?:canary|backend-compatibility|cms-coverage-matrix)\.json/);
   assert.doesNotMatch(workflow, /candidate\/g16-csp-browser\.json/);
-  // Tres provas de checkout limpo no run canonico. A verificacao do passe de diagnostico e outra
-  // coisa: ela e filtrada ao diretorio de evidencia e vive no job dele.
-  assert.equal(
-    (workflowJob(workflow, "deploy").match(/git status --porcelain --untracked-files=all/g) ?? []).length,
-    3,
+  assert.ok(
+    (workflowJob(workflow, "deploy").match(/git status --porcelain --untracked-files=all/g) ?? []).length >=
+      2,
   );
+  assert.equal((browserAttestation.match(/status --porcelain --untracked-files=all/g) ?? []).length, 2);
   assert.match(workflow, /id: browser_mutating_cleanup/);
   assert.doesNotMatch(workflow, /id: browser_routes_cleanup/);
   assert.match(workflow, /Retry cleanup for the same isolated browser lease/);
@@ -683,19 +713,301 @@ test("staging workflow exercises the exact-SHA governed lifecycle with disposabl
   const forwardEnd = workflow.indexOf("\n      - name:", forwardStart + 1);
   const forwardBlock = workflow.slice(forwardStart, forwardEnd);
   assert.ok(workflow.indexOf('wait "$real_browser_consumer_pid"') < forwardStart);
+  assert.match(forwardBlock, /--deployment-id "\$\{\{ needs\.deploy\.outputs\.canonical_deployment_id \}\}"/);
   assert.match(
     forwardBlock,
-    /--deployment-id "\$\{\{ steps\.staging_owned_deployment\.outputs\.deployment_id \}\}"/,
+    /QA_CMS_FORWARD_DEPLOYMENT_ID: \$\{\{ needs\.deploy\.outputs\.canonical_deployment_id \}\}/,
   );
-  assert.match(
-    forwardBlock,
-    /QA_CMS_FORWARD_DEPLOYMENT_ID: \$\{\{ steps\.staging_owned_deployment\.outputs\.deployment_id \}\}/,
-  );
-  assert.match(forwardBlock, /QA_CMS_EXPECTED_SHA: \$\{\{ steps\.candidate\.outputs\.sha \}\}/);
+  assert.match(forwardBlock, /QA_CMS_EXPECTED_SHA: \$\{\{ needs\.deploy\.outputs\.candidate_sha \}\}/);
   assert.match(
     forwardBlock,
     /PLAYWRIGHT_BASE_URL: https:\/\/ev2-g17-canary\.gaiatec-cms-staging\.pages\.dev/,
   );
+});
+
+test("all staging canary publishers share the single non-cancelling writer fence", async () => {
+  const workflowNames = (await readdir(".github/workflows")).filter((name) => /\.ya?ml$/.test(name));
+  const publishers = [];
+  for (const name of workflowNames) {
+    const workflow = await read(`.github/workflows/${name}`);
+    if (
+      workflow.includes("gaiatec-cms-staging") &&
+      /pages deploy|deploy-sealed-staging-dist\.mjs|staging-pages-state\.mjs compensate/.test(workflow)
+    )
+      publishers.push({ name, workflow });
+  }
+  const stagingFence = /concurrency:\s+group: staging\s+cancel-in-progress: false/;
+  const expectedPreviewPublishers = [
+    "preview.yml",
+    ...Array.from({ length: 12 }, (_, index) => `preview-ev2-phase${index + 3}.yml`),
+    "preview-ev2-phase16.yml",
+  ];
+  const recoveryWatchdogs = new Set([
+    "deploy-staging-watchdog.yml",
+    "promote-staging-frontend-bridge-watchdog.yml",
+    "rollback-staging-watchdog.yml",
+  ]);
+  for (const expected of expectedPreviewPublishers)
+    assert.ok(
+      publishers.some(({ name }) => name === expected),
+      `${expected} escaped publisher inventory`,
+    );
+  for (const { name, workflow } of publishers) {
+    if (recoveryWatchdogs.has(name)) {
+      assert.match(
+        workflow,
+        /concurrency:\s+group: staging-recovery-\$\{\{ github\.event\.workflow_run\.id \}\}-\$\{\{ github\.event\.workflow_run\.run_attempt \}\}\s+cancel-in-progress: false/,
+        `${name} can be evicted before recovering its parent`,
+      );
+      continue;
+    }
+    assert.match(workflow, stagingFence, `${name} escaped the single staging writer fence`);
+    assert.doesNotMatch(
+      workflow,
+      /group: (?:preview-|ev2-g\d|ev2-g\d+-candidate-preview)/,
+      `${name} retained an independent staging mutation fence`,
+    );
+  }
+  for (const expected of expectedPreviewPublishers) {
+    const workflow = publishers.find(({ name }) => name === expected).workflow;
+    const fence = workflow.indexOf("recovery-state-store.mjs fence");
+    const deploy = workflow.indexOf("id: deploy");
+    assert.ok(fence >= 0 && fence < deploy, `${expected} does not fence immediately before mutation`);
+    assert.match(workflow, /--owner-kind staging-preview --require-empty/);
+    assert.match(workflow, /RELEASE_GUARD_TOKEN: \$\{\{ secrets\.RELEASE_GUARD_TOKEN \}\}/);
+    assert.match(workflow, /RECOVERY_STATE_HMAC_KEY: \$\{\{ secrets\.EVIDENCE_SALT \}\}/);
+    assert.match(workflow, /persist-credentials: false/);
+    assert.match(workflow, /path: control/);
+    assert.match(workflow, /node-version-file: control\/\.nvmrc/);
+    assert.match(workflow, /node control\/scripts\/ev2\/phase12\/recovery-state-store\.mjs fence/);
+    const trustedCheckout = workflow.indexOf("Checkout trusted staging fence controls just in time");
+    assert.ok(
+      trustedCheckout >= 0 && trustedCheckout < fence,
+      `${expected} does not execute the fence from a just-in-time trusted checkout`,
+    );
+  }
+  const hotfixWatchdog = await read(".github/workflows/promote-staging-cms-public-hotfix-watchdog.yml");
+  assert.match(
+    hotfixWatchdog,
+    /github\.event_name == 'workflow_dispatch' && 'staging' \|\| format\('staging-recovery-\{0\}-\{1\}',\s*github\.event\.workflow_run\.id,\s*github\.event\.workflow_run\.run_attempt\)/,
+  );
+});
+
+test("authoritative staging writers fence capture and durably arm recovery before mutation", async () => {
+  const [deployWorkflow, bridge, rollback, hotfix] = await Promise.all([
+    read(".github/workflows/deploy-staging.yml"),
+    read(".github/workflows/promote-staging-frontend-bridge.yml"),
+    read(".github/workflows/rollback-staging.yml"),
+    read(".github/workflows/promote-staging-cms-public-hotfix.yml"),
+  ]);
+  const assertOrdered = (workflow, labels, context) => {
+    const positions = labels.map((label) => workflow.indexOf(label));
+    assert.ok(
+      positions.every((position) => position >= 0),
+      `${context} is missing an ordered gate`,
+    );
+    assert.deepEqual(
+      positions,
+      [...positions].sort((left, right) => left - right),
+      `${context} does not preserve fence -> capture -> recovery -> mutation order`,
+    );
+  };
+
+  const deploy = workflowJob(deployWorkflow, "deploy");
+  const live = workflowJob(deployWorkflow, "validate_live_baseline");
+  assertOrdered(
+    live,
+    [
+      "Refuse authoritative live capture while any staging recovery is armed",
+      "Probe the approved live baseline without mutation",
+      "Capture the approved live Pages identity read-only",
+      "Capture and verify a read-only preflight environment snapshot",
+    ],
+    "deploy read-only baseline",
+  );
+  assertOrdered(
+    deploy,
+    [
+      "Reconfirm the empty recovery fence immediately before authoritative deploy capture",
+      "Prove the live staging alias matches the approved rollback SHA",
+      "Capture immutable live staging state before any remote mutation",
+      "Persist redundant HMAC staging state before mutation",
+      "Arm staging mutation only after every durable recovery proof exists",
+      "Apply the exact candidate migrations to staging",
+    ],
+    "deploy mutation lane",
+  );
+  assert.match(deploy, /--owner-kind staging-deploy --require-empty/);
+  assert.match(live, /--owner-kind staging-deploy --require-empty/);
+
+  assertOrdered(
+    bridge,
+    [
+      "Reconfirm the empty recovery fence immediately before authoritative bridge capture",
+      "Prove live alias is the expected old-backend baseline",
+      "Capture canonical staging state before any deployment or fixture",
+      "Persist redundant HMAC bridge state only after remote recovery proof",
+      "Deploy sealed A to isolated staging preview branch",
+    ],
+    "frontend bridge",
+  );
+  assert.match(bridge, /--owner-kind staging-cms-public-legacy --require-empty/);
+
+  assertOrdered(
+    rollback,
+    [
+      "Reconfirm the empty recovery fence immediately before authoritative rollback capture",
+      "Capture immutable live staging state before any remote mutation",
+      "Persist redundant HMAC rollback state after both durable uploads are verified",
+      "Restore only the exact retained and sealed staging-candidate bytes",
+    ],
+    "staging rollback",
+  );
+  assert.match(rollback, /--owner-kind staging-rollback --require-empty/);
+
+  assertOrdered(
+    hotfix,
+    [
+      "Reconfirm the empty recovery fence immediately before authoritative hotfix capture",
+      "Prove the live staging baseline before capture",
+      "Capture exact live baseline and candidate bytes before mutation",
+      "Persist the exact recovery state redundantly",
+      "Fence all staging domains immediately before the PATCH",
+      "Apply only the exact candidate bundle once",
+    ],
+    "cms-public hotfix",
+  );
+  assert.match(hotfix, /--owner-kind staging-cms-public-hotfix --require-empty/);
+});
+
+test("staging control plane gates the serial mutation lane with immutable parallel handoffs", async () => {
+  const workflow = await read(".github/workflows/deploy-staging.yml");
+  const preflight = workflowJob(workflow, "preflight");
+  const source = workflowJob(workflow, "validate_source");
+  const live = workflowJob(workflow, "validate_live_baseline");
+  const deploy = workflowJob(workflow, "deploy");
+  const frontendPost = workflowJob(workflow, "post_deploy_frontend_readonly");
+  const backendPost = workflowJob(workflow, "post_deploy_backend_readonly");
+  const browser = workflowJob(workflow, "browser_attestation");
+  const evidence = workflowJob(workflow, "evidence");
+  const finalizer = workflowJob(workflow, "finalize");
+
+  assert.match(deploy, /needs: \[preflight, validate_source, validate_live_baseline\]/);
+  assert.match(source, /needs: preflight/);
+  assert.match(live, /needs: preflight/);
+  assert.match(frontendPost, /needs: deploy/);
+  assert.match(backendPost, /needs: deploy/);
+  assert.match(browser, /needs: \[deploy, post_deploy_frontend_readonly, post_deploy_backend_readonly\]/);
+  assert.match(
+    evidence,
+    /needs: \[deploy, post_deploy_frontend_readonly, post_deploy_backend_readonly, browser_attestation\]/,
+  );
+  assert.match(finalizer, /needs: \[deploy, browser_attestation, evidence\][\s\S]*if: always\(\)/);
+
+  for (const readOnlyJob of [preflight, source, live, frontendPost, backendPost, evidence]) {
+    assert.doesNotMatch(readOnlyJob, /supabase db push|supabase secrets set|wrangler pages deploy/);
+    assert.doesNotMatch(readOnlyJob, /cms-browser-fixture\.mjs setup|staging-roundtrip\.mjs/);
+  }
+  assert.match(live, /SELECT-only|read-only preflight environment snapshot/);
+  assert.match(frontendPost, /mutationAttempted: false/);
+  assert.match(backendPost, /databaseSelectOnly: true[\s\S]*mutationAttempted: false/);
+  assert.doesNotMatch(deploy, /cms-browser-fixture\.mjs|run-real-browser-attestation-consumer\.mjs/);
+  const browserOnlyEvidence =
+    /cms-(?:auth-lifecycle|real-browser-attestation|browser-mutating|terminal-coverage-matrix|browser-rollback|rollback-authenticated-compatibility|public-forward-compatibility)/;
+  assert.doesNotMatch(deploy, browserOnlyEvidence);
+  assert.doesNotMatch(frontendPost, browserOnlyEvidence);
+  assert.match(browser, browserOnlyEvidence);
+  assert.match(browser, /environment: staging/);
+  assert.equal((browser.match(/persist-credentials: false/g) ?? []).length, 2);
+  assert.match(browser, /needs\.deploy\.outputs\.browser_run_tag/);
+  assert.match(browser, /QA_CMS_RUN_TAG=%s/);
+  assert.match(browser, /verify-readiness[\s\S]*--grep @ui-bootstrap/);
+  assert.match(browser, /browser-jit-evidence\.json/);
+  assert.match(browser, /id: browser_evidence_artifact/);
+
+  for (const consumer of [deploy, source, live, frontendPost, backendPost, browser, evidence, finalizer]) {
+    assert.match(consumer, /artifact-ids:/);
+    assert.match(consumer, /digest-mismatch: error/);
+  }
+  assert.ok(
+    deploy.indexOf("Run three healthy G12 windows and inherited system assurance") <
+      deploy.indexOf("Validate source inventory and signed-out routes in the deployed browser"),
+  );
+  assert.match(browser, /needs\.post_deploy_frontend_readonly\.result == 'success'/);
+  assert.match(browser, /needs\.post_deploy_backend_readonly\.result == 'success'/);
+  assert.match(browser, /verify-readiness[\s\S]*--grep @ui-bootstrap/);
+  assert.match(finalizer, /id: dag_outcome/);
+  assert.match(finalizer, /BROWSER_RESULT: \$\{\{ needs\.browser_attestation\.result \}\}/);
+  assert.match(
+    finalizer,
+    /id: finalizer_browser_recovery[\s\S]*cms-browser-fixture\.mjs recover[\s\S]*steps\.finalizer_state\.outputs\.browser_run_tag/,
+  );
+  assert.match(finalizer, /BROWSER_RECOVERY_OUTCOME:[\s\S]*test "\$BROWSER_RECOVERY_OUTCOME" = success/);
+  assert.match(finalizer, /steps\.dag_outcome\.outputs\.succeeded != 'true'/);
+  assert.match(
+    evidence,
+    /postDeployParallel: true[\s\S]*postDeployReadOnly: true[\s\S]*browserChallengeJustInTime: true/,
+  );
+});
+
+test("staging evidence is fail-closed and SHA-bound for every selected release profile", async () => {
+  const workflow = await read(".github/workflows/deploy-staging.yml");
+  const deploy = workflowJob(workflow, "deploy");
+  const backendPost = workflowJob(workflow, "post_deploy_backend_readonly");
+  const evidence = workflowJob(workflow, "evidence");
+
+  const profileEvidenceStart = deploy.indexOf(
+    "Materialize fail-closed evidence for the selected release profile",
+  );
+  const profileEvidenceEnd = deploy.indexOf(
+    "Require every successful staging evidence file",
+    profileEvidenceStart,
+  );
+  assert.ok(profileEvidenceStart >= 0 && profileEvidenceEnd > profileEvidenceStart);
+  const profileEvidence = deploy.slice(profileEvidenceStart, profileEvidenceEnd);
+  assert.match(profileEvidence, /"frontend-only": \{ edge: false, databaseAuth: false \}/);
+  assert.match(profileEvidence, /"edge-only": \{ edge: true, databaseAuth: false \}/);
+  assert.match(profileEvidence, /"database-auth": \{ edge: false, databaseAuth: true \}/);
+  assert.match(profileEvidence, /"full-release": \{ edge: true, databaseAuth: true \}/);
+  assert.match(profileEvidence, /G12_STAGING_REQUIRED_PROFILE_EVIDENCE_MISSING/);
+  assert.match(profileEvidence, /G12_STAGING_STALE_PROFILE_EVIDENCE_REFUSED/);
+  assert.match(
+    profileEvidence,
+    /candidateSha: process\.env\.CANDIDATE_SHA,[\s\S]*releaseProfile: process\.env\.RELEASE_PROFILE/,
+  );
+  assert.match(profileEvidence, /status: required \? "passed" : "not-required"/);
+
+  const requiredEvidenceStart = deploy.indexOf("Require every successful staging evidence file");
+  const requiredEvidenceEnd = deploy.indexOf("- id: staging_evidence_artifact", requiredEvidenceStart);
+  const requiredEvidence = deploy.slice(requiredEvidenceStart, requiredEvidenceEnd);
+  assert.match(requiredEvidence, /staging-release-profile-evidence\.json/);
+  assert.match(requiredEvidence, /case "\$RELEASE_PROFILE" in/);
+  assert.match(requiredEvidence, /edge-only\) evidence_files\+=/);
+  assert.match(requiredEvidence, /database-auth\) evidence_files\+=/);
+  assert.match(requiredEvidence, /full-release\) evidence_files\+=/);
+
+  const inventoryStart = backendPost.indexOf("Recheck exact staging function inventory read-only");
+  const inventoryEnd = backendPost.indexOf(
+    "Recheck staging database contracts with SELECT-only SQL",
+    inventoryStart,
+  );
+  assert.ok(inventoryStart >= 0 && inventoryEnd > inventoryStart);
+  const inventory = backendPost.slice(inventoryStart, inventoryEnd);
+  assert.match(inventory, /edge-only\|full-release\)/);
+  assert.match(inventory, /frontend-only\|database-auth\)/);
+  assert.equal((inventory.match(/--receipt/g) ?? []).length, 1);
+  assert.match(
+    inventory,
+    /test ! -e \.\.\/staging-evidence\/candidate\/outputs\/g12-staging-function-deployment\.json/,
+  );
+  assert.match(inventory, /--environment staging --project-ref "\$STAGING_SUPABASE_PROJECT_REF"/);
+  assert.match(
+    backendPost,
+    /functions: edgeRequired \? "candidate-receipt-bound" : "live-inventory-only-not-required"/,
+  );
+  assert.match(backendPost, /releaseProfile: process\.env\.RELEASE_PROFILE/);
+  assert.match(evidence, /backend\.releaseProfile !== process\.env\.RELEASE_PROFILE/);
+  assert.match(evidence, /backend\.checks\.edgeRequired !== edgeRequired/);
 });
 
 test("staging watchdog compensates cancelled, timed-out and ambiguous deploys without external overwrite", async () => {
@@ -711,59 +1023,141 @@ test("staging watchdog compensates cancelled, timed-out and ambiguous deploys wi
   assert.match(watchdog, /github\.event\.workflow_run\.conclusion == 'failure'/);
   assert.match(watchdog, /github\.event\.workflow_run\.conclusion == 'timed_out'/);
   assert.match(watchdog, /github\.event\.workflow_run\.path == '\.github\/workflows\/deploy-staging\.yml'/);
-  assert.match(watchdog, /concurrency:\s+group: staging\s+cancel-in-progress: false/);
-  assert.match(watchdog, /staging-deploy-state-\$\{\{ github\.event\.workflow_run\.id \}\}/);
-  assert.match(watchdog, /staging-recovery-\$\{\{ github\.event\.workflow_run\.id \}\}/);
+  assert.match(
+    watchdog,
+    /concurrency:\s+group: staging-recovery-\$\{\{ github\.event\.workflow_run\.id \}\}-\$\{\{ github\.event\.workflow_run\.run_attempt \}\}\s+cancel-in-progress: false/,
+  );
+  assert.match(watchdog, /Recover HMAC staging state independently of artifacts/);
+  assert.match(watchdog, /recovery-state-store\.mjs get\s+--allow-missing\s+--kind staging-deploy/);
+  assert.match(watchdog, /\.\.\/state-variable\/staging-deploy-state\.json/);
+  assert.doesNotMatch(watchdog, /id: artifact_state|Fall back to the run state artifact/);
+  assert.match(watchdog, /artifact-ids: \$\{\{ steps\.watchdog_state\.outputs\.recovery_artifact_id \}\}/);
+  assert.match(watchdog, /verify-staging-deploy-recovery-artifact\.mjs/);
   assert.match(watchdog, /staging-pages-state\.mjs compensate/);
   assert.match(watchdog, /staging-pages-state\.mjs assert-original/);
-  for (const [source, prefix] of [
-    [workflow, "finalizer"],
-    [watchdog, "watchdog"],
-  ]) {
-    const decision = source.indexOf(`id: ${prefix}_decision`);
-    const checkout = source.indexOf(`id: ${prefix}_backend_checkout`, decision);
-    const database = source.indexOf(`id: ${prefix}_recovery_database`, checkout);
-    const configuration = source.indexOf(`id: ${prefix}_recovery_configuration`, database);
-    const functions = source.indexOf(`id: ${prefix}_recovery_functions`, configuration);
-    const pages = source.indexOf("staging-pages-state.mjs compensate", functions);
-    assert.ok(decision >= 0 && decision < checkout);
-    assert.ok(checkout < database && database < configuration && configuration < functions);
-    assert.ok(functions < pages, `${prefix} must converge the forward backend before Pages recovery`);
-    const recovery = source.slice(checkout, pages);
-    assert.match(
-      recovery,
-      /ref: \$\{\{ steps\.(?:finalizer|watchdog)_state\.outputs\.candidate_release \}\}/,
-    );
-    assert.match(recovery, /version: 2\.116\.0/);
-    assert.match(recovery, /supabase db push --linked --include-all --dry-run/);
-    assert.match(recovery, /configure-staging-ai-provider-secrets\.mjs/);
-    assert.match(recovery, /--source \. --rollback-source \./);
-    assert.ok((recovery.match(/continue-on-error: true/g) ?? []).length >= 5);
-    assert.match(source, new RegExp(`steps\\.${prefix}_recovery_functions\\.outcome == 'success'`));
-    for (const suffix of ["compensation", "compensation_retry"]) {
-      const start = source.indexOf(`id: ${prefix}_${suffix}`, functions);
-      const end = source.indexOf("\n      - name:", start);
-      assert.ok(start >= 0 && end > start);
-      assert.match(
-        source.slice(start, end),
-        new RegExp(`steps\\.${prefix}_recovery_functions\\.outcome == 'success'`),
-      );
-    }
+  const watchdogDecision = watchdog.indexOf("id: watchdog_decision");
+  const watchdogPackage = watchdog.indexOf("id: watchdog_release_source", watchdogDecision);
+  const watchdogDatabase = watchdog.indexOf("id: watchdog_recovery_database", watchdogPackage);
+  const watchdogFunctions = watchdog.indexOf("id: watchdog_recovery_functions", watchdogDatabase);
+  const watchdogAggregate = watchdog.indexOf("id: watchdog_backend_recovery", watchdogFunctions);
+  const watchdogPages = watchdog.indexOf("staging-pages-state.mjs compensate", watchdogAggregate);
+  assert.ok(watchdogDecision >= 0 && watchdogDecision < watchdogPackage);
+  assert.ok(
+    watchdogPackage < watchdogDatabase &&
+      watchdogDatabase < watchdogFunctions &&
+      watchdogFunctions < watchdogAggregate,
+  );
+  assert.ok(watchdogAggregate < watchdogPages);
+  const watchdogRecovery = watchdog.slice(watchdogPackage, watchdogPages);
+  assert.match(watchdogRecovery, /resolve-ci-staging-frontend-artifact\.mjs/);
+  assert.match(watchdogRecovery, /verify-staging-release-package\.mjs/);
+  assert.match(watchdogRecovery, /validateCiReleasePlan/);
+  assert.match(watchdogRecovery, /version: 2\.116\.0/);
+  assert.match(watchdogRecovery, /supabase db push --linked --include-all --dry-run/);
+  assert.match(watchdogRecovery, /g12-staging-watchdog-release-package\/database/);
+  assert.match(
+    watchdogRecovery,
+    /g12-staging-watchdog-release-package\/edge\/source\/scripts\/ev2\/phase12\/configure-staging-edge-public-secrets\.mjs/,
+  );
+  assert.match(
+    watchdogRecovery,
+    /g12-staging-watchdog-release-package\/edge\/source\/scripts\/ev2\/phase12\/configure-staging-ai-provider-secrets\.mjs/,
+  );
+  assert.match(
+    watchdogRecovery,
+    /working-directory: \$\{\{ steps\.watchdog_database_payload\.outputs\.project_directory \}\}[\s\S]*configure-staging-auth\.mjs/,
+  );
+  assert.doesNotMatch(watchdogRecovery, /supabase secrets set --project-ref/);
+  assert.match(watchdogRecovery, /--candidate-artifact "\$package\/edge"/);
+  assert.match(watchdogRecovery, /--baseline-artifact \.\.\/recovery\/edge-baseline/);
+  assert.match(
+    watchdogRecovery,
+    /--baseline-manifest-sha256 "\$\{\{ steps\.watchdog_state\.outputs\.edge_baseline_manifest_sha256 \}\}"/,
+  );
+  assert.doesNotMatch(watchdogRecovery, /--rollback-source/);
+  assert.doesNotMatch(
+    watchdogRecovery,
+    /candidate-recovery|watchdog_backend_checkout|--source \. --rollback-source \./,
+  );
+  for (const suffix of ["compensation", "compensation_retry"]) {
+    const start = watchdog.indexOf(`id: watchdog_${suffix}\n`, watchdogAggregate);
+    const end = watchdog.indexOf("\n      - name:", start);
+    assert.ok(start >= 0 && end > start);
+    assert.match(watchdog.slice(start, end), /steps\.watchdog_backend_recovery\.outcome == 'success'/);
   }
-  assert.match(workflow, /id: finalizer_terminal_owned/);
+
+  const finalizerDecision = workflow.indexOf("id: finalizer_decision");
+  const finalizerPackage = workflow.indexOf("id: finalizer_release_source", finalizerDecision);
+  const finalizerDatabase = workflow.indexOf("id: finalizer_recovery_database", finalizerPackage);
+  const finalizerFunctions = workflow.indexOf("id: finalizer_recovery_functions", finalizerDatabase);
+  const finalizerAggregate = workflow.indexOf("id: finalizer_backend_recovery", finalizerFunctions);
+  const finalizerPages = workflow.indexOf("staging-pages-state.mjs compensate", finalizerAggregate);
+  assert.ok(finalizerDecision >= 0 && finalizerDecision < finalizerPackage);
+  assert.ok(
+    finalizerPackage < finalizerDatabase &&
+      finalizerDatabase < finalizerFunctions &&
+      finalizerFunctions < finalizerAggregate,
+  );
+  assert.ok(finalizerAggregate < finalizerPages);
+  const finalizerRecovery = workflow.slice(finalizerPackage, finalizerPages);
+  assert.match(finalizerRecovery, /resolve-ci-staging-frontend-artifact\.mjs/);
+  assert.match(finalizerRecovery, /verify-staging-release-package\.mjs/);
+  assert.match(finalizerRecovery, /version: 2\.116\.0/);
+  assert.match(finalizerRecovery, /supabase db push --linked --include-all --dry-run/);
+  assert.match(finalizerRecovery, /g12-staging-finalizer-release-package\/database/);
+  assert.match(
+    finalizerRecovery,
+    /g12-staging-finalizer-release-package\/edge\/source\/scripts\/ev2\/phase12\/configure-staging-edge-public-secrets\.mjs/,
+  );
+  assert.match(
+    finalizerRecovery,
+    /g12-staging-finalizer-release-package\/edge\/source\/scripts\/ev2\/phase12\/configure-staging-ai-provider-secrets\.mjs/,
+  );
+  assert.match(
+    finalizerRecovery,
+    /working-directory: \$\{\{ steps\.finalizer_database_payload\.outputs\.project_directory \}\}[\s\S]*configure-staging-auth\.mjs/,
+  );
+  assert.doesNotMatch(finalizerRecovery, /supabase secrets set --project-ref/);
+  assert.match(finalizerRecovery, /--candidate-artifact "\$package\/edge"/);
+  assert.match(finalizerRecovery, /--baseline-artifact \.\.\/recovery\/edge-baseline/);
+  assert.match(
+    finalizerRecovery,
+    /--baseline-manifest-sha256 "\$\{\{ steps\.finalizer_state\.outputs\.edge_baseline_manifest_sha256 \}\}"/,
+  );
+  assert.doesNotMatch(finalizerRecovery, /--rollback-source/);
+  assert.doesNotMatch(finalizerRecovery, /candidate-recovery|--source \. --rollback-source \./);
+  for (const suffix of ["compensation", "compensation_retry"]) {
+    const start = workflow.indexOf(`id: finalizer_${suffix}\n`, finalizerAggregate);
+    const end = workflow.indexOf("\n      - name:", start);
+    assert.ok(start >= 0 && end > start);
+    assert.match(workflow.slice(start, end), /steps\.finalizer_backend_recovery\.outcome == 'success'/);
+  }
+  assert.match(workflow, /id: finalizer_terminal_bridge/);
   assert.match(workflow, /id: finalizer_terminal_original/);
   const finalizer = workflowJob(workflow, "finalize");
   assert.match(finalizer, /recovery-state-store\.mjs get\s+--allow-missing\s+--kind staging-deploy/);
   assert.match(finalizer, /id: pre_mutation_ready/);
+  assert.match(finalizer, /id: pre_mutation_evidence/);
+  assert.match(finalizer, /id: pre_mutation_evidence_upload/);
+  assert.match(finalizer, /id: pre_mutation_evidence_identity/);
   assert.match(finalizer, /id: clear_pre_mutation_recovery_state/);
   assert.match(finalizer, /id: pre_mutation_finalize/);
   const preMutationReady = finalizer.indexOf("id: pre_mutation_ready");
+  const preMutationEvidence = finalizer.indexOf("id: pre_mutation_evidence", preMutationReady);
+  const preMutationUpload = finalizer.indexOf("id: pre_mutation_evidence_upload", preMutationEvidence);
+  const preMutationIdentity = finalizer.indexOf("id: pre_mutation_evidence_identity", preMutationUpload);
   const preMutationClear = finalizer.indexOf("id: clear_pre_mutation_recovery_state");
   const preMutationTerminal = finalizer.indexOf("id: pre_mutation_finalize");
-  assert.ok(preMutationReady < preMutationClear && preMutationClear < preMutationTerminal);
+  assert.ok(
+    preMutationReady < preMutationEvidence &&
+      preMutationEvidence < preMutationUpload &&
+      preMutationUpload < preMutationIdentity &&
+      preMutationIdentity < preMutationClear &&
+      preMutationClear < preMutationTerminal,
+  );
   assert.match(
     finalizer.slice(preMutationClear, preMutationTerminal),
-    /steps\.pre_mutation_ready\.outcome == 'success'/,
+    /steps\.pre_mutation_ready\.outcome == 'success'[\s\S]*steps\.pre_mutation_evidence\.outcome == 'success'[\s\S]*steps\.pre_mutation_evidence_upload\.outcome == 'success'[\s\S]*steps\.pre_mutation_evidence_identity\.outcome == 'success'/,
   );
   assert.match(
     finalizer,
@@ -803,7 +1197,7 @@ test("staging watchdog compensates cancelled, timed-out and ambiguous deploys wi
   );
   assert.match(
     finalizer,
-    /needs\.deploy\.result != 'success'[\s\S]*steps\.finalizer_recovery_functions\.outcome == 'success'[\s\S]*steps\.finalizer_terminal_original\.outcome == 'success'[\s\S]*steps\.clear_recovery_state\.outcome != 'success'/,
+    /steps\.dag_outcome\.outputs\.succeeded != 'true'[\s\S]*steps\.finalizer_backend_recovery\.outcome == 'success'[\s\S]*steps\.finalizer_terminal_original\.outcome == 'success'[\s\S]*steps\.clear_recovery_state\.outcome != 'success'/,
   );
   assert.match(watchdog, /id: watchdog_terminal_canonical/);
   const watchdogClear = watchdog.slice(
@@ -811,11 +1205,7 @@ test("staging watchdog compensates cancelled, timed-out and ambiguous deploys wi
     watchdog.indexOf("- name: Fail closed", watchdog.indexOf("id: clear_recovery_state")),
   );
   for (const required of [
-    "watchdog_backend_checkout",
-    "watchdog_supabase_cli",
-    "watchdog_recovery_database",
-    "watchdog_recovery_configuration",
-    "watchdog_recovery_functions",
+    "watchdog_backend_recovery",
     "watchdog_real_browser_rendezvous_cleanup",
     "watchdog_terminal_canonical",
   ])
@@ -888,6 +1278,9 @@ test("the staging watchdog distinguishes unstarted, pre-mutation and recovery-re
   assert.match(compensate, /id: watchdog_real_browser_rendezvous_cleanup/);
   assert.match(compensate, /clear-challenge[\s\S]*real-browser-attestation-store\.mjs clear/);
   assert.match(compensate, /id: pre_mutation_ready/);
+  assert.match(compensate, /id: pre_mutation_evidence/);
+  assert.match(compensate, /id: pre_mutation_evidence_upload/);
+  assert.match(compensate, /id: pre_mutation_evidence_identity/);
   assert.match(compensate, /id: clear_pre_mutation_recovery_state/);
   assert.match(compensate, /id: pre_mutation_finalize/);
   assert.match(
@@ -895,11 +1288,17 @@ test("the staging watchdog distinguishes unstarted, pre-mutation and recovery-re
     /id: watchdog_decision[\s\S]*needs\.classify-parent-run\.outputs\.mutation_mode != 'pre-mutation'/,
   );
   const watchdogPreReady = compensate.indexOf("id: pre_mutation_ready");
+  const watchdogPreEvidence = compensate.indexOf("id: pre_mutation_evidence", watchdogPreReady);
+  const watchdogPreUpload = compensate.indexOf("id: pre_mutation_evidence_upload", watchdogPreEvidence);
+  const watchdogPreIdentity = compensate.indexOf("id: pre_mutation_evidence_identity", watchdogPreUpload);
   const watchdogPreClear = compensate.indexOf("id: clear_pre_mutation_recovery_state");
   const watchdogPreTerminal = compensate.indexOf("id: pre_mutation_finalize");
   const watchdogDecision = compensate.indexOf("id: watchdog_decision");
   assert.ok(
-    watchdogPreReady < watchdogPreClear &&
+    watchdogPreReady < watchdogPreEvidence &&
+      watchdogPreEvidence < watchdogPreUpload &&
+      watchdogPreUpload < watchdogPreIdentity &&
+      watchdogPreIdentity < watchdogPreClear &&
       watchdogPreClear < watchdogPreTerminal &&
       watchdogPreTerminal < watchdogDecision,
   );
@@ -909,7 +1308,7 @@ test("the staging watchdog distinguishes unstarted, pre-mutation and recovery-re
   );
   assert.match(
     compensate.slice(watchdogPreClear, watchdogPreTerminal),
-    /steps\.pre_mutation_ready\.outcome == 'success'/,
+    /steps\.pre_mutation_ready\.outcome == 'success'[\s\S]*steps\.pre_mutation_evidence\.outcome == 'success'[\s\S]*steps\.pre_mutation_evidence_upload\.outcome == 'success'[\s\S]*steps\.pre_mutation_evidence_identity\.outcome == 'success'/,
   );
   assert.match(compensate, /test "\$VARIABLE_STATE_PRESENT" = false/);
   assert.match(
@@ -1032,12 +1431,40 @@ test("staging deploy and rollback serialize mutations against the same environme
     /ROLLBACK-STAGING:\$FRONTEND_REF:\$BACKEND_REF:\$SOURCE_RUN_ID:\$SOURCE_RUN_ATTEMPT:\$CANDIDATE_ARTIFACT_ID/,
   );
   assert.equal((rollback.match(/\^\[a-f0-9\]\{40\}\$/g) ?? []).length >= 2, true);
-  const sealedTarget = rollback.indexOf("Verify the downloaded target archive and seal before any mutation");
+  const sealedTarget = rollback.indexOf(
+    "Materialize the exact target package with bounded legacy read-only compatibility",
+  );
   const modelGuard = rollback.indexOf("Prove the sealed rollback frontend accepts the retained AI model");
-  const backendMutation = rollback.indexOf("Converge the retained staging schema and Edge Functions");
-  assert.ok(sealedTarget >= 0 && sealedTarget < modelGuard && modelGuard < backendMutation);
+  const backendVerification = rollback.indexOf("Verify the retained staging backend without mutation");
+  assert.ok(sealedTarget >= 0 && sealedTarget < modelGuard && modelGuard < backendVerification);
   assert.match(rollback, /verify-ai-model-rollback-compatibility\.mjs/);
-  assert.match(rollback, /--source \.\.\/frontend --dist \.\.\/target-artifact\/dist/);
+  assert.match(
+    rollback,
+    /--source \.\.\/frontend --dist "\$\{\{ steps\.target_package\.outputs\.dist_path \}\}"/,
+  );
+  const backendVerificationStep = rollback.slice(
+    backendVerification,
+    rollback.indexOf("Install exact locked Wrangler after durable pre-state", backendVerification),
+  );
+  assert.match(
+    backendVerificationStep,
+    /supabase functions list --project-ref "\$STAGING_SUPABASE_PROJECT_REF" --output json/,
+  );
+  assert.match(
+    backendVerificationStep,
+    /verify-production-functions\.mjs[\s\S]*--environment staging --project-ref "\$STAGING_SUPABASE_PROJECT_REF"/,
+  );
+  assert.match(backendVerificationStep, /verify-staging-database\.mjs --source \./);
+  for (const forbiddenMutation of [
+    /supabase link/,
+    /supabase db push/,
+    /configure-staging-ai-provider-secrets\.mjs/,
+    /deploy-staging-functions\.mjs/,
+    /--receipt/,
+  ])
+    assert.doesNotMatch(backendVerificationStep, forbiddenMutation);
+  assert.doesNotMatch(rollback, /g12-staging-rollback-function-deployment\.json/);
+  assert.match(rollback, /g12-staging-rollback-functions-verification\.json/);
 });
 
 test("rollout probe waits for a stable boundary before starting its strict measurement window", async () => {
@@ -2449,7 +2876,14 @@ test("release workflows and reduced canary are immutable, staged and production 
     "the exact deployed frontend must accept the forward AI response before rollback state is armed",
   );
   assert.match(deployStaging, /supabase db push --linked --include-all --yes/);
-  assert.match(deployStaging, /deploy-staging-functions\.mjs[\s\S]*--rollback-source \.\.\/baseline/);
+  assert.match(
+    deployStaging,
+    /deploy-staging-functions\.mjs[\s\S]*--baseline-artifact "\$RUNNER_TEMP\/g12-staging-recovery-pre-mutation\/edge-baseline"/,
+  );
+  assert.match(
+    deployStaging,
+    /--baseline-manifest-sha256 "\$\{\{ steps\.staging_state\.outputs\.edge_baseline_manifest_sha256 \}\}"/,
+  );
   assert.match(deployStaging, /g12-staging-function-deployment\.json/);
   assert.match(deployStaging, /--environment staging --project-ref/);
   assert.match(deployStaging, /verify-staging-database\.mjs/);
@@ -2459,9 +2893,10 @@ test("release workflows and reduced canary are immutable, staged and production 
   // script que de fato executa mantem a regra e remove a causa.
   assert.match(deployStaging, /node scripts\/ev2\/phase17\/staging-canary\.mjs \| tee/);
   assert.doesNotMatch(deployStaging, /npm run [a-z0-9:.-]+ \| tee/);
-  assert.match(deployStaging, /--branch ev2-g17-canary/);
-  assert.match(deployStaging, /Build the approved rollback frontend against the candidate backend/);
-  assert.match(deployStaging, /working-directory: baseline/);
+  assert.doesNotMatch(deployStaging, /--branch ev2-g17-canary/);
+  assert.doesNotMatch(deployStaging, /npm run build:staging/);
+  assert.match(deployStaging, /Run locked install, audit and source-only compatibility gates/);
+  assert.match(deployStaging, /--repository-root \.\.\/baseline/);
   assert.match(deployStaging, /--branch ev2-g12-rollback-compat/);
   assert.match(deployStaging, /--commit-hash \$\{\{ inputs\.rollback_ref \}\}/);
   assert.match(deployStaging, /g12-staging-rollback-compatibility\.json/);
@@ -2472,12 +2907,20 @@ test("release workflows and reduced canary are immutable, staged and production 
   );
   assert.ok(
     deployStaging.indexOf("--branch ev2-g12-rollback-compat") <
-      deployStaging.indexOf("--branch ev2-g17-canary"),
-    "rollback compatibility must pass before the candidate deployment",
+      deployStaging.indexOf("Prove the exact bridge deployment remains canonical after backend mutation"),
+    "rollback compatibility must pass before retaining the exact bridge deployment",
   );
-  assert.match(stagingFunctionDeploy, /G12_STAGING_FUNCTION_INVENTORY_MISMATCH/);
-  assert.match(stagingFunctionDeploy, /deployWithVerifiedCompensation/);
-  assert.match(stagingFunctionDeploy, /STAGING_CANDIDATE_RECONVERGENCE_OR_VERIFICATION_FAILED/);
+  assert.match(stagingFunctionDeploy, /--candidate-artifact/);
+  assert.match(stagingFunctionDeploy, /--artifact-manifest-sha256/);
+  assert.match(stagingFunctionDeploy, /--baseline-artifact/);
+  assert.match(stagingFunctionDeploy, /--baseline-manifest-sha256/);
+  assert.doesNotMatch(stagingFunctionDeploy, /--rollback-source|supabase functions deploy/);
+  assert.match(stagingFunctionDeploy, /loadAndVerifyAllEdgeRuntimeArtifact/);
+  assert.match(stagingFunctionDeploy, /loadAndVerifyStagingEdgeBaselineArtifact/);
+  assert.match(stagingFunctionDeploy, /deployEdgeArtifactWithVerifiedCompensation/);
+  assert.match(stagingFunctionDeploy, /method: "PATCH"/);
+  assert.match(stagingFunctionDeploy, /application\/vnd\.denoland\.eszip/);
+  assert.match(stagingFunctionDeploy, /evaluateExactBaselineRestoration/);
   assert.match(stagingFunctionDeploy, /g12\.staging\.functions\.deployment_verified/);
   assert.match(stagingDatabaseVerify, /migration_history_exact/);
   assert.match(stagingDatabaseVerify, /sourceMigrationManifest\(sourceRoot\)/);

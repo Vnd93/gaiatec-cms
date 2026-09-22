@@ -1,0 +1,157 @@
+{
+  "schemaVersion": 1,
+  "defaultProfile": "full-release",
+  "ambiguityPolicy": "full-release",
+  "profiles": {
+    "frontend-only": {
+      "jobs": ["quality", "package-staging", "browser"],
+      "gates": [
+        "preflight",
+        "supply-chain",
+        "frontend-static",
+        "frontend-unit",
+        "browser-headless",
+        "artifact-seal",
+        "immutable-provenance",
+        "recovery-ready",
+        "rollback-compatibility",
+        "security-regression",
+        "pages-candidate",
+        "postdeploy-http",
+        "real-chrome-authenticated",
+        "audit-terminal",
+        "cleanup-zero"
+      ]
+    },
+    "edge-only": {
+      "jobs": ["quality", "package-staging", "hotfix-bundle-smoke", "browser"],
+      "gates": [
+        "preflight",
+        "supply-chain",
+        "frontend-static",
+        "frontend-unit",
+        "browser-headless",
+        "edge-contract",
+        "edge-runtime-smoke",
+        "artifact-seal",
+        "immutable-provenance",
+        "recovery-ready",
+        "rollback-compatibility",
+        "security-regression",
+        "pages-candidate",
+        "edge-mutation",
+        "postdeploy-http",
+        "postdeploy-edge",
+        "real-chrome-authenticated",
+        "audit-terminal",
+        "cleanup-zero"
+      ]
+    },
+    "database-auth": {
+      "jobs": ["quality", "package-staging", "database", "browser"],
+      "gates": [
+        "preflight",
+        "supply-chain",
+        "frontend-static",
+        "frontend-unit",
+        "browser-headless",
+        "migration-contract",
+        "rls",
+        "mfa-aal2",
+        "artifact-seal",
+        "immutable-provenance",
+        "recovery-ready",
+        "rollback-compatibility",
+        "security-regression",
+        "pages-candidate",
+        "database-auth-mutation",
+        "postdeploy-http",
+        "postdeploy-database-auth",
+        "real-chrome-authenticated",
+        "audit-terminal",
+        "cleanup-zero"
+      ]
+    },
+    "full-release": {
+      "jobs": ["quality", "package-staging", "hotfix-bundle-smoke", "database", "browser"],
+      "gates": [
+        "preflight",
+        "supply-chain",
+        "frontend-static",
+        "frontend-unit",
+        "browser-headless",
+        "edge-contract",
+        "edge-runtime-smoke",
+        "migration-contract",
+        "rls",
+        "mfa-aal2",
+        "artifact-seal",
+        "immutable-provenance",
+        "recovery-ready",
+        "rollback-compatibility",
+        "security-regression",
+        "pages-candidate",
+        "edge-mutation",
+        "database-auth-mutation",
+        "serial-exclusive-mutation",
+        "postdeploy-http",
+        "postdeploy-edge",
+        "postdeploy-database-auth",
+        "real-chrome-authenticated",
+        "audit-terminal",
+        "cleanup-zero"
+      ]
+    }
+  },
+  "classification": {
+    "forceFullRelease": {
+      "exact": [
+        ".env.example",
+        ".nvmrc",
+        "deno.lock",
+        "eslint.config.js",
+        "package-lock.json",
+        "package.json",
+        "playwright.config.ts",
+        "tsconfig.json",
+        "tsconfig.strict.json",
+        "vite.config.ts",
+        "vitest.config.ts",
+        "wrangler.jsonc"
+      ],
+      "prefixes": [
+        ".github/",
+        "cloudflare/",
+        "docs/",
+        "scripts/qa/",
+        "scripts/ev2/",
+        "scripts/phase1/",
+        "scripts/phase2/",
+        "scripts/phase3/",
+        "scripts/phase4/",
+        "scripts/phase5/",
+        "scripts/phase6/",
+        "scripts/phase7/",
+        "scripts/phase8/",
+        "scripts/phase9/",
+        "scripts/phase10/",
+        "scripts/phase11/",
+        "tests/"
+      ]
+    },
+    "byProfile": {
+      "frontend-only": {
+        "exact": ["index.html", "postcss.config.mjs", "vercel.json"],
+        "prefixes": ["public/", "src/styles/"]
+      },
+      "edge-only": {
+        "exact": [],
+        "prefixes": ["supabase/functions/"]
+      },
+      "database-auth": {
+        "exact": [],
+        "prefixes": ["supabase/migrations/", "supabase/seed/", "supabase/tests/"]
+      }
+    }
+  }
+}

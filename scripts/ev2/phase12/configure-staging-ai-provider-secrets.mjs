@@ -7,6 +7,7 @@ import {
   evaluateStagingAiProviderSecretTransition,
   STAGING_AI_EXTERNAL_PROVIDER_ENABLED,
   STAGING_OPENROUTER_MODEL,
+  validateStagingAiProviderSecretInventory,
 } from "./staging-ai-provider-secrets-lib.mjs";
 
 const STAGING_PROJECT_REF = "glcqsosxwgmlhzgcsnzv";
@@ -35,6 +36,11 @@ const temporaryDirectory = await mkdtemp(join(tmpdir(), "g12-staging-ai-provider
 const envFile = join(temporaryDirectory, "provider.env");
 try {
   const before = listSecrets();
+  const beforeValidation = validateStagingAiProviderSecretInventory(before);
+  if (!beforeValidation.valid)
+    throw new Error(
+      `G12_STAGING_AI_PROVIDER_SECRET_INVENTORY_REFUSED:${beforeValidation.violations.join(",")}`,
+    );
   await writeFile(
     envFile,
     `OPENROUTER_MODEL=${JSON.stringify(STAGING_OPENROUTER_MODEL)}\nCMS_AI_EXTERNAL_PROVIDER_ENABLED=${JSON.stringify(STAGING_AI_EXTERNAL_PROVIDER_ENABLED)}\n`,
@@ -51,6 +57,8 @@ try {
       modelDigest: result.modelDigest,
       switchDigest: result.switchDigest,
       apiKeyPreserved: result.apiKeyPreserved,
+      unmanagedSecretCount: result.unmanagedSecretCount,
+      unmanagedSecretsPreserved: result.unmanagedSecretsPreserved,
       valuesDisclosed: 0,
     }),
   );

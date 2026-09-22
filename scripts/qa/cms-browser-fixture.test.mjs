@@ -31,6 +31,10 @@ const leaseWindowMigration = readFileSync(
   new URL("../../supabase/migrations/0091_cms_qa_actor_lease_window.sql", import.meta.url),
   "utf8",
 );
+const masterScopeMigration = readFileSync(
+  new URL("../../supabase/migrations/0068_cms_master_authoritative_read_scope.sql", import.meta.url),
+  "utf8",
+);
 const stagingWorkflow = readFileSync(
   new URL("../../.github/workflows/deploy-staging.yml", import.meta.url),
   "utf8",
@@ -187,6 +191,7 @@ test("the PIM prerequisite plan is complete, actor-namespaced and deterministic"
   const first = buildPimPrerequisitePlan(runTag, actorOne, sha, plannedIds);
   const second = buildPimPrerequisitePlan(runTag, actorTwo, sha, plannedIds);
 
+  assert.equal(first.runTag, runTag);
   assert.equal(first.dimensions.length, 5);
   assert.deepEqual(
     first.dimensions.map(({ listKey }) => listKey),
@@ -426,6 +431,20 @@ test("actor-only fixture state is bound to environment, project, SHA and synthet
       sha,
     ).pimPrerequisites.status,
     "ready",
+  );
+  assert.throws(
+    () =>
+      validateFixtureState(
+        {
+          ...state,
+          pimCatalogEnabled: true,
+          pimPrerequisites: { ...readyPim, runTag: "QA-CMS-FINAL-20260907-bbbbbbbb" },
+        },
+        "staging",
+        state.projectRef,
+        sha,
+      ),
+    /QA_CMS_FIXTURE_STATE_REFUSED/,
   );
   assert.throws(
     () =>
@@ -1070,9 +1089,13 @@ test("the executable stays fail-closed and leaves no active synthetic surface", 
   assert.match(source, /const PRODUCT_CONTROLLED_DIMENSIONS = Object\.freeze/);
   assert.match(source, /action: "upsert_option"/);
   assert.match(source, /action: "create_entity"/);
+  assert.match(source, /sourceRef: plan\.runTag/);
+  assert.match(masterScopeMigration, /p_source_ref = lease\.run_tag/);
   assert.match(source, /insert into public\.cms_pim_attribute_definitions/);
   assert.match(source, /insert into public\.cms_pim_attribute_sets/);
   assert.match(source, /action: "list_catalog"/);
+  assert.match(source, /\^CMS_\[A-Z0-9_\]\+\$/);
+  assert.match(source, /`\$\{errorCode\}:\$\{response\.status\}:\$\{responseCode\}`/);
   assert.match(source, /actorNamespaced: true/);
   assert.match(source, /editorialEntitiesCreatedByFixture: 0/);
   const setupSource = source.slice(

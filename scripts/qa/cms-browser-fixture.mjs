@@ -264,7 +264,9 @@ async function invokeAuthenticatedCmsFunction(token, functionName, body, errorCo
   });
   const payload = await response.json().catch(() => null);
   if (response.status !== 200 || !payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new Error(errorCode);
+    const responseCode =
+      typeof payload?.code === "string" && /^CMS_[A-Z0-9_]+$/.test(payload.code) ? payload.code : "unknown";
+    throw new Error(`${errorCode}:${response.status}:${responseCode}`);
   }
   return payload;
 }
@@ -298,6 +300,7 @@ export function buildPimPrerequisitePlan(
   const slugPrefix = `${runTag.toLowerCase()}-${namespace}`;
   return {
     status: "planned",
+    runTag,
     namespace,
     optionIds: [...plannedIds.optionIds],
     attributeDefinitionId: plannedIds.attributeDefinitionId,
@@ -388,7 +391,7 @@ async function provisionPimPrerequisites(actor, plan) {
         name: dimension.label,
         description: `Entidade sintética e temporária ${plan.namespace}`,
         sourceType: "manual",
-        sourceRef: `${plan.namespace}:${dimension.suffix}`,
+        sourceRef: plan.runTag,
       },
       "QA_CMS_FIXTURE_PIM_MASTER_ENTITY_FAILED",
       { idempotencyKey: envelope.commandId },
@@ -1472,6 +1475,7 @@ export function validateFixtureState(value, environment, projectRef, candidateSh
       typeof pim === "object" &&
       !Array.isArray(pim) &&
       ["planned", "ready"].includes(pim.status) &&
+      pim.runTag === value.runTag &&
       /^[0-9a-f]{12}$/.test(pim.namespace ?? "") &&
       Array.isArray(pim.optionIds) &&
       pim.optionIds.length === PRODUCT_CONTROLLED_DIMENSIONS.length &&

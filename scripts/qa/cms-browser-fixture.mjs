@@ -1062,7 +1062,7 @@ async function assertActorLease(actorId, runTag, expectedStatus) {
   return lease;
 }
 
-// O encerramento de lease dispara doze limpezas terminais num unico statement, e juntas elas varrem
+// O encerramento de lease dispara as limpezas terminais num unico statement, e juntas elas varrem
 // mais de trinta tabelas do run. Pelo PostgREST isso corre sob o `statement_timeout` de oito segundos
 // herdado do `authenticator`, que nunca foi orcamento para essa varredura: o deploy 34528923953
 // reprovou aqui, e o canario G11 reproduziu a mesma causa tres vezes, SQLSTATE 57014.
@@ -2205,6 +2205,9 @@ async function inspectResidue(state, itemIds) {
   const zeroCount = Promise.resolve({ error: null, count: 0 });
   const [
     activeContent,
+    activeBlogAuthors,
+    activeBlogCategories,
+    activeBlogTags,
     activeProfiles,
     overrides,
     legacyRoles,
@@ -2229,6 +2232,27 @@ async function inspectResidue(state, itemIds) {
         .in("created_by", actorIds)
         .neq("workflow_status", "archived"),
       "QA_CMS_FIXTURE_CONTENT_RESIDUE_UNAVAILABLE",
+    ),
+    exactCount(
+      context.admin
+        .from("cms_blog_authors")
+        .select("id", { count: "exact", head: true })
+        .in("created_by", actorIds),
+      "QA_CMS_FIXTURE_BLOG_AUTHOR_RESIDUE_UNAVAILABLE",
+    ),
+    exactCount(
+      context.admin
+        .from("cms_blog_categories")
+        .select("id", { count: "exact", head: true })
+        .in("created_by", actorIds),
+      "QA_CMS_FIXTURE_BLOG_CATEGORY_RESIDUE_UNAVAILABLE",
+    ),
+    exactCount(
+      context.admin
+        .from("cms_blog_tags")
+        .select("id", { count: "exact", head: true })
+        .in("created_by", actorIds),
+      "QA_CMS_FIXTURE_BLOG_TAG_RESIDUE_UNAVAILABLE",
     ),
     exactCount(
       context.admin
@@ -2446,6 +2470,9 @@ async function inspectResidue(state, itemIds) {
   }
   const activeResidue =
     activeContent +
+    activeBlogAuthors +
+    activeBlogCategories +
+    activeBlogTags +
     activeProfiles +
     overrides +
     legacyRoles +
@@ -2469,6 +2496,9 @@ async function inspectResidue(state, itemIds) {
   return {
     activeResidue,
     activeContent,
+    activeBlogAuthors,
+    activeBlogCategories,
+    activeBlogTags,
     activeProfiles,
     activeCredentials,
     activeFeatureOverrides: overrides,
@@ -3097,6 +3127,9 @@ async function cleanupState(state) {
     return {
       activeResidue: 0,
       activeContent: 0,
+      activeBlogAuthors: 0,
+      activeBlogCategories: 0,
+      activeBlogTags: 0,
       activeProfiles: 0,
       activeCredentials: 0,
       activeFeatureOverrides: 0,
@@ -3314,6 +3347,9 @@ async function cleanupState(state) {
       if (banned.error) throw new Error("credentials");
     }
   });
+  for (const actorId of actorIds) {
+    await runStep("QA_CMS_FIXTURE_LEASE_COMPLETION_FAILED", () => completeActorLease(actorId, state.runTag));
+  }
   let residue;
   await runStep("QA_CMS_FIXTURE_RESIDUE_VERIFICATION_FAILED", async () => {
     residue = await inspectResidue(state, itemIds);
@@ -3326,7 +3362,6 @@ async function cleanupState(state) {
     (state.setupAudited && residue.setupAuditEvents < 1)
   )
     throw new Error("QA_CMS_FIXTURE_CLEANUP_INCOMPLETE");
-  for (const actorId of actorIds) await completeActorLease(actorId, state.runTag);
   return { ...residue, leaseStatus: "cleaned" };
 }
 

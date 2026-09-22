@@ -673,6 +673,21 @@ describe("matriz final de cobertura do CMS", () => {
     expect(source).not.toContain('page.getByLabel("Autor").fill("Equipe QA GAIATEC")');
   });
 
+  it("nomeia falhas editoriais sem persistir o corpo bruto da resposta", () => {
+    const source = readFileSync(e2eSpec, "utf8");
+    const start = source.indexOf("async function editorialResponseEvidence");
+    const end = source.indexOf("\nasync function", start + 1);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    const helper = source.slice(start, end);
+
+    expect(helper).toContain("CMS_EDITORIAL_RESPONSE_INVALID");
+    expect(helper).toContain("HTTP ${response.status()} (${backendCode})");
+    expect(helper).toContain("/^[A-Z][A-Z0-9_]{2,119}$/");
+    expect(helper).not.toMatch(/result\.(?:error|message|details|hint)/);
+    expect(helper).not.toMatch(/JSON\.stringify\(result\)/);
+  });
+
   it("acompanha os controles estruturados e os rótulos editoriais atuais do artigo", () => {
     const source = readFileSync(e2eSpec, "utf8");
     const createStart = source.indexOf("async function fillSyntheticPostForCreate");

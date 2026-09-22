@@ -16,6 +16,7 @@ import {
   CMS_PUBLIC_RELATION_LIMIT_0085_OWNER_ONLY_HELPERS,
   CMS_PROGRESSIVE_DRAFT_TERMINAL_CLEANUP_0104_OWNER_ONLY_FUNCTIONS,
   CMS_SESSION_LOGOUT_FAST_PATH_0105_OWNER_ONLY_FUNCTIONS,
+  CMS_BLOG_TAXONOMY_TERMINAL_CLEANUP_0106_OWNER_ONLY_FUNCTIONS,
   CMS_QA_ACTOR_RUNTIME_REPAIRS_0086_OWNER_ONLY_FUNCTIONS,
   CMS_RELEASE_STABILITY_FOLLOWUP_0101_OWNER_ONLY_FUNCTIONS,
   CMS_RUNTIME_INTEGRITY_REPAIRS_0087_OWNER_ONLY_FUNCTIONS,
@@ -26,6 +27,7 @@ import {
   CMS_MEDIA_UPLOAD_ABORT_0082_OWNER_ONLY_HELPERS,
   CMS_SESSION_REFRESH_REVOCATION_0083_RPCS,
   auditLogReadScaleSemanticSql,
+  blogTaxonomyTerminalCleanupSemanticSql,
   exactMigrationHistorySql,
   leadRetrySubphaseTimingSemanticSql,
   leadOriginBindingSemanticSql,
@@ -114,6 +116,7 @@ const scenarioCoverage = [
   "0103",
   "0104",
   "0105",
+  "0106",
 ];
 const accessToken = process.env.SUPABASE_ACCESS_TOKEN ?? "";
 const expectedSha = process.env.G12_MIGRATION_CANARY_EXPECTED_SHA ?? "";
@@ -777,6 +780,11 @@ async function preflightMigrations() {
     )},
     ${sessionLogoutFastPathSemanticSql("session_logout_fast_path_0105_semantics_exact")},
     ${ownerOnlyFunctionContractSql(
+      "blog_taxonomy_terminal_cleanup_0106_functions_locked",
+      CMS_BLOG_TAXONOMY_TERMINAL_CLEANUP_0106_OWNER_ONLY_FUNCTIONS,
+    )},
+    ${blogTaxonomyTerminalCleanupSemanticSql("blog_taxonomy_terminal_cleanup_0106_semantics_exact")},
+    ${ownerOnlyFunctionContractSql(
       "release_stability_followup_0101_functions_locked",
       CMS_RELEASE_STABILITY_FOLLOWUP_0101_OWNER_ONLY_FUNCTIONS,
     )},
@@ -1016,6 +1024,14 @@ async function preflightMigrations() {
   check(
     "session_logout_fast_path_0105_semantics_exact",
     row?.session_logout_fast_path_0105_semantics_exact === true,
+  );
+  check(
+    "blog_taxonomy_terminal_cleanup_0106_functions_locked",
+    row?.blog_taxonomy_terminal_cleanup_0106_functions_locked === true,
+  );
+  check(
+    "blog_taxonomy_terminal_cleanup_0106_semantics_exact",
+    row?.blog_taxonomy_terminal_cleanup_0106_semantics_exact === true,
   );
   check(
     "release_stability_followup_0101_functions_locked",

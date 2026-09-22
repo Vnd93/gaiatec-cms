@@ -722,7 +722,13 @@ async function editorialResponseEvidence(response: Response, action: string, exp
     typeof result.correlationId !== "string" ||
     !/^[0-9a-f-]{36}$/i.test(result.correlationId)
   ) {
-    throw new Error(`A ação editorial ${action} não foi confirmada atomicamente pelo backend.`);
+    const backendCode =
+      typeof result?.code === "string" && /^[A-Z][A-Z0-9_]{2,119}$/.test(result.code)
+        ? result.code
+        : "CMS_EDITORIAL_RESPONSE_INVALID";
+    throw new Error(
+      `A ação editorial ${action} não foi confirmada atomicamente pelo backend: HTTP ${response.status()} (${backendCode}).`,
+    );
   }
   return {
     itemId: result.itemId,

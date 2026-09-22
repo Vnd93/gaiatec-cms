@@ -1014,6 +1014,16 @@ test("the executable stays fail-closed and leaves no active synthetic surface", 
   assert.match(source, /QA_CMS_FIXTURE_DOCUMENT_BLOB_RESIDUE/);
   assert.match(source, /QA_CMS_FIXTURE_DOCUMENT_BLOB_VERIFICATION_FAILED/);
   assert.match(source, /activeDocuments/);
+  assert.match(source, /activeBlogAuthors/);
+  assert.match(source, /activeBlogCategories/);
+  assert.match(source, /activeBlogTags/);
+  assert.match(source, /QA_CMS_FIXTURE_BLOG_AUTHOR_RESIDUE_UNAVAILABLE/);
+  assert.match(source, /QA_CMS_FIXTURE_BLOG_CATEGORY_RESIDUE_UNAVAILABLE/);
+  assert.match(source, /QA_CMS_FIXTURE_BLOG_TAG_RESIDUE_UNAVAILABLE/);
+  assert.match(
+    source,
+    /activeContent \+\s*activeBlogAuthors \+\s*activeBlogCategories \+\s*activeBlogTags \+/,
+  );
   assert.match(source, /update public\.cms_content_items item set workflow_status='archived'/);
   assert.match(source, /update public\.cms_route_rules route set active=false/);
   assert.match(
@@ -1064,6 +1074,17 @@ test("the executable stays fail-closed and leaves no active synthetic surface", 
   assert.match(source, /credentialsInStateOrReport: false/);
   assert.match(source, /\["setup", "cleanup", "residue"\]\.includes\(mode\)/);
   assert.match(source, /state\.status !== "cleaned"/);
+  const terminalLeaseCompletion = source.indexOf(
+    'for (const actorId of actorIds) {\n    await runStep("QA_CMS_FIXTURE_LEASE_COMPLETION_FAILED"',
+  );
+  const terminalResidueInspection = source.indexOf(
+    "residue = await inspectResidue(state, itemIds)",
+    terminalLeaseCompletion,
+  );
+  assert.ok(
+    terminalLeaseCompletion >= 0 && terminalLeaseCompletion < terminalResidueInspection,
+    "all leases terminalize before the final zero-residue inspection",
+  );
   assert.match(
     source,
     /const activeLeases = leases\.filter\(\(lease\) => lease\.status !== "cleaned"\)\.length/,

@@ -9,6 +9,7 @@ import {
   CMS_PUBLIC_RELATION_LIMIT_0085_OWNER_ONLY_HELPERS,
   CMS_PROGRESSIVE_DRAFT_TERMINAL_CLEANUP_0104_OWNER_ONLY_FUNCTIONS,
   CMS_SESSION_LOGOUT_FAST_PATH_0105_OWNER_ONLY_FUNCTIONS,
+  CMS_BLOG_TAXONOMY_TERMINAL_CLEANUP_0106_OWNER_ONLY_FUNCTIONS,
   CMS_QA_ACTOR_RUNTIME_REPAIRS_0086_OWNER_ONLY_FUNCTIONS,
   CMS_RELEASE_STABILITY_FOLLOWUP_0101_OWNER_ONLY_FUNCTIONS,
   CMS_RUNTIME_INTEGRITY_REPAIRS_0087_CRB_PROSRC_SHA256,
@@ -21,6 +22,7 @@ import {
   CMS_SESSION_REFRESH_REVOCATION_0083_RPCS,
   G12_PINNED_MIGRATION_TAIL,
   auditLogReadScaleSemanticSql,
+  blogTaxonomyTerminalCleanupSemanticSql,
   exactMigrationHistorySql,
   leadRetrySubphaseTimingSemanticSql,
   leadOriginBindingSemanticSql,
@@ -97,9 +99,9 @@ test("the repository migration history is contiguous", () => {
   // digest dos bytes. E o que impede que alguem acrescente migration sem revisao: nao basta criar
   // o arquivo, e preciso declarar o conteudo dele aqui.
   assert.deepEqual(G12_PINNED_MIGRATION_TAIL.at(-1), {
-    version: "0105",
-    file: "0105_cms_session_logout_fast_path.sql",
-    sha256: "d926d3d158ca9f86d5d268607164258749bb8420c04ee90f858d75ce1f6e6c3a",
+    version: "0106",
+    file: "0106_cms_blog_taxonomy_terminal_cleanup.sql",
+    sha256: "ea74418d601472563e3a321bf4c7560a21322e92f7c5b01c9188d6edfeba3b1e",
   });
   assert.deepEqual(manifest.slice(-G12_PINNED_MIGRATION_TAIL.length), G12_PINNED_MIGRATION_TAIL);
   for (const migration of manifest.slice(-G12_PINNED_MIGRATION_TAIL.length)) {
@@ -893,6 +895,48 @@ test("0105 semantic preflight proves the logout-only short path and preserves fu
   assert.match(contract, /^coalesce\(/);
   assert.match(contract, /, false\) as session_logout_fast_path_0105_semantics_exact$/);
   assert.throws(() => sessionLogoutFastPathSemanticSql("Bad Alias"));
+});
+
+test("0106 semantic preflight proves exact terminal taxonomy cleanup without TTL shortcuts", () => {
+  const acl = ownerOnlyFunctionContractSql(
+    "blog_taxonomy_terminal_cleanup_0106_functions_locked",
+    CMS_BLOG_TAXONOMY_TERMINAL_CLEANUP_0106_OWNER_ONLY_FUNCTIONS,
+  );
+  const contract = blogTaxonomyTerminalCleanupSemanticSql(
+    "blog_taxonomy_terminal_cleanup_0106_semantics_exact",
+  );
+
+  for (const marker of [
+    "cms_cleanup_qa_blog_taxonomy_0106",
+    "cms_cleanup_terminal_qa_blog_taxonomy_0106",
+    'search_path=""',
+    "cms_qa_actor_marker_is_exact",
+    "peer.status=''active''",
+    "cms-qa-blog-taxonomy-group:",
+    "cms_qa_blog_taxonomy_scope_ambiguous",
+    "cms_qa_blog_taxonomy_reference_active",
+    "cms_qa_blog_taxonomy_reference_ambiguous",
+    "cms_blog_authors",
+    "cms_blog_categories",
+    "cms_blog_tags",
+    "cms_content_draft_snapshots",
+    "draft.updated_byasreference_actor_id",
+    "revision.created_byasreference_actor_id",
+    "snapshot.displaced_byasreference_actor_id",
+    "creator.actor_id=item.created_byandcreator.run_tag=p_run_tagandcreator.candidate_sha=p_candidate_shaandcreator.environment=p_environmentandupdater.run_tag=p_run_tagandupdater.candidate_sha=p_candidate_shaandupdater.environment=p_environmentandreference_actor.run_tag=p_run_tagandreference_actor.candidate_sha=p_candidate_shaandreference_actor.environment=p_environment",
+    "item.updated_at>=updater.created_atandreference.reference_atbetweenreference_actor.created_atandreference_actor.expires_atandprivate.cms_qa_actor_marker_is_exact(creator.actor_id,creator.run_tag,creator.candidate_sha,creator.environment)andprivate.cms_qa_actor_marker_is_exact(updater.actor_id,updater.run_tag,updater.candidate_sha,updater.environment)andprivate.cms_qa_actor_marker_is_exact(reference_actor.actor_id,reference_actor.run_tag,reference_actor.candidate_sha,reference_actor.environment)",
+    "zzy_cms_cleanup_qa_blog_taxonomy_0106",
+    "tgtype = 19",
+  ])
+    assert.ok(contract.includes(marker), marker);
+
+  assert.match(acl, /has_function_privilege\('service_role'/);
+  assert.match(acl, /has_function_privilege\('authenticated'/);
+  assert.match(acl, /has_function_privilege\('anon'/);
+  assert.match(contract, /not like '%peer\.expires_at%'/);
+  assert.match(contract, /^coalesce\(/);
+  assert.match(contract, /, false\) as blog_taxonomy_terminal_cleanup_0106_semantics_exact$/);
+  assert.throws(() => blogTaxonomyTerminalCleanupSemanticSql("Bad Alias"));
 });
 
 test("0090 semantic preflight proves the lease accepts only the state the fence imposes", () => {

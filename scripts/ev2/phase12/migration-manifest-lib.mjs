@@ -125,6 +125,11 @@ export const G12_PINNED_MIGRATION_TAIL = Object.freeze([
     file: "0105_cms_session_logout_fast_path.sql",
     sha256: "d926d3d158ca9f86d5d268607164258749bb8420c04ee90f858d75ce1f6e6c3a",
   }),
+  Object.freeze({
+    version: "0106",
+    file: "0106_cms_blog_taxonomy_terminal_cleanup.sql",
+    sha256: "ea74418d601472563e3a321bf4c7560a21322e92f7c5b01c9188d6edfeba3b1e",
+  }),
 ]);
 
 export const CMS_MEDIA_UPLOAD_ABORT_0082_RPCS = Object.freeze([
@@ -211,6 +216,11 @@ export const CMS_PROGRESSIVE_DRAFT_TERMINAL_CLEANUP_0104_OWNER_ONLY_FUNCTIONS = 
 
 export const CMS_SESSION_LOGOUT_FAST_PATH_0105_OWNER_ONLY_FUNCTIONS = Object.freeze([
   "private.cms_resolve_logout_core_0105(uuid,text,text,text,timestamp with time zone,uuid)",
+]);
+
+export const CMS_BLOG_TAXONOMY_TERMINAL_CLEANUP_0106_OWNER_ONLY_FUNCTIONS = Object.freeze([
+  "private.cms_cleanup_qa_blog_taxonomy_0106(uuid,text,text,text,text)",
+  "private.cms_cleanup_terminal_qa_blog_taxonomy_0106()",
 ]);
 
 export const CMS_MEDIA_UPLOAD_ABORT_0082_OWNER_ONLY_HELPERS = Object.freeze([
@@ -1584,6 +1594,109 @@ export function progressiveDraftTerminalCleanupSemanticSql(alias) {
             lease.run_tag,
             lease.candidate_sha,
             lease.environment
+          )
+      )
+    , false) as ${alias}`;
+}
+
+// The 0106 boundary removes only exact synthetic blog taxonomy after every
+// actor in the same SHA/environment run is terminal. Active status, not TTL,
+// is authoritative; public or cross-scope references always fail closed.
+export function blogTaxonomyTerminalCleanupSemanticSql(alias) {
+  if (!/^[a-z][a-z0-9_]*$/.test(alias)) fail("blog-taxonomy-terminal-cleanup-alias");
+  const cleanup = "private.cms_cleanup_qa_blog_taxonomy_0106(uuid,text,text,text,text)";
+  const triggerFunction = "private.cms_cleanup_terminal_qa_blog_taxonomy_0106()";
+  const definition = `regexp_replace(lower(pg_get_functiondef(to_regprocedure('${cleanup}'))), '[[:space:]]+', '', 'g')`;
+  const triggerDefinition = `regexp_replace(lower(pg_get_functiondef(to_regprocedure('${triggerFunction}'))), '[[:space:]]+', '', 'g')`;
+  return `coalesce(
+      to_regprocedure('${cleanup}') is not null
+      and to_regprocedure('${triggerFunction}') is not null
+      and (
+        select procedure.prosecdef
+          and 'search_path=""' = any(coalesce(procedure.proconfig, array[]::text[]))
+        from pg_catalog.pg_proc procedure
+        where procedure.oid = to_regprocedure('${cleanup}')
+      )
+      and (
+        select procedure.prosecdef
+          and 'search_path=""' = any(coalesce(procedure.proconfig, array[]::text[]))
+        from pg_catalog.pg_proc procedure
+        where procedure.oid = to_regprocedure('${triggerFunction}')
+      )
+      and ${definition} like '%fromprivate.cms_qa_actor_leaseslease%'
+      and ${definition} like '%forupdate%'
+      and ${definition} like '%private.cms_qa_actor_marker_is_exact(%'
+      and ${definition} like '%peer.status=''active''%'
+      and ${definition} not like '%peer.expires_at%'
+      and ${definition} like '%author.created_atbetweencreator.created_atandcreator.expires_at%'
+      and ${definition} like '%category.created_atbetweencreator.created_atandcreator.expires_at%'
+      and ${definition} like '%tag.created_atbetweencreator.created_atandcreator.expires_at%'
+      and ${definition} like '%pg_advisory_xact_lock(%'
+      and ${definition} like '%cms-qa-blog-taxonomy-group:%'
+      and ${definition} not like '%pg_try_advisory_xact_lock(%'
+      and ${definition} like '%cms_qa_blog_taxonomy_scope_ambiguous%'
+      and ${definition} like '%cms_qa_blog_taxonomy_reference_active%'
+      and ${definition} like '%cms_qa_blog_taxonomy_reference_ambiguous%'
+      and ${definition} like '%jsonb_array_elements(%'
+      and ${definition} like '%frompublic.cms_content_draft_snapshotssnapshot%'
+      and ${definition} like '%draft.updated_byasreference_actor_id%'
+      and ${definition} like '%revision.created_byasreference_actor_id%'
+      and ${definition} like '%snapshot.displaced_byasreference_actor_id%'
+      and ${definition} like '%creator.actor_id=item.created_byandcreator.run_tag=p_run_tagandcreator.candidate_sha=p_candidate_shaandcreator.environment=p_environmentandupdater.run_tag=p_run_tagandupdater.candidate_sha=p_candidate_shaandupdater.environment=p_environmentandreference_actor.run_tag=p_run_tagandreference_actor.candidate_sha=p_candidate_shaandreference_actor.environment=p_environment%'
+      and ${definition} like '%item.updated_at>=updater.created_atandreference.reference_atbetweenreference_actor.created_atandreference_actor.expires_atandprivate.cms_qa_actor_marker_is_exact(creator.actor_id,creator.run_tag,creator.candidate_sha,creator.environment)andprivate.cms_qa_actor_marker_is_exact(updater.actor_id,updater.run_tag,updater.candidate_sha,updater.environment)andprivate.cms_qa_actor_marker_is_exact(reference_actor.actor_id,reference_actor.run_tag,reference_actor.candidate_sha,reference_actor.environment)%'
+      and ${definition} like '%item.created_atbetweencreator.created_atandcreator.expires_at%'
+      and ${definition} like '%deletefrompublic.cms_blog_tags%'
+      and ${definition} like '%deletefrompublic.cms_blog_categories%'
+      and ${definition} like '%deletefrompublic.cms_blog_authors%'
+      and ${definition} like '%insertintopublic.cms_audit_log%'
+      and ${definition} like '%''cms:qa.blog_taxonomy.compensated''%'
+      and ${triggerDefinition} like '%old.status=''active''%'
+      and ${triggerDefinition} like '%new.statusin(''cleaned'',''expired'')%'
+      and ${triggerDefinition} like '%performprivate.cms_cleanup_qa_blog_taxonomy_0106(%'
+      and (
+        select count(*) = 1
+        from pg_catalog.pg_trigger trigger
+        where trigger.tgrelid = 'private.cms_qa_actor_leases'::regclass
+          and trigger.tgname = 'zzy_cms_cleanup_qa_blog_taxonomy_0106'
+          and trigger.tgfoid = to_regprocedure('${triggerFunction}')
+          and trigger.tgtype = 19
+          and trigger.tgenabled = 'O'
+          and not trigger.tgisinternal
+      )
+      and not exists (
+        select 1
+        from (
+          select author.created_by, author.updated_by, author.created_at, author.updated_at
+          from public.cms_blog_authors author
+          union all
+          select category.created_by, category.updated_by, category.created_at, category.updated_at
+          from public.cms_blog_categories category
+          union all
+          select tag.created_by, tag.updated_by, tag.created_at, tag.updated_at
+          from public.cms_blog_tags tag
+        ) taxonomy
+        join private.cms_qa_actor_leases creator on creator.actor_id = taxonomy.created_by
+        join private.cms_qa_actor_leases updater on updater.actor_id = taxonomy.updated_by
+        where creator.status in ('cleaned', 'expired')
+          and updater.status in ('cleaned', 'expired')
+          and creator.run_tag = updater.run_tag
+          and creator.candidate_sha = updater.candidate_sha
+          and creator.environment = updater.environment
+          and taxonomy.created_at between creator.created_at and creator.expires_at
+          and taxonomy.updated_at between updater.created_at and updater.expires_at
+          and private.cms_qa_actor_marker_is_exact(
+            creator.actor_id, creator.run_tag, creator.candidate_sha, creator.environment
+          )
+          and private.cms_qa_actor_marker_is_exact(
+            updater.actor_id, updater.run_tag, updater.candidate_sha, updater.environment
+          )
+          and not exists (
+            select 1
+            from private.cms_qa_actor_leases active_peer
+            where active_peer.run_tag = creator.run_tag
+              and active_peer.candidate_sha = creator.candidate_sha
+              and active_peer.environment = creator.environment
+              and active_peer.status = 'active'
           )
       )
     , false) as ${alias}`;

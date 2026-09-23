@@ -124,6 +124,7 @@ const state = buildStagingDeployRecoveryState({
     inventorySha256: edgeBaseline.manifest.inventorySha256,
     functionCount: edgeBaseline.manifest.functionCount,
     aggregateBytes: edgeBaseline.manifest.aggregateBytes,
+    aggregateRawEszipBytes: edgeBaseline.manifest.aggregateRawEszipBytes,
   },
   browserRecovery: {
     environment: "staging",

@@ -945,6 +945,9 @@ jobs:
           test "$(jq -r .runtime.indexDigest "$input_manifest")" = "$EDGE_RUNTIME_INDEX_DIGEST"
           test "$(jq -r .runtime.amd64Digest "$input_manifest")" = "$EDGE_RUNTIME_AMD64_DIGEST"
           inventory_sha256="$(jq -r .inventorySha256 "$input_manifest")"
+          dependency_files_sha256="$(jq -r .dependencies.filesSha256 "$input_manifest")"
+          test "$(printf '%s' "$dependency_files_sha256" | grep -E '^[a-f0-9]{64}$')" = "$dependency_files_sha256"
+          test "$(sha256sum all-edge-runtime-input/edge-function-dependencies.sha256 | awk '{print $1}')" = "$dependency_files_sha256"
           input_manifest_sha256="$(sha256sum "$input_manifest" | awk '{print $1}')"
           docker run --rm --platform linux/amd64 --network bridge --read-only \
             --user "$(id -u):$(id -g)" \
@@ -958,6 +961,7 @@ jobs:
             --env JSR_URL=https://jsr.io/ \
             --env G12_CANDIDATE_SHA="${{ github.sha }}" \
             --env G12_INVENTORY_SHA256="$inventory_sha256" \
+            --env G12_DEPENDENCY_FILES_SHA256="$dependency_files_sha256" \
             --env G12_INPUT_MANIFEST_SHA256="$input_manifest_sha256" \
             --env G12_EDGE_RUNTIME_INDEX_DIGEST="$EDGE_RUNTIME_INDEX_DIGEST" \
             --env G12_EDGE_RUNTIME_AMD64_DIGEST="$EDGE_RUNTIME_AMD64_DIGEST" \

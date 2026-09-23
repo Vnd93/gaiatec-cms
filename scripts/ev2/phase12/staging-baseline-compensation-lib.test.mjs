@@ -103,6 +103,7 @@ function state(mode = "deploy-compensation") {
         inventorySha256: "5".repeat(64),
         functionCount: PRODUCTION_FUNCTIONS.length,
         aggregateBytes: 4096,
+        aggregateRawEszipBytes: 8192,
       },
     };
   return {

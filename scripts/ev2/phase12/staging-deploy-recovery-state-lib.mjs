@@ -176,6 +176,7 @@ function validateEdgeBaseline(value, violations) {
       "inventorySha256",
       "functionCount",
       "aggregateBytes",
+      "aggregateRawEszipBytes",
     ])
   ) {
     violations.push("edge_baseline_keys_invalid");
@@ -190,9 +191,15 @@ function validateEdgeBaseline(value, violations) {
   if (
     !Number.isSafeInteger(value.aggregateBytes) ||
     value.aggregateBytes < 1 ||
-    value.aggregateBytes > STAGING_EDGE_BASELINE_ARTIFACT.maximumAggregateBytes
+    value.aggregateBytes > STAGING_EDGE_BASELINE_ARTIFACT.maximumAggregateDeployableBytes
   )
     violations.push("edge_baseline_aggregate_bytes_invalid");
+  if (
+    !Number.isSafeInteger(value.aggregateRawEszipBytes) ||
+    value.aggregateRawEszipBytes < 1 ||
+    value.aggregateRawEszipBytes > STAGING_EDGE_BASELINE_ARTIFACT.maximumAggregateRawEszipBytes
+  )
+    violations.push("edge_baseline_aggregate_raw_eszip_bytes_invalid");
 }
 
 function expectedRunMarker(runId, attempt) {
@@ -644,6 +651,8 @@ export async function verifyStagingDeployRecoveryArtifact({ artifactDirectory, s
       violations.push("edge_baseline_function_count_state_mismatch");
     if (edgeBaseline.manifest.aggregateBytes !== state.edgeBaseline.aggregateBytes)
       violations.push("edge_baseline_aggregate_bytes_state_mismatch");
+    if (edgeBaseline.manifest.aggregateRawEszipBytes !== state.edgeBaseline.aggregateRawEszipBytes)
+      violations.push("edge_baseline_aggregate_raw_eszip_bytes_state_mismatch");
   } catch (error) {
     violations.push(String(error instanceof Error ? error.message : error));
   }
@@ -689,6 +698,7 @@ export async function verifyStagingDeployRecoveryArtifact({ artifactDirectory, s
     environmentSnapshotSha256: environmentVerification.snapshotSha256,
     edgeBaselineManifestSha256: edgeBaseline?.manifestSha256,
     edgeBaselineInventorySha256: edgeBaseline?.manifest?.inventorySha256,
+    edgeBaselineAggregateRawEszipBytes: edgeBaseline?.manifest?.aggregateRawEszipBytes,
   };
 }
 
@@ -726,6 +736,7 @@ export function recoveryStateOutputs(state, statePath) {
     edge_baseline_inventory_sha256: state.edgeBaseline.inventorySha256,
     edge_baseline_function_count: String(state.edgeBaseline.functionCount),
     edge_baseline_aggregate_bytes: String(state.edgeBaseline.aggregateBytes),
+    edge_baseline_aggregate_raw_eszip_bytes: String(state.edgeBaseline.aggregateRawEszipBytes),
     browser_run_tag: state.browserRecovery.runTag,
     browser_environment: state.browserRecovery.environment,
     state_path: statePath,

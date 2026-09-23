@@ -2,6 +2,13 @@ import { createHash } from "node:crypto";
 import { cp, lstat, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
+import {
+  ALL_EDGE_RUNTIME_LOCK_PROFILES,
+  ALL_EDGE_RUNTIME_SOURCE_LOCK,
+  allEdgeRuntimeBundleLockEvidence,
+  allEdgeRuntimeDenoConfig,
+  materializeAllEdgeRuntimeBundleLock,
+} from "./all-edge-runtime-deno-lock-lib.mjs";
 import { PRODUCTION_FUNCTIONS } from "./production-backend-lib.mjs";
 
 export const ALL_EDGE_RUNTIME_SMOKE = Object.freeze({
@@ -21,6 +28,8 @@ export const ALL_EDGE_RUNTIME_SMOKE = Object.freeze({
   ]),
   maximumEszipBytes: 64 * 1024 * 1024,
   maximumAggregateEszipBytes: 1024 * 1024 * 1024,
+  maximumDeployableBytes: 20 * 1024 * 1024,
+  maximumAggregateDeployableBytes: PRODUCTION_FUNCTIONS.length * 20 * 1024 * 1024,
 });
 
 function refuse(label) {
@@ -102,6 +111,8 @@ async function exactFunctionInventory(source) {
     const entrypoint = join(root, name, "index.ts");
     const stats = await lstat(entrypoint).catch(() => null);
     if (!stats?.isFile() || stats.isSymbolicLink()) refuse(`ENTRYPOINT:${name}`);
+    await assertAbsent(join(root, name, "deno.json"), `FUNCTION_CONFIG:${name}`);
+    await assertAbsent(join(root, name, "deno.lock"), `FUNCTION_LOCK:${name}`);
   }
   return expected;
 }
@@ -136,6 +147,7 @@ export async function materializeAllEdgeRuntimeSmokeInput({ source, output, cand
       )
     ).flat(),
     ...(await recordsUnder(sourceRoot, "deno.lock")),
+    ...(await recordsUnder(sourceRoot, ALL_EDGE_RUNTIME_SOURCE_LOCK.path)),
   ];
   if (
     sourceRecords.some(({ path }) =>
@@ -146,8 +158,18 @@ export async function materializeAllEdgeRuntimeSmokeInput({ source, output, cand
   const sourceSummary = summarizeRecords(sourceRecords);
   const importMapPath = join(sourceRoot, "supabase", "functions", "import_map.json");
   const importMapBytes = await readFile(importMapPath);
-  const importMap = validateImportMap(JSON.parse(importMapBytes.toString("utf8")));
-  const denoLockBytes = await readFile(join(sourceRoot, "deno.lock"));
+  validateImportMap(JSON.parse(importMapBytes.toString("utf8")));
+  const rootDenoLockBytes = await readFile(join(sourceRoot, "deno.lock"));
+  const rootDenoLock = JSON.parse(rootDenoLockBytes.toString("utf8"));
+  const edgeSourceLockBytes = await readFile(
+    join(sourceRoot, ...ALL_EDGE_RUNTIME_SOURCE_LOCK.path.split("/")),
+  );
+  if (
+    edgeSourceLockBytes.byteLength !== ALL_EDGE_RUNTIME_SOURCE_LOCK.serializedBytes ||
+    sha256(edgeSourceLockBytes) !== ALL_EDGE_RUNTIME_SOURCE_LOCK.sha256
+  )
+    refuse("EDGE_SOURCE_LOCK_IDENTITY");
+  const edgeSourceLock = JSON.parse(edgeSourceLockBytes.toString("utf8"));
 
   await mkdir(outputRoot, { recursive: false, mode: 0o700 });
   await cp(join(sourceRoot, "supabase", "functions"), join(outputRoot, "supabase", "functions"), {
@@ -163,20 +185,46 @@ export async function materializeAllEdgeRuntimeSmokeInput({ source, output, cand
       force: false,
     });
   }
-  await writeFile(join(outputRoot, "deno.lock"), denoLockBytes, { flag: "wx", mode: 0o600 });
-  await writeFile(
-    join(outputRoot, "deno.json"),
-    `${JSON.stringify(
-      {
-        imports: importMap.imports,
-        lock: { path: "./deno.lock", frozen: true },
-        nodeModulesDir: "none",
-      },
-      null,
-      2,
-    )}\n`,
-    { flag: "wx", mode: 0o600 },
+  const denoConfigBytes = Buffer.from(`${JSON.stringify(allEdgeRuntimeDenoConfig(), null, 2)}\n`, "utf8");
+  const dependencyRecords = [];
+  const profileFunctions = new Map(Object.keys(ALL_EDGE_RUNTIME_LOCK_PROFILES).map((id) => [id, []]));
+  const profileEvidence = new Map();
+  for (const name of functions) {
+    const directory = join(outputRoot, "supabase", "functions", name);
+    const materialized = materializeAllEdgeRuntimeBundleLock({
+      rootLock: rootDenoLock,
+      sourceLock: edgeSourceLock,
+      functionName: name,
+    });
+    const evidence = allEdgeRuntimeBundleLockEvidence(
+      materialized.lock,
+      materialized.bytes,
+      materialized.profile,
+    );
+    profileFunctions.get(materialized.profile.id).push(name);
+    profileEvidence.set(materialized.profile.id, evidence);
+    const lockPath = join(directory, "deno.lock");
+    const configPath = join(directory, "deno.json");
+    await writeFile(lockPath, materialized.bytes, { flag: "wx", mode: 0o600 });
+    await writeFile(configPath, denoConfigBytes, { flag: "wx", mode: 0o600 });
+    for (const path of [lockPath, configPath]) {
+      const bytes = await readFile(path);
+      dependencyRecords.push({
+        path: posixPath(relative(outputRoot, path)),
+        sha256: sha256(bytes),
+        bytes: bytes.byteLength,
+      });
+    }
+  }
+  dependencyRecords.sort((left, right) => left.path.localeCompare(right.path));
+  const dependencyIndexBytes = Buffer.from(
+    dependencyRecords.map((record) => `${record.sha256}  ${record.path}\n`).join(""),
+    "utf8",
   );
+  await writeFile(join(outputRoot, "edge-function-dependencies.sha256"), dependencyIndexBytes, {
+    flag: "wx",
+    mode: 0o600,
+  });
   const inventoryBytes = Buffer.from(`${functions.join("\n")}\n`, "utf8");
   await writeFile(join(outputRoot, "edge-functions.txt"), inventoryBytes, {
     flag: "wx",
@@ -190,8 +238,7 @@ export async function materializeAllEdgeRuntimeSmokeInput({ source, output, cand
         ALL_EDGE_RUNTIME_SMOKE.externalSourceFiles.map((path) => recordsUnder(outputRoot, path)),
       )
     ).flat(),
-    ...(await recordsUnder(outputRoot, "deno.lock")),
-    ...(await recordsUnder(outputRoot, "deno.json")),
+    ...(await recordsUnder(outputRoot, "edge-function-dependencies.sha256")),
     ...(await recordsUnder(outputRoot, "edge-functions.txt")),
   ];
   const materializedSummary = summarizeRecords(materializedRecords);
@@ -211,9 +258,23 @@ export async function materializeAllEdgeRuntimeSmokeInput({ source, output, cand
       treeSha256: sourceSummary.treeSha256,
       fileCount: sourceSummary.fileCount,
       bytes: sourceSummary.bytes,
-      denoLockSha256: sha256(denoLockBytes),
+      denoLockSha256: sha256(rootDenoLockBytes),
+      edgeSourceDenoLockPath: ALL_EDGE_RUNTIME_SOURCE_LOCK.path,
+      edgeSourceDenoLockSha256: sha256(edgeSourceLockBytes),
+      edgeSourceDenoLockBytes: edgeSourceLockBytes.byteLength,
       importMapSha256: sha256(importMapBytes),
       externalSourceFiles: [...ALL_EDGE_RUNTIME_SMOKE.externalSourceFiles],
+    },
+    dependencies: {
+      configSha256: sha256(denoConfigBytes),
+      configBytes: denoConfigBytes.byteLength,
+      filesPath: "edge-function-dependencies.sha256",
+      filesSha256: sha256(dependencyIndexBytes),
+      fileCount: dependencyRecords.length,
+      profiles: Object.keys(ALL_EDGE_RUNTIME_LOCK_PROFILES).map((id) => ({
+        ...profileEvidence.get(id),
+        functions: profileFunctions.get(id),
+      })),
     },
     materialized: {
       treeSha256: materializedSummary.treeSha256,

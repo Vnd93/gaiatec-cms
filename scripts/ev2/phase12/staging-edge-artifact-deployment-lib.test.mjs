@@ -371,6 +371,7 @@ test("staging candidate CLI accepts only a verified artifact and PATCHes exact E
   assert.match(deployCli, /evaluateExactEdgeArtifactDeployment/);
   assert.match(deployCli, /evaluateExactBaselineRestoration/);
   assert.match(deployCli, /loadAndVerifyStagingEdgeBaselineArtifact/);
+  assert.match(deployCli, /aggregateRawEszipBytes: baseline\.manifest\.aggregateRawEszipBytes/);
   assert.doesNotMatch(deployCli, /runBaselineDeploy|rollbackSourceRoot|"functions",\s*"deploy"/);
   assert.doesNotMatch(deployCli, /classifyFunctionDeploymentOutput|reconvergeCandidate/);
 });

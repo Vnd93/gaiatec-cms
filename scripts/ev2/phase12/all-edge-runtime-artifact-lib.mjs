@@ -2,6 +2,12 @@ import { createHash } from "node:crypto";
 import { lstatSync, readFileSync, readdirSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 
+import {
+  ALL_EDGE_RUNTIME_LOCK_PROFILES,
+  ALL_EDGE_RUNTIME_SOURCE_LOCK,
+  allEdgeRuntimeDenoConfig,
+  allEdgeRuntimeLockProfile,
+} from "./all-edge-runtime-deno-lock-lib.mjs";
 import { ALL_EDGE_RUNTIME_SMOKE } from "./all-edge-runtime-smoke-lib.mjs";
 import { PUBLIC_FUNCTIONS } from "./production-backend-lib.mjs";
 import { reconcileDownloadedBundleBody } from "./staging-cms-public-hotfix-lib.mjs";
@@ -23,6 +29,10 @@ function posix(value) {
 function requireFile(path, label) {
   const stats = lstatSync(path, { throwIfNoEntry: false });
   if (!stats?.isFile() || stats.isSymbolicLink()) refuse(label);
+}
+
+function requireAbsent(path, label) {
+  if (lstatSync(path, { throwIfNoEntry: false })) refuse(label);
 }
 
 function artifactRecords(root, directoryNames) {
@@ -53,6 +63,111 @@ function exactKeys(value, expected, label) {
     refuse(label);
 }
 
+function expectedDependencyEvidence(functions) {
+  const configBytes = Buffer.from(`${JSON.stringify(allEdgeRuntimeDenoConfig(), null, 2)}\n`, "utf8");
+  const records = functions
+    .flatMap((name) => {
+      const directory = `supabase/functions/${name}`;
+      const profile = allEdgeRuntimeLockProfile(name);
+      return [
+        {
+          path: `${directory}/deno.json`,
+          sha256: sha256(configBytes),
+          bytes: configBytes.byteLength,
+          kind: "config",
+        },
+        {
+          path: `${directory}/deno.lock`,
+          sha256: profile.sha256,
+          bytes: profile.serializedBytes,
+          kind: "lock",
+        },
+      ];
+    })
+    .sort((left, right) => left.path.localeCompare(right.path));
+  const indexBytes = Buffer.from(
+    records.map((record) => `${record.sha256}  ${record.path}\n`).join(""),
+    "utf8",
+  );
+  const profiles = Object.values(ALL_EDGE_RUNTIME_LOCK_PROFILES).map((profile) => ({
+    profileId: profile.id,
+    sha256: profile.sha256,
+    serializedBytes: profile.serializedBytes,
+    specifierCount: profile.specifierCount,
+    jsrPackageCount: profile.jsrPackageCount,
+    npmPackageCount: profile.npmPackageCount,
+    dependencyEdgeCount: profile.dependencyEdgeCount,
+    functions: functions.filter((name) => allEdgeRuntimeLockProfile(name).id === profile.id),
+  }));
+  return {
+    configBytes,
+    configSha256: sha256(configBytes),
+    records,
+    indexBytes,
+    filesSha256: sha256(indexBytes),
+    profiles,
+  };
+}
+
+function validateDependencyManifest(dependencies, functions) {
+  exactKeys(
+    dependencies,
+    ["configSha256", "configBytes", "filesPath", "filesSha256", "fileCount", "profiles"],
+    "DEPENDENCIES_SHAPE",
+  );
+  const expected = expectedDependencyEvidence(functions);
+  if (
+    dependencies.configSha256 !== expected.configSha256 ||
+    dependencies.configBytes !== expected.configBytes.byteLength ||
+    dependencies.filesPath !== "edge-function-dependencies.sha256" ||
+    dependencies.filesSha256 !== expected.filesSha256 ||
+    dependencies.fileCount !== expected.records.length ||
+    !Array.isArray(dependencies.profiles) ||
+    dependencies.profiles.length !== expected.profiles.length
+  )
+    refuse("DEPENDENCIES");
+  for (const profile of dependencies.profiles)
+    exactKeys(
+      profile,
+      [
+        "profileId",
+        "sha256",
+        "serializedBytes",
+        "specifierCount",
+        "jsrPackageCount",
+        "npmPackageCount",
+        "dependencyEdgeCount",
+        "functions",
+      ],
+      "DEPENDENCY_PROFILE_SHAPE",
+    );
+  if (JSON.stringify(dependencies.profiles) !== JSON.stringify(expected.profiles))
+    refuse("DEPENDENCY_PROFILES");
+  return expected;
+}
+
+function validateMaterializedDependencyFiles(sourceRoot, dependencies) {
+  const expected = validateDependencyManifest(dependencies, ALL_EDGE_RUNTIME_SMOKE.functions);
+  requireAbsent(join(sourceRoot, "deno.json"), "CONSUMER_GLOBAL_DENO_CONFIG");
+  requireAbsent(join(sourceRoot, "deno.lock"), "CONSUMER_GLOBAL_DENO_LOCK");
+  const indexPath = join(sourceRoot, ...dependencies.filesPath.split("/"));
+  requireFile(indexPath, "CONSUMER_DEPENDENCY_INDEX");
+  const indexBytes = readFileSync(indexPath);
+  if (!indexBytes.equals(expected.indexBytes) || sha256(indexBytes) !== dependencies.filesSha256)
+    refuse("CONSUMER_DEPENDENCY_INDEX");
+  for (const record of expected.records) {
+    const path = join(sourceRoot, ...record.path.split("/"));
+    requireFile(path, `CONSUMER_DEPENDENCY_FILE:${record.path}`);
+    const bytes = readFileSync(path);
+    if (
+      bytes.byteLength !== record.bytes ||
+      sha256(bytes) !== record.sha256 ||
+      (record.kind === "config" && !bytes.equals(expected.configBytes))
+    )
+      refuse(`CONSUMER_DEPENDENCY_FILE:${record.path}`);
+  }
+}
+
 function validateAttestations({
   candidateSha,
   inputManifest,
@@ -72,6 +187,7 @@ function validateAttestations({
       "FUNCTION_COUNT",
       "INVENTORY_SHA256",
       "INPUT_MANIFEST_SHA256",
+      "DEPENDENCY_FILES_SHA256",
       "BUNDLES_MANIFEST_SHA256",
       "SIZES_MANIFEST_SHA256",
       "AGGREGATE_ESZIP_BYTES",
@@ -104,6 +220,7 @@ function validateAttestations({
     buildAttestation.EDGE_RUNTIME_AMD64_DIGEST !== ALL_EDGE_RUNTIME_SMOKE.edgeRuntimeAmd64Digest ||
     buildAttestation.PLATFORM !== "linux/amd64" ||
     buildAttestation.INPUT_MANIFEST_SHA256 !== inputManifestSha256 ||
+    buildAttestation.DEPENDENCY_FILES_SHA256 !== inputManifest.dependencies.filesSha256 ||
     buildAttestation.BUNDLES_MANIFEST_SHA256 !== checksumsSha256 ||
     buildAttestation.SIZES_MANIFEST_SHA256 !== sizesSha256 ||
     !/^[1-9][0-9]*$/.test(buildAttestation.AGGREGATE_ESZIP_BYTES)
@@ -159,6 +276,7 @@ export function buildAllEdgeRuntimeArtifactManifest({
       "functionCount",
       "inventorySha256",
       "source",
+      "dependencies",
       "materialized",
     ],
     "INPUT_MANIFEST_SHAPE",
@@ -166,10 +284,24 @@ export function buildAllEdgeRuntimeArtifactManifest({
   exactKeys(inputManifest.runtime, ["image", "indexDigest", "amd64Digest"], "RUNTIME_SHAPE");
   exactKeys(
     inputManifest.source,
-    ["treeSha256", "fileCount", "bytes", "denoLockSha256", "importMapSha256", "externalSourceFiles"],
+    [
+      "treeSha256",
+      "fileCount",
+      "bytes",
+      "denoLockSha256",
+      "edgeSourceDenoLockPath",
+      "edgeSourceDenoLockSha256",
+      "edgeSourceDenoLockBytes",
+      "importMapSha256",
+      "externalSourceFiles",
+    ],
     "SOURCE_SHAPE",
   );
   exactKeys(inputManifest.materialized, ["treeSha256", "fileCount", "bytes"], "MATERIALIZED_SHAPE");
+  const dependencyEvidence = validateDependencyManifest(
+    inputManifest.dependencies,
+    ALL_EDGE_RUNTIME_SMOKE.functions,
+  );
   if (
     inputManifest.schemaVersion !== 1 ||
     inputManifest.event !== "g12.ci.all_edge_runtime_smoke.input_materialized" ||
@@ -186,6 +318,9 @@ export function buildAllEdgeRuntimeArtifactManifest({
     !SHA256.test(bootRecordsSha256) ||
     !SHA256.test(inputManifest.source.treeSha256) ||
     !SHA256.test(inputManifest.source.denoLockSha256) ||
+    inputManifest.source.edgeSourceDenoLockPath !== ALL_EDGE_RUNTIME_SOURCE_LOCK.path ||
+    inputManifest.source.edgeSourceDenoLockSha256 !== ALL_EDGE_RUNTIME_SOURCE_LOCK.sha256 ||
+    inputManifest.source.edgeSourceDenoLockBytes !== ALL_EDGE_RUNTIME_SOURCE_LOCK.serializedBytes ||
     !SHA256.test(inputManifest.source.importMapSha256) ||
     JSON.stringify(inputManifest.source.externalSourceFiles) !==
       JSON.stringify(ALL_EDGE_RUNTIME_SMOKE.externalSourceFiles) ||
@@ -227,7 +362,7 @@ export function buildAllEdgeRuntimeArtifactManifest({
     exactKeys(bundle.deployable, ["path", "sha256", "bytes"], "DEPLOYABLE_BUNDLE_SHAPE");
     if (
       bundle.entrypointPath !== `file:///workspace/supabase/functions/${bundle.slug}/index.ts` ||
-      bundle.importMapPath !== "file:///workspace/deno.json" ||
+      bundle.importMapPath !== `file:///workspace/supabase/functions/${bundle.slug}/deno.json` ||
       bundle.verifyJwt !== !PUBLIC_FUNCTIONS.has(bundle.slug) ||
       bundle.expectedColdBootStatus !== (bundle.slug === "cms-outbox-worker" ? 401 : 200) ||
       bundle.raw.path !== `raw/${bundle.slug}.eszip` ||
@@ -238,7 +373,8 @@ export function buildAllEdgeRuntimeArtifactManifest({
       bundle.raw.bytes < 1 ||
       bundle.raw.bytes > ALL_EDGE_RUNTIME_SMOKE.maximumEszipBytes ||
       !Number.isSafeInteger(bundle.deployable.bytes) ||
-      bundle.deployable.bytes < 1
+      bundle.deployable.bytes < 1 ||
+      bundle.deployable.bytes > ALL_EDGE_RUNTIME_SMOKE.maximumDeployableBytes
     )
       refuse(`BUNDLE:${bundle.slug}`);
     aggregateRawBytes += bundle.raw.bytes;
@@ -246,6 +382,7 @@ export function buildAllEdgeRuntimeArtifactManifest({
   }
   if (
     aggregateRawBytes > ALL_EDGE_RUNTIME_SMOKE.maximumAggregateEszipBytes ||
+    aggregateDeployableBytes > ALL_EDGE_RUNTIME_SMOKE.maximumAggregateDeployableBytes ||
     String(aggregateRawBytes) !== buildAttestation.AGGREGATE_ESZIP_BYTES ||
     !SHA256.test(fileIndexSha256) ||
     !Number.isSafeInteger(fileCount) ||
@@ -272,7 +409,18 @@ export function buildAllEdgeRuntimeArtifactManifest({
       fileCount: inputManifest.materialized.fileCount,
       bytes: inputManifest.materialized.bytes,
       denoLockSha256: inputManifest.source.denoLockSha256,
+      edgeSourceDenoLockPath: inputManifest.source.edgeSourceDenoLockPath,
+      edgeSourceDenoLockSha256: inputManifest.source.edgeSourceDenoLockSha256,
+      edgeSourceDenoLockBytes: inputManifest.source.edgeSourceDenoLockBytes,
       importMapSha256: inputManifest.source.importMapSha256,
+      dependencies: {
+        configSha256: dependencyEvidence.configSha256,
+        configBytes: dependencyEvidence.configBytes.byteLength,
+        filesPath: inputManifest.dependencies.filesPath,
+        filesSha256: dependencyEvidence.filesSha256,
+        fileCount: dependencyEvidence.records.length,
+        profiles: dependencyEvidence.profiles,
+      },
       externalSourceFiles: inputManifest.source.externalSourceFiles,
     },
     promotion: {
@@ -379,6 +527,7 @@ export function loadAndVerifyAllEdgeRuntimeArtifact({ root, candidateSha, manife
     fileIndexSha256: sha256(indexBytes),
     fileCount: records.length,
   });
+  validateMaterializedDependencyFiles(join(artifactRoot, "source"), inputManifest.dependencies);
   if (JSON.stringify(manifest) !== JSON.stringify(expectedManifest)) refuse("CONSUMER_MANIFEST_CONTRACT");
 
   const functions = [];

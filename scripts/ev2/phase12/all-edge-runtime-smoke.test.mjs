@@ -12,6 +12,10 @@ import {
   materializeAllEdgeRuntimeSmokeInput,
 } from "./all-edge-runtime-smoke-lib.mjs";
 import {
+  ALL_EDGE_RUNTIME_LOCK_PROFILES,
+  ALL_EDGE_RUNTIME_SOURCE_LOCK,
+} from "./all-edge-runtime-deno-lock-lib.mjs";
+import {
   buildAllEdgeRuntimeArtifactManifest,
   loadAndVerifyAllEdgeRuntimeArtifact,
   parseExactAttestation,
@@ -24,9 +28,67 @@ const builder = await readFile(new URL("./all-edge-runtime-smoke-bundle.sh", imp
 const boot = await readFile(new URL("./all-edge-runtime-smoke-boot.sh", import.meta.url), "utf8");
 const sealer = await readFile(new URL("./seal-all-edge-runtime-artifact.mjs", import.meta.url), "utf8");
 const verifierPath = fileURLToPath(new URL("./verify-all-edge-runtime-artifact.mjs", import.meta.url));
+const repositoryRootLockBytes = await readFile(new URL("../../../deno.lock", import.meta.url));
+const edgeSourceLockBytes = await readFile(new URL("./all-edge-runtime-source-deno.lock", import.meta.url));
 
 const digest = (value) => value.toString(16).padStart(64, "0");
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+
+function lockProfileEvidence(id, functions) {
+  const profile = ALL_EDGE_RUNTIME_LOCK_PROFILES[id];
+  return {
+    profileId: id,
+    sha256: profile.sha256,
+    serializedBytes: profile.serializedBytes,
+    specifierCount: profile.specifierCount,
+    jsrPackageCount: profile.jsrPackageCount,
+    npmPackageCount: profile.npmPackageCount,
+    dependencyEdgeCount: profile.dependencyEdgeCount,
+    functions,
+  };
+}
+
+function dependencyManifestFixture() {
+  const configBytes = Buffer.from(
+    `${JSON.stringify(
+      {
+        imports: { zod: "npm:zod@4.4.3" },
+        lock: { path: "./deno.lock", frozen: true },
+        nodeModulesDir: "none",
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  const records = PRODUCTION_FUNCTIONS.flatMap((name) => {
+    const profile = ["rdo-command", "rdo-sign"].includes(name) ? "pdf" : "standard";
+    return [
+      {
+        path: `supabase/functions/${name}/deno.json`,
+        sha256: sha256(configBytes),
+      },
+      {
+        path: `supabase/functions/${name}/deno.lock`,
+        sha256: ALL_EDGE_RUNTIME_LOCK_PROFILES[profile].sha256,
+      },
+    ];
+  }).sort((left, right) => left.path.localeCompare(right.path));
+  const indexBytes = Buffer.from(records.map((record) => `${record.sha256}  ${record.path}\n`).join(""));
+  return {
+    configSha256: sha256(configBytes),
+    configBytes: configBytes.byteLength,
+    filesPath: "edge-function-dependencies.sha256",
+    filesSha256: sha256(indexBytes),
+    fileCount: records.length,
+    profiles: [
+      lockProfileEvidence(
+        "standard",
+        PRODUCTION_FUNCTIONS.filter((name) => !["rdo-command", "rdo-sign"].includes(name)),
+      ),
+      lockProfileEvidence("pdf", ["rdo-command", "rdo-sign"]),
+    ],
+  };
+}
 
 function be32(value) {
   const bytes = Buffer.alloc(4);
@@ -68,7 +130,7 @@ function artifactFixture() {
   const bundles = PRODUCTION_FUNCTIONS.map((slug, index) => ({
     slug,
     entrypointPath: `file:///workspace/supabase/functions/${slug}/index.ts`,
-    importMapPath: "file:///workspace/deno.json",
+    importMapPath: `file:///workspace/supabase/functions/${slug}/deno.json`,
     verifyJwt: !PUBLIC_FUNCTIONS.has(slug),
     expectedColdBootStatus: slug === "cms-outbox-worker" ? 401 : 200,
     raw: { path: `raw/${slug}.eszip`, sha256: digest(index + 20), bytes: index + 1 },
@@ -95,10 +157,14 @@ function artifactFixture() {
       fileCount: 100,
       bytes: 1000,
       denoLockSha256: digest(3),
+      edgeSourceDenoLockPath: ALL_EDGE_RUNTIME_SOURCE_LOCK.path,
+      edgeSourceDenoLockSha256: ALL_EDGE_RUNTIME_SOURCE_LOCK.sha256,
+      edgeSourceDenoLockBytes: ALL_EDGE_RUNTIME_SOURCE_LOCK.serializedBytes,
       importMapSha256: digest(4),
       externalSourceFiles: [...ALL_EDGE_RUNTIME_SMOKE.externalSourceFiles],
     },
-    materialized: { treeSha256: digest(5), fileCount: 102, bytes: 1200 },
+    dependencies: dependencyManifestFixture(),
+    materialized: { treeSha256: digest(5), fileCount: 170, bytes: 1200 },
   };
   const inputManifestSha256 = digest(6);
   const checksumsSha256 = digest(7);
@@ -111,6 +177,7 @@ function artifactFixture() {
     FUNCTION_COUNT: String(PRODUCTION_FUNCTIONS.length),
     INVENTORY_SHA256: inputManifest.inventorySha256,
     INPUT_MANIFEST_SHA256: inputManifestSha256,
+    DEPENDENCY_FILES_SHA256: inputManifest.dependencies.filesSha256,
     BUNDLES_MANIFEST_SHA256: checksumsSha256,
     SIZES_MANIFEST_SHA256: sizesSha256,
     AGGREGATE_ESZIP_BYTES: String(bundles.reduce((total, bundle) => total + bundle.raw.bytes, 0)),
@@ -191,7 +258,10 @@ async function fixture(root) {
     await mkdir(dirname(target), { recursive: true });
     await writeFile(target, `export const fixture = ${JSON.stringify(path)};\n`);
   }
-  await writeFile(join(source, "deno.lock"), '{"version":"5","specifiers":{},"jsr":{},"npm":{}}\n');
+  await writeFile(join(source, "deno.lock"), repositoryRootLockBytes);
+  const edgeSourceLockPath = join(source, ...ALL_EDGE_RUNTIME_SOURCE_LOCK.path.split("/"));
+  await mkdir(dirname(edgeSourceLockPath), { recursive: true });
+  await writeFile(edgeSourceLockPath, edgeSourceLockBytes);
   return source;
 }
 
@@ -248,6 +318,10 @@ test("materialization seals the exact candidate inventory, source tree, frozen l
     assert.deepEqual(manifest.functions, PRODUCTION_FUNCTIONS);
     assert.equal(manifest.functionCount, 34);
     assert.match(manifest.source.treeSha256, /^[a-f0-9]{64}$/);
+    assert.equal(manifest.source.denoLockSha256, sha256(repositoryRootLockBytes));
+    assert.equal(manifest.source.edgeSourceDenoLockPath, ALL_EDGE_RUNTIME_SOURCE_LOCK.path);
+    assert.equal(manifest.source.edgeSourceDenoLockSha256, ALL_EDGE_RUNTIME_SOURCE_LOCK.sha256);
+    assert.equal(manifest.source.edgeSourceDenoLockBytes, ALL_EDGE_RUNTIME_SOURCE_LOCK.serializedBytes);
     assert.deepEqual(manifest.source.externalSourceFiles, [
       "scripts/ev2/phase12/configure-staging-ai-provider-secrets.mjs",
       "scripts/ev2/phase12/configure-staging-edge-public-secrets.mjs",
@@ -268,11 +342,45 @@ test("materialization seals the exact candidate inventory, source tree, frozen l
       await readFile(join(output, "edge-functions.txt"), "utf8"),
       `${PRODUCTION_FUNCTIONS.join("\n")}\n`,
     );
-    assert.deepEqual(JSON.parse(await readFile(join(output, "deno.json"), "utf8")), {
-      imports: { zod: "npm:zod@4.4.3" },
-      lock: { path: "./deno.lock", frozen: true },
-      nodeModulesDir: "none",
-    });
+    await assert.rejects(readFile(join(output, "deno.json")), (error) => error?.code === "ENOENT");
+    await assert.rejects(readFile(join(output, "deno.lock")), (error) => error?.code === "ENOENT");
+    const dependencyIndex = await readFile(join(output, "edge-function-dependencies.sha256"), "utf8");
+    const dependencyLines = dependencyIndex.trimEnd().split("\n");
+    assert.equal(dependencyLines.length, 68);
+    const dependencyPaths = dependencyLines.map((line) => line.slice(66));
+    assert.deepEqual(
+      dependencyPaths,
+      [...dependencyPaths].sort((left, right) => left.localeCompare(right)),
+    );
+    assert.equal(manifest.dependencies.filesPath, "edge-function-dependencies.sha256");
+    assert.equal(manifest.dependencies.filesSha256, sha256(Buffer.from(dependencyIndex)));
+    assert.equal(manifest.dependencies.fileCount, 68);
+    assert.deepEqual(manifest.dependencies.profiles, [
+      lockProfileEvidence(
+        "standard",
+        PRODUCTION_FUNCTIONS.filter((name) => !["rdo-command", "rdo-sign"].includes(name)),
+      ),
+      lockProfileEvidence("pdf", ["rdo-command", "rdo-sign"]),
+    ]);
+    for (const name of PRODUCTION_FUNCTIONS) {
+      const directory = join(output, "supabase", "functions", name);
+      const configBytes = await readFile(join(directory, "deno.json"));
+      const lockBytes = await readFile(join(directory, "deno.lock"));
+      assert.deepEqual(JSON.parse(configBytes.toString("utf8")), {
+        imports: { zod: "npm:zod@4.4.3" },
+        lock: { path: "./deno.lock", frozen: true },
+        nodeModulesDir: "none",
+      });
+      const profile = ["rdo-command", "rdo-sign"].includes(name) ? "pdf" : "standard";
+      assert.equal(sha256(lockBytes), ALL_EDGE_RUNTIME_LOCK_PROFILES[profile].sha256, name);
+      for (const leaf of ["deno.json", "deno.lock"])
+        assert.ok(
+          dependencyLines.includes(
+            `${sha256(await readFile(join(directory, leaf)))}  supabase/functions/${name}/${leaf}`,
+          ),
+          `${name}/${leaf}`,
+        );
+    }
     for (const path of ALL_EDGE_RUNTIME_SMOKE.externalSourceFiles)
       assert.deepEqual(
         await readFile(join(output, ...path.split("/"))),
@@ -343,6 +451,29 @@ test("materialization fails closed on inventory drift, local env, an existing ou
       }),
       /G12_ALL_EDGE_RUNTIME_SMOKE_CANDIDATE_SHA_REFUSED/,
     );
+    const injectedConfig = join(source, "supabase", "functions", PRODUCTION_FUNCTIONS[0], "deno.json");
+    await writeFile(injectedConfig, "{}\n");
+    await assert.rejects(
+      materializeAllEdgeRuntimeSmokeInput({
+        source,
+        output: join(root, "injected-config-output"),
+        candidateSha: "b".repeat(40),
+      }),
+      new RegExp(`G12_ALL_EDGE_RUNTIME_SMOKE_FUNCTION_CONFIG:${PRODUCTION_FUNCTIONS[0]}_REFUSED`),
+    );
+    await rm(injectedConfig);
+    await writeFile(
+      join(source, ...ALL_EDGE_RUNTIME_SOURCE_LOCK.path.split("/")),
+      Buffer.concat([edgeSourceLockBytes, Buffer.from("\n")]),
+    );
+    await assert.rejects(
+      materializeAllEdgeRuntimeSmokeInput({
+        source,
+        output: join(root, "source-lock-drift-output"),
+        candidateSha: "b".repeat(40),
+      }),
+      /G12_ALL_EDGE_RUNTIME_SMOKE_EDGE_SOURCE_LOCK_IDENTITY_REFUSED/,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -393,10 +524,22 @@ test("generic builder proves every exact entrypoint with pinned bundle and unbun
   assert.match(builder, /edge-runtime bundle/);
   assert.match(builder, /--entrypoint "\$\{entrypoint\}"/);
   assert.match(builder, /edge-runtime unbundle/);
+  assert.match(builder, /edge-function-dependencies\.sha256/);
+  assert.match(builder, /count != 68/);
+  assert.ok(builder.includes("$2 !~ /^supabase\\/functions\\/[a-z0-9-]+\\/deno\\.(json|lock)$/"));
+  assert.match(builder, /G12_ALL_EDGE_RUNTIME_SMOKE_ROOT_DENO_CONFIG_REFUSED/);
+  assert.match(builder, /function_config="\$\{input\}\/supabase\/functions\/\$\{slug\}\/deno\.json"/);
+  assert.match(builder, /function_lock="\$\{input\}\/supabase\/functions\/\$\{slug\}\/deno\.lock"/);
   assert.match(builder, /maximum_eszip_bytes=67108864/);
   assert.match(builder, /maximum_aggregate_eszip_bytes=1073741824/);
+  assert.match(builder, /g12\.ci\.all_edge_runtime_smoke\.bundle_measured/);
+  assertOrdered(builder, [
+    '"bytes":%s,"maximumBytes":%s',
+    'test "${bytes}" -gt 0 && test "${bytes}" -le "${maximum_eszip_bytes}"',
+  ]);
   assert.match(builder, /G12_ALL_EDGE_RUNTIME_SMOKE_BUNDLE_FAILED:\$\{slug\}/);
   assert.match(builder, /EVENT=g12\.ci\.all_edge_runtime_smoke\.bundles_verified/);
+  assert.match(builder, /DEPENDENCY_FILES_SHA256/);
   assert.doesNotMatch(builder, /supabase functions deploy|TOKEN|PASSWORD|SECRET/);
 });
 
@@ -419,6 +562,12 @@ test("generic boot invokes every exact ESZIP in the pinned runtime with no netwo
 test("the sealed Edge artifact manifest binds exact raw ESZIP and deployable EZBR metadata", () => {
   const fixture = artifactFixture();
   const manifest = buildAllEdgeRuntimeArtifactManifest(fixture);
+  assert.equal(ALL_EDGE_RUNTIME_SMOKE.maximumEszipBytes, 64 * 1024 * 1024);
+  assert.equal(ALL_EDGE_RUNTIME_SMOKE.maximumDeployableBytes, 20 * 1024 * 1024);
+  assert.equal(
+    ALL_EDGE_RUNTIME_SMOKE.maximumAggregateDeployableBytes,
+    PRODUCTION_FUNCTIONS.length * ALL_EDGE_RUNTIME_SMOKE.maximumDeployableBytes,
+  );
   assert.equal(manifest.functionCount, PRODUCTION_FUNCTIONS.length);
   assert.deepEqual(
     manifest.bundles.map((bundle) => bundle.slug),
@@ -436,7 +585,7 @@ test("the sealed Edge artifact manifest binds exact raw ESZIP and deployable EZB
   });
   for (const bundle of manifest.bundles) {
     assert.equal(bundle.entrypointPath, `file:///workspace/supabase/functions/${bundle.slug}/index.ts`);
-    assert.equal(bundle.importMapPath, "file:///workspace/deno.json");
+    assert.equal(bundle.importMapPath, `file:///workspace/supabase/functions/${bundle.slug}/deno.json`);
     assert.equal(bundle.raw.path, `raw/${bundle.slug}.eszip`);
     assert.equal(bundle.deployable.path, `deployable/${bundle.slug}.ezbr`);
     assert.equal(bundle.verifyJwt, !PUBLIC_FUNCTIONS.has(bundle.slug));
@@ -470,6 +619,21 @@ test("the Edge artifact refuses missing, extra, reordered, or digest-unbound fun
   assert.throws(
     () => buildAllEdgeRuntimeArtifactManifest(digestDrift),
     /G12_ALL_EDGE_RUNTIME_ARTIFACT_BUILD_ATTESTATION_REFUSED/,
+  );
+  const deployableOversize = artifactFixture();
+  deployableOversize.bundles[0].deployable.bytes = ALL_EDGE_RUNTIME_SMOKE.maximumDeployableBytes + 1;
+  assert.throws(
+    () => buildAllEdgeRuntimeArtifactManifest(deployableOversize),
+    new RegExp(`G12_ALL_EDGE_RUNTIME_ARTIFACT_BUNDLE:${PRODUCTION_FUNCTIONS[0]}_REFUSED`),
+  );
+  const rawAggregateOversize = artifactFixture();
+  for (const bundle of rawAggregateOversize.bundles) bundle.raw.bytes = 32 * 1024 * 1024;
+  rawAggregateOversize.buildAttestation.AGGREGATE_ESZIP_BYTES = String(
+    rawAggregateOversize.bundles.reduce((total, bundle) => total + bundle.raw.bytes, 0),
+  );
+  assert.throws(
+    () => buildAllEdgeRuntimeArtifactManifest(rawAggregateOversize),
+    /G12_ALL_EDGE_RUNTIME_ARTIFACT_ARTIFACT_BOUNDARY_REFUSED/,
   );
 });
 
@@ -522,6 +686,7 @@ test("the sealer and read-only consumer prove one exact all-function EZBR artifa
         `FUNCTION_COUNT=${PRODUCTION_FUNCTIONS.length}`,
         `INVENTORY_SHA256=${inputManifest.inventorySha256}`,
         `INPUT_MANIFEST_SHA256=${sha256(inputManifestBytes)}`,
+        `DEPENDENCY_FILES_SHA256=${inputManifest.dependencies.filesSha256}`,
         `BUNDLES_MANIFEST_SHA256=${sha256(checksums)}`,
         `SIZES_MANIFEST_SHA256=${sha256(sizes)}`,
         `AGGREGATE_ESZIP_BYTES=${aggregateBytes}`,
@@ -607,6 +772,8 @@ test("the sealer and read-only consumer prove one exact all-function EZBR artifa
 test("the artifact sealer frames each raw ESZIP as deterministic Brotli EZBR and preserves exact source", () => {
   assert.match(sealer, /frameRawEszip\(raw\)/);
   assert.match(sealer, /deployable\/\$\{name\}\.ezbr/);
+  assert.match(sealer, /importMapPath: `file:\/\/\/workspace\/supabase\/functions\/\$\{name\}\/deno\.json`/);
+  assert.match(sealer, /edge-function-dependencies\.sha256/);
   assert.match(sealer, /PUBLIC_FUNCTIONS\.has\(name\)/);
   assert.match(sealer, /join\(outputRoot, "source"\)/);
   assert.match(sealer, /artifact-files\.sha256/);

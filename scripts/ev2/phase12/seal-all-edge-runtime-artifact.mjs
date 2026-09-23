@@ -127,6 +127,7 @@ export async function sealAllEdgeRuntimeArtifact({
   await requireDirectory(bundlesRoot, "BUNDLES_ROOT");
   for (const [path, label] of [
     [join(inputRoot, "all-edge-runtime-smoke-input.json"), "INPUT_MANIFEST"],
+    [join(inputRoot, "edge-function-dependencies.sha256"), "DEPENDENCY_INDEX"],
     [join(inputRoot, "edge-functions.txt"), "INPUT_INVENTORY"],
     [buildAttestationPath, "BUILD_ATTESTATION"],
     [bootAttestationPath, "BOOT_ATTESTATION"],
@@ -138,6 +139,30 @@ export async function sealAllEdgeRuntimeArtifact({
 
   const inputManifestBytes = await readFile(join(inputRoot, "all-edge-runtime-smoke-input.json"));
   const inputManifest = JSON.parse(inputManifestBytes.toString("utf8"));
+  const dependencyIndexBytes = await readFile(join(inputRoot, "edge-function-dependencies.sha256"));
+  const dependencyRecords = (
+    await Promise.all(
+      ALL_EDGE_RUNTIME_SMOKE.functions.flatMap((name) =>
+        ["deno.json", "deno.lock"].map((file) =>
+          indexedFiles(inputRoot, join("supabase", "functions", name, file)),
+        ),
+      ),
+    )
+  )
+    .flat()
+    .sort((left, right) => left.path.localeCompare(right.path));
+  const expectedDependencyIndexBytes = Buffer.from(
+    dependencyRecords.map((record) => `${record.sha256}  ${record.path}\n`).join(""),
+    "utf8",
+  );
+  if (
+    inputManifest.dependencies?.filesPath !== "edge-function-dependencies.sha256" ||
+    inputManifest.dependencies?.filesSha256 !== sha256(dependencyIndexBytes) ||
+    inputManifest.dependencies?.fileCount !== dependencyRecords.length ||
+    dependencyRecords.length !== ALL_EDGE_RUNTIME_SMOKE.functions.length * 2 ||
+    !dependencyIndexBytes.equals(expectedDependencyIndexBytes)
+  )
+    throw new Error("G12_ALL_EDGE_RUNTIME_ARTIFACT_DEPENDENCY_INDEX_REFUSED");
   const inventoryBytes = await readFile(join(inputRoot, "edge-functions.txt"));
   if (
     inventoryBytes.toString("utf8") !== `${ALL_EDGE_RUNTIME_SMOKE.functions.join("\n")}\n` ||
@@ -147,8 +172,7 @@ export async function sealAllEdgeRuntimeArtifact({
   const inputRootEntries = (await readdir(inputRoot)).sort((left, right) => left.localeCompare(right));
   const expectedInputRootEntries = [
     "all-edge-runtime-smoke-input.json",
-    "deno.json",
-    "deno.lock",
+    "edge-function-dependencies.sha256",
     "edge-functions.txt",
     "supabase",
     ...new Set(ALL_EDGE_RUNTIME_SMOKE.externalSourceFiles.map((path) => path.split("/")[0])),
@@ -160,8 +184,7 @@ export async function sealAllEdgeRuntimeArtifact({
       [
         "supabase/functions",
         ...ALL_EDGE_RUNTIME_SMOKE.externalSourceFiles,
-        "deno.lock",
-        "deno.json",
+        "edge-function-dependencies.sha256",
         "edge-functions.txt",
       ].map((path) => indexedFiles(inputRoot, path)),
     )
@@ -238,7 +261,7 @@ export async function sealAllEdgeRuntimeArtifact({
     bundles.push({
       slug: name,
       entrypointPath: `file:///workspace/supabase/functions/${name}/index.ts`,
-      importMapPath: "file:///workspace/deno.json",
+      importMapPath: `file:///workspace/supabase/functions/${name}/deno.json`,
       verifyJwt: !PUBLIC_FUNCTIONS.has(name),
       expectedColdBootStatus: expectedStatus,
       raw: { path: `raw/${name}.eszip`, sha256: sha256(raw), bytes: raw.byteLength },

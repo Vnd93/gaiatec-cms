@@ -10,6 +10,7 @@ import { frameRawEszip } from "./staging-cms-public-hotfix-lib.mjs";
 import {
   buildStagingEdgeBaselineManifest,
   loadAndVerifyStagingEdgeBaselineArtifact,
+  STAGING_EDGE_BASELINE_ARTIFACT,
   writeStagingEdgeBaselineArtifact,
 } from "./staging-edge-baseline-artifact-lib.mjs";
 
@@ -92,7 +93,22 @@ test("exact live Edge baseline accepts stable raw bodies and seals every functio
     manifest.functions.every(({ body }) => body.path.endsWith(".ezbr")),
     true,
   );
+  assert.equal(
+    manifest.aggregateRawEszipBytes,
+    manifest.functions.reduce((total, record) => total + record.body.rawEszipBytes, 0),
+  );
   assert.match(manifest.inventorySha256, /^[a-f0-9]{64}$/);
+});
+
+test("baseline keeps download, raw ESZIP, and deployable EZBR limits distinct", () => {
+  assert.equal(STAGING_EDGE_BASELINE_ARTIFACT.maximumDownloadBytes, 64 * 1024 * 1024);
+  assert.equal(STAGING_EDGE_BASELINE_ARTIFACT.maximumRawEszipBytes, 64 * 1024 * 1024);
+  assert.equal(STAGING_EDGE_BASELINE_ARTIFACT.maximumDeployableBodyBytes, 20 * 1024 * 1024);
+  assert.equal(
+    STAGING_EDGE_BASELINE_ARTIFACT.maximumAggregateDeployableBytes,
+    PRODUCTION_FUNCTIONS.length * 20 * 1024 * 1024,
+  );
+  assert.equal(STAGING_EDGE_BASELINE_ARTIFACT.maximumAggregateRawEszipBytes, 1024 * 1024 * 1024);
 });
 
 test("inventory drift during body capture fails closed", () => {
@@ -159,6 +175,25 @@ test("baseline loader rejects traversal-shaped manifest records before body acce
   );
 });
 
+test("baseline loader rejects a forged raw ESZIP aggregate", async (context) => {
+  const temporary = await mkdtemp(join(tmpdir(), "g12-edge-baseline-raw-aggregate-test-"));
+  context.after(() => rm(temporary, { recursive: true, force: true }));
+  await mkdir(join(temporary, "parent"));
+  const written = writeStagingEdgeBaselineArtifact({
+    ...fixture(),
+    outputDirectory: join(temporary, "parent", "edge-baseline"),
+  });
+  const manifestPath = join(written.root, "manifest.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  manifest.aggregateRawEszipBytes += 1;
+  await chmod(manifestPath, 0o600);
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  assert.throws(
+    () => loadAndVerifyStagingEdgeBaselineArtifact({ root: written.root }),
+    /aggregate_raw_eszip_bytes_mismatch/i,
+  );
+});
+
 test("baseline loader rejects symlinked bundle entries", async (context) => {
   const temporary = await mkdtemp(join(tmpdir(), "g12-edge-baseline-symlink-test-"));
   context.after(() => rm(temporary, { recursive: true, force: true }));
@@ -174,11 +209,14 @@ test("baseline loader rejects symlinked bundle entries", async (context) => {
   try {
     await symlink(outsidePath, bodyPath, "file");
   } catch (error) {
-    if (error?.code === "EPERM") {
+    if (["EPERM", "EACCES"].includes(error?.code)) {
       context.skip("file symlinks require an unavailable Windows privilege");
       return;
     }
     throw error;
   }
-  assert.throws(() => loadAndVerifyStagingEdgeBaselineArtifact({ root: written.root }), /LAYOUT_REFUSED/);
+  assert.throws(
+    () => loadAndVerifyStagingEdgeBaselineArtifact({ root: written.root }),
+    /G12_STAGING_EDGE_BASELINE_ARTIFACT_BUNDLE_LAYOUT_INVALID_REFUSED/i,
+  );
 });

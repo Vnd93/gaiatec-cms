@@ -273,6 +273,7 @@ async function main() {
           inventorySha256: baseline.manifest.inventorySha256,
           functionCount: baseline.manifest.functionCount,
           aggregateBytes: baseline.manifest.aggregateBytes,
+          aggregateRawEszipBytes: baseline.manifest.aggregateRawEszipBytes,
         },
         mutatedFunctionCount: mutatedNames.size,
         reconciledCandidateFunctionCount: candidateOnlyNames.size,

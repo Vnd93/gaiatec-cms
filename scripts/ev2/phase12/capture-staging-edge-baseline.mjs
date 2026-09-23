@@ -96,7 +96,7 @@ async function captureBodies(projectRef) {
       if (!slug) return;
       const body = await request(`/v1/projects/${projectRef}/functions/${encodeURIComponent(slug)}/body`, {
         accept: "*/*",
-        maximumBytes: STAGING_EDGE_BASELINE_ARTIFACT.maximumBodyBytes,
+        maximumBytes: STAGING_EDGE_BASELINE_ARTIFACT.maximumDownloadBytes,
       });
       bodies.set(slug, body);
     }
@@ -138,6 +138,7 @@ if (process.env.GITHUB_OUTPUT)
       `edge_baseline_inventory_sha256=${result.manifest.inventorySha256}`,
       `edge_baseline_function_count=${result.manifest.functionCount}`,
       `edge_baseline_aggregate_bytes=${result.manifest.aggregateBytes}`,
+      `edge_baseline_aggregate_raw_eszip_bytes=${result.manifest.aggregateRawEszipBytes}`,
       "",
     ].join("\n"),
     "utf8",
@@ -149,6 +150,7 @@ console.log(
     inventorySha256: result.manifest.inventorySha256,
     functionCount: result.manifest.functionCount,
     aggregateBytes: result.manifest.aggregateBytes,
+    aggregateRawEszipBytes: result.manifest.aggregateRawEszipBytes,
     secretsDisclosed: false,
   }),
 );

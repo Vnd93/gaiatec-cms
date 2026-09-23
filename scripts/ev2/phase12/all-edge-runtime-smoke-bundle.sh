@@ -13,6 +13,7 @@ output=/output
 cache=/deno-cache
 inventory="${input}/edge-functions.txt"
 manifest="${input}/all-edge-runtime-smoke-input.json"
+dependency_index="${input}/edge-function-dependencies.sha256"
 expected_count=34
 maximum_eszip_bytes=67108864
 maximum_aggregate_eszip_bytes=1073741824
@@ -69,14 +70,32 @@ require_writable_directory "${cache}" G12_ALL_EDGE_RUNTIME_SMOKE_CACHE_REFUSED
 require_writable_directory /tmp G12_ALL_EDGE_RUNTIME_SMOKE_TMP_REFUSED
 require_file "${inventory}" G12_ALL_EDGE_RUNTIME_SMOKE_INVENTORY_REFUSED
 require_file "${manifest}" G12_ALL_EDGE_RUNTIME_SMOKE_MANIFEST_REFUSED
-require_file "${input}/deno.json" G12_ALL_EDGE_RUNTIME_SMOKE_DENO_CONFIG_REFUSED
-require_file "${input}/deno.lock" G12_ALL_EDGE_RUNTIME_SMOKE_DENO_LOCK_REFUSED
+require_file "${dependency_index}" G12_ALL_EDGE_RUNTIME_SMOKE_DEPENDENCY_INDEX_REFUSED
+test ! -e "${input}/deno.json" && test ! -e "${input}/deno.lock" || \
+  refuse G12_ALL_EDGE_RUNTIME_SMOKE_ROOT_DENO_CONFIG_REFUSED
 require_file "${input}/supabase/functions/import_map.json" \
   G12_ALL_EDGE_RUNTIME_SMOKE_IMPORT_MAP_REFUSED
 require_equal "$(sha_value "${inventory}")" "${G12_INVENTORY_SHA256:-}" \
   G12_ALL_EDGE_RUNTIME_SMOKE_INVENTORY_DIGEST_REFUSED
 require_equal "$(sha_value "${manifest}")" "${G12_INPUT_MANIFEST_SHA256:-}" \
   G12_ALL_EDGE_RUNTIME_SMOKE_MANIFEST_DIGEST_REFUSED
+require_equal "$(sha_value "${dependency_index}")" "${G12_DEPENDENCY_FILES_SHA256:-}" \
+  G12_ALL_EDGE_RUNTIME_SMOKE_DEPENDENCY_INDEX_DIGEST_REFUSED
+if ! awk '
+  {
+    if (NF != 2) exit 1
+    if (length($1) != 64 || $1 !~ /^[a-f0-9]+$/) exit 1
+    if ($2 !~ /^supabase\/functions\/[a-z0-9-]+\/deno\.(json|lock)$/) exit 1
+    if ($0 != $1 "  " $2) exit 1
+    count += 1
+  }
+  END { if (count != 68) exit 1 }
+' "${dependency_index}"; then
+  refuse G12_ALL_EDGE_RUNTIME_SMOKE_DEPENDENCY_INDEX_SHAPE_REFUSED
+fi
+if ! (cd "${input}" && sha256sum --check --strict --status edge-function-dependencies.sha256); then
+  refuse G12_ALL_EDGE_RUNTIME_SMOKE_DEPENDENCY_FILE_DIGEST_REFUSED
+fi
 
 symlink="$(find "${input}" -type l -print -quit)"
 test -z "${symlink}" || refuse G12_ALL_EDGE_RUNTIME_SMOKE_INPUT_SYMLINK_REFUSED
@@ -110,9 +129,13 @@ size_records="${output}/runtime-bundles.bytes"
 
 while IFS= read -r slug; do
   entrypoint="${input}/supabase/functions/${slug}/index.ts"
+  function_config="${input}/supabase/functions/${slug}/deno.json"
+  function_lock="${input}/supabase/functions/${slug}/deno.lock"
   eszip="${output}/bundles/${slug}.eszip"
   unbundled="${output}/unbundled/${slug}"
   require_file "${entrypoint}" G12_ALL_EDGE_RUNTIME_SMOKE_ENTRYPOINT_REFUSED
+  require_file "${function_config}" "G12_ALL_EDGE_RUNTIME_SMOKE_FUNCTION_CONFIG_REFUSED:${slug}"
+  require_file "${function_lock}" "G12_ALL_EDGE_RUNTIME_SMOKE_FUNCTION_LOCK_REFUSED:${slug}"
   test ! -e "${eszip}" && test ! -e "${unbundled}" || \
     refuse G12_ALL_EDGE_RUNTIME_SMOKE_OUTPUT_COLLISION_REFUSED
   if ! edge-runtime bundle \
@@ -132,6 +155,8 @@ while IFS= read -r slug; do
   case "${bytes}" in
     "" | *[!0-9]*) refuse "G12_ALL_EDGE_RUNTIME_SMOKE_ESZIP_SIZE_REFUSED:${slug}" ;;
   esac
+  printf '{"event":"g12.ci.all_edge_runtime_smoke.bundle_measured","slug":"%s","bytes":%s,"maximumBytes":%s}\n' \
+    "${slug}" "${bytes}" "${maximum_eszip_bytes}"
   test "${bytes}" -gt 0 && test "${bytes}" -le "${maximum_eszip_bytes}" || \
     refuse "G12_ALL_EDGE_RUNTIME_SMOKE_ESZIP_SIZE_REFUSED:${slug}"
   printf '%s  bundles/%s.eszip\n' "$(sha_value "${eszip}")" "${slug}" >> "${bundle_records}"
@@ -156,6 +181,7 @@ test "${aggregate_bytes}" -gt 0 && \
   printf 'CANDIDATE_SHA=%s\n' "${G12_CANDIDATE_SHA}"
   printf 'FUNCTION_COUNT=%s\n' "${expected_count}"
   printf 'INVENTORY_SHA256=%s\n' "${G12_INVENTORY_SHA256}"
+  printf 'DEPENDENCY_FILES_SHA256=%s\n' "${G12_DEPENDENCY_FILES_SHA256}"
   printf 'INPUT_MANIFEST_SHA256=%s\n' "${G12_INPUT_MANIFEST_SHA256}"
   printf 'BUNDLES_MANIFEST_SHA256=%s\n' "$(sha_value "${bundle_records}")"
   printf 'SIZES_MANIFEST_SHA256=%s\n' "$(sha_value "${size_records}")"

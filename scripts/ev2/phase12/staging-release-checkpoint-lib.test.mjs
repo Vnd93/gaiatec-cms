@@ -60,6 +60,7 @@ function state() {
       inventorySha256: "4".repeat(64),
       functionCount: 34,
       aggregateBytes: 4096,
+      aggregateRawEszipBytes: 8192,
     },
     browserRecovery: {
       environment: "staging",

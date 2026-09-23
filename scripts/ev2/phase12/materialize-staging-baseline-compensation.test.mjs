@@ -216,6 +216,7 @@ async function fixture() {
       inventorySha256: edgeArtifact.manifest.inventorySha256,
       functionCount: edgeArtifact.manifest.functionCount,
       aggregateBytes: edgeArtifact.manifest.aggregateBytes,
+      aggregateRawEszipBytes: edgeArtifact.manifest.aggregateRawEszipBytes,
     },
     browserRecovery: {
       environment: "staging",

@@ -37,8 +37,11 @@ export const STAGING_EDGE_BASELINE_ARTIFACT = Object.freeze({
   manifestFile: "manifest.json",
   artifactManifestPath: "edge-baseline/manifest.json",
   bundlesDirectory: "bundles",
-  maximumBodyBytes: ALL_EDGE_RUNTIME_SMOKE.maximumEszipBytes,
-  maximumAggregateBytes: ALL_EDGE_RUNTIME_SMOKE.maximumAggregateEszipBytes,
+  maximumDownloadBytes: ALL_EDGE_RUNTIME_SMOKE.maximumEszipBytes,
+  maximumDeployableBodyBytes: ALL_EDGE_RUNTIME_SMOKE.maximumDeployableBytes,
+  maximumRawEszipBytes: ALL_EDGE_RUNTIME_SMOKE.maximumEszipBytes,
+  maximumAggregateDeployableBytes: ALL_EDGE_RUNTIME_SMOKE.maximumAggregateDeployableBytes,
+  maximumAggregateRawEszipBytes: ALL_EDGE_RUNTIME_SMOKE.maximumAggregateEszipBytes,
 });
 
 function refuse(label) {
@@ -132,15 +135,19 @@ export function buildStagingEdgeBaselineManifest({
   const snapshot = requireStableInventory(beforePayload, afterPayload);
   const functions = [];
   let aggregateBytes = 0;
+  let aggregateRawEszipBytes = 0;
   for (const tuple of snapshot.records) {
     const reconciled = reconcileDownloadedBundleBody(bodyFor(bodies, tuple.name), tuple.bundleSha256);
     const deploymentBody = reconciled.deploymentBody;
     if (
       deploymentBody.byteLength < 1 ||
-      deploymentBody.byteLength > STAGING_EDGE_BASELINE_ARTIFACT.maximumBodyBytes
+      deploymentBody.byteLength > STAGING_EDGE_BASELINE_ARTIFACT.maximumDeployableBodyBytes ||
+      reconciled.rawEszip.byteLength < 1 ||
+      reconciled.rawEszip.byteLength > STAGING_EDGE_BASELINE_ARTIFACT.maximumRawEszipBytes
     )
       refuse(`BODY_SIZE:${tuple.name}`);
     aggregateBytes += deploymentBody.byteLength;
+    aggregateRawEszipBytes += reconciled.rawEszip.byteLength;
     functions.push({
       slug: tuple.name,
       tuple: normalizeFunctionTuple(tuple),
@@ -154,7 +161,12 @@ export function buildStagingEdgeBaselineManifest({
     });
   }
   functions.sort((left, right) => left.slug.localeCompare(right.slug));
-  if (aggregateBytes < 1 || aggregateBytes > STAGING_EDGE_BASELINE_ARTIFACT.maximumAggregateBytes)
+  if (
+    aggregateBytes < 1 ||
+    aggregateBytes > STAGING_EDGE_BASELINE_ARTIFACT.maximumAggregateDeployableBytes ||
+    aggregateRawEszipBytes < 1 ||
+    aggregateRawEszipBytes > STAGING_EDGE_BASELINE_ARTIFACT.maximumAggregateRawEszipBytes
+  )
     refuse("AGGREGATE_SIZE");
   const bundleIndex = functions.map(({ slug, body }) => ({ slug, ...body }));
   return {
@@ -172,6 +184,7 @@ export function buildStagingEdgeBaselineManifest({
     inventorySha256: snapshot.inventorySha256,
     bundleIndexSha256: sha256(canonicalBytes(bundleIndex)),
     aggregateBytes,
+    aggregateRawEszipBytes,
     functions,
   };
 }
@@ -190,6 +203,7 @@ function validateManifest(manifest, expected = {}) {
       "inventorySha256",
       "bundleIndexSha256",
       "aggregateBytes",
+      "aggregateRawEszipBytes",
       "functions",
     ])
   )
@@ -226,9 +240,15 @@ function validateManifest(manifest, expected = {}) {
   if (
     !Number.isSafeInteger(manifest.aggregateBytes) ||
     manifest.aggregateBytes < 1 ||
-    manifest.aggregateBytes > STAGING_EDGE_BASELINE_ARTIFACT.maximumAggregateBytes
+    manifest.aggregateBytes > STAGING_EDGE_BASELINE_ARTIFACT.maximumAggregateDeployableBytes
   )
     violations.push("aggregate_bytes_invalid");
+  if (
+    !Number.isSafeInteger(manifest.aggregateRawEszipBytes) ||
+    manifest.aggregateRawEszipBytes < 1 ||
+    manifest.aggregateRawEszipBytes > STAGING_EDGE_BASELINE_ARTIFACT.maximumAggregateRawEszipBytes
+  )
+    violations.push("aggregate_raw_eszip_bytes_invalid");
   return [...new Set(violations)];
 }
 
@@ -320,16 +340,17 @@ export function loadAndVerifyStagingEdgeBaselineArtifact({ root, expectedManifes
       !SHA256.test(String(record.body.rawEszipSha256 ?? "")) ||
       !Number.isSafeInteger(record.body.bytes) ||
       record.body.bytes < 1 ||
-      record.body.bytes > STAGING_EDGE_BASELINE_ARTIFACT.maximumBodyBytes ||
+      record.body.bytes > STAGING_EDGE_BASELINE_ARTIFACT.maximumDeployableBodyBytes ||
       !Number.isSafeInteger(record.body.rawEszipBytes) ||
       record.body.rawEszipBytes < 1 ||
-      record.body.rawEszipBytes > STAGING_EDGE_BASELINE_ARTIFACT.maximumBodyBytes
+      record.body.rawEszipBytes > STAGING_EDGE_BASELINE_ARTIFACT.maximumRawEszipBytes
     )
       violations.push(`${record.slug}:body_contract_invalid`);
   }
   if (violations.length > 0) refuse(violations.join(","));
   const functions = [];
   let aggregateBytes = 0;
+  let aggregateRawEszipBytes = 0;
   for (const record of manifest?.functions ?? []) {
     const bodyPath = join(artifactRoot, ...record.body.path.split("/"));
     const bodyMetadata = lstatSync(bodyPath, { throwIfNoEntry: false });
@@ -347,6 +368,7 @@ export function loadAndVerifyStagingEdgeBaselineArtifact({ root, expectedManifes
       violations.push(`${record.slug}:body_identity_invalid`);
     try {
       const reconciled = reconcileDownloadedBundleBody(body, record.tuple?.bundleSha256);
+      aggregateRawEszipBytes += reconciled.rawEszip.byteLength;
       if (
         reconciled.rawEszip.byteLength !== record.body.rawEszipBytes ||
         sha256(reconciled.rawEszip) !== record.body.rawEszipSha256
@@ -367,6 +389,12 @@ export function loadAndVerifyStagingEdgeBaselineArtifact({ root, expectedManifes
   if (sha256(canonicalBytes(bundleIndex)) !== manifest?.bundleIndexSha256)
     violations.push("bundle_index_mismatch");
   if (aggregateBytes !== manifest?.aggregateBytes) violations.push("aggregate_bytes_mismatch");
+  if (aggregateRawEszipBytes !== manifest?.aggregateRawEszipBytes)
+    violations.push("aggregate_raw_eszip_bytes_mismatch");
+  if (aggregateBytes > STAGING_EDGE_BASELINE_ARTIFACT.maximumAggregateDeployableBytes)
+    violations.push("aggregate_bytes_invalid");
+  if (aggregateRawEszipBytes > STAGING_EDGE_BASELINE_ARTIFACT.maximumAggregateRawEszipBytes)
+    violations.push("aggregate_raw_eszip_bytes_invalid");
   if (violations.length > 0) refuse(violations.join(","));
   return { root: artifactRoot, manifest, manifestSha256, functions };
 }

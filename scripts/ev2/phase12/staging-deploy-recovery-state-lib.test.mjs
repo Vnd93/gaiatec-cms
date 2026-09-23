@@ -21,6 +21,7 @@ import {
 import {
   STAGING_DEPLOY_RECOVERY,
   buildStagingDeployRecoveryState,
+  recoveryStateOutputs,
   validateStagingDeployRecoveryArtifactMetadata,
   validateStagingDeployRecoverySourceFiles,
   validateStagingDeployRecoveryState,
@@ -167,6 +168,7 @@ function fixtureIdentity(overrides = {}) {
       inventorySha256: digest("6"),
       functionCount: PRODUCTION_FUNCTIONS.length,
       aggregateBytes: 8192,
+      aggregateRawEszipBytes: 16_384,
     },
     browserRecovery: {
       environment: "staging",
@@ -185,6 +187,10 @@ test("staging deploy recovery v4 has an exact fail-closed schema", () => {
   const state = stateFixture();
   assert.equal(validateStagingDeployRecoveryState(state).valid, true);
   assert.equal(state.source.gateCiRunAttempt, 2);
+  assert.equal(
+    recoveryStateOutputs(state, "staging-deploy-state.json").edge_baseline_aggregate_raw_eszip_bytes,
+    "16384",
+  );
   assert.deepEqual(Object.keys(state).sort(), [
     "branch",
     "browserRecovery",
@@ -214,6 +220,11 @@ test("staging deploy recovery v4 has an exact fail-closed schema", () => {
     (value) => (value.dist.archiveBytes = 0),
     (value) => (value.recoveryArtifact.id = "0"),
     (value) => (value.environmentSnapshot.file = "../snapshot.json"),
+    (value) => delete value.edgeBaseline.aggregateRawEszipBytes,
+    (value) => (value.edgeBaseline.aggregateRawEszipBytes = 0),
+    (value) =>
+      (value.edgeBaseline.aggregateRawEszipBytes =
+        STAGING_EDGE_BASELINE_ARTIFACT.maximumAggregateRawEszipBytes + 1),
     (value) => (value.browserRecovery.runTag = `QA-CMS-FINAL-20260922-${"d".repeat(8)}`),
     (value) => (value.browserRecovery.environment = "production"),
   ]) {
@@ -438,6 +449,7 @@ async function artifactFixture(root) {
       inventorySha256: edgeArtifact.manifest.inventorySha256,
       functionCount: edgeArtifact.manifest.functionCount,
       aggregateBytes: edgeArtifact.manifest.aggregateBytes,
+      aggregateRawEszipBytes: edgeArtifact.manifest.aggregateRawEszipBytes,
     },
     browserRecovery: {
       environment: "staging",
@@ -489,6 +501,16 @@ test("local recovery verification proves archive, seal, provenance, snapshot and
           state: tampered,
         }),
       /environment_snapshot_digest_mismatch/,
+    );
+    const tamperedRawAggregate = structuredClone(fixture.state);
+    tamperedRawAggregate.edgeBaseline.aggregateRawEszipBytes += 1;
+    await assert.rejects(
+      () =>
+        verifyStagingDeployRecoveryArtifact({
+          artifactDirectory: fixture.artifactPath,
+          state: tamperedRawAggregate,
+        }),
+      /edge_baseline_aggregate_raw_eszip_bytes_state_mismatch/,
     );
     await writeFile(join(fixture.outputPath, "unexpected.txt"), "unexpected\n");
     await assert.rejects(

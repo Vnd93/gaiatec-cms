@@ -666,7 +666,7 @@ test("CI executes the real hardened Docker bundle twice and seals the result", (
   }
 });
 
-test("CI authenticates only the two GHCR pull lanes and retries only registry throttles", () => {
+test("CI authenticates only the two GHCR pull lanes and selects only verified registry mirrors", () => {
   const jobsStart = ciWorkflow.indexOf("\njobs:");
   const hotfixStart = ciWorkflow.indexOf("  hotfix-bundle-smoke:", jobsStart);
   const databaseStart = ciWorkflow.indexOf("\n  database:", hotfixStart);
@@ -706,7 +706,7 @@ test("CI authenticates only the two GHCR pull lanes and retries only registry th
   }
 
   const hotfixPull = stepBody(ciWorkflow, "Verify and pull the immutable runtime for the Docker smoke");
-  assert.match(hotfixPull, /retry_ghcr\(\)/);
+  assert.match(hotfixPull, /retry_registry_throttle\(\)/);
   assert.match(hotfixPull, /for attempt in 1 2 3/);
   assert.match(hotfixPull, /if "\$@" > "\$output_path" 2> "\$error_path"; then/);
   assert.equal((hotfixPull.match(/cat "\$error_path" >&2/g) ?? []).length, 2);
@@ -714,11 +714,16 @@ test("CI authenticates only the two GHCR pull lanes and retries only registry th
   assert.match(hotfixPull, /429/);
   assert.doesNotMatch(hotfixPull, /retry-after|\[\^0-9\]/);
   assert.match(hotfixPull, /backoff_seconds="\$\(\(5 \* 2 \*\* \(attempt - 1\)\)\)"/);
+  assert.match(hotfixPull, /public\.ecr\.aws\/supabase\/edge-runtime/);
+  assert.match(hotfixPull, /ghcr\.io\/supabase\/edge-runtime/);
+  assert.match(hotfixPull, /docker\.io\/supabase\/edge-runtime/);
+  assert.match(hotfixPull, /G12_EDGE_RUNTIME_REGISTRIES_EXHAUSTED/);
+  assert.match(hotfixPull, /EDGE_RUNTIME_AMD64_IMAGE_ID/);
   assertOrdered(hotfixPull, [
-    'retry_ghcr inspect "$INDEX_MANIFEST"',
+    'retry_registry_throttle "$label-inspect" "$INDEX_MANIFEST"',
     'test "sha256:$(sha256sum "$INDEX_MANIFEST"',
     'select(.platform.os == "linux" and .platform.architecture == "amd64"',
-    'retry_ghcr pull "$PULL_LOG"',
+    'retry_registry_throttle "$label-pull" "$PULL_LOG"',
   ]);
   assert.equal((hotfixPull.match(/docker buildx imagetools inspect --raw/g) ?? []).length, 1);
   assert.equal((hotfixPull.match(/docker pull --platform linux\/amd64/g) ?? []).length, 1);

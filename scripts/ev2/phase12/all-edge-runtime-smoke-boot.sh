@@ -7,6 +7,7 @@ bundle_root="${1:-}"
 inventory="${2:-}"
 attestation="${3:-}"
 expected_image='ghcr.io/supabase/edge-runtime:v1.74.3@sha256:c52405002a890ca9fcf77978671c57f3a988e03174afb277f84ac65bc917013c'
+expected_amd64_digest='sha256:cc355c3d0e9c063a351cad56d1c4c52a3c4d85aff4e1fad9d91688e75f9aad09'
 expected_count=34
 
 refuse() {
@@ -22,6 +23,14 @@ test -n "${attestation}" && test ! -e "${attestation}" || \
   refuse G12_ALL_EDGE_RUNTIME_SMOKE_BOOT_ATTESTATION_REFUSED
 test "${EDGE_RUNTIME_IMAGE:-}" = "${expected_image}" || \
   refuse G12_ALL_EDGE_RUNTIME_SMOKE_BOOT_IMAGE_REFUSED
+runtime_exec_image="${EDGE_RUNTIME_EXEC_IMAGE:-${EDGE_RUNTIME_IMAGE:-}}"
+case "${runtime_exec_image}" in
+  "${expected_image}"|\
+  "public.ecr.aws/supabase/edge-runtime@${expected_amd64_digest}"|\
+  "ghcr.io/supabase/edge-runtime@${expected_amd64_digest}"|\
+  "docker.io/supabase/edge-runtime@${expected_amd64_digest}") ;;
+  *) refuse G12_ALL_EDGE_RUNTIME_SMOKE_BOOT_EXEC_IMAGE_REFUSED ;;
+esac
 test "$(sha256sum "${inventory}" | awk '{print $1}')" = "${G12_INVENTORY_SHA256:-}" || \
   refuse G12_ALL_EDGE_RUNTIME_SMOKE_BOOT_INVENTORY_DIGEST_REFUSED
 
@@ -86,7 +95,7 @@ while IFS= read -r slug; do
     --tmpfs /tmp:rw,nosuid,nodev,size=67108864,mode=1777 \
     --volume "$(realpath -- "${eszip}"):/candidate/output.eszip:ro" \
     --env HOME=/tmp \
-    "${EDGE_RUNTIME_IMAGE}" start \
+    "${runtime_exec_image}" start \
     --ip 0.0.0.0 \
     --port 9000 \
     --main-service /candidate/output.eszip \

@@ -775,6 +775,7 @@ jobs:
         ghcr.io/supabase/edge-runtime:v1.74.3@sha256:c52405002a890ca9fcf77978671c57f3a988e03174afb277f84ac65bc917013c
       EDGE_RUNTIME_INDEX_DIGEST: sha256:c52405002a890ca9fcf77978671c57f3a988e03174afb277f84ac65bc917013c
       EDGE_RUNTIME_AMD64_DIGEST: sha256:cc355c3d0e9c063a351cad56d1c4c52a3c4d85aff4e1fad9d91688e75f9aad09
+      EDGE_RUNTIME_AMD64_IMAGE_ID: sha256:04332d354964b089d81eb872ce1604119a9cf62b54d3556338f3a46d81bfcc8e
     steps:
       - name: Checkout the workflow control revision for the Docker smoke
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -827,13 +828,17 @@ jobs:
           PULL_LOG: ${{ runner.temp }}/g12-smoke-edge-runtime-pull.log
         run: |
           set -euo pipefail
-          retry_ghcr() {
+          refuse() {
+            printf '%s\n' "$1" >&2
+            exit 1
+          }
+          retry_registry_throttle() {
             local label="$1"
             local output_path="$2"
             shift 2
             local attempt error_path backoff_seconds
             for attempt in 1 2 3; do
-              error_path="$RUNNER_TEMP/g12-ghcr-${label}-${attempt}.stderr"
+              error_path="$RUNNER_TEMP/g12-edge-runtime-${label}-${attempt}.stderr"
               rm -f "$output_path" "$error_path"
               if "$@" > "$output_path" 2> "$error_path"; then
                 cat "$error_path" >&2
@@ -843,28 +848,81 @@ jobs:
               if ! grep -Eiq \
                 'toomanyrequests|too[[:space:]]+many[[:space:]]+requests|(^|[^[:alnum:]])429([^[:alnum:]]|$)' \
                 "$error_path"; then
-                printf 'G12_GHCR_NON_THROTTLE_FAILURE:%s:%s\n' "$label" "$attempt" >&2
-                return 1
+                printf 'G12_EDGE_RUNTIME_REGISTRY_NON_THROTTLE_FAILURE:%s:%s\n' \
+                  "$label" "$attempt" >&2
+                return 10
               fi
               if [ "$attempt" -eq 3 ]; then
-                printf 'G12_GHCR_THROTTLE_RETRY_EXHAUSTED:%s\n' "$label" >&2
-                return 1
+                printf 'G12_EDGE_RUNTIME_REGISTRY_THROTTLE_RETRY_EXHAUSTED:%s\n' \
+                  "$label" >&2
+                return 29
               fi
               backoff_seconds="$((5 * 2 ** (attempt - 1)))"
-              printf 'G12_GHCR_THROTTLE_RETRY:%s:%s:%s\n' \
+              printf 'G12_EDGE_RUNTIME_REGISTRY_THROTTLE_RETRY:%s:%s:%s\n' \
                 "$label" "$attempt" "$backoff_seconds" >&2
               sleep "$backoff_seconds"
             done
           }
-          retry_ghcr inspect "$INDEX_MANIFEST" \
-            docker buildx imagetools inspect --raw "$EDGE_RUNTIME_IMAGE"
-          test "sha256:$(sha256sum "$INDEX_MANIFEST" | awk '{print $1}')" = "$EDGE_RUNTIME_INDEX_DIGEST"
-          test "$(jq -r --arg digest "$EDGE_RUNTIME_AMD64_DIGEST" \
-            '[.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64" and .digest == $digest)] | length' \
-            "$INDEX_MANIFEST")" = 1
-          retry_ghcr pull "$PULL_LOG" \
-            docker pull --platform linux/amd64 "$EDGE_RUNTIME_IMAGE"
-          cat "$PULL_LOG"
+          repositories=(
+            public.ecr.aws/supabase/edge-runtime
+            ghcr.io/supabase/edge-runtime
+            docker.io/supabase/edge-runtime
+          )
+          selected=false
+          for repository in "${repositories[@]}"; do
+            case "$repository" in
+              public.ecr.aws/*) label=public-ecr ;;
+              ghcr.io/*) label=ghcr ;;
+              docker.io/*) label=docker-hub ;;
+              *) refuse G12_EDGE_RUNTIME_REGISTRY_ALLOWLIST_REFUSED ;;
+            esac
+            index_ref="${repository}:v1.74.3@${EDGE_RUNTIME_INDEX_DIGEST}"
+            exec_ref="${repository}@${EDGE_RUNTIME_AMD64_DIGEST}"
+            if [ "$repository" = ghcr.io/supabase/edge-runtime ]; then
+              test "$index_ref" = "$EDGE_RUNTIME_IMAGE" || \
+                refuse G12_EDGE_RUNTIME_CANONICAL_IMAGE_REFUSED
+            fi
+            if retry_registry_throttle "$label-inspect" "$INDEX_MANIFEST" \
+              docker buildx imagetools inspect --raw "$index_ref"; then
+              :
+            else
+              status=$?
+              if [ "$status" -eq 29 ]; then
+                continue
+              fi
+              refuse "G12_EDGE_RUNTIME_REGISTRY_INSPECT_REFUSED:${label}:${status}"
+            fi
+            test "sha256:$(sha256sum "$INDEX_MANIFEST" | awk '{print $1}')" = \
+              "$EDGE_RUNTIME_INDEX_DIGEST" || \
+              refuse "G12_EDGE_RUNTIME_INDEX_DIGEST_REFUSED:${label}"
+            test "$(jq -r --arg digest "$EDGE_RUNTIME_AMD64_DIGEST" \
+              '[.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64" and .digest == $digest)] | length' \
+              "$INDEX_MANIFEST")" = 1 || \
+              refuse "G12_EDGE_RUNTIME_AMD64_DESCRIPTOR_REFUSED:${label}"
+            if retry_registry_throttle "$label-pull" "$PULL_LOG" \
+              docker pull --platform linux/amd64 "$exec_ref"; then
+              :
+            else
+              status=$?
+              if [ "$status" -eq 29 ]; then
+                continue
+              fi
+              refuse "G12_EDGE_RUNTIME_REGISTRY_PULL_REFUSED:${label}:${status}"
+            fi
+            cat "$PULL_LOG"
+            image_id="$(docker image inspect --format '{{.Id}}' "$exec_ref")" || \
+              refuse "G12_EDGE_RUNTIME_LOCAL_IMAGE_REFUSED:${label}"
+            test "$image_id" = "$EDGE_RUNTIME_AMD64_IMAGE_ID" || \
+              refuse "G12_EDGE_RUNTIME_LOCAL_IMAGE_ID_REFUSED:${label}"
+            test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$exec_ref")" = \
+              linux/amd64 || \
+              refuse "G12_EDGE_RUNTIME_LOCAL_PLATFORM_REFUSED:${label}"
+            printf 'EDGE_RUNTIME_EXEC_IMAGE=%s\n' "$exec_ref" >> "$GITHUB_ENV"
+            printf 'G12_EDGE_RUNTIME_REGISTRY_SELECTED:%s\n' "$label"
+            selected=true
+            break
+          done
+          test "$selected" = true || refuse G12_EDGE_RUNTIME_REGISTRIES_EXHAUSTED
       - name: Remove the Docker smoke GHCR credentials
         if: always()
         run: docker logout ghcr.io
@@ -907,7 +965,7 @@ jobs:
             --env G12_BUNDLE_DENO_LOCK_SHA256="$bundle_deno_lock_sha256" \
             --env G12_BUNDLE_DENO_LOCK_NPM_ROOT_SPECIFIERS="$bundle_deno_lock_npm_roots" \
             --env G12_BUNDLE_DENO_LOCK_EVIDENCE_JSON="$bundle_deno_lock_evidence" \
-            --entrypoint /bin/sh "$EDGE_RUNTIME_IMAGE" /g12-builder.sh online-primary default
+            --entrypoint /bin/sh "$EDGE_RUNTIME_EXEC_IMAGE" /g12-builder.sh online-primary default
       - name: Rebuild independently with a fresh online cache
         run: |
           set -euo pipefail
@@ -947,7 +1005,7 @@ jobs:
             --env G12_BUNDLE_DENO_LOCK_SHA256="$bundle_deno_lock_sha256" \
             --env G12_BUNDLE_DENO_LOCK_NPM_ROOT_SPECIFIERS="$bundle_deno_lock_npm_roots" \
             --env G12_BUNDLE_DENO_LOCK_EVIDENCE_JSON="$bundle_deno_lock_evidence" \
-            --entrypoint /bin/sh "$EDGE_RUNTIME_IMAGE" /g12-builder.sh online-rebuild default
+            --entrypoint /bin/sh "$EDGE_RUNTIME_EXEC_IMAGE" /g12-builder.sh online-rebuild default
       - name: Verify and report the bounded raw ESZIP sizes
         run: |
           set -euo pipefail
@@ -1039,7 +1097,7 @@ jobs:
             --env G12_EDGE_RUNTIME_INDEX_DIGEST="$EDGE_RUNTIME_INDEX_DIGEST" \
             --env G12_EDGE_RUNTIME_AMD64_DIGEST="$EDGE_RUNTIME_AMD64_DIGEST" \
             --env G12_PLATFORM=linux/amd64 \
-            --entrypoint /bin/sh "$EDGE_RUNTIME_IMAGE" /g12-all-edge-builder.sh candidate
+            --entrypoint /bin/sh "$EDGE_RUNTIME_EXEC_IMAGE" /g12-all-edge-builder.sh candidate
       - name: Cold-boot every candidate Edge Function without external egress
         env:
           G12_CANDIDATE_SHA: ${{ github.sha }}

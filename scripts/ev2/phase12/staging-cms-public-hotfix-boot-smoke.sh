@@ -5,6 +5,7 @@ umask 077
 
 eszip_input="${1:-}"
 expected_image='ghcr.io/supabase/edge-runtime:v1.74.3@sha256:c52405002a890ca9fcf77978671c57f3a988e03174afb277f84ac65bc917013c'
+expected_amd64_digest='sha256:cc355c3d0e9c063a351cad56d1c4c52a3c4d85aff4e1fad9d91688e75f9aad09'
 
 refuse() {
   printf '%s\n' "$1" >&2
@@ -16,6 +17,14 @@ test -f "${eszip_input}" && test ! -L "${eszip_input}" && test -s "${eszip_input
   refuse G12_STAGING_CMS_PUBLIC_HOTFIX_BOOT_ESZIP_REFUSED
 test "${EDGE_RUNTIME_IMAGE:-}" = "${expected_image}" || \
   refuse G12_STAGING_CMS_PUBLIC_HOTFIX_BOOT_IMAGE_REFUSED
+runtime_exec_image="${EDGE_RUNTIME_EXEC_IMAGE:-${EDGE_RUNTIME_IMAGE:-}}"
+case "${runtime_exec_image}" in
+  "${expected_image}"|\
+  "public.ecr.aws/supabase/edge-runtime@${expected_amd64_digest}"|\
+  "ghcr.io/supabase/edge-runtime@${expected_amd64_digest}"|\
+  "docker.io/supabase/edge-runtime@${expected_amd64_digest}") ;;
+  *) refuse G12_STAGING_CMS_PUBLIC_HOTFIX_BOOT_EXEC_IMAGE_REFUSED ;;
+esac
 
 eszip="$(realpath -- "${eszip_input}")" || \
   refuse G12_STAGING_CMS_PUBLIC_HOTFIX_BOOT_ESZIP_PATH_REFUSED
@@ -50,7 +59,7 @@ container_id="$(docker run --detach --platform linux/amd64 \
   --tmpfs /tmp:rw,nosuid,nodev,size=67108864,mode=1777 \
   --volume "${eszip}:/candidate/output.eszip:ro" \
   --env HOME=/tmp \
-  "${EDGE_RUNTIME_IMAGE}" start \
+  "${runtime_exec_image}" start \
   --ip 0.0.0.0 \
   --port 9000 \
   --main-service /candidate/output.eszip \

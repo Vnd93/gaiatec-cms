@@ -635,6 +635,7 @@ jobs:
           QA_CMS_LEGACY_BRIDGE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
           QA_CMS_LEGACY_BRIDGE_CONTROL_SHA: ${{ github.event.workflow_run.head_sha }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_INTERNAL_IMAGE_REGISTRY: public.ecr.aws
       - name: Upload the watchdog restore evidence
         id: legacy_restore_evidence_upload
         if: always() && steps.legacy_restore.outcome != 'skipped'

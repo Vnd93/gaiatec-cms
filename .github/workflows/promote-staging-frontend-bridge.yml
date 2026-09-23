@@ -1082,6 +1082,7 @@ jobs:
           QA_CMS_LEGACY_BRIDGE_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
           QA_CMS_LEGACY_BRIDGE_LEGACY_SHA: ${{ env.LEGACY_PUBLIC_BACKEND_SHA }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_INTERNAL_IMAGE_REGISTRY: public.ecr.aws
       - name: Take the exclusive legacy backend lease before any swap
         id: legacy_lease
         if: steps.legacy_prepare.outcome == 'success'
@@ -1109,6 +1110,7 @@ jobs:
           QA_CMS_LEGACY_BRIDGE_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
           QA_CMS_LEGACY_BRIDGE_LEGACY_SHA: ${{ env.LEGACY_PUBLIC_BACKEND_SHA }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_INTERNAL_IMAGE_REGISTRY: public.ecr.aws
       - name: Bound convergence of the engaged legacy backend on isolated A
         id: preview_convergence
         if: steps.legacy_engage.outcome == 'success'
@@ -1328,6 +1330,7 @@ jobs:
           QA_CMS_LEGACY_BRIDGE_LEGACY_SHA: ${{ env.LEGACY_PUBLIC_BACKEND_SHA }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           REQUIRE_CONTRACT_PROBE: ${{ steps.canonical_fixture.outcome == 'success' }}
+          SUPABASE_INTERNAL_IMAGE_REGISTRY: public.ecr.aws
         run: |
           set -euo pipefail
           probe=""

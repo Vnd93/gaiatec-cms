@@ -1129,13 +1129,13 @@ jobs:
           test -n "$GHCR_TOKEN"
           printf '%s' "$GHCR_TOKEN" |
             docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin
-      - name: Start the local Supabase stack with bounded GHCR throttle recovery
+      - name: Start the local Supabase stack with native registry fallback
         run: |
           set -euo pipefail
           started=false
           for attempt in 1 2 3; do
             log_path="$RUNNER_TEMP/g12-supabase-start-${attempt}.log"
-            if supabase start 2>&1 | tee "$log_path"; then
+            if env -u SUPABASE_INTERNAL_IMAGE_REGISTRY supabase start 2>&1 | tee "$log_path"; then
               started=true
               break
             fi
@@ -1143,26 +1143,26 @@ jobs:
               ! grep -Eiq \
                 'toomanyrequests|too[[:space:]]+many[[:space:]]+requests|(^|[^[:alnum:]])429([^[:alnum:]]|$)' \
                 "$log_path"; then
-              printf 'G12_SUPABASE_START_NON_GHCR_THROTTLE_FAILURE:%s\n' "$attempt" >&2
+              printf 'G12_SUPABASE_START_NON_REGISTRY_THROTTLE_FAILURE:%s\n' "$attempt" >&2
               exit 1
             fi
             if [ "$attempt" -eq 3 ]; then
               break
             fi
-            supabase stop --no-backup
+            env -u SUPABASE_INTERNAL_IMAGE_REGISTRY supabase stop --no-backup
             backoff_seconds="$((5 * 2 ** (attempt - 1)))"
-            printf 'G12_SUPABASE_START_GHCR_THROTTLE_RETRY:%s:%s\n' \
+            printf 'G12_SUPABASE_START_REGISTRY_THROTTLE_RETRY:%s:%s\n' \
               "$attempt" "$backoff_seconds" >&2
             sleep "$backoff_seconds"
           done
           test "$started" = true
+      - run: env -u SUPABASE_INTERNAL_IMAGE_REGISTRY supabase db reset --local --no-seed
+      - run: env -u SUPABASE_INTERNAL_IMAGE_REGISTRY supabase test db
+      - if: always()
+        run: env -u SUPABASE_INTERNAL_IMAGE_REGISTRY supabase stop --no-backup
       - name: Remove the local Supabase stack GHCR credentials
         if: always()
         run: docker logout ghcr.io
-      - run: supabase db reset --local --no-seed
-      - run: supabase test db
-      - if: always()
-        run: supabase stop --no-backup
       - name: Seal the exact database release payload after every database gate passes
         id: database-payload
         run: >-

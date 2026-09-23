@@ -9,7 +9,7 @@ jobs:
       - run: npm run check
   database:
     steps:
-      - run: supabase test db
+      - run: env -u SUPABASE_INTERNAL_IMAGE_REGISTRY supabase test db
 `;
 const manifest = {
   scripts: {

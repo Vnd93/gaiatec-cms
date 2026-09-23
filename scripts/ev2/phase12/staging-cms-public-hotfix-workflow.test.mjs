@@ -725,21 +725,37 @@ test("CI authenticates only the two GHCR pull lanes and retries only registry th
 
   const databaseStartStep = stepBody(
     ciWorkflow,
-    "Start the local Supabase stack with bounded GHCR throttle recovery",
+    "Start the local Supabase stack with native registry fallback",
   );
   assert.match(databaseStartStep, /for attempt in 1 2 3/);
-  assert.match(databaseStartStep, /if supabase start 2>&1 \| tee "\$log_path"; then/);
+  assert.match(
+    databaseStartStep,
+    /if env -u SUPABASE_INTERNAL_IMAGE_REGISTRY supabase start 2>&1 \| tee "\$log_path"; then/,
+  );
+  assert.equal(
+    (databaseStartStep.match(/env -u SUPABASE_INTERNAL_IMAGE_REGISTRY supabase start/g) ?? []).length,
+    1,
+  );
+  assert.doesNotMatch(
+    databaseStartStep,
+    /SUPABASE_INTERNAL_IMAGE_REGISTRY=(?:ghcr\.io|public\.ecr\.aws|docker\.io)/,
+  );
   assert.match(
     databaseStartStep,
     /grep -Fqi 'failed to pull docker image from all registries:' "\$log_path"/,
   );
   assert.match(databaseStartStep, /toomanyrequests\|too\[\[:space:\]\]\+many/);
   assert.doesNotMatch(databaseStartStep, /retry-after|\[\^0-9\]/);
-  assert.match(databaseStartStep, /supabase stop --no-backup/);
+  assert.match(databaseStartStep, /env -u SUPABASE_INTERNAL_IMAGE_REGISTRY supabase stop --no-backup/);
   assert.match(databaseStartStep, /backoff_seconds="\$\(\(5 \* 2 \*\* \(attempt - 1\)\)\)"/);
   assert.match(databaseStartStep, /test "\$started" = true/);
   assert.equal((database.match(/supabase start/g) ?? []).length, 1);
   assert.equal((database.match(/supabase stop --no-backup/g) ?? []).length, 2);
+  assert.equal((database.match(/env -u SUPABASE_INTERNAL_IMAGE_REGISTRY supabase /g) ?? []).length, 5);
+  assert.doesNotMatch(
+    database,
+    /(?<!env -u SUPABASE_INTERNAL_IMAGE_REGISTRY )supabase (?:start|stop|db reset|test db)/,
+  );
   assert.doesNotMatch(database, /--ignore-health-check|--exclude/);
   assert.match(database, /supabase\/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520/);
   assert.match(database, /version: 2\.116\.0/);
@@ -760,11 +776,11 @@ test("CI authenticates only the two GHCR pull lanes and retries only registry th
   assertOrdered(database, [
     "supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520",
     "Authenticate read-only GHCR pulls for the local Supabase stack",
-    "Start the local Supabase stack with bounded GHCR throttle recovery",
+    "Start the local Supabase stack with native registry fallback",
+    "env -u SUPABASE_INTERNAL_IMAGE_REGISTRY supabase db reset --local --no-seed",
+    "env -u SUPABASE_INTERNAL_IMAGE_REGISTRY supabase test db",
+    "env -u SUPABASE_INTERNAL_IMAGE_REGISTRY supabase stop --no-backup",
     "Remove the local Supabase stack GHCR credentials",
-    "supabase db reset --local --no-seed",
-    "supabase test db",
-    "supabase stop --no-backup",
   ]);
 });
 

@@ -18,7 +18,8 @@ export function candidateTestRunner(relativePath) {
 export function candidateTestIsCiExecuted(relativePath, packageManifest, ciWorkflow) {
   const runner = candidateTestRunner(relativePath);
   if (!runner) return false;
-  if (runner === "supabase-test-db") return /^\s*- run: supabase test db\s*$/m.test(ciWorkflow);
+  if (runner === "supabase-test-db")
+    return /^\s*- run: env -u SUPABASE_INTERNAL_IMAGE_REGISTRY supabase test db\s*$/m.test(ciWorkflow);
   if (!/^\s*- run: npm run check\s*$/m.test(ciWorkflow)) return false;
   const scripts = packageManifest?.scripts ?? {};
   if (!packageScriptInvokes(scripts.check, runner)) return false;

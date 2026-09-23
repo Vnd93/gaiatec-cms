@@ -279,8 +279,12 @@ jobs:
         working-directory: control
         run: |
           set -euo pipefail
-          node <<'NODE'
-          const { readFileSync } = require("node:fs");
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          import {
+            stagingBridgeRecoveryProvenanceModeForArchive,
+            verifyStagingBridgeRecoveryOutputs,
+          } from "./scripts/ev2/phase12/staging-bridge-recovery-artifact-lib.mjs";
           const state = JSON.parse(readFileSync("../state-artifact/staging-frontend-bridge-state.json", "utf8"));
           const seal = JSON.parse(readFileSync("../recovery/outputs/staging-baseline-dist-seal.json", "utf8"));
           const identity = {
@@ -296,6 +300,10 @@ jobs:
           if (JSON.stringify(state.recovery?.seal) !== JSON.stringify(identity) ||
               state.original?.release !== identity.candidateSha)
             throw new Error("G12_STAGING_BRIDGE_WATCHDOG_RECOVERY_BINDING_REFUSED");
+          await verifyStagingBridgeRecoveryOutputs({
+            outputsDirectory: "../recovery/outputs",
+            expectedProvenanceMode: stagingBridgeRecoveryProvenanceModeForArchive(identity.archiveFile),
+          });
           NODE
           node scripts/ev2/phase12/verify-production-dist-seal.mjs \
             --dist ../recovery/dist \

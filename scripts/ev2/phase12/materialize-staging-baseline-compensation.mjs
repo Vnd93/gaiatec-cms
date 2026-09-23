@@ -8,6 +8,11 @@ import { materializeProductionDistArchive, verifyProductionDistSeal } from "./pr
 import { validateStagingBaselineBootstrapRecord } from "./staging-baseline-bootstrap-lib.mjs";
 import { validateStagingCompensationState } from "./staging-baseline-compensation-lib.mjs";
 import {
+  stagingBridgeRecoveryProvenanceModeForArchive,
+  verifyStagingBridgeRecoveryOutputs,
+} from "./staging-bridge-recovery-artifact-lib.mjs";
+import { stagingSealIdentity } from "./staging-recovery-seal-lib.mjs";
+import {
   STAGING_DEPLOY_RECOVERY,
   verifyStagingDeployRecoveryArtifact,
 } from "./staging-deploy-recovery-state-lib.mjs";
@@ -98,14 +103,9 @@ async function requireAbsentOutput(path, forbidden) {
   return target;
 }
 
-async function assertStateArtifactDirectory(root) {
+async function assertStateArtifactDirectory(root, file) {
   const entries = await readdir(root, { withFileTypes: true });
-  if (
-    entries.length !== 1 ||
-    entries[0].name !== "staging-deploy-state.json" ||
-    !entries[0].isFile() ||
-    entries[0].isSymbolicLink()
-  )
+  if (entries.length !== 1 || entries[0].name !== file || !entries[0].isFile() || entries[0].isSymbolicLink())
     throw new Error("G12_STAGING_BASELINE_COMPENSATION_REFUSED:state_artifact_contents_invalid");
   return resolve(root, entries[0].name);
 }
@@ -147,27 +147,22 @@ if (
   !["deploy-compensation", "bridge-compensation"].includes(mode) ||
   !recordPath ||
   !recoveryInput ||
+  !stateInput ||
   !outputInput ||
   !FULL_SHA.test(candidateSha) ||
   !FULL_SHA.test(controlSha) ||
   !POSITIVE.test(runId) ||
   !Number.isSafeInteger(runAttempt) ||
   runAttempt < 1 ||
-  (mode === "deploy-compensation" &&
-    (!stateInput ||
-      !POSITIVE.test(recoveryArtifactId) ||
-      !/^sha256:[a-f0-9]{64}$/.test(recoveryArtifactDigest) ||
-      !recoveryArtifactName))
+  !POSITIVE.test(recoveryArtifactId) ||
+  !/^sha256:[a-f0-9]{64}$/.test(recoveryArtifactDigest) ||
+  !recoveryArtifactName
 )
   throw new Error("G12_STAGING_BASELINE_COMPENSATION_INPUT_REFUSED");
 
 const recoveryRoot = await assertDirectory(recoveryInput, "recovery_root");
-const stateRoot = stateInput ? await assertDirectory(stateInput, "state_root") : null;
-const outputDist = await requireAbsentOutput(outputInput, [
-  recoveryRoot,
-  ...(stateRoot ? [stateRoot] : []),
-  resolve(recordPath),
-]);
+const stateRoot = await assertDirectory(stateInput, "state_root");
+const outputDist = await requireAbsentOutput(outputInput, [recoveryRoot, stateRoot, resolve(recordPath)]);
 let statePath;
 let recoveryDist;
 let recoveryOutputs;
@@ -177,21 +172,14 @@ if (mode === "deploy-compensation") {
     ["dist", STAGING_DEPLOY_RECOVERY.edgeBaselineDirectory, "outputs"],
     "deploy_recovery",
   );
-  statePath = await assertStateArtifactDirectory(stateRoot);
+  statePath = await assertStateArtifactDirectory(stateRoot, "staging-deploy-state.json");
   recoveryDist = resolve(recoveryRoot, "dist");
   recoveryOutputs = resolve(recoveryRoot, "outputs");
 } else {
-  await assertEntries(recoveryRoot, ["baseline", "control"], "bridge_recovery");
-  await assertEntries(resolve(recoveryRoot, "control"), ["outputs"], "bridge_control");
-  await assertEntries(
-    resolve(recoveryRoot, "control/outputs"),
-    ["staging-frontend-bridge-state.json"],
-    "bridge_state",
-  );
-  await assertEntries(resolve(recoveryRoot, "baseline"), ["dist", "outputs"], "bridge_baseline");
-  statePath = resolve(recoveryRoot, "control/outputs/staging-frontend-bridge-state.json");
-  recoveryDist = resolve(recoveryRoot, "baseline/dist");
-  recoveryOutputs = resolve(recoveryRoot, "baseline/outputs");
+  await assertEntries(recoveryRoot, ["dist", "outputs"], "bridge_recovery");
+  statePath = await assertStateArtifactDirectory(stateRoot, "staging-frontend-bridge-state.json");
+  recoveryDist = resolve(recoveryRoot, "dist");
+  recoveryOutputs = resolve(recoveryRoot, "outputs");
 }
 await assertDirectory(recoveryDist, "recovery_dist");
 await assertDirectory(recoveryOutputs, "recovery_outputs");
@@ -208,10 +196,28 @@ const stateResult = validateStagingCompensationState({
 });
 if (!stateResult.valid)
   throw new Error(`G12_STAGING_BASELINE_COMPENSATION_STATE_REFUSED:${stateResult.violations.join(",")}`);
+const stateRecoveryArtifact =
+  mode === "deploy-compensation" ? state.recoveryArtifact : state.recovery?.artifact;
+if (
+  stateRecoveryArtifact?.id !== recoveryArtifactId ||
+  stateRecoveryArtifact?.digest !== recoveryArtifactDigest ||
+  stateRecoveryArtifact?.name !== recoveryArtifactName
+)
+  throw new Error("G12_STAGING_BASELINE_COMPENSATION_REFUSED:recovery_artifact_binding_invalid");
 
 const baselineSealPath = resolve(recoveryOutputs, "staging-baseline-dist-seal.json");
 const baselineSealIdentity = await stableFile(baselineSealPath);
 const baselineSeal = json(baselineSealIdentity, "seal");
+if (
+  mode === "bridge-compensation" &&
+  JSON.stringify(state.recovery?.seal) !== JSON.stringify(stagingSealIdentity(baselineSeal))
+)
+  throw new Error("G12_STAGING_BASELINE_COMPENSATION_REFUSED:recovery_seal_binding_invalid");
+if (mode === "bridge-compensation")
+  await verifyStagingBridgeRecoveryOutputs({
+    outputsDirectory: recoveryOutputs,
+    expectedProvenanceMode: stagingBridgeRecoveryProvenanceModeForArchive(state.recovery.seal.archiveFile),
+  });
 const recoverySnapshot = await verifySnapshot(recoveryDist, baselineSeal, candidateSha);
 const provenancePath = resolve(recoveryOutputs, STAGING_FRONTEND_PACKAGE.provenanceFile);
 let provenanceIdentity = null;
@@ -251,12 +257,6 @@ try {
     )
       throw new Error("G12_STAGING_BASELINE_COMPENSATION_REFUSED:provenance_identity_invalid");
     if (mode === "deploy-compensation") {
-      if (
-        state.recoveryArtifact?.id !== recoveryArtifactId ||
-        state.recoveryArtifact?.digest !== recoveryArtifactDigest ||
-        state.recoveryArtifact?.name !== recoveryArtifactName
-      )
-        throw new Error("G12_STAGING_BASELINE_COMPENSATION_REFUSED:recovery_artifact_binding_invalid");
       await verifyStagingDeployRecoveryArtifact({ artifactDirectory: recoveryRoot, state });
       if (
         provenance.sourceRunId !== state.source.ciRunId ||
@@ -367,6 +367,7 @@ if (process.env.GITHUB_OUTPUT)
       `archive_path=${resolve(archivePath)}`,
       `seal_path=${baselineSealIdentity.path}`,
       `provenance_path=${provenanceIdentity?.path ?? ""}`,
+      `provenance_mode=${provenanceIdentity ? "required" : "pinned-bootstrap-absent"}`,
       "",
     ].join("\n"),
     "utf8",

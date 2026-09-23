@@ -23,7 +23,9 @@ const policySha256 = "2".repeat(64);
 const sourceArtifactName = `staging-frontend-${candidateSha}-${sourceRunId}-${sourceRunAttempt}`;
 
 function nodeHeredocs(workflow) {
-  return [...workflow.matchAll(/^\s*node <<'NODE'\r?\n([\s\S]*?)^\s*NODE\s*$/gm)].map((match) => match[1]);
+  return [...workflow.matchAll(/^\s*node( --input-type=module)? <<'NODE'\r?\n([\s\S]*?)^\s*NODE\s*$/gm)].map(
+    (match) => ({ module: Boolean(match[1]), program: match[2] }),
+  );
 }
 
 function deploymentId(index) {
@@ -429,6 +431,7 @@ test("promotion requires headless fail-closed cleanup while full staging owns po
   const recoveryUpload = workflow.indexOf(
     "Upload mandatory exact bridge recovery bytes before state or mutation",
   );
+  const recoveryTopology = workflow.indexOf("Verify exact mode-bound recovery topology before upload");
   const recoveryState = workflow.indexOf(
     "Bind durable staging bridge recovery state to immutable baseline bytes",
   );
@@ -447,6 +450,8 @@ test("promotion requires headless fail-closed cleanup while full staging owns po
   const hmacState = workflow.indexOf("Persist redundant HMAC bridge state only after remote recovery proof");
   assert.ok(
     recoveryUpload >= 0 &&
+      recoveryTopology >= 0 &&
+      recoveryTopology < recoveryUpload &&
       recoveryUpload < recoveryState &&
       recoveryState < recoveryStateUpload &&
       recoveryStateUpload < recoveryStateDownload &&
@@ -464,6 +469,11 @@ test("promotion requires headless fail-closed cleanup while full staging owns po
   assert.match(workflow, /artifact-ids: \$\{\{ steps\.recovery_upload\.outputs\.artifact-id \}\}/);
   assert.match(workflow, /steps\.durable_recovery_remote\.outcome == 'success'/);
   assert.match(workflow, /steps\.hmac_state\.outcome == 'success'/);
+  assert.equal((workflow.match(/verify-staging-bridge-recovery-artifact\.mjs/g) ?? []).length, 2);
+  assert.match(
+    watchdog,
+    /stagingBridgeRecoveryProvenanceModeForArchive[\s\S]*verifyStagingBridgeRecoveryOutputs/,
+  );
   assert.match(workflow, /PREVIEW_DEPLOYMENT_ORIGIN: \$\{\{ steps\.preview\.outputs\.deployment-url \}\}/);
   assert.match(
     workflow,
@@ -501,14 +511,28 @@ test("promotion requires headless fail-closed cleanup while full staging owns po
   assert.match(watchdog, /cms-public-bridge-fixture\.mjs recover/);
   const watchdogPrograms = nodeHeredocs(watchdog);
   assert.ok(watchdogPrograms.length >= 3);
-  for (const [index, program] of watchdogPrograms.entries()) {
-    const parsed = spawnSync(process.execPath, ["--check"], { input: program, encoding: "utf8" });
+  for (const [index, heredoc] of watchdogPrograms.entries()) {
+    const parsed = spawnSync(
+      process.execPath,
+      heredoc.module ? ["--input-type=module", "--check"] : ["--check"],
+      {
+        input: heredoc.program,
+        encoding: "utf8",
+      },
+    );
     assert.equal(parsed.status, 0, `watchdog inline Node ${index + 1}: ${parsed.stderr}`);
   }
   const bridgePrograms = nodeHeredocs(workflow);
   assert.ok(bridgePrograms.length >= 2);
-  for (const [index, program] of bridgePrograms.entries()) {
-    const parsed = spawnSync(process.execPath, ["--check"], { input: program, encoding: "utf8" });
+  for (const [index, heredoc] of bridgePrograms.entries()) {
+    const parsed = spawnSync(
+      process.execPath,
+      heredoc.module ? ["--input-type=module", "--check"] : ["--check"],
+      {
+        input: heredoc.program,
+        encoding: "utf8",
+      },
+    );
     assert.equal(parsed.status, 0, `bridge inline Node ${index + 1}: ${parsed.stderr}`);
   }
 
@@ -1173,8 +1197,15 @@ test("a lost bridge runner cannot leave the legacy public backend live on stagin
   assert.match(restore, /if \(!restoreProven\) refuse\("PUBLIC_V2_CONTRACT_UNPROVEN"\)/);
 
   const programs = nodeHeredocs(watchdog);
-  for (const [index, program] of programs.entries()) {
-    const parsed = spawnSync(process.execPath, ["--check"], { input: program, encoding: "utf8" });
+  for (const [index, heredoc] of programs.entries()) {
+    const parsed = spawnSync(
+      process.execPath,
+      heredoc.module ? ["--input-type=module", "--check"] : ["--check"],
+      {
+        input: heredoc.program,
+        encoding: "utf8",
+      },
+    );
     assert.equal(parsed.status, 0, `watchdog inline Node ${index + 1}: ${parsed.stderr}`);
   }
 });

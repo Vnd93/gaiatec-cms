@@ -215,7 +215,7 @@ test("staging rollback routes only the pinned legacy compensation through immuta
   };
   const bootstrapRemote = index("Verify one-time bootstrap provenance against live GitHub metadata");
   const compensationRemote = index("Resolve exact failed run and immutable compensation artifacts");
-  const stateDownload = index("Download exact deploy-compensation state by ID and digest");
+  const stateDownload = index("Download exact compensation state by ID and digest");
   const recoveryDownload = index("Download exact compensation recovery bytes by ID and digest");
   const modernMaterialize = index("Verify compensation state and materialize exact recovery bytes");
   const legacyVerify = index("Verify pinned legacy bootstrap compensation before selecting bootstrap bytes");
@@ -250,7 +250,14 @@ test("staging rollback routes only the pinned legacy compensation through immuta
   );
   const modernBlock = workflow.slice(modernMaterialize, legacyVerify);
   assert.doesNotMatch(modernBlock, /legacy-bootstrap-compensation/);
-  assert.match(modernBlock, /materialize-staging-baseline-compensation\.mjs/);
+  assert.match(
+    producerRegion,
+    /Download exact compensation state by ID and digest[\s\S]*steps\.baseline_source\.outputs\.mode == 'bridge-compensation'[\s\S]*artifact-ids: \$\{\{ steps\.baseline_compensation\.outputs\.state_artifact_id \}\}/,
+  );
+  assert.match(
+    modernBlock,
+    /materialize-staging-baseline-compensation\.mjs[\s\S]*--state-dir "\$RUNNER_TEMP\/g12-staging-rollback-compensation-state"/,
+  );
   for (const name of [
     "Verify one-time bootstrap provenance against live GitHub metadata",
     "Download exact bootstrap bridge evidence by ID and digest",

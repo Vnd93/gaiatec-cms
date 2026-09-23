@@ -56,19 +56,54 @@ test("deploy compensation resolves and compares the original CI package without 
 });
 
 test("bridge compensation preserves the exact recovery archive including bootstrap without provenance", () => {
+  const stateDownload = step("Download the immutable compensation state by exact artifact ID");
   const validate = step("Validate compensation state, seal, snapshot, and bytes before materialization");
   const preserve = step("Preserve exact recovery bytes for future bridge compensation");
+  assert.match(stateDownload, /bridge-compensation/);
+  assert.match(stateDownload, /state_artifact_id/);
   assert.match(validate, /materialize-staging-baseline-compensation\.mjs/);
+  assert.match(validate, /--state-dir/);
   assert.match(validate, /staging-baseline-bootstrap\.json/);
   assert.match(preserve, /cp "\$ARCHIVE_PATH"/);
   assert.match(preserve, /if \[ -n "\$PROVENANCE_PATH" \]/);
   assert.doesNotMatch(`${validate}\n${preserve}`, /npm run build|seal-production-dist|vite build/);
 });
 
+test("mode-bound recovery topology is proven before upload and after immutable download", () => {
+  const materialize = position("Materialize the exact one-time bootstrap baseline");
+  const localTopology = position("Verify exact mode-bound recovery topology before upload");
+  const upload = position("Upload mandatory exact bridge recovery bytes before state or mutation");
+  const stateDownload = position("Download just-uploaded bridge recovery state by immutable artifact ID");
+  const recoveryDownload = position(
+    "Download just-uploaded exact bridge recovery bytes by immutable artifact ID",
+  );
+  const remoteTopology = position("Reverify remote bridge state and exact recovery bytes before mutation");
+  const mutation = position("Persist redundant HMAC bridge state only after remote recovery proof");
+  assert.ok(
+    materialize < localTopology &&
+      localTopology < upload &&
+      upload < stateDownload &&
+      stateDownload < recoveryDownload &&
+      recoveryDownload < remoteTopology &&
+      remoteTopology < mutation,
+  );
+  const verifier = /verify-staging-bridge-recovery-artifact\.mjs/g;
+  assert.equal((workflow.match(verifier) ?? []).length, 2);
+  assert.match(step("Verify exact mode-bound recovery topology before upload"), /--baseline-mode/);
+  assert.match(
+    step("Reverify remote bridge state and exact recovery bytes before mutation"),
+    /--peer-outputs[\s\S]*--baseline-mode/,
+  );
+  assert.doesNotMatch(
+    step("Reverify remote bridge state and exact recovery bytes before mutation"),
+    /readFileSync\([^\n]*staging-frontend-provenance\.json/,
+  );
+});
+
 test("legacy bootstrap compensation is double-attested and never enters the modern materializer", () => {
   const bootstrapRemote = position("Verify the one-time baseline bootstrap against live GitHub metadata");
   const compensationRemote = position("Resolve the exact failed run and immutable compensation artifacts");
-  const stateDownload = position("Download the immutable deploy-compensation state by exact artifact ID");
+  const stateDownload = position("Download the immutable compensation state by exact artifact ID");
   const recoveryDownload = position(
     "Download the immutable compensation recovery bytes by exact artifact ID",
   );
@@ -94,7 +129,7 @@ test("legacy bootstrap compensation is double-attested and never enters the mode
   assert.match(remote, /legacy-bootstrap-compensation/);
   assert.match(remote, /legacy-bootstrap-compensation' && 'deploy-compensation'/);
   for (const label of [
-    "Download the immutable deploy-compensation state by exact artifact ID",
+    "Download the immutable compensation state by exact artifact ID",
     "Download the immutable compensation recovery bytes by exact artifact ID",
   ]) {
     const value = step(label);

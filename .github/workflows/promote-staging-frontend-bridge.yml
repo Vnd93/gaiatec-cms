@@ -427,9 +427,10 @@ jobs:
           --mode "${{ steps.baseline_source.outputs.mode == 'legacy-bootstrap-compensation' && 'deploy-compensation' || steps.baseline_source.outputs.mode }}"
           --run-id "${{ steps.baseline_source.outputs.compensation_run_id }}"
           --run-attempt "${{ steps.baseline_source.outputs.compensation_run_attempt }}"
-      - name: Download the immutable deploy-compensation state by exact artifact ID
+      - name: Download the immutable compensation state by exact artifact ID
         if: >-
           steps.baseline_source.outputs.mode == 'deploy-compensation' ||
+          steps.baseline_source.outputs.mode == 'bridge-compensation' ||
           steps.baseline_source.outputs.mode == 'legacy-bootstrap-compensation'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -471,18 +472,15 @@ jobs:
         run: |
           set -euo pipefail
           output="$RUNNER_TEMP/g12-staging-baseline-compensation-verified"
-          state_args=()
           if [ "$COMPENSATION_MODE" = bridge-compensation ]; then
             output=../baseline/dist
-          else
-            state_args=(--state-dir "$RUNNER_TEMP/g12-staging-baseline-compensation-state")
           fi
           test ! -e "$output"
           node scripts/ev2/phase12/materialize-staging-baseline-compensation.mjs \
             --mode "$COMPENSATION_MODE" \
             --record .github/release-controls/staging-baseline-bootstrap.json \
             --recovery-dir "$RUNNER_TEMP/g12-staging-baseline-compensation-recovery" \
-            "${state_args[@]}" \
+            --state-dir "$RUNNER_TEMP/g12-staging-baseline-compensation-state" \
             --candidate "${{ inputs.expected_baseline_sha }}" \
             --run-id "${{ steps.baseline_source.outputs.compensation_run_id }}" \
             --run-attempt "${{ steps.baseline_source.outputs.compensation_run_attempt }}" \
@@ -801,6 +799,15 @@ jobs:
           --dist ../baseline/dist
           --seal ../baseline/outputs/staging-baseline-dist-seal.json
           --candidate "${{ inputs.expected_baseline_sha }}"
+      - name: Verify exact mode-bound recovery topology before upload
+        id: recovery_topology
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/verify-staging-bridge-recovery-artifact.mjs
+          --outputs ../baseline/outputs
+          --baseline-mode "${{ steps.baseline_source.outputs.mode }}"
+          --compensation-provenance-mode
+          "${{ steps.baseline_compensation_package.outputs.provenance_mode }}"
       - name: Upload mandatory exact bridge recovery bytes before state or mutation
         id: recovery_upload
         timeout-minutes: 10
@@ -929,8 +936,15 @@ jobs:
           RECOVERY_ARTIFACT_ID: ${{ steps.recovery_upload.outputs.artifact-id }}
           RECOVERY_ARTIFACT_DIGEST: ${{ steps.recovery_upload.outputs.artifact-digest }}
           BASELINE_SHA: ${{ inputs.expected_baseline_sha }}
+          BASELINE_SOURCE_MODE: ${{ steps.baseline_source.outputs.mode }}
+          COMPENSATION_PROVENANCE_MODE: ${{ steps.baseline_compensation_package.outputs.provenance_mode }}
         run: |
           set -euo pipefail
+          node scripts/ev2/phase12/verify-staging-bridge-recovery-artifact.mjs \
+            --outputs ../baseline/outputs \
+            --peer-outputs "$RUNNER_TEMP/g12-staging-bridge-recovery-pre-mutation/outputs" \
+            --baseline-mode "$BASELINE_SOURCE_MODE" \
+            --compensation-provenance-mode "$COMPENSATION_PROVENANCE_MODE"
           node <<'NODE'
           const { appendFileSync, readFileSync } = require("node:fs");
           const { join } = require("node:path");
@@ -959,14 +973,6 @@ jobs:
           if (!localSealBytes.equals(remoteSealBytes))
             throw new Error("G12_STAGING_BRIDGE_REMOTE_SEAL_BYTES_REFUSED");
           const seal = JSON.parse(remoteSealBytes.toString("utf8"));
-          const localArchive = readFileSync(join("../baseline/outputs", seal.archiveFile));
-          const remoteArchive = readFileSync(join(recoveryRoot, "outputs", seal.archiveFile));
-          if (!localArchive.equals(remoteArchive))
-            throw new Error("G12_STAGING_BRIDGE_REMOTE_ARCHIVE_BYTES_REFUSED");
-          const localProvenance = readFileSync("../baseline/outputs/staging-frontend-provenance.json");
-          const remoteProvenance = readFileSync(join(recoveryRoot, "outputs", "staging-frontend-provenance.json"));
-          if (!localProvenance.equals(remoteProvenance))
-            throw new Error("G12_STAGING_BRIDGE_REMOTE_PROVENANCE_BYTES_REFUSED");
           const expectedArtifact = {
             id: process.env.RECOVERY_ARTIFACT_ID,
             digest: recoveryArtifactDigest,

@@ -125,6 +125,23 @@ function state(mode = "deploy-compensation") {
       createdOn: "2026-09-22T11:00:00.000Z",
       commitMessage: "g12-staging-bridge-run-39999999999-1",
     },
+    recovery: {
+      artifact: {
+        id: "201",
+        digest: `sha256:${"6".repeat(64)}`,
+        name: `staging-frontend-bridge-recovery-${runId}-${runAttempt}`,
+      },
+      seal: {
+        schemaVersion: 2,
+        candidateSha: expectedRelease,
+        fileCount: 2,
+        byteCount: 50,
+        treeSha256: "2".repeat(64),
+        archiveFile: "staging-frontend-dist.tar",
+        archiveBytes: 100,
+        archiveSha256: "1".repeat(64),
+      },
+    },
   };
 }
 
@@ -239,6 +256,36 @@ test("compensation artifacts are unique, digest-bound, unexpired, and retained",
     );
 });
 
+test("bridge compensation requires a unique separate state and recovery artifact pair", () => {
+  const bridgeRun = run("bridge-compensation");
+  const stateName = `staging-frontend-bridge-state-${runId}-${runAttempt}`;
+  const recoveryName = `staging-frontend-bridge-recovery-${runId}-${runAttempt}`;
+  const artifacts = [artifact(stateName, 11), artifact(recoveryName, 12)];
+  const selected = selectStagingCompensationArtifacts({
+    artifacts,
+    run: bridgeRun,
+    mode: "bridge-compensation",
+    runId,
+    runAttempt,
+    now,
+  });
+  assert.equal(selected.valid, true);
+  assert.equal(selected.stateArtifact.name, stateName);
+  assert.equal(selected.recoveryArtifact.name, recoveryName);
+  for (const changed of [[artifacts[1]], [artifacts[0]], [...artifacts, artifact(stateName, 13)]])
+    assert.equal(
+      selectStagingCompensationArtifacts({
+        artifacts: changed,
+        run: bridgeRun,
+        mode: "bridge-compensation",
+        runId,
+        runAttempt,
+        now,
+      }).valid,
+      false,
+    );
+});
+
 test("compensation state is bound to exact run, marker, control SHA, and original release", () => {
   for (const mode of ["deploy-compensation", "bridge-compensation"])
     assert.deepEqual(
@@ -275,6 +322,36 @@ test("compensation state is bound to exact run, marker, control SHA, and origina
       false,
       label,
     );
+  }
+});
+
+test("bridge compensation state rejects malformed or ambiguous recovery bindings", () => {
+  const cases = [
+    ["missing recovery", (value) => delete value.recovery],
+    ["extra recovery key", (value) => (value.recovery.untrusted = true)],
+    ["missing artifact", (value) => delete value.recovery.artifact],
+    ["extra artifact key", (value) => (value.recovery.artifact.untrusted = true)],
+    ["invalid artifact id", (value) => (value.recovery.artifact.id = "0")],
+    ["invalid artifact digest", (value) => (value.recovery.artifact.digest = "sha256:bad")],
+    ["wrong artifact name", (value) => (value.recovery.artifact.name = "other")],
+    ["missing seal", (value) => delete value.recovery.seal],
+    ["extra seal key", (value) => (value.recovery.seal.untrusted = true)],
+    ["invalid seal archive", (value) => (value.recovery.seal.archiveFile = "other.tar")],
+    ["invalid seal digest", (value) => (value.recovery.seal.archiveSha256 = "bad")],
+  ];
+  for (const [label, mutate] of cases) {
+    const changed = state("bridge-compensation");
+    mutate(changed);
+    const result = validateStagingCompensationState({
+      state: changed,
+      mode: "bridge-compensation",
+      runId,
+      runAttempt,
+      controlSha,
+      expectedRelease,
+    });
+    assert.equal(result.valid, false, label);
+    assert.ok(result.violations.includes("state_recovery_invalid"), label);
   }
 });
 

@@ -21,6 +21,7 @@ import {
   STAGING_ENVIRONMENT_SNAPSHOT,
   writeStagingEnvironmentSnapshot,
 } from "./staging-environment-snapshot-lib.mjs";
+import { stagingSealIdentity } from "./staging-recovery-seal-lib.mjs";
 import { writeStagingFrontendPackage } from "./staging-frontend-package-lib.mjs";
 
 const candidateSha = "b".repeat(40);
@@ -239,16 +240,20 @@ function materialize(paths, output, options = {}) {
     "--recovery-dir",
     options.recovery ?? paths.recovery,
   ];
-  if (mode === "deploy-compensation") args.push("--state-dir", paths.stateRoot);
-  if (mode === "deploy-compensation")
-    args.push(
-      "--recovery-artifact-id",
-      options.recoveryArtifactId ?? "200",
-      "--recovery-artifact-digest",
-      options.recoveryArtifactDigest ?? `sha256:${"5".repeat(64)}`,
-      "--recovery-artifact-name",
-      options.recoveryArtifactName ?? `staging-recovery-${runId}-${runAttempt}`,
-    );
+  args.push(
+    "--state-dir",
+    options.stateRoot ?? paths.stateRoot,
+    "--recovery-artifact-id",
+    options.recoveryArtifactId ?? (mode === "deploy-compensation" ? "200" : "201"),
+    "--recovery-artifact-digest",
+    options.recoveryArtifactDigest ??
+      (mode === "deploy-compensation" ? `sha256:${"5".repeat(64)}` : `sha256:${"6".repeat(64)}`),
+    "--recovery-artifact-name",
+    options.recoveryArtifactName ??
+      (mode === "deploy-compensation"
+        ? `staging-recovery-${runId}-${runAttempt}`
+        : `staging-frontend-bridge-recovery-${runId}-${runAttempt}`),
+  );
   args.push(
     "--candidate",
     options.candidateSha ?? candidateSha,
@@ -264,8 +269,48 @@ function materialize(paths, output, options = {}) {
   return spawnSync(process.execPath, args, {
     cwd: resolve("."),
     encoding: "utf8",
-    env: { ...process.env, ...profile },
+    env: { ...process.env, ...profile, GITHUB_OUTPUT: options.githubOutput ?? "" },
   });
+}
+
+async function prepareModernBridgeCompensation(paths) {
+  const bridgeRecovery = resolve(paths.root, "bridge-recovery-fixture");
+  const bridgeStateRoot = resolve(paths.root, "bridge-state-fixture");
+  await mkdir(resolve(bridgeRecovery, "outputs"), { recursive: true });
+  await mkdir(bridgeStateRoot);
+  await cp(paths.sourceDist, resolve(bridgeRecovery, "dist"), { recursive: true });
+  for (const [source, target] of [
+    ["staging-frontend-dist.tar", "staging-frontend-dist.tar"],
+    ["staging-frontend-dist-seal.json", "staging-baseline-dist-seal.json"],
+    ["staging-frontend-dist-seal.json", "staging-frontend-dist-seal.json"],
+    ["staging-frontend-provenance.json", "staging-frontend-provenance.json"],
+  ])
+    await cp(resolve(paths.packageRoot, source), resolve(bridgeRecovery, "outputs", target));
+  const seal = JSON.parse(
+    await readFile(resolve(paths.packageRoot, "staging-frontend-dist-seal.json"), "utf8"),
+  );
+  const bridgeState = {
+    schemaVersion: 1,
+    event: "g12.staging.deploy.prepared",
+    workflow: { runId, runAttempt, controlSha },
+    project: "gaiatec-cms-staging",
+    branch: "ev2-g17-canary",
+    runMarker: `g12-staging-bridge-run-${runId}-${runAttempt}`,
+    compensationMarker: `g12-staging-bridge-compensation-${runId}-${runAttempt}`,
+    candidateRelease: "c".repeat(40),
+    original: paths.state.original,
+    recovery: {
+      artifact: {
+        id: "201",
+        digest: `sha256:${"6".repeat(64)}`,
+        name: `staging-frontend-bridge-recovery-${runId}-${runAttempt}`,
+      },
+      seal: stagingSealIdentity(seal),
+    },
+  };
+  const bridgeStatePath = resolve(bridgeStateRoot, "staging-frontend-bridge-state.json");
+  await writeFile(bridgeStatePath, `${JSON.stringify(bridgeState, null, 2)}\n`);
+  return { bridgeRecovery, bridgeStateRoot, bridgeStatePath, bridgeState };
 }
 
 test("deploy compensation validates state and recovery before materializing unchanged bytes", async () => {
@@ -283,20 +328,24 @@ test("deploy compensation validates state and recovery before materializing unch
   }
 });
 
-test("bridge compensation materializes only recovery bytes bound to its embedded state", async () => {
+test("bridge compensation materializes current recovery bytes bound to its separate state", async () => {
   const paths = await fixture();
   try {
     const bridgeRecovery = resolve(paths.root, "bridge-recovery");
-    await mkdir(resolve(bridgeRecovery, "control/outputs"), { recursive: true });
-    await mkdir(resolve(bridgeRecovery, "baseline/outputs"), { recursive: true });
-    await cp(paths.sourceDist, resolve(bridgeRecovery, "baseline/dist"), { recursive: true });
+    const bridgeStateRoot = resolve(paths.root, "bridge-state");
+    await mkdir(resolve(bridgeRecovery, "outputs"), { recursive: true });
+    await mkdir(bridgeStateRoot);
+    await cp(paths.sourceDist, resolve(bridgeRecovery, "dist"), { recursive: true });
     for (const [source, target] of [
       ["staging-frontend-dist.tar", "staging-frontend-dist.tar"],
       ["staging-frontend-dist-seal.json", "staging-baseline-dist-seal.json"],
       ["staging-frontend-dist-seal.json", "staging-frontend-dist-seal.json"],
       ["staging-frontend-provenance.json", "staging-frontend-provenance.json"],
     ])
-      await cp(resolve(paths.packageRoot, source), resolve(bridgeRecovery, "baseline/outputs", target));
+      await cp(resolve(paths.packageRoot, source), resolve(bridgeRecovery, "outputs", target));
+    const seal = JSON.parse(
+      await readFile(resolve(paths.packageRoot, "staging-frontend-dist-seal.json"), "utf8"),
+    );
     const bridgeState = {
       schemaVersion: 1,
       event: "g12.staging.deploy.prepared",
@@ -307,17 +356,29 @@ test("bridge compensation materializes only recovery bytes bound to its embedded
       compensationMarker: `g12-staging-bridge-compensation-${runId}-${runAttempt}`,
       candidateRelease: "c".repeat(40),
       original: paths.state.original,
+      recovery: {
+        artifact: {
+          id: "201",
+          digest: `sha256:${"6".repeat(64)}`,
+          name: `staging-frontend-bridge-recovery-${runId}-${runAttempt}`,
+        },
+        seal: stagingSealIdentity(seal),
+      },
     };
     await writeFile(
-      resolve(bridgeRecovery, "control/outputs/staging-frontend-bridge-state.json"),
+      resolve(bridgeStateRoot, "staging-frontend-bridge-state.json"),
       `${JSON.stringify(bridgeState, null, 2)}\n`,
     );
     const output = resolve(paths.root, "bridge-verified");
+    const githubOutput = resolve(paths.root, "bridge-output.txt");
     const result = materialize(paths, output, {
       mode: "bridge-compensation",
       recovery: bridgeRecovery,
+      stateRoot: bridgeStateRoot,
+      githubOutput,
     });
     assert.equal(result.status, 0, result.stderr);
+    assert.match(await readFile(githubOutput, "utf8"), /provenance_mode=required/);
     assert.deepEqual(JSON.parse(await readFile(resolve(output, "release-manifest.json"), "utf8")), {
       schemaVersion: 1,
       release: candidateSha,
@@ -327,25 +388,100 @@ test("bridge compensation materializes only recovery bytes bound to its embedded
   }
 });
 
+test("bridge compensation rejects every recovery artifact tuple divergence before materialization", async () => {
+  for (const options of [
+    { recoveryArtifactId: "202" },
+    { recoveryArtifactDigest: `sha256:${"7".repeat(64)}` },
+    { recoveryArtifactName: `staging-frontend-bridge-recovery-${runId}-different` },
+  ]) {
+    const paths = await fixture();
+    try {
+      const bridge = await prepareModernBridgeCompensation(paths);
+      const output = resolve(paths.root, "bridge-artifact-refused");
+      const result = materialize(paths, output, {
+        mode: "bridge-compensation",
+        recovery: bridge.bridgeRecovery,
+        stateRoot: bridge.bridgeStateRoot,
+        ...options,
+      });
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /recovery_artifact_binding_invalid/);
+      await assert.rejects(readFile(resolve(output, "release-manifest.json")), /ENOENT/);
+    } finally {
+      await rm(paths.root, { recursive: true, force: true });
+    }
+  }
+});
+
+test("bridge compensation rejects a state seal divergent from the exact recovery bytes", async () => {
+  const paths = await fixture();
+  try {
+    const bridge = await prepareModernBridgeCompensation(paths);
+    bridge.bridgeState.recovery.seal.archiveSha256 = "7".repeat(64);
+    await writeFile(bridge.bridgeStatePath, `${JSON.stringify(bridge.bridgeState, null, 2)}\n`);
+    const output = resolve(paths.root, "bridge-seal-refused");
+    const result = materialize(paths, output, {
+      mode: "bridge-compensation",
+      recovery: bridge.bridgeRecovery,
+      stateRoot: bridge.bridgeStateRoot,
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /recovery_seal_binding_invalid/);
+    await assert.rejects(readFile(resolve(output, "release-manifest.json")), /ENOENT/);
+  } finally {
+    await rm(paths.root, { recursive: true, force: true });
+  }
+});
+
+test("bridge compensation rejects malformed companion seal bytes or type", async () => {
+  for (const mutation of [
+    async (path) => writeFile(path, "{}\n"),
+    async (path) => {
+      await rm(path);
+      await mkdir(path);
+    },
+  ]) {
+    const paths = await fixture();
+    try {
+      const bridge = await prepareModernBridgeCompensation(paths);
+      const companionSealPath = resolve(bridge.bridgeRecovery, "outputs", "staging-frontend-dist-seal.json");
+      await chmod(companionSealPath, 0o600);
+      await mutation(companionSealPath);
+      const output = resolve(paths.root, "bridge-companion-refused");
+      const result = materialize(paths, output, {
+        mode: "bridge-compensation",
+        recovery: bridge.bridgeRecovery,
+        stateRoot: bridge.bridgeStateRoot,
+      });
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /G12_STAGING_BRIDGE_RECOVERY_TOPOLOGY_REFUSED/);
+      await assert.rejects(readFile(resolve(output, "release-manifest.json")), /ENOENT/);
+    } finally {
+      await rm(paths.root, { recursive: true, force: true });
+    }
+  }
+});
+
 test("bridge compensation accepts the exact bootstrap recovery without package provenance", async () => {
   const paths = await fixture();
   try {
     const bootstrapSource = resolve(paths.root, "bootstrap-source");
     const bridgeRecovery = resolve(paths.root, "bootstrap-bridge-recovery");
+    const bridgeStateRoot = resolve(paths.root, "bootstrap-bridge-state");
     const recordPath = resolve(paths.root, "bootstrap-record.json");
     await mkdir(bootstrapSource);
-    await mkdir(resolve(bridgeRecovery, "control/outputs"), { recursive: true });
-    await mkdir(resolve(bridgeRecovery, "baseline/outputs"), { recursive: true });
-    await cp(paths.sourceDist, resolve(bridgeRecovery, "baseline/dist"), { recursive: true });
+    await mkdir(resolve(bridgeRecovery, "outputs"), { recursive: true });
+    await mkdir(bridgeStateRoot);
+    await cp(paths.sourceDist, resolve(bridgeRecovery, "dist"), { recursive: true });
     const archivePath = resolve(bootstrapSource, "staging-candidate-dist.tar");
     const seal = await sealProductionDistArchive(paths.sourceDist, archivePath, candidateSha);
     const sealBytes = Buffer.from(`${JSON.stringify(seal, null, 2)}\n`);
     await writeFile(
-      resolve(bridgeRecovery, "baseline/outputs/staging-candidate-dist.tar"),
+      resolve(bridgeRecovery, "outputs/staging-candidate-dist.tar"),
       await readFile(archivePath),
     );
-    await writeFile(resolve(bridgeRecovery, "baseline/outputs/staging-baseline-dist-seal.json"), sealBytes);
-    await writeFile(resolve(bridgeRecovery, "baseline/outputs/staging-candidate-dist-seal.json"), sealBytes);
+    await writeFile(resolve(bridgeRecovery, "outputs/staging-baseline-dist-seal.json"), sealBytes);
+    await writeFile(resolve(bridgeRecovery, "outputs/staging-candidate-dist-seal.json"), sealBytes);
     const record = {
       schemaVersion: 1,
       event: "g12.staging.baseline.bootstrap",
@@ -400,18 +536,30 @@ test("bridge compensation accepts the exact bootstrap recovery without package p
         createdOn: record.canonical.createdOn,
         commitMessage: record.canonical.commitMessage,
       },
+      recovery: {
+        artifact: {
+          id: "201",
+          digest: `sha256:${"6".repeat(64)}`,
+          name: `staging-frontend-bridge-recovery-${runId}-${runAttempt}`,
+        },
+        seal: stagingSealIdentity(seal),
+      },
     };
     await writeFile(
-      resolve(bridgeRecovery, "control/outputs/staging-frontend-bridge-state.json"),
+      resolve(bridgeStateRoot, "staging-frontend-bridge-state.json"),
       `${JSON.stringify(bridgeState, null, 2)}\n`,
     );
     const output = resolve(paths.root, "bootstrap-verified");
+    const githubOutput = resolve(paths.root, "bootstrap-output.txt");
     const result = materialize(paths, output, {
       mode: "bridge-compensation",
       recovery: bridgeRecovery,
+      stateRoot: bridgeStateRoot,
       record: recordPath,
+      githubOutput,
     });
     assert.equal(result.status, 0, result.stderr);
+    assert.match(await readFile(githubOutput, "utf8"), /provenance_mode=pinned-bootstrap-absent/);
     assert.deepEqual(JSON.parse(await readFile(resolve(output, "release-manifest.json"), "utf8")), {
       schemaVersion: 1,
       release: candidateSha,

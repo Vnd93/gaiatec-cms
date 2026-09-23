@@ -446,9 +446,10 @@ jobs:
           --mode "${{ steps.baseline_source.outputs.mode == 'legacy-bootstrap-compensation' && 'deploy-compensation' || steps.baseline_source.outputs.mode }}"
           --run-id "${{ steps.baseline_source.outputs.producer_run_id }}"
           --run-attempt "${{ steps.baseline_source.outputs.producer_run_attempt }}"
-      - name: Download exact deploy-compensation state by ID and digest
+      - name: Download exact compensation state by ID and digest
         if: >-
           steps.baseline_source.outputs.mode == 'deploy-compensation' ||
+          steps.baseline_source.outputs.mode == 'bridge-compensation' ||
           steps.baseline_source.outputs.mode == 'legacy-bootstrap-compensation'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -480,15 +481,11 @@ jobs:
         env: *staging_rollback_build_identity
         run: |
           set -euo pipefail
-          state_args=()
-          if [ "${{ steps.baseline_source.outputs.mode }}" = deploy-compensation ]; then
-            state_args=(--state-dir "$RUNNER_TEMP/g12-staging-rollback-compensation-state")
-          fi
           node scripts/ev2/phase12/materialize-staging-baseline-compensation.mjs \
             --mode "${{ steps.baseline_source.outputs.mode }}" \
             --record .github/release-controls/staging-baseline-bootstrap.json \
             --recovery-dir "$RUNNER_TEMP/g12-staging-rollback-compensation-recovery" \
-            "${state_args[@]}" \
+            --state-dir "$RUNNER_TEMP/g12-staging-rollback-compensation-state" \
             --candidate "${{ steps.original_staging.outputs.release }}" \
             --run-id "${{ steps.baseline_source.outputs.producer_run_id }}" \
             --run-attempt "${{ steps.baseline_source.outputs.producer_run_attempt }}" \

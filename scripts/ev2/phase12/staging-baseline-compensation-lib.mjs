@@ -20,7 +20,7 @@ const MODE = Object.freeze({
     marker: "bridge",
     workflowName: "Promote staging frontend bridge",
     workflowPath: ".github/workflows/promote-staging-frontend-bridge.yml",
-    stateArtifactName: null,
+    stateArtifactName: (runId, runAttempt) => `staging-frontend-bridge-state-${runId}-${runAttempt}`,
     recoveryArtifactName: (runId, runAttempt) => `staging-frontend-bridge-recovery-${runId}-${runAttempt}`,
     runMarker: (runId, runAttempt) => `g12-staging-bridge-run-${runId}-${runAttempt}`,
   },
@@ -157,6 +157,7 @@ export function validateStagingCompensationState({
       "compensationMarker",
       "candidateRelease",
       "original",
+      "recovery",
     ]) ||
     state?.schemaVersion !== 1 ||
     state?.event !== "g12.staging.deploy.prepared" ||
@@ -187,6 +188,35 @@ export function validateStagingCompensationState({
     !isDeploymentCommitMessage(state?.original?.commitMessage)
   )
     violations.push("state_original_invalid");
+  if (
+    !exactKeys(state?.recovery, ["artifact", "seal"]) ||
+    !exactKeys(state?.recovery?.artifact, ["id", "digest", "name"]) ||
+    !exactKeys(state?.recovery?.seal, [
+      "schemaVersion",
+      "candidateSha",
+      "fileCount",
+      "byteCount",
+      "treeSha256",
+      "archiveFile",
+      "archiveBytes",
+      "archiveSha256",
+    ]) ||
+    !/^[1-9]\d*$/.test(state?.recovery?.artifact?.id ?? "") ||
+    !PREFIXED_SHA256.test(state?.recovery?.artifact?.digest ?? "") ||
+    state?.recovery?.artifact?.name !== `staging-frontend-bridge-recovery-${runId}-${runAttempt}` ||
+    state?.recovery?.seal?.schemaVersion !== 2 ||
+    state?.recovery?.seal?.candidateSha !== expectedRelease ||
+    !Number.isSafeInteger(state?.recovery?.seal?.fileCount) ||
+    state.recovery.seal.fileCount < 1 ||
+    !Number.isSafeInteger(state?.recovery?.seal?.byteCount) ||
+    state.recovery.seal.byteCount < 1 ||
+    !Number.isSafeInteger(state?.recovery?.seal?.archiveBytes) ||
+    state.recovery.seal.archiveBytes < 1 ||
+    !/^[a-f0-9]{64}$/.test(state?.recovery?.seal?.treeSha256 ?? "") ||
+    !/^[a-f0-9]{64}$/.test(state?.recovery?.seal?.archiveSha256 ?? "") ||
+    !["staging-frontend-dist.tar", "staging-candidate-dist.tar"].includes(state?.recovery?.seal?.archiveFile)
+  )
+    violations.push("state_recovery_invalid");
   return { valid: violations.length === 0, violations: [...new Set(violations)] };
 }
 

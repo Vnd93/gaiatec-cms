@@ -453,6 +453,18 @@ jobs:
           repository: Vnd93/gaiatec-cms
           run-id: ${{ steps.baseline_source.outputs.compensation_run_id }}
           path: ${{ runner.temp }}/g12-staging-baseline-compensation-recovery
+      - name: Initialize dedicated exact bridge recovery payload root
+        working-directory: control
+        run: |
+          set -euo pipefail
+          root="$GITHUB_WORKSPACE/staging-bridge-recovery-payload"
+          if [ -e "$root" ] || [ -L "$root" ]; then
+            echo "::error::Dedicated bridge recovery payload root must be new."
+            exit 1
+          fi
+          install -d -m 0700 -- "$root"
+          install -d -m 0700 -- "$root/outputs"
+          test -z "$(git -C ../baseline status --porcelain=v1)"
       - name: Validate compensation state, seal, snapshot, and bytes before materialization
         id: baseline_compensation_package
         if: >-
@@ -473,7 +485,7 @@ jobs:
           set -euo pipefail
           output="$RUNNER_TEMP/g12-staging-baseline-compensation-verified"
           if [ "$COMPENSATION_MODE" = bridge-compensation ]; then
-            output=../baseline/dist
+            output=../staging-bridge-recovery-payload/dist
           fi
           test ! -e "$output"
           node scripts/ev2/phase12/materialize-staging-baseline-compensation.mjs \
@@ -558,22 +570,21 @@ jobs:
           VITE_EV2_DRAFT_V2_CANDIDATE: "false"
         run: |
           set -euo pipefail
-          test ! -e ../baseline/dist
+          test ! -e ../staging-bridge-recovery-payload/dist
           node scripts/ev2/phase12/verify-staging-frontend-package.mjs \
             --package "$RUNNER_TEMP/g12-staging-baseline-compensation-ci-package" \
-            --output ../baseline/dist \
+            --output ../staging-bridge-recovery-payload/dist \
             --candidate "${{ inputs.expected_baseline_sha }}" \
             --run-id "${{ steps.baseline_compensation_ci_source.outputs.source_run_id }}" \
             --run-attempt "${{ steps.baseline_compensation_ci_source.outputs.source_run_attempt }}"
-          mkdir -p ../baseline/outputs
           cp "$RUNNER_TEMP/g12-staging-baseline-compensation-ci-package/staging-frontend-dist.tar" \
-            ../baseline/outputs/staging-frontend-dist.tar
+            ../staging-bridge-recovery-payload/outputs/staging-frontend-dist.tar
           cp "$RUNNER_TEMP/g12-staging-baseline-compensation-ci-package/staging-frontend-dist-seal.json" \
-            ../baseline/outputs/staging-baseline-dist-seal.json
+            ../staging-bridge-recovery-payload/outputs/staging-baseline-dist-seal.json
           cp "$RUNNER_TEMP/g12-staging-baseline-compensation-ci-package/staging-frontend-dist-seal.json" \
-            ../baseline/outputs/staging-frontend-dist-seal.json
+            ../staging-bridge-recovery-payload/outputs/staging-frontend-dist-seal.json
           cp "$RUNNER_TEMP/g12-staging-baseline-compensation-ci-package/staging-frontend-provenance.json" \
-            ../baseline/outputs/staging-frontend-provenance.json
+            ../staging-bridge-recovery-payload/outputs/staging-frontend-provenance.json
       - name: Bind the original CI bytes to the deploy recovery snapshot
         if: steps.baseline_source.outputs.mode == 'deploy-compensation'
         env:
@@ -606,14 +617,13 @@ jobs:
           PROVENANCE_PATH: ${{ steps.baseline_compensation_package.outputs.provenance_path }}
         run: |
           set -euo pipefail
-          mkdir -p ../baseline/outputs
-          cp "$ARCHIVE_PATH" "../baseline/outputs/$(basename "$ARCHIVE_PATH")"
-          cp "$SEAL_PATH" ../baseline/outputs/staging-baseline-dist-seal.json
+          cp "$ARCHIVE_PATH" "../staging-bridge-recovery-payload/outputs/$(basename "$ARCHIVE_PATH")"
+          cp "$SEAL_PATH" ../staging-bridge-recovery-payload/outputs/staging-baseline-dist-seal.json
           if [ -n "$PROVENANCE_PATH" ]; then
-            cp "$PROVENANCE_PATH" ../baseline/outputs/staging-frontend-provenance.json
-            cp "$SEAL_PATH" ../baseline/outputs/staging-frontend-dist-seal.json
+            cp "$PROVENANCE_PATH" ../staging-bridge-recovery-payload/outputs/staging-frontend-provenance.json
+            cp "$SEAL_PATH" ../staging-bridge-recovery-payload/outputs/staging-frontend-dist-seal.json
           else
-            cp "$SEAL_PATH" ../baseline/outputs/staging-candidate-dist-seal.json
+            cp "$SEAL_PATH" ../staging-bridge-recovery-payload/outputs/staging-candidate-dist-seal.json
           fi
       - name: Download the immutable bootstrap bridge evidence
         if: >-
@@ -647,19 +657,18 @@ jobs:
         working-directory: control
         run: |
           set -euo pipefail
-          test ! -e ../baseline/dist
+          test ! -e ../staging-bridge-recovery-payload/dist
           node scripts/ev2/phase12/materialize-staging-baseline-bootstrap.mjs \
             --record .github/release-controls/staging-baseline-bootstrap.json \
             --bridge-artifact-dir "$RUNNER_TEMP/g12-staging-baseline-bootstrap-bridge" \
             --source-artifact-dir "$RUNNER_TEMP/g12-staging-baseline-bootstrap-source" \
-            --output-dist ../baseline/dist
-          mkdir -p ../baseline/outputs
+            --output-dist ../staging-bridge-recovery-payload/dist
           cp "$RUNNER_TEMP/g12-staging-baseline-bootstrap-source/staging-candidate-dist.tar" \
-            ../baseline/outputs/staging-candidate-dist.tar
+            ../staging-bridge-recovery-payload/outputs/staging-candidate-dist.tar
           cp "$RUNNER_TEMP/g12-staging-baseline-bootstrap-source/staging-candidate-dist-seal.json" \
-            ../baseline/outputs/staging-baseline-dist-seal.json
+            ../staging-bridge-recovery-payload/outputs/staging-baseline-dist-seal.json
           cp "$RUNNER_TEMP/g12-staging-baseline-bootstrap-source/staging-candidate-dist-seal.json" \
-            ../baseline/outputs/staging-candidate-dist-seal.json
+            ../staging-bridge-recovery-payload/outputs/staging-candidate-dist-seal.json
       - name: Resolve the immutable bridge-v5 evidence run for the live baseline
         id: baseline_bridge_run
         if: steps.baseline_source.outputs.mode == 'bridge-v5'
@@ -753,22 +762,21 @@ jobs:
           VITE_EV2_DRAFT_V2_CANDIDATE: "false"
         run: |
           set -euo pipefail
-          test ! -e ../baseline/dist
+          test ! -e ../staging-bridge-recovery-payload/dist
           node scripts/ev2/phase12/verify-staging-frontend-package.mjs \
             --package "$RUNNER_TEMP/g12-staging-baseline-package" \
-            --output ../baseline/dist \
+            --output ../staging-bridge-recovery-payload/dist \
             --candidate "${{ inputs.expected_baseline_sha }}" \
             --run-id "${{ steps.baseline_ci_source.outputs.source_run_id }}" \
             --run-attempt "${{ steps.baseline_ci_source.outputs.source_run_attempt }}"
-          mkdir -p ../baseline/outputs
           cp "$RUNNER_TEMP/g12-staging-baseline-package/staging-frontend-dist.tar" \
-            ../baseline/outputs/staging-frontend-dist.tar
+            ../staging-bridge-recovery-payload/outputs/staging-frontend-dist.tar
           cp "$RUNNER_TEMP/g12-staging-baseline-package/staging-frontend-dist-seal.json" \
-            ../baseline/outputs/staging-baseline-dist-seal.json
+            ../staging-bridge-recovery-payload/outputs/staging-baseline-dist-seal.json
           cp "$RUNNER_TEMP/g12-staging-baseline-package/staging-frontend-dist-seal.json" \
-            ../baseline/outputs/staging-frontend-dist-seal.json
+            ../staging-bridge-recovery-payload/outputs/staging-frontend-dist-seal.json
           cp "$RUNNER_TEMP/g12-staging-baseline-package/staging-frontend-provenance.json" \
-            ../baseline/outputs/staging-frontend-provenance.json
+            ../staging-bridge-recovery-payload/outputs/staging-frontend-provenance.json
       - name: Bind materialized baseline bytes to bridge-v5 evidence
         if: steps.baseline_source.outputs.mode == 'bridge-v5'
         env:
@@ -794,17 +802,19 @@ jobs:
           test "$ACTUAL_BYTE_COUNT" = "$ATTESTED_BYTE_COUNT"
       - name: Verify the exact recovery baseline before arming mutation
         working-directory: control
-        run: >-
-          node scripts/ev2/phase12/verify-production-dist-seal.mjs
-          --dist ../baseline/dist
-          --seal ../baseline/outputs/staging-baseline-dist-seal.json
-          --candidate "${{ inputs.expected_baseline_sha }}"
+        run: |
+          set -euo pipefail
+          test -z "$(git -C ../baseline status --porcelain=v1)"
+          node scripts/ev2/phase12/verify-production-dist-seal.mjs \
+            --dist ../staging-bridge-recovery-payload/dist \
+            --seal ../staging-bridge-recovery-payload/outputs/staging-baseline-dist-seal.json \
+            --candidate "${{ inputs.expected_baseline_sha }}"
       - name: Verify exact mode-bound recovery topology before upload
         id: recovery_topology
         working-directory: control
         run: >-
           node scripts/ev2/phase12/verify-staging-bridge-recovery-artifact.mjs
-          --outputs ../baseline/outputs
+          --root ../staging-bridge-recovery-payload
           --baseline-mode "${{ steps.baseline_source.outputs.mode }}"
           --compensation-provenance-mode
           "${{ steps.baseline_compensation_package.outputs.provenance_mode }}"
@@ -815,12 +825,10 @@ jobs:
         with:
           name: staging-frontend-bridge-recovery-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            baseline/dist
-            baseline/outputs/*.tar
-            baseline/outputs/staging-baseline-dist-seal.json
-            baseline/outputs/staging-*-dist-seal.json
-            baseline/outputs/staging-frontend-provenance.json
+            ${{ github.workspace }}/staging-bridge-recovery-payload/dist
+            ${{ github.workspace }}/staging-bridge-recovery-payload/outputs
           if-no-files-found: error
+          include-hidden-files: true
           compression-level: 0
           retention-days: 90
       - name: Bind durable staging bridge recovery state to immutable baseline bytes
@@ -846,7 +854,7 @@ jobs:
             : `sha256:${rawArtifactDigest}`;
           if (!/^[1-9]\d*$/.test(artifactId || "") || !/^sha256:[a-f0-9]{64}$/.test(artifactDigest))
             throw new Error("G12_STAGING_BRIDGE_RECOVERY_ARTIFACT_IDENTITY_REFUSED");
-          const seal = JSON.parse(readFileSync("../baseline/outputs/staging-baseline-dist-seal.json", "utf8"));
+          const seal = JSON.parse(readFileSync("../staging-bridge-recovery-payload/outputs/staging-baseline-dist-seal.json", "utf8"));
           const sealIdentity = {
             schemaVersion: seal.schemaVersion,
             candidateSha: seal.candidateSha,
@@ -941,8 +949,8 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/ev2/phase12/verify-staging-bridge-recovery-artifact.mjs \
-            --outputs ../baseline/outputs \
-            --peer-outputs "$RUNNER_TEMP/g12-staging-bridge-recovery-pre-mutation/outputs" \
+            --root ../staging-bridge-recovery-payload \
+            --peer-root "$RUNNER_TEMP/g12-staging-bridge-recovery-pre-mutation" \
             --baseline-mode "$BASELINE_SOURCE_MODE" \
             --compensation-provenance-mode "$COMPENSATION_PROVENANCE_MODE"
           node <<'NODE'
@@ -968,7 +976,7 @@ jobs:
             throw new Error("G12_STAGING_BRIDGE_REMOTE_STATE_BYTES_REFUSED");
           const state = JSON.parse(remoteStateBytes.toString("utf8"));
           const recoveryRoot = join(process.env.RUNNER_TEMP, "g12-staging-bridge-recovery-pre-mutation");
-          const localSealBytes = readFileSync("../baseline/outputs/staging-baseline-dist-seal.json");
+          const localSealBytes = readFileSync("../staging-bridge-recovery-payload/outputs/staging-baseline-dist-seal.json");
           const remoteSealBytes = readFileSync(join(recoveryRoot, "outputs", "staging-baseline-dist-seal.json"));
           if (!localSealBytes.equals(remoteSealBytes))
             throw new Error("G12_STAGING_BRIDGE_REMOTE_SEAL_BYTES_REFUSED");

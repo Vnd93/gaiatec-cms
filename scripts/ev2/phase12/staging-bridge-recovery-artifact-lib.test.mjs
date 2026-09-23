@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -8,6 +9,7 @@ import test from "node:test";
 import {
   resolveStagingBridgeRecoveryProvenanceMode,
   STAGING_BRIDGE_RECOVERY_PROVENANCE,
+  verifyStagingBridgeRecoveryArtifact,
   verifyStagingBridgeRecoveryOutputs,
 } from "./staging-bridge-recovery-artifact-lib.mjs";
 
@@ -44,6 +46,18 @@ async function fixture(provenanceMode) {
   const remote = resolve(root, "remote");
   await writeTopology(local, provenanceMode);
   await writeTopology(remote, provenanceMode);
+  return { root, local, remote };
+}
+
+async function artifactFixture(provenanceMode) {
+  const root = await mkdtemp(resolve(tmpdir(), "g12-bridge-recovery-artifact-"));
+  const local = resolve(root, "local");
+  const remote = resolve(root, "remote");
+  for (const artifact of [local, remote]) {
+    await mkdir(resolve(artifact, "dist"), { recursive: true });
+    await writeFile(resolve(artifact, "dist", "index.html"), "sealed baseline\n");
+    await writeTopology(resolve(artifact, "outputs"), provenanceMode);
+  }
   return { root, local, remote };
 }
 
@@ -88,6 +102,168 @@ for (const provenanceMode of Object.values(STAGING_BRIDGE_RECOVERY_PROVENANCE))
       await rm(paths.root, { recursive: true, force: true });
     }
   });
+
+for (const provenanceMode of Object.values(STAGING_BRIDGE_RECOVERY_PROVENANCE))
+  test(`${provenanceMode} exact local and remote artifact roots are accepted`, async () => {
+    const paths = await artifactFixture(provenanceMode);
+    try {
+      const result = await verifyStagingBridgeRecoveryArtifact({
+        artifactRoot: paths.local,
+        peerArtifactRoot: paths.remote,
+        expectedProvenanceMode: provenanceMode,
+      });
+      assert.equal(result.provenanceMode, provenanceMode);
+    } finally {
+      await rm(paths.root, { recursive: true, force: true });
+    }
+  });
+
+test("artifact root refuses unrelated members instead of hiding them from upload", async () => {
+  const paths = await artifactFixture(STAGING_BRIDGE_RECOVERY_PROVENANCE.required);
+  try {
+    await writeFile(resolve(paths.local, "unexpected.txt"), "unexpected\n");
+    await assert.rejects(
+      verifyStagingBridgeRecoveryArtifact({
+        artifactRoot: paths.local,
+        expectedProvenanceMode: STAGING_BRIDGE_RECOVERY_PROVENANCE.required,
+      }),
+      /local_payload_contents_invalid/,
+    );
+  } finally {
+    await rm(paths.root, { recursive: true, force: true });
+  }
+});
+
+test("artifact root refuses symlinked dist and outputs directories", async (t) => {
+  for (const directory of ["dist", "outputs"]) {
+    const paths = await artifactFixture(STAGING_BRIDGE_RECOVERY_PROVENANCE.required);
+    try {
+      const target = resolve(paths.root, `outside-${directory}`);
+      const member = resolve(paths.local, directory);
+      await mkdir(target);
+      await rm(member, { recursive: true });
+      try {
+        await symlink(target, member, process.platform === "win32" ? "junction" : "dir");
+      } catch (error) {
+        if (error?.code === "EPERM") {
+          t.skip("symlink creation is unavailable on this Windows host");
+          return;
+        }
+        throw error;
+      }
+      await assert.rejects(
+        verifyStagingBridgeRecoveryArtifact({
+          artifactRoot: paths.local,
+          expectedProvenanceMode: STAGING_BRIDGE_RECOVERY_PROVENANCE.required,
+        }),
+        /local_payload_contents_invalid/,
+      );
+    } finally {
+      await rm(paths.root, { recursive: true, force: true });
+    }
+  }
+});
+
+test("artifact root refuses a symlinked root", async (t) => {
+  const root = await mkdtemp(resolve(tmpdir(), "g12-bridge-recovery-root-link-"));
+  const target = resolve(root, "target");
+  const linked = resolve(root, "linked");
+  try {
+    await mkdir(resolve(target, "dist"), { recursive: true });
+    await writeFile(resolve(target, "dist", "index.html"), "sealed baseline\n");
+    await writeTopology(resolve(target, "outputs"), STAGING_BRIDGE_RECOVERY_PROVENANCE.required);
+    try {
+      await symlink(target, linked, process.platform === "win32" ? "junction" : "dir");
+    } catch (error) {
+      if (error?.code === "EPERM") {
+        t.skip("symlink creation is unavailable on this Windows host");
+        return;
+      }
+      throw error;
+    }
+    await assert.rejects(
+      verifyStagingBridgeRecoveryArtifact({
+        artifactRoot: linked,
+        expectedProvenanceMode: STAGING_BRIDGE_RECOVERY_PROVENANCE.required,
+      }),
+      /local_payload_root_invalid/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("artifact roots reject extra recovery-like members locally and after download", async () => {
+  for (const { provenanceMode, side, extra } of [
+    {
+      provenanceMode: STAGING_BRIDGE_RECOVERY_PROVENANCE.required,
+      side: "local",
+      extra: "extra-recovery.tar",
+    },
+    {
+      provenanceMode: STAGING_BRIDGE_RECOVERY_PROVENANCE.required,
+      side: "local",
+      extra: "staging-unexpected-dist-seal.json",
+    },
+    {
+      provenanceMode: STAGING_BRIDGE_RECOVERY_PROVENANCE.pinnedBootstrapAbsent,
+      side: "local",
+      extra: "staging-frontend-provenance.json",
+    },
+    {
+      provenanceMode: STAGING_BRIDGE_RECOVERY_PROVENANCE.required,
+      side: "remote",
+      extra: "extra-recovery.tar",
+    },
+  ]) {
+    const paths = await artifactFixture(provenanceMode);
+    try {
+      await writeFile(resolve(paths[side], "outputs", extra), "unexpected\n");
+      await assert.rejects(
+        verifyStagingBridgeRecoveryArtifact({
+          artifactRoot: paths.local,
+          peerArtifactRoot: paths.remote,
+          expectedProvenanceMode: provenanceMode,
+        }),
+        side === "local" ? /local_outputs_contents_invalid/ : /remote_outputs_contents_invalid/,
+      );
+    } finally {
+      await rm(paths.root, { recursive: true, force: true });
+    }
+  }
+});
+
+test("recovery artifact CLI verifies local and downloaded roots and requires the new root interface", async () => {
+  const paths = await artifactFixture(STAGING_BRIDGE_RECOVERY_PROVENANCE.required);
+  const cli = resolve("scripts/ev2/phase12/verify-staging-bridge-recovery-artifact.mjs");
+  try {
+    const verified = spawnSync(
+      process.execPath,
+      [
+        cli,
+        "--root",
+        paths.local,
+        "--peer-root",
+        paths.remote,
+        "--expected-provenance-mode",
+        STAGING_BRIDGE_RECOVERY_PROVENANCE.required,
+      ],
+      { encoding: "utf8" },
+    );
+    assert.equal(verified.status, 0, `${verified.stderr}\n${verified.stdout}`);
+    assert.match(verified.stdout, /"remoteBytesVerified":true/);
+
+    const missingRoot = spawnSync(
+      process.execPath,
+      [cli, "--expected-provenance-mode", STAGING_BRIDGE_RECOVERY_PROVENANCE.required],
+      { encoding: "utf8" },
+    );
+    assert.notEqual(missingRoot.status, 0);
+    assert.match(missingRoot.stderr, /G12_STAGING_BRIDGE_RECOVERY_TOPOLOGY_INPUT_REFUSED/);
+  } finally {
+    await rm(paths.root, { recursive: true, force: true });
+  }
+});
 
 test("modern recovery refuses missing or mismatched provenance", async () => {
   for (const mutation of [

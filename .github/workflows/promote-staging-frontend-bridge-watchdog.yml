@@ -283,7 +283,7 @@ jobs:
           import { readFileSync } from "node:fs";
           import {
             stagingBridgeRecoveryProvenanceModeForArchive,
-            verifyStagingBridgeRecoveryOutputs,
+            verifyStagingBridgeRecoveryArtifact,
           } from "./scripts/ev2/phase12/staging-bridge-recovery-artifact-lib.mjs";
           const state = JSON.parse(readFileSync("../state-artifact/staging-frontend-bridge-state.json", "utf8"));
           const seal = JSON.parse(readFileSync("../recovery/outputs/staging-baseline-dist-seal.json", "utf8"));
@@ -300,8 +300,8 @@ jobs:
           if (JSON.stringify(state.recovery?.seal) !== JSON.stringify(identity) ||
               state.original?.release !== identity.candidateSha)
             throw new Error("G12_STAGING_BRIDGE_WATCHDOG_RECOVERY_BINDING_REFUSED");
-          await verifyStagingBridgeRecoveryOutputs({
-            outputsDirectory: "../recovery/outputs",
+          await verifyStagingBridgeRecoveryArtifact({
+            artifactRoot: "../recovery",
             expectedProvenanceMode: stagingBridgeRecoveryProvenanceModeForArchive(identity.archiveFile),
           });
           NODE

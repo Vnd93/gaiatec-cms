@@ -428,6 +428,7 @@ test("promotion requires headless fail-closed cleanup while full staging owns po
     workflow,
     /staging-pages-state\.mjs compensate[\s\S]*--dist "\$RUNNER_TEMP\/g12-staging-bridge-recovery-pre-mutation\/dist"[\s\S]*--seal "\$RUNNER_TEMP\/g12-staging-bridge-recovery-pre-mutation\/outputs\/staging-baseline-dist-seal\.json"[\s\S]*--wrangler-script \.\.\/candidate\/node_modules\/wrangler\/bin\/wrangler\.js/,
   );
+  const recoveryRoot = workflow.indexOf("Initialize dedicated exact bridge recovery payload root");
   const recoveryUpload = workflow.indexOf(
     "Upload mandatory exact bridge recovery bytes before state or mutation",
   );
@@ -449,8 +450,10 @@ test("promotion requires headless fail-closed cleanup while full staging owns po
   );
   const hmacState = workflow.indexOf("Persist redundant HMAC bridge state only after remote recovery proof");
   assert.ok(
-    recoveryUpload >= 0 &&
+    recoveryRoot >= 0 &&
+      recoveryUpload >= 0 &&
       recoveryTopology >= 0 &&
+      recoveryRoot < recoveryTopology &&
       recoveryTopology < recoveryUpload &&
       recoveryUpload < recoveryState &&
       recoveryState < recoveryStateUpload &&
@@ -459,6 +462,25 @@ test("promotion requires headless fail-closed cleanup while full staging owns po
       recoveryDownload < recoveryVerification &&
       recoveryVerification < hmacState &&
       hmacState < workflow.indexOf("Deploy sealed A to isolated staging preview branch"),
+  );
+  const recoveryUploadEnd = workflow.indexOf("\n      - name:", recoveryUpload + 1);
+  const recoveryUploadStep = workflow.slice(recoveryUpload, recoveryUploadEnd);
+  const recoveryVerificationEnd = workflow.indexOf("\n      - name:", recoveryVerification + 1);
+  const recoveryVerificationStep = workflow.slice(recoveryVerification, recoveryVerificationEnd);
+  assert.match(
+    recoveryUploadStep,
+    /path: \|\r?\n\s+\$\{\{ github\.workspace \}\}\/staging-bridge-recovery-payload\/dist\r?\n\s+\$\{\{ github\.workspace \}\}\/staging-bridge-recovery-payload\/outputs\r?\n/,
+  );
+  assert.doesNotMatch(recoveryUploadStep, /baseline\/|[?*]/);
+  assert.match(recoveryUploadStep, /include-hidden-files: true/);
+  assert.doesNotMatch(workflow, /\.\.\/baseline\/(?:dist|outputs)/);
+  assert.match(
+    recoveryVerificationStep,
+    /verify-staging-bridge-recovery-artifact\.mjs[\s\S]*--root \.\.\/staging-bridge-recovery-payload[\s\S]*--peer-root "\$RUNNER_TEMP\/g12-staging-bridge-recovery-pre-mutation"/,
+  );
+  assert.match(
+    recoveryVerificationStep,
+    /verify-production-dist-seal\.mjs[\s\S]*--dist "\$RUNNER_TEMP\/g12-staging-bridge-recovery-pre-mutation\/dist"[\s\S]*--seal "\$RUNNER_TEMP\/g12-staging-bridge-recovery-pre-mutation\/outputs\/staging-baseline-dist-seal\.json"/,
   );
   assert.match(workflow, /RECOVERY_ARTIFACT_ID: \$\{\{ steps\.recovery_upload\.outputs\.artifact-id \}\}/);
   assert.match(
@@ -472,7 +494,7 @@ test("promotion requires headless fail-closed cleanup while full staging owns po
   assert.equal((workflow.match(/verify-staging-bridge-recovery-artifact\.mjs/g) ?? []).length, 2);
   assert.match(
     watchdog,
-    /stagingBridgeRecoveryProvenanceModeForArchive[\s\S]*verifyStagingBridgeRecoveryOutputs/,
+    /stagingBridgeRecoveryProvenanceModeForArchive[\s\S]*verifyStagingBridgeRecoveryArtifact[\s\S]*artifactRoot: "\.\.\/recovery"/,
   );
   assert.match(workflow, /PREVIEW_DEPLOYMENT_ORIGIN: \$\{\{ steps\.preview\.outputs\.deployment-url \}\}/);
   assert.match(

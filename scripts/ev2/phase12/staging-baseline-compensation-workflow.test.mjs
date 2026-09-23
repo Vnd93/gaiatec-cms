@@ -69,7 +69,73 @@ test("bridge compensation preserves the exact recovery archive including bootstr
   assert.doesNotMatch(`${validate}\n${preserve}`, /npm run build|seal-production-dist|vite build/);
 });
 
+test("bridge recovery is materialized only in a new dedicated exact artifact root", () => {
+  const initialize = step("Initialize dedicated exact bridge recovery payload root");
+  assert.match(initialize, /root="\$GITHUB_WORKSPACE\/staging-bridge-recovery-payload"/);
+  assert.match(initialize, /\[ -e "\$root" \] \|\| \[ -L "\$root" \]/);
+  assert.match(initialize, /install -d -m 0700 -- "\$root"/);
+  assert.match(initialize, /install -d -m 0700 -- "\$root\/outputs"/);
+  assert.doesNotMatch(initialize, /root\/dist|rm -rf/);
+  assert.match(initialize, /git -C \.\.\/baseline status --porcelain=v1/);
+
+  for (const label of [
+    "Validate compensation state, seal, snapshot, and bytes before materialization",
+    "Materialize the exact original CI package after deploy compensation",
+    "Preserve exact recovery bytes for future bridge compensation",
+    "Materialize the exact one-time bootstrap baseline",
+    "Materialize and verify the exact bridge-v5 baseline bytes",
+  ]) {
+    assert.ok(position("Initialize dedicated exact bridge recovery payload root") < position(label));
+    assert.match(step(label), /staging-bridge-recovery-payload/);
+  }
+  assert.match(
+    step("Validate compensation state, seal, snapshot, and bytes before materialization"),
+    /output=\.\.\/staging-bridge-recovery-payload\/dist/,
+  );
+  for (const label of [
+    "Materialize the exact original CI package after deploy compensation",
+    "Materialize and verify the exact bridge-v5 baseline bytes",
+  ]) {
+    const materializer = step(label);
+    assert.match(materializer, /--output \.\.\/staging-bridge-recovery-payload\/dist/);
+    for (const file of [
+      "staging-frontend-dist.tar",
+      "staging-baseline-dist-seal.json",
+      "staging-frontend-dist-seal.json",
+      "staging-frontend-provenance.json",
+    ])
+      assert.ok(materializer.includes(`staging-bridge-recovery-payload/outputs/${file}`));
+  }
+  const bootstrap = step("Materialize the exact one-time bootstrap baseline");
+  assert.match(bootstrap, /--output-dist \.\.\/staging-bridge-recovery-payload\/dist/);
+  for (const file of [
+    "staging-candidate-dist.tar",
+    "staging-baseline-dist-seal.json",
+    "staging-candidate-dist-seal.json",
+  ])
+    assert.ok(bootstrap.includes(`staging-bridge-recovery-payload/outputs/${file}`));
+  assert.doesNotMatch(bootstrap, /staging-frontend-(?:dist|provenance)/);
+  assert.doesNotMatch(workflow, /\.\.\/baseline\/(?:dist|outputs)/);
+
+  const upload = step("Upload mandatory exact bridge recovery bytes before state or mutation");
+  assert.match(
+    upload,
+    /path: \|\r?\n\s+\$\{\{ github\.workspace \}\}\/staging-bridge-recovery-payload\/dist\r?\n\s+\$\{\{ github\.workspace \}\}\/staging-bridge-recovery-payload\/outputs\r?\n/,
+  );
+  assert.doesNotMatch(upload, /baseline\/|[?*]/);
+  assert.match(upload, /include-hidden-files: true/);
+  assert.match(
+    step("Bind durable staging bridge recovery state to immutable baseline bytes"),
+    /\.\.\/staging-bridge-recovery-payload\/outputs\/staging-baseline-dist-seal\.json/,
+  );
+  assert.match(
+    step("Verify the exact recovery baseline before arming mutation"),
+    /git -C \.\.\/baseline status --porcelain=v1/,
+  );
+});
+
 test("mode-bound recovery topology is proven before upload and after immutable download", () => {
+  const initialize = position("Initialize dedicated exact bridge recovery payload root");
   const materialize = position("Materialize the exact one-time bootstrap baseline");
   const localTopology = position("Verify exact mode-bound recovery topology before upload");
   const upload = position("Upload mandatory exact bridge recovery bytes before state or mutation");
@@ -80,7 +146,8 @@ test("mode-bound recovery topology is proven before upload and after immutable d
   const remoteTopology = position("Reverify remote bridge state and exact recovery bytes before mutation");
   const mutation = position("Persist redundant HMAC bridge state only after remote recovery proof");
   assert.ok(
-    materialize < localTopology &&
+    initialize < materialize &&
+      materialize < localTopology &&
       localTopology < upload &&
       upload < stateDownload &&
       stateDownload < recoveryDownload &&
@@ -89,10 +156,13 @@ test("mode-bound recovery topology is proven before upload and after immutable d
   );
   const verifier = /verify-staging-bridge-recovery-artifact\.mjs/g;
   assert.equal((workflow.match(verifier) ?? []).length, 2);
-  assert.match(step("Verify exact mode-bound recovery topology before upload"), /--baseline-mode/);
+  assert.match(
+    step("Verify exact mode-bound recovery topology before upload"),
+    /--root \.\.\/staging-bridge-recovery-payload[\s\S]*--baseline-mode/,
+  );
   assert.match(
     step("Reverify remote bridge state and exact recovery bytes before mutation"),
-    /--peer-outputs[\s\S]*--baseline-mode/,
+    /--root \.\.\/staging-bridge-recovery-payload[\s\S]*--peer-root "\$RUNNER_TEMP\/g12-staging-bridge-recovery-pre-mutation"[\s\S]*--baseline-mode/,
   );
   assert.doesNotMatch(
     step("Reverify remote bridge state and exact recovery bytes before mutation"),

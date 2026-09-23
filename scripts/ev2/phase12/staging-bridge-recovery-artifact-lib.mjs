@@ -47,6 +47,44 @@ function sameMetadata(left, right) {
   );
 }
 
+async function inspectArtifactRoot(artifactRoot, label) {
+  const root = resolve(artifactRoot);
+  const rootBefore = await lstat(root, { bigint: true }).catch(() => refuse(`${label}_root_missing`));
+  if (!rootBefore.isDirectory() || rootBefore.isSymbolicLink()) refuse(`${label}_root_invalid`);
+  const entries = await readdir(root, { withFileTypes: true });
+  if (
+    !exactNames(
+      entries.map((entry) => entry.name),
+      ["dist", "outputs"],
+    ) ||
+    entries.some((entry) => !entry.isDirectory() || entry.isSymbolicLink())
+  )
+    refuse(`${label}_contents_invalid`);
+
+  const distDirectory = resolve(root, "dist");
+  const outputsDirectory = resolve(root, "outputs");
+  const distBefore = await lstat(distDirectory, { bigint: true }).catch(() =>
+    refuse(`${label}_dist_missing`),
+  );
+  const outputsBefore = await lstat(outputsDirectory, { bigint: true }).catch(() =>
+    refuse(`${label}_outputs_missing`),
+  );
+  if (!distBefore.isDirectory() || distBefore.isSymbolicLink()) refuse(`${label}_dist_invalid`);
+  if (!outputsBefore.isDirectory() || outputsBefore.isSymbolicLink()) refuse(`${label}_outputs_invalid`);
+  return { root, rootBefore, distDirectory, distBefore, outputsDirectory, outputsBefore };
+}
+
+async function assertArtifactRootStable(artifact, label) {
+  for (const [path, before, suffix] of [
+    [artifact.root, artifact.rootBefore, "root"],
+    [artifact.distDirectory, artifact.distBefore, "dist"],
+    [artifact.outputsDirectory, artifact.outputsBefore, "outputs"],
+  ]) {
+    const after = await lstat(path, { bigint: true }).catch(() => refuse(`${label}_${suffix}_changed`));
+    if (!sameMetadata(before, after)) refuse(`${label}_${suffix}_changed`);
+  }
+}
+
 async function stableRegularFile(path, label) {
   const target = resolve(path);
   const pathBefore = await lstat(target, { bigint: true }).catch(() => refuse(`${label}_missing`));
@@ -190,4 +228,25 @@ export async function verifyStagingBridgeRecoveryOutputs({
     provenanceFile: topology.provenanceFile,
     seal: local.seal,
   };
+}
+
+export async function verifyStagingBridgeRecoveryArtifact({
+  artifactRoot,
+  peerArtifactRoot = "",
+  baselineMode = "",
+  compensationProvenanceMode = "",
+  expectedProvenanceMode = "",
+}) {
+  const local = await inspectArtifactRoot(artifactRoot, "local_payload");
+  const peer = peerArtifactRoot ? await inspectArtifactRoot(peerArtifactRoot, "remote_payload") : null;
+  const result = await verifyStagingBridgeRecoveryOutputs({
+    outputsDirectory: local.outputsDirectory,
+    peerOutputsDirectory: peer?.outputsDirectory ?? "",
+    baselineMode,
+    compensationProvenanceMode,
+    expectedProvenanceMode,
+  });
+  await assertArtifactRootStable(local, "local_payload");
+  if (peer) await assertArtifactRootStable(peer, "remote_payload");
+  return result;
 }

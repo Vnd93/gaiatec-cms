@@ -666,6 +666,108 @@ test("CI executes the real hardened Docker bundle twice and seals the result", (
   }
 });
 
+test("CI authenticates only the two GHCR pull lanes and retries only registry throttles", () => {
+  const jobsStart = ciWorkflow.indexOf("\njobs:");
+  const hotfixStart = ciWorkflow.indexOf("  hotfix-bundle-smoke:", jobsStart);
+  const databaseStart = ciWorkflow.indexOf("\n  database:", hotfixStart);
+  const browserStart = ciWorkflow.indexOf("\n  browser:", databaseStart);
+  assert.notEqual(jobsStart, -1, "missing CI jobs boundary");
+  assert.notEqual(hotfixStart, -1, "missing hotfix-bundle-smoke job");
+  assert.notEqual(databaseStart, -1, "missing database job");
+  assert.notEqual(browserStart, -1, "missing database job boundary");
+
+  const globalControl = ciWorkflow.slice(0, jobsStart);
+  const hotfix = ciWorkflow.slice(hotfixStart, databaseStart);
+  const database = ciWorkflow.slice(databaseStart, browserStart);
+  assert.doesNotMatch(globalControl, /packages:/);
+  assert.equal((ciWorkflow.match(/^ {6}packages: read$/gm) ?? []).length, 2);
+  assert.doesNotMatch(ciWorkflow, /packages: write|docker\/login-action|GHCR_PAT|github\.token.*write/);
+
+  for (const job of [hotfix, database]) {
+    assert.match(
+      job,
+      /^ {4}permissions:\r?\n {6}actions: read\r?\n {6}contents: read\r?\n {6}packages: read$/m,
+    );
+    assert.doesNotMatch(job, /\$\{\{\s*secrets\.|continue-on-error:|\|\| true/);
+  }
+  assert.equal((ciWorkflow.match(/docker login ghcr\.io/g) ?? []).length, 2);
+  assert.equal((ciWorkflow.match(/docker logout ghcr\.io/g) ?? []).length, 2);
+
+  const hotfixLogin = stepBody(ciWorkflow, "Authenticate read-only GHCR pulls for the Docker smoke");
+  const databaseLogin = stepBody(
+    ciWorkflow,
+    "Authenticate read-only GHCR pulls for the local Supabase stack",
+  );
+  for (const login of [hotfixLogin, databaseLogin]) {
+    assert.match(login, /GHCR_USERNAME: \$\{\{ github\.actor \}\}/);
+    assert.match(login, /GHCR_TOKEN: \$\{\{ github\.token \}\}/);
+    assert.match(login, /printf '%s' "\$GHCR_TOKEN" \|/);
+    assert.match(login, /docker login ghcr\.io --username "\$GHCR_USERNAME" --password-stdin/);
+  }
+
+  const hotfixPull = stepBody(ciWorkflow, "Verify and pull the immutable runtime for the Docker smoke");
+  assert.match(hotfixPull, /retry_ghcr\(\)/);
+  assert.match(hotfixPull, /for attempt in 1 2 3/);
+  assert.match(hotfixPull, /if "\$@" > "\$output_path" 2> "\$error_path"; then/);
+  assert.equal((hotfixPull.match(/cat "\$error_path" >&2/g) ?? []).length, 2);
+  assert.match(hotfixPull, /toomanyrequests\|too\[\[:space:\]\]\+many/);
+  assert.match(hotfixPull, /429/);
+  assert.doesNotMatch(hotfixPull, /retry-after|\[\^0-9\]/);
+  assert.match(hotfixPull, /backoff_seconds="\$\(\(5 \* 2 \*\* \(attempt - 1\)\)\)"/);
+  assertOrdered(hotfixPull, [
+    'retry_ghcr inspect "$INDEX_MANIFEST"',
+    'test "sha256:$(sha256sum "$INDEX_MANIFEST"',
+    'select(.platform.os == "linux" and .platform.architecture == "amd64"',
+    'retry_ghcr pull "$PULL_LOG"',
+  ]);
+  assert.equal((hotfixPull.match(/docker buildx imagetools inspect --raw/g) ?? []).length, 1);
+  assert.equal((hotfixPull.match(/docker pull --platform linux\/amd64/g) ?? []).length, 1);
+
+  const databaseStartStep = stepBody(
+    ciWorkflow,
+    "Start the local Supabase stack with bounded GHCR throttle recovery",
+  );
+  assert.match(databaseStartStep, /for attempt in 1 2 3/);
+  assert.match(databaseStartStep, /if supabase start 2>&1 \| tee "\$log_path"; then/);
+  assert.match(
+    databaseStartStep,
+    /grep -Fqi 'failed to pull docker image from all registries:' "\$log_path"/,
+  );
+  assert.match(databaseStartStep, /toomanyrequests\|too\[\[:space:\]\]\+many/);
+  assert.doesNotMatch(databaseStartStep, /retry-after|\[\^0-9\]/);
+  assert.match(databaseStartStep, /supabase stop --no-backup/);
+  assert.match(databaseStartStep, /backoff_seconds="\$\(\(5 \* 2 \*\* \(attempt - 1\)\)\)"/);
+  assert.match(databaseStartStep, /test "\$started" = true/);
+  assert.equal((database.match(/supabase start/g) ?? []).length, 1);
+  assert.equal((database.match(/supabase stop --no-backup/g) ?? []).length, 2);
+  assert.doesNotMatch(database, /--ignore-health-check|--exclude/);
+  assert.match(database, /supabase\/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520/);
+  assert.match(database, /version: 2\.116\.0/);
+
+  const hotfixLogout = stepBody(ciWorkflow, "Remove the Docker smoke GHCR credentials");
+  const databaseLogout = stepBody(ciWorkflow, "Remove the local Supabase stack GHCR credentials");
+  for (const logout of [hotfixLogout, databaseLogout]) {
+    assert.match(logout, /if: always\(\)/);
+    assert.match(logout, /run: docker logout ghcr\.io/);
+  }
+  assertOrdered(hotfix, [
+    "Materialize the complete candidate Edge Function inventory",
+    "Authenticate read-only GHCR pulls for the Docker smoke",
+    "Verify and pull the immutable runtime for the Docker smoke",
+    "Remove the Docker smoke GHCR credentials",
+    "Build the primary Docker candidate with canonical JSR identities",
+  ]);
+  assertOrdered(database, [
+    "supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520",
+    "Authenticate read-only GHCR pulls for the local Supabase stack",
+    "Start the local Supabase stack with bounded GHCR throttle recovery",
+    "Remove the local Supabase stack GHCR credentials",
+    "supabase db reset --local --no-seed",
+    "supabase test db",
+    "supabase stop --no-backup",
+  ]);
+});
+
 test("both candidate paths prove and report the exact bounded raw ESZIP size before sealing", () => {
   assert.equal(STAGING_CMS_PUBLIC_HOTFIX.maximumRawEszipBytes, 64 * 1024 * 1024);
   assert.equal(STAGING_CMS_PUBLIC_HOTFIX.maximumWireBundleBytes, 20 * 1024 * 1024);

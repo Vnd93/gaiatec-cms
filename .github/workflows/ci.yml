@@ -761,6 +761,10 @@ jobs:
     if: needs.release-plan.outputs.run_edge == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    permissions:
+      actions: read
+      contents: read
+      packages: read
     outputs:
       artifact_id: ${{ steps.upload-edge-runtime-artifact.outputs.artifact-id }}
       artifact_digest: ${{ steps.upload-edge-runtime-artifact.outputs.artifact-digest }}
@@ -807,17 +811,63 @@ jobs:
           --source ../candidate-source
           --output ../all-edge-runtime-input
           --candidate-sha "${{ github.sha }}"
+      - name: Authenticate read-only GHCR pulls for the Docker smoke
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test -n "$GHCR_USERNAME"
+          test -n "$GHCR_TOKEN"
+          printf '%s' "$GHCR_TOKEN" |
+            docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin
       - name: Verify and pull the immutable runtime for the Docker smoke
         env:
           INDEX_MANIFEST: ${{ runner.temp }}/g12-smoke-edge-runtime-index.json
+          PULL_LOG: ${{ runner.temp }}/g12-smoke-edge-runtime-pull.log
         run: |
           set -euo pipefail
-          docker buildx imagetools inspect --raw "$EDGE_RUNTIME_IMAGE" > "$INDEX_MANIFEST"
+          retry_ghcr() {
+            local label="$1"
+            local output_path="$2"
+            shift 2
+            local attempt error_path backoff_seconds
+            for attempt in 1 2 3; do
+              error_path="$RUNNER_TEMP/g12-ghcr-${label}-${attempt}.stderr"
+              rm -f "$output_path" "$error_path"
+              if "$@" > "$output_path" 2> "$error_path"; then
+                cat "$error_path" >&2
+                return 0
+              fi
+              cat "$error_path" >&2
+              if ! grep -Eiq \
+                'toomanyrequests|too[[:space:]]+many[[:space:]]+requests|(^|[^[:alnum:]])429([^[:alnum:]]|$)' \
+                "$error_path"; then
+                printf 'G12_GHCR_NON_THROTTLE_FAILURE:%s:%s\n' "$label" "$attempt" >&2
+                return 1
+              fi
+              if [ "$attempt" -eq 3 ]; then
+                printf 'G12_GHCR_THROTTLE_RETRY_EXHAUSTED:%s\n' "$label" >&2
+                return 1
+              fi
+              backoff_seconds="$((5 * 2 ** (attempt - 1)))"
+              printf 'G12_GHCR_THROTTLE_RETRY:%s:%s:%s\n' \
+                "$label" "$attempt" "$backoff_seconds" >&2
+              sleep "$backoff_seconds"
+            done
+          }
+          retry_ghcr inspect "$INDEX_MANIFEST" \
+            docker buildx imagetools inspect --raw "$EDGE_RUNTIME_IMAGE"
           test "sha256:$(sha256sum "$INDEX_MANIFEST" | awk '{print $1}')" = "$EDGE_RUNTIME_INDEX_DIGEST"
           test "$(jq -r --arg digest "$EDGE_RUNTIME_AMD64_DIGEST" \
             '[.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64" and .digest == $digest)] | length' \
             "$INDEX_MANIFEST")" = 1
-          docker pull --platform linux/amd64 "$EDGE_RUNTIME_IMAGE"
+          retry_ghcr pull "$PULL_LOG" \
+            docker pull --platform linux/amd64 "$EDGE_RUNTIME_IMAGE"
+          cat "$PULL_LOG"
+      - name: Remove the Docker smoke GHCR credentials
+        if: always()
+        run: docker logout ghcr.io
       - name: Build the primary Docker candidate with canonical JSR identities
         run: |
           set -euo pipefail
@@ -1038,6 +1088,10 @@ jobs:
     if: needs.release-plan.outputs.run_database_auth == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    permissions:
+      actions: read
+      contents: read
+      packages: read
     outputs:
       artifact_id: ${{ steps.upload-database-payload.outputs.artifact-id }}
       artifact_digest: ${{ steps.upload-database-payload.outputs.artifact-digest }}
@@ -1065,7 +1119,46 @@ jobs:
       - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3
         with:
           version: 2.116.0
-      - run: supabase start
+      - name: Authenticate read-only GHCR pulls for the local Supabase stack
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test -n "$GHCR_USERNAME"
+          test -n "$GHCR_TOKEN"
+          printf '%s' "$GHCR_TOKEN" |
+            docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin
+      - name: Start the local Supabase stack with bounded GHCR throttle recovery
+        run: |
+          set -euo pipefail
+          started=false
+          for attempt in 1 2 3; do
+            log_path="$RUNNER_TEMP/g12-supabase-start-${attempt}.log"
+            if supabase start 2>&1 | tee "$log_path"; then
+              started=true
+              break
+            fi
+            if ! grep -Fqi 'failed to pull docker image from all registries:' "$log_path" || \
+              ! grep -Eiq \
+                'toomanyrequests|too[[:space:]]+many[[:space:]]+requests|(^|[^[:alnum:]])429([^[:alnum:]]|$)' \
+                "$log_path"; then
+              printf 'G12_SUPABASE_START_NON_GHCR_THROTTLE_FAILURE:%s\n' "$attempt" >&2
+              exit 1
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              break
+            fi
+            supabase stop --no-backup
+            backoff_seconds="$((5 * 2 ** (attempt - 1)))"
+            printf 'G12_SUPABASE_START_GHCR_THROTTLE_RETRY:%s:%s\n' \
+              "$attempt" "$backoff_seconds" >&2
+            sleep "$backoff_seconds"
+          done
+          test "$started" = true
+      - name: Remove the local Supabase stack GHCR credentials
+        if: always()
+        run: docker logout ghcr.io
       - run: supabase db reset --local --no-seed
       - run: supabase test db
       - if: always()

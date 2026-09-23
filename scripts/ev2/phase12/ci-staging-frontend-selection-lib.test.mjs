@@ -512,6 +512,33 @@ test("downloaded release plan is schema-exact, recomputed from the matrix and bo
     assert.deepEqual(verified.plan, plan);
     assert.equal(verified.planSha256, planSha256);
 
+    const fullRepositoryFiles = Array.from(
+      { length: 2_585 },
+      (_, index) => `src/styles/generated/component-${String(index).padStart(4, "0")}.css`,
+    );
+    const largeSelection = selectReleaseProfile({
+      matrix,
+      changedFiles: fullRepositoryFiles,
+    });
+    const largePlan = { ...plan, ...largeSelection, schemaVersion: plan.schemaVersion };
+    const largeSerialized = `${JSON.stringify(largePlan, null, 2)}\n`;
+    const largePlanSha256 = createHash("sha256").update(largeSerialized).digest("hex");
+    assert.ok(Buffer.byteLength(largeSerialized) > 256 * 1024);
+    assert.ok(Buffer.byteLength(largeSerialized) <= 1024 * 1024);
+    await writeFile(file, largeSerialized, "utf8");
+    const verifiedLargePlan = await verifyCiReleasePlan(file, {
+      ...fileExpected,
+      profile: largePlan.selectedProfile,
+      planSha256: largePlanSha256,
+      actualPlanSha256: largePlanSha256,
+    });
+    assert.equal(verifiedLargePlan.plan.changedFiles.length, 2_585);
+    assert.equal(verifiedLargePlan.planSha256, largePlanSha256);
+
+    await writeFile(file, Buffer.alloc(1024 * 1024 + 1, 0x20));
+    await assert.rejects(verifyCiReleasePlan(file, fileExpected), /G12_CI_RELEASE_PLAN_FILE_REFUSED/);
+    await writeFile(file, serialized, "utf8");
+
     await writeFile(controlSelectorPath, "// substituted selector\n", "utf8");
     await assert.rejects(
       verifyCiReleasePlan(file, fileExpected),

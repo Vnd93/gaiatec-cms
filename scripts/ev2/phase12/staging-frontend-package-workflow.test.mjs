@@ -2,14 +2,16 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const [workflow, resolver, verifier, matrix, baselineResolver, baselineLibrary] = await Promise.all([
-  readFile(new URL("../../../.github/workflows/ci.yml", import.meta.url), "utf8"),
-  readFile(new URL("./resolve-ci-staging-frontend-artifact.mjs", import.meta.url), "utf8"),
-  readFile(new URL("./verify-staging-frontend-package.mjs", import.meta.url), "utf8"),
-  readFile(new URL("../../../.github/release-controls/release-gate-matrix.json", import.meta.url), "utf8"),
-  readFile(new URL("./resolve-staging-release-baseline.mjs", import.meta.url), "utf8"),
-  readFile(new URL("./staging-release-baseline-lib.mjs", import.meta.url), "utf8"),
-]);
+const [workflow, resolver, verifier, matrix, baselineResolver, baselineLibrary, selectionLibrary] =
+  await Promise.all([
+    readFile(new URL("../../../.github/workflows/ci.yml", import.meta.url), "utf8"),
+    readFile(new URL("./resolve-ci-staging-frontend-artifact.mjs", import.meta.url), "utf8"),
+    readFile(new URL("./verify-staging-frontend-package.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../../../.github/release-controls/release-gate-matrix.json", import.meta.url), "utf8"),
+    readFile(new URL("./resolve-staging-release-baseline.mjs", import.meta.url), "utf8"),
+    readFile(new URL("./staging-release-baseline-lib.mjs", import.meta.url), "utf8"),
+    readFile(new URL("./ci-staging-frontend-selection-lib.mjs", import.meta.url), "utf8"),
+  ]);
 
 function job(name, nextName) {
   const start = workflow.indexOf(`  ${name}:`);
@@ -82,6 +84,12 @@ test("release-plan trusts an all-or-nothing four-file bundle from the proven sta
   assert.match(releasePlan, /plan\.controlSha !== process\.env\.BASE_SHA/);
   assert.match(releasePlan, /plan\.trustMode !== "base-controls"/);
   assert.match(releasePlan, /process\.env\.EXPECTED_BASELINE_PROVEN !== "true"/);
+});
+
+test("release-plan producer and verifier enforce the same bounded per-file ceiling", () => {
+  const releasePlan = job("release-plan", "quality");
+  assert.match(releasePlan, /metadata\.size > 1_048_576/);
+  assert.match(selectionLibrary, /const MAX_RELEASE_PLAN_FILE_BYTES = 1024 \* 1024;/);
 });
 
 test("staging profile baseline requires a successful exact-attempt checkpoint and terminal chain", () => {

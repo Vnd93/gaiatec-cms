@@ -19,8 +19,9 @@ const PREFIXED_SHA256 = /^sha256:[a-f0-9]{64}$/;
 const POSITIVE_INTEGER = /^[1-9]\d*$/;
 const MINIMUM_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 const MAX_SELECTION_FILE_BYTES = 64 * 1024;
-const MAX_RELEASE_PLAN_FILE_BYTES = 256 * 1024;
 const MAX_CONTROL_FILE_BYTES = 1024 * 1024;
+// Keep the verifier aligned with the producer's per-file release-plan artifact ceiling.
+const MAX_RELEASE_PLAN_FILE_BYTES = 1024 * 1024;
 const PACKAGE_JOB_NAME = "package-staging";
 const BUILD_STEP_NAME = "Build, seal and verify the immutable staging frontend package";
 const UPLOAD_STEP_NAME = "Upload the only deployable staging frontend package";

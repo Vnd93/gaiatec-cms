@@ -1,8 +1,10 @@
-import { appendFile } from "node:fs/promises";
+import { appendFile, readFile } from "node:fs/promises";
 
 import {
   selectStagingCompensationArtifacts,
   STAGING_BASELINE_COMPENSATION_REPOSITORY,
+  validateStagingBridgeRerunArtifactLossFallback,
+  validateStagingCompensationArtifactList,
   validateStagingCompensationRun,
 } from "./staging-baseline-compensation-lib.mjs";
 
@@ -14,6 +16,8 @@ function argument(name) {
 const mode = argument("mode");
 const runId = argument("run-id");
 const runAttempt = Number(argument("run-attempt"));
+const recordFile = argument("record");
+const expectedRelease = argument("expected-release");
 const token = process.env.GITHUB_TOKEN ?? "";
 if (
   !["deploy-compensation", "bridge-compensation"].includes(mode) ||
@@ -52,17 +56,49 @@ if (!runResult.valid)
   throw new Error(`G12_STAGING_BASELINE_COMPENSATION_RUN_REFUSED:${runResult.violations.join(",")}`);
 
 const artifactPayload = await github(`/actions/runs/${runId}/artifacts?per_page=100`);
-if (Number(artifactPayload?.total_count ?? 0) > 100)
-  throw new Error("G12_STAGING_BASELINE_COMPENSATION_ARTIFACT_PAGINATION_REFUSED");
+const artifactList = validateStagingCompensationArtifactList(artifactPayload);
+if (!artifactList.valid) throw new Error("G12_STAGING_BASELINE_COMPENSATION_ARTIFACT_LIST_INCOMPLETE");
 const selected = selectStagingCompensationArtifacts({
-  artifacts: artifactPayload?.artifacts,
+  artifacts: artifactList.artifacts,
   run,
   mode,
   runId,
   runAttempt,
 });
-if (!selected.valid)
-  throw new Error(`G12_STAGING_BASELINE_COMPENSATION_ARTIFACT_REFUSED:${selected.violations.join(",")}`);
+let recoverySource = "compensation-artifacts";
+if (!selected.valid) {
+  let record;
+  try {
+    record = JSON.parse(await readFile(recordFile, "utf8"));
+  } catch {
+    throw new Error(
+      `G12_STAGING_BASELINE_COMPENSATION_ARTIFACT_REFUSED:${selected.violations.join(",")},rerun_fallback_record_unavailable`,
+    );
+  }
+  const currentRun = await github(`/actions/runs/${runId}`);
+  const markerJobs = await github(`/actions/runs/${runId}/attempts/${runAttempt}/jobs?per_page=100`);
+  const currentJobs = await github(
+    `/actions/runs/${runId}/attempts/${currentRun.run_attempt}/jobs?per_page=100`,
+  );
+  const fallback = validateStagingBridgeRerunArtifactLossFallback({
+    record,
+    expectedRelease,
+    artifacts: artifactList.artifacts,
+    markerRun: run,
+    currentRun,
+    markerJobs,
+    currentJobs,
+    mode,
+    runId,
+    runAttempt,
+    repository: process.env.GITHUB_REPOSITORY,
+  });
+  if (!fallback.valid)
+    throw new Error(
+      `G12_STAGING_BASELINE_COMPENSATION_ARTIFACT_REFUSED:${selected.violations.join(",")},${fallback.violations.join(",")}`,
+    );
+  recoverySource = "bootstrap-rerun-loss";
+}
 if (!process.env.GITHUB_OUTPUT) throw new Error("G12_STAGING_BASELINE_COMPENSATION_OUTPUT_REQUIRED");
 
 await appendFile(
@@ -70,9 +106,10 @@ await appendFile(
   [
     `control_sha=${run.head_sha}`,
     `run_conclusion=${run.conclusion}`,
-    `recovery_artifact_id=${selected.recoveryArtifact.id}`,
-    `recovery_artifact_digest=${selected.recoveryArtifact.digest}`,
-    `recovery_artifact_name=${selected.recoveryArtifact.name}`,
+    `recovery_source=${recoverySource}`,
+    `recovery_artifact_id=${selected.recoveryArtifact?.id ?? ""}`,
+    `recovery_artifact_digest=${selected.recoveryArtifact?.digest ?? ""}`,
+    `recovery_artifact_name=${selected.recoveryArtifact?.name ?? ""}`,
     `state_artifact_id=${selected.stateArtifact?.id ?? ""}`,
     `state_artifact_digest=${selected.stateArtifact?.digest ?? ""}`,
     `state_artifact_name=${selected.stateArtifact?.name ?? ""}`,
@@ -87,7 +124,9 @@ console.log(
     runId,
     runAttempt,
     controlSha: run.head_sha,
-    artifactIdsResolved: true,
-    artifactDigestsPresent: true,
+    recoverySource,
+    artifactIdsResolved: selected.valid,
+    artifactDigestsPresent: selected.valid,
+    rerunArtifactLossVerified: recoverySource === "bootstrap-rerun-loss",
   }),
 );

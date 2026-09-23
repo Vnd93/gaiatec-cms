@@ -28,13 +28,45 @@ test("compensation marker remains untrusted until exact run and artifact resolut
   assert.ok(classify < remote && remote < download && download < materialize && materialize < mutation);
   assert.match(
     step("Resolve the exact failed run and immutable compensation artifacts"),
-    /resolve-staging-baseline-compensation\.mjs[\s\S]*--run-id[\s\S]*--run-attempt/,
+    /resolve-staging-baseline-compensation\.mjs[\s\S]*--run-id[\s\S]*--run-attempt[\s\S]*--record[\s\S]*--expected-release/,
   );
   assert.match(
     step("Download the immutable compensation recovery bytes by exact artifact ID"),
     /artifact-ids: \$\{\{ steps\.baseline_compensation\.outputs\.recovery_artifact_id \}\}[\s\S]*digest-mismatch: error[\s\S]*run-id:/,
   );
   assert.match(resolver, /actions\/runs\/\$\{runId\}\/attempts\/\$\{runAttempt\}/);
+});
+
+test("GitHub rerun artifact loss uses only a remotely proven compensation and pinned bootstrap", () => {
+  const remote = position("Resolve the exact failed run and immutable compensation artifacts");
+  const fallback = position("Verify pinned bootstrap after GitHub rerun artifact loss");
+  const bootstrapDownload = position("Download the immutable bootstrap baseline bytes");
+  const mutation = position("Persist redundant HMAC bridge state only after remote recovery proof");
+  assert.ok(remote < fallback && fallback < bootstrapDownload && bootstrapDownload < mutation);
+  assert.match(step("Verify pinned bootstrap after GitHub rerun artifact loss"), /bootstrap-rerun-loss/);
+  assert.match(
+    step("Download the immutable compensation state by exact artifact ID"),
+    /recovery_source == 'compensation-artifacts'/,
+  );
+  assert.match(
+    step("Download the immutable compensation recovery bytes by exact artifact ID"),
+    /recovery_source == 'compensation-artifacts'/,
+  );
+  assert.match(
+    step("Preserve exact recovery bytes for future bridge compensation"),
+    /recovery_source == 'compensation-artifacts'/,
+  );
+  for (const label of [
+    "Download the immutable bootstrap bridge evidence",
+    "Download the immutable bootstrap baseline bytes",
+    "Materialize the exact one-time bootstrap baseline",
+  ])
+    assert.match(step(label), /bootstrap-rerun-loss/);
+  assert.match(
+    step("Verify exact mode-bound recovery topology before upload"),
+    /bootstrap-rerun-loss[\s\S]*pinned-bootstrap-absent/,
+  );
+  assert.doesNotMatch(workflow.slice(fallback, mutation), /npm run build|seal-production-dist|vite build/);
 });
 
 test("deploy compensation resolves and compares the original CI package without rebuild or reseal", () => {
@@ -64,6 +96,7 @@ test("bridge compensation preserves the exact recovery archive including bootstr
   assert.match(validate, /materialize-staging-baseline-compensation\.mjs/);
   assert.match(validate, /--state-dir/);
   assert.match(validate, /staging-baseline-bootstrap\.json/);
+  assert.match(preserve, /recovery_source == 'compensation-artifacts'/);
   assert.match(preserve, /cp "\$ARCHIVE_PATH"/);
   assert.match(preserve, /if \[ -n "\$PROVENANCE_PATH" \]/);
   assert.doesNotMatch(`${validate}\n${preserve}`, /npm run build|seal-production-dist|vite build/);

@@ -5,6 +5,8 @@ import { PRODUCTION_FUNCTIONS } from "./production-backend-lib.mjs";
 import {
   parseStagingCompensationMarker,
   selectStagingCompensationArtifacts,
+  validateStagingBridgeRerunArtifactLossFallback,
+  validateStagingCompensationArtifactList,
   validateStagingCompensationRun,
   validateStagingCompensationState,
 } from "./staging-baseline-compensation-lib.mjs";
@@ -45,6 +47,117 @@ function artifact(name, id) {
     size_in_bytes: 4096,
     expires_at: "2030-01-01T00:00:00.000Z",
     workflow_run: { id: Number(runId), head_sha: controlSha },
+  };
+}
+
+const rerunCompensationSteps = [
+  "Upload mandatory exact bridge recovery bytes before state or mutation",
+  "Upload immutable bridge recovery state after binding exact baseline identity",
+  "Download just-uploaded bridge recovery state by immutable artifact ID",
+  "Download just-uploaded exact bridge recovery bytes by immutable artifact ID",
+  "Reverify remote bridge state and exact recovery bytes before mutation",
+  "Persist redundant HMAC bridge state only after remote recovery proof",
+  "Promote exact A to canonical staging alias with CAS",
+  "Restore the candidate public backend in every outcome",
+  "Automatically restore old staging frontend on failure",
+  "Reconfirm compensated canonical staging before clearing recovery state",
+  "Probe compensated canonical staging before clearing recovery state",
+  "Seal non-sensitive automatic bridge compensation evidence",
+  "Upload mandatory automatic bridge compensation evidence",
+  "Verify automatic bridge compensation artifact identity",
+  "Clear redundant recovery state only after success or proven compensation",
+  "Upload mandatory legacy backend restore evidence before lease release",
+  "Verify mandatory legacy backend restore artifact identity",
+  "Release the legacy backend lease only after a proven restore",
+];
+
+function completedStep(name, conclusion = "success") {
+  return { name, status: "completed", conclusion };
+}
+
+function rerunFallbackFixture() {
+  const markerRun = { ...run("bridge-compensation"), conclusion: "cancelled" };
+  const currentRun = {
+    ...run("bridge-compensation"),
+    run_attempt: runAttempt + 1,
+    conclusion: "failure",
+  };
+  const markerJobs = {
+    total_count: 2,
+    jobs: [
+      {
+        name: "promote",
+        status: "completed",
+        conclusion: "cancelled",
+        steps: rerunCompensationSteps.map((name) => completedStep(name)),
+      },
+      { name: "pipeline-metrics", status: "completed", conclusion: "success", steps: [] },
+    ],
+  };
+  const currentJobs = {
+    total_count: 2,
+    jobs: [
+      {
+        name: "promote",
+        status: "completed",
+        conclusion: "failure",
+        steps: [
+          completedStep("Resolve the exact failed run and immutable compensation artifacts", "failure"),
+          completedStep("Persist redundant HMAC bridge state only after remote recovery proof", "skipped"),
+        ],
+      },
+      { name: "pipeline-metrics", status: "completed", conclusion: "success", steps: [] },
+    ],
+  };
+  return {
+    record: {
+      schemaVersion: 1,
+      event: "g12.staging.baseline.bootstrap",
+      repository: "Vnd93/gaiatec-cms",
+      candidateSha: expectedRelease,
+      canonical: {
+        deploymentId: "00000000-0000-4000-8000-000000000010",
+        createdOn: "2026-09-22T11:05:24.028Z",
+        commitMessage: "g12-staging-bridge-run-30000000001-1",
+      },
+      bridge: {
+        runId: "30000000001",
+        runAttempt: 1,
+        controlSha: expectedRelease,
+        artifactId: "50000000001",
+        artifactDigest: `sha256:${"1".repeat(64)}`,
+        artifactName: `staging-frontend-bridge-${expectedRelease}`,
+        evidenceSha256: "2".repeat(64),
+      },
+      source: {
+        runId: "30000000002",
+        runAttempt: 1,
+        controlSha: expectedRelease,
+        artifactId: "50000000002",
+        artifactDigest: `sha256:${"3".repeat(64)}`,
+        artifactName: `staging-candidate-${expectedRelease}-30000000002-1`,
+        sealFile: "staging-candidate-dist-seal.json",
+        archiveFile: "staging-candidate-dist.tar",
+        sealSha256: "4".repeat(64),
+      },
+      dist: {
+        archiveSha256: "5".repeat(64),
+        treeSha256: "6".repeat(64),
+        archiveBytes: 100,
+        fileCount: 2,
+        byteCount: 50,
+      },
+    },
+    expectedRelease,
+    artifacts: [artifact(`pipeline-duration-bridge-${controlSha}-${runId}-${runAttempt + 1}`, 90)],
+    markerRun,
+    currentRun,
+    markerJobs,
+    currentJobs,
+    mode: "bridge-compensation",
+    runId,
+    runAttempt,
+    repository: "Vnd93/gaiatec-cms",
   };
 }
 
@@ -256,6 +369,24 @@ test("compensation artifacts are unique, digest-bound, unexpired, and retained",
     );
 });
 
+test("compensation artifact absence is trusted only from a complete bounded listing", () => {
+  const artifacts = [artifact("pipeline-duration", 1)];
+  assert.deepEqual(validateStagingCompensationArtifactList({ total_count: 1, artifacts }), {
+    valid: true,
+    violations: [],
+    artifacts,
+  });
+  for (const payload of [
+    undefined,
+    {},
+    { total_count: "1", artifacts },
+    { total_count: 2, artifacts },
+    { total_count: 0, artifacts },
+    { total_count: 101, artifacts: Array.from({ length: 101 }, (_, index) => ({ id: index + 1 })) },
+  ])
+    assert.equal(validateStagingCompensationArtifactList(payload).valid, false);
+});
+
 test("bridge compensation requires a unique separate state and recovery artifact pair", () => {
   const bridgeRun = run("bridge-compensation");
   const stateName = `staging-frontend-bridge-state-${runId}-${runAttempt}`;
@@ -284,6 +415,59 @@ test("bridge compensation requires a unique separate state and recovery artifact
       }).valid,
       false,
     );
+});
+
+test("bridge rerun artifact loss falls back only after exact compensation and pre-mutation failure proof", () => {
+  const fixture = rerunFallbackFixture();
+  assert.deepEqual(validateStagingBridgeRerunArtifactLossFallback(fixture), {
+    valid: true,
+    violations: [],
+  });
+
+  const cases = [
+    ["release", (value) => (value.expectedRelease = attemptedRelease)],
+    ["attempt chain", (value) => (value.currentRun.run_attempt += 1)],
+    [
+      "artifact still exists",
+      (value) =>
+        value.artifacts.push(artifact(`staging-frontend-bridge-recovery-${runId}-${runAttempt}`, 91)),
+    ],
+    [
+      "compensation incomplete",
+      (value) =>
+        (value.markerJobs.jobs[0].steps.find(
+          (entry) => entry.name === "Automatically restore old staging frontend on failure",
+        ).conclusion = "failure"),
+    ],
+    [
+      "rerun did not fail at resolver",
+      (value) =>
+        (value.currentJobs.jobs[0].steps.find(
+          (entry) => entry.name === "Resolve the exact failed run and immutable compensation artifacts",
+        ).conclusion = "success"),
+    ],
+    [
+      "rerun crossed mutation boundary",
+      (value) =>
+        (value.currentJobs.jobs[0].steps.find(
+          (entry) => entry.name === "Persist redundant HMAC bridge state only after remote recovery proof",
+        ).conclusion = "success"),
+    ],
+  ];
+  for (const [label, mutate] of cases) {
+    const changed = structuredClone(rerunFallbackFixture());
+    mutate(changed);
+    assert.equal(validateStagingBridgeRerunArtifactLossFallback(changed).valid, false, label);
+  }
+});
+
+test("rerun artifact-loss fallback is unavailable to deploy compensation", () => {
+  const fixture = rerunFallbackFixture();
+  fixture.mode = "deploy-compensation";
+  assert.deepEqual(validateStagingBridgeRerunArtifactLossFallback(fixture), {
+    valid: false,
+    violations: ["fallback_mode_invalid"],
+  });
 });
 
 test("compensation state is bound to exact run, marker, control SHA, and original release", () => {

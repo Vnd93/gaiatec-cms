@@ -1,11 +1,35 @@
 import { isDeploymentCommitMessage } from "./deployment-commit-message.mjs";
 import { FULL_SHA_PATTERN, UUID_PATTERN } from "./release-guard-lib.mjs";
+import { validateStagingBaselineBootstrapRecord } from "./staging-baseline-bootstrap-lib.mjs";
 import { validateStagingDeployRecoveryState } from "./staging-deploy-recovery-state-lib.mjs";
 
 const PREFIXED_SHA256 = /^sha256:[a-f0-9]{64}$/;
 const REPOSITORY = "Vnd93/gaiatec-cms";
 const MINIMUM_ARTIFACT_REMAINING_MS = 7 * 24 * 60 * 60 * 1000;
 const TERMINAL_FAILURES = new Set(["failure", "cancelled", "timed_out", "action_required"]);
+const BRIDGE_RERUN_REQUIRED_COMPENSATION_STEPS = Object.freeze([
+  "Upload mandatory exact bridge recovery bytes before state or mutation",
+  "Upload immutable bridge recovery state after binding exact baseline identity",
+  "Download just-uploaded bridge recovery state by immutable artifact ID",
+  "Download just-uploaded exact bridge recovery bytes by immutable artifact ID",
+  "Reverify remote bridge state and exact recovery bytes before mutation",
+  "Persist redundant HMAC bridge state only after remote recovery proof",
+  "Promote exact A to canonical staging alias with CAS",
+  "Restore the candidate public backend in every outcome",
+  "Automatically restore old staging frontend on failure",
+  "Reconfirm compensated canonical staging before clearing recovery state",
+  "Probe compensated canonical staging before clearing recovery state",
+  "Seal non-sensitive automatic bridge compensation evidence",
+  "Upload mandatory automatic bridge compensation evidence",
+  "Verify automatic bridge compensation artifact identity",
+  "Clear redundant recovery state only after success or proven compensation",
+  "Upload mandatory legacy backend restore evidence before lease release",
+  "Verify mandatory legacy backend restore artifact identity",
+  "Release the legacy backend lease only after a proven restore",
+]);
+const BRIDGE_RERUN_FAILURE_STEP = "Resolve the exact failed run and immutable compensation artifacts";
+const BRIDGE_RERUN_FIRST_MUTATION_STEP =
+  "Persist redundant HMAC bridge state only after remote recovery proof";
 
 const MODE = Object.freeze({
   "deploy-compensation": {
@@ -125,6 +149,125 @@ export function selectStagingCompensationArtifacts({
     recoveryArtifact: violations.includes("recovery_artifact_invalid") ? null : recoveryMatches[0],
     stateArtifact,
   };
+}
+
+export function validateStagingCompensationArtifactList(payload) {
+  const artifacts = Array.isArray(payload?.artifacts) ? payload.artifacts : [];
+  const valid =
+    Number.isSafeInteger(payload?.total_count) &&
+    payload.total_count === artifacts.length &&
+    payload.total_count <= 100;
+  return {
+    valid,
+    violations: valid ? [] : ["artifact_list_incomplete"],
+    artifacts,
+  };
+}
+
+function completeJobs(payload) {
+  const jobs = Array.isArray(payload?.jobs) ? payload.jobs : [];
+  return (
+    Number.isSafeInteger(payload?.total_count) &&
+    payload.total_count === jobs.length &&
+    payload.total_count > 0 &&
+    payload.total_count <= 100
+  );
+}
+
+function uniqueJob(payload, name) {
+  const matches = (Array.isArray(payload?.jobs) ? payload.jobs : []).filter((entry) => entry?.name === name);
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function uniqueStep(job, name) {
+  const matches = (Array.isArray(job?.steps) ? job.steps : []).filter((entry) => entry?.name === name);
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function successfulStep(job, name) {
+  const step = uniqueStep(job, name);
+  return step?.status === "completed" && step?.conclusion === "success";
+}
+
+export function validateStagingBridgeRerunArtifactLossFallback({
+  record,
+  expectedRelease,
+  artifacts,
+  markerRun,
+  currentRun,
+  markerJobs,
+  currentJobs,
+  mode,
+  runId,
+  runAttempt,
+  repository,
+}) {
+  const violations = [];
+  if (mode !== "bridge-compensation") return { valid: false, violations: ["fallback_mode_invalid"] };
+  if (!validateStagingBaselineBootstrapRecord(record).valid) violations.push("fallback_record_invalid");
+  if (expectedRelease !== record?.candidateSha || !FULL_SHA_PATTERN.test(expectedRelease ?? ""))
+    violations.push("fallback_release_invalid");
+
+  const markerValidation = validateStagingCompensationRun({
+    run: markerRun,
+    mode,
+    runId,
+    runAttempt,
+    repository,
+  });
+  if (!markerValidation.valid) violations.push("fallback_marker_run_invalid");
+
+  const currentAttempt = Number(currentRun?.run_attempt);
+  const currentValidation = validateStagingCompensationRun({
+    run: currentRun,
+    mode,
+    runId,
+    runAttempt: currentAttempt,
+    repository,
+  });
+  if (!currentValidation.valid) violations.push("fallback_current_run_invalid");
+  if (
+    !Number.isSafeInteger(currentAttempt) ||
+    currentAttempt !== Number(runAttempt) + 1 ||
+    currentRun?.head_sha !== markerRun?.head_sha
+  )
+    violations.push("fallback_attempt_chain_invalid");
+
+  const config = definition(mode);
+  const values = Array.isArray(artifacts) ? artifacts : [];
+  const lostNames = [
+    config.stateArtifactName(runId, runAttempt),
+    config.recoveryArtifactName(runId, runAttempt),
+  ];
+  if (lostNames.some((name) => values.some((artifact) => artifact?.name === name)))
+    violations.push("fallback_artifact_loss_unproven");
+
+  if (!completeJobs(markerJobs)) violations.push("fallback_marker_jobs_invalid");
+  const markerPromote = uniqueJob(markerJobs, "promote");
+  if (
+    !markerPromote ||
+    markerPromote.status !== "completed" ||
+    !TERMINAL_FAILURES.has(markerPromote.conclusion) ||
+    !BRIDGE_RERUN_REQUIRED_COMPENSATION_STEPS.every((name) => successfulStep(markerPromote, name))
+  )
+    violations.push("fallback_compensation_steps_invalid");
+
+  if (!completeJobs(currentJobs)) violations.push("fallback_current_jobs_invalid");
+  const currentPromote = uniqueJob(currentJobs, "promote");
+  const failureStep = uniqueStep(currentPromote, BRIDGE_RERUN_FAILURE_STEP);
+  const mutationStep = uniqueStep(currentPromote, BRIDGE_RERUN_FIRST_MUTATION_STEP);
+  if (
+    !currentPromote ||
+    currentPromote.status !== "completed" ||
+    currentPromote.conclusion !== "failure" ||
+    failureStep?.status !== "completed" ||
+    failureStep?.conclusion !== "failure" ||
+    mutationStep?.status !== "completed" ||
+    mutationStep?.conclusion !== "skipped"
+  )
+    violations.push("fallback_current_failure_boundary_invalid");
+
+  return { valid: violations.length === 0, violations: [...new Set(violations)] };
 }
 
 export function validateStagingCompensationState({

@@ -469,7 +469,7 @@ jobs:
             database-auth|full-release)
               database_path="$(jq -er '[.components.database.files[] | select(.path | endswith(".g12db"))] | if length == 1 then .[0].path else error("database payload identity missing") end' outputs/staging-release-package/staging-release-package.json)"
               database_sha256="$(jq -er --arg path "$database_path" '.components.database.files[] | select(.path == $path) | .sha256' outputs/staging-release-package/staging-release-package.json)"
-              node scripts/ev2/phase12/verify-database-release-payload.mjs \
+              env -u GITHUB_OUTPUT node scripts/ev2/phase12/verify-database-release-payload.mjs \
                 --payload "outputs/staging-release-package/database/$database_path" \
                 --output "$RUNNER_TEMP/g12-database-release-reused" \
                 --candidate "${{ github.sha }}" \
@@ -569,7 +569,7 @@ jobs:
             database-auth|full-release)
               database_payload="$RUNNER_TEMP/g12-database-release-artifact/${{ needs.database.outputs.payload_file_name }}"
               test -f "$database_payload" && test ! -L "$database_payload"
-              node scripts/ev2/phase12/verify-database-release-payload.mjs \
+              env -u GITHUB_OUTPUT node scripts/ev2/phase12/verify-database-release-payload.mjs \
                 --payload "$database_payload" \
                 --output "$RUNNER_TEMP/g12-database-release-create" \
                 --candidate "${{ github.sha }}" \
@@ -663,6 +663,29 @@ jobs:
             [a-f0-9][a-f0-9]*) artifact_digest="sha256:${artifact_digest}" ;;
             *) exit 1 ;;
           esac
+          frontend_root=outputs/staging-release-package/frontend
+          frontend_archive="$frontend_root/staging-frontend-dist.tar"
+          frontend_seal="$frontend_root/staging-frontend-dist-seal.json"
+          frontend_provenance="$frontend_root/staging-frontend-provenance.json"
+          for file in "$frontend_archive" "$frontend_seal" "$frontend_provenance"; do
+            test -f "$file" && test ! -L "$file"
+          done
+          test "$archive_sha256" = "$(sha256sum "$frontend_archive" | awk '{print $1}')"
+          test "$archive_sha256" = "$(jq -er '.archiveSha256' "$frontend_seal")"
+          test "$archive_sha256" = "$(jq -er '.archive.sha256' "$frontend_provenance")"
+          test "$archive_bytes" = "$(stat -c '%s' "$frontend_archive")"
+          test "$archive_bytes" = "$(jq -er '.archiveBytes' "$frontend_seal")"
+          test "$archive_bytes" = "$(jq -er '.archive.bytes' "$frontend_provenance")"
+          test "$tree_sha256" = "$(jq -er '.treeSha256' "$frontend_seal")"
+          test "$tree_sha256" = "$(jq -er '.dist.treeSha256' "$frontend_provenance")"
+          test "$file_count" = "$(jq -er '.fileCount' "$frontend_seal")"
+          test "$file_count" = "$(jq -er '.dist.fileCount' "$frontend_provenance")"
+          test "$byte_count" = "$(jq -er '.byteCount' "$frontend_seal")"
+          test "$byte_count" = "$(jq -er '.dist.byteCount' "$frontend_provenance")"
+          test "$profile_sha256" = "$(jq -er '.profile.sha256' "$frontend_provenance")"
+          test "$seal_sha256" = "$(sha256sum "$frontend_seal" | awk '{print $1}')"
+          test "$seal_sha256" = "$(jq -er '.seal.sha256' "$frontend_provenance")"
+          test "$provenance_sha256" = "$(sha256sum "$frontend_provenance" | awk '{print $1}')"
           test "$(printf '%s' "$artifact_id" | grep -E '^[1-9][0-9]*$')" = "$artifact_id"
           test "$(printf '%s' "$artifact_digest" | grep -E '^sha256:[a-f0-9]{64}$')" = "$artifact_digest"
           test "$(printf '%s' "$profile_sha256" | grep -E '^[a-f0-9]{64}$')" = "$profile_sha256"

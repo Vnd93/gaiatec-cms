@@ -252,6 +252,58 @@ test("package-staging selects before build and creates exactly one unified wrapp
   assert.match(packageJob, /node scripts\/ev2\/phase12\/verify-staging-release-package\.mjs/);
 });
 
+test("package selection keeps the frontend identity output channel exclusive", () => {
+  const packageJob = job("package-staging", "hotfix-bundle-smoke");
+  assert.equal((packageJob.match(/verify-database-release-payload\.mjs/g) ?? []).length, 2);
+  assert.equal(
+    (
+      packageJob.match(
+        /env -u GITHUB_OUTPUT node scripts\/ev2\/phase12\/verify-database-release-payload\.mjs/g,
+      ) ?? []
+    ).length,
+    2,
+  );
+
+  const databaseJob = job("database", "browser");
+  assert.match(databaseJob, /node scripts\/ev2\/phase12\/verify-database-release-payload\.mjs/);
+  assert.doesNotMatch(
+    databaseJob,
+    /env -u GITHUB_OUTPUT node scripts\/ev2\/phase12\/verify-database-release-payload\.mjs/,
+  );
+});
+
+test("package selection rebinds every frontend identity to the final seal and provenance", () => {
+  const packageJob = job("package-staging", "hotfix-bundle-smoke");
+  const start = packageJob.indexOf("name: Expose the exact original package producer without aliases");
+  const end = packageJob.indexOf("name: Seal the current gate attempt to the exact original package", start);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+  const expose = packageJob.slice(start, end);
+
+  for (const file of [
+    "staging-frontend-dist.tar",
+    "staging-frontend-dist-seal.json",
+    "staging-frontend-provenance.json",
+  ]) {
+    assert.match(expose, new RegExp(file.replaceAll(".", "\\.")));
+  }
+  for (const identity of [
+    "archiveSha256",
+    "archiveBytes",
+    "treeSha256",
+    "fileCount",
+    "byteCount",
+    "profile.sha256",
+    "seal.sha256",
+  ]) {
+    assert.match(expose, new RegExp(identity.replaceAll(".", "\\.")));
+  }
+  assert.match(expose, /sha256sum "\$frontend_archive"/);
+  assert.match(expose, /stat -c '%s' "\$frontend_archive"/);
+  assert.match(expose, /sha256sum "\$frontend_seal"/);
+  assert.match(expose, /sha256sum "\$frontend_provenance"/);
+});
+
 test("reuse verifies the unified wrapper, trusted controls, and every selected component", () => {
   const packageJob = job("package-staging", "hotfix-bundle-smoke");
   assert.match(

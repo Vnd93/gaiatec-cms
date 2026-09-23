@@ -400,17 +400,20 @@ export function evaluateCiReleasePlanArtifact({
   if (!Number.isSafeInteger(artifact?.size_in_bytes) || artifact.size_in_bytes < 1)
     violations.push("release_plan_artifact_size_invalid");
   if (artifact?.expired !== false) violations.push("release_plan_artifact_expired");
+  const runCreatedAt = Date.parse(run?.created_at ?? "");
   const createdAt = Date.parse(artifact?.created_at ?? "");
   const updatedAt = Date.parse(artifact?.updated_at ?? "");
   const expiresAt = Date.parse(artifact?.expires_at ?? "");
   if (
+    !Number.isFinite(runCreatedAt) ||
     !Number.isFinite(createdAt) ||
     !Number.isFinite(updatedAt) ||
     !Number.isFinite(expiresAt) ||
+    runCreatedAt > createdAt ||
     createdAt > updatedAt ||
     updatedAt > now + 5 * 60 * 1000 ||
     expiresAt <= now ||
-    expiresAt - createdAt < MINIMUM_RETENTION_MS
+    expiresAt - runCreatedAt < MINIMUM_RETENTION_MS
   ) {
     violations.push("release_plan_artifact_retention_invalid");
   }
@@ -505,7 +508,7 @@ function priorAttemptState(record, expected, violations) {
   const build = stepState(job, BUILD_STEP_NAME, violations, attempt);
   const upload = stepState(job, UPLOAD_STEP_NAME, violations, attempt);
   if (upload.successful && !build.successful) violations.push(`attempt_${attempt}_upload_without_build`);
-  return { attempt, job, build, upload };
+  return { attempt, run: record.run, job, build, upload };
 }
 
 function matchingPackageArtifacts(artifacts, expected) {
@@ -527,14 +530,17 @@ function validatePackageArtifact(artifact, attemptState, expected, now, violatio
   if (!Number.isSafeInteger(artifact?.size_in_bytes) || artifact.size_in_bytes < 1)
     violations.push("artifact_size_invalid");
   if (artifact?.expired !== false) violations.push("artifact_expired");
+  const runCreatedAt = Date.parse(attemptState?.run?.created_at ?? "");
   const createdAt = Date.parse(artifact?.created_at ?? "");
   const expiresAt = Date.parse(artifact?.expires_at ?? "");
   if (
+    !Number.isFinite(runCreatedAt) ||
     !Number.isFinite(createdAt) ||
     !Number.isFinite(expiresAt) ||
+    runCreatedAt > createdAt ||
     createdAt > now + 5 * 60 * 1000 ||
     expiresAt <= now ||
-    expiresAt - createdAt < MINIMUM_RETENTION_MS
+    expiresAt - runCreatedAt < MINIMUM_RETENTION_MS
   ) {
     violations.push("artifact_retention_invalid");
   }
@@ -1177,14 +1183,17 @@ export function evaluateCiStagingFrontendSelectionArtifact({
   if (!Number.isSafeInteger(artifact?.size_in_bytes) || artifact.size_in_bytes < 1)
     violations.push("selection_artifact_size_invalid");
   if (artifact?.expired !== false) violations.push("selection_artifact_expired");
+  const runCreatedAt = Date.parse(run?.created_at ?? "");
   const createdAt = Date.parse(artifact?.created_at ?? "");
   const expiresAt = Date.parse(artifact?.expires_at ?? "");
   if (
+    !Number.isFinite(runCreatedAt) ||
     !Number.isFinite(createdAt) ||
     !Number.isFinite(expiresAt) ||
+    runCreatedAt > createdAt ||
     createdAt > now + 5 * 60 * 1000 ||
     expiresAt <= now ||
-    expiresAt - createdAt < MINIMUM_RETENTION_MS
+    expiresAt - runCreatedAt < MINIMUM_RETENTION_MS
   ) {
     violations.push("selection_artifact_retention_invalid");
   }

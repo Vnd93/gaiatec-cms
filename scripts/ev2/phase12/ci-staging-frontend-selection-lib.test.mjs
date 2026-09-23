@@ -49,6 +49,7 @@ function workflowRun(attempt, { current = false, conclusion = "success" } = {}) 
     event: "push",
     head_branch: "main",
     head_sha: headSha,
+    created_at: "2026-09-20T12:00:00.000Z",
     status: current ? "in_progress" : "completed",
     conclusion: current ? null : conclusion,
     actor: { login: "Vnd93" },
@@ -89,7 +90,7 @@ function packageArtifact(attempt, overrides = {}) {
     digest: `sha256:${"b".repeat(64)}`,
     size_in_bytes: 4096,
     expired: false,
-    created_at: "2026-09-20T12:00:00.000Z",
+    created_at: "2026-09-20T12:01:00.000Z",
     expires_at: "2026-12-19T12:00:00.000Z",
     archive_download_url: `https://api.github.com/repos/${repository}/actions/artifacts/${id}/zip`,
     workflow_run: { id: Number(runId), head_branch: "main", head_sha: headSha },
@@ -105,7 +106,7 @@ function releasePlanArtifact(attempt, overrides = {}) {
     digest: `sha256:${"7".repeat(64)}`,
     size_in_bytes: 2048,
     expired: false,
-    created_at: "2026-09-20T12:00:00.000Z",
+    created_at: "2026-09-20T12:01:00.000Z",
     updated_at: "2026-09-20T12:01:00.000Z",
     expires_at: "2026-12-19T12:00:00.000Z",
     url: `https://api.github.com/repos/${repository}/actions/artifacts/${id}`,
@@ -192,6 +193,22 @@ test("selector refuses ambiguous, substituted, expired, and unsuccessfully produ
     ["artifact_digest_invalid", { artifacts: [packageArtifact(1, { digest: "b".repeat(64) })] }],
     ["artifact_expired", { artifacts: [packageArtifact(1, { expired: true })] }],
     [
+      "artifact_retention_invalid",
+      { artifacts: [packageArtifact(1, { expires_at: "2026-12-19T11:59:59.999Z" })] },
+    ],
+    [
+      "artifact_retention_invalid",
+      {
+        priorAttempts: [
+          {
+            attempt: 1,
+            run: { ...workflowRun(1, { conclusion: "failure" }), created_at: "invalid" },
+            jobs: [packageJob(1)],
+          },
+        ],
+      },
+    ],
+    [
       "artifact_run_binding_invalid",
       {
         artifacts: [packageArtifact(1, { workflow_run: { id: 7, head_branch: "main", head_sha: headSha } })],
@@ -225,6 +242,11 @@ test("selector requires the complete bounded prior-attempt history and trusted c
     currentRun: { ...workflowRun(2, { current: true }), triggering_actor: { login: "attacker" } },
   });
   assert.ok(untrusted.violations.includes("run_triggering_actor_invalid"));
+
+  const missingRunTimestamp = select({
+    currentRun: { ...workflowRun(2, { current: true }), created_at: undefined },
+  });
+  assert.ok(missingRunTimestamp.violations.includes("release_plan_artifact_retention_invalid"));
 
   const unbounded = evaluateCiStagingFrontendPackageSelection({
     repository,
@@ -624,6 +646,7 @@ test("release plan artifact resolver binds current and completed CI attempts wit
     ["release_plan_artifact_not_unique", []],
     ["release_plan_artifact_not_unique", [artifact, { ...artifact, id: artifact.id + 1 }]],
     ["release_plan_artifact_digest_invalid", [{ ...artifact, digest: "7".repeat(64) }]],
+    ["release_plan_artifact_retention_invalid", [{ ...artifact, expires_at: "2026-12-19T11:59:59.999Z" }]],
     ["release_plan_artifact_api_url_invalid", [{ ...artifact, url: "https://attacker.invalid" }]],
     [
       "release_plan_artifact_run_binding_invalid",
@@ -652,7 +675,7 @@ test("selection evidence resolves only with the exact release plan from the succ
     digest: `sha256:${"9".repeat(64)}`,
     size_in_bytes: 2048,
     expired: false,
-    created_at: "2026-09-20T12:00:00.000Z",
+    created_at: "2026-09-20T12:01:00.000Z",
     expires_at: "2026-12-19T12:00:00.000Z",
     archive_download_url: `https://api.github.com/repos/${repository}/actions/artifacts/${id}/zip`,
     workflow_run: { id: Number(runId), head_branch: "main", head_sha: headSha },
@@ -688,6 +711,24 @@ test("selection evidence resolves only with the exact release plan from the succ
     now,
   });
   assert.ok(duplicate.violations.includes("selection_artifact_not_unique"));
+
+  const insufficientRetention = evaluateCiStagingFrontendSelectionArtifact({
+    repository,
+    run: workflowRun(gateRunAttempt),
+    artifacts: [planArtifact, { ...artifact, expires_at: "2026-12-19T11:59:59.999Z" }],
+    expected,
+    now,
+  });
+  assert.ok(insufficientRetention.violations.includes("selection_artifact_retention_invalid"));
+
+  const invalidRunTimestamp = evaluateCiStagingFrontendSelectionArtifact({
+    repository,
+    run: { ...workflowRun(gateRunAttempt), created_at: "invalid" },
+    artifacts: [planArtifact, artifact],
+    expected,
+    now,
+  });
+  assert.ok(invalidRunTimestamp.violations.includes("selection_artifact_retention_invalid"));
 
   const substitutedPlan = evaluateCiStagingFrontendSelectionArtifact({
     repository,

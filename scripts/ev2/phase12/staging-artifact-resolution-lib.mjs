@@ -76,14 +76,17 @@ export function evaluatePipelineDurationArtifact({
   if (!Number.isSafeInteger(artifact?.size_in_bytes) || artifact.size_in_bytes < 1)
     violations.push("artifact_size_invalid");
   if (artifact?.expired !== false) violations.push("artifact_expired");
+  const runCreatedAt = Date.parse(run?.created_at ?? "");
   const createdAt = Date.parse(artifact?.created_at ?? "");
   const expiresAt = Date.parse(artifact?.expires_at ?? "");
   if (
+    !Number.isFinite(runCreatedAt) ||
     !Number.isFinite(createdAt) ||
     !Number.isFinite(expiresAt) ||
+    runCreatedAt > createdAt ||
     createdAt > now + 5 * 60 * 1000 ||
     expiresAt <= now ||
-    expiresAt - createdAt < MINIMUM_RETENTION_MS
+    expiresAt - runCreatedAt < MINIMUM_RETENTION_MS
   ) {
     violations.push("artifact_retention_invalid");
   }
@@ -171,17 +174,20 @@ export function evaluateStagingCandidateArtifact({ repository, run, artifacts, e
   if (!Number.isSafeInteger(artifact?.size_in_bytes) || artifact.size_in_bytes <= 0)
     violations.push("artifact_size_invalid");
 
+  const runCreatedAt = Date.parse(run?.created_at ?? "");
   const createdAt = Date.parse(artifact?.created_at ?? "");
   const updatedAt = Date.parse(artifact?.updated_at ?? "");
   const expiresAt = Date.parse(artifact?.expires_at ?? "");
   if (
+    !Number.isFinite(runCreatedAt) ||
     !Number.isFinite(createdAt) ||
     !Number.isFinite(updatedAt) ||
     !Number.isFinite(expiresAt) ||
+    runCreatedAt > createdAt ||
     createdAt > updatedAt ||
     updatedAt > now + 5 * 60 * 1000 ||
     expiresAt <= now ||
-    expiresAt - createdAt < MINIMUM_RETENTION_MS
+    expiresAt - runCreatedAt < MINIMUM_RETENTION_MS
   ) {
     violations.push("artifact_retention_invalid");
   }
@@ -322,14 +328,17 @@ export function evaluateCiStagingFrontendArtifact({
     violations.push("artifact_size_invalid");
   if (artifact?.expired !== false) violations.push("artifact_expired");
 
+  const runCreatedAt = Date.parse(producerRun?.created_at ?? "");
   const createdAt = Date.parse(artifact?.created_at ?? "");
   const expiresAt = Date.parse(artifact?.expires_at ?? "");
   if (
+    !Number.isFinite(runCreatedAt) ||
     !Number.isFinite(createdAt) ||
     !Number.isFinite(expiresAt) ||
+    runCreatedAt > createdAt ||
     createdAt > now + 5 * 60 * 1000 ||
     expiresAt <= now ||
-    expiresAt - createdAt < MINIMUM_RETENTION_MS
+    expiresAt - runCreatedAt < MINIMUM_RETENTION_MS
   ) {
     violations.push("artifact_retention_invalid");
   }

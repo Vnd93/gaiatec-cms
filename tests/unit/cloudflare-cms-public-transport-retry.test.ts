@@ -75,21 +75,42 @@ afterEach(() => {
 });
 
 describe("cms-public transport retry", () => {
-  it("recovers a managed page when the first transport attempt stalls", async () => {
+  it("does not hedge a managed page that answers before the tail window", async () => {
+    vi.useFakeTimers();
+    const network = vi.fn(async () => managedPage());
+    vi.stubGlobal("fetch", network);
+
+    const response = await worker.fetch(new Request(`${origin}/contato`), environment());
+
+    expect(response.status).toBe(200);
+    expect(network).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(701);
+    expect(network).toHaveBeenCalledTimes(1);
+  });
+
+  it("hedges a stalled managed page before the release latency budget", async () => {
     vi.useFakeTimers();
     let attempt = 0;
+    let primarySignal: AbortSignal | null | undefined;
     const network = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
       attempt += 1;
-      return attempt === 1 ? rejectWhenAborted(init?.signal) : Promise.resolve(managedPage());
+      if (attempt === 1) {
+        primarySignal = init?.signal;
+        return rejectWhenAborted(init?.signal);
+      }
+      return Promise.resolve(managedPage());
     });
     vi.stubGlobal("fetch", network);
 
+    const startedAt = Date.now();
     const pending = worker.fetch(new Request(`${origin}/contato`), environment());
-    await vi.advanceTimersByTimeAsync(2_200);
+    await vi.advanceTimersByTimeAsync(700);
     const response = await pending;
 
     expect(response.status).toBe(200);
     expect(network).toHaveBeenCalledTimes(2);
+    expect(Date.now() - startedAt).toBeLessThan(1_500);
+    expect(primarySignal?.aborted).toBe(true);
   });
 
   it("fails closed inside five seconds when both transport attempts stall", async () => {
@@ -99,7 +120,7 @@ describe("cms-public transport retry", () => {
     vi.stubGlobal("fetch", network);
 
     const pending = worker.fetch(new Request(`${origin}/contato`), environment());
-    await vi.advanceTimersByTimeAsync(2_200);
+    await vi.advanceTimersByTimeAsync(700);
     await vi.advanceTimersByTimeAsync(2_200);
     const response = await pending;
 
@@ -116,6 +137,75 @@ describe("cms-public transport retry", () => {
 
     expect(response.status).toBe(503);
     expect(network).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps an HTTP failure fail-closed when the hedge answers first", async () => {
+    vi.useFakeTimers();
+    let attempt = 0;
+    const network = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+      attempt += 1;
+      return attempt === 1
+        ? rejectWhenAborted(init?.signal)
+        : Promise.resolve(new Response(null, { status: 503 }));
+    });
+    vi.stubGlobal("fetch", network);
+
+    const pending = worker.fetch(new Request(`${origin}/contato`), environment());
+    await vi.advanceTimersByTimeAsync(700);
+    const response = await pending;
+
+    expect(response.status).toBe(503);
+    expect(network).toHaveBeenCalledTimes(2);
+  });
+
+  it("starts the backup immediately after an early transport rejection", async () => {
+    vi.useFakeTimers();
+    let attempt = 0;
+    const network = vi.fn(() => {
+      attempt += 1;
+      return attempt === 1 ? Promise.reject(new TypeError("network")) : Promise.resolve(managedPage());
+    });
+    vi.stubGlobal("fetch", network);
+
+    const startedAt = Date.now();
+    const pending = worker.fetch(new Request(`${origin}/contato`), environment());
+    await vi.advanceTimersByTimeAsync(0);
+    const response = await pending;
+
+    expect(response.status).toBe(200);
+    expect(network).toHaveBeenCalledTimes(2);
+    expect(Date.now() - startedAt).toBe(0);
+  });
+
+  it("waits for the primary when the hedged transport fails first", async () => {
+    vi.useFakeTimers();
+    let attempt = 0;
+    let resolvePrimary!: (response: Response) => void;
+    const primary = new Promise<Response>((resolve) => {
+      resolvePrimary = resolve;
+    });
+    const network = vi.fn(() => {
+      attempt += 1;
+      return attempt === 1 ? primary : Promise.reject(new TypeError("network"));
+    });
+    vi.stubGlobal("fetch", network);
+
+    let settled = false;
+    const pending = worker
+      .fetch(new Request(`${origin}/contato`), environment())
+      .then((response: Response) => {
+        settled = true;
+        return response;
+      });
+    await vi.advanceTimersByTimeAsync(700);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(network).toHaveBeenCalledTimes(2);
+    expect(settled).toBe(false);
+
+    resolvePrimary(managedPage());
+    const response = await pending;
+    expect(response.status).toBe(200);
   });
 
   it.each(["media", "document"] as const)(

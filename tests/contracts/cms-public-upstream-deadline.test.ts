@@ -16,15 +16,24 @@ describe("public upstream deadline", () => {
       /CMS_PUBLIC_ATTEMPT_TIMEOUT_MS = ([\d_]+);/.exec(worker)?.[1].replace(/_/g, ""),
     );
     const callerAttempts = Number(/CMS_PUBLIC_MAX_ATTEMPTS = (\d+);/.exec(worker)?.[1]);
+    const callerHedgeDelay = Number(
+      /CMS_PUBLIC_HEDGE_DELAY_MS = ([\d_]+);/.exec(worker)?.[1].replace(/_/g, ""),
+    );
     // Two transport attempts stay inside the original five-second caller ceiling, including room
     // for the Worker to synthesize and return its fail-closed response.
     expect(callerBudget).toBe(5000);
     expect(callerAttemptBudget * callerAttempts).toBeLessThan(callerBudget);
     expect(callerBudget - callerAttemptBudget * callerAttempts).toBeGreaterThanOrEqual(500);
+    // The original timeout is preserved. Only a read-only tail is duplicated early enough for a
+    // healthy backup response to arrive inside the unchanged 1.5 second release budget.
+    expect(callerHedgeDelay).toBe(700);
+    expect(callerHedgeDelay).toBeLessThan(1500);
     expect(worker).toContain('fetchCmsPublic({ type: "page-by-path", path }, { retryTransport: true })');
+    expect(worker.match(/\{ retryTransport: true \}/g)).toHaveLength(1);
     expect(worker).toContain(
       "retryTransport ? Math.min(CMS_PUBLIC_ATTEMPT_TIMEOUT_MS, remainingMs) : remainingMs",
     );
+    expect(worker).toContain("...(hedgeActive ? [hedge] : [])");
     expect(fn).toContain("const PUBLIC_UPSTREAM_TIMEOUT_MS = 900;");
     const budget = Number(/PUBLIC_UPSTREAM_TIMEOUT_MS = ([\d_]+);/.exec(fn)?.[1].replace(/_/g, ""));
     // Two attempts have to fit inside the caller's ceiling with room for the rest of the request,

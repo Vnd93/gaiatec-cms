@@ -8,6 +8,7 @@ const CMS_PUBLIC_ANON_KEY = "__CMS_PUBLIC_ANON_KEY__";
 const CMS_PUBLIC_TOTAL_TIMEOUT_MS = 5_000;
 const CMS_PUBLIC_ATTEMPT_TIMEOUT_MS = 2_200;
 const CMS_PUBLIC_MAX_ATTEMPTS = 2;
+const CMS_PUBLIC_HEDGE_DELAY_MS = 700;
 
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
@@ -338,30 +339,81 @@ async function cmsPublic(params, env = {}, { retryTransport = false } = {}) {
   const target = new URL(endpoint);
   for (const [key, value] of Object.entries(params)) target.searchParams.set(key, value);
 
-  // Selected metadata lookups can recover one transient platform stall. Large media/document
-  // responses retain their original single 5 s attempt, and received HTTP failures never retry.
+  // Selected read-only metadata lookups hedge one slow transport without shortening either timeout.
+  // The first HTTP response (including a failure) wins and cancels the duplicate, so received HTTP
+  // failures stay fail-closed. Large media/document responses retain their original single attempt.
   const deadline = Date.now() + CMS_PUBLIC_TOTAL_TIMEOUT_MS;
-  const maxAttempts = retryTransport ? CMS_PUBLIC_MAX_ATTEMPTS : 1;
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+  const startAttempt = (id) => {
     const remainingMs = deadline - Date.now();
-    if (remainingMs <= 0) break;
+    if (remainingMs <= 0) return null;
     const controller = new AbortController();
     const timeout = setTimeout(
       () => controller.abort(),
       retryTransport ? Math.min(CMS_PUBLIC_ATTEMPT_TIMEOUT_MS, remainingMs) : remainingMs,
     );
-    try {
-      return await fetch(target, {
-        headers: { apikey: anonKey },
-        signal: controller.signal,
-      });
-    } catch {
-      // Only transport failures reach this branch. A received 4xx/5xx response returns above and
-      // remains fail-closed; a second transport failure falls through to the synthetic 503.
-    } finally {
-      clearTimeout(timeout);
+    const result = Promise.resolve()
+      .then(() =>
+        fetch(target, {
+          headers: { apikey: anonKey },
+          signal: controller.signal,
+        }),
+      )
+      .then(
+        (response) => ({ id, kind: "response", response }),
+        () => ({ id, kind: "transport-failure" }),
+      )
+      .finally(() => clearTimeout(timeout));
+    return { id, controller, result };
+  };
+
+  const primary = startAttempt(1);
+  if (!primary) return new Response(null, { status: 503 });
+  if (!retryTransport) {
+    const outcome = await primary.result;
+    return outcome.kind === "response" ? outcome.response : new Response(null, { status: 503 });
+  }
+
+  const pending = new Map([[primary.id, primary]]);
+  let secondaryStarted = false;
+  let hedgeActive = true;
+  let hedgeTimer;
+  const hedge = new Promise((resolve) => {
+    hedgeTimer = setTimeout(() => resolve({ kind: "hedge" }), CMS_PUBLIC_HEDGE_DELAY_MS);
+  });
+  const startSecondary = () => {
+    if (secondaryStarted) return;
+    secondaryStarted = true;
+    const secondary = startAttempt(CMS_PUBLIC_MAX_ATTEMPTS);
+    if (secondary) pending.set(secondary.id, secondary);
+  };
+
+  while (pending.size > 0) {
+    const outcome = await Promise.race([
+      ...[...pending.values()].map((attempt) => attempt.result),
+      ...(hedgeActive ? [hedge] : []),
+    ]);
+    if (outcome.kind === "hedge") {
+      hedgeActive = false;
+      startSecondary();
+      continue;
+    }
+
+    pending.delete(outcome.id);
+    if (outcome.kind === "response") {
+      clearTimeout(hedgeTimer);
+      for (const attempt of pending.values()) attempt.controller.abort();
+      return outcome.response;
+    }
+
+    // A transport failure is safe to repeat because this mode is used only for the GET
+    // page-by-path lookup. Start the backup immediately instead of waiting out the hedge delay.
+    if (!secondaryStarted) {
+      hedgeActive = false;
+      clearTimeout(hedgeTimer);
+      startSecondary();
     }
   }
+  clearTimeout(hedgeTimer);
   return new Response(null, { status: 503 });
 }
 

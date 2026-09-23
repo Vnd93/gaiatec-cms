@@ -64,3 +64,66 @@ test("bridge compensation preserves the exact recovery archive including bootstr
   assert.match(preserve, /if \[ -n "\$PROVENANCE_PATH" \]/);
   assert.doesNotMatch(`${validate}\n${preserve}`, /npm run build|seal-production-dist|vite build/);
 });
+
+test("legacy bootstrap compensation is double-attested and never enters the modern materializer", () => {
+  const bootstrapRemote = position("Verify the one-time baseline bootstrap against live GitHub metadata");
+  const compensationRemote = position("Resolve the exact failed run and immutable compensation artifacts");
+  const stateDownload = position("Download the immutable deploy-compensation state by exact artifact ID");
+  const recoveryDownload = position(
+    "Download the immutable compensation recovery bytes by exact artifact ID",
+  );
+  const legacyVerify = position(
+    "Verify the pinned legacy bootstrap compensation without relaxing modern recovery",
+  );
+  const bootstrapBridgeDownload = position("Download the immutable bootstrap bridge evidence");
+  const bootstrapSourceDownload = position("Download the immutable bootstrap baseline bytes");
+  const bootstrapMaterialize = position("Materialize the exact one-time bootstrap baseline");
+  const mutation = position("Persist redundant HMAC bridge state only after remote recovery proof");
+  assert.ok(
+    bootstrapRemote < compensationRemote &&
+      compensationRemote < stateDownload &&
+      stateDownload < recoveryDownload &&
+      recoveryDownload < legacyVerify &&
+      legacyVerify < bootstrapBridgeDownload &&
+      bootstrapBridgeDownload < bootstrapSourceDownload &&
+      bootstrapSourceDownload < bootstrapMaterialize &&
+      bootstrapMaterialize < mutation,
+  );
+
+  const remote = step("Resolve the exact failed run and immutable compensation artifacts");
+  assert.match(remote, /legacy-bootstrap-compensation/);
+  assert.match(remote, /legacy-bootstrap-compensation' && 'deploy-compensation'/);
+  for (const label of [
+    "Download the immutable deploy-compensation state by exact artifact ID",
+    "Download the immutable compensation recovery bytes by exact artifact ID",
+  ]) {
+    const value = step(label);
+    assert.match(value, /legacy-bootstrap-compensation/);
+    assert.match(value, /artifact-ids:/);
+    assert.match(value, /digest-mismatch: error/);
+  }
+  const modern = step("Validate compensation state, seal, snapshot, and bytes before materialization");
+  assert.doesNotMatch(modern, /legacy-bootstrap-compensation/);
+  assert.match(modern, /materialize-staging-baseline-compensation\.mjs/);
+
+  const legacy = step("Verify the pinned legacy bootstrap compensation without relaxing modern recovery");
+  assert.match(legacy, /verify-staging-legacy-bootstrap-compensation\.mjs/);
+  assert.match(legacy, /--state-artifact-id[\s\S]*--state-artifact-digest[\s\S]*--state-artifact-name/);
+  assert.match(
+    legacy,
+    /--recovery-artifact-id[\s\S]*--recovery-artifact-digest[\s\S]*--recovery-artifact-name/,
+  );
+  for (const label of [
+    "Verify the one-time baseline bootstrap against live GitHub metadata",
+    "Download the immutable bootstrap bridge evidence",
+    "Download the immutable bootstrap baseline bytes",
+    "Materialize the exact one-time bootstrap baseline",
+  ])
+    assert.match(step(label), /legacy-bootstrap-compensation/);
+
+  const region = workflow.slice(
+    legacyVerify,
+    bootstrapMaterialize + step("Materialize the exact one-time bootstrap baseline").length,
+  );
+  assert.doesNotMatch(region, /npm run build|seal-production-dist|vite build/);
+});

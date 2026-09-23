@@ -1,6 +1,9 @@
 import { isDeploymentCommitMessage } from "./deployment-commit-message.mjs";
 import { FULL_SHA_PATTERN, UUID_PATTERN } from "./release-guard-lib.mjs";
-import { validateStagingBaselineBootstrapRecord } from "./staging-baseline-bootstrap-lib.mjs";
+import {
+  identifyLegacyBootstrapCompensation,
+  validateStagingBaselineBootstrapRecord,
+} from "./staging-baseline-bootstrap-lib.mjs";
 
 const MARKERS = Object.freeze([
   {
@@ -50,6 +53,20 @@ export function classifyStagingRollbackBaseline({ record, deployment }) {
       violations: [],
     };
   }
+
+  const legacyBootstrapCompensation = identifyLegacyBootstrapCompensation({
+    record,
+    candidateSha: deployment.release,
+    commitMessage: deployment.commitMessage,
+  });
+  if (legacyBootstrapCompensation)
+    return {
+      valid: true,
+      mode: "legacy-bootstrap-compensation",
+      runId: legacyBootstrapCompensation.runId,
+      runAttempt: legacyBootstrapCompensation.runAttempt,
+      violations: [],
+    };
 
   for (const definition of MARKERS) {
     const match = definition.pattern.exec(deployment.commitMessage);

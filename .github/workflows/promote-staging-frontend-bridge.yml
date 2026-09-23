@@ -396,7 +396,9 @@ jobs:
           --commit-message-b64 "${{ steps.baseline_state.outputs.commit_message_b64 }}"
       - name: Verify the one-time baseline bootstrap against live GitHub metadata
         id: baseline_bootstrap
-        if: steps.baseline_source.outputs.mode == 'bootstrap'
+        if: >-
+          steps.baseline_source.outputs.mode == 'bootstrap' ||
+          steps.baseline_source.outputs.mode == 'legacy-bootstrap-compensation'
         working-directory: control
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -415,17 +417,20 @@ jobs:
         id: baseline_compensation
         if: >-
           steps.baseline_source.outputs.mode == 'deploy-compensation' ||
-          steps.baseline_source.outputs.mode == 'bridge-compensation'
+          steps.baseline_source.outputs.mode == 'bridge-compensation' ||
+          steps.baseline_source.outputs.mode == 'legacy-bootstrap-compensation'
         working-directory: control
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: >-
           node scripts/ev2/phase12/resolve-staging-baseline-compensation.mjs
-          --mode "${{ steps.baseline_source.outputs.mode }}"
+          --mode "${{ steps.baseline_source.outputs.mode == 'legacy-bootstrap-compensation' && 'deploy-compensation' || steps.baseline_source.outputs.mode }}"
           --run-id "${{ steps.baseline_source.outputs.compensation_run_id }}"
           --run-attempt "${{ steps.baseline_source.outputs.compensation_run_attempt }}"
       - name: Download the immutable deploy-compensation state by exact artifact ID
-        if: steps.baseline_source.outputs.mode == 'deploy-compensation'
+        if: >-
+          steps.baseline_source.outputs.mode == 'deploy-compensation' ||
+          steps.baseline_source.outputs.mode == 'legacy-bootstrap-compensation'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           artifact-ids: ${{ steps.baseline_compensation.outputs.state_artifact_id }}
@@ -437,7 +442,8 @@ jobs:
       - name: Download the immutable compensation recovery bytes by exact artifact ID
         if: >-
           steps.baseline_source.outputs.mode == 'deploy-compensation' ||
-          steps.baseline_source.outputs.mode == 'bridge-compensation'
+          steps.baseline_source.outputs.mode == 'bridge-compensation' ||
+          steps.baseline_source.outputs.mode == 'legacy-bootstrap-compensation'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           artifact-ids: ${{ steps.baseline_compensation.outputs.recovery_artifact_id }}
@@ -485,6 +491,24 @@ jobs:
             --recovery-artifact-digest "${{ steps.baseline_compensation.outputs.recovery_artifact_digest }}" \
             --recovery-artifact-name "${{ steps.baseline_compensation.outputs.recovery_artifact_name }}" \
             --output-dist "$output"
+      - name: Verify the pinned legacy bootstrap compensation without relaxing modern recovery
+        if: steps.baseline_source.outputs.mode == 'legacy-bootstrap-compensation'
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/verify-staging-legacy-bootstrap-compensation.mjs
+          --record .github/release-controls/staging-baseline-bootstrap.json
+          --state-artifact-dir "$RUNNER_TEMP/g12-staging-baseline-compensation-state"
+          --recovery-artifact-dir "$RUNNER_TEMP/g12-staging-baseline-compensation-recovery"
+          --candidate-sha "${{ inputs.expected_baseline_sha }}"
+          --control-sha "${{ steps.baseline_compensation.outputs.control_sha }}"
+          --run-id "${{ steps.baseline_source.outputs.compensation_run_id }}"
+          --run-attempt "${{ steps.baseline_source.outputs.compensation_run_attempt }}"
+          --state-artifact-id "${{ steps.baseline_compensation.outputs.state_artifact_id }}"
+          --state-artifact-digest "${{ steps.baseline_compensation.outputs.state_artifact_digest }}"
+          --state-artifact-name "${{ steps.baseline_compensation.outputs.state_artifact_name }}"
+          --recovery-artifact-id "${{ steps.baseline_compensation.outputs.recovery_artifact_id }}"
+          --recovery-artifact-digest "${{ steps.baseline_compensation.outputs.recovery_artifact_digest }}"
+          --recovery-artifact-name "${{ steps.baseline_compensation.outputs.recovery_artifact_name }}"
       - name: Resolve the original CI package attested inside deploy recovery
         id: baseline_compensation_ci_source
         if: steps.baseline_source.outputs.mode == 'deploy-compensation'
@@ -594,7 +618,9 @@ jobs:
             cp "$SEAL_PATH" ../baseline/outputs/staging-candidate-dist-seal.json
           fi
       - name: Download the immutable bootstrap bridge evidence
-        if: steps.baseline_source.outputs.mode == 'bootstrap'
+        if: >-
+          steps.baseline_source.outputs.mode == 'bootstrap' ||
+          steps.baseline_source.outputs.mode == 'legacy-bootstrap-compensation'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           artifact-ids: ${{ steps.baseline_bootstrap.outputs.bridge_artifact_id }}
@@ -604,7 +630,9 @@ jobs:
           run-id: ${{ steps.baseline_bootstrap.outputs.bridge_run_id }}
           path: ${{ runner.temp }}/g12-staging-baseline-bootstrap-bridge
       - name: Download the immutable bootstrap baseline bytes
-        if: steps.baseline_source.outputs.mode == 'bootstrap'
+        if: >-
+          steps.baseline_source.outputs.mode == 'bootstrap' ||
+          steps.baseline_source.outputs.mode == 'legacy-bootstrap-compensation'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           artifact-ids: ${{ steps.baseline_bootstrap.outputs.source_artifact_id }}
@@ -615,7 +643,9 @@ jobs:
           path: ${{ runner.temp }}/g12-staging-baseline-bootstrap-source
       - name: Materialize the exact one-time bootstrap baseline
         id: baseline_bootstrap_package
-        if: steps.baseline_source.outputs.mode == 'bootstrap'
+        if: >-
+          steps.baseline_source.outputs.mode == 'bootstrap' ||
+          steps.baseline_source.outputs.mode == 'legacy-bootstrap-compensation'
         working-directory: control
         run: |
           set -euo pipefail

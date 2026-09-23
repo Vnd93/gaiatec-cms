@@ -277,3 +277,21 @@ test("compensation state is bound to exact run, marker, control SHA, and origina
     );
   }
 });
+
+test("modern deploy compensation keeps rejecting the legacy v1 deploy state", () => {
+  const legacy = state("bridge-compensation");
+  legacy.runMarker = `g12-staging-run-${runId}-${runAttempt}`;
+  legacy.compensationMarker = `g12-staging-deploy-compensation-${runId}-${runAttempt}`;
+  legacy.candidateRelease = expectedRelease;
+  assert.equal(
+    validateStagingCompensationState({
+      state: legacy,
+      mode: "deploy-compensation",
+      runId,
+      runAttempt,
+      controlSha,
+      expectedRelease,
+    }).valid,
+    false,
+  );
+});

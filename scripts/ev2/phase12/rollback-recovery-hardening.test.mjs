@@ -137,7 +137,7 @@ test("staging rollback proves immutable original bytes and both durable uploads 
   assert.match(producerResolution, /resolve-staging-baseline-compensation\.mjs/);
   assert.match(producerResolution, /deploy-v4\) archive=/);
   assert.match(producerResolution, /bridge-v5\) archive=/);
-  assert.match(producerResolution, /bootstrap\) archive=/);
+  assert.match(producerResolution, /bootstrap\|legacy-bootstrap-compensation\)/);
   assert.match(producerResolution, /deploy-compensation\|bridge-compensation\)/);
   assert.match(producerResolution, /\*\) echo G12_STAGING_ROLLBACK_BASELINE_MODE_REFUSED/);
 
@@ -204,6 +204,81 @@ test("staging rollback proves immutable original bytes and both durable uploads 
     2,
     "every compensating Pages mutation must remain inside an explicitly gated step",
   );
+});
+
+test("staging rollback routes only the pinned legacy compensation through immutable bootstrap bytes", async () => {
+  const workflow = await read(".github/workflows/rollback-staging.yml");
+  const index = (name) => {
+    const value = workflow.indexOf(name);
+    assert.ok(value >= 0, `missing rollback step: ${name}`);
+    return value;
+  };
+  const bootstrapRemote = index("Verify one-time bootstrap provenance against live GitHub metadata");
+  const compensationRemote = index("Resolve exact failed run and immutable compensation artifacts");
+  const stateDownload = index("Download exact deploy-compensation state by ID and digest");
+  const recoveryDownload = index("Download exact compensation recovery bytes by ID and digest");
+  const modernMaterialize = index("Verify compensation state and materialize exact recovery bytes");
+  const legacyVerify = index("Verify pinned legacy bootstrap compensation before selecting bootstrap bytes");
+  const bootstrapDownload = index("Download exact bootstrap bridge evidence by ID and digest");
+  const bootstrapSourceDownload = index("Download exact bootstrap source bytes by ID and digest");
+  const bootstrapMaterialize = index("Materialize exact bootstrap bytes without rebuilding");
+  const normalize = index("Normalize only the selected immutable recovery archive and seal");
+  const upload = index("Upload mandatory exact rollback recovery bytes before state or mutation");
+  assert.ok(
+    bootstrapRemote < compensationRemote &&
+      compensationRemote < stateDownload &&
+      stateDownload < recoveryDownload &&
+      recoveryDownload < modernMaterialize &&
+      modernMaterialize < legacyVerify &&
+      legacyVerify < bootstrapDownload &&
+      bootstrapDownload < bootstrapSourceDownload &&
+      bootstrapSourceDownload < bootstrapMaterialize &&
+      bootstrapMaterialize < normalize &&
+      normalize < upload,
+  );
+
+  const producerRegion = workflow.slice(bootstrapRemote, normalize);
+  assert.match(producerRegion, /legacy-bootstrap-compensation' && 'deploy-compensation'/);
+  assert.match(producerRegion, /verify-staging-legacy-bootstrap-compensation\.mjs/);
+  assert.match(
+    producerRegion,
+    /--state-artifact-id[\s\S]*--state-artifact-digest[\s\S]*--state-artifact-name/,
+  );
+  assert.match(
+    producerRegion,
+    /--recovery-artifact-id[\s\S]*--recovery-artifact-digest[\s\S]*--recovery-artifact-name/,
+  );
+  const modernBlock = workflow.slice(modernMaterialize, legacyVerify);
+  assert.doesNotMatch(modernBlock, /legacy-bootstrap-compensation/);
+  assert.match(modernBlock, /materialize-staging-baseline-compensation\.mjs/);
+  for (const name of [
+    "Verify one-time bootstrap provenance against live GitHub metadata",
+    "Download exact bootstrap bridge evidence by ID and digest",
+    "Download exact bootstrap source bytes by ID and digest",
+    "Materialize exact bootstrap bytes without rebuilding",
+  ]) {
+    const start = index(name);
+    const end = workflow.indexOf("\n      - name:", start + 1);
+    assert.match(workflow.slice(start, end < 0 ? workflow.length : end), /legacy-bootstrap-compensation/);
+  }
+  const bootstrapMaterializeBlock = workflow.slice(bootstrapMaterialize, normalize);
+  assert.match(
+    bootstrapMaterializeBlock,
+    /mkdir -p \.\.\/recovery-source[\s\S]*materialize-staging-baseline-bootstrap\.mjs/,
+  );
+  const normalizeBlock = workflow.slice(
+    normalize,
+    index("Verify exact recovered bytes before durable upload or mutation"),
+  );
+  assert.match(
+    normalizeBlock,
+    /bootstrap\|legacy-bootstrap-compensation\)[\s\S]*BOOTSTRAP_ARCHIVE[\s\S]*BOOTSTRAP_SEAL/,
+  );
+  assert.match(
+    normalizeBlock,
+    /deploy-compensation\|bridge-compensation\)[\s\S]*COMPENSATION_ARCHIVE[\s\S]*COMPENSATION_SEAL/,
+  );
+  assert.doesNotMatch(producerRegion, /npm run build|seal-production-dist|vite build/);
 });
 
 test("staging baseline inventory uses candidate tooling with a fail-closed explicit repository root", async () => {

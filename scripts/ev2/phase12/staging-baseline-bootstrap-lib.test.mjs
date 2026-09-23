@@ -68,7 +68,7 @@ test("versioned staging baseline bootstrap record is exact and valid", () => {
   }
 });
 
-test("baseline source permits only the exact bootstrap deployment or a v5 bridge marker", () => {
+test("baseline source accepts only exact remotely verifiable producer identities", () => {
   assert.deepEqual(
     selectStagingBaselineSource({
       record,
@@ -83,6 +83,28 @@ test("baseline source permits only the exact bootstrap deployment or a v5 bridge
       requiresRemoteVerification: true,
       bridgeRunId: record.bridge.runId,
       bridgeRunAttempt: record.bridge.runAttempt,
+    },
+  );
+  assert.deepEqual(
+    selectStagingBaselineSource({
+      record,
+      candidateSha: record.candidateSha,
+      deployment: {
+        deploymentId: "00000000-0000-4000-8000-000000000002",
+        createdOn: "2026-09-22T12:30:00.000Z",
+        commitMessage: `g12-staging-deploy-compensation-${record.source.runId}-${record.source.runAttempt}`,
+      },
+    }),
+    {
+      valid: true,
+      violations: [],
+      mode: "legacy-bootstrap-compensation",
+      trusted: false,
+      requiresRemoteVerification: true,
+      bridgeRunId: "",
+      bridgeRunAttempt: 0,
+      compensationRunId: record.source.runId,
+      compensationRunAttempt: record.source.runAttempt,
     },
   );
   assert.deepEqual(
@@ -151,6 +173,37 @@ test("baseline source permits only the exact bootstrap deployment or a v5 bridge
     }).valid,
     false,
   );
+  for (const changed of [
+    {
+      candidateSha: "a".repeat(40),
+      marker: `g12-staging-deploy-compensation-${record.source.runId}-${record.source.runAttempt}`,
+    },
+    {
+      candidateSha: record.candidateSha,
+      marker: `g12-staging-deploy-compensation-${Number(record.source.runId) + 1}-${record.source.runAttempt}`,
+    },
+    {
+      candidateSha: record.candidateSha,
+      marker: `g12-staging-deploy-compensation-${record.source.runId}-${record.source.runAttempt + 1}`,
+    },
+    {
+      candidateSha: record.candidateSha,
+      marker: `g12-staging-bridge-compensation-${record.source.runId}-${record.source.runAttempt}`,
+    },
+  ]) {
+    assert.notEqual(
+      selectStagingBaselineSource({
+        record,
+        candidateSha: changed.candidateSha,
+        deployment: {
+          deploymentId: "00000000-0000-4000-8000-000000000003",
+          createdOn: "2026-09-22T13:00:00.000Z",
+          commitMessage: changed.marker,
+        },
+      }).mode,
+      "legacy-bootstrap-compensation",
+    );
+  }
 });
 
 test("bootstrap remote tuple is fail-closed across both runs and artifacts", () => {

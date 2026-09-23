@@ -423,58 +423,33 @@ jobs:
           test "$ACTUAL_BYTE_COUNT" = "$ATTESTED_BYTE_COUNT"
       - name: Verify one-time bootstrap provenance against live GitHub metadata
         id: baseline_bootstrap
-        if: steps.baseline_source.outputs.mode == 'bootstrap'
+        if: >-
+          steps.baseline_source.outputs.mode == 'bootstrap' ||
+          steps.baseline_source.outputs.mode == 'legacy-bootstrap-compensation'
         working-directory: control
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
         run: >-
           node scripts/ev2/phase12/resolve-staging-baseline-bootstrap.mjs
           --record .github/release-controls/staging-baseline-bootstrap.json
-      - name: Download exact bootstrap bridge evidence by ID and digest
-        if: steps.baseline_source.outputs.mode == 'bootstrap'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          artifact-ids: ${{ steps.baseline_bootstrap.outputs.bridge_artifact_id }}
-          digest-mismatch: error
-          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
-          repository: Vnd93/gaiatec-cms
-          run-id: ${{ steps.baseline_bootstrap.outputs.bridge_run_id }}
-          path: ${{ runner.temp }}/g12-staging-rollback-bootstrap-bridge
-      - name: Download exact bootstrap source bytes by ID and digest
-        if: steps.baseline_source.outputs.mode == 'bootstrap'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          artifact-ids: ${{ steps.baseline_bootstrap.outputs.source_artifact_id }}
-          digest-mismatch: error
-          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
-          repository: Vnd93/gaiatec-cms
-          run-id: ${{ steps.baseline_bootstrap.outputs.source_run_id }}
-          path: ${{ runner.temp }}/g12-staging-rollback-bootstrap-source
-      - name: Materialize exact bootstrap bytes without rebuilding
-        id: baseline_bootstrap_package
-        if: steps.baseline_source.outputs.mode == 'bootstrap'
-        working-directory: control
-        run: >-
-          node scripts/ev2/phase12/materialize-staging-baseline-bootstrap.mjs
-          --record .github/release-controls/staging-baseline-bootstrap.json
-          --bridge-artifact-dir "$RUNNER_TEMP/g12-staging-rollback-bootstrap-bridge"
-          --source-artifact-dir "$RUNNER_TEMP/g12-staging-rollback-bootstrap-source"
-          --output-dist ../recovery-source/dist
       - name: Resolve exact failed run and immutable compensation artifacts
         id: baseline_compensation
         if: >-
           steps.baseline_source.outputs.mode == 'deploy-compensation' ||
-          steps.baseline_source.outputs.mode == 'bridge-compensation'
+          steps.baseline_source.outputs.mode == 'bridge-compensation' ||
+          steps.baseline_source.outputs.mode == 'legacy-bootstrap-compensation'
         working-directory: control
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
         run: >-
           node scripts/ev2/phase12/resolve-staging-baseline-compensation.mjs
-          --mode "${{ steps.baseline_source.outputs.mode }}"
+          --mode "${{ steps.baseline_source.outputs.mode == 'legacy-bootstrap-compensation' && 'deploy-compensation' || steps.baseline_source.outputs.mode }}"
           --run-id "${{ steps.baseline_source.outputs.producer_run_id }}"
           --run-attempt "${{ steps.baseline_source.outputs.producer_run_attempt }}"
       - name: Download exact deploy-compensation state by ID and digest
-        if: steps.baseline_source.outputs.mode == 'deploy-compensation'
+        if: >-
+          steps.baseline_source.outputs.mode == 'deploy-compensation' ||
+          steps.baseline_source.outputs.mode == 'legacy-bootstrap-compensation'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           artifact-ids: ${{ steps.baseline_compensation.outputs.state_artifact_id }}
@@ -486,7 +461,8 @@ jobs:
       - name: Download exact compensation recovery bytes by ID and digest
         if: >-
           steps.baseline_source.outputs.mode == 'deploy-compensation' ||
-          steps.baseline_source.outputs.mode == 'bridge-compensation'
+          steps.baseline_source.outputs.mode == 'bridge-compensation' ||
+          steps.baseline_source.outputs.mode == 'legacy-bootstrap-compensation'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           artifact-ids: ${{ steps.baseline_compensation.outputs.recovery_artifact_id }}
@@ -521,6 +497,48 @@ jobs:
             --recovery-artifact-digest "${{ steps.baseline_compensation.outputs.recovery_artifact_digest }}" \
             --recovery-artifact-name "${{ steps.baseline_compensation.outputs.recovery_artifact_name }}" \
             --output-dist ../recovery-source/dist
+      - name: Verify pinned legacy bootstrap compensation before selecting bootstrap bytes
+        if: steps.baseline_source.outputs.mode == 'legacy-bootstrap-compensation'
+        working-directory: control
+        run: >-
+          node scripts/ev2/phase12/verify-staging-legacy-bootstrap-compensation.mjs
+          --record .github/release-controls/staging-baseline-bootstrap.json
+          --state-artifact-dir "$RUNNER_TEMP/g12-staging-rollback-compensation-state"
+          --recovery-artifact-dir "$RUNNER_TEMP/g12-staging-rollback-compensation-recovery"
+          --candidate-sha "${{ steps.original_staging.outputs.release }}"
+          --control-sha "${{ steps.baseline_compensation.outputs.control_sha }}"
+          --run-id "${{ steps.baseline_source.outputs.producer_run_id }}"
+          --run-attempt "${{ steps.baseline_source.outputs.producer_run_attempt }}"
+          --state-artifact-id "${{ steps.baseline_compensation.outputs.state_artifact_id }}"
+          --state-artifact-digest "${{ steps.baseline_compensation.outputs.state_artifact_digest }}"
+          --state-artifact-name "${{ steps.baseline_compensation.outputs.state_artifact_name }}"
+          --recovery-artifact-id "${{ steps.baseline_compensation.outputs.recovery_artifact_id }}"
+          --recovery-artifact-digest "${{ steps.baseline_compensation.outputs.recovery_artifact_digest }}"
+          --recovery-artifact-name "${{ steps.baseline_compensation.outputs.recovery_artifact_name }}"
+      - name: Download exact bootstrap bridge evidence by ID and digest
+        if: >-
+          steps.baseline_source.outputs.mode == 'bootstrap' ||
+          steps.baseline_source.outputs.mode == 'legacy-bootstrap-compensation'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.baseline_bootstrap.outputs.bridge_artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ steps.baseline_bootstrap.outputs.bridge_run_id }}
+          path: ${{ runner.temp }}/g12-staging-rollback-bootstrap-bridge
+      - name: Download exact bootstrap source bytes by ID and digest
+        if: >-
+          steps.baseline_source.outputs.mode == 'bootstrap' ||
+          steps.baseline_source.outputs.mode == 'legacy-bootstrap-compensation'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.baseline_bootstrap.outputs.source_artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ steps.baseline_bootstrap.outputs.source_run_id }}
+          path: ${{ runner.temp }}/g12-staging-rollback-bootstrap-source
       - name: Resolve original CI tuple attested by deploy compensation
         id: baseline_compensation_ci_source
         if: steps.baseline_source.outputs.mode == 'deploy-compensation'
@@ -547,6 +565,20 @@ jobs:
           test "$RECOVERED_ID" = "$RESOLVED_ID"
           test "$RECOVERED_DIGEST" = "$RESOLVED_DIGEST"
           test "$RECOVERED_NAME" = "$RESOLVED_NAME"
+      - name: Materialize exact bootstrap bytes without rebuilding
+        id: baseline_bootstrap_package
+        if: >-
+          steps.baseline_source.outputs.mode == 'bootstrap' ||
+          steps.baseline_source.outputs.mode == 'legacy-bootstrap-compensation'
+        working-directory: control
+        run: |
+          set -euo pipefail
+          mkdir -p ../recovery-source
+          node scripts/ev2/phase12/materialize-staging-baseline-bootstrap.mjs \
+            --record .github/release-controls/staging-baseline-bootstrap.json \
+            --bridge-artifact-dir "$RUNNER_TEMP/g12-staging-rollback-bootstrap-bridge" \
+            --source-artifact-dir "$RUNNER_TEMP/g12-staging-rollback-bootstrap-source" \
+            --output-dist ../recovery-source/dist
       - name: Normalize only the selected immutable recovery archive and seal
         working-directory: control
         env:
@@ -564,7 +596,8 @@ jobs:
           case "$BASELINE_MODE" in
             deploy-v4) archive="$DEPLOY_ARCHIVE"; seal="$DEPLOY_SEAL" ;;
             bridge-v5) archive="$BRIDGE_ARCHIVE"; seal="$BRIDGE_SEAL" ;;
-            bootstrap) archive="$BOOTSTRAP_ARCHIVE"; seal="$BOOTSTRAP_SEAL" ;;
+            bootstrap|legacy-bootstrap-compensation)
+              archive="$BOOTSTRAP_ARCHIVE"; seal="$BOOTSTRAP_SEAL" ;;
             deploy-compensation|bridge-compensation)
               archive="$COMPENSATION_ARCHIVE"; seal="$COMPENSATION_SEAL" ;;
             *) echo G12_STAGING_ROLLBACK_BASELINE_MODE_REFUSED >&2; exit 1 ;;

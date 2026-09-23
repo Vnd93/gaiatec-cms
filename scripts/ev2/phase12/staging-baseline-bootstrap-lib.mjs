@@ -165,6 +165,15 @@ export function validateStagingBaselineBootstrapRemote({
   return { valid: violations.length === 0, violations: [...new Set(violations)] };
 }
 
+export function identifyLegacyBootstrapCompensation({ record, candidateSha, commitMessage }) {
+  if (!validateStagingBaselineBootstrapRecord(record).valid || candidateSha !== record.candidateSha)
+    return null;
+  const match = /^g12-staging-deploy-compensation-([1-9]\d*)-([1-9]\d*)$/.exec(String(commitMessage ?? ""));
+  if (!match || match[1] !== record.source.runId || Number(match[2]) !== record.source.runAttempt)
+    return null;
+  return { runId: match[1], runAttempt: Number(match[2]) };
+}
+
 export function selectStagingBaselineSource({ record, candidateSha, deployment }) {
   const recordValidation = validateStagingBaselineBootstrapRecord(record);
   if (!recordValidation.valid)
@@ -191,6 +200,23 @@ export function selectStagingBaselineSource({ record, candidateSha, deployment }
     return { valid: false, violations: ["deployment_invalid"], mode: "refused" };
   if (!Number.isFinite(Date.parse(deployment?.createdOn ?? "")) || (!bridge && !compensation))
     return { valid: false, violations: ["bridge_marker_invalid"], mode: "refused" };
+  const legacyBootstrapCompensation = identifyLegacyBootstrapCompensation({
+    record,
+    candidateSha,
+    commitMessage,
+  });
+  if (legacyBootstrapCompensation)
+    return {
+      valid: true,
+      violations: [],
+      mode: "legacy-bootstrap-compensation",
+      trusted: false,
+      requiresRemoteVerification: true,
+      bridgeRunId: "",
+      bridgeRunAttempt: 0,
+      compensationRunId: legacyBootstrapCompensation.runId,
+      compensationRunAttempt: legacyBootstrapCompensation.runAttempt,
+    };
   if (compensation)
     return {
       valid: true,

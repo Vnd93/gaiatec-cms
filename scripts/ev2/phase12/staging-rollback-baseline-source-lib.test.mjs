@@ -50,6 +50,50 @@ test("classifies bridge and compensation producers without accepting rollback ma
   assert.deepEqual(refused.violations, ["deployment_producer_marker_invalid"]);
 });
 
+test("selects legacy bootstrap compensation only for the pinned deploy tuple and release", async () => {
+  const bootstrap = await record();
+  const marker = `g12-staging-deploy-compensation-${bootstrap.source.runId}-${bootstrap.source.runAttempt}`;
+  assert.deepEqual(
+    classifyStagingRollbackBaseline({
+      record: bootstrap,
+      deployment: {
+        ...deployment,
+        release: bootstrap.candidateSha,
+        commitMessage: marker,
+      },
+    }),
+    {
+      valid: true,
+      mode: "legacy-bootstrap-compensation",
+      runId: bootstrap.source.runId,
+      runAttempt: bootstrap.source.runAttempt,
+      violations: [],
+    },
+  );
+  for (const changed of [
+    { release: sha, commitMessage: marker },
+    {
+      release: bootstrap.candidateSha,
+      commitMessage: `g12-staging-deploy-compensation-${Number(bootstrap.source.runId) + 1}-${bootstrap.source.runAttempt}`,
+    },
+    {
+      release: bootstrap.candidateSha,
+      commitMessage: `g12-staging-deploy-compensation-${bootstrap.source.runId}-${bootstrap.source.runAttempt + 1}`,
+    },
+    {
+      release: bootstrap.candidateSha,
+      commitMessage: `g12-staging-bridge-compensation-${bootstrap.source.runId}-${bootstrap.source.runAttempt}`,
+    },
+  ])
+    assert.notEqual(
+      classifyStagingRollbackBaseline({
+        record: bootstrap,
+        deployment: { ...deployment, ...changed },
+      }).mode,
+      "legacy-bootstrap-compensation",
+    );
+});
+
 test("accepts bootstrap only for the exact immutable deployment identity", async () => {
   const bootstrap = await record();
   const exact = classifyStagingRollbackBaseline({

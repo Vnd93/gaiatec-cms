@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, posix, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
@@ -524,6 +524,20 @@ test("generic builder proves every exact entrypoint with pinned bundle and unbun
   assert.match(builder, /edge-runtime bundle/);
   assert.match(builder, /--entrypoint "\$\{entrypoint\}"/);
   assert.match(builder, /edge-runtime unbundle/);
+  assert.match(builder, /unbundle_root="\$\{output\}\/unbundled\/\$\{slug\}"/);
+  assert.match(builder, /unbundled="\$\{unbundle_root\}\/workspace\/supabase\/functions\/\$\{slug\}"/);
+  assert.doesNotMatch(builder, /unbundled="\$\{output\}\/unbundled\/\$\{slug\}"/);
+  assertOrdered(builder, [
+    'unbundle_root="${output}/unbundled/${slug}"',
+    'unbundled="${unbundle_root}/workspace/supabase/functions/${slug}"',
+    'test ! -e "${eszip}" && test ! -e "${unbundle_root}"',
+    'edge-runtime unbundle --eszip "${eszip}" --output "${unbundled}"',
+    'require_directory "${unbundle_root}"',
+    'if ! unbundled_symlink="$(find "${unbundle_root}" -type l -print -quit)"; then',
+    'test -z "${unbundled_symlink}"',
+    'if ! unbundled_file="$(find "${unbundle_root}" -type f -print -quit)"; then',
+    'test -n "${unbundled_file}"',
+  ]);
   assert.match(builder, /edge-function-dependencies\.sha256/);
   assert.match(builder, /count != 68/);
   assert.ok(builder.includes("$2 !~ /^supabase\\/functions\\/[a-z0-9-]+\\/deno\\.(json|lock)$/"));
@@ -541,6 +555,19 @@ test("generic builder proves every exact entrypoint with pinned bundle and unbun
   assert.match(builder, /EVENT=g12\.ci\.all_edge_runtime_smoke\.bundles_verified/);
   assert.match(builder, /DEPENDENCY_FILES_SHA256/);
   assert.doesNotMatch(builder, /supabase functions deploy|TOKEN|PASSWORD|SECRET/);
+});
+
+test("mirrored per-function unbundle output contains shared and repository imports", () => {
+  const slug = "cms-content";
+  const unbundleRoot = posix.join("/output/unbundled", slug);
+  const unbundled = posix.join(unbundleRoot, "workspace/supabase/functions", slug);
+  const sharedModule = posix.resolve(unbundled, "../_shared/security.ts");
+  const repositoryModule = posix.resolve(unbundled, "../../../src/shared/contracts/cms-content.ts");
+
+  assert.equal(sharedModule, posix.join(unbundleRoot, "workspace/supabase/functions/_shared/security.ts"));
+  assert.equal(repositoryModule, posix.join(unbundleRoot, "workspace/src/shared/contracts/cms-content.ts"));
+  assert.ok(sharedModule.startsWith(`${unbundleRoot}/`));
+  assert.ok(repositoryModule.startsWith(`${unbundleRoot}/`));
 });
 
 test("generic boot invokes every exact ESZIP in the pinned runtime with no network or privileges", () => {

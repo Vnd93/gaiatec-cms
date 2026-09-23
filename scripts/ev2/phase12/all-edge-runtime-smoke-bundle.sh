@@ -132,11 +132,12 @@ while IFS= read -r slug; do
   function_config="${input}/supabase/functions/${slug}/deno.json"
   function_lock="${input}/supabase/functions/${slug}/deno.lock"
   eszip="${output}/bundles/${slug}.eszip"
-  unbundled="${output}/unbundled/${slug}"
+  unbundle_root="${output}/unbundled/${slug}"
+  unbundled="${unbundle_root}/workspace/supabase/functions/${slug}"
   require_file "${entrypoint}" G12_ALL_EDGE_RUNTIME_SMOKE_ENTRYPOINT_REFUSED
   require_file "${function_config}" "G12_ALL_EDGE_RUNTIME_SMOKE_FUNCTION_CONFIG_REFUSED:${slug}"
   require_file "${function_lock}" "G12_ALL_EDGE_RUNTIME_SMOKE_FUNCTION_LOCK_REFUSED:${slug}"
-  test ! -e "${eszip}" && test ! -e "${unbundled}" || \
+  test ! -e "${eszip}" && test ! -e "${unbundle_root}" || \
     refuse G12_ALL_EDGE_RUNTIME_SMOKE_OUTPUT_COLLISION_REFUSED
   if ! edge-runtime bundle \
     --entrypoint "${entrypoint}" \
@@ -149,7 +150,19 @@ while IFS= read -r slug; do
   if ! edge-runtime unbundle --eszip "${eszip}" --output "${unbundled}"; then
     refuse "G12_ALL_EDGE_RUNTIME_SMOKE_UNBUNDLE_FAILED:${slug}"
   fi
-  test -n "$(find "${unbundled}" -type f -print -quit)" || \
+  require_directory "${unbundle_root}" \
+    "G12_ALL_EDGE_RUNTIME_SMOKE_UNBUNDLE_ROOT_REFUSED:${slug}"
+  require_directory "${unbundled}" \
+    "G12_ALL_EDGE_RUNTIME_SMOKE_UNBUNDLED_DIRECTORY_REFUSED:${slug}"
+  if ! unbundled_symlink="$(find "${unbundle_root}" -type l -print -quit)"; then
+    refuse "G12_ALL_EDGE_RUNTIME_SMOKE_UNBUNDLED_SYMLINK_SCAN_FAILED:${slug}"
+  fi
+  test -z "${unbundled_symlink}" || \
+    refuse "G12_ALL_EDGE_RUNTIME_SMOKE_UNBUNDLED_SYMLINK_REFUSED:${slug}"
+  if ! unbundled_file="$(find "${unbundle_root}" -type f -print -quit)"; then
+    refuse "G12_ALL_EDGE_RUNTIME_SMOKE_UNBUNDLED_FILE_SCAN_FAILED:${slug}"
+  fi
+  test -n "${unbundled_file}" || \
     refuse "G12_ALL_EDGE_RUNTIME_SMOKE_UNBUNDLED_EMPTY:${slug}"
   bytes="$(wc -c < "${eszip}" | tr -d '[:space:]')"
   case "${bytes}" in

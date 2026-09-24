@@ -781,20 +781,29 @@ jobs:
           VITE_EV2_DRAFT_V2_CANDIDATE: "false"
         run: |
           set -euo pipefail
+          release_root="$RUNNER_TEMP/g12-staging-baseline-release"
+          test ! -e "$release_root"
+          node scripts/ev2/phase12/verify-staging-release-package.mjs \
+            --package "$RUNNER_TEMP/g12-staging-baseline-package" \
+            --output "$release_root" \
+            --candidate "${{ inputs.expected_baseline_sha }}" \
+            --profile "full-release" \
+            --run-id "${{ steps.baseline_ci_source.outputs.source_run_id }}" \
+            --run-attempt "${{ steps.baseline_ci_source.outputs.source_run_attempt }}"
           test ! -e ../staging-bridge-recovery-payload/dist
           node scripts/ev2/phase12/verify-staging-frontend-package.mjs \
-            --package "$RUNNER_TEMP/g12-staging-baseline-package" \
+            --package "$release_root/frontend" \
             --output ../staging-bridge-recovery-payload/dist \
             --candidate "${{ inputs.expected_baseline_sha }}" \
             --run-id "${{ steps.baseline_ci_source.outputs.source_run_id }}" \
             --run-attempt "${{ steps.baseline_ci_source.outputs.source_run_attempt }}"
-          cp "$RUNNER_TEMP/g12-staging-baseline-package/staging-frontend-dist.tar" \
+          cp "$release_root/frontend/staging-frontend-dist.tar" \
             ../staging-bridge-recovery-payload/outputs/staging-frontend-dist.tar
-          cp "$RUNNER_TEMP/g12-staging-baseline-package/staging-frontend-dist-seal.json" \
+          cp "$release_root/frontend/staging-frontend-dist-seal.json" \
             ../staging-bridge-recovery-payload/outputs/staging-baseline-dist-seal.json
-          cp "$RUNNER_TEMP/g12-staging-baseline-package/staging-frontend-dist-seal.json" \
+          cp "$release_root/frontend/staging-frontend-dist-seal.json" \
             ../staging-bridge-recovery-payload/outputs/staging-frontend-dist-seal.json
-          cp "$RUNNER_TEMP/g12-staging-baseline-package/staging-frontend-provenance.json" \
+          cp "$release_root/frontend/staging-frontend-provenance.json" \
             ../staging-bridge-recovery-payload/outputs/staging-frontend-provenance.json
       - name: Bind materialized baseline bytes to bridge-v5 evidence
         if: steps.baseline_source.outputs.mode == 'bridge-v5'

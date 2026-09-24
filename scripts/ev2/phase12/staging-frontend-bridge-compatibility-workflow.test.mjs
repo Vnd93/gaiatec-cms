@@ -780,6 +780,15 @@ test("bridge and full staging bind one CI package and retain the bridge deployme
     bridgeDownload,
     /--profile "\$\{\{ steps\.candidate_selection\.outputs\.release_profile \}\}"/,
   );
+  const bridgeBaselineMaterialize = bridge.slice(
+    bridge.indexOf("Materialize and verify the exact bridge-v5 baseline bytes"),
+    bridge.indexOf("Bind materialized baseline bytes to bridge-v5 evidence"),
+  );
+  assert.match(bridgeBaselineMaterialize, /verify-staging-release-package\.mjs/);
+  assert.match(bridgeBaselineMaterialize, /--package "\$RUNNER_TEMP\/g12-staging-baseline-package"/);
+  assert.match(bridgeBaselineMaterialize, /--output "\$release_root"/);
+  assert.match(bridgeBaselineMaterialize, /verify-staging-frontend-package\.mjs/);
+  assert.match(bridgeBaselineMaterialize, /--package "\$release_root\/frontend"/);
   const currentAttemptBinding = bridge.slice(
     bridge.indexOf("Bind the materialized bytes to the current-attempt selection"),
     bridge.indexOf("Prove live alias is the expected old-backend baseline"),

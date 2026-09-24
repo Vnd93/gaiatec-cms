@@ -60,11 +60,11 @@ jobs:
             throw new Error("G12_RECOVERY_REQUEST_SOURCE_WORKFLOW_INVALID");
           NODE
           artifact_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}")"
-          node - "$artifact_json" "$SOURCE_RUN_ID" <<'NODE'
+          node - "$artifact_json" "$SOURCE_RUN_ID" "$SOURCE_RUN_ATTEMPT" <<'NODE'
           const artifact = JSON.parse(process.argv[2]);
           if (artifact.expired || String(artifact.workflow_run?.id) !== process.argv[3])
             throw new Error("G12_RECOVERY_REQUEST_ARTIFACT_BINDING_INVALID");
-          if (artifact.name !== `staging-cms-public-legacy-${process.argv[3]}-${artifact.workflow_run.run_attempt}`)
+          if (artifact.name !== `staging-cms-public-legacy-${process.argv[3]}-${process.argv[4]}`)
             throw new Error("G12_RECOVERY_REQUEST_ARTIFACT_NAME_INVALID");
           NODE
 

@@ -109,10 +109,6 @@ jobs:
           CONTROL_SHA: ${{ inputs.control_sha }}
         run: |
           set -euo pipefail
-          node scripts/ev2/phase12/recovery-state-store.mjs get \
-            --kind staging-cms-public-legacy \
-            --file legacy-state/staging-cms-public-legacy-state.json \
-            --run-id "$SOURCE_RUN_ID" --run-attempt "$SOURCE_RUN_ATTEMPT" --control-sha "$CONTROL_SHA"
           node scripts/ev2/phase12/recovery-state-store.mjs clear \
             --kind staging-cms-public-legacy \
             --file legacy-state/staging-cms-public-legacy-state.json \

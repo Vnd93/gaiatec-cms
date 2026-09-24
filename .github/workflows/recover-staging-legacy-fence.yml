@@ -49,9 +49,9 @@ jobs:
           [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
           run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}")"
           node - "$run_json" "$SOURCE_RUN_ATTEMPT" "$CONTROL_SHA" <<'NODE'
-          const run = JSON.parse(process.argv[1]);
-          const attempt = process.argv[2];
-          const sha = process.argv[3];
+          const run = JSON.parse(process.argv[2]);
+          const attempt = process.argv[3];
+          const sha = process.argv[4];
           if (run.event !== "workflow_dispatch" || run.status !== "completed" || run.head_branch !== "main")
             throw new Error("G12_RECOVERY_REQUEST_SOURCE_RUN_INVALID");
           if (String(run.run_attempt) !== attempt || run.head_sha !== sha)
@@ -61,10 +61,10 @@ jobs:
           NODE
           artifact_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}")"
           node - "$artifact_json" "$SOURCE_RUN_ID" "$SOURCE_RUN_ATTEMPT" <<'NODE'
-          const artifact = JSON.parse(process.argv[1]);
-          if (artifact.expired || String(artifact.workflow_run?.id) !== process.argv[2])
+          const artifact = JSON.parse(process.argv[2]);
+          if (artifact.expired || String(artifact.workflow_run?.id) !== process.argv[3])
             throw new Error("G12_RECOVERY_REQUEST_ARTIFACT_BINDING_INVALID");
-          if (artifact.name !== `staging-cms-public-legacy-${process.argv[2]}-${process.argv[3]}`)
+          if (artifact.name !== `staging-cms-public-legacy-${process.argv[3]}-${process.argv[4]}`)
             throw new Error("G12_RECOVERY_REQUEST_ARTIFACT_NAME_INVALID");
           NODE
 
@@ -94,9 +94,9 @@ jobs:
           node - "$SOURCE_RUN_ID" "$SOURCE_RUN_ATTEMPT" "$CONTROL_SHA" <<'NODE'
           const { readFileSync } = require("node:fs");
           const state = JSON.parse(readFileSync("legacy-state/staging-cms-public-legacy-state.json", "utf8"));
-          if (String(state.workflow?.runId) !== process.argv[1] || String(state.workflow?.runAttempt) !== process.argv[2])
+          if (String(state.workflow?.runId) !== process.argv[2] || String(state.workflow?.runAttempt) !== process.argv[3])
             throw new Error("G12_RECOVERY_STATE_SOURCE_BINDING_INVALID");
-          if (state.workflow?.controlSha !== process.argv[3])
+          if (state.workflow?.controlSha !== process.argv[4])
             throw new Error("G12_RECOVERY_STATE_CONTROL_BINDING_INVALID");
           if (state.project !== "gaiatec-cms-staging" || state.branch !== "ev2-g17-canary")
             throw new Error("G12_RECOVERY_STATE_TARGET_INVALID");

@@ -1,0 +1,133 @@
+name: Recover staging legacy fence
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Run da bridge que armou o lease legado
+        required: true
+        type: string
+      source_run_attempt:
+        description: Attempt exato do run de origem
+        required: true
+        type: string
+      control_sha:
+        description: SHA exato do controle da bridge de origem
+        required: true
+        type: string
+      state_artifact_id:
+        description: Artifact ID exato contendo staging-cms-public-legacy-state.json
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: staging-recovery-admin
+  cancel-in-progress: false
+
+jobs:
+  clear:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: staging
+    steps:
+      - name: Validate trusted recovery request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ inputs.source_run_attempt }}
+          CONTROL_SHA: ${{ inputs.control_sha }}
+          ARTIFACT_ID: ${{ inputs.state_artifact_id }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$SOURCE_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          [[ "$CONTROL_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}")"
+          node - "$run_json" "$SOURCE_RUN_ATTEMPT" "$CONTROL_SHA" <<'NODE'
+          const run = JSON.parse(process.argv[2]);
+          const attempt = process.argv[3];
+          const sha = process.argv[4];
+          if (run.event !== "workflow_dispatch" || run.status !== "completed" || run.head_branch !== "main")
+            throw new Error("G12_RECOVERY_REQUEST_SOURCE_RUN_INVALID");
+          if (String(run.run_attempt) !== attempt || run.head_sha !== sha)
+            throw new Error("G12_RECOVERY_REQUEST_SOURCE_BINDING_INVALID");
+          if (run.path !== ".github/workflows/promote-staging-frontend-bridge.yml")
+            throw new Error("G12_RECOVERY_REQUEST_SOURCE_WORKFLOW_INVALID");
+          NODE
+          artifact_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}")"
+          node - "$artifact_json" "$SOURCE_RUN_ID" <<'NODE'
+          const artifact = JSON.parse(process.argv[2]);
+          if (artifact.expired || String(artifact.workflow_run?.id) !== process.argv[3])
+            throw new Error("G12_RECOVERY_REQUEST_ARTIFACT_BINDING_INVALID");
+          if (artifact.name !== `staging-cms-public-legacy-${process.argv[3]}-${artifact.workflow_run.run_attempt}`)
+            throw new Error("G12_RECOVERY_REQUEST_ARTIFACT_NAME_INVALID");
+          NODE
+
+      - name: Checkout exact source control
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.control_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download exact legacy recovery state
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v6
+        with:
+          artifact-ids: ${{ inputs.state_artifact_id }}
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.source_run_id }}
+          path: legacy-state
+
+      - name: Verify exact state payload
+        env:
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ inputs.source_run_attempt }}
+          CONTROL_SHA: ${{ inputs.control_sha }}
+        run: |
+          set -euo pipefail
+          test "$(find legacy-state -type f -name 'staging-cms-public-legacy-state.json' | wc -l)" = 1
+          node - "$SOURCE_RUN_ID" "$SOURCE_RUN_ATTEMPT" "$CONTROL_SHA" <<'NODE'
+          const { readFileSync } = require("node:fs");
+          const state = JSON.parse(readFileSync("legacy-state/staging-cms-public-legacy-state.json", "utf8"));
+          if (String(state.workflow?.runId) !== process.argv[2] || String(state.workflow?.runAttempt) !== process.argv[3])
+            throw new Error("G12_RECOVERY_STATE_SOURCE_BINDING_INVALID");
+          if (state.workflow?.controlSha !== process.argv[4])
+            throw new Error("G12_RECOVERY_STATE_CONTROL_BINDING_INVALID");
+          if (state.project !== "gaiatec-cms-staging" || state.branch !== "ev2-g17-canary")
+            throw new Error("G12_RECOVERY_STATE_TARGET_INVALID");
+          NODE
+
+      - name: Read and CAS-clear exact legacy fence
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ inputs.source_run_attempt }}
+          CONTROL_SHA: ${{ inputs.control_sha }}
+        run: |
+          set -euo pipefail
+          node scripts/ev2/phase12/recovery-state-store.mjs get \
+            --kind staging-cms-public-legacy \
+            --file legacy-state/staging-cms-public-legacy-state.json \
+            --run-id "$SOURCE_RUN_ID" --run-attempt "$SOURCE_RUN_ATTEMPT" --control-sha "$CONTROL_SHA"
+          node scripts/ev2/phase12/recovery-state-store.mjs clear \
+            --kind staging-cms-public-legacy \
+            --file legacy-state/staging-cms-public-legacy-state.json \
+            --run-id "$SOURCE_RUN_ID" --run-attempt "$SOURCE_RUN_ATTEMPT" --control-sha "$CONTROL_SHA"
+
+      - name: Verify empty staging recovery fence
+        env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ inputs.source_run_attempt }}
+          CONTROL_SHA: ${{ inputs.control_sha }}
+        run: |
+          set -euo pipefail
+          node scripts/ev2/phase12/recovery-state-store.mjs fence --owner-kind staging-cms-public-legacy --require-empty \
+            --run-id "$SOURCE_RUN_ID" --run-attempt "$SOURCE_RUN_ATTEMPT" --control-sha "$CONTROL_SHA"

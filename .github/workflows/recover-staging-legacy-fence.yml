@@ -75,31 +75,29 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Download exact legacy recovery state
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v6
-        with:
-          artifact-ids: ${{ inputs.state_artifact_id }}
-          github-token: ${{ github.token }}
-          run-id: ${{ inputs.source_run_id }}
-          path: legacy-state
-
-      - name: Verify exact state payload
+      - name: Read exact remote legacy recovery state
         env:
+          RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
+          RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
           SOURCE_RUN_ID: ${{ inputs.source_run_id }}
           SOURCE_RUN_ATTEMPT: ${{ inputs.source_run_attempt }}
           CONTROL_SHA: ${{ inputs.control_sha }}
         run: |
           set -euo pipefail
-          test "$(find legacy-state -type f -name 'staging-cms-public-legacy-state.json' | wc -l)" = 1
-          node - "$SOURCE_RUN_ID" "$SOURCE_RUN_ATTEMPT" "$CONTROL_SHA" <<'NODE'
+          mkdir -p legacy-state
+          node scripts/ev2/phase12/recovery-state-store.mjs get \
+            --kind staging-cms-public-legacy \
+            --file legacy-state/staging-cms-public-legacy-state.json \
+            --run-id "$SOURCE_RUN_ID" --run-attempt "$SOURCE_RUN_ATTEMPT" --control-sha "$CONTROL_SHA"
+          node - <<'NODE'
           const { readFileSync } = require("node:fs");
           const state = JSON.parse(readFileSync("legacy-state/staging-cms-public-legacy-state.json", "utf8"));
-          if (String(state.workflow?.runId) !== process.argv[2] || String(state.workflow?.runAttempt) !== process.argv[3])
-            throw new Error("G12_RECOVERY_STATE_SOURCE_BINDING_INVALID");
-          if (state.workflow?.controlSha !== process.argv[4])
-            throw new Error("G12_RECOVERY_STATE_CONTROL_BINDING_INVALID");
-          if (state.project !== "gaiatec-cms-staging" || state.branch !== "ev2-g17-canary")
+          if (state.projectRef !== "glcqsosxwgmlhzgcsnzv" || state.environment !== "staging")
             throw new Error("G12_RECOVERY_STATE_TARGET_INVALID");
+          if (state.workflow?.runId !== process.env.SOURCE_RUN_ID || String(state.workflow?.runAttempt) !== process.env.SOURCE_RUN_ATTEMPT)
+            throw new Error("G12_RECOVERY_STATE_SOURCE_BINDING_INVALID");
+          if (state.workflow?.controlSha !== process.env.CONTROL_SHA)
+            throw new Error("G12_RECOVERY_STATE_CONTROL_BINDING_INVALID");
           NODE
 
       - name: Read and CAS-clear exact legacy fence

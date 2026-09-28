@@ -370,6 +370,75 @@ export const CatalogRollbackPlanSchema = z
   })
   .strict();
 
+/**
+ * Evidence envelope for the post-Fatia-4 UAT gate. It is safe to commit:
+ * it contains only immutable hashes, counters and gate outcomes, never
+ * operator identity, credentials, cookies or editorial payloads.
+ */
+export const CatalogFatia4UatRecordSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    candidateSha: z.string().regex(/^[0-9a-f]{40}$/),
+    environment: z.enum(["local", "staging"]),
+    featureFlag: z.literal("default-off"),
+    coverage: CatalogFatia4CoverageSchema,
+    rollback: CatalogRollbackPlanSchema,
+    browser: z
+      .object({
+        engine: z.enum(["chrome", "chromium"]),
+        authenticated: z.boolean(),
+        backend: z.enum(["local", "staging"]),
+        status: z.enum(["pending", "passed"]),
+        evidenceId: CatalogEditorialUatEvidenceSchema.nullable(),
+      })
+      .strict()
+      .superRefine((browser, context) => {
+        if (browser.status === "passed") {
+          if (browser.engine !== "chrome") {
+            context.addIssue({
+              code: "custom",
+              path: ["engine"],
+              message: "manual UAT requires Google Chrome",
+            });
+          }
+          if (!browser.authenticated || browser.backend !== "staging" || browser.evidenceId === null) {
+            context.addIssue({
+              code: "custom",
+              path: ["status"],
+              message: "passed UAT requires authenticated Chrome, staging backend and evidence",
+            });
+          }
+        }
+        if (browser.status === "pending" && browser.evidenceId !== null) {
+          context.addIssue({
+            code: "custom",
+            path: ["evidenceId"],
+            message: "pending UAT cannot carry completion evidence",
+          });
+        }
+      }),
+    publication: z.literal(false),
+    load: z.literal(false),
+    cutover: z.literal(false),
+  })
+  .strict()
+  .superRefine((record, context) => {
+    if (record.browser.status === "passed" && record.environment !== "staging") {
+      context.addIssue({
+        code: "custom",
+        path: ["environment"],
+        message: "authenticated UAT can only pass against staging",
+      });
+    }
+    if (record.coverage.publication || record.coverage.load || record.coverage.cutover) {
+      context.addIssue({
+        code: "custom",
+        path: ["coverage"],
+        message: "UAT evidence cannot authorize publication, load or cutover",
+      });
+    }
+  });
+
 export type CatalogReleaseProfile = z.infer<typeof CatalogReleaseProfileSchema>;
 export type CatalogChangeClass = z.infer<typeof CatalogChangeClassSchema>;
 export type CatalogWave = z.infer<typeof CatalogWaveSchema>;
@@ -380,6 +449,7 @@ export type CatalogEditorialPublicTerm = z.infer<typeof CatalogEditorialPublicTe
 export type CatalogNominalApprovalEvidence = z.infer<typeof CatalogNominalApprovalEvidenceSchema>;
 export type CatalogFatia4Coverage = z.infer<typeof CatalogFatia4CoverageSchema>;
 export type CatalogRollbackPlan = z.infer<typeof CatalogRollbackPlanSchema>;
+export type CatalogFatia4UatRecord = z.infer<typeof CatalogFatia4UatRecordSchema>;
 export type CatalogPublicationState = z.infer<typeof CatalogPublicationStateSchema>;
 export type CatalogPublicSnapshot = z.infer<typeof CatalogPublicSnapshotSchema>;
 export type CatalogPublicationOutboxEvent = z.infer<typeof CatalogPublicationOutboxEventSchema>;

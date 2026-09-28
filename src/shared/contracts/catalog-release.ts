@@ -38,7 +38,22 @@ export const CatalogDecisionIdSchema = z.enum([
   "CAT-D010",
 ]);
 
-export const CatalogNominalApprovalSchema = z.enum(["pending-approval", "approved", "rejected"]);
+export const CatalogNominalApprovalSchema = z.enum([
+  "pending-approval",
+  "user-confirmed-provisional",
+  "approved",
+  "rejected",
+]);
+
+/**
+ * Itens 17 e 18 foram confirmados pelo usuário somente como provisórios.
+ * Isso não é aprovação funcional, UAT, carga, publicação ou cutover.
+ */
+export const CATALOG_USER_CONFIRMED_PROVISIONAL_ORDERS = [17, 18] as const;
+
+export function isUserConfirmedProvisionalCatalogOrder(order: number): boolean {
+  return (CATALOG_USER_CONFIRMED_PROVISIONAL_ORDERS as readonly number[]).includes(order);
+}
 
 export const CatalogNominalProductSchema = z
   .object({

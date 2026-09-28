@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  CATALOG_USER_CONFIRMED_PROVISIONAL_ORDERS,
   CatalogNominalProductSchema,
+  isUserConfirmedProvisionalCatalogOrder,
   isCatalogFeatureEnabled,
   selectCatalogReleaseProfile,
 } from "@/shared/contracts/catalog-release";
@@ -50,5 +52,26 @@ describe("catalog release governance", () => {
     expect(CatalogNominalProductSchema.safeParse({ ...valid.data, source: "legacy-import" }).success).toBe(
       false,
     );
+  });
+
+  it("keeps items 17 and 18 explicitly provisional, never approved", () => {
+    expect(CATALOG_USER_CONFIRMED_PROVISIONAL_ORDERS).toEqual([17, 18]);
+    expect(isUserConfirmedProvisionalCatalogOrder(17)).toBe(true);
+    expect(isUserConfirmedProvisionalCatalogOrder(18)).toBe(true);
+    expect(isUserConfirmedProvisionalCatalogOrder(16)).toBe(false);
+    expect(
+      CatalogNominalProductSchema.safeParse({
+        schemaVersion: 1,
+        candidateId: "b0000000-0000-4000-8000-000000000017",
+        name: "Medidor de Nível Ultrassônico Compacto",
+        ownerRole: "Comercial GAIATEC Sistemas",
+        approverRole: "Comercial GAIATEC Sistemas",
+        approval: "user-confirmed-provisional",
+        source: "canonical-nominal-list",
+        importMode: "none",
+        wave: "foundation",
+        decisionIds: ["CAT-D001"],
+      }).success,
+    ).toBe(true);
   });
 });

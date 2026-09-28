@@ -25,6 +25,50 @@ export const CatalogWaveSchema = z.enum([
   "editorial-cutover-prep",
 ]);
 
+export const CatalogPublicationStateSchema = z.enum(["draft", "ready", "published"]);
+
+const CATALOG_COMMERCIAL_KEYS = new Set(["sku", "price", "stock", "inventory", "availability", "Offer"]);
+
+export const CatalogPublicSnapshotSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    snapshotId: z.uuid(),
+    productId: z.uuid(),
+    revision: z.number().int().positive(),
+    slug: z
+      .string()
+      .trim()
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    title: z.string().trim().min(1).max(240),
+    content: z.record(z.string(), z.unknown()),
+    cta: z.literal("Solicitar orçamento"),
+    publishedAt: z.iso.datetime(),
+  })
+  .strict()
+  .superRefine((snapshot, context) => {
+    for (const key of Object.keys(snapshot.content)) {
+      if (CATALOG_COMMERCIAL_KEYS.has(key)) {
+        context.addIssue({
+          code: "custom",
+          path: ["content", key],
+          message: "commercial catalog fields are not part of the publication contract",
+        });
+      }
+    }
+  });
+
+export const CatalogPublicationOutboxEventSchema = z
+  .object({
+    id: z.uuid(),
+    productId: z.uuid(),
+    revision: z.number().int().positive(),
+    snapshotId: z.uuid().nullable(),
+    eventType: z.enum(["published", "invalidated"]),
+    status: z.enum(["pending", "processing", "processed", "failed"]),
+    attemptCount: z.number().int().nonnegative(),
+  })
+  .strict();
+
 export const CatalogDecisionIdSchema = z.enum([
   "CAT-D001",
   "CAT-D002",
@@ -74,6 +118,9 @@ export type CatalogReleaseProfile = z.infer<typeof CatalogReleaseProfileSchema>;
 export type CatalogChangeClass = z.infer<typeof CatalogChangeClassSchema>;
 export type CatalogWave = z.infer<typeof CatalogWaveSchema>;
 export type CatalogNominalProduct = z.infer<typeof CatalogNominalProductSchema>;
+export type CatalogPublicationState = z.infer<typeof CatalogPublicationStateSchema>;
+export type CatalogPublicSnapshot = z.infer<typeof CatalogPublicSnapshotSchema>;
+export type CatalogPublicationOutboxEvent = z.infer<typeof CatalogPublicationOutboxEventSchema>;
 
 /** Ambiguous or mixed changes always receive the broadest gate set. */
 export function selectCatalogReleaseProfile(changeClass: CatalogChangeClass): CatalogReleaseProfile {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CATALOG_USER_CONFIRMED_PROVISIONAL_ORDERS,
   CatalogNominalProductSchema,
+  CatalogPublicSnapshotSchema,
   isUserConfirmedProvisionalCatalogOrder,
   isCatalogFeatureEnabled,
   selectCatalogReleaseProfile,
@@ -73,5 +74,23 @@ describe("catalog release governance", () => {
         decisionIds: ["CAT-D001"],
       }).success,
     ).toBe(true);
+  });
+
+  it("keeps the public snapshot contract published-only and without commercial fields", () => {
+    const base = {
+      schemaVersion: 1 as const,
+      snapshotId: "b0000000-0000-4000-8000-000000000101",
+      productId: "b0000000-0000-4000-8000-000000000102",
+      revision: 2,
+      slug: "produto-staging",
+      title: "Produto de staging",
+      content: { summary: "Conteúdo editorial" },
+      cta: "Solicitar orçamento" as const,
+      publishedAt: "2026-09-28T12:00:00.000Z",
+    };
+    expect(CatalogPublicSnapshotSchema.safeParse(base).success).toBe(true);
+    expect(CatalogPublicSnapshotSchema.safeParse({ ...base, content: { price: 1 } }).success).toBe(false);
+    expect(CatalogPublicSnapshotSchema.safeParse({ ...base, cta: "Comprar" }).success).toBe(false);
+    expect(CatalogPublicSnapshotSchema.safeParse({ ...base, Offer: {} }).success).toBe(false);
   });
 });

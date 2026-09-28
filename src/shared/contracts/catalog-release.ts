@@ -188,10 +188,198 @@ export const CatalogNominalProductSchema = z
   })
   .strict();
 
+export const CatalogEditorialTermKindSchema = z.enum(["technology", "industry", "application"]);
+
+const CatalogEditorialBodyBlockSchema = z
+  .object({
+    heading: z.string().trim().min(1).max(160),
+    paragraphs: z.array(z.string().trim().min(1).max(2_000)).min(1).max(20),
+  })
+  .strict();
+
+export const CatalogEditorialUatEvidenceSchema = z
+  .object({
+    evidenceId: z
+      .string()
+      .trim()
+      .regex(/^CAT-UAT-[A-Z0-9-]{3,80}$/),
+    completedAt: z.iso.datetime(),
+  })
+  .strict();
+
+/**
+ * Public editorial term payload. It is intentionally text-only and carries
+ * no SKU, price, stock, availability, or import metadata. A term may be
+ * rendered in a staging preview while remaining noindex until approval and
+ * UAT evidence are both present.
+ */
+export const CatalogEditorialTermSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    termId: z.uuid(),
+    kind: CatalogEditorialTermKindSchema,
+    slug: z
+      .string()
+      .trim()
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    path: z
+      .string()
+      .trim()
+      .regex(/^\/catalogo\/(?:tecnologia|industria|aplicacao)\/[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    title: z.string().trim().min(1).max(180),
+    summary: z.string().trim().min(1).max(600),
+    blocks: z.array(CatalogEditorialBodyBlockSchema).min(1).max(50),
+    productId: z.uuid(),
+    productPublicationState: z.literal("published"),
+    ownerRole: z.string().trim().min(1).max(120),
+    approverRole: z.string().trim().min(1).max(120),
+    approval: CatalogNominalApprovalSchema,
+    uatEvidence: CatalogEditorialUatEvidenceSchema.nullable(),
+    seo: z
+      .object({
+        canonicalPath: z
+          .string()
+          .trim()
+          .regex(/^\/catalogo\/(?:tecnologia|industria|aplicacao)\/[a-z0-9]+(?:-[a-z0-9]+)*$/),
+        indexable: z.boolean(),
+      })
+      .strict(),
+  })
+  .strict()
+  .superRefine((term, context) => {
+    const expectedPath = catalogEditorialTermPath(term.kind, term.slug);
+    if (term.path !== expectedPath) {
+      context.addIssue({
+        code: "custom",
+        path: ["path"],
+        message: "editorial term path must match its kind and slug",
+      });
+    }
+    if (term.seo.canonicalPath !== term.path) {
+      context.addIssue({
+        code: "custom",
+        path: ["seo", "canonicalPath"],
+        message: "editorial term canonical path must match the public path",
+      });
+    }
+    if (term.seo.indexable && (term.approval !== "approved" || term.uatEvidence === null)) {
+      context.addIssue({
+        code: "custom",
+        path: ["seo", "indexable"],
+        message: "indexability requires approved editorial review and UAT evidence",
+      });
+    }
+  });
+
+/** Sanitized wire contract used by the public term page (no internal IDs). */
+export const CatalogEditorialPublicTermSchema = z
+  .object({
+    kind: CatalogEditorialTermKindSchema,
+    slug: z
+      .string()
+      .trim()
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    path: z
+      .string()
+      .trim()
+      .regex(/^\/catalogo\/(?:tecnologia|industria|aplicacao)\/[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    title: z.string().trim().min(1).max(180),
+    summary: z.string().trim().min(1).max(600),
+    blocks: z.array(CatalogEditorialBodyBlockSchema).min(1).max(50),
+    seo: z
+      .object({
+        canonicalPath: z
+          .string()
+          .trim()
+          .regex(/^\/catalogo\/(?:tecnologia|industria|aplicacao)\/[a-z0-9]+(?:-[a-z0-9]+)*$/),
+        indexable: z.boolean(),
+      })
+      .strict(),
+  })
+  .strict()
+  .superRefine((term, context) => {
+    if (term.path !== catalogEditorialTermPath(term.kind, term.slug)) {
+      context.addIssue({
+        code: "custom",
+        path: ["path"],
+        message: "public editorial term path must match its kind and slug",
+      });
+    }
+    if (term.seo.canonicalPath !== term.path) {
+      context.addIssue({
+        code: "custom",
+        path: ["seo", "canonicalPath"],
+        message: "public editorial term canonical path must match the public path",
+      });
+    }
+  });
+
+/** Owner/approver and UAT evidence used by the CAT-011 coverage gate. */
+export const CatalogNominalApprovalEvidenceSchema = CatalogNominalProductSchema.extend({
+  uatEvidence: CatalogEditorialUatEvidenceSchema.nullable(),
+}).strict();
+
+export const CatalogFatia4CoverageSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    source: z.literal("canonical-nominal-list"),
+    totalCandidates: z.number().int().nonnegative(),
+    reviewedCandidates: z.number().int().nonnegative(),
+    approvedCandidates: z.number().int().nonnegative(),
+    provisionalCandidates: z.number().int().nonnegative(),
+    requiredCoveragePercent: z.literal(100),
+    publication: z.literal(false),
+    load: z.literal(false),
+    cutover: z.literal(false),
+  })
+  .strict()
+  .superRefine((coverage, context) => {
+    if (coverage.reviewedCandidates > coverage.totalCandidates) {
+      context.addIssue({
+        code: "custom",
+        path: ["reviewedCandidates"],
+        message: "reviewed candidates cannot exceed the nominal list",
+      });
+    }
+    if (coverage.approvedCandidates > coverage.reviewedCandidates) {
+      context.addIssue({
+        code: "custom",
+        path: ["approvedCandidates"],
+        message: "approved candidates require prior review",
+      });
+    }
+    if (coverage.provisionalCandidates > coverage.reviewedCandidates) {
+      context.addIssue({
+        code: "custom",
+        path: ["provisionalCandidates"],
+        message: "provisional candidates require prior review",
+      });
+    }
+  });
+
+/** CAT-012 rollback evidence: one reader, legacy source, and no copying. */
+export const CatalogRollbackPlanSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    reader: z.literal("legacy"),
+    featureFlag: z.literal("ev2.catalog_v1"),
+    copyBetweenSources: z.literal(false),
+    publication: z.literal(false),
+    load: z.literal(false),
+    cutover: z.literal(false),
+  })
+  .strict();
+
 export type CatalogReleaseProfile = z.infer<typeof CatalogReleaseProfileSchema>;
 export type CatalogChangeClass = z.infer<typeof CatalogChangeClassSchema>;
 export type CatalogWave = z.infer<typeof CatalogWaveSchema>;
 export type CatalogNominalProduct = z.infer<typeof CatalogNominalProductSchema>;
+export type CatalogEditorialTermKind = z.infer<typeof CatalogEditorialTermKindSchema>;
+export type CatalogEditorialTerm = z.infer<typeof CatalogEditorialTermSchema>;
+export type CatalogEditorialPublicTerm = z.infer<typeof CatalogEditorialPublicTermSchema>;
+export type CatalogNominalApprovalEvidence = z.infer<typeof CatalogNominalApprovalEvidenceSchema>;
+export type CatalogFatia4Coverage = z.infer<typeof CatalogFatia4CoverageSchema>;
+export type CatalogRollbackPlan = z.infer<typeof CatalogRollbackPlanSchema>;
 export type CatalogPublicationState = z.infer<typeof CatalogPublicationStateSchema>;
 export type CatalogPublicSnapshot = z.infer<typeof CatalogPublicSnapshotSchema>;
 export type CatalogPublicationOutboxEvent = z.infer<typeof CatalogPublicationOutboxEventSchema>;
@@ -200,6 +388,47 @@ export type CatalogRelationKind = z.infer<typeof CatalogRelationKindSchema>;
 export type CatalogCompositionUnit = z.infer<typeof CatalogCompositionUnitSchema>;
 export type CatalogProductRelation = z.infer<typeof CatalogProductRelationSchema>;
 export type CatalogEffectiveRelation = z.infer<typeof CatalogEffectiveRelationSchema>;
+
+export function catalogEditorialTermPath(kind: CatalogEditorialTermKind, slug: string): string {
+  const segment = kind === "technology" ? "tecnologia" : kind === "industry" ? "industria" : "aplicacao";
+  return `/catalogo/${segment}/${slug}`;
+}
+
+export function isCatalogEditorialTermIndexable(
+  term: CatalogEditorialTerm,
+  featureEnabled: boolean,
+): boolean {
+  return (
+    featureEnabled &&
+    term.productPublicationState === "published" &&
+    term.approval === "approved" &&
+    term.uatEvidence !== null &&
+    term.seo.indexable
+  );
+}
+
+export function resolveCatalogEditorialSeo(term: CatalogEditorialTerm, featureEnabled: boolean) {
+  return {
+    canonicalPath: term.seo.canonicalPath,
+    indexable: isCatalogEditorialTermIndexable(term, featureEnabled),
+  };
+}
+
+export function isCatalogEditorialPublicTermIndexable(
+  term: CatalogEditorialPublicTerm,
+  featureEnabled: boolean,
+): boolean {
+  return featureEnabled && term.seo.indexable;
+}
+
+export function selectCatalogReaderSource(input: {
+  featureEnabled: boolean;
+  catalogReaderReady: boolean;
+  legacyReaderAvailable: boolean;
+}): "legacy" | "catalog" {
+  if (!input.featureEnabled || !input.catalogReaderReady || !input.legacyReaderAvailable) return "legacy";
+  return "catalog";
+}
 
 /**
  * Resolves the CAT-D006 precedence contract without performing I/O:

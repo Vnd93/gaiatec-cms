@@ -20,6 +20,7 @@ const DiscoveryListPage = lazy(() => import("../public/pages/CmsDiscoveryListPag
 const DiscoveryDetailPage = lazy(() => import("../public/pages/CmsDiscoveryDetailPage"));
 const ComparadorPage = lazy(() => import("../public/pages/CmsComparePage"));
 const SearchPage = lazy(() => import("../public/pages/CmsSearchPage"));
+const EditorialTermPage = lazy(() => import("../public/pages/CmsEditorialTermPage"));
 const NotFoundPage = lazy(() => import("./pages/NotFoundPage"));
 
 // ─── App interno: Relatório Diário de Obra (/relatorio-de-obra) ───
@@ -144,6 +145,9 @@ export const router = createBrowserRouter([
       { path: "produtos", element: lazyWrap(ProdutosPage) },
       { path: "produtos/comparador", element: lazyWrap(ComparadorPage) },
       { path: "produtos/:slug", element: lazyWrap(ProdutoPage) },
+      { path: "catalogo/tecnologia/:slug", element: lazyWrap(EditorialTermPage) },
+      { path: "catalogo/industria/:slug", element: lazyWrap(EditorialTermPage) },
+      { path: "catalogo/aplicacao/:slug", element: lazyWrap(EditorialTermPage) },
       { path: "busca", element: lazyWrap(SearchPage) },
       { path: "aplicacoes", element: discoveryList("application") },
       { path: "aplicacoes/:slug", element: discoveryDetail("application") },

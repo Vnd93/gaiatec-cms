@@ -2,12 +2,20 @@ import { describe, expect, it } from "vitest";
 import {
   CATALOG_USER_CONFIRMED_PROVISIONAL_ORDERS,
   CatalogNominalProductSchema,
+  CatalogNominalApprovalEvidenceSchema,
+  CatalogEditorialPublicTermSchema,
+  CatalogEditorialTermSchema,
+  CatalogFatia4CoverageSchema,
+  CatalogRollbackPlanSchema,
   CatalogProductRelationSchema,
   CatalogEffectiveRelationSchema,
   selectEffectiveCatalogRelations,
   CatalogPublicSnapshotSchema,
   isUserConfirmedProvisionalCatalogOrder,
+  isCatalogEditorialTermIndexable,
+  resolveCatalogEditorialSeo,
   isCatalogFeatureEnabled,
+  selectCatalogReaderSource,
   selectCatalogReleaseProfile,
 } from "@/shared/contracts/catalog-release";
 
@@ -153,5 +161,128 @@ describe("catalog release governance", () => {
       relationKind: "local_exclusion",
     });
     expect(selectEffectiveCatalogRelations([inherited, direct])).toEqual([direct]);
+  });
+
+  it("keeps CAT-010 editorial terms noindex until approval and UAT evidence", () => {
+    const base = {
+      schemaVersion: 1 as const,
+      termId: "b0000000-0000-4000-8000-000000000301",
+      kind: "technology" as const,
+      slug: "medicao-de-nivel",
+      path: "/catalogo/tecnologia/medicao-de-nivel",
+      title: "Medição de nível",
+      summary: "Conteúdo técnico de staging.",
+      blocks: [{ heading: "Visão geral", paragraphs: ["Texto editorial sem dados comerciais."] }],
+      productId: "b0000000-0000-4000-8000-000000000302",
+      productPublicationState: "published" as const,
+      ownerRole: "Comercial GAIATEC Sistemas",
+      approverRole: "Comercial GAIATEC Sistemas",
+      approval: "user-confirmed-provisional" as const,
+      uatEvidence: null,
+      seo: { canonicalPath: "/catalogo/tecnologia/medicao-de-nivel", indexable: false },
+    };
+    const provisional = CatalogEditorialTermSchema.parse(base);
+    expect(isCatalogEditorialTermIndexable(provisional, true)).toBe(false);
+    expect(resolveCatalogEditorialSeo(provisional, true).indexable).toBe(false);
+    const approved = CatalogEditorialTermSchema.parse({
+      ...base,
+      approval: "approved",
+      uatEvidence: { evidenceId: "CAT-UAT-F4-001", completedAt: "2026-09-28T12:00:00.000Z" },
+      seo: { ...base.seo, indexable: true },
+    });
+    expect(isCatalogEditorialTermIndexable(approved, true)).toBe(true);
+    expect(isCatalogEditorialTermIndexable(approved, false)).toBe(false);
+    expect(
+      CatalogEditorialTermSchema.safeParse({
+        ...approved,
+        seo: { ...approved.seo, indexable: true },
+        uatEvidence: null,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("sanitizes the CAT-010 public term wire contract", () => {
+    const publicTerm = {
+      kind: "application" as const,
+      slug: "monitoramento-remoto",
+      path: "/catalogo/aplicacao/monitoramento-remoto",
+      title: "Monitoramento remoto",
+      summary: "Guia editorial de staging.",
+      blocks: [{ heading: "Aplicação", paragraphs: ["Conteúdo aprovado para revisão."] }],
+      seo: { canonicalPath: "/catalogo/aplicacao/monitoramento-remoto", indexable: false },
+    };
+    expect(CatalogEditorialPublicTermSchema.safeParse(publicTerm).success).toBe(true);
+    expect(CatalogEditorialPublicTermSchema.safeParse({ ...publicTerm, productId: "secret" }).success).toBe(
+      false,
+    );
+  });
+
+  it("records CAT-011 nominal evidence without changing provisional approval", () => {
+    const entry = {
+      schemaVersion: 1 as const,
+      candidateId: "b0000000-0000-4000-8000-000000000317",
+      name: "Candidato provisório",
+      ownerRole: "Comercial GAIATEC Sistemas",
+      approverRole: "Comercial GAIATEC Sistemas",
+      approval: "user-confirmed-provisional" as const,
+      source: "canonical-nominal-list" as const,
+      importMode: "none" as const,
+      wave: "editorial-cutover-prep" as const,
+      decisionIds: ["CAT-D008"] as const,
+      uatEvidence: null,
+    };
+    expect(CatalogNominalApprovalEvidenceSchema.safeParse(entry).success).toBe(true);
+    expect(CatalogNominalApprovalEvidenceSchema.safeParse({ ...entry, sku: "forbidden" }).success).toBe(
+      false,
+    );
+  });
+
+  it("keeps CAT-012 rollback single-source and fail-closed", () => {
+    expect(
+      CatalogRollbackPlanSchema.safeParse({
+        schemaVersion: 1,
+        reader: "legacy",
+        featureFlag: "ev2.catalog_v1",
+        copyBetweenSources: false,
+        publication: false,
+        load: false,
+        cutover: false,
+      }).success,
+    ).toBe(true);
+    expect(
+      selectCatalogReaderSource({
+        featureEnabled: false,
+        catalogReaderReady: true,
+        legacyReaderAvailable: true,
+      }),
+    ).toBe("legacy");
+    expect(
+      selectCatalogReaderSource({
+        featureEnabled: true,
+        catalogReaderReady: true,
+        legacyReaderAvailable: true,
+      }),
+    ).toBe("catalog");
+    expect(
+      selectCatalogReaderSource({
+        featureEnabled: true,
+        catalogReaderReady: false,
+        legacyReaderAvailable: true,
+      }),
+    ).toBe("legacy");
+    expect(
+      CatalogFatia4CoverageSchema.safeParse({
+        schemaVersion: 1,
+        source: "canonical-nominal-list",
+        totalCandidates: 18,
+        reviewedCandidates: 18,
+        approvedCandidates: 16,
+        provisionalCandidates: 2,
+        requiredCoveragePercent: 100,
+        publication: false,
+        load: false,
+        cutover: false,
+      }).success,
+    ).toBe(true);
   });
 });

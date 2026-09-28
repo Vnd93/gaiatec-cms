@@ -1,0 +1,104 @@
+.catalog-editorial {
+  min-height: 70vh;
+  background: #f7f8fa;
+  color: #171b22;
+}
+
+.catalog-editorial__hero {
+  padding: clamp(4rem, 11vw, 8rem) max(1.5rem, calc((100vw - 74rem) / 2));
+  background: linear-gradient(125deg, #080b11 0%, #132545 72%, #0057de 100%);
+  color: #fff;
+}
+
+.catalog-editorial__hero h1 {
+  max-width: 52rem;
+  margin: 0.75rem 0 1rem;
+  font-size: clamp(2.25rem, 6vw, 5rem);
+  line-height: 0.98;
+  letter-spacing: -0.04em;
+}
+
+.catalog-editorial__hero > p:last-child {
+  max-width: 42rem;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 1.1rem;
+  line-height: 1.7;
+}
+
+.catalog-editorial__eyebrow {
+  margin: 0;
+  color: #4aa3ff;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.catalog-editorial__body {
+  display: grid;
+  gap: 2.5rem;
+  max-width: 56rem;
+  margin: 0 auto;
+  padding: clamp(2.5rem, 8vw, 5rem) 1.5rem 6rem;
+}
+
+.catalog-editorial__body section {
+  padding-bottom: 2rem;
+  border-bottom: 1px solid #d9dde3;
+}
+
+.catalog-editorial__body h2 {
+  margin: 0 0 0.75rem;
+  color: #080b11;
+  font-size: clamp(1.45rem, 3vw, 2rem);
+}
+
+.catalog-editorial__body p {
+  margin: 0.5rem 0 0;
+  color: #626b78;
+  line-height: 1.8;
+}
+
+.catalog-editorial__cta,
+.catalog-editorial__state a {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  justify-content: center;
+  padding: 0.85rem 1.25rem;
+  border: 1px solid #0057de;
+  background: #0057de;
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.catalog-editorial__cta:hover,
+.catalog-editorial__state a:hover {
+  background: #0046b3;
+}
+
+.catalog-editorial__state {
+  display: grid;
+  min-height: 70vh;
+  place-content: center;
+  gap: 0.75rem;
+  padding: 2rem;
+  text-align: center;
+}
+
+.catalog-editorial__state h1,
+.catalog-editorial__state p {
+  margin: 0;
+}
+
+.catalog-editorial__state h1 {
+  color: #080b11;
+}
+
+.catalog-editorial__state > p:not(.catalog-editorial__eyebrow) {
+  max-width: 34rem;
+  color: #626b78;
+}

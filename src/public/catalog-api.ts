@@ -12,6 +12,12 @@ import type {
 import type { CmsRelatedItem } from "./components/CmsPageRenderer";
 import { activateLegacyCatalogContext, adaptLegacyCatalogResponse } from "./catalog-backend-compatibility";
 import { normalizeLegacyFormResponse, transferLegacyFormBinding } from "./form-backend-compatibility";
+import {
+  CatalogEditorialPublicTermSchema,
+  CatalogEditorialTermKindSchema,
+  type CatalogEditorialPublicTerm,
+  type CatalogEditorialTermKind,
+} from "@/shared/contracts/catalog-release";
 
 type CmsProductModel = CmsProductContent["models"][number];
 type CmsProductVariant = CmsProductModel["variants"][number];
@@ -145,6 +151,16 @@ export type PublicRouteRule = {
 };
 export type PublishedPageResolution =
   { kind: "page"; page: PublishedPage } | { kind: "route"; rule: PublicRouteRule } | { kind: "fallback" };
+
+export type PublicCatalogCapability = {
+  key: "ev2.catalog_v1";
+  enabled: boolean;
+  source: "default" | "override" | "kill_switch" | "unavailable";
+};
+
+export type PublishedCatalogEditorialTerm = CatalogEditorialPublicTerm & {
+  publishedAt: string;
+};
 
 export type PublicNavigationItem = {
   location: "header" | "footer";
@@ -1231,6 +1247,55 @@ export async function getPublishedPageByPath(path: string): Promise<PublishedPag
   const resolution = normalizePageResolution(result, path);
   if (!resolution) throw new Error("Resposta pública incompatível com o contrato vigente.");
   return resolution;
+}
+
+function normalizeCatalogCapability(value: unknown): PublicCatalogCapability {
+  if (
+    !isRecord(value) ||
+    !exactKeys(value, ["key", "enabled", "source"]) ||
+    value.key !== "ev2.catalog_v1" ||
+    typeof value.enabled !== "boolean" ||
+    !["default", "override", "kill_switch", "unavailable"].includes(String(value.source))
+  )
+    throw new Error("Capacidade pública do catálogo incompatível com o contrato vigente.");
+  return {
+    key: "ev2.catalog_v1",
+    enabled: value.enabled,
+    source: value.source as PublicCatalogCapability["source"],
+  };
+}
+
+/** Server-owned capability; absence or malformed data remains unavailable. */
+export async function getCatalogCapability(): Promise<PublicCatalogCapability> {
+  return normalizeCatalogCapability(
+    await catalogFetch<unknown>(new URLSearchParams({ type: "catalog-capability" })),
+  );
+}
+
+export async function getPublishedCatalogEditorialTerm(
+  kind: CatalogEditorialTermKind,
+  slug: string,
+): Promise<PublishedCatalogEditorialTerm> {
+  const parsedKind = CatalogEditorialTermKindSchema.safeParse(kind);
+  if (!parsedKind.success || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug))
+    throw new Error("Termo editorial inválido.");
+  const result = await catalogFetch<unknown>(
+    new URLSearchParams({ type: "catalog-editorial-term", kind: parsedKind.data, slug }),
+  );
+  if (
+    !isRecord(result) ||
+    !exactKeys(result, ["kind", "slug", "path", "payload", "publishedAt"]) ||
+    result.kind !== "catalog-term" ||
+    typeof result.slug !== "string" ||
+    typeof result.path !== "string" ||
+    typeof result.publishedAt !== "string" ||
+    !Number.isFinite(Date.parse(result.publishedAt))
+  )
+    throw new Error("Termo editorial incompatível com o contrato público vigente.");
+  const payload = CatalogEditorialPublicTermSchema.safeParse(result.payload);
+  if (!payload.success || payload.data.slug !== result.slug || payload.data.path !== result.path)
+    throw new Error("Termo editorial incompatível com o contrato público vigente.");
+  return { ...payload.data, publishedAt: result.publishedAt };
 }
 
 export async function getPublicRouteRule(path: string) {

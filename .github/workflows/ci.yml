@@ -334,7 +334,10 @@ jobs:
       needs.release-plan.outputs.run_package_staging == 'true'
     environment: staging
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The full-release bootstrap profile transfers the sealed Edge artifact
+    # byte-for-byte (currently ~934 MB); keep all gates fail-closed while
+    # allowing the immutable download to complete on a cold GitHub runner.
+    timeout-minutes: 45
     outputs:
       package_mode: ${{ steps.package-source.outputs.mode }}
       source_run_id: ${{ steps.package-source.outputs.source_run_id }}

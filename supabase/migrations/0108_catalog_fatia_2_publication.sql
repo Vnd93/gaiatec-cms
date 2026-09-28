@@ -75,7 +75,8 @@ create table public.cms_catalog_publication_outbox (
   processed_at timestamptz,
   last_error text,
   created_at timestamptz not null default now(),
-  unique (product_id, revision, event_type)
+  constraint cms_catalog_publication_outbox_event_dedupe
+    unique (product_id, revision, event_type)
 );
 
 create unique index cms_catalog_product_snapshots_current_idx

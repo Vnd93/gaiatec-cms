@@ -161,7 +161,7 @@ select ok(
   'anonymous cannot read the publication outbox'
 );
 select ok(
-  (select position('security definer' in pg_get_functiondef(oid)) > 0
+  (select position('security definer' in lower(pg_get_functiondef(oid))) > 0
    from pg_proc where proname = 'cms_catalog_record_publication'),
   'projection writer is private security definer'
 );
@@ -178,11 +178,11 @@ select ok(
   'snapshot references the immutable product revision'
 );
 select ok(
-  exists (select 1 from pg_index where indexrelid::regclass::text = 'public.cms_catalog_product_snapshots_current_idx'),
+  to_regclass('public.cms_catalog_product_snapshots_current_idx') is not null,
   'current snapshot index exists'
 );
 select ok(
-  exists (select 1 from pg_constraint where conname = 'cms_catalog_publication_outbox_product_id_revision_event_type_key'),
+  exists (select 1 from pg_constraint where conname = 'cms_catalog_publication_outbox_event_dedupe'),
   'outbox deduplicates product revision events'
 );
 

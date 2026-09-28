@@ -138,7 +138,7 @@ export const G12_PINNED_MIGRATION_TAIL = Object.freeze([
   Object.freeze({
     version: "0108",
     file: "0108_catalog_fatia_2_publication.sql",
-    sha256: "4356f8f1f0492e9efb7e422024ef0ac0f198cf521e14a0d0840de459bd86659f",
+    sha256: "ef1b6e83aaf0c257eaa3602c0dabc14ff440d21bd3af1aef8a3d732afeef7b01",
   }),
 ]);
 

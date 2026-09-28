@@ -250,6 +250,10 @@ const compatibilityTests = {
     "supabase/tests/rls_cms_blog_taxonomy_terminal_cleanup.test.sql",
     "tests/contracts/cms-blog-taxonomy-terminal-cleanup.test.ts",
   ],
+  "0107": [
+    "supabase/tests/rls_catalog_fatia1_foundation.test.sql",
+    "tests/contracts/catalog-fatia1-migration.test.ts",
+  ],
 };
 for (const migration of additions) {
   const version = migration.version;

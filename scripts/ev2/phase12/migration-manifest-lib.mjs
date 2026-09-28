@@ -130,6 +130,11 @@ export const G12_PINNED_MIGRATION_TAIL = Object.freeze([
     file: "0106_cms_blog_taxonomy_terminal_cleanup.sql",
     sha256: "ea74418d601472563e3a321bf4c7560a21322e92f7c5b01c9188d6edfeba3b1e",
   }),
+  Object.freeze({
+    version: "0107",
+    file: "0107_catalog_fatia_1_foundation.sql",
+    sha256: "059ed035cebe10bf1e1bc49bbe9591f2085d525bc4b414b2df62625ba91c28ac",
+  }),
 ]);
 
 export const CMS_MEDIA_UPLOAD_ABORT_0082_RPCS = Object.freeze([

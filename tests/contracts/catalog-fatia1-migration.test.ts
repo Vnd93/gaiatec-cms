@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const migration = readFileSync("supabase/migrations/20260928123338_catalog_fatia_1_foundation.sql", "utf8");
+const migration = readFileSync("supabase/migrations/0107_catalog_fatia_1_foundation.sql", "utf8");
 const pgTap = readFileSync("supabase/tests/rls_catalog_fatia1_foundation.test.sql", "utf8");
 
 describe("catalog slice 1 foundation", () => {

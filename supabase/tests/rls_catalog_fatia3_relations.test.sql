@@ -56,11 +56,21 @@ select ok(
   'relation kind constraint exists'
 );
 select ok(
-  exists (select 1 from pg_constraint where conname = 'cms_catalog_product_relation_revisions_source_product_id_check'),
+  exists (
+    select 1
+    from pg_constraint
+    where conrelid = 'public.cms_catalog_product_relation_revisions'::regclass
+      and position('source_product_id <> target_product_id' in pg_get_constraintdef(oid)) > 0
+  ),
   'self relation check exists'
 );
 select ok(
-  exists (select 1 from pg_constraint where conname = 'cms_catalog_product_hierarchy_revisions_child_product_id_check'),
+  exists (
+    select 1
+    from pg_constraint
+    where conrelid = 'public.cms_catalog_product_hierarchy_revisions'::regclass
+      and position('child_product_id <> parent_product_id' in pg_get_constraintdef(oid)) > 0
+  ),
   'self hierarchy check exists'
 );
 select ok(

@@ -1,10 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const migration = readFileSync(
-  "supabase/migrations/20260928123338_catalog_fatia_1_foundation.sql",
-  "utf8",
-);
+const migration = readFileSync("supabase/migrations/20260928123338_catalog_fatia_1_foundation.sql", "utf8");
 const pgTap = readFileSync("supabase/tests/rls_catalog_fatia1_foundation.test.sql", "utf8");
 
 describe("catalog slice 1 foundation", () => {
@@ -21,7 +18,9 @@ describe("catalog slice 1 foundation", () => {
   });
 
   it("keeps commercial fields out and protects mutations", () => {
-    expect(migration).toContain("not (content ?| array['sku', 'price', 'stock', 'inventory', 'availability'])");
+    expect(migration).toContain(
+      "not (content ?| array['sku', 'price', 'stock', 'inventory', 'availability'])",
+    );
     expect(migration).toContain("CMS_CATALOG_REVISION_CONFLICT");
     expect(migration).toContain("CMS_CATALOG_TAXONOMY_CYCLE");
     expect(migration).toContain("CMS_CATALOG_TAXONOMY_PARENT_TYPE_MISMATCH");

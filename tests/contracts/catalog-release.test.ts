@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   CATALOG_USER_CONFIRMED_PROVISIONAL_ORDERS,
   CatalogNominalProductSchema,
+  CatalogProductRelationSchema,
+  CatalogEffectiveRelationSchema,
+  selectEffectiveCatalogRelations,
   CatalogPublicSnapshotSchema,
   isUserConfirmedProvisionalCatalogOrder,
   isCatalogFeatureEnabled,
@@ -92,5 +95,63 @@ describe("catalog release governance", () => {
     expect(CatalogPublicSnapshotSchema.safeParse({ ...base, content: { price: 1 } }).success).toBe(false);
     expect(CatalogPublicSnapshotSchema.safeParse({ ...base, cta: "Comprar" }).success).toBe(false);
     expect(CatalogPublicSnapshotSchema.safeParse({ ...base, Offer: {} }).success).toBe(false);
+  });
+
+  it("enforces CAT-D006 composition quantities and controlled units", () => {
+    const base = {
+      schemaVersion: 1 as const,
+      relationKey: "b0000000-0000-4000-8000-000000000201",
+      revision: 1,
+      sourceProductId: "b0000000-0000-4000-8000-000000000202",
+      targetProductId: "b0000000-0000-4000-8000-000000000203",
+      sourceEntityKind: "kit" as const,
+      targetEntityKind: "product" as const,
+      relationKind: "required_component" as const,
+      quantity: 2,
+      unitCode: "un" as const,
+      status: "active" as const,
+    };
+    expect(CatalogProductRelationSchema.safeParse(base).success).toBe(true);
+    expect(CatalogProductRelationSchema.safeParse({ ...base, quantity: null }).success).toBe(false);
+    expect(CatalogProductRelationSchema.safeParse({ ...base, unitCode: "dozen" }).success).toBe(false);
+    expect(
+      CatalogProductRelationSchema.safeParse({
+        ...base,
+        relationKind: "compatible",
+        quantity: 1,
+        unitCode: "un",
+      }).success,
+    ).toBe(false);
+    expect(CatalogProductRelationSchema.safeParse({ ...base, targetEntityKind: "kit" }).success).toBe(false);
+  });
+
+  it("resolves CAT-D006 direct and local-exclusion precedence with origin", () => {
+    const common = {
+      schemaVersion: 1 as const,
+      relationKey: "b0000000-0000-4000-8000-000000000211",
+      revision: 1,
+      sourceProductId: "b0000000-0000-4000-8000-000000000212",
+      targetProductId: "b0000000-0000-4000-8000-000000000213",
+      sourceEntityKind: "product" as const,
+      targetEntityKind: "product" as const,
+      relationKind: "compatible" as const,
+      quantity: null,
+      unitCode: null,
+      status: "active" as const,
+      subjectProductId: "b0000000-0000-4000-8000-000000000214",
+      relationOriginProductId: "b0000000-0000-4000-8000-000000000215",
+      relationOriginLevel: 1,
+      isLocalExclusion: false,
+    };
+    const inherited = CatalogEffectiveRelationSchema.parse(common);
+    const direct = CatalogEffectiveRelationSchema.parse({
+      ...common,
+      relationKey: "b0000000-0000-4000-8000-000000000216",
+      relationOriginProductId: common.subjectProductId,
+      relationOriginLevel: 0,
+      isLocalExclusion: true,
+      relationKind: "local_exclusion",
+    });
+    expect(selectEffectiveCatalogRelations([inherited, direct])).toEqual([direct]);
   });
 });

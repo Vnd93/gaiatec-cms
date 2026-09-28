@@ -27,6 +27,80 @@ export const CatalogWaveSchema = z.enum([
 
 export const CatalogPublicationStateSchema = z.enum(["draft", "ready", "published"]);
 
+export const CatalogEntityKindSchema = z.enum(["product", "model", "variant", "kit"]);
+
+export const CatalogRelationKindSchema = z.enum([
+  "contains",
+  "required_component",
+  "optional_component",
+  "accessory",
+  "compatible",
+  "alternative",
+  "substitutes",
+  "successor",
+  "local_exclusion",
+]);
+
+export const CatalogCompositionUnitSchema = z.enum(["un", "set", "g", "kg", "ml", "l", "mm", "cm", "m"]);
+
+const CATALOG_COMPOSITION_RELATIONS = new Set(["contains", "required_component", "optional_component"]);
+
+export const CatalogProductRelationSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    relationKey: z.uuid(),
+    revision: z.number().int().positive(),
+    sourceProductId: z.uuid(),
+    targetProductId: z.uuid(),
+    sourceEntityKind: CatalogEntityKindSchema,
+    targetEntityKind: CatalogEntityKindSchema,
+    relationKind: CatalogRelationKindSchema,
+    quantity: z.number().positive().nullable(),
+    unitCode: CatalogCompositionUnitSchema.nullable(),
+    status: z.enum(["active", "retracted"]),
+  })
+  .strict()
+  .superRefine((relation, context) => {
+    if (relation.sourceProductId === relation.targetProductId) {
+      context.addIssue({
+        code: "custom",
+        path: ["targetProductId"],
+        message: "self-relations are not allowed",
+      });
+    }
+    const isComposition = CATALOG_COMPOSITION_RELATIONS.has(relation.relationKind);
+    if (isComposition && (relation.quantity === null || relation.unitCode === null)) {
+      context.addIssue({
+        code: "custom",
+        path: ["quantity"],
+        message: "composition relations require positive quantity and controlled unit",
+      });
+    }
+    if (!isComposition && (relation.quantity !== null || relation.unitCode !== null)) {
+      context.addIssue({
+        code: "custom",
+        path: ["quantity"],
+        message: "non-composition relations cannot carry quantity or unit",
+      });
+    }
+    if (relation.sourceEntityKind === "kit" && relation.targetEntityKind === "kit") {
+      context.addIssue({
+        code: "custom",
+        path: ["targetEntityKind"],
+        message: "nested kits are not allowed",
+      });
+    }
+  });
+
+export const CatalogEffectiveRelationSchema = CatalogProductRelationSchema.and(
+  z.object({
+    subjectProductId: z.uuid(),
+    relationOriginProductId: z.uuid(),
+    relationOriginLevel: z.number().int().min(0).max(2),
+    isLocalExclusion: z.boolean(),
+  }),
+);
+
 const CATALOG_COMMERCIAL_KEYS = new Set(["sku", "price", "stock", "inventory", "availability", "Offer"]);
 
 export const CatalogPublicSnapshotSchema = z
@@ -121,6 +195,40 @@ export type CatalogNominalProduct = z.infer<typeof CatalogNominalProductSchema>;
 export type CatalogPublicationState = z.infer<typeof CatalogPublicationStateSchema>;
 export type CatalogPublicSnapshot = z.infer<typeof CatalogPublicSnapshotSchema>;
 export type CatalogPublicationOutboxEvent = z.infer<typeof CatalogPublicationOutboxEventSchema>;
+export type CatalogEntityKind = z.infer<typeof CatalogEntityKindSchema>;
+export type CatalogRelationKind = z.infer<typeof CatalogRelationKindSchema>;
+export type CatalogCompositionUnit = z.infer<typeof CatalogCompositionUnitSchema>;
+export type CatalogProductRelation = z.infer<typeof CatalogProductRelationSchema>;
+export type CatalogEffectiveRelation = z.infer<typeof CatalogEffectiveRelationSchema>;
+
+/**
+ * Resolves the CAT-D006 precedence contract without performing I/O:
+ * direct beats inherited, and a local exclusion beats an inclusion at the
+ * same level. The origin is retained for the operator/API response.
+ */
+export function selectEffectiveCatalogRelations(
+  candidates: CatalogEffectiveRelation[],
+): CatalogEffectiveRelation[] {
+  const selected = new Map<string, CatalogEffectiveRelation>();
+  for (const candidate of candidates) {
+    const key = `${candidate.subjectProductId}:${candidate.targetProductId}`;
+    const current = selected.get(key);
+    if (
+      !current ||
+      candidate.relationOriginLevel < current.relationOriginLevel ||
+      (candidate.relationOriginLevel === current.relationOriginLevel &&
+        candidate.isLocalExclusion &&
+        !current.isLocalExclusion)
+    ) {
+      selected.set(key, candidate);
+    }
+  }
+  return [...selected.values()].sort((left, right) =>
+    `${left.subjectProductId}:${left.targetProductId}`.localeCompare(
+      `${right.subjectProductId}:${right.targetProductId}`,
+    ),
+  );
+}
 
 /** Ambiguous or mixed changes always receive the broadest gate set. */
 export function selectCatalogReleaseProfile(changeClass: CatalogChangeClass): CatalogReleaseProfile {

@@ -140,6 +140,11 @@ export const G12_PINNED_MIGRATION_TAIL = Object.freeze([
     file: "0108_catalog_fatia_2_publication.sql",
     sha256: "ef1b6e83aaf0c257eaa3602c0dabc14ff440d21bd3af1aef8a3d732afeef7b01",
   }),
+  Object.freeze({
+    version: "0109",
+    file: "0109_catalog_fatia_3_relations.sql",
+    sha256: "921e9cfcf4a6947a656a17768ac04fbc67db851e39099d50abc9ed5a9178084d",
+  }),
 ]);
 
 export const CMS_MEDIA_UPLOAD_ABORT_0082_RPCS = Object.freeze([

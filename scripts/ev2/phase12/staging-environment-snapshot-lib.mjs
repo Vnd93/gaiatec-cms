@@ -7,7 +7,8 @@ import { dirname, parse, relative, resolve, sep } from "node:path";
 const FULL_SHA = /^[a-f0-9]{40}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
-const MIGRATION_VERSION = /^\d{8,20}$/;
+const MIGRATION_VERSION = /^(?:\d{4}|\d{8,20})$/;
+const LEGACY_MIGRATION_VERSION = /^\d{4}$/;
 const MIGRATION_TIME = /^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z| ?UTC)?)?$/;
 const FUNCTION_NAME = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 const MAX_INPUT_BYTES = 4 * 1024 * 1024;
@@ -123,6 +124,27 @@ function compareMigration(left, right) {
   return canonicalValue(migrationBase(left)).localeCompare(canonicalValue(migrationBase(right)));
 }
 
+function migrationCell(value) {
+  const trimmed = value.trim();
+  // CLI 2.116.0 text tables wrap cells, including the blank side of a pending row, in backticks.
+  // Unwrap exactly one complete pair; malformed or nested quoting still fails row validation.
+  const quoted = /^`([^`]*)`$/.exec(trimmed);
+  return quoted ? quoted[1].trim() : trimmed;
+}
+
+function validMigrationTime({ localVersion, remoteVersion, timeUtc }) {
+  if (timeUtc === null) return true;
+  if (typeof timeUtc !== "string") return false;
+  if (MIGRATION_TIME.test(timeUtc)) return true;
+  // Four-digit repository versions are not timestamps. The pinned CLI repeats that exact
+  // version in Time (UTC); accepting a different identity would conceal an ambiguous snapshot.
+  return (
+    LEGACY_MIGRATION_VERSION.test(timeUtc) &&
+    timeUtc === (localVersion ?? remoteVersion) &&
+    (localVersion === null || remoteVersion === null || localVersion === remoteVersion)
+  );
+}
+
 export function parseLinkedMigrationList(output) {
   assertBoundedText(output, "migration_output");
   const lines = output
@@ -137,7 +159,7 @@ export function parseLinkedMigrationList(output) {
 
   for (const line of lines) {
     if (/^[-+|─┼\s]+$/.test(line)) continue;
-    let parts = line.split(/[|│]/).map((part) => part.trim());
+    let parts = line.split(/[|│]/).map(migrationCell);
     if (parts.length === 5 && parts[0] === "" && parts.at(-1) === "") parts = parts.slice(1, -1);
     if (parts.length !== 3)
       throw new Error("G12_STAGING_ENVIRONMENT_SNAPSHOT_REFUSED:migration_output_unrecognized");
@@ -158,7 +180,7 @@ export function parseLinkedMigrationList(output) {
       (!localVersion && !remoteVersion) ||
       (localVersion && !MIGRATION_VERSION.test(localVersion)) ||
       (remoteVersion && !MIGRATION_VERSION.test(remoteVersion)) ||
-      (timeUtc && !MIGRATION_TIME.test(timeUtc))
+      !validMigrationTime({ localVersion, remoteVersion, timeUtc })
     ) {
       throw new Error("G12_STAGING_ENVIRONMENT_SNAPSHOT_REFUSED:migration_row_invalid");
     }
@@ -318,7 +340,7 @@ function evaluateMigrationInventory(value, violations) {
         (typeof base.localVersion !== "string" || !MIGRATION_VERSION.test(base.localVersion))) ||
       (base.remoteVersion !== null &&
         (typeof base.remoteVersion !== "string" || !MIGRATION_VERSION.test(base.remoteVersion))) ||
-      (base.timeUtc !== null && (typeof base.timeUtc !== "string" || !MIGRATION_TIME.test(base.timeUtc)))
+      !validMigrationTime(base)
     ) {
       violations.push("migration_entry_invalid");
     }

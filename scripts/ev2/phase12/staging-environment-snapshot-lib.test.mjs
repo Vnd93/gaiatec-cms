@@ -30,6 +30,15 @@ const migrationOutput = `
                  | 20260902000000 | 2026-09-02 00:00:00
   20260903000000 |                | 2026-09-03 00:00:00
 `;
+// Sanitized CLI 2.116.0 text shape observed against the real staging migration inventory.
+const legacyMigrationOutput = [
+  "   Local  | Remote | Time (UTC) ",
+  "  --------|--------|------------",
+  "   `0001` | `0001` | `0001`     ",
+  "   `0105` | `0105` | `0105`     ",
+  "   `0106` | ` `    | `0106`     ",
+  "   ` `    | `0107` | `0107`     ",
+].join("\n");
 const functionsOutput = JSON.stringify([
   { name: "cms-system", status: "ACTIVE", version: 8, verify_jwt: true, ignored: "safe" },
   { slug: "cms-public", status: "active", version: "7", verify_jwt: false },
@@ -44,7 +53,7 @@ function expected() {
   };
 }
 
-async function fixture(context) {
+async function fixture(context, migrations = migrationOutput) {
   const root = await mkdtemp(join(tmpdir(), "g12-staging-environment-snapshot-"));
   context.after(() => rm(root, { recursive: true, force: true }));
   const outputPath = join(root, "snapshot.json");
@@ -52,7 +61,7 @@ async function fixture(context) {
   const runCommand = (arguments_) => {
     calls.push(arguments_);
     if (arguments_[0] === "--version") return "2.116.0\n";
-    if (arguments_[0] === "migration") return migrationOutput;
+    if (arguments_[0] === "migration") return migrations;
     if (arguments_[0] === "functions") return functionsOutput;
     throw new Error("unexpected command");
   };
@@ -86,6 +95,64 @@ test("migration parser fails closed on banners, ANSI, duplicates and malformed r
     assert.throws(() => parseLinkedMigrationList(value), /STAGING_ENVIRONMENT_SNAPSHOT_REFUSED/);
 });
 
+test("migration parser preserves four-digit identities in the pinned CLI's quoted text table", () => {
+  const parsed = parseLinkedMigrationList(legacyMigrationOutput.replaceAll("\n", "\r\n"));
+  assert.deepEqual(parsed, parseLinkedMigrationList(legacyMigrationOutput.replaceAll("`", "")));
+  assert.deepEqual(
+    parsed.map(({ localVersion, remoteVersion, timeUtc }) => ({ localVersion, remoteVersion, timeUtc })),
+    [
+      { localVersion: "0001", remoteVersion: "0001", timeUtc: "0001" },
+      { localVersion: "0105", remoteVersion: "0105", timeUtc: "0105" },
+      { localVersion: "0106", remoteVersion: null, timeUtc: "0106" },
+      { localVersion: null, remoteVersion: "0107", timeUtc: "0107" },
+    ],
+  );
+  const timestamp = migrationOutput.replaceAll("20260901000000", "`20260901000000`");
+  assert.deepEqual(parseLinkedMigrationList(timestamp), parseLinkedMigrationList(migrationOutput));
+});
+
+test("legacy table compatibility does not accept ambiguous identities, quoting or time cells", () => {
+  const rows = [
+    "0105 | 0105 | 0106",
+    "0105 | 0106 | 0105",
+    " | 0105 | 0106",
+    "0105 | | 0000",
+    " | | 0105",
+    "105 | 105 | 105",
+    "00105 | 00105 | 00105",
+    "20260901000000 | | 20260901000000",
+    "`0105 | 0105 | 0105",
+    "0105` | 0105 | 0105",
+    "``0105`` | 0105 | 0105",
+    "`0105`extra | 0105 | 0105",
+    "0105 | 0105 | `opaque`",
+  ];
+  for (const row of rows)
+    assert.throws(
+      () => parseLinkedMigrationList(`Local | Remote | Time (UTC)\n${row}`),
+      /migration_row_invalid/,
+      row,
+    );
+  assert.throws(
+    () => parseLinkedMigrationList(`${legacyMigrationOutput}\n0105 | 0105 | 0105`),
+    /migration_row_duplicate/,
+  );
+});
+
+test("legacy migration snapshots round-trip with the same hash and strict verifier", async (context) => {
+  const { outputPath, snapshot, snapshotSha256 } = await fixture(context, legacyMigrationOutput);
+  const verified = await verifyStagingEnvironmentSnapshot({ snapshotPath: outputPath, expected: expected() });
+  assert.equal(verified.snapshotSha256, snapshotSha256);
+  assert.deepEqual(verified.snapshot.supabase.migrations, snapshot.supabase.migrations);
+  for (const timeUtc of ["0106", "`0105`", "opaque", 105]) {
+    const changed = structuredClone(snapshot);
+    changed.supabase.migrations.entries[1].timeUtc = timeUtc;
+    assert.ok(
+      evaluateStagingEnvironmentSnapshot(changed, expected()).violations.includes("migration_entry_invalid"),
+    );
+  }
+});
+
 test("function parser emits only sorted credential-free remote identity fields", () => {
   const parsed = parseSupabaseFunctionList(functionsOutput);
   assert.deepEqual(
@@ -116,8 +183,8 @@ test("capture pins Supabase 2.116.0 and uses only the documented read-only comma
   const { calls, outputPath, snapshot, snapshotSha256 } = await fixture(context);
   assert.deepEqual(calls, [
     ["--version"],
-    [...STAGING_ENVIRONMENT_SNAPSHOT.migrationCommand],
-    [...STAGING_ENVIRONMENT_SNAPSHOT.functionsCommand],
+    ["migration", "list", "--linked", "--project-ref", "glcqsosxwgmlhzgcsnzv", "--output-format", "text"],
+    ["functions", "list", "--project-ref", "glcqsosxwgmlhzgcsnzv", "--output", "json"],
   ]);
   const content = await readFile(outputPath, "utf8");
   assert.equal(content, canonicalStagingEnvironmentSnapshot(snapshot));

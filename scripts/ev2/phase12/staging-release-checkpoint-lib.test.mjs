@@ -1,9 +1,16 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { createReleaseCheckpoint } from "./release-checkpoint-lib.mjs";
+import {
+  createBootstrapReleaseCheckpointPolicyBytes,
+  createBootstrapReleaseGateMatrixBytes,
+} from "./release-profile-lib.mjs";
 import { buildStagingDeployRecoveryState } from "./staging-deploy-recovery-state-lib.mjs";
 import {
   readStagingReleaseCheckpointControls,
@@ -96,10 +103,187 @@ async function fixture(root) {
   return { paths, controls };
 }
 
+async function bootstrapFixture(root) {
+  const { paths } = await fixture(root);
+  const matrixBytes = createBootstrapReleaseGateMatrixBytes();
+  const policyBytes = createBootstrapReleaseCheckpointPolicyBytes();
+  await writeFile(paths.controlMatrix, matrixBytes);
+  await writeFile(paths.controlPolicy, policyBytes);
+  const options = {
+    candidateMatrixPath: paths.candidateMatrix,
+    controlMatrixPath: paths.controlMatrix,
+    candidatePolicyPath: paths.candidatePolicy,
+    controlPolicyPath: paths.controlPolicy,
+    profile: "full-release",
+    expectedMatrixSha256: createHash("sha256").update(matrixBytes).digest("hex"),
+    expectedPolicySha256: createHash("sha256").update(policyBytes).digest("hex"),
+  };
+  return { paths, options, controls: await readStagingReleaseCheckpointControls(options) };
+}
+
+test("exact CI bootstrap controls bind a full release without caching any gate or extending TTL", async (context) => {
+  const root = await mkdtemp(join(tmpdir(), "g12-bootstrap-checkpoint-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const { paths, controls } = await bootstrapFixture(root);
+  assert.equal(controls.reuseMode, "bootstrap-no-reuse");
+  assert.deepEqual(controls.reusableGates, []);
+  assert.equal(controls.policy.reusableGates["artifact-seal"].maximumAgeSeconds, 1);
+  const written = await writeStagingReleaseCheckpoint({
+    statePath: paths.state,
+    outputPath: paths.checkpoint,
+    controls,
+    createdAt: "2026-09-22T11:00:00.000Z",
+  });
+  assert.deepEqual(written.checkpoint.gates, []);
+  assert.equal(written.checkpoint.matrixSha256, controls.matrixSha256);
+  assert.equal(written.checkpoint.policySha256, controls.policySha256);
+  const verify = () =>
+    verifyStagingReleaseCheckpoint({
+      statePath: paths.state,
+      checkpointPath: paths.checkpoint,
+      controls,
+      now: "2026-09-22T11:01:00.000Z",
+    });
+  const verified = await verify();
+  assert.equal(verified.evaluation.bindingMatches, true);
+  assert.deepEqual(verified.evaluation.reusable, []);
+  assert.equal(verified.evaluation.mutationGatesReused, false);
+  for (const mutate of [
+    (value) => {
+      value.candidateRelease = value.original.release = "9".repeat(40);
+      value.source.name = `staging-frontend-${value.candidateRelease}-35347256000-1`;
+      value.browserRecovery.runTag = "QA-CMS-FINAL-20260922-99999999";
+    },
+    (value) => (value.source.artifactId = "987654322"),
+    (value) => (value.source.digest = `sha256:${"9".repeat(64)}`),
+    (value) => (value.source.gateCiRunAttempt = 3),
+    (value) => (value.dist.archiveSha256 = "9".repeat(64)),
+    (value) => (value.dist.treeSha256 = "9".repeat(64)),
+    (value) => (value.original.deploymentId = "223e4567-e89b-42d3-a456-426614174000"),
+    (value) => (value.environmentSnapshot.sha256 = "9".repeat(64)),
+    (value) => (value.edgeBaseline.manifestSha256 = "9".repeat(64)),
+  ]) {
+    const changed = state();
+    mutate(changed);
+    await writeFile(paths.state, `${JSON.stringify(changed)}\n`);
+    await assert.rejects(verify, /REUSE_REFUSED/u);
+  }
+  await writeFile(paths.state, `${JSON.stringify(state())}\n`);
+  for (const field of ["profile", "matrixSha256", "policySha256"]) {
+    await writeFile(
+      paths.checkpoint,
+      JSON.stringify({
+        ...written.checkpoint,
+        [field]: field === "profile" ? "frontend-only" : "9".repeat(64),
+      }),
+    );
+    await assert.rejects(verify, /REUSE_REFUSED/u);
+  }
+  // Even a valid, freshly completed artifact gate cannot be smuggled into bootstrap reuse.
+  const injected = createReleaseCheckpoint({
+    policy: controls.policy,
+    context: written.context,
+    createdAt: "2026-09-22T11:01:00.000Z",
+    gateNames: ["artifact-seal", "immutable-provenance"],
+  });
+  await writeFile(paths.checkpoint, JSON.stringify(injected));
+  await assert.rejects(verify, /REUSE_REFUSED/u);
+});
+
+test("bootstrap refuses narrower profiles, missing or wrong digests and modified or mixed control bytes", async (context) => {
+  const root = await mkdtemp(join(tmpdir(), "g12-bootstrap-controls-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const { paths, options } = await bootstrapFixture(root);
+  for (const profile of ["frontend-only", "edge-only", "database-auth"]) {
+    await assert.rejects(
+      () => readStagingReleaseCheckpointControls({ ...options, profile }),
+      /PROFILE_REFUSED/u,
+    );
+  }
+  for (const field of ["expectedMatrixSha256", "expectedPolicySha256"]) {
+    for (const value of ["", "9".repeat(64)]) {
+      await assert.rejects(
+        () => readStagingReleaseCheckpointControls({ ...options, [field]: value }),
+        /CONTROL_DIGEST_MISMATCH/u,
+      );
+    }
+  }
+  for (const [path, original, candidatePath] of [
+    [paths.controlMatrix, createBootstrapReleaseGateMatrixBytes(), paths.candidateMatrix],
+    [paths.controlPolicy, createBootstrapReleaseCheckpointPolicyBytes(), paths.candidatePolicy],
+  ]) {
+    for (const changed of [Buffer.concat([original, Buffer.from("\n")]), await readFile(candidatePath)]) {
+      await writeFile(path, changed);
+      await assert.rejects(() => readStagingReleaseCheckpointControls(options), /CONTROL_BYTES_MISMATCH/u);
+    }
+    await writeFile(path, original);
+  }
+  await writeFile(paths.candidatePolicy, "{}");
+  await assert.rejects(() => readStagingReleaseCheckpointControls(options), /policy schema is invalid/u);
+});
+
+test("bootstrap writer and verifier CLIs expose an explicit no-reuse boundary with the real control-byte mismatch", async (context) => {
+  const root = await mkdtemp(join(tmpdir(), "g12-bootstrap-cli-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const { paths, options } = await bootstrapFixture(root);
+  const common = [
+    "--state",
+    paths.state,
+    "--candidate-matrix",
+    paths.candidateMatrix,
+    "--control-matrix",
+    paths.controlMatrix,
+    "--candidate-policy",
+    paths.candidatePolicy,
+    "--control-policy",
+    paths.controlPolicy,
+    "--profile",
+    "full-release",
+    "--expected-matrix-sha256",
+    options.expectedMatrixSha256,
+    "--expected-policy-sha256",
+    options.expectedPolicySha256,
+  ];
+  const writerOutput = join(root, "writer-output");
+  const verifierOutput = join(root, "verifier-output");
+  execFileSync(
+    process.execPath,
+    [
+      "scripts/ev2/phase12/write-staging-release-checkpoint.mjs",
+      ...common,
+      "--output",
+      paths.checkpoint,
+      "--created-at",
+      "2026-09-22T11:00:00.000Z",
+    ],
+    { env: { ...process.env, GITHUB_OUTPUT: writerOutput }, windowsHide: true },
+  );
+  execFileSync(
+    process.execPath,
+    [
+      "scripts/ev2/phase12/verify-staging-release-checkpoint.mjs",
+      ...common,
+      "--checkpoint",
+      paths.checkpoint,
+      "--now",
+      "2026-09-22T11:01:00.000Z",
+    ],
+    { env: { ...process.env, GITHUB_OUTPUT: verifierOutput }, windowsHide: true },
+  );
+  const output = await readFile(verifierOutput, "utf8");
+  assert.match(output, /^verified=true$/m);
+  assert.match(output, /^reuse_mode=bootstrap-no-reuse$/m);
+  assert.match(output, /^reusable_gates=$/m);
+  assert.match(output, /^mutation_gates_reused=false$/m);
+  assert.match(output, new RegExp(`^candidate_sha=${candidateSha}$`, "m"));
+  assert.match(output, new RegExp(`^matrix_sha256=${options.expectedMatrixSha256}$`, "m"));
+});
+
 test("state v4 produces a durable full-context checkpoint with only two reusable artifact gates", async (context) => {
   const root = await mkdtemp(join(tmpdir(), "g12-staging-checkpoint-"));
   context.after(() => rm(root, { recursive: true, force: true }));
   const { paths, controls } = await fixture(root);
+  assert.equal(controls.reuseMode, "artifact-only");
   const written = await writeStagingReleaseCheckpoint({
     statePath: paths.state,
     outputPath: paths.checkpoint,

@@ -837,6 +837,7 @@ jobs:
           REMOTE_EDGE_BASELINE_MANIFEST_SHA256: ${{ steps.staging_recovery_remote.outputs.edge_baseline_manifest_sha256 }}
           CHECKPOINT_VERIFIED: ${{ steps.staging_release_checkpoint_remote.outputs.verified }}
           CHECKPOINT_BINDING_MATCHES: ${{ steps.staging_release_checkpoint_remote.outputs.binding_matches }}
+          CHECKPOINT_REUSE_MODE: ${{ steps.staging_release_checkpoint_remote.outputs.reuse_mode }}
           CHECKPOINT_REUSABLE_GATES: ${{ steps.staging_release_checkpoint_remote.outputs.reusable_gates }}
           CHECKPOINT_MUTATION_GATES_REUSED: ${{ steps.staging_release_checkpoint_remote.outputs.mutation_gates_reused }}
           CHECKPOINT_CANDIDATE_SHA: ${{ steps.staging_release_checkpoint_remote.outputs.candidate_sha }}
@@ -879,7 +880,14 @@ jobs:
           test "$EDGE_BASELINE_MANIFEST_SHA256" = "$REMOTE_EDGE_BASELINE_MANIFEST_SHA256"
           test "$CHECKPOINT_VERIFIED" = true
           test "$CHECKPOINT_BINDING_MATCHES" = true
-          test "$CHECKPOINT_REUSABLE_GATES" = artifact-seal,immutable-provenance
+          case "$CHECKPOINT_REUSE_MODE" in
+            artifact-only) test "$CHECKPOINT_REUSABLE_GATES" = artifact-seal,immutable-provenance ;;
+            bootstrap-no-reuse)
+              test "$CHECKPOINT_PROFILE" = full-release
+              test -z "$CHECKPOINT_REUSABLE_GATES"
+              ;;
+            *) echo "::error::Unknown staging checkpoint reuse mode."; exit 1 ;;
+          esac
           test "$CHECKPOINT_MUTATION_GATES_REUSED" = false
           test "$CHECKPOINT_CANDIDATE_SHA" = "$CANDIDATE_SHA"
           test "$CHECKPOINT_ARTIFACT_ID" = "$SOURCE_ARTIFACT_ID"

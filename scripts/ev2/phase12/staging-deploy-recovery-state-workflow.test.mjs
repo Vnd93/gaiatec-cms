@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
@@ -23,6 +24,45 @@ function workflowStep(source, name) {
 }
 
 const step = (name) => workflowStep(watchdog, name);
+
+test("the runner mutation boundary accepts only exact artifact reuse or full bootstrap with no cache", (context) => {
+  if (process.platform === "win32") {
+    context.skip("the staging Bash boundary is exercised on the Linux CI runner");
+    return;
+  }
+  const boundary = workflowStep(
+    deploy,
+    "Arm staging mutation only after every durable recovery proof exists",
+  );
+  const selection = boundary.match(/case "\$CHECKPOINT_REUSE_MODE" in[\s\S]*?esac/);
+  assert.ok(selection, "explicit checkpoint mode selection is mandatory");
+  for (const [mode, profile, gates, accepted] of [
+    ["artifact-only", "full-release", "artifact-seal,immutable-provenance", true],
+    ["bootstrap-no-reuse", "full-release", "", true],
+    ["bootstrap-no-reuse", "frontend-only", "", false],
+    ["bootstrap-no-reuse", "full-release", "artifact-seal,immutable-provenance", false],
+    ["artifact-only", "full-release", "", false],
+    ["artifact-only", "full-release", "artifact-seal", false],
+    ["", "full-release", "", false],
+    ["unknown", "full-release", "", false],
+  ]) {
+    const result = spawnSync("bash", ["-euo", "pipefail", "-c", selection[0]], {
+      env: {
+        ...process.env,
+        CHECKPOINT_REUSE_MODE: mode,
+        CHECKPOINT_PROFILE: profile,
+        CHECKPOINT_REUSABLE_GATES: gates,
+      },
+      encoding: "utf8",
+    });
+    assert.ifError(result.error);
+    assert.equal(
+      result.status === 0,
+      accepted,
+      JSON.stringify({ mode, profile, gates, stderr: result.stderr }),
+    );
+  }
+});
 
 test("watchdog validates v4 state with the reusable fail-closed verifier", () => {
   const validation = step("Validate incomplete-run state and immutable ancestry");
@@ -391,6 +431,7 @@ test("deploy persists and reverifies the full-context checkpoint bundle before t
   for (const output of [
     "verified",
     "binding_matches",
+    "reuse_mode",
     "reusable_gates",
     "mutation_gates_reused",
     "candidate_sha",
@@ -408,6 +449,14 @@ test("deploy persists and reverifies the full-context checkpoint bundle before t
     assert.match(boundary, new RegExp(`steps\\.staging_release_checkpoint_remote\\.outputs\\.${output}`));
   }
   assert.match(boundary, /test "\$CHECKPOINT_REUSABLE_GATES" = artifact-seal,immutable-provenance/);
+  assert.match(boundary, /case "\$CHECKPOINT_REUSE_MODE" in/);
+  assert.match(
+    boundary,
+    /bootstrap-no-reuse\)\s+test "\$CHECKPOINT_PROFILE" = full-release\s+test -z "\$CHECKPOINT_REUSABLE_GATES"/,
+  );
+  assert.match(boundary, /Unknown staging checkpoint reuse mode[\s\S]*?exit 1/);
+  assert.match(checkpointVerifier, /reuse_mode=\$\{controls\.reuseMode\}/);
+  assert.doesNotMatch(checkpointVerifier, /"reusable_gates=artifact-seal,immutable-provenance"/);
   assert.match(boundary, /test "\$CHECKPOINT_MUTATION_GATES_REUSED" = false/);
   for (const binding of [
     "CANDIDATE_SHA",

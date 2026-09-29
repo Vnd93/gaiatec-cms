@@ -607,7 +607,7 @@ test("both candidate workflows propagate the exact projected lock evidence into 
   assert.doesNotMatch(runner, /"DENO_LOCK_SHA256"/);
 });
 
-test("CI executes the real hardened Docker bundle twice and seals the result", () => {
+test("CI preserves the pinned historical regression and independently proves the current candidate", () => {
   const jobStart = ciWorkflow.indexOf("  hotfix-bundle-smoke:");
   const databaseStart = ciWorkflow.indexOf("\n  database:", jobStart);
   assert.notEqual(jobStart, -1, "missing hotfix-bundle-smoke job");
@@ -618,6 +618,10 @@ test("CI executes the real hardened Docker bundle twice and seals the result", (
   assert.match(job, /- name: Checkout the exact CI candidate for the Docker smoke/);
   assert.match(job, /ref: \$\{\{ github\.sha \}\}/);
   assert.doesNotMatch(job, /ref: \$\{\{ env\.HOTFIX_SHA \}\}/);
+  assert.match(job, /ref: e40eb0c2cc81c27fbf8f23e8671136f9dfc6f282/);
+  assert.match(job, /path: historical-hotfix-source/);
+  assert.match(job, /--source \.\.\/historical-hotfix-source\s+--output \.\.\/bundle-input/);
+  assert.match(job, /prepare-all-edge-runtime-smoke-input\.mjs\s+--source \.\.\/candidate-source/);
   assert.equal(exactEnvValue(mainWorkflow, "HOTFIX_SHA"), "e40eb0c2cc81c27fbf8f23e8671136f9dfc6f282");
   for (const [key, immutableValue] of Object.entries({
     EDGE_RUNTIME_IMAGE:
@@ -637,11 +641,11 @@ test("CI executes the real hardened Docker bundle twice and seals the result", (
     "Cold-boot the exact Docker smoke candidate without external egress",
     "Seal the byte-identical Docker smoke builds",
   ]);
-  assert.equal((job.match(/--user "\$\(id -u\):\$\(id -g\)"/g) ?? []).length, 3);
-  assert.equal((job.match(/--cap-drop ALL --security-opt no-new-privileges/g) ?? []).length, 3);
-  assert.equal((job.match(/--env HOME=\/tmp --env DENO_DIR=\/deno-cache/g) ?? []).length, 3);
-  assert.equal((job.match(/--env JSR_URL=https:\/\/jsr\.io\//g) ?? []).length, 3);
-  assert.equal((job.match(/--network bridge/g) ?? []).length, 3);
+  assert.equal((job.match(/--user "\$\(id -u\):\$\(id -g\)"/g) ?? []).length, 4);
+  assert.equal((job.match(/--cap-drop ALL --security-opt no-new-privileges/g) ?? []).length, 4);
+  assert.equal((job.match(/--env HOME=\/tmp --env DENO_DIR=\/deno-cache/g) ?? []).length, 4);
+  assert.equal((job.match(/--env JSR_URL=https:\/\/jsr\.io\//g) ?? []).length, 4);
+  assert.equal((job.match(/--network bridge/g) ?? []).length, 4);
   assert.match(job, /staging-cms-public-hotfix\.mjs seal-candidate/);
   assert.doesNotMatch(job, /\$\{\{\s*secrets\.|environment:/);
 

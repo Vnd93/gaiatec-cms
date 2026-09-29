@@ -111,6 +111,10 @@ export async function sealAllEdgeRuntimeArtifact({
   bootRecords: bootRecordsFile,
   checksums: checksumsFile,
   sizes: sizesFile,
+  rebuildBundles,
+  rebuildAttestation,
+  rebuildChecksums,
+  rebuildSizes,
   output,
   candidateSha,
 }) {
@@ -121,10 +125,22 @@ export async function sealAllEdgeRuntimeArtifact({
   const bootRecordsPath = resolve(bootRecordsFile);
   const checksumsPath = resolve(checksumsFile);
   const sizesPath = resolve(sizesFile);
+  const rebuildRoot = resolve(rebuildBundles);
+  const rebuildAttestationPath = resolve(rebuildAttestation);
+  const rebuildChecksumsPath = resolve(rebuildChecksums);
+  const rebuildSizesPath = resolve(rebuildSizes);
   const outputRoot = resolve(output);
   await requireAbsent(outputRoot);
   await requireDirectory(inputRoot, "INPUT_ROOT");
   await requireDirectory(bundlesRoot, "BUNDLES_ROOT");
+  await requireDirectory(rebuildRoot, "REBUILD_ROOT");
+  if (
+    rebuildRoot === bundlesRoot ||
+    rebuildAttestationPath === buildAttestationPath ||
+    rebuildChecksumsPath === checksumsPath ||
+    rebuildSizesPath === sizesPath
+  )
+    throw new Error("G12_ALL_EDGE_RUNTIME_ARTIFACT_INDEPENDENT_REBUILD_REFUSED");
   for (const [path, label] of [
     [join(inputRoot, "all-edge-runtime-smoke-input.json"), "INPUT_MANIFEST"],
     [join(inputRoot, "edge-function-dependencies.sha256"), "DEPENDENCY_INDEX"],
@@ -134,6 +150,9 @@ export async function sealAllEdgeRuntimeArtifact({
     [bootRecordsPath, "BOOT_RECORDS"],
     [checksumsPath, "CHECKSUMS"],
     [sizesPath, "SIZES"],
+    [rebuildAttestationPath, "REBUILD_ATTESTATION"],
+    [rebuildChecksumsPath, "REBUILD_CHECKSUMS"],
+    [rebuildSizesPath, "REBUILD_SIZES"],
   ])
     await requireFile(path, label);
 
@@ -207,6 +226,14 @@ export async function sealAllEdgeRuntimeArtifact({
   const bootRecordsBytes = await readFile(bootRecordsPath);
   const checksumBytes = await readFile(checksumsPath);
   const sizeBytes = await readFile(sizesPath);
+  // Both runs use the same read-only input and exact runtime but independent
+  // empty caches. The attestation has no timestamp/path-dependent fields.
+  if (
+    !(await readFile(rebuildAttestationPath)).equals(await readFile(buildAttestationPath)) ||
+    !(await readFile(rebuildChecksumsPath)).equals(checksumBytes) ||
+    !(await readFile(rebuildSizesPath)).equals(sizeBytes)
+  )
+    throw new Error("G12_ALL_EDGE_RUNTIME_ARTIFACT_REBUILD_EVIDENCE_REFUSED");
   const checksums = parseChecksumRecords(checksumBytes.toString("utf8"));
   const sizes = parseSizeRecords(sizeBytes.toString("utf8"));
   const bootRecords = parseBootRecords(bootRecordsBytes.toString("utf8"));
@@ -229,6 +256,28 @@ export async function sealAllEdgeRuntimeArtifact({
   );
   if (JSON.stringify(bundleNames) !== JSON.stringify(expectedBundleNames))
     throw new Error("G12_ALL_EDGE_RUNTIME_ARTIFACT_BUNDLE_INVENTORY_REFUSED");
+  const rebuildEntries = await readdir(rebuildRoot, { withFileTypes: true });
+  if (
+    rebuildEntries.some((entry) => !entry.isFile()) ||
+    JSON.stringify(rebuildEntries.map((entry) => entry.name).sort()) !==
+      JSON.stringify(expectedBundleNames.map((name) => `${name}.eszip`).sort())
+  )
+    throw new Error("G12_ALL_EDGE_RUNTIME_ARTIFACT_REBUILD_INVENTORY_REFUSED");
+  // Prove byte identity before creating anything in the deployable artifact.
+  for (const name of expectedBundleNames) {
+    const primaryPath = join(bundlesRoot, `${name}.eszip`);
+    const rebuiltPath = join(rebuildRoot, `${name}.eszip`);
+    await requireFile(primaryPath, `RAW_BUNDLE:${name}`);
+    await requireFile(rebuiltPath, `REBUILD_BUNDLE:${name}`);
+    const [primaryStats, rebuiltStats] = await Promise.all([lstat(primaryPath), lstat(rebuiltPath)]);
+    if (
+      primaryStats.size < 1 ||
+      primaryStats.size > ALL_EDGE_RUNTIME_SMOKE.maximumEszipBytes ||
+      rebuiltStats.size !== primaryStats.size ||
+      !(await readFile(primaryPath)).equals(await readFile(rebuiltPath))
+    )
+      throw new Error(`G12_ALL_EDGE_RUNTIME_ARTIFACT_REPRODUCIBILITY_REFUSED:${name}`);
+  }
 
   await mkdir(join(outputRoot, "raw"), { recursive: true, mode: 0o700 });
   await mkdir(join(outputRoot, "deployable"), { recursive: true, mode: 0o700 });
@@ -281,6 +330,9 @@ export async function sealAllEdgeRuntimeArtifact({
     [bootRecordsPath, "boot-records.tsv"],
     [checksumsPath, "runtime-bundles.sha256"],
     [sizesPath, "runtime-bundles.bytes"],
+    [rebuildAttestationPath, "rebuild-attestation.env"],
+    [rebuildChecksumsPath, "rebuild-bundles.sha256"],
+    [rebuildSizesPath, "rebuild-bundles.bytes"],
   ])
     await copyFile(source, join(outputRoot, "evidence", target));
 
@@ -329,6 +381,10 @@ export async function main() {
     bootRecords: argument("boot-records"),
     checksums: argument("checksums"),
     sizes: argument("sizes"),
+    rebuildBundles: argument("rebuild-bundles"),
+    rebuildAttestation: argument("rebuild-attestation"),
+    rebuildChecksums: argument("rebuild-checksums"),
+    rebuildSizes: argument("rebuild-sizes"),
     output: argument("output"),
     candidateSha,
   });

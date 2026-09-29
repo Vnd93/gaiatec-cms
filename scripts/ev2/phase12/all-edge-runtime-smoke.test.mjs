@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, posix, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -493,6 +493,7 @@ test("edge and full profiles run a candidate-bound all-function runtime smoke wi
     "Verify and pull the immutable runtime for the Docker smoke",
     "Seal the byte-identical Docker smoke builds",
     "Bundle and unbundle every candidate Edge Function in the pinned runtime",
+    "Rebuild every current candidate Edge Function with an independent empty cache",
     "Cold-boot every candidate Edge Function without external egress",
     "Seal the complete Edge Function candidate artifact",
     "Preserve the complete deployable Edge Function candidate artifact",
@@ -506,6 +507,11 @@ test("edge and full profiles run a candidate-bound all-function runtime smoke wi
   assert.match(job, /all-edge-runtime-smoke-boot\.sh/);
   assert.match(job, /seal-all-edge-runtime-artifact\.mjs/);
   assert.match(job, /--boot-records "\$RUNNER_TEMP\/g12-all-edge-output\/boot-records\.tsv"/);
+  assert.match(job, /test ! -e "\$RUNNER_TEMP\/g12-all-edge-rebuild-cache"/);
+  assert.match(job, /g12-all-edge-rebuild-cache:\/deno-cache:rw/);
+  assert.match(job, /--rebuild-bundles "\$RUNNER_TEMP\/g12-all-edge-rebuild\/bundles"/);
+  assert.match(job, /--rebuild-attestation "\$RUNNER_TEMP\/g12-all-edge-rebuild\/build-attestation\.env"/);
+  assert.doesNotMatch(job, /continue-on-error/);
   assert.match(job, /path: \$\{\{ runner\.temp \}\}\/g12-all-edge-artifact/);
   assert.doesNotMatch(job, /path: \|[\s\S]*g12-all-edge-artifact/);
   assert.match(job, /artifact_id: \$\{\{ steps\.upload-edge-runtime-artifact\.outputs\.artifact-id \}\}/);
@@ -736,7 +742,12 @@ test("the sealer and read-only consumer prove one exact all-function EZBR artifa
         "",
       ].join("\n"),
     );
-    const manifest = await sealAllEdgeRuntimeArtifact({
+    const rebuildRoot = join(root, "rebuild");
+    await mkdir(rebuildRoot);
+    await cp(bundles, join(rebuildRoot, "bundles"), { recursive: true });
+    for (const file of ["build-attestation.env", "runtime-bundles.sha256", "runtime-bundles.bytes"])
+      await copyFile(join(evidence, file), join(rebuildRoot, file));
+    const sealOptions = {
       input,
       bundles,
       buildAttestation: buildAttestationPath,
@@ -744,9 +755,36 @@ test("the sealer and read-only consumer prove one exact all-function EZBR artifa
       bootRecords: bootRecordsPath,
       checksums: checksumsPath,
       sizes: sizesPath,
+      rebuildBundles: join(rebuildRoot, "bundles"),
+      rebuildAttestation: join(rebuildRoot, "build-attestation.env"),
+      rebuildChecksums: join(rebuildRoot, "runtime-bundles.sha256"),
+      rebuildSizes: join(rebuildRoot, "runtime-bundles.bytes"),
       output,
       candidateSha,
-    });
+    };
+    await assert.rejects(
+      sealAllEdgeRuntimeArtifact({ ...sealOptions, rebuildBundles: bundles }),
+      /INDEPENDENT_REBUILD_REFUSED/,
+    );
+    const changedRebuild = join(rebuildRoot, "bundles", "cms-public.eszip");
+    const originalRebuild = await readFile(changedRebuild);
+    const drift = Buffer.from(originalRebuild);
+    drift[drift.byteLength - 1] ^= 1;
+    await writeFile(changedRebuild, drift);
+    await assert.rejects(sealAllEdgeRuntimeArtifact(sealOptions), /REPRODUCIBILITY_REFUSED:cms-public/);
+    await writeFile(changedRebuild, originalRebuild);
+    await writeFile(sealOptions.rebuildAttestation, "CANDIDATE_SHA=wrong\n");
+    await assert.rejects(sealAllEdgeRuntimeArtifact(sealOptions), /REBUILD_EVIDENCE_REFUSED/);
+    await copyFile(buildAttestationPath, sealOptions.rebuildAttestation);
+    const extraRebuild = join(rebuildRoot, "bundles", "extra.eszip");
+    await writeFile(extraRebuild, originalRebuild);
+    await assert.rejects(sealAllEdgeRuntimeArtifact(sealOptions), /REBUILD_INVENTORY_REFUSED/);
+    await rm(extraRebuild);
+    const manifest = await sealAllEdgeRuntimeArtifact(sealOptions);
+    assert.deepEqual(
+      await readFile(join(output, "evidence", "rebuild-attestation.env")),
+      await readFile(buildAttestationPath),
+    );
     const manifestSha256 = sha256(await readFile(join(output, "manifest.json")));
     const verified = loadAndVerifyAllEdgeRuntimeArtifact({
       root: output,

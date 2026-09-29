@@ -793,6 +793,14 @@ jobs:
           fetch-depth: 0
           path: candidate-source
           persist-credentials: false
+      # This regression is bound to the original hotfix bytes. It must never be
+      # relabelled as the current candidate or used as its deployable artifact.
+      - name: Checkout the immutable historical hotfix regression fixture
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: e40eb0c2cc81c27fbf8f23e8671136f9dfc6f282
+          path: historical-hotfix-source
+          persist-credentials: false
       - name: Use the repository-pinned Node runtime for the Docker smoke
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
@@ -802,11 +810,13 @@ jobs:
           set -euo pipefail
           test "$(git -C candidate-source rev-parse HEAD)" = "${{ github.sha }}"
           test -z "$(git -C candidate-source status --short)"
+          test "$(git -C historical-hotfix-source rev-parse HEAD)" = e40eb0c2cc81c27fbf8f23e8671136f9dfc6f282
+          test -z "$(git -C historical-hotfix-source status --short)"
       - name: Prepare the production-mode candidate input for the Docker smoke
         working-directory: control
         run: >-
           node scripts/ev2/phase12/staging-cms-public-hotfix.mjs prepare-bundle-input
-          --source ../candidate-source
+          --source ../historical-hotfix-source
           --output ../bundle-input
       - name: Materialize the complete candidate Edge Function inventory
         working-directory: control
@@ -1101,6 +1111,35 @@ jobs:
             --env G12_EDGE_RUNTIME_AMD64_DIGEST="$EDGE_RUNTIME_AMD64_DIGEST" \
             --env G12_PLATFORM=linux/amd64 \
             --entrypoint /bin/sh "$EDGE_RUNTIME_EXEC_IMAGE" /g12-all-edge-builder.sh candidate
+      - name: Rebuild every current candidate Edge Function with an independent empty cache
+        run: |
+          set -euo pipefail
+          test ! -e "$RUNNER_TEMP/g12-all-edge-rebuild"
+          test ! -e "$RUNNER_TEMP/g12-all-edge-rebuild-cache"
+          install -d -m 700 "$RUNNER_TEMP/g12-all-edge-rebuild" "$RUNNER_TEMP/g12-all-edge-rebuild-cache"
+          input_manifest="all-edge-runtime-input/all-edge-runtime-smoke-input.json"
+          test "$(jq -r .candidateSha "$input_manifest")" = "${{ github.sha }}"
+          inventory_sha256="$(jq -r .inventorySha256 "$input_manifest")"
+          dependency_files_sha256="$(jq -r .dependencies.filesSha256 "$input_manifest")"
+          input_manifest_sha256="$(sha256sum "$input_manifest" | awk '{print $1}')"
+          docker run --rm --platform linux/amd64 --network bridge --read-only \
+            --user "$(id -u):$(id -g)" \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --tmpfs /tmp:rw,nosuid,nodev,size=67108864,mode=1777 \
+            --volume "$GITHUB_WORKSPACE/all-edge-runtime-input:/workspace:ro" \
+            --volume "$RUNNER_TEMP/g12-all-edge-rebuild:/output:rw" \
+            --volume "$RUNNER_TEMP/g12-all-edge-rebuild-cache:/deno-cache:rw" \
+            --volume "$GITHUB_WORKSPACE/control/scripts/ev2/phase12/all-edge-runtime-smoke-bundle.sh:/g12-all-edge-builder.sh:ro" \
+            --env HOME=/tmp --env DENO_DIR=/deno-cache --env DENO_NO_PACKAGE_JSON=1 \
+            --env JSR_URL=https://jsr.io/ \
+            --env G12_CANDIDATE_SHA="${{ github.sha }}" \
+            --env G12_INVENTORY_SHA256="$inventory_sha256" \
+            --env G12_DEPENDENCY_FILES_SHA256="$dependency_files_sha256" \
+            --env G12_INPUT_MANIFEST_SHA256="$input_manifest_sha256" \
+            --env G12_EDGE_RUNTIME_INDEX_DIGEST="$EDGE_RUNTIME_INDEX_DIGEST" \
+            --env G12_EDGE_RUNTIME_AMD64_DIGEST="$EDGE_RUNTIME_AMD64_DIGEST" \
+            --env G12_PLATFORM=linux/amd64 \
+            --entrypoint /bin/sh "$EDGE_RUNTIME_EXEC_IMAGE" /g12-all-edge-builder.sh candidate
       - name: Cold-boot every candidate Edge Function without external egress
         env:
           G12_CANDIDATE_SHA: ${{ github.sha }}
@@ -1124,6 +1163,10 @@ jobs:
             --boot-records "$RUNNER_TEMP/g12-all-edge-output/boot-records.tsv" \
             --checksums "$RUNNER_TEMP/g12-all-edge-output/runtime-bundles.sha256" \
             --sizes "$RUNNER_TEMP/g12-all-edge-output/runtime-bundles.bytes" \
+            --rebuild-bundles "$RUNNER_TEMP/g12-all-edge-rebuild/bundles" \
+            --rebuild-attestation "$RUNNER_TEMP/g12-all-edge-rebuild/build-attestation.env" \
+            --rebuild-checksums "$RUNNER_TEMP/g12-all-edge-rebuild/runtime-bundles.sha256" \
+            --rebuild-sizes "$RUNNER_TEMP/g12-all-edge-rebuild/runtime-bundles.bytes" \
             --candidate-sha "${{ github.sha }}" \
             --output "$artifact_root"
           test "$(jq -r .candidateSha "$artifact_root/manifest.json")" = "${{ github.sha }}"

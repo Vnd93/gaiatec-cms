@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-export const STAGING_OPENROUTER_MODEL = "qwen/qwen3.8-27b:free";
+export const STAGING_OPENROUTER_MODEL = "inclusionai/ling-3.0-flash-sante:free";
 export const STAGING_AI_EXTERNAL_PROVIDER_ENABLED = "true";
 
 const digest = (value) => createHash("sha256").update(value, "utf8").digest("hex");

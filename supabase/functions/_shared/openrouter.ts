@@ -1,4 +1,4 @@
-export const APPROVED_OPENROUTER_MODEL = "qwen/qwen3.8-27b:free";
+export const APPROVED_OPENROUTER_MODEL = "inclusionai/ling-3.0-flash-sante:free";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 export type OpenRouterProposal = {

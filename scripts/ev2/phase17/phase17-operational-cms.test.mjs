@@ -49,14 +49,14 @@ test("every EV2 mutation endpoint keeps the production switch fail-closed", asyn
   }
 });
 
-test("OpenRouter adapter is locked to the privacy-safe Qwen free endpoint", async () => {
+test("OpenRouter adapter is locked to the privacy-safe Sante free endpoint", async () => {
   const [adapter, edge, contract, page] = await Promise.all([
     read("supabase/functions/_shared/openrouter.ts"),
     read("supabase/functions/cms-ai/index.ts"),
     read("src/shared/contracts/ev2-ai.ts"),
     read("src/admin/pages/AdminAiAssistantPage.tsx"),
   ]);
-  assert.match(adapter, /qwen\/qwen3\.8-27b:free/);
+  assert.match(adapter, /inclusionai\/ling-3\.0-flash-sante:free/);
   assert.match(adapter, /OPENROUTER_MODEL/);
   assert.match(adapter, /AbortController/);
   assert.doesNotMatch(adapter, /response_format/);

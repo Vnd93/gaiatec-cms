@@ -68,8 +68,8 @@ select is((select provider from public.cms_ai_provider_policy
   where policy_key='f015-openrouter-v2'),'openrouter',
   'OpenRouter is the sole configured provider');
 select is((select model_key from public.cms_ai_provider_policy
-  where policy_key='f015-openrouter-v3'),
-  'qwen/qwen3.8-27b:free','the canonical privacy-safe free model is pinned');
+  where policy_key='f015-openrouter-v4'),
+  'inclusionai/ling-3.0-flash-sante:free','the canonical privacy-safe free model is pinned');
 select is((select automatic_publish_allowed from public.cms_ai_provider_policy
   where policy_key='f015-openrouter-v2'),false,
   'AI policy never permits automatic publication');

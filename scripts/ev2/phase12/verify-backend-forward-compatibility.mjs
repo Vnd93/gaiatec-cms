@@ -277,6 +277,13 @@ const compatibilityTests = {
     "tests/unit/ev2-ai-model-transition.test.ts",
     "tests/unit/openrouter-adapter.test.ts",
   ],
+  "0113": [
+    "supabase/tests/rls_cms_ai_private_model_transition.test.sql",
+    "supabase/tests/rls_cms_ai_authoritative_scope.test.sql",
+    "tests/contracts/cms-ai-sante-free-transition.test.ts",
+    "tests/unit/ev2-ai-model-transition.test.ts",
+    "tests/unit/openrouter-adapter.test.ts",
+  ],
 };
 for (const migration of additions) {
   const version = migration.version;

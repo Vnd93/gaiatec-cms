@@ -160,6 +160,11 @@ export const G12_PINNED_MIGRATION_TAIL = Object.freeze([
     file: "0112_cms_ai_qwen_free_model_transition.sql",
     sha256: "a9da7e25bd72bad8807f3b63706f5c3fdbf8e35c45c603cc46a45781463b3853",
   }),
+  Object.freeze({
+    version: "0113",
+    file: "0113_cms_ai_sante_free_model_transition.sql",
+    sha256: "3796d0d1f2ef8d8c622e15d3bec44185baf4155ece60de3806d40091a77e211a",
+  }),
 ]);
 
 export const CMS_MEDIA_UPLOAD_ABORT_0082_RPCS = Object.freeze([

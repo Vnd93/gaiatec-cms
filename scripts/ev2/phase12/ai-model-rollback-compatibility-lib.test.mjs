@@ -8,11 +8,17 @@ import {
   AI_ACTIVE_RESPONSE_MODEL,
   AI_LEGACY_RESPONSE_MODEL,
   AI_PREVIOUS_RESPONSE_MODEL,
+  AI_INTERIM_RESPONSE_MODEL,
   evaluateAiModelRollbackCompatibility,
   fetchAiModelRollbackBundle,
 } from "./ai-model-rollback-compatibility-lib.mjs";
 
-async function fixture({ activeInSource = true, activeInBundle = true, previous = true } = {}) {
+async function fixture({
+  activeInSource = true,
+  activeInBundle = true,
+  previous = true,
+  interim = true,
+} = {}) {
   const root = await mkdtemp(join(tmpdir(), "g12-ai-model-rollback-"));
   const contracts = join(root, "src", "shared", "contracts");
   const dist = join(root, "dist", "assets");
@@ -25,6 +31,7 @@ async function fixture({ activeInSource = true, activeInBundle = true, previous 
       `export const EV2_AI_ACTIVE_OPENROUTER_MODEL = "${active}" as const;`,
       AI_LEGACY_RESPONSE_MODEL,
       previous ? AI_PREVIOUS_RESPONSE_MODEL : "",
+      interim ? AI_INTERIM_RESPONSE_MODEL : "",
       "z.enum(EV2_AI_COMPATIBLE_RESPONSE_MODELS)",
       "providerModel: Ev2AiCompatibleResponseModelSchema,",
       "allowedModel: Ev2AiCompatibleResponseModelSchema,",
@@ -39,12 +46,12 @@ async function fixture({ activeInSource = true, activeInBundle = true, previous 
   );
   await writeFile(
     join(dist, "index.js"),
-    `${AI_LEGACY_RESPONSE_MODEL}\n${previous ? AI_PREVIOUS_RESPONSE_MODEL : ""}\n${activeInBundle ? AI_ACTIVE_RESPONSE_MODEL : ""}`,
+    `${AI_LEGACY_RESPONSE_MODEL}\n${previous ? AI_PREVIOUS_RESPONSE_MODEL : ""}\n${interim ? AI_INTERIM_RESPONSE_MODEL : ""}\n${activeInBundle ? AI_ACTIVE_RESPONSE_MODEL : ""}`,
   );
   return { root, dist: join(root, "dist") };
 }
 
-test("accepts only a source and built artifact that both carry the three-model bridge", async (t) => {
+test("accepts only a source and built artifact that both carry the four-model bridge", async (t) => {
   const valid = await fixture();
   t.after(() => rm(valid.root, { recursive: true, force: true }));
   const result = evaluateAiModelRollbackCompatibility(valid.root, valid.dist);
@@ -59,7 +66,7 @@ test("accepts the exact checked-in source contract with a compatible synthetic b
   await mkdir(dist, { recursive: true });
   await writeFile(
     join(dist, "contract.js"),
-    `${AI_LEGACY_RESPONSE_MODEL}\n${AI_PREVIOUS_RESPONSE_MODEL}\n${AI_ACTIVE_RESPONSE_MODEL}`,
+    `${AI_LEGACY_RESPONSE_MODEL}\n${AI_PREVIOUS_RESPONSE_MODEL}\n${AI_INTERIM_RESPONSE_MODEL}\n${AI_ACTIVE_RESPONSE_MODEL}`,
   );
   t.after(() => rm(root, { recursive: true, force: true }));
   assert.equal(evaluateAiModelRollbackCompatibility(process.cwd(), dist).outcome, "pass");
@@ -90,6 +97,15 @@ test("rejects pre-bridge source or bundle independently", async (t) => {
       "active_model_bundle_missing",
     ),
   );
+});
+
+test("rejects loss of the Qwen response bridge after a recovered deployment", async (t) => {
+  const value = await fixture({ interim: false });
+  t.after(() => rm(value.root, { recursive: true, force: true }));
+  const result = evaluateAiModelRollbackCompatibility(value.root, value.dist);
+  assert.equal(result.outcome, "fail");
+  assert.ok(result.violations.includes("interim_response_model_missing"));
+  assert.ok(result.violations.includes("interim_model_bundle_missing"));
 });
 
 test("rejects model literals that never coexist in one compiled contract chunk", async (t) => {

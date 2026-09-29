@@ -2,10 +2,11 @@ import { z } from "zod";
 
 export const Ev2AiEnvironmentSchema = z.enum(["local", "staging", "production"]);
 export const Ev2AiProviderModeSchema = z.literal("openrouter");
-export const EV2_AI_ACTIVE_OPENROUTER_MODEL = "qwen/qwen3.8-27b:free" as const;
+export const EV2_AI_ACTIVE_OPENROUTER_MODEL = "inclusionai/ling-3.0-flash-sante:free" as const;
 export const EV2_AI_COMPATIBLE_RESPONSE_MODELS = [
   "nvidia/nemotron-3.5-lightning:free",
   "inclusionai/ling-3.0-flash-vl:free",
+  "qwen/qwen3.8-27b:free",
   EV2_AI_ACTIVE_OPENROUTER_MODEL,
 ] as const;
 export const Ev2AiCompatibleResponseModelSchema = z.enum(EV2_AI_COMPATIBLE_RESPONSE_MODELS);

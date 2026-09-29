@@ -78,7 +78,7 @@ test("tool catalog cannot execute critical or CMS-mutating actions", async () =>
   assert.match(edge, /detectAiPromptInjection\(sourceExcerpt\.value\)/);
   assert.match(edge, /redactAiText/);
   assert.doesNotMatch(edge, /\bfetch\s*\(/);
-  assert.match(provider, /qwen\/qwen3\.8-27b:free/);
+  assert.match(provider, /inclusionai\/ling-3\.0-flash-sante:free/);
   assert.doesNotMatch(edge, /SUPABASE_SERVICE_ROLE_KEY\s*=/);
 });
 

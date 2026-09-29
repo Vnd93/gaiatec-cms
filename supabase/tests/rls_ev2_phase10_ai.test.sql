@@ -260,7 +260,7 @@ from (
         'inputTokens', 20,
         'outputTokens', 15,
         'providerMode', 'openrouter',
-        'providerModel', 'qwen/qwen3.8-27b:free',
+        'providerModel', 'inclusionai/ling-3.0-flash-sante:free',
         'externalProviderEnabled', true,
         'policyVersion', 'f015-v1'
       ),

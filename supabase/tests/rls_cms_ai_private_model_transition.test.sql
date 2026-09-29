@@ -1,12 +1,12 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(50);
+select plan(58);
 
 select has_table('public','cms_ai_provider_policy',
   'AI provider policy evidence remains present');
-select is((select count(*)::integer from public.cms_ai_provider_policy),3,
-  'both transitions append policies without removing historical evidence');
+select is((select count(*)::integer from public.cms_ai_provider_policy),4,
+  'all transitions append policies without removing historical evidence');
 select is((select model_key from public.cms_ai_provider_policy
   where policy_key='f015-openrouter'),
   'nvidia/nemotron-3.5-lightning:free','the historical provider policy is preserved');
@@ -29,9 +29,9 @@ select is((select direct_database_access_allowed from public.cms_ai_provider_pol
   where policy_key='f015-openrouter-v2'),false,'direct database access remains forbidden');
 
 select is((select configuration->>'model' from public.cms_ai_policy_versions where version=1),
-  'qwen/qwen3.8-27b:free','the active policy state points to Qwen free');
+  'inclusionai/ling-3.0-flash-sante:free','the active policy state points to Sante free');
 select is((select configuration->>'previousModel' from public.cms_ai_policy_versions where version=1),
-  'inclusionai/ling-3.0-flash-vl:free','the active policy state records its predecessor');
+  'qwen/qwen3.8-27b:free','the active policy state records its predecessor');
 
 select alike((select pg_get_constraintdef(oid) from pg_constraint
   where conrelid='public.cms_ai_provider_calls'::regclass
@@ -55,15 +55,15 @@ select alike((select pg_get_constraintdef(oid) from pg_constraint
   'evaluation evidence preserves the previous model');
 
 select alike(pg_get_functiondef('public.cms_ai_eval_provider_enforce()'::regprocedure),
-  '%qwen/qwen3.8-27b:free%',
+  '%inclusionai/ling-3.0-flash-sante:free%',
   'new evaluation evidence is pinned to the active model');
 select alike(pg_get_functiondef(
   'public.cms_record_ai_provider_call_scoped(uuid,uuid,text,text,text,text,timestamptz,text,text,integer,integer,text,text,uuid)'::regprocedure
-), '%qwen/qwen3.8-27b:free%',
+), '%inclusionai/ling-3.0-flash-sante:free%',
   'new provider evidence is pinned to the active model');
 select alike(pg_get_functiondef(
   'public.cms_record_ai_provider_call_scoped(uuid,uuid,text,text,text,text,timestamptz,text,text,integer,integer,text,text,uuid)'::regprocedure
-), '%f015-openrouter-v3%',
+), '%f015-openrouter-v4%',
   'the scoped writer selects only the active provider policy');
 select alike(pg_get_functiondef(
   'public.cms_record_ai_provider_call_scoped(uuid,uuid,text,text,text,text,timestamptz,text,text,integer,integer,text,text,uuid)'::regprocedure
@@ -98,7 +98,7 @@ select alike(pg_get_functiondef(
   'the workspace reports the exact model used by historical sessions');
 select alike(pg_get_functiondef(
   'public.cms_get_ai_workspace(uuid,text,text,text,text,timestamptz,uuid)'::regprocedure
-), '%qwen/qwen3.8-27b:free%',
+), '%inclusionai/ling-3.0-flash-sante:free%',
   'sessions without evidence use the active model');
 select alike(pg_get_functiondef(
   'public.cms_execute_ai_command(uuid,text,jsonb,text,text,text,text,timestamptz,uuid,uuid,text,text)'::regprocedure
@@ -106,7 +106,7 @@ select alike(pg_get_functiondef(
   'the post-0088 MFA wrapper is preserved');
 select alike(pg_get_functiondef(
   'public.cms_execute_ai_command(uuid,text,jsonb,text,text,text,text,timestamptz,uuid,uuid,text,text)'::regprocedure
-), '%qwen/qwen3.8-27b:free%',
+), '%inclusionai/ling-3.0-flash-sante:free%',
   'the command wrapper requires the active model');
 
 select is((select count(*)::integer from pg_trigger
@@ -175,7 +175,7 @@ select is((select configuration->>'dataCollection' from public.cms_ai_policy_ver
 select is((select configuration->'zeroDataRetention' from public.cms_ai_policy_versions where version=1),
   'true'::jsonb,'ZDR stays mandatory');
 select is((select configuration->>'providerPolicyKey' from public.cms_ai_policy_versions where version=1),
-  'f015-openrouter-v3','configuration selects only the successor policy');
+  'f015-openrouter-v4','configuration selects only the successor policy');
 select alike((select pg_get_constraintdef(oid) from pg_constraint
   where conrelid='public.cms_ai_provider_calls'::regclass
     and conname='cms_ai_provider_calls_model_key_check'),
@@ -212,6 +212,41 @@ select is((select count(*)::integer from pg_class where oid in (
   'public.cms_ai_provider_policy'::regclass,'public.cms_ai_provider_calls'::regclass,
   'public.cms_ai_eval_runs'::regclass) and relrowsecurity),3,
   'RLS remains enabled on policy, calls and evaluation evidence');
+
+select is((select model_key from public.cms_ai_provider_policy
+  where policy_key='f015-openrouter-v4'),'inclusionai/ling-3.0-flash-sante:free',
+  'the latest successor pins the exact Sante free model');
+select is((select allowed_environments from public.cms_ai_provider_policy
+  where policy_key='f015-openrouter-v4'),array['local','staging']::text[],
+  'the latest successor never authorizes production');
+select ok((select provider='openrouter' and policy_version='f015-v1'
+  and status='approved' and training_opt_out and not real_data_allowed
+  and not automatic_publish_allowed and not direct_database_access_allowed
+  from public.cms_ai_provider_policy where policy_key='f015-openrouter-v4'),
+  'the latest successor retains every approved safety restriction');
+select alike((select pg_get_constraintdef(oid) from pg_constraint
+  where conrelid='public.cms_ai_provider_calls'::regclass
+    and conname='cms_ai_provider_calls_model_key_check'),
+  '%inclusionai/ling-3.0-flash-sante:free%','provider evidence accepts the exact Sante model');
+select alike((select pg_get_constraintdef(oid) from pg_constraint
+  where conrelid='public.cms_ai_eval_runs'::regclass
+    and conname='cms_ai_eval_runs_model_key_check'),
+  '%inclusionai/ling-3.0-flash-sante:free%','evaluation evidence accepts the exact Sante model');
+select throws_ok(
+  $$insert into public.cms_ai_provider_calls(
+    actor_id,session_id,provider,model_key,input_tokens,output_tokens,status,correlation_id
+  ) values (gen_random_uuid(),gen_random_uuid(),'openrouter','qwen/qwen3.8-27b:free',
+    1,1,'succeeded',gen_random_uuid())$$,
+  '42501','CMS_AI_PROVIDER_MODEL_FORBIDDEN','new Qwen calls are refused after the third transition');
+select throws_ok(
+  $$insert into public.cms_ai_provider_calls(
+    actor_id,session_id,provider,model_key,input_tokens,output_tokens,status,correlation_id
+  ) values (gen_random_uuid(),gen_random_uuid(),'openrouter','inclusionai/ling-3.0-flash-sante',
+    1,1,'succeeded',gen_random_uuid())$$,
+  '42501','CMS_AI_PROVIDER_MODEL_FORBIDDEN','the non-free Sante variant is forbidden');
+select throws_ok($$update public.cms_ai_provider_policy set status='approved'
+  where policy_key='f015-openrouter-v4'$$,'42501','CMS audit records are immutable',
+  'the Sante policy is immutable');
 
 select * from finish();
 rollback;

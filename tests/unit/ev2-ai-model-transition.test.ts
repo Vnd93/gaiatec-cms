@@ -14,12 +14,19 @@ import {
 
 const LEGACY_MODEL = "nvidia/nemotron-3.5-lightning:free";
 const PREVIOUS_MODEL = "inclusionai/ling-3.0-flash-vl:free";
-const NEXT_MODEL = "qwen/qwen3.8-27b:free";
+const INTERIM_MODEL = "qwen/qwen3.8-27b:free";
+const NEXT_MODEL = "inclusionai/ling-3.0-flash-sante:free";
 
 describe("AI model transition bridge", () => {
-  it("accepts exactly two historical models and the new free model for reading", () => {
+  it("accepts exactly three historical models and the new free model for reading", () => {
     expect(EV2_AI_ACTIVE_OPENROUTER_MODEL).toBe(NEXT_MODEL);
-    expect(EV2_AI_COMPATIBLE_RESPONSE_MODELS).toEqual([LEGACY_MODEL, PREVIOUS_MODEL, NEXT_MODEL]);
+    expect(EV2_AI_COMPATIBLE_RESPONSE_MODELS).toEqual([
+      LEGACY_MODEL,
+      PREVIOUS_MODEL,
+      INTERIM_MODEL,
+      NEXT_MODEL,
+    ]);
+    expect(Ev2AiCompatibleResponseModelSchema.safeParse(INTERIM_MODEL).success).toBe(true);
     expect(Ev2AiCompatibleResponseModelSchema.safeParse(PREVIOUS_MODEL).success).toBe(true);
     expect(Ev2AiCompatibleResponseModelSchema.safeParse(LEGACY_MODEL).success).toBe(true);
     expect(Ev2AiCompatibleResponseModelSchema.safeParse(NEXT_MODEL).success).toBe(true);
@@ -79,7 +86,7 @@ describe("AI model transition bridge", () => {
     expect(Ev2AiExecutionCapabilitySchema.safeParse(executionCapability).success).toBe(false);
   });
 
-  it.each([LEGACY_MODEL, PREVIOUS_MODEL, NEXT_MODEL])(
+  it.each([LEGACY_MODEL, PREVIOUS_MODEL, INTERIM_MODEL, NEXT_MODEL])(
     "keeps assist and execution responses compatible with %s",
     (model) => {
       expect(

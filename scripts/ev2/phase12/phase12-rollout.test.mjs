@@ -549,7 +549,7 @@ test("staging workflow exercises the exact-SHA governed lifecycle with disposabl
   assert.match(workflow, /STAGING_CANDIDATE_SHA: \$\{\{ steps\.candidate\.outputs\.sha \}\}/);
   assert.match(
     workflow,
-    /g12-staging-release-package\/edge\/source\/scripts\/ev2\/phase12\/configure-staging-edge-public-secrets\.mjs/,
+    /configure-staging-edge-transition\.mjs[\s\S]*--kind public[\s\S]*--candidate-artifact "\$RUNNER_TEMP\/g12-staging-release-package\/edge"/,
   );
   assert.doesNotMatch(workflow, /supabase secrets set --project-ref/);
   const mutatingAuth = workflow.indexOf("cms-auth-lifecycle.spec.ts");

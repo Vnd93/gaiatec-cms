@@ -915,6 +915,7 @@ jobs:
           supabase db push --linked --include-all --dry-run
           supabase db push --linked --include-all --yes
       - name: Configure the exact staging browser origins without wildcard trust
+        id: staging_edge_public_transition
         if: >-
           steps.frontend_bridge.outputs.release_profile == 'edge-only' ||
           steps.frontend_bridge.outputs.release_profile == 'full-release'
@@ -926,8 +927,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node "$RUNNER_TEMP/g12-staging-release-package/edge/source/scripts/ev2/phase12/configure-staging-edge-public-secrets.mjs" |
-            tee "$RUNNER_TEMP/g12-staging-edge-public-secrets.json"
+          edge_manifest_sha256="$(jq -er '.components.edge.files[] | select(.path == "manifest.json") | .sha256' "$RUNNER_TEMP/g12-staging-release-package/staging-release-package.json")"
+          node ../candidate/scripts/ev2/phase12/configure-staging-edge-transition.mjs \
+            --kind public --candidate "${{ steps.candidate.outputs.sha }}" \
+            --candidate-artifact "$RUNNER_TEMP/g12-staging-release-package/edge" \
+            --artifact-manifest-sha256 "$edge_manifest_sha256" \
+            --baseline-artifact "$RUNNER_TEMP/g12-staging-recovery-pre-mutation/edge-baseline" \
+            --baseline-manifest-sha256 "${{ steps.staging_state.outputs.edge_baseline_manifest_sha256 }}" \
+            --report ../candidate/outputs/g12-staging-edge-public-transition.json
       - name: Configure and verify the exact staging Auth redirect boundary
         if: >-
           steps.frontend_bridge.outputs.release_profile == 'database-auth' ||
@@ -941,6 +948,7 @@ jobs:
         shell: bash
         run: node scripts/ev2/phase12/configure-staging-auth.mjs | tee "$RUNNER_TEMP/g12-staging-auth.json"
       - name: Configure and verify the exact privacy-safe staging AI provider policy
+        id: staging_edge_ai_transition
         if: >-
           steps.frontend_bridge.outputs.release_profile == 'edge-only' ||
           steps.frontend_bridge.outputs.release_profile == 'full-release'
@@ -948,9 +956,18 @@ jobs:
         env:
           STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: >-
-          node
-          "$RUNNER_TEMP/g12-staging-release-package/edge/source/scripts/ev2/phase12/configure-staging-ai-provider-secrets.mjs"
+        run: |
+          set -euo pipefail
+          edge_manifest_sha256="$(jq -er '.components.edge.files[] | select(.path == "manifest.json") | .sha256' "$RUNNER_TEMP/g12-staging-release-package/staging-release-package.json")"
+          node ../candidate/scripts/ev2/phase12/configure-staging-edge-transition.mjs \
+            --kind ai --candidate "${{ steps.candidate.outputs.sha }}" \
+            --candidate-artifact "$RUNNER_TEMP/g12-staging-release-package/edge" \
+            --artifact-manifest-sha256 "$edge_manifest_sha256" \
+            --baseline-artifact "$RUNNER_TEMP/g12-staging-recovery-pre-mutation/edge-baseline" \
+            --baseline-manifest-sha256 "${{ steps.staging_state.outputs.edge_baseline_manifest_sha256 }}" \
+            --previous-receipt ../candidate/outputs/g12-staging-edge-public-transition.json \
+            --previous-receipt-sha256 "${{ steps.staging_edge_public_transition.outputs.receipt_sha256 }}" \
+            --report ../candidate/outputs/g12-staging-edge-configuration-transition.json
       - name: Deploy the complete exact-candidate Edge Function inventory to staging
         if: >-
           steps.frontend_bridge.outputs.release_profile == 'edge-only' ||
@@ -971,6 +988,8 @@ jobs:
             --baseline-manifest-sha256 "${{ steps.staging_state.outputs.edge_baseline_manifest_sha256 }}" \
             --candidate "${{ steps.candidate.outputs.sha }}" \
             --mode initial \
+            --configuration-receipt outputs/g12-staging-edge-configuration-transition.json \
+            --configuration-receipt-sha256 "${{ steps.staging_edge_ai_transition.outputs.receipt_sha256 }}" \
             --report outputs/g12-staging-function-deployment.json
       - name: Verify the exact deployed staging Function modes
         if: >-
@@ -1401,6 +1420,8 @@ jobs:
             g17-staging-canary.json
           )
           edge_evidence=(
+            candidate/outputs/g12-staging-edge-public-transition.json
+            candidate/outputs/g12-staging-edge-configuration-transition.json
             candidate/outputs/g12-staging-function-deployment.json
             g12-staging-functions.json
           )
@@ -1460,6 +1481,8 @@ jobs:
             candidate/outputs/cms-final-coverage.json
             candidate/outputs/g12-cms-coverage-matrix.json
             candidate/outputs/g12-staging-function-deployment.json
+            candidate/outputs/g12-staging-edge-public-transition.json
+            candidate/outputs/g12-staging-edge-configuration-transition.json
             candidate/outputs/g12-backend-compatibility.json
             baseline/outputs/cms-coverage-rollback.json
             candidate/outputs/g12-canary.json

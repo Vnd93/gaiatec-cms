@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 import { loadAndVerifyAllEdgeRuntimeArtifact } from "./all-edge-runtime-artifact-lib.mjs";
@@ -7,6 +7,7 @@ import { PRODUCTION_FUNCTIONS, PUBLIC_FUNCTIONS } from "./production-backend-lib
 import { sourceDigestInventory } from "./production-function-deployment-lib.mjs";
 import { functionInventorySnapshot } from "./staging-cms-public-hotfix-lib.mjs";
 import { loadAndVerifyStagingEdgeBaselineArtifact } from "./staging-edge-baseline-artifact-lib.mjs";
+import { verifyStagingEdgeConfigurationReceipt } from "./staging-edge-configuration-transition-lib.mjs";
 import {
   deployEdgeArtifactWithVerifiedCompensation,
   evaluateExactBaselineRestoration,
@@ -132,6 +133,43 @@ async function main() {
   );
   const functionsPath = `/v1/projects/${projectRef}/functions`;
   const readLiveInventory = () => managementRequest(functionsPath);
+  let initialInventorySha256 = baseline.manifest.inventorySha256;
+  let initialBaselineFunctions = baseline.functions;
+  let configurationReceiptSha256 = null;
+  if (deploymentMode === "initial") {
+    const receiptPath = resolve(
+      argument("--configuration-receipt", "G12_STAGING_FUNCTION_CONFIGURATION_RECEIPT_REQUIRED"),
+    );
+    const metadata = lstatSync(receiptPath);
+    if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size > 256 * 1024)
+      throw new Error("G12_STAGING_FUNCTION_CONFIGURATION_RECEIPT_FILE_REFUSED");
+    const bytes = readFileSync(receiptPath);
+    configurationReceiptSha256 = sha256(bytes);
+    if (
+      configurationReceiptSha256 !==
+      argument("--configuration-receipt-sha256", "G12_STAGING_FUNCTION_CONFIGURATION_DIGEST_REQUIRED")
+    )
+      throw new Error("G12_STAGING_FUNCTION_CONFIGURATION_RECEIPT_DIGEST_REFUSED");
+    const configured = verifyStagingEdgeConfigurationReceipt({
+      receipt: JSON.parse(bytes),
+      baseline,
+      expected: {
+        candidateSha,
+        projectRef,
+        workflow: {
+          runId: process.env.GITHUB_RUN_ID,
+          runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT),
+          controlSha: process.env.GITHUB_SHA,
+        },
+      },
+    });
+    initialInventorySha256 = configured.inventorySha256;
+    const configuredByName = new Map(configured.records.map((record) => [record.name, record]));
+    initialBaselineFunctions = baseline.functions.map((record) => ({
+      ...record,
+      tuple: configuredByName.get(record.slug),
+    }));
+  }
 
   const preflight = await pollForVerifiedFunctionState({
     readInventory: readLiveInventory,
@@ -143,12 +181,12 @@ async function main() {
     publicFunctions: PUBLIC_FUNCTIONS,
   });
   if (!liveSnapshot.valid) throw new Error("G12_STAGING_FUNCTION_BASELINE_LIVE_DRIFT");
-  if (deploymentMode === "initial" && liveSnapshot.inventorySha256 !== baseline.manifest.inventorySha256)
+  if (deploymentMode === "initial" && liveSnapshot.inventorySha256 !== initialInventorySha256)
     throw new Error("G12_STAGING_FUNCTION_BASELINE_LIVE_DRIFT");
   const reconciliation = evaluateStagingFunctionReconciliationPreflight({
     payload: liveBefore,
     functions: artifact.functions,
-    baselineFunctions: baseline.functions,
+    baselineFunctions: deploymentMode === "initial" ? initialBaselineFunctions : baseline.functions,
     mode: deploymentMode,
   });
   if (!reconciliation.valid)
@@ -263,6 +301,8 @@ async function main() {
         target: "candidate",
         deploymentMode,
         transport: "management-api-ezbr",
+        configurationReceiptSha256,
+        initialInventorySha256,
         artifact: {
           manifestSha256: artifact.manifestSha256,
           inventorySha256: artifact.manifest.input.inventorySha256,

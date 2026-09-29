@@ -1007,7 +1007,8 @@ jobs:
           node scripts/ev2/phase12/verify-production-functions.mjs \
           --file ../g12-staging-functions.json \
           --receipt outputs/g12-staging-function-deployment.json \
-          --source . --candidate "${{ steps.candidate.outputs.sha }}" \
+          --source "$RUNNER_TEMP/g12-staging-release-package/edge/source" \
+          --candidate "${{ steps.candidate.outputs.sha }}" \
           --environment staging --project-ref "$STAGING_SUPABASE_PROJECT_REF"
       - name: Verify staging migrations, RLS, Storage and Vault read-only
         working-directory: candidate
@@ -2453,6 +2454,58 @@ jobs:
             *) echo "G12_STAGING_RELEASE_PROFILE_INVALID" >&2; exit 1 ;;
           esac
           node candidate/scripts/ev2/phase12/verify-staging-evidence.mjs "${evidence_files[@]}"
+      - name: Resolve the same sealed CI package for read-only Edge verification
+        id: backend_release_source
+        if: >-
+          needs.deploy.outputs.release_profile == 'edge-only' ||
+          needs.deploy.outputs.release_profile == 'full-release'
+        working-directory: candidate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node scripts/ev2/phase12/resolve-ci-staging-frontend-artifact.mjs
+          --run-id "${{ needs.deploy.outputs.source_ci_run_id }}"
+          --run-attempt "${{ needs.deploy.outputs.source_ci_run_attempt }}"
+          --gate-run-attempt "${{ needs.deploy.outputs.gate_ci_run_attempt }}"
+          --sha "${{ needs.deploy.outputs.candidate_sha }}"
+      - name: Download the same sealed CI package for read-only Edge verification
+        if: >-
+          needs.deploy.outputs.release_profile == 'edge-only' ||
+          needs.deploy.outputs.release_profile == 'full-release'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.deploy.outputs.source_artifact_id }}
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          repository: Vnd93/gaiatec-cms
+          run-id: ${{ needs.deploy.outputs.source_ci_run_id }}
+          path: ${{ runner.temp }}/g12-staging-post-backend-release-package
+      - name: Reverify sealed package identity and bytes before read-only Edge verification
+        if: >-
+          needs.deploy.outputs.release_profile == 'edge-only' ||
+          needs.deploy.outputs.release_profile == 'full-release'
+        working-directory: candidate
+        env:
+          RESOLVED_ID: ${{ steps.backend_release_source.outputs.artifact_id }}
+          RESOLVED_DIGEST: ${{ steps.backend_release_source.outputs.artifact_digest }}
+          RESOLVED_NAME: ${{ steps.backend_release_source.outputs.artifact_name }}
+          EXPECTED_ID: ${{ needs.deploy.outputs.source_artifact_id }}
+          EXPECTED_DIGEST: ${{ needs.deploy.outputs.source_artifact_digest }}
+          EXPECTED_NAME: ${{ needs.deploy.outputs.source_artifact_name }}
+          RESOLVED_GATE_ATTEMPT: ${{ steps.backend_release_source.outputs.gate_run_attempt }}
+          EXPECTED_GATE_ATTEMPT: ${{ needs.deploy.outputs.gate_ci_run_attempt }}
+        run: |
+          set -euo pipefail
+          test "$RESOLVED_ID" = "$EXPECTED_ID"
+          test "$RESOLVED_DIGEST" = "$EXPECTED_DIGEST"
+          test "$RESOLVED_NAME" = "$EXPECTED_NAME"
+          test "$RESOLVED_GATE_ATTEMPT" = "$EXPECTED_GATE_ATTEMPT"
+          node scripts/ev2/phase12/verify-staging-release-package.mjs \
+            --package "$RUNNER_TEMP/g12-staging-post-backend-release-package" \
+            --candidate "${{ needs.deploy.outputs.candidate_sha }}" \
+            --profile "${{ needs.deploy.outputs.release_profile }}" \
+            --run-id "${{ needs.deploy.outputs.source_ci_run_id }}" \
+            --run-attempt "${{ needs.deploy.outputs.source_ci_run_attempt }}"
       - name: Recheck exact staging function inventory read-only
         working-directory: candidate
         env:
@@ -2470,7 +2523,8 @@ jobs:
               node scripts/ev2/phase12/verify-production-functions.mjs \
                 --file ../post-deploy-backend-readonly/functions.json \
                 --receipt ../staging-evidence/candidate/outputs/g12-staging-function-deployment.json \
-                --source . --candidate "${{ needs.deploy.outputs.candidate_sha }}" \
+                --source "$RUNNER_TEMP/g12-staging-post-backend-release-package/edge/source" \
+                --candidate "${{ needs.deploy.outputs.candidate_sha }}" \
                 --environment staging --project-ref "$STAGING_SUPABASE_PROJECT_REF"
               ;;
             frontend-only|database-auth)

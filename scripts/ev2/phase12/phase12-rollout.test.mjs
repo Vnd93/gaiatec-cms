@@ -1010,6 +1010,56 @@ test("staging evidence is fail-closed and SHA-bound for every selected release p
   assert.match(evidence, /backend\.checks\.edgeRequired !== edgeRequired/);
 });
 
+test("staging receipt consumers bind the same verified materialized source instead of the checkout", async () => {
+  const workflow = await read(".github/workflows/deploy-staging.yml");
+  const deploy = workflowJob(workflow, "deploy");
+  const backendPost = workflowJob(workflow, "post_deploy_backend_readonly");
+  const initialStart = deploy.indexOf("Verify the exact deployed staging Function modes");
+  const initialEnd = deploy.indexOf("Verify staging migrations, RLS, Storage and Vault read-only");
+  assert.ok(initialStart >= 0 && initialEnd > initialStart);
+  const initial = deploy.slice(initialStart, initialEnd);
+  assert.match(initial, /--receipt outputs\/g12-staging-function-deployment\.json/);
+  assert.match(initial, /--source "\$RUNNER_TEMP\/g12-staging-release-package\/edge\/source"/);
+  assert.doesNotMatch(initial, /--source \./);
+  assert.ok(
+    deploy.indexOf("Verify the unified release package before any candidate mutation") < initialStart,
+  );
+
+  const names = [
+    "Resolve the same sealed CI package for read-only Edge verification",
+    "Download the same sealed CI package for read-only Edge verification",
+    "Reverify sealed package identity and bytes before read-only Edge verification",
+    "Recheck exact staging function inventory read-only",
+  ];
+  const positions = names.map((name) => backendPost.indexOf(name));
+  for (let index = 0; index < positions.length; index += 1)
+    assert.ok(positions[index] >= 0 && (index === 0 || positions[index] > positions[index - 1]));
+  const sealedSource = backendPost.slice(positions[0], positions[3]);
+  assert.equal(
+    (sealedSource.match(/needs\.deploy\.outputs\.release_profile == 'edge-only'/g) ?? []).length,
+    3,
+  );
+  assert.equal(
+    (sealedSource.match(/needs\.deploy\.outputs\.release_profile == 'full-release'/g) ?? []).length,
+    3,
+  );
+  assert.match(sealedSource, /resolve-ci-staging-frontend-artifact\.mjs/);
+  assert.match(sealedSource, /artifact-ids: \$\{\{ needs\.deploy\.outputs\.source_artifact_id \}\}/);
+  assert.match(sealedSource, /digest-mismatch: error/);
+  for (const identity of ["ID", "DIGEST", "NAME", "GATE_ATTEMPT"])
+    assert.ok(sealedSource.includes(`test "$RESOLVED_${identity}" = "$EXPECTED_${identity}"`));
+  assert.match(sealedSource, /verify-staging-release-package\.mjs/);
+  for (const binding of ["candidate_sha", "release_profile", "source_ci_run_id", "source_ci_run_attempt"])
+    assert.ok(sealedSource.includes(`needs.deploy.outputs.${binding}`));
+  const inventory = backendPost.slice(
+    positions[3],
+    backendPost.indexOf("Recheck staging database contracts with SELECT-only SQL"),
+  );
+  assert.match(inventory, /--source "\$RUNNER_TEMP\/g12-staging-post-backend-release-package\/edge\/source"/);
+  assert.doesNotMatch(inventory, /--source \./);
+  assert.doesNotMatch(sealedSource, /continue-on-error: true|npm run build|supabase functions deploy/);
+});
+
 test("staging watchdog compensates cancelled, timed-out and ambiguous deploys without external overwrite", async () => {
   const [workflow, watchdog, pagesState, fixture, mutationBoundaryClassifier] = await Promise.all([
     read(".github/workflows/deploy-staging.yml"),

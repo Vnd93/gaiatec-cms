@@ -21,6 +21,7 @@ import {
   parseExactAttestation,
 } from "./all-edge-runtime-artifact-lib.mjs";
 import { PRODUCTION_FUNCTIONS, PUBLIC_FUNCTIONS } from "./production-backend-lib.mjs";
+import { sourceDigestInventory } from "./production-function-deployment-lib.mjs";
 import { sealAllEdgeRuntimeArtifact } from "./seal-all-edge-runtime-artifact.mjs";
 
 const workflow = await readFile(new URL("../../../.github/workflows/ci.yml", import.meta.url), "utf8");
@@ -794,6 +795,65 @@ test("the sealer and read-only consumer prove one exact all-function EZBR artifa
     assert.equal(verified.manifest.event, manifest.event);
     assert.equal(verified.functions.length, PRODUCTION_FUNCTIONS.length);
     assert.ok(verified.functions.every((record) => record.deployable.path.endsWith(".ezbr")));
+    // The sealed source includes per-function Deno config/locks materialized by CI.
+    // A receipt for those bytes must never be checked against the original checkout.
+    const sealedDigests = sourceDigestInventory(verified.sourceRoot, PRODUCTION_FUNCTIONS);
+    const checkoutDigests = sourceDigestInventory(source, PRODUCTION_FUNCTIONS);
+    for (const name of PRODUCTION_FUNCTIONS)
+      assert.notEqual(sealedDigests[name], checkoutDigests[name], name);
+    const liveFunctions = verified.functions.map((record) => ({
+      name: record.slug,
+      status: "ACTIVE",
+      version: 4,
+      verify_jwt: record.verifyJwt,
+      ezbr_sha256: record.deployable.sha256,
+      updated_at: "2026-09-29T00:00:00Z",
+    }));
+    const livePath = join(root, "live-functions.json");
+    const receiptPath = join(root, "deployment-receipt.json");
+    await writeFile(livePath, JSON.stringify(liveFunctions));
+    await writeFile(
+      receiptPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        event: "g12.staging.functions.deployment_verified",
+        candidateSha,
+        projectRef: "glcqsosxwgmlhzgcsnzv",
+        deployments: liveFunctions.map((record) => ({
+          name: record.name,
+          sourceSha256: sealedDigests[record.name],
+          bundleSha256: record.ezbr_sha256,
+          version: record.version,
+        })),
+      }),
+    );
+    const verifyReceipt = (sourceRoot) =>
+      spawnSync(
+        process.execPath,
+        [
+          fileURLToPath(new URL("./verify-production-functions.mjs", import.meta.url)),
+          "--file",
+          livePath,
+          "--receipt",
+          receiptPath,
+          "--source",
+          sourceRoot,
+          "--candidate",
+          candidateSha,
+          "--environment",
+          "staging",
+          "--project-ref",
+          "glcqsosxwgmlhzgcsnzv",
+        ],
+        { encoding: "utf8" },
+      );
+    const wrongCheckout = verifyReceipt(source);
+    assert.notEqual(wrongCheckout.status, 0);
+    for (const name of PRODUCTION_FUNCTIONS)
+      assert.ok(wrongCheckout.stderr.includes(`${name}:receipt_source_digest_mismatch`), name);
+    const exactSealedSource = verifyReceipt(verified.sourceRoot);
+    assert.equal(exactSealedSource.status, 0, exactSealedSource.stderr);
+    assert.equal(JSON.parse(exactSealedSource.stdout).exactRemoteDigestsBound, true);
     const githubOutput = join(root, "github-output.txt");
     const cli = spawnSync(
       process.execPath,

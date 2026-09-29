@@ -10,6 +10,7 @@ import {
 import {
   assertEngagePlan,
   assertRestorePlan,
+  assertRestoredFunctionDeployment,
   buildLegacyBridgeState,
   containsUuid,
   exactKeys,
@@ -473,12 +474,117 @@ test("the swap only ever deploys the legacy bytes recorded at prepare time", () 
   );
 });
 
-test("restore is only proven when the live function version advances past the swap", () => {
+test("version advancement alone refuses equal or regressed versions", () => {
   assert.equal(restoredVersionAdvanced(state(), 57), true);
   assert.equal(restoredVersionAdvanced(state(), 56), false);
   assert.equal(restoredVersionAdvanced(state(), 55), false);
   assert.equal(restoredVersionAdvanced(state(), 0), false);
   assert.equal(restoredVersionAdvanced({}, 57), false);
+});
+
+function liveFunction(overrides = {}) {
+  return {
+    name: "cms-public",
+    slug: "cms-public",
+    status: "ACTIVE",
+    version: 56,
+    verify_jwt: false,
+    ezbr_sha256: "7".repeat(64),
+    updated_at: "2026-09-29T12:27:46.034Z",
+    ...overrides,
+  };
+}
+
+function restoredDeployment(overrides = {}) {
+  return {
+    state: state(),
+    observedCandidateSourceSha256: CANDIDATE_DIGEST,
+    before: liveFunction(),
+    after: liveFunction(),
+    deploymentOutcome: "no-change",
+    ...overrides,
+  };
+}
+
+test("a failed pre-upload swap can restore without advancing only with an attested stable CLI no-op", () => {
+  const result = assertRestoredFunctionDeployment(restoredDeployment());
+  assert.equal(result.deploymentOutcome, "no-change");
+  assert.equal(result.version, 56);
+  assert.equal(result.bundleSha256, "7".repeat(64));
+  assert.equal(result.sourceSha256, CANDIDATE_DIGEST);
+});
+
+test("a real swap restore still requires the next version and exact candidate source", () => {
+  const result = assertRestoredFunctionDeployment(
+    restoredDeployment({
+      before: liveFunction({ version: 57 }),
+      after: liveFunction({ version: 58, ezbr_sha256: "8".repeat(64) }),
+      deploymentOutcome: "deployed",
+    }),
+  );
+  assert.equal(result.version, 58);
+  assert.equal(result.deploymentOutcome, "deployed");
+});
+
+test("an already-restored watchdog replay still binds stable immutable remote fields", () => {
+  assert.equal(
+    assertRestoredFunctionDeployment(
+      restoredDeployment({ before: liveFunction({ version: 58 }), after: liveFunction({ version: 58 }) }),
+    ).version,
+    58,
+  );
+});
+
+test("restore refuses no-op ambiguity, metadata drift, version regression and authorization drift", () => {
+  const cases = [
+    { deploymentOutcome: "deployed" },
+    { deploymentOutcome: undefined },
+    { deploymentOutcome: "unknown" },
+    { before: liveFunction({ version: 55 }), after: liveFunction({ version: 55 }) },
+    { before: liveFunction({ version: 55 }), deploymentOutcome: "deployed" },
+    { after: liveFunction({ version: 55 }) },
+    { after: liveFunction({ version: 57 }) },
+    { after: liveFunction({ version: 58 }), deploymentOutcome: "deployed" },
+    { after: liveFunction({ ezbr_sha256: "8".repeat(64) }) },
+    { before: liveFunction({ ezbr_sha256: undefined }) },
+    { after: liveFunction({ ezbr_sha256: undefined }) },
+    { after: liveFunction({ updated_at: "2026-09-29T13:27:46.034Z" }) },
+    { before: liveFunction({ updated_at: null }), after: liveFunction({ updated_at: null }) },
+    { before: liveFunction({ verify_jwt: undefined }) },
+    { after: liveFunction({ verify_jwt: true }) },
+    { after: liveFunction({ verify_jwt: undefined }) },
+    { after: liveFunction({ status: "INACTIVE" }) },
+    { after: liveFunction({ name: "cms-content", slug: "cms-content" }) },
+  ];
+  for (const drift of cases)
+    assert.throws(() => assertRestoredFunctionDeployment(restoredDeployment(drift)), /RESTORE_NOT_APPLIED/);
+  assert.throws(
+    () =>
+      assertRestoredFunctionDeployment(restoredDeployment({ observedCandidateSourceSha256: LEGACY_DIGEST })),
+    /RESTORE_SOURCE_MISMATCH/,
+  );
+  assert.throws(
+    () =>
+      assertRestoredFunctionDeployment(restoredDeployment({ state: { ...state(), capturedLiveVersion: 0 } })),
+    /LIVE_VERSION_INVALID/,
+  );
+});
+
+test("the bridge captures the exact CLI result and keeps native registry fallback without deploy retries", async () => {
+  const source = await readFile("scripts/qa/cms-public-legacy-bridge.mjs", "utf8");
+  assert.match(source, /delete cliEnvironment\.SUPABASE_INTERNAL_IMAGE_REGISTRY/);
+  assert.match(source, /capture: "deployment"/);
+  assert.match(source, /return classifyFunctionDeploymentOutput/);
+  const restore = source.slice(
+    source.indexOf("async function restore()"),
+    source.indexOf("export async function main()"),
+  );
+  assert.equal((restore.match(/deployFunction\(candidateSource\)/g) ?? []).length, 1);
+  assert.ok(
+    restore.indexOf("assertRestoredFunctionDeployment") <
+      restore.indexOf("probePublicV2RestoreSentinelConvergence"),
+  );
+  assert.match(restore, /if \(!restoreProven\) refuse\("PUBLIC_V2_CONTRACT_UNPROVEN"\)/);
 });
 
 test("the legacy bridge holds its own exclusive recovery variable", () => {

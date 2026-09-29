@@ -1,3 +1,5 @@
+import { evaluateCandidateFunctionDeployment } from "../ev2/phase12/production-function-deployment-lib.mjs";
+
 const FULL_SHA = /^[a-f0-9]{40}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
 const POSITIVE_INTEGER = /^[1-9]\d*$/;
@@ -300,9 +302,39 @@ export function assertEngagePlan(state, observedLegacySourceSha256) {
   };
 }
 
-// A restored function must be a strictly newer deployment than the one captured before the swap;
-// an equal or lower version means the legacy bytes are still live.
+// Version advancement alone never proves the deployed bytes. A failed pre-upload engage can also
+// leave the candidate unchanged; that case requires an explicit CLI no-op and stable remote identity.
 export function restoredVersionAdvanced(state, restoredVersion) {
   if (!Number.isSafeInteger(restoredVersion) || restoredVersion < 1) return false;
   return restoredVersion > Number(state?.capturedLiveVersion ?? Number.POSITIVE_INFINITY);
+}
+
+export function assertRestoredFunctionDeployment({
+  state,
+  observedCandidateSourceSha256,
+  before,
+  after,
+  deploymentOutcome,
+}) {
+  const plan = assertRestorePlan(state, observedCandidateSourceSha256);
+  if (!Number.isSafeInteger(state.capturedLiveVersion) || state.capturedLiveVersion < 1)
+    throw legacyBridgeRefusal("LIVE_VERSION_INVALID");
+  const result = evaluateCandidateFunctionDeployment({
+    beforePayload: [before],
+    afterPayload: [after],
+    managedFunctions: [plan.slug],
+    publicFunctions: new Set([plan.slug]),
+    candidateSourceDigests: { [plan.slug]: plan.sourceSha256 },
+    deploymentOutcomes: { [plan.slug]: deploymentOutcome },
+  });
+  if (
+    !result.valid ||
+    before?.verify_jwt !== false ||
+    after?.verify_jwt !== false ||
+    Number(before?.version) < state.capturedLiveVersion ||
+    (!restoredVersionAdvanced(state, Number(after?.version)) &&
+      !(deploymentOutcome === "no-change" && Number(after?.version) === state.capturedLiveVersion))
+  )
+    throw legacyBridgeRefusal("RESTORE_NOT_APPLIED");
+  return { ...result.deployments[0], deploymentOutcome };
 }

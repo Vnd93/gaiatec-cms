@@ -16,7 +16,7 @@ on:
         required: true
         type: string
       state_artifact_id:
-        description: Artifact ID exato contendo staging-cms-public-legacy-state.json
+        description: Artifact ID exato dos relatorios da bridge; estado autoritativo vem do lease HMAC
         required: true
         type: string
 
@@ -43,6 +43,9 @@ jobs:
           ARTIFACT_ID: ${{ inputs.state_artifact_id }}
         run: |
           set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "${GITHUB_ACTOR,,}" = vnd93
+          test "${GITHUB_TRIGGERING_ACTOR,,}" = vnd93
           [[ "$SOURCE_RUN_ID" =~ ^[1-9][0-9]*$ ]]
           [[ "$SOURCE_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
           [[ "$CONTROL_SHA" =~ ^[a-f0-9]{40}$ ]]
@@ -58,6 +61,8 @@ jobs:
             throw new Error("G12_RECOVERY_REQUEST_SOURCE_BINDING_INVALID");
           if (run.path !== ".github/workflows/promote-staging-frontend-bridge.yml")
             throw new Error("G12_RECOVERY_REQUEST_SOURCE_WORKFLOW_INVALID");
+          if (run.conclusion === "success")
+            throw new Error("G12_RECOVERY_REQUEST_SUCCESSFUL_SOURCE_REFUSED");
           NODE
           artifact_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}")"
           node - "$artifact_json" "$SOURCE_RUN_ID" "$SOURCE_RUN_ATTEMPT" <<'NODE'
@@ -67,15 +72,27 @@ jobs:
           if (artifact.name !== `staging-cms-public-legacy-${process.argv[3]}-${process.argv[4]}`)
             throw new Error("G12_RECOVERY_REQUEST_ARTIFACT_NAME_INVALID");
           NODE
+          for status in queued in_progress waiting pending requested; do
+            active="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs?status=${status}&per_page=100" \
+              --jq ".workflow_runs[] | select(.id != ${GITHUB_RUN_ID}) | .id")"
+            test -z "$active" || { echo "::error::G12_RECOVERY_CONCURRENT_OPERATION_REFUSED"; exit 1; }
+          done
 
-      - name: Checkout exact source control
+      - name: Checkout trusted recovery control
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ inputs.control_sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
+          path: control
           persist-credentials: false
 
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: control/.nvmrc
+
       - name: Read exact remote legacy recovery state
+        id: recovery_state
+        working-directory: control
         env:
           RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
           RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
@@ -84,23 +101,85 @@ jobs:
           CONTROL_SHA: ${{ inputs.control_sha }}
         run: |
           set -euo pipefail
-          mkdir -p legacy-state
+          mkdir -p ../legacy-state
+          node scripts/ev2/phase12/recovery-state-store.mjs fence \
+            --owner-kind staging-cms-public-legacy \
+            --run-id "$SOURCE_RUN_ID" --run-attempt "$SOURCE_RUN_ATTEMPT" --control-sha "$CONTROL_SHA"
           node scripts/ev2/phase12/recovery-state-store.mjs get \
             --kind staging-cms-public-legacy \
-            --file legacy-state/staging-cms-public-legacy-state.json \
+            --file ../legacy-state/staging-cms-public-legacy-state.json \
             --run-id "$SOURCE_RUN_ID" --run-attempt "$SOURCE_RUN_ATTEMPT" --control-sha "$CONTROL_SHA"
           node - <<'NODE'
-          const { readFileSync } = require("node:fs");
-          const state = JSON.parse(readFileSync("legacy-state/staging-cms-public-legacy-state.json", "utf8"));
+          const { appendFileSync, readFileSync } = require("node:fs");
+          const state = JSON.parse(readFileSync("../legacy-state/staging-cms-public-legacy-state.json", "utf8"));
+          if (state.event !== "g12.staging.cms_public_legacy.engaged" || state.functionSlug !== "cms-public")
+            throw new Error("G12_RECOVERY_STATE_KIND_INVALID");
           if (state.projectRef !== "glcqsosxwgmlhzgcsnzv" || state.environment !== "staging")
             throw new Error("G12_RECOVERY_STATE_TARGET_INVALID");
           if (state.workflow?.runId !== process.env.SOURCE_RUN_ID || String(state.workflow?.runAttempt) !== process.env.SOURCE_RUN_ATTEMPT)
             throw new Error("G12_RECOVERY_STATE_SOURCE_BINDING_INVALID");
           if (state.workflow?.controlSha !== process.env.CONTROL_SHA)
             throw new Error("G12_RECOVERY_STATE_CONTROL_BINDING_INVALID");
+          if (!/^[a-f0-9]{40}$/.test(state.candidate?.sha ?? "") ||
+              !/^[a-f0-9]{40}$/.test(state.legacy?.sha ?? "") || state.candidate.sha === state.legacy.sha)
+            throw new Error("G12_RECOVERY_STATE_RELEASE_INVALID");
+          appendFileSync(process.env.GITHUB_OUTPUT,
+            `candidate_sha=${state.candidate.sha}\nlegacy_sha=${state.legacy.sha}\n`);
           NODE
 
-      - name: Read and CAS-clear exact legacy fence
+      - name: Checkout exact restore bytes recorded in the sealed lease
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ steps.recovery_state.outputs.candidate_sha }}
+          fetch-depth: 0
+          path: candidate
+          persist-credentials: false
+
+      - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3
+        with:
+          version: 2.116.0
+
+      - name: Restore and prove exact candidate backend before releasing the fence
+        working-directory: candidate
+        env:
+          QA_CMS_LEGACY_BRIDGE_ENVIRONMENT: staging
+          QA_CMS_LEGACY_BRIDGE_CANDIDATE_SHA: ${{ steps.recovery_state.outputs.candidate_sha }}
+          QA_CMS_LEGACY_BRIDGE_LEGACY_SHA: ${{ steps.recovery_state.outputs.legacy_sha }}
+          QA_CMS_LEGACY_BRIDGE_RUN_ID: ${{ inputs.source_run_id }}
+          QA_CMS_LEGACY_BRIDGE_RUN_ATTEMPT: ${{ inputs.source_run_attempt }}
+          QA_CMS_LEGACY_BRIDGE_CONTROL_SHA: ${{ inputs.control_sha }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$QA_CMS_LEGACY_BRIDGE_CANDIDATE_SHA"
+          mkdir -p outputs
+          cp ../legacy-state/staging-cms-public-legacy-state.json outputs/staging-cms-public-legacy-state.json
+          node ../control/scripts/qa/cms-public-legacy-bridge.mjs restore \
+            --candidate-source . --state outputs/staging-cms-public-legacy-state.json \
+            --report outputs/staging-cms-public-legacy-admin-restore.json
+
+      - name: Preserve mandatory immutable restore proof
+        id: restore_evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: staging-cms-public-legacy-admin-restore-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            candidate/outputs/staging-cms-public-legacy-state.json
+            candidate/outputs/staging-cms-public-legacy-admin-restore.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Verify mandatory restore artifact identity
+        env:
+          ARTIFACT_ID: ${{ steps.restore_evidence.outputs.artifact-id }}
+          ARTIFACT_DIGEST: ${{ steps.restore_evidence.outputs.artifact-digest }}
+        run: |
+          set -euo pipefail
+          [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$ARTIFACT_DIGEST" =~ ^(sha256:)?[a-f0-9]{64}$ ]]
+
+      - name: CAS-clear exact legacy fence only after proven restore and durable evidence
+        working-directory: control
         env:
           RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
           RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}
@@ -111,10 +190,11 @@ jobs:
           set -euo pipefail
           node scripts/ev2/phase12/recovery-state-store.mjs clear \
             --kind staging-cms-public-legacy \
-            --file legacy-state/staging-cms-public-legacy-state.json \
+            --file ../legacy-state/staging-cms-public-legacy-state.json \
             --run-id "$SOURCE_RUN_ID" --run-attempt "$SOURCE_RUN_ATTEMPT" --control-sha "$CONTROL_SHA"
 
       - name: Verify empty staging recovery fence
+        working-directory: control
         env:
           RELEASE_GUARD_TOKEN: ${{ secrets.RELEASE_GUARD_TOKEN }}
           RECOVERY_STATE_HMAC_KEY: ${{ secrets.EVIDENCE_SALT }}

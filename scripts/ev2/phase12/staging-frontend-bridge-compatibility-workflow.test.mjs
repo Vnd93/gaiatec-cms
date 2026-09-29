@@ -1043,7 +1043,7 @@ test("the legacy public backend is swapped in under an exclusive lease and alway
   assert.match(workflow, /recovery-state-store\.mjs clear --kind staging-cms-public-legacy/);
   assert.match(workflow, /steps\.legacy_prepare\.outcome == 'success'/);
   assert.match(workflow, /steps\.legacy_lease\.outcome == 'success'/);
-  assert.match(workflow, /always\(\) && steps\.legacy_engage\.outcome == 'success'/);
+  assert.match(workflow, /id: legacy_restore\s+if: always\(\) && steps\.legacy_lease\.outcome == 'success'/);
   assert.match(
     workflow,
     /REQUIRE_CONTRACT_PROBE: \$\{\{ steps\.canonical_fixture\.outcome == 'success' \}\}/,
@@ -1065,7 +1065,7 @@ test("the legacy public backend is swapped in under an exclusive lease and alway
     workflow,
     /The candidate public backend restore was not proven; the recovery lease remains armed\./,
   );
-  assert.match(workflow, /if \[ "\$LEGACY_ENGAGE" = success \] && \[ "\$LEGACY_RESTORE" != success \]; then/);
+  assert.match(workflow, /if \[ "\$LEGACY_LEASE" = success \] && \[ "\$LEGACY_RESTORE" != success \]; then/);
   assert.match(
     workflow,
     /always\(\) && steps\.legacy_lease\.outcome == 'success' &&\s*\n\s*steps\.legacy_restore\.outcome == 'success'/,
@@ -1081,12 +1081,78 @@ test("the legacy public backend is swapped in under an exclusive lease and alway
   assert.match(workflow, /test "\$LEGACY_RESTORE_EVIDENCE" = success/);
   assert.match(workflow, /test "\$LEGACY_RESTORE_EVIDENCE_IDENTITY" = success/);
   assert.match(workflow, /test "\$LEGACY_CLEAR" = success/);
+  assert.match(workflow, /if \[ "\$LEGACY_LEASE" != success \]; then test "\$LEGACY_RESTORE" = skipped; fi/);
+  assert.doesNotMatch(
+    workflow,
+    /if \[ "\$LEGACY_ENGAGE" != success \]; then test "\$LEGACY_RESTORE" = skipped/,
+  );
 
   // The swap is a staging-only operation: the production project must never appear in it.
   const legacySection = workflow.slice(prepare, canonicalCleanup);
   assert.equal(legacySection.includes("chfuhctnhqgyjowkvllv"), false);
   assert.equal(legacySection.includes("gaiatecsistemas.com.br"), false);
   assert.match(legacySection, /QA_CMS_LEGACY_BRIDGE_ENVIRONMENT: staging/);
+});
+
+test("manual legacy recovery cannot clear a fence without exact restore bytes and durable proof", async () => {
+  const workflow = await readFile(".github/workflows/recover-staging-legacy-fence.yml", "utf8");
+  const readState = workflow.indexOf("      - name: Read exact remote legacy recovery state");
+  const checkout = workflow.indexOf(
+    "      - name: Checkout exact restore bytes recorded in the sealed lease",
+  );
+  const restore = workflow.indexOf("      - name: Restore and prove exact candidate backend");
+  const upload = workflow.indexOf("      - name: Preserve mandatory immutable restore proof");
+  const identity = workflow.indexOf("      - name: Verify mandatory restore artifact identity");
+  const clear = workflow.indexOf(
+    "      - name: CAS-clear exact legacy fence only after proven restore and durable evidence",
+  );
+  const empty = workflow.indexOf("      - name: Verify empty staging recovery fence");
+  assert.ok(
+    readState >= 0 &&
+      readState < checkout &&
+      checkout < restore &&
+      restore < upload &&
+      upload < identity &&
+      identity < clear &&
+      clear < empty,
+  );
+  assert.match(workflow, /test "\$GITHUB_REF" = refs\/heads\/main/);
+  assert.match(workflow, /test "\$\{GITHUB_ACTOR,,\}" = vnd93/);
+  assert.match(workflow, /test "\$\{GITHUB_TRIGGERING_ACTOR,,\}" = vnd93/);
+  assert.match(workflow, /for status in queued in_progress waiting pending requested/);
+  assert.match(workflow, /G12_RECOVERY_CONCURRENT_OPERATION_REFUSED/);
+  assert.match(workflow, /run\.head_sha !== sha/);
+  assert.match(workflow, /run\.status !== "completed"/);
+  assert.match(workflow, /artifact\.workflow_run\?\.id/);
+  assert.match(workflow, /RECOVERY_STATE_HMAC_KEY: \$\{\{ secrets\.EVIDENCE_SALT \}\}/);
+  assert.match(workflow, /recovery-state-store\.mjs fence[\s\S]*--owner-kind staging-cms-public-legacy/);
+  assert.match(workflow, /ref: \$\{\{ github\.sha \}\}[\s\S]*path: control/);
+  assert.match(workflow, /ref: \$\{\{ steps\.recovery_state\.outputs\.candidate_sha \}\}/);
+  assert.match(workflow, /node \.\.\/control\/scripts\/qa\/cms-public-legacy-bridge\.mjs restore/);
+  assert.match(workflow, /--candidate-source \. --state outputs\/staging-cms-public-legacy-state\.json/);
+  assert.match(workflow, /version: 2\.116\.0/);
+  assert.match(workflow, /node-version-file: control\/\.nvmrc/);
+  assert.match(workflow.slice(upload, identity), /if-no-files-found: error/);
+  assert.match(
+    workflow.slice(clear, empty),
+    /--run-id "\$SOURCE_RUN_ID" --run-attempt "\$SOURCE_RUN_ATTEMPT" --control-sha "\$CONTROL_SHA"/,
+  );
+  assert.match(workflow.slice(empty), /--require-empty/);
+  assert.doesNotMatch(
+    workflow,
+    /continue-on-error|always\(\)|--use-api|chfuhctnhqgyjowkvllv|variable delete/,
+  );
+  for (const [index, heredoc] of nodeHeredocs(workflow).entries()) {
+    const parsed = spawnSync(
+      process.execPath,
+      heredoc.module ? ["--input-type=module", "--check"] : ["--check"],
+      {
+        input: heredoc.program,
+        encoding: "utf8",
+      },
+    );
+    assert.equal(parsed.status, 0, `legacy recovery inline Node ${index + 1}: ${parsed.stderr}`);
+  }
 });
 
 test("bridge probes sample enough to make p95 a percentile instead of the maximum", async () => {

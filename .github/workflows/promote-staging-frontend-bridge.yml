@@ -1330,7 +1330,7 @@ jobs:
           QA_CMS_BRIDGE_REPORT_PATH: outputs/staging-bridge-canonical-headless.json
       - name: Restore the candidate public backend in every outcome
         id: legacy_restore
-        if: always() && steps.legacy_engage.outcome == 'success'
+        if: always() && steps.legacy_lease.outcome == 'success'
         continue-on-error: true
         working-directory: candidate
         env:
@@ -1627,6 +1627,7 @@ jobs:
         with:
           name: staging-cms-public-legacy-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
+            candidate/outputs/staging-cms-public-legacy-state.json
             candidate/outputs/staging-cms-public-legacy-prepare.json
             candidate/outputs/staging-cms-public-legacy-engage.json
             candidate/outputs/staging-cms-public-legacy-restore.json
@@ -1658,7 +1659,7 @@ jobs:
           LEGACY_CLEAR: ${{ steps.clear_legacy_state.outcome }}
         run: |
           set -euo pipefail
-          if [ "$LEGACY_ENGAGE" = success ] && [ "$LEGACY_RESTORE" != success ]; then
+          if [ "$LEGACY_LEASE" = success ] && [ "$LEGACY_RESTORE" != success ]; then
             echo "::error::The candidate public backend restore was not proven; the recovery lease remains armed."
             exit 1
           fi
@@ -1667,7 +1668,7 @@ jobs:
             test "$LEGACY_RESTORE_EVIDENCE_IDENTITY" = success
             test "$LEGACY_CLEAR" = success
           fi
-          if [ "$LEGACY_ENGAGE" != success ]; then test "$LEGACY_RESTORE" = skipped; fi
+          if [ "$LEGACY_LEASE" != success ]; then test "$LEGACY_RESTORE" = skipped; fi
           if [ "$EVIDENCE" = success ]; then
             test "$RECOVER" = skipped
             test "$CLEAR_RECOVERY" = success

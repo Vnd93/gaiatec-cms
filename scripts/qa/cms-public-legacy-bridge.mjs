@@ -4,10 +4,14 @@ import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { PUBLIC_FUNCTIONS } from "../ev2/phase12/production-backend-lib.mjs";
-import { productionFunctionSourceDigest } from "../ev2/phase12/production-function-deployment-lib.mjs";
+import {
+  classifyFunctionDeploymentOutput,
+  productionFunctionSourceDigest,
+} from "../ev2/phase12/production-function-deployment-lib.mjs";
 import {
   assertEngagePlan,
   assertRestorePlan,
+  assertRestoredFunctionDeployment,
   buildLegacyBridgeState,
   LEGACY_BRIDGE_ENVIRONMENT,
   LEGACY_BRIDGE_FUNCTION_SLUG,
@@ -17,7 +21,6 @@ import {
   probePublicV2RestoreConvergence,
   probePublicV2RestoreSentinelConvergence,
   PUBLIC_V2_RESTORE_SENTINEL_VERSION,
-  restoredVersionAdvanced,
 } from "./cms-public-legacy-bridge-lib.mjs";
 
 const FULL_SHA = /^[a-f0-9]{40}$/;
@@ -67,15 +70,20 @@ function validateRuntime() {
 }
 
 function supabase(args, { capture = false, cwd = root } = {}) {
+  // Preserve the pinned CLI's native registry fallback, already used by CI. A single forced
+  // registry can throttle before upload and must not prevent restoration. No deploy is retried here.
+  const cliEnvironment = { ...process.env, SUPABASE_ACCESS_TOKEN: accessToken };
+  delete cliEnvironment.SUPABASE_INTERNAL_IMAGE_REGISTRY;
   const result = spawnSync("supabase", args, {
     cwd,
     encoding: "utf8",
     stdio: capture ? ["ignore", "pipe", "pipe"] : ["ignore", "inherit", "inherit"],
-    env: { ...process.env, SUPABASE_ACCESS_TOKEN: accessToken },
+    env: cliEnvironment,
     timeout: 5 * 60_000,
     maxBuffer: 20 * 1024 * 1024,
   });
   if (result.error || result.status !== 0) refuse("SUPABASE_COMMAND_FAILED");
+  if (capture === "deployment") return { stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
   return capture ? (result.stdout ?? "") : "";
 }
 
@@ -94,7 +102,7 @@ function liveFunction() {
     version < 1
   )
     refuse("FUNCTION_INVENTORY_INVALID");
-  return { version, status: "ACTIVE" };
+  return { ...record, version, status: "ACTIVE" };
 }
 
 // The legacy checkout predates the import map, so the map is only passed when the source tree carries
@@ -112,7 +120,12 @@ function deployFunction(sourceRoot) {
   args.push("--no-verify-jwt");
   // The CLI resolves supabase/functions relative to its own working directory, so the deploy has to
   // run from the checkout that owns the bytes being deployed.
-  supabase(args, { cwd: sourceRoot });
+  const output = supabase(args, { cwd: sourceRoot, capture: "deployment" });
+  return classifyFunctionDeploymentOutput({
+    ...output,
+    name: LEGACY_BRIDGE_FUNCTION_SLUG,
+    projectRef: LEGACY_BRIDGE_PROJECT_REF,
+  });
 }
 
 function anonKey() {
@@ -264,13 +277,15 @@ async function restore() {
   const plan = assertRestorePlan(state, observed);
   const before = liveFunction();
 
-  deployFunction(candidateSource);
+  const deploymentOutcome = deployFunction(candidateSource);
   const after = liveFunction();
-  // The live version must never regress and must sit past the version captured before the swap. An
-  // equal version here means the candidate bytes were already live, which is what a watchdog rerun
-  // over an already-restored function looks like.
-  if (after.version < before.version || !restoredVersionAdvanced(state, after.version))
-    refuse("RESTORE_NOT_APPLIED");
+  const deployment = assertRestoredFunctionDeployment({
+    state,
+    observedCandidateSourceSha256: observed,
+    before,
+    after,
+    deploymentOutcome,
+  });
 
   let probedKey = null;
   let probeState = null;
@@ -315,6 +330,9 @@ async function restore() {
     capturedVersion: state.capturedLiveVersion,
     legacyVersion: before.version,
     restoredVersion: after.version,
+    deploymentOutcome,
+    restoredBundleSha256: deployment.bundleSha256,
+    restoredUpdatedAt: deployment.updatedAt,
     candidateSourceSha256: plan.sourceSha256,
     contractProbe,
     contractProbeKind,

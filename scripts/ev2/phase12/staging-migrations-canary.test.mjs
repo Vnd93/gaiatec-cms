@@ -60,6 +60,92 @@ test("staging migration canary is fail-closed on the one authorized project and 
   assert.match(source, /SUPABASE_ACCESS_TOKEN: accessToken/);
 });
 
+test("canary refuses unlinked or mismatched CLI context before requesting keys", async () => {
+  const source = await read("scripts/ev2/phase12/staging-migrations-canary.mjs");
+  const loader = source.slice(
+    source.indexOf("async function loadContext()"),
+    source.indexOf("async function rest("),
+  );
+  const target = { ref: "glcqsosxwgmlhzgcsnzv", name: "GAIATEC CMS Staging", region: "us-east-2" };
+  const execute = new Function("supabaseJson", "createClient", "TARGET", `${loader}\nreturn loadContext();`);
+  const valid = { ...target, linked: true };
+  const rejected = [
+    [],
+    [{ ...valid, ref: "zzzzzzzzzzzzzzzzzzzz" }],
+    [{ ...valid, name: "Unexpected project" }],
+    [{ ...valid, region: "eu-west-1" }],
+    [{ ...valid, linked: false }],
+    [{ ...target }],
+    [{ ...valid, linked: "true" }],
+  ];
+  for (const projects of rejected) {
+    const calls = [];
+    await assert.rejects(
+      execute(
+        (args) => {
+          calls.push(args);
+          return projects;
+        },
+        () => {
+          throw new Error("client must not be created before the target guard");
+        },
+        target,
+      ),
+      /G12_STAGING_MIGRATION_CANARY_TARGET_REFUSED/,
+    );
+    assert.deepEqual(calls, [["projects", "list"]]);
+  }
+  const calls = [];
+  const context = await execute(
+    (args) => {
+      calls.push(args);
+      return args[1] === "list"
+        ? [valid]
+        : [
+            { id: "anon", api_key: "unit-test-anon" },
+            { id: "service_role", api_key: "unit-test-service" },
+          ];
+    },
+    () => ({ fixtureOnly: true }),
+    target,
+  );
+  assert.equal(context.url, `https://${target.ref}.supabase.co`);
+  assert.deepEqual(calls, [
+    ["projects", "list"],
+    ["projects", "api-keys", "--project-ref", target.ref, "--reveal"],
+  ]);
+});
+
+test("all staging canaries retain an independently linked exact candidate workspace", async () => {
+  const workflow = (await read(".github/workflows/deploy-staging.yml")).replaceAll("\r\n", "\n");
+  const start = workflow.indexOf("      - name: Link the exact candidate workspace for staging canaries");
+  const end = workflow.indexOf("\n      - name:", start + 1);
+  assert.ok(start >= 0 && end > start);
+  const step = workflow.slice(start, end);
+  assert.match(step, /working-directory: candidate/);
+  assert.match(step, /CANDIDATE_SHA: \$\{\{ steps\.candidate\.outputs\.sha \}\}/);
+  assert.match(step, /set -euo pipefail/);
+  assert.ok(step.includes('test "$STAGING_SUPABASE_PROJECT_REF" = "glcqsosxwgmlhzgcsnzv"'));
+  assert.ok(step.includes('test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"'));
+  assert.ok(step.includes('test -z "$(git status --porcelain --untracked-files=all)"'));
+  assert.match(step, /supabase link --project-ref "\$STAGING_SUPABASE_PROJECT_REF" --yes/);
+  assert.doesNotMatch(
+    step,
+    /\n\s+if:|continue-on-error|supabase (?:db push|config push|secrets set|functions deploy)/,
+  );
+  assert.ok(workflow.indexOf("Arm staging mutation only after every durable recovery proof exists") < start);
+  assert.ok(workflow.indexOf("Verify staging migrations, RLS, Storage and Vault read-only") < start);
+  for (const canary of [
+    "Exercise post-baseline migration scenarios",
+    "Run three healthy G12 windows",
+    "Run authenticated synthetic canary",
+  ]) {
+    assert.ok(workflow.indexOf(canary) > end);
+  }
+  const inherited = await read("scripts/ev2/phase11/staging-canary.mjs");
+  assert.match(inherited, /project\.linked !== true/);
+});
+
 test("canary proves the collaboration assignee directory is scoped and data-minimized", async () => {
   const source = await read("scripts/ev2/phase12/staging-migrations-canary.mjs");
 

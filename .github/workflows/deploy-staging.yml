@@ -1019,6 +1019,22 @@ jobs:
         run: >-
           node scripts/ev2/phase12/verify-staging-database.mjs
           --source . | tee ../g12-staging-database.json
+      - name: Link the exact candidate workspace for staging canaries
+        working-directory: candidate
+        env:
+          STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          CANDIDATE_SHA: ${{ steps.candidate.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$STAGING_SUPABASE_PROJECT_REF" = "glcqsosxwgmlhzgcsnzv"
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          # Database mutation uses its isolated sealed payload workspace. The canaries run from
+          # the candidate checkout and must independently retain their strict linked-target guard.
+          # Linking records CLI context only; migrations remain exclusive to the sealed payload.
+          supabase link --project-ref "$STAGING_SUPABASE_PROJECT_REF" --yes
       - name: Exercise post-baseline migration scenarios with isolated synthetic data
         if: >-
           steps.frontend_bridge.outputs.release_profile == 'database-auth' ||

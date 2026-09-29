@@ -105,6 +105,14 @@ export const adminNavigation: AdminNavigationGroup[] = [
     icon: PackageSearch,
     items: [
       {
+        to: "/admin/nucleo-catalogo",
+        label: "Núcleo de Catálogo",
+        description: "Cadastro manual, revisões e relações do novo catálogo.",
+        icon: PackageSearch,
+        permissions: ["cms:catalog.read"],
+        match: /^\/admin\/nucleo-catalogo\/?$/,
+      },
+      {
         to: "/admin/produtos",
         label: "Produtos",
         description: "Catálogo, atributos e publicação de produtos.",
@@ -455,6 +463,7 @@ export const administrativeRouteInventory = [
     permission: "execução assistida e recursos individuais ativados",
   },
   { surface: "Produtos", route: "/admin/produtos", permission: "cms:products.read" },
+  { surface: "Núcleo de Catálogo", route: "/admin/nucleo-catalogo", permission: "cms:catalog.read" },
   { surface: "Cadastro em massa", route: "/admin/produtos/importacao", permission: "cms:products.edit" },
   { surface: "Cadastro técnico", route: "/admin/pim", permission: "cms:pim.read" },
   { surface: "Conteúdo editorial", route: "/admin/conteudo", permission: "cms:posts.read" },

@@ -68,7 +68,7 @@ describe("arquitetura de informação administrativa", () => {
     ]);
     expect(
       visibleGroups.flatMap((group) => group.items.filter((entry) => entry.menu !== false)),
-    ).toHaveLength(28);
+    ).toHaveLength(29);
   });
 
   it.each([
@@ -76,6 +76,7 @@ describe("arquitetura de informação administrativa", () => {
     ["Assistente IA", "cms:ai.read"],
     ["Centro de Qualidade", "cms:quality.read"],
     ["Produtos", "cms:products.read"],
+    ["Núcleo de Catálogo", "cms:catalog.read"],
     ["Serviços", "cms:services.read"],
     ["Indústrias", "cms:industries.read"],
     ["Aplicações", "cms:applications.read"],
@@ -124,6 +125,7 @@ describe("arquitetura de informação administrativa", () => {
 
   it.each([
     ["/admin/meu-trabalho", "", "cms:collaboration.read"],
+    ["/admin/nucleo-catalogo", "", "cms:catalog.read"],
     ["/admin/leads", "", "cms:leads.read"],
     ["/admin/assistente/execucao", "", "cms:ai.read"],
     ["/admin/qualidade", "", "cms:quality.read"],

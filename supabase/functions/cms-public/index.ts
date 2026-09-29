@@ -225,6 +225,31 @@ const handleRequest = async (req: Request) => {
     auth: { persistSession: false },
   });
   const publicEndpoint = `${supabaseUrl}/functions/v1/cms-public`;
+  if (type === "catalog-sitemap") {
+    if (!service) return json({ error: "Catálogo temporariamente indisponível." }, 503);
+    const result = await client.rpc("cms_catalog_public_sitemap", { p_environment: environment, p_release_sha: Deno.env.get("CMS_RELEASE_SHA") ?? "" });
+    if (result.error || !Array.isArray(result.data)) return json({ error: "Catálogo temporariamente indisponível." }, 503);
+    return json({ items: result.data });
+  }
+  if (["catalog-capability", "catalog-editorial-term", "catalog-product"].includes(type)) {
+    if (!service) return json({ error: "Catálogo temporariamente indisponível." }, 503);
+    if (type === "catalog-capability") {
+      const result = await client.rpc("cms_catalog_public_capability", { p_environment: environment });
+      return result.error || !result.data
+        ? json({ error: "Catálogo temporariamente indisponível." }, 503)
+        : json(result.data);
+    }
+    const kind = type === "catalog-product" ? "product" : url.searchParams.get("kind") ?? "";
+    const slug = url.searchParams.get("slug") ?? "";
+    if (!["product", "technology", "industry", "application"].includes(kind) || !slugPattern.test(slug) || slug.length > 160)
+      return json({ error: "Conteúdo não encontrado." }, 404);
+    const result = await client.rpc("cms_catalog_public_read", {
+      p_environment: environment, p_release_sha: Deno.env.get("CMS_RELEASE_SHA") ?? "",
+      p_kind: kind, p_slug: slug,
+    });
+    if (result.error) return json({ error: "Catálogo temporariamente indisponível." }, 503);
+    return result.data ? json(result.data) : json({ error: "Conteúdo não encontrado." }, 404);
+  }
   const loadPublicResource = async () => {
     const kind = url.searchParams.get("kind") ?? "";
     const slug = url.searchParams.get("slug") ?? "";

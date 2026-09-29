@@ -180,6 +180,12 @@ Deno.serve(async (req) => {
     correlationId = crypto.randomUUID();
   const documentBlobCleanup = await reconcileDocumentBlobs(admin);
   const incompleteMediaCleanup = await reconcileIncompleteMediaUploads(admin);
+  // Catalog projection is already atomic and no-store. Reconcile only exact
+  // snapshot receipts, behind the live flag; never touch the production lane.
+  const catalogEnvironment = Deno.env.get("CMS_ENVIRONMENT");
+  const catalogOutbox = catalogEnvironment === "local" || catalogEnvironment === "staging"
+    ? await admin.rpc("cms_catalog_reconcile_publication_outbox", { p_environment: catalogEnvironment, p_limit: 20 })
+    : { data: { enabled: false, processed: 0, superseded: 0, busy: false }, error: null };
   const expiredCampaigns = await admin.rpc("cms_expire_campaigns", {
     p_limit: 50,
     p_correlation_id: correlationId,
@@ -355,6 +361,7 @@ Deno.serve(async (req) => {
     else collaborationFailed += 1;
   }
   const degraded =
+    Boolean(catalogOutbox.error) ||
     documentBlobCleanup.failed > 0 ||
     documentBlobCleanup.discoveryFailed ||
     incompleteMediaCleanup.failed > 0 ||
@@ -370,6 +377,7 @@ Deno.serve(async (req) => {
       leadDurability: true,
       documentBlobCleanup,
       incompleteMediaCleanup,
+      catalogOutbox: catalogOutbox.error ? { error: "catalog_outbox_failed" } : catalogOutbox.data,
       scheduled,
       dueReleases: dueReleases.data ?? { processed: 0, failed: 0, partialWrites: 0 },
       expiredCampaigns: expiredCampaigns.data ?? 0,

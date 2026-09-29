@@ -21,6 +21,7 @@ const DiscoveryDetailPage = lazy(() => import("../public/pages/CmsDiscoveryDetai
 const ComparadorPage = lazy(() => import("../public/pages/CmsComparePage"));
 const SearchPage = lazy(() => import("../public/pages/CmsSearchPage"));
 const EditorialTermPage = lazy(() => import("../public/pages/CmsEditorialTermPage"));
+const CatalogSnapshotProductPage = lazy(() => import("../public/pages/CmsCatalogSnapshotProductPage"));
 const NotFoundPage = lazy(() => import("./pages/NotFoundPage"));
 
 // ─── App interno: Relatório Diário de Obra (/relatorio-de-obra) ───
@@ -45,6 +46,7 @@ const AdminAiExecutionPage = lazy(() => import("../admin/pages/AdminAiExecutionP
 const AdminContentPage = lazy(() => import("../admin/pages/AdminContentPage"));
 const AdminEditorPage = lazy(() => import("../admin/pages/AdminEditorPage"));
 const AdminProductsPage = lazy(() => import("../admin/pages/AdminProductsPage"));
+const AdminCatalogWorkspacePage = lazy(() => import("../admin/pages/AdminCatalogWorkspacePage"));
 const AdminProductEditorPage = lazy(() => import("../admin/pages/AdminProductEditorPage"));
 const AdminBulkImportPage = lazy(() => import("../admin/pages/AdminBulkImportPage"));
 const AdminMediaPage = lazy(() => import("../admin/pages/AdminMediaPage"));
@@ -148,6 +150,7 @@ export const router = createBrowserRouter([
       { path: "catalogo/tecnologia/:slug", element: lazyWrap(EditorialTermPage) },
       { path: "catalogo/industria/:slug", element: lazyWrap(EditorialTermPage) },
       { path: "catalogo/aplicacao/:slug", element: lazyWrap(EditorialTermPage) },
+      { path: "catalogo/itens/:slug", element: lazyWrap(CatalogSnapshotProductPage) },
       { path: "busca", element: lazyWrap(SearchPage) },
       { path: "aplicacoes", element: discoveryList("application") },
       { path: "aplicacoes/:slug", element: discoveryDetail("application") },
@@ -201,6 +204,7 @@ export const router = createBrowserRouter([
           { path: "conteudo", element: lazyWrap(AdminContentPage) },
           { path: "conteudo/:id", element: lazyWrap(AdminEditorPage) },
           { path: "produtos", element: lazyWrap(AdminProductsPage) },
+          { path: "nucleo-catalogo", element: lazyWrap(AdminCatalogWorkspacePage) },
           { path: "produtos/importacao", element: lazyWrap(AdminBulkImportPage) },
           { path: "produtos/:id", element: lazyWrap(AdminProductEditorPage) },
           { path: "descoberta/:contentType", element: lazyWrap(AdminDiscoveryPage) },

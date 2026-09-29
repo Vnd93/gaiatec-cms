@@ -262,6 +262,14 @@ const compatibilityTests = {
     "supabase/tests/rls_catalog_fatia3_relations.test.sql",
     "tests/contracts/catalog-fatia3-migration.test.ts",
   ],
+  "0110": [
+    "supabase/tests/rls_catalog_workspace_integration.test.sql",
+    "tests/contracts/catalog-workspace.test.ts",
+  ],
+  "0111": [
+    "supabase/tests/rls_catalog_workspace_integration.test.sql",
+    "tests/contracts/catalog-workspace.test.ts",
+  ],
 };
 for (const migration of additions) {
   const version = migration.version;

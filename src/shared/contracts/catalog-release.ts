@@ -92,14 +92,12 @@ export const CatalogProductRelationSchema = z
     }
   });
 
-export const CatalogEffectiveRelationSchema = CatalogProductRelationSchema.and(
-  z.object({
-    subjectProductId: z.uuid(),
-    relationOriginProductId: z.uuid(),
-    relationOriginLevel: z.number().int().min(0).max(2),
-    isLocalExclusion: z.boolean(),
-  }),
-);
+export const CatalogEffectiveRelationSchema = CatalogProductRelationSchema.safeExtend({
+  subjectProductId: z.uuid(),
+  relationOriginProductId: z.uuid(),
+  relationOriginLevel: z.number().int().min(0).max(2),
+  isLocalExclusion: z.boolean(),
+});
 
 const CATALOG_COMMERCIAL_KEYS = new Set(["sku", "price", "stock", "inventory", "availability", "Offer"]);
 
@@ -190,7 +188,7 @@ export const CatalogNominalProductSchema = z
 
 export const CatalogEditorialTermKindSchema = z.enum(["technology", "industry", "application"]);
 
-const CatalogEditorialBodyBlockSchema = z
+export const CatalogEditorialBodyBlockSchema = z
   .object({
     heading: z.string().trim().min(1).max(160),
     paragraphs: z.array(z.string().trim().min(1).max(2_000)).min(1).max(20),
@@ -272,6 +270,20 @@ export const CatalogEditorialTermSchema = z
   });
 
 /** Sanitized wire contract used by the public term page (no internal IDs). */
+export const CatalogPublicProductLinkSchema = z
+  .object({
+    title: z.string().trim().min(1).max(240),
+    summary: z.string().max(600),
+    path: z.string().regex(/^\/catalogo\/itens\/[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  })
+  .strict();
+export const CatalogPublicProductSchema = CatalogPublicProductLinkSchema.extend({
+  slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  description: z.string().max(20_000),
+  indexable: z.literal(false),
+})
+  .strict()
+  .refine((product) => product.path === `/catalogo/itens/${product.slug}`);
 export const CatalogEditorialPublicTermSchema = z
   .object({
     kind: CatalogEditorialTermKindSchema,
@@ -286,6 +298,7 @@ export const CatalogEditorialPublicTermSchema = z
     title: z.string().trim().min(1).max(180),
     summary: z.string().trim().min(1).max(600),
     blocks: z.array(CatalogEditorialBodyBlockSchema).min(1).max(50),
+    products: z.array(CatalogPublicProductLinkSchema).max(200).default([]),
     seo: z
       .object({
         canonicalPath: z
@@ -508,10 +521,11 @@ export function selectCatalogReaderSource(input: {
 export function selectEffectiveCatalogRelations(
   candidates: CatalogEffectiveRelation[],
 ): CatalogEffectiveRelation[] {
-  const selected = new Map<string, CatalogEffectiveRelation>();
+  const selected = new Map<string, CatalogEffectiveRelation[]>();
   for (const candidate of candidates) {
     const key = `${candidate.subjectProductId}:${candidate.targetProductId}`;
-    const current = selected.get(key);
+    const rows = selected.get(key);
+    const current = rows?.[0];
     if (
       !current ||
       candidate.relationOriginLevel < current.relationOriginLevel ||
@@ -519,14 +533,24 @@ export function selectEffectiveCatalogRelations(
         candidate.isLocalExclusion &&
         !current.isLocalExclusion)
     ) {
-      selected.set(key, candidate);
+      selected.set(key, [candidate]);
+    } else if (
+      rows &&
+      candidate.relationOriginLevel === current.relationOriginLevel &&
+      candidate.isLocalExclusion === current.isLocalExclusion
+    ) {
+      const sameKind = rows.findIndex((row) => row.relationKind === candidate.relationKind);
+      if (sameKind < 0) rows.push(candidate);
+      else if (candidate.revision > rows[sameKind].revision) rows[sameKind] = candidate;
     }
   }
-  return [...selected.values()].sort((left, right) =>
-    `${left.subjectProductId}:${left.targetProductId}`.localeCompare(
-      `${right.subjectProductId}:${right.targetProductId}`,
-    ),
-  );
+  return [...selected.values()]
+    .flat()
+    .sort((left, right) =>
+      `${left.subjectProductId}:${left.targetProductId}:${left.relationKind}`.localeCompare(
+        `${right.subjectProductId}:${right.targetProductId}:${right.relationKind}`,
+      ),
+    );
 }
 
 /** Ambiguous or mixed changes always receive the broadest gate set. */

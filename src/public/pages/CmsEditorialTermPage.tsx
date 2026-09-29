@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
 import {
   getCatalogCapability,
   getPublishedCatalogEditorialTerm,
@@ -29,7 +29,9 @@ function unavailableSeo(path: string) {
 }
 
 export default function CmsEditorialTermPage() {
-  const { termKind = "", slug = "" } = useParams();
+  const navigate = useNavigate();
+  const { slug = "" } = useParams();
+  const termKind = useLocation().pathname.split("/")[2] ?? "";
   const [term, setTerm] = useState<PublishedCatalogEditorialTerm | null>(null);
   const [state, setState] = useState<"loading" | "disabled" | "error" | "ready">("loading");
   const path = `/catalogo/${termKind}/${slug}`;
@@ -62,6 +64,10 @@ export default function CmsEditorialTermPage() {
       })
       .then((result) => {
         if (!active || !result) return;
+        if (result.data.kind === "redirect") {
+          void navigate(result.data.path, { replace: true });
+          return;
+        }
         setTerm(result.data);
         applyCatalogSeo({
           title: `${result.data.title} | GAIATEC`,
@@ -79,7 +85,7 @@ export default function CmsEditorialTermPage() {
     return () => {
       active = false;
     };
-  }, [path, slug, termKind]);
+  }, [path, slug, termKind, navigate]);
 
   if (state === "loading")
     return (
@@ -116,6 +122,19 @@ export default function CmsEditorialTermPage() {
             ))}
           </section>
         ))}
+        {term.products.length > 0 && (
+          <section aria-label="Produtos publicados relacionados">
+            <h2>Produtos relacionados</h2>
+            <ul>
+              {term.products.map((product) => (
+                <li key={product.path}>
+                  <Link to={product.path}>{product.title}</Link>
+                  <p>{product.summary}</p>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
         <Link className="catalog-editorial__cta" to="/contato">
           Solicitar orçamento
         </Link>

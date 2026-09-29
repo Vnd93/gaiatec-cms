@@ -111,7 +111,7 @@ const PRIVATE_ROUTE = /^\/(relatorio-de-obra|admin|preview|cms\/conteudo)(?:\/|$
 const RDO_ROUTES =
   /^\/relatorio-de-obra(?:\/(login|definir-senha|assinar\/[^/]+|arquivo|novo|relatorio\/[^/]+|equipe))?\/?$/;
 const ADMIN_ROUTES =
-  /^\/admin(?:\/(login|recuperar-senha|definir-senha|mfa|meu-trabalho|assistente|assistente\/execucao|conteudo(?:\/novo|\/[0-9a-f-]{36})?|produtos(?:\/novo|\/importacao|\/[0-9a-f-]{36})?|descoberta\/(?:service|industry|application|solution)(?:\/(?:novo|[0-9a-f-]{36}))?|busca|qualidade|listas-mestras|dados-mestres|pim|paginas(?:\/(?:novo|[0-9a-f-]{36}))?|estudio-visual(?:\/[0-9a-f-]{36})?|sites|site|marketing(?:\/campanhas\/(?:novo|[0-9a-f-]{36})|\/formularios)?|leads|midia|perfil|usuarios|auditoria|diagnosticos))?\/?$/;
+  /^\/admin(?:\/(login|recuperar-senha|definir-senha|mfa|meu-trabalho|assistente|assistente\/execucao|conteudo(?:\/novo|\/[0-9a-f-]{36})?|nucleo-catalogo|produtos(?:\/novo|\/importacao|\/[0-9a-f-]{36})?|descoberta\/(?:service|industry|application|solution)(?:\/(?:novo|[0-9a-f-]{36}))?|busca|qualidade|listas-mestras|dados-mestres|pim|paginas(?:\/(?:novo|[0-9a-f-]{36}))?|estudio-visual(?:\/[0-9a-f-]{36})?|sites|site|marketing(?:\/campanhas\/(?:novo|[0-9a-f-]{36})|\/formularios)?|leads|midia|perfil|usuarios|auditoria|diagnosticos))?\/?$/;
 const PREVIEW_ROUTES = /^\/preview\/[A-Za-z0-9_-]{43}\/?$/;
 const CMS_DEMO_ROUTES = /^\/cms\/conteudo\/[a-z0-9]+(?:-[a-z0-9]+)*\/?$/;
 const ASSET_PATH =
@@ -825,6 +825,66 @@ async function handleRequest(request, env) {
   const normalizedPath = path.length > 1 ? path.replace(/\/$/, "") : path;
   const staticRedirect = STATIC_REDIRECTS.get(normalizedPath);
   if (staticRedirect) return redirectResponse(staticRedirect, 301);
+
+  // Isolated preview routes. No legacy fallback or automatic catalog cutover.
+  const catalogRoute =
+    /^\/catalogo\/(tecnologia|industria|aplicacao|itens)\/([a-z0-9]+(?:-[a-z0-9]+)*)\/?$/.exec(path);
+  if (catalogRoute || path === "/sitemap-catalogo.xml") {
+    if (env.CMS_CATALOG_V1 !== "true") return spaResponse(request, env, 404, { noindex: true });
+    if (!catalogRoute) {
+      const result = await fetchCmsPublic({ type: "catalog-sitemap" });
+      if (!result?.ok) return spaResponse(request, env, 503, { noindex: true });
+      const data = await result.json();
+      if (
+        !Array.isArray(data?.items) ||
+        data.items.length > 200 ||
+        data.items.some(
+          (item) =>
+            !/^\/catalogo\/(?:tecnologia|industria|aplicacao)\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(
+              item?.path ?? "",
+            ),
+        )
+      )
+        return spaResponse(request, env, 503, { noindex: true });
+      const xml = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${data.items.map((item) => `<url><loc>${url.origin}${item.path}</loc></url>`).join("")}</urlset>`;
+      return withHeaders(
+        new Response(xml, {
+          headers: { "Content-Type": "application/xml; charset=utf-8", "Cache-Control": "no-store" },
+        }),
+        { noindex: stagingHost },
+      );
+    }
+    const [, segment, slug] = catalogRoute;
+    const kind = {
+      tecnologia: "technology",
+      industria: "industry",
+      aplicacao: "application",
+      itens: "product",
+    }[segment];
+    const detail = await fetchCmsPublic({
+      type: kind === "product" ? "catalog-product" : "catalog-editorial-term",
+      kind,
+      slug,
+    });
+    if (!detail?.ok) return spaResponse(request, env, detail?.status === 404 ? 404 : 503, { noindex: true });
+    const page = await detail.json();
+    const destinationPattern = new RegExp(`^/catalogo/${segment}/[a-z0-9]+(?:-[a-z0-9]+)*$`);
+    if (page?.kind === "redirect") {
+      if (page.status !== 301 || !destinationPattern.test(page.path) || page.path === normalizedPath)
+        return spaResponse(request, env, 503, { noindex: true });
+      // Do not cache a redirect across a flag rollback.
+      const response = redirectResponse(page.path, 301);
+      response.headers.set("Cache-Control", "no-store, max-age=0");
+      return response;
+    }
+    if (page?.path !== normalizedPath || page?.slug !== slug)
+      return spaResponse(request, env, 503, { noindex: true });
+    return spaResponse(request, env, 200, {
+      noindex: stagingHost || page?.payload?.seo?.indexable !== true,
+      page: { ...page, seo: page?.payload?.seo ?? { canonicalPath: page.path, indexable: false } },
+      stagingHost,
+    });
+  }
 
   if (
     ["/sitemap.xml", "/sitemap-conteudo.xml", "/sitemap-produtos.xml", "/sitemap-blog.xml"].includes(path)

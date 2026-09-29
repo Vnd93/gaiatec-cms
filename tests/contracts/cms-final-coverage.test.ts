@@ -66,6 +66,7 @@ type Inventory = {
     fieldContracts: Array<{ id: string; valuesToTest: string[]; resultState: string }>;
     actionContracts: Array<{ id: string; semanticProof: string; resultState: string }>;
     apiHelperEdgeBindings: Array<{ helper: string; edgeFunction: string; evidence: string }>;
+    apiHelperRpcBindings: Array<{ helper: string; databaseFunctions: string[]; evidence: string }>;
     state: string;
     evidence: string[];
     correction: string | null;
@@ -382,12 +383,18 @@ describe("matriz final de cobertura do CMS", () => {
       1,
     );
     expect(
-      new Set(conditionalAuthFailures.map(({ control, surfaceId }) => `${surfaceId}|${control.id}`)),
+      // The final ordinal changes when another inventoried page adds controls;
+      // ownership, source line and control kind remain the evidence identity.
+      new Set(
+        conditionalAuthFailures.map(
+          ({ control, surfaceId }) => `${surfaceId}|${control.id.replace(/:\d+$/, "")}`,
+        ),
+      ),
     ).toEqual(
       new Set([
-        "auth-mfa|src/admin/pages/MfaPage.tsx:84:button:1001",
-        "auth-mfa|src/admin/pages/MfaPage.tsx:87:button:1002",
-        "auth-set-password|src/admin/pages/SetPasswordPage.tsx:76:button:1012",
+        "auth-mfa|src/admin/pages/MfaPage.tsx:84:button",
+        "auth-mfa|src/admin/pages/MfaPage.tsx:87:button",
+        "auth-set-password|src/admin/pages/SetPasswordPage.tsx:76:button",
       ]),
     );
     expect(
@@ -602,6 +609,37 @@ describe("matriz final de cobertura do CMS", () => {
     expect(report.matrix.find((surface) => surface.id === "content-edit")?.edgeFunctions).toContain(
       "cms-public",
     );
+    const catalog = report.matrix.find((surface) => surface.id === "catalog-workspace");
+    expect(catalog?.apiHelperRpcBindings).toEqual([
+      {
+        helper: "executeCatalogWorkspaceCommand",
+        databaseFunctions: ["cms_catalog_workspace_command"],
+        evidence: "src/admin/api/catalog-workspace-api.ts",
+      },
+      {
+        helper: "executeCatalogEditorialCommand",
+        databaseFunctions: ["cms_catalog_editorial_command"],
+        evidence: "src/admin/api/catalog-workspace-api.ts",
+      },
+    ]);
+    expect(catalog?.databaseFunctions).toEqual(
+      expect.arrayContaining([
+        "cms_catalog_workspace",
+        "cms_catalog_workspace_command",
+        "cms_catalog_product_history",
+        "cms_catalog_editorial_workspace",
+        "cms_catalog_editorial_command",
+      ]),
+    );
+    expect(
+      report.matrix.every((surface) =>
+        surface.apiHelperRpcBindings.every(
+          (binding) =>
+            binding.databaseFunctions.length > 0 &&
+            binding.databaseFunctions.every((name) => surface.databaseFunctions.includes(name)),
+        ),
+      ),
+    ).toBe(true);
   });
 
   it("cruza código e índices locais com a documentação CMS/EV2 canônica", () => {

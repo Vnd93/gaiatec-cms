@@ -14,6 +14,7 @@ import { activateLegacyCatalogContext, adaptLegacyCatalogResponse } from "./cata
 import { normalizeLegacyFormResponse, transferLegacyFormBinding } from "./form-backend-compatibility";
 import {
   CatalogEditorialPublicTermSchema,
+  CatalogPublicProductSchema,
   CatalogEditorialTermKindSchema,
   type CatalogEditorialPublicTerm,
   type CatalogEditorialTermKind,
@@ -1275,13 +1276,24 @@ export async function getCatalogCapability(): Promise<PublicCatalogCapability> {
 export async function getPublishedCatalogEditorialTerm(
   kind: CatalogEditorialTermKind,
   slug: string,
-): Promise<PublishedCatalogEditorialTerm> {
+): Promise<PublishedCatalogEditorialTerm | { kind: "redirect"; status: 301; path: string }> {
   const parsedKind = CatalogEditorialTermKindSchema.safeParse(kind);
   if (!parsedKind.success || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug))
     throw new Error("Termo editorial inválido.");
   const result = await catalogFetch<unknown>(
     new URLSearchParams({ type: "catalog-editorial-term", kind: parsedKind.data, slug }),
   );
+  const prefix = { technology: "tecnologia", industry: "industria", application: "aplicacao" }[kind];
+  if (
+    isRecord(result) &&
+    exactKeys(result, ["kind", "status", "path"]) &&
+    result.kind === "redirect" &&
+    result.status === 301 &&
+    typeof result.path === "string" &&
+    new RegExp(`^/catalogo/${prefix}/[a-z0-9]+(?:-[a-z0-9]+)*$`).test(result.path) &&
+    result.path !== `/catalogo/${prefix}/${slug}`
+  )
+    return { kind: "redirect", status: 301, path: result.path };
   if (
     !isRecord(result) ||
     !exactKeys(result, ["kind", "slug", "path", "payload", "publishedAt"]) ||
@@ -1293,9 +1305,24 @@ export async function getPublishedCatalogEditorialTerm(
   )
     throw new Error("Termo editorial incompatível com o contrato público vigente.");
   const payload = CatalogEditorialPublicTermSchema.safeParse(result.payload);
-  if (!payload.success || payload.data.slug !== result.slug || payload.data.path !== result.path)
+  if (
+    !payload.success ||
+    payload.data.slug !== slug ||
+    payload.data.kind !== kind ||
+    payload.data.slug !== result.slug ||
+    payload.data.path !== result.path
+  )
     throw new Error("Termo editorial incompatível com o contrato público vigente.");
   return { ...payload.data, publishedAt: result.publishedAt };
+}
+
+export async function getPublishedCatalogSnapshotProduct(slug: string) {
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new Error("Produto inválido.");
+  const data = await catalogFetch<unknown>(new URLSearchParams({ type: "catalog-product", slug }));
+  const product = CatalogPublicProductSchema.safeParse(data);
+  if (!product.success || product.data.slug !== slug)
+    throw new Error("Produto incompatível com o contrato público vigente.");
+  return product.data;
 }
 
 export async function getPublicRouteRule(path: string) {

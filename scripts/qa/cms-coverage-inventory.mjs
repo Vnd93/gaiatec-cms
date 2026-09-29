@@ -122,7 +122,7 @@ const ADMIN_DECLARATION_OWNER_OVERRIDES = {
   "src/admin/pages/AdminSiteConfigurationPage.tsx#PlacementEditor": ["site-placements"],
 };
 const OPERATIONAL_EDGE_OWNERS = {
-  "cms-outbox-worker": ["work-inbox", "campaign-edit", "forms", "leads", "diagnostics"],
+  "cms-outbox-worker": ["work-inbox", "campaign-edit", "forms", "leads", "diagnostics", "catalog-workspace"],
   "lead-capture": ["forms", "campaign-edit"],
   "submit-contact": ["public-contact-compatibility"],
   "rdo-command": ["rdo-report-editor", "rdo-reports"],
@@ -318,6 +318,42 @@ const profiles = {
     publicConsumers: ["/blog/:slug", "/cms/conteudo/:slug", "/preview/:token"],
     publicResult:
       "Artigo aprovado aparece na rota pública; arquivamento/retirada remove ou retorna 410 conforme regra.",
+  },
+  catalogWorkspace: {
+    section: "Catálogo",
+    menu: "Núcleo de Catálogo",
+    purpose: "Operar produtos, taxonomia, relações e páginas editoriais versionadas, sem carga ou cutover.",
+    sourceFiles: [
+      "src/admin/pages/AdminCatalogWorkspacePage.tsx",
+      "src/admin/components/CatalogEditorialWorkspace.tsx",
+      "src/admin/api/catalog-workspace-api.ts",
+    ],
+    permissions: ["cms:catalog.read", "cms:catalog.edit", "cms:catalog.administer", "cms:catalog.publish"],
+    apiHelpers: ["executeCatalogWorkspaceCommand", "executeCatalogEditorialCommand"],
+    edgeFunctions: ["cms-public"],
+    tables: [
+      "cms_catalog_products",
+      "cms_catalog_product_revisions",
+      "cms_catalog_taxonomy_terms",
+      "cms_catalog_taxonomy_revisions",
+      "cms_catalog_product_snapshots",
+      "cms_catalog_publication_outbox",
+      "cms_catalog_product_relation_revisions",
+      "cms_catalog_product_hierarchy_revisions",
+      "cms_catalog_editorial_revisions",
+      "cms_catalog_editorial_index_approvals",
+      "cms_catalog_audit_events",
+    ],
+    storage: [],
+    publicConsumers: [
+      "/catalogo/itens/:slug",
+      "/catalogo/tecnologia/:slug",
+      "/catalogo/industria/:slug",
+      "/catalogo/aplicacao/:slug",
+    ],
+    publicResult:
+      "Somente snapshots publicados com opt-in explícito; default-off, sem fallback legado e sem aprovação de homologação presumida.",
+    featureFlag: "ev2.catalog_v1",
   },
   productsList: {
     section: "Catálogo",
@@ -890,6 +926,7 @@ function ruleRange(start, end, topic, ruleProfiles) {
 
 const businessRuleBindings = [
   ...ruleRange(1, 4, "Rascunho e concorrência", [
+    "catalogWorkspace",
     "contentEditor",
     "productEditor",
     "pageEditor",
@@ -1027,6 +1064,9 @@ const surfaces = [
   }),
   surface("products-list", "/admin/produtos", "/admin/produtos", "productsList", {
     menuPath: "/admin/produtos",
+  }),
+  surface("catalog-workspace", "/admin/nucleo-catalogo", "/admin/nucleo-catalogo", "catalogWorkspace", {
+    menuPath: "/admin/nucleo-catalogo",
   }),
   surface("products-import", "/admin/produtos/importacao", "/admin/produtos/importacao", "bulkImport", {
     menuPath: "/admin/produtos/importacao",
@@ -1528,6 +1568,30 @@ function discoverApiHelperEdges() {
   return mapping;
 }
 
+function discoverApiHelperRpcs() {
+  const mapping = {};
+  for (const absolutePath of walk(resolve(repositoryRoot, "src/admin/api"))) {
+    if (!absolutePath.endsWith(".ts")) continue;
+    const file = absolutePath.slice(repositoryRoot.length + 1).replaceAll("\\", "/");
+    const source = sourceText(file);
+    const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+    for (const declaration of ast.statements) {
+      if (
+        !ts.isFunctionDeclaration(declaration) ||
+        !declaration.name ||
+        !declaration.body ||
+        !declaration.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)
+      )
+        continue;
+      const targets = unique(
+        [...declaration.body.getText(ast).matchAll(/\.rpc\(\s*["']([^"']+)["']/g)].map((match) => match[1]),
+      );
+      if (targets.length) mapping[declaration.name.text] = { targets, evidence: file };
+    }
+  }
+  return mapping;
+}
+
 function discoverMigrationInventory() {
   const migrationsDirectory = resolve(repositoryRoot, "supabase/migrations");
   const files = readdirSync(migrationsDirectory)
@@ -1996,6 +2060,8 @@ function validateAndBuild() {
   const edgeFunctionNames = new Set(edgeFunctionSources.map((edge) => edge.name));
   const backendDataCalls = inventoryBackendDataCalls(edgeFunctionSources, migrationInventory);
   const apiHelperEdges = discoverApiHelperEdges();
+  const apiHelperRpcs = discoverApiHelperRpcs();
+  const knownFunctions = new Set(migrationInventory.databaseFunctions.map((entry) => entry.name));
   const knownRelations = new Set(migrationInventory.relations.map((relation) => relation.name));
   const knownBuckets = new Set(migrationInventory.storageBuckets.map((bucket) => bucket.name));
   const knownPermissions = new Set(migrationInventory.permissions);
@@ -2015,9 +2081,16 @@ function validateAndBuild() {
     const edgeCalls = backendDataCalls.filter((call) =>
       call.ownerEdgeFunctions.some((edge) => effectiveEdgeFunctions.includes(edge)),
     );
-    const databaseFunctions = unique(
-      edgeCalls.filter((call) => call.classification === "database-rpc").flatMap((call) => call.targets),
+    const directRpcs = sourceDependencyClosure(profile.sourceFiles).flatMap((file) =>
+      [...sourceText(file).matchAll(/\.rpc\(\s*["']([^"']+)["']/g)].map((match) => match[1]),
     );
+    const databaseFunctions = unique([
+      ...edgeCalls.filter((call) => call.classification === "database-rpc").flatMap((call) => call.targets),
+      ...directRpcs,
+    ]);
+    if (directRpcs.some((name) => !knownFunctions.has(name))) {
+      throw new Error(`RPC administrativa ausente das migrations em ${item.profile}.`);
+    }
     const tables = unique([
       ...profile.tables,
       ...sourceDirectTables,
@@ -2079,11 +2152,20 @@ function validateAndBuild() {
           : "sessão e permissão efetiva",
       },
       apiHelpers: profile.apiHelpers,
-      apiHelperEdgeBindings: profile.apiHelpers.map((helper) => ({
-        helper,
-        edgeFunction: apiHelperEdges[helper] ?? null,
-        evidence: "src/admin/api/cms-api.ts",
-      })),
+      apiHelperEdgeBindings: profile.apiHelpers
+        .filter((helper) => apiHelperEdges[helper])
+        .map((helper) => ({
+          helper,
+          edgeFunction: apiHelperEdges[helper] ?? null,
+          evidence: "src/admin/api/cms-api.ts",
+        })),
+      apiHelperRpcBindings: profile.apiHelpers
+        .filter((helper) => apiHelperRpcs[helper])
+        .map((helper) => ({
+          helper,
+          databaseFunctions: apiHelperRpcs[helper].targets,
+          evidence: apiHelperRpcs[helper].evidence,
+        })),
       edgeFunctions: effectiveEdgeFunctions,
       databaseFunctions,
       tables,
@@ -2162,7 +2244,14 @@ function validateAndBuild() {
     }
     for (const helper of profile.apiHelpers) {
       const mappedEdge = apiHelperEdges[helper];
-      if (!mappedEdge) throw new Error(`Helper CMS sem Edge Function source-backed: ${helper}`);
+      const mappedRpc = apiHelperRpcs[helper];
+      if (
+        !mappedEdge &&
+        mappedRpc?.targets.length &&
+        mappedRpc.targets.every((name) => knownFunctions.has(name))
+      )
+        continue;
+      if (!mappedEdge) throw new Error(`Helper CMS sem Edge Function ou RPC source-backed: ${helper}`);
       if (!profile.edgeFunctions.includes(mappedEdge)) {
         throw new Error(`Helper ${helper} chama ${mappedEdge}, ausente do perfil ${profileId}.`);
       }

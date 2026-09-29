@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   APPROVED_OPENROUTER_MODEL,
   generateOpenRouterProposal,
+  openRouterConfigured,
 } from "../../supabase/functions/_shared/openrouter";
 
 declare global {
@@ -75,10 +76,38 @@ describe("OpenRouter adapter", () => {
     const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
     const body = JSON.parse(String(request.body)) as Record<string, unknown>;
     expect(body.model).toBe(APPROVED_OPENROUTER_MODEL);
-    expect(body.provider).toEqual({ data_collection: "deny", zdr: true });
+    expect(body.provider).toEqual({
+      data_collection: "deny",
+      zdr: true,
+      max_price: { prompt: 0, completion: 0, request: 0 },
+    });
+    expect(body.model).toBe("qwen/qwen3.8-27b:free");
     expect(body).not.toHaveProperty("models");
     expect(body).not.toHaveProperty("response_format");
     expect(request.headers).toMatchObject({ "X-OpenRouter-Metadata": "enabled" });
+  });
+
+  it.each([
+    "inclusionai/ling-3.0-flash-vl:free",
+    "nvidia/nemotron-3.5-lightning:free",
+    "qwen/qwen3.8-27b",
+    "openrouter/auto",
+  ])("refuses unapproved configuration before any network call: %s", async (model) => {
+    vi.stubGlobal("Deno", {
+      env: {
+        get: (name: string) =>
+          ({
+            OPENROUTER_API_KEY: "synthetic-test-key",
+            OPENROUTER_MODEL: model,
+            CMS_AI_EXTERNAL_PROVIDER_ENABLED: "true",
+          })[name],
+      },
+    });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    expect(openRouterConfigured()).toBe(false);
+    await expect(generateOpenRouterProposal(input)).rejects.toThrow("OPENROUTER_NOT_CONFIGURED");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("distinguishes a policy-filtered 404 from a generic 404", async () => {

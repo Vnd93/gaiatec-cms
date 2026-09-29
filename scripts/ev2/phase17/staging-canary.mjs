@@ -12,7 +12,7 @@ import {
 const PROJECT_REF = "glcqsosxwgmlhzgcsnzv";
 const PROJECT_NAME = "GAIATEC CMS Staging";
 const ORIGIN = "https://ev2-g17-canary.gaiatec-cms-staging.pages.dev";
-const EXPECTED_MODEL = "inclusionai/ling-3.0-flash-vl:free";
+const EXPECTED_MODEL = "qwen/qwen3.8-27b:free";
 const EXPECTED_SHA = process.env.EV2_G17_EXPECTED_SHA ?? "";
 if (!/^[a-f0-9]{40}$/.test(EXPECTED_SHA)) throw new Error("EV2_G17_EXPECTED_SHA inválido.");
 const QA_RUN_TAG = createQaRunTag(EXPECTED_SHA);
@@ -685,7 +685,7 @@ console.log(
     candidateSha: EXPECTED_SHA,
     checks: checks.length,
     provider: "openrouter",
-    model: "inclusionai/ling-3.0-flash-vl:free",
+    model: EXPECTED_MODEL,
     syntheticUsers: 2,
     productionMutations: 0,
     realDataUsed: false,

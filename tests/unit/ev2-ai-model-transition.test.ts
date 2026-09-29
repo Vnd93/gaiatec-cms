@@ -13,12 +13,14 @@ import {
 } from "@/shared/contracts/ev2-ai-execute";
 
 const LEGACY_MODEL = "nvidia/nemotron-3.5-lightning:free";
-const NEXT_MODEL = "inclusionai/ling-3.0-flash-vl:free";
+const PREVIOUS_MODEL = "inclusionai/ling-3.0-flash-vl:free";
+const NEXT_MODEL = "qwen/qwen3.8-27b:free";
 
 describe("AI model transition bridge", () => {
-  it("accepts exactly the legacy and next zero-cost models", () => {
+  it("accepts exactly two historical models and the new free model for reading", () => {
     expect(EV2_AI_ACTIVE_OPENROUTER_MODEL).toBe(NEXT_MODEL);
-    expect(EV2_AI_COMPATIBLE_RESPONSE_MODELS).toEqual([LEGACY_MODEL, NEXT_MODEL]);
+    expect(EV2_AI_COMPATIBLE_RESPONSE_MODELS).toEqual([LEGACY_MODEL, PREVIOUS_MODEL, NEXT_MODEL]);
+    expect(Ev2AiCompatibleResponseModelSchema.safeParse(PREVIOUS_MODEL).success).toBe(true);
     expect(Ev2AiCompatibleResponseModelSchema.safeParse(LEGACY_MODEL).success).toBe(true);
     expect(Ev2AiCompatibleResponseModelSchema.safeParse(NEXT_MODEL).success).toBe(true);
     expect(Ev2AiCompatibleResponseModelSchema.safeParse("openrouter/auto").success).toBe(false);
@@ -77,36 +79,39 @@ describe("AI model transition bridge", () => {
     expect(Ev2AiExecutionCapabilitySchema.safeParse(executionCapability).success).toBe(false);
   });
 
-  it.each([LEGACY_MODEL, NEXT_MODEL])("keeps assist and execution responses compatible with %s", (model) => {
-    expect(
-      Ev2AiSessionCreatedSchema.safeParse({
-        schemaVersion: 1,
-        sessionId: "11111111-1111-4111-8111-111111111111",
-        status: "active",
-        providerMode: "openrouter",
-        providerModel: model,
-        externalProviderEnabled: true,
-        expiresAt: "2026-09-13T12:00:00.000Z",
-        correlationId: "22222222-2222-4222-8222-222222222222",
-      }).success,
-    ).toBe(true);
-    expect(
-      Ev2AiExecutionMutationResultSchema.safeParse({
-        schemaVersion: 1,
-        action: "create_target",
-        targetRef: "g14x-model-transition",
-        planId: null,
-        runId: null,
-        status: "created",
-        planHash: null,
-        applied: false,
-        published: false,
-        syntheticOnly: true,
-        providerMode: "openrouter",
-        providerModel: model,
-        realDataAllowed: false,
-        correlationId: "33333333-3333-4333-8333-333333333333",
-      }).success,
-    ).toBe(true);
-  });
+  it.each([LEGACY_MODEL, PREVIOUS_MODEL, NEXT_MODEL])(
+    "keeps assist and execution responses compatible with %s",
+    (model) => {
+      expect(
+        Ev2AiSessionCreatedSchema.safeParse({
+          schemaVersion: 1,
+          sessionId: "11111111-1111-4111-8111-111111111111",
+          status: "active",
+          providerMode: "openrouter",
+          providerModel: model,
+          externalProviderEnabled: true,
+          expiresAt: "2026-09-13T12:00:00.000Z",
+          correlationId: "22222222-2222-4222-8222-222222222222",
+        }).success,
+      ).toBe(true);
+      expect(
+        Ev2AiExecutionMutationResultSchema.safeParse({
+          schemaVersion: 1,
+          action: "create_target",
+          targetRef: "g14x-model-transition",
+          planId: null,
+          runId: null,
+          status: "created",
+          planHash: null,
+          applied: false,
+          published: false,
+          syntheticOnly: true,
+          providerMode: "openrouter",
+          providerModel: model,
+          realDataAllowed: false,
+          correlationId: "33333333-3333-4333-8333-333333333333",
+        }).success,
+      ).toBe(true);
+    },
+  );
 });

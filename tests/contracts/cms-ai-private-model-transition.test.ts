@@ -12,6 +12,7 @@ const productionBackend = readFileSync("scripts/ev2/phase12/production-backend-l
 
 const legacyModel = "nvidia/nemotron-3.5-lightning:free";
 const activeModel = "inclusionai/ling-3.0-flash-vl:free";
+const nextModel = "qwen/qwen3.8-27b:free";
 
 describe("private zero-cost AI model transition", () => {
   it("preserves historical evidence while closing new writes on Ling", () => {
@@ -48,18 +49,22 @@ describe("private zero-cost AI model transition", () => {
   });
 
   it("uses only a deny-plus-ZDR free endpoint with no paid fallback", () => {
-    expect(adapter).toContain(`APPROVED_OPENROUTER_MODEL = "${activeModel}"`);
-    expect(adapter).toContain('provider: { data_collection: "deny", zdr: true }');
+    expect(adapter).toContain(`APPROVED_OPENROUTER_MODEL = "${nextModel}"`);
+    expect(adapter).toContain('data_collection: "deny"');
+    expect(adapter).toContain("zdr: true");
+    expect(adapter).toContain("max_price: { prompt: 0, completion: 0, request: 0 }");
     expect(adapter).toContain("OPENROUTER_NO_ALLOWED_PROVIDER");
     expect(adapter).not.toMatch(/response_format|models:/);
     expect(adapter).not.toMatch(/console\.(?:log|debug|info)/);
     expect(productionBackend).toContain(`PRODUCTION_OPENROUTER_MODEL = "${activeModel}"`);
-    expect(stagingSecrets).toContain(`STAGING_OPENROUTER_MODEL = "${activeModel}"`);
+    expect(stagingSecrets).toContain(`STAGING_OPENROUTER_MODEL = "${nextModel}"`);
+    expect(productionBackend).not.toContain(nextModel);
   });
 
-  it("ships a two-model frontend bridge before staging changes its backend", () => {
+  it("ships a three-model frontend bridge before staging changes its backend", () => {
     expect(assistContract).toContain(`"${legacyModel}"`);
     expect(assistContract).toContain(`"${activeModel}"`);
+    expect(assistContract).toContain(`"${nextModel}"`);
     expect(assistContract).toContain("EV2_AI_ACTIVE_OPENROUTER_MODEL");
     expect(executeContract).toContain("CompatibleResponseModel = Ev2AiCompatibleResponseModelSchema");
     const bridge = stagingWorkflow.indexOf(

@@ -270,6 +270,13 @@ const compatibilityTests = {
     "supabase/tests/rls_catalog_workspace_integration.test.sql",
     "tests/contracts/catalog-workspace.test.ts",
   ],
+  "0112": [
+    "supabase/tests/rls_cms_ai_private_model_transition.test.sql",
+    "supabase/tests/rls_cms_ai_authoritative_scope.test.sql",
+    "tests/contracts/cms-ai-qwen-free-transition.test.ts",
+    "tests/unit/ev2-ai-model-transition.test.ts",
+    "tests/unit/openrouter-adapter.test.ts",
+  ],
 };
 for (const migration of additions) {
   const version = migration.version;

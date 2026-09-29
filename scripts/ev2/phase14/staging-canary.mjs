@@ -484,7 +484,7 @@ try {
   check(
     "approved_provider_boundary",
     operatorCapability.json.providerMode === "openrouter" &&
-      operatorCapability.json.providerModel === "inclusionai/ling-3.0-flash-vl:free" &&
+      operatorCapability.json.providerModel === "qwen/qwen3.8-27b:free" &&
       operatorCapability.json.externalProviderEnabled === true &&
       operatorCapability.json.externalProviderReady === true &&
       operatorCapability.json.realDataAllowed === false &&
@@ -524,7 +524,7 @@ try {
     workspace.json.policy.gate === "G14" &&
       workspace.json.policy.productionAllowed === false &&
       workspace.json.policy.providerMode === "openrouter" &&
-      workspace.json.policy.providerModel === "inclusionai/ling-3.0-flash-vl:free" &&
+      workspace.json.policy.providerModel === "qwen/qwen3.8-27b:free" &&
       workspace.json.policy.externalProviderEnabled === true &&
       workspace.json.policy.externalProviderReady === true &&
       workspace.json.policy.reviewerSeparationRequired === true,

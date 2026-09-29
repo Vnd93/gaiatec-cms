@@ -2,7 +2,8 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { extname, join } from "node:path";
 
 export const AI_LEGACY_RESPONSE_MODEL = "nvidia/nemotron-3.5-lightning:free";
-export const AI_ACTIVE_RESPONSE_MODEL = "inclusionai/ling-3.0-flash-vl:free";
+export const AI_PREVIOUS_RESPONSE_MODEL = "inclusionai/ling-3.0-flash-vl:free";
+export const AI_ACTIVE_RESPONSE_MODEL = "qwen/qwen3.8-27b:free";
 
 const MAX_REMOTE_JAVASCRIPT_ASSETS = 256;
 const JAVASCRIPT_SPECIFIER = String.raw`[^"']+\.m?js(?:\?[^"']*)?`;
@@ -71,6 +72,7 @@ export function evaluateAiModelRollbackCompatibilityBundle(sourceRoot, bundles) 
   if (!assist.includes(`EV2_AI_ACTIVE_OPENROUTER_MODEL = "${AI_ACTIVE_RESPONSE_MODEL}"`))
     violations.push("active_model_contract_missing");
   if (!assist.includes(AI_LEGACY_RESPONSE_MODEL)) violations.push("legacy_response_model_missing");
+  if (!assist.includes(AI_PREVIOUS_RESPONSE_MODEL)) violations.push("previous_response_model_missing");
   if (!assist.includes("z.enum(EV2_AI_COMPATIBLE_RESPONSE_MODELS)"))
     violations.push("compatible_response_schema_missing");
   if (occurrences(assist, "Ev2AiCompatibleResponseModelSchema") < 6)
@@ -99,10 +101,14 @@ export function evaluateAiModelRollbackCompatibilityBundle(sourceRoot, bundles) 
   const bundle = Array.isArray(bundles) ? bundles.join("\n") : "";
   if (!bundle.includes(AI_ACTIVE_RESPONSE_MODEL)) violations.push("active_model_bundle_missing");
   if (!bundle.includes(AI_LEGACY_RESPONSE_MODEL)) violations.push("legacy_model_bundle_missing");
+  if (!bundle.includes(AI_PREVIOUS_RESPONSE_MODEL)) violations.push("previous_model_bundle_missing");
   if (
     !Array.isArray(bundles) ||
     !bundles.some(
-      (asset) => asset.includes(AI_ACTIVE_RESPONSE_MODEL) && asset.includes(AI_LEGACY_RESPONSE_MODEL),
+      (asset) =>
+        asset.includes(AI_ACTIVE_RESPONSE_MODEL) &&
+        asset.includes(AI_PREVIOUS_RESPONSE_MODEL) &&
+        asset.includes(AI_LEGACY_RESPONSE_MODEL),
     )
   )
     violations.push("compatible_models_not_colocated_in_bundle");
@@ -112,6 +118,7 @@ export function evaluateAiModelRollbackCompatibilityBundle(sourceRoot, bundles) 
     event: "g12.ai-model.rollback-compatibility",
     activeModel: AI_ACTIVE_RESPONSE_MODEL,
     legacyResponseModel: AI_LEGACY_RESPONSE_MODEL,
+    previousResponseModel: AI_PREVIOUS_RESPONSE_MODEL,
     sourceBridgeVerified: violations.every((item) => item.includes("bundle")),
     bundleBridgeVerified: violations.every((item) => !item.includes("bundle")),
     inspectedBundleFiles: Array.isArray(bundles) ? bundles.length : 0,

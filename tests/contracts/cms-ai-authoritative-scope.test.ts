@@ -13,7 +13,7 @@ const fixture = readFileSync("scripts/qa/cms-browser-fixture.mjs", "utf8");
 const pgTap = readFileSync("supabase/tests/rls_cms_ai_authoritative_scope.test.sql", "utf8");
 
 const legacyModel = "nvidia/nemotron-3.5-lightning:free";
-const approvedModel = "inclusionai/ling-3.0-flash-vl:free";
+const approvedModel = "qwen/qwen3.8-27b:free";
 
 describe("authoritative AI scope for F-015 and F-016", () => {
   it("pins the sole provider/model and forbids autonomous or direct data access", () => {
@@ -23,7 +23,9 @@ describe("authoritative AI scope for F-015 and F-016", () => {
     expect(migration).toContain("check (not direct_database_access_allowed)");
     expect(migration).toContain("check (training_opt_out)");
     expect(openRouter).toContain(`APPROVED_OPENROUTER_MODEL = "${approvedModel}"`);
-    expect(openRouter).toContain('provider: { data_collection: "deny", zdr: true }');
+    expect(openRouter).toContain('data_collection: "deny"');
+    expect(openRouter).toContain("zdr: true");
+    expect(openRouter).toContain("max_price: { prompt: 0, completion: 0, request: 0 }");
     expect(assistContract).toContain('z.literal("openrouter")');
     expect(executeContract).toContain('z.literal("openrouter")');
     expect(executeContract).toContain("externalProviderReady: z.boolean()");

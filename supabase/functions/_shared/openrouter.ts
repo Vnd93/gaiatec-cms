@@ -1,4 +1,4 @@
-export const APPROVED_OPENROUTER_MODEL = "inclusionai/ling-3.0-flash-vl:free";
+export const APPROVED_OPENROUTER_MODEL = "qwen/qwen3.8-27b:free";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 export type OpenRouterProposal = {
@@ -83,7 +83,11 @@ export async function generateOpenRouterProposal(input: {
       },
       body: JSON.stringify({
         model: APPROVED_OPENROUTER_MODEL,
-        provider: { data_collection: "deny", zdr: true },
+        provider: {
+          data_collection: "deny",
+          zdr: true,
+          max_price: { prompt: 0, completion: 0, request: 0 },
+        },
         temperature: 0.2,
         max_tokens: 900,
         reasoning: { effort: "none", exclude: true },

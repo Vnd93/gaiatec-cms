@@ -5,6 +5,10 @@ const migration = readFileSync("supabase/migrations/0080_cms_qa_rate_limit_proof
 const edge = readFileSync("supabase/functions/cms-public/index.ts", "utf8");
 const e2e = readFileSync("tests/e2e/cms-security-boundaries.spec.ts", "utf8");
 const workflow = readFileSync(".github/workflows/deploy-staging.yml", "utf8");
+const configurationTransition = readFileSync(
+  "scripts/ev2/phase12/configure-staging-edge-transition.mjs",
+  "utf8",
+);
 
 describe("staging-only isolated rate-limit proof", () => {
   it("binds each bucket to one exact active QA lease and removes it explicitly or terminally", () => {
@@ -77,9 +81,13 @@ describe("staging-only isolated rate-limit proof", () => {
     const browserAttestation = workflow.slice(browserJobStart, browserJobEnd);
 
     expect(deploy).toContain("STAGING_CANDIDATE_SHA: ${{ steps.candidate.outputs.sha }}");
-    expect(deploy).toContain(
-      "$RUNNER_TEMP/g12-staging-release-package/edge/source/scripts/ev2/phase12/configure-staging-edge-public-secrets.mjs",
+    expect(deploy).toMatch(
+      /configure-staging-edge-transition\.mjs[\s\S]*--kind public --candidate "\$\{\{ steps\.candidate\.outputs\.sha \}\}"[\s\S]*--candidate-artifact "\$RUNNER_TEMP\/g12-staging-release-package\/edge"/,
     );
+    expect(configurationTransition).toContain("loadAndVerifyAllEdgeRuntimeArtifact({");
+    expect(configurationTransition).toContain('"configure-staging-edge-public-secrets.mjs"');
+    expect(configurationTransition).toContain('join(artifact.sourceRoot, "scripts/ev2/phase12", script)');
+    expect(configurationTransition).toContain("STAGING_CANDIDATE_SHA: candidateSha");
     expect(browserAttestation).toContain("ref: ${{ needs.deploy.outputs.candidate_sha }}");
     expect(browserAttestation).toContain("QA_CMS_EXPECTED_SHA: ${{ needs.deploy.outputs.candidate_sha }}");
     expect(browserAttestation).toContain("QA_CMS_TARGET_ENVIRONMENT: staging");

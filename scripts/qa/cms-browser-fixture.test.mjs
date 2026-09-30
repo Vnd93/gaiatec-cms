@@ -13,6 +13,8 @@ import {
   buildRecoveredFormRetirementSql,
   buildRouteDefinitions,
   capabilityManifestReady,
+  buildFixtureCleanupError,
+  fixtureCleanupFailureDiagnostics,
   recoverInterruptedUiResourceBinding,
   resolveFixtureRunTag,
   resolveTarget,
@@ -63,6 +65,58 @@ const featureKeys = [
   "ev2.ai_execute",
   "ev2.system_assurance",
 ];
+
+test("cleanup preserva etapas recusadas sem transformar resíduo zero em aprovação", () => {
+  const error = buildFixtureCleanupError(
+    [
+      "QA_CMS_FIXTURE_SESSION_REVOCATION_FAILED",
+      "QA_CMS_FIXTURE_LEASE_COMPLETION_FAILED",
+      "QA_CMS_FIXTURE_SESSION_REVOCATION_FAILED",
+    ],
+    { activeResidue: 0, cleanupAuditEvents: 1, setupAuditEvents: 1 },
+    true,
+  );
+  assert.equal(error.message, "QA_CMS_FIXTURE_CLEANUP_INCOMPLETE");
+  assert.deepEqual(fixtureCleanupFailureDiagnostics(error), {
+    failedSteps: ["QA_CMS_FIXTURE_SESSION_REVOCATION_FAILED", "QA_CMS_FIXTURE_LEASE_COMPLETION_FAILED"],
+    residueChecked: true,
+    zeroActiveResidue: true,
+    cleanupAuditPresent: true,
+    setupAuditRequired: true,
+    setupAuditPresent: true,
+  });
+  assert.match(source, /throw buildFixtureCleanupError\(failures, residue, state\.setupAudited\)/);
+  assert.match(source, /cleanupDiagnostics: fixtureCleanupFailureDiagnostics\(error\)/);
+});
+
+test("cleanup só expõe códigos fixos e nunca mensagens, payloads ou identificadores", () => {
+  const unsafe = "synthetic-secret-not-for-report";
+  const error = buildFixtureCleanupError(
+    [unsafe, "QA_CMS_FIXTURE_NOT_AN_ALLOWED_STEP_FAILED", new Error(unsafe)],
+    { activeResidue: 2, cleanupAuditEvents: 0, setupAuditEvents: 0, payload: unsafe },
+    true,
+  );
+  const report = fixtureCleanupFailureDiagnostics(error);
+  assert.deepEqual(report.failedSteps, ["QA_CMS_FIXTURE_UNKNOWN_CLEANUP_STEP"]);
+  assert.equal(report.zeroActiveResidue, false);
+  assert.equal(report.cleanupAuditPresent, false);
+  assert.equal(report.setupAuditPresent, false);
+  assert.ok(!JSON.stringify(error).includes(unsafe));
+  assert.equal(fixtureCleanupFailureDiagnostics({ cleanupDiagnostics: { payload: unsafe } }), null);
+  assert.equal(fixtureCleanupFailureDiagnostics(new Error(unsafe)), null);
+});
+
+test("cleanup distingue ausência de verificação de prova terminal limpa", () => {
+  const report = fixtureCleanupFailureDiagnostics(buildFixtureCleanupError([], undefined, true));
+  assert.deepEqual(report, {
+    failedSteps: [],
+    residueChecked: false,
+    zeroActiveResidue: false,
+    cleanupAuditPresent: false,
+    setupAuditRequired: true,
+    setupAuditPresent: false,
+  });
+});
 
 function createAdminMock(initialTables) {
   const tables = structuredClone(initialTables);

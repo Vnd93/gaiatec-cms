@@ -3321,6 +3321,57 @@ async function cleanupEditorialGraph(state, actorIds, itemIds, executeQuery = ma
     throw new Error("QA_CMS_FIXTURE_EDITORIAL_CLEANUP_FAILED");
 }
 
+const CLEANUP_FAILURE_STEPS = new Set([
+  "QA_CMS_FIXTURE_OWNED_ITEMS_DISCOVERY_FAILED",
+  "QA_CMS_FIXTURE_EDITORIAL_GRAPH_CLEANUP_FAILED",
+  "QA_CMS_FIXTURE_TOMBSTONE_ACTIVATION_FAILED",
+  "QA_CMS_FIXTURE_DOCUMENT_CLEANUP_FAILED",
+  "QA_CMS_FIXTURE_OVERRIDE_CLEANUP_FAILED",
+  "QA_CMS_FIXTURE_SCOPED_ROLE_CLEANUP_FAILED",
+  "QA_CMS_FIXTURE_ROLE_CLEANUP_FAILED",
+  "QA_CMS_FIXTURE_RDO_ACCESS_CLEANUP_FAILED",
+  "QA_CMS_FIXTURE_AI_SESSION_CLEANUP_FAILED",
+  "QA_CMS_FIXTURE_AI_PLAN_CLEANUP_FAILED",
+  "QA_CMS_FIXTURE_AI_TARGET_CLEANUP_FAILED",
+  "QA_CMS_FIXTURE_CLEANUP_AUDIT_FAILED",
+  "QA_CMS_FIXTURE_PROFILE_SUSPEND_FAILED",
+  "QA_CMS_FIXTURE_SESSION_REVOCATION_FAILED",
+  "QA_CMS_FIXTURE_CREDENTIAL_REVOCATION_FAILED",
+  "QA_CMS_FIXTURE_LEASE_COMPLETION_FAILED",
+  "QA_CMS_FIXTURE_RESIDUE_VERIFICATION_FAILED",
+]);
+
+class FixtureCleanupIncompleteError extends Error {
+  constructor(failures, residue, setupAudited) {
+    super("QA_CMS_FIXTURE_CLEANUP_INCOMPLETE");
+    const codes = Array.isArray(failures) ? failures : [null];
+    // Keep only source-owned stage labels and booleans, never API errors or row data.
+    this.cleanupDiagnostics = Object.freeze({
+      failedSteps: Object.freeze([
+        ...new Set(
+          codes.map((code) =>
+            CLEANUP_FAILURE_STEPS.has(code) ? code : "QA_CMS_FIXTURE_UNKNOWN_CLEANUP_STEP",
+          ),
+        ),
+      ]),
+      residueChecked: Boolean(residue && typeof residue === "object" && !Array.isArray(residue)),
+      zeroActiveResidue: residue?.activeResidue === 0,
+      cleanupAuditPresent:
+        Number.isSafeInteger(residue?.cleanupAuditEvents) && residue.cleanupAuditEvents > 0,
+      setupAuditRequired: setupAudited === true,
+      setupAuditPresent: Number.isSafeInteger(residue?.setupAuditEvents) && residue.setupAuditEvents > 0,
+    });
+  }
+}
+
+export function buildFixtureCleanupError(failures, residue, setupAudited) {
+  return new FixtureCleanupIncompleteError(failures, residue, setupAudited);
+}
+
+export function fixtureCleanupFailureDiagnostics(error) {
+  return error instanceof FixtureCleanupIncompleteError ? structuredClone(error.cleanupDiagnostics) : null;
+}
+
 async function cleanupState(state) {
   validateFixtureState(state, target.environment, target.ref, expectedSha);
   if (!state.actorId)
@@ -3561,7 +3612,7 @@ async function cleanupState(state) {
     residue.cleanupAuditEvents < 1 ||
     (state.setupAudited && residue.setupAuditEvents < 1)
   )
-    throw new Error("QA_CMS_FIXTURE_CLEANUP_INCOMPLETE");
+    throw buildFixtureCleanupError(failures, residue, state.setupAudited);
   return { ...residue, leaseStatus: "cleaned" };
 }
 
@@ -3905,6 +3956,7 @@ async function cleanup() {
       candidateSha: expectedSha,
       runTag: state.runTag,
       errorCode,
+      cleanupDiagnostics: fixtureCleanupFailureDiagnostics(error),
       productionMutations: productionMutationSummary({
         cleanupAttempted: Boolean(state.actorId),
         cleanupCompleted: false,

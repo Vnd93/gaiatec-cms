@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { REAL_BROWSER_LEAD_CHECKS } from "../phase7/real-browser-lead-controls-lib.mjs";
 
 import {
   CMS_TERMINAL_VIEWPORTS,
@@ -9,6 +10,18 @@ import {
 
 const sha = "1234567890abcdef1234567890abcdef12345678";
 const runTag = `QA-CMS-FINAL-20260907-${sha.slice(0, 8)}`;
+const leadBinding = {
+  candidateSha: sha,
+  controlSha: sha,
+  runId: "7654321",
+  runAttempt: 1,
+  runTag,
+  deploymentId: "12345678-1234-4123-8123-123456789abc",
+  reference: "LD-0123ABCDEF",
+  challengeNonceSha256: "b".repeat(64),
+  emailSha256: "c".repeat(64),
+  screenshotSha256: "a".repeat(64),
+};
 
 function fieldKey(surfaceId, name = "Name", occurrence = 0) {
   return `field|${surfaceId}|${name.toLowerCase()}|${occurrence}`;
@@ -448,6 +461,18 @@ function fixture(authSurfaces = ["auth-login"]) {
       },
       security: boundReport(),
     },
+    leadControls: {
+      schemaVersion: 1,
+      status: "passed",
+      event: "g7.real_browser.lead_controls.passed",
+      environment: "staging",
+      ...leadBinding,
+      checks: Object.fromEntries(REAL_BROWSER_LEAD_CHECKS.map((key) => [key, true])),
+      cleanup: { actorLeasesCleaned: 3, retainedLeaseAuditEvents: 6, watchdogFallbackOnCancellation: true },
+      productionTouched: false,
+      tokenCaptured: false,
+    },
+    leadControlsExpected: { ...leadBinding },
     realBrowser: {
       status: "passed",
       environment: "staging",
@@ -469,6 +494,23 @@ function fixture(authSurfaces = ["auth-login"]) {
     environment: "staging",
   };
 }
+
+test("terminal staging refuses omitted or incomplete relocated Chrome lead controls", () => {
+  for (const key of REAL_BROWSER_LEAD_CHECKS) {
+    const input = fixture();
+    input.leadControls.checks[key] = false;
+    assert.throws(() => materializeCmsTerminalCoverage(input), /LEAD_CONTROLS_REFUSED/);
+  }
+  const absent = fixture();
+  delete absent.leadControls;
+  assert.throws(() => materializeCmsTerminalCoverage(absent), /LEAD_CONTROLS_REFUSED/);
+  const changed = fixture();
+  changed.leadControlsExpected.deploymentId = "other-deployment";
+  assert.throws(() => materializeCmsTerminalCoverage(changed), /binding_deploymentId/);
+  const terminal = materializeCmsTerminalCoverage(fixture());
+  delete terminal.evidenceManifest.stagingLeadControls;
+  assert.throws(() => assertCmsTerminalCoverage(terminal), /STAGING_LEAD_CONTROLS_INCOMPLETE/);
+});
 
 function productionFixture() {
   const input = fixture();

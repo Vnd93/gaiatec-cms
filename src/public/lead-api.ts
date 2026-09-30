@@ -1,6 +1,7 @@
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabase";
 import type { PublicFormVersion } from "./catalog-api";
 import { compatibleLeadRequest, normalizeCompatibleLeadSuccess } from "./form-backend-compatibility";
+import { requiresStagingLeadProof } from "./staging-lead-proof";
 
 export type LeadFieldValue = string | boolean | string[];
 
@@ -8,6 +9,7 @@ export type LeadCaptureResult = {
   reference?: string;
   duplicate?: boolean;
   challengeRequired?: boolean;
+  stagingHttpIdempotencyVerified?: true;
 };
 
 const publicLeadFailureMessage = "Não foi possível enviar. Tente novamente.";
@@ -61,12 +63,24 @@ export async function submitGovernedLead({
     captchaToken,
   });
   if (!request) throw new Error(publicLeadFailureMessage);
+  const stagingProofRequired = requiresStagingLeadProof({
+    environment: import.meta.env.VITE_CMS_ENVIRONMENT,
+    origin: window.location.origin,
+    path: window.location.pathname,
+    campaignPath,
+    source,
+    formKey: form.key,
+    fields,
+  });
+  // Serialize once. The explicit QA duplicate uses exactly the same bytes and
+  // the same Siteverify idempotency key. No token leaves this normal transport.
+  const body = JSON.stringify(request.body);
   let response: Response;
   try {
     response = await fetch(`${SUPABASE_URL}/functions/v1/lead-capture`, {
       method: "POST",
       headers: { apikey: SUPABASE_ANON_KEY, "Content-Type": "application/json" },
-      body: JSON.stringify(request.body),
+      body,
     });
   } catch {
     throw new Error(publicLeadFailureMessage);
@@ -80,5 +94,26 @@ export async function submitGovernedLead({
   const confirmation = normalizeCompatibleLeadSuccess(result, request.contract);
   if (response.status !== 201 || !confirmation)
     throw new Error("Não foi possível confirmar o envio. Tente novamente.");
+  if (stagingProofRequired) {
+    if (!captchaToken || confirmation.duplicate !== false)
+      throw new Error("Não foi possível comprovar a captação sintética inicial.");
+    // Exactly one deliberate duplicate, not a retry on an uncertain failure.
+    const repeated = await fetch(`${SUPABASE_URL}/functions/v1/lead-capture`, {
+      method: "POST",
+      headers: { apikey: SUPABASE_ANON_KEY, "Content-Type": "application/json" },
+      body,
+    }).catch(() => null);
+    const repeatedConfirmation = normalizeCompatibleLeadSuccess(
+      await repeated?.json().catch(() => null),
+      request.contract,
+    );
+    if (
+      repeated?.status !== 201 ||
+      repeatedConfirmation?.duplicate !== true ||
+      repeatedConfirmation.reference !== confirmation.reference
+    )
+      throw new Error("Não foi possível comprovar a idempotência sintética.");
+    return { ...confirmation, stagingHttpIdempotencyVerified: true };
+  }
   return confirmation;
 }

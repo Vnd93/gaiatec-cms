@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { TurnstileChallenge } from "@/app/components/TurnstileChallenge";
 import type { PublicFormVersion } from "../catalog-api";
 import { submitGovernedLead, type LeadFieldValue } from "../lead-api";
+import { STAGING_LEAD_PROOF_MESSAGE } from "../staging-lead-proof";
 
 type Props = {
   form: PublicFormVersion;
@@ -81,7 +82,11 @@ export function CmsLeadForm({
       captchaTokenRef.current = "";
       setCaptchaRefreshKey((current) => current + 1);
       setIdempotencyKey(crypto.randomUUID());
-      setMessage(`${form.successMessage}${result.reference ? ` Protocolo ${result.reference}.` : ""}`);
+      setMessage(
+        `${form.successMessage}${result.reference ? ` Protocolo ${result.reference}.` : ""}${
+          result.stagingHttpIdempotencyVerified ? ` ${STAGING_LEAD_PROOF_MESSAGE}` : ""
+        }`,
+      );
     } catch (caught) {
       if ((caught as Error & { challengeRequired?: boolean }).challengeRequired) {
         setCaptchaRequired(true);

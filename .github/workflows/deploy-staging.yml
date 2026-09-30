@@ -2927,13 +2927,17 @@ jobs:
           QA_CMS_UI_CREATED_STATE_PATH: outputs/cms-ui-created-state.json
           QA_CMS_EXPECTED_SHA: ${{ needs.deploy.outputs.candidate_sha }}
           QA_CMS_TARGET_ENVIRONMENT: staging
-      - name: Traverse the rollback frontend with an AAL2 session against the candidate backend
+      - name: Traverse the rollback frontend with an AAL2 session against the candidate backend and prove Chrome lead controls
+        id: real_browser_lead_controls
         timeout-minutes: 30
         working-directory: candidate
-        run: >-
-          npx playwright test tests/e2e/cms-final-coverage.spec.ts
-          --project=desktop-chromium --workers=1 --retries=0
-          --grep "sessão AAL2 percorre todas as superfícies"
+        run: |
+          set -euo pipefail
+          env -u SUPABASE_ACCESS_TOKEN npx playwright test tests/e2e/cms-final-coverage.spec.ts \
+            --project=desktop-chromium --workers=1 --retries=0 \
+            --grep "sessão AAL2 percorre todas as superfícies"
+          node scripts/phase7/staging-roundtrip.mjs --real-browser-lead-controls \
+            | tee outputs/cms-real-browser-lead-controls.json
         env:
           PLAYWRIGHT_BASE_URL: https://ev2-g12-rollback-compat.gaiatec-cms-staging.pages.dev
           QA_CMS_REPORT_PATH: outputs/cms-rollback-authenticated-compatibility.json
@@ -2942,6 +2946,13 @@ jobs:
           QA_CMS_FRONTEND_EXPECTED_SHA: ${{ needs.deploy.outputs.rollback_sha }}
           QA_CMS_ROLLBACK_COMPATIBILITY: "true"
           QA_CMS_TARGET_ENVIRONMENT: staging
+          GAIATEC_EXPECTED_SHA: ${{ needs.deploy.outputs.candidate_sha }}
+          GAIATEC_DEPLOYMENT_ID: ${{ needs.deploy.outputs.canonical_deployment_id }}
+          GAIATEC_QA_RUN_TAG: ${{ needs.deploy.outputs.browser_run_tag }}
+          GAIATEC_STAGING_ORIGIN: https://ev2-g17-canary.gaiatec-cms-staging.pages.dev
+          GAIATEC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          GAIATEC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       - name: Revoke the rollback compatibility actor and verify zero active residue
         id: rollback_browser_cleanup
         if: always() && steps.rollback_browser_fixture.outcome != 'skipped'
@@ -3024,6 +3035,8 @@ jobs:
           --security outputs/cms-security-boundaries.json
           --real-browser outputs/cms-real-browser-attestation.json
           --real-browser-screenshot outputs/cms-real-browser-attestation.png
+          --lead-controls outputs/cms-real-browser-lead-controls.json
+          --deployment-id "${{ needs.deploy.outputs.canonical_deployment_id }}"
           --run-id "${{ github.run_id }}"
           --run-attempt "${{ github.run_attempt }}"
           --control-sha "${{ github.sha }}"
@@ -3053,6 +3066,7 @@ jobs:
             candidate/outputs/cms-ui-created-state.json
             candidate/outputs/cms-real-browser-attestation.json
             candidate/outputs/cms-real-browser-attestation.png
+            candidate/outputs/cms-real-browser-lead-controls.json
             candidate/outputs/cms-public-forward-compatibility.json
             candidate/outputs/cms-browser-mutating-setup.json
             candidate/outputs/cms-browser-mutating-cleanup.json
@@ -3071,6 +3085,7 @@ jobs:
             candidate/outputs/cms-security-boundaries.json \
             candidate/outputs/cms-ui-created-state.json \
             candidate/outputs/cms-real-browser-attestation.json \
+            candidate/outputs/cms-real-browser-lead-controls.json \
             candidate/outputs/cms-public-forward-compatibility.json \
             candidate/outputs/cms-browser-mutating-setup.json \
             candidate/outputs/cms-browser-mutating-cleanup.json \

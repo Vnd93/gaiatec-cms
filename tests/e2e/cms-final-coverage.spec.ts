@@ -1784,6 +1784,11 @@ async function acceptIabLeadAndMarkResponded(input: {
     challenge,
   });
   const reference = attestation.reference;
+  const stagingHttpIdempotencyVerified =
+    input.environment === "staging" &&
+    attestation.visibleSuccessText.includes("Idempotência HTTP 201 confirmada.");
+  if (input.environment === "staging" && !stagingHttpIdempotencyVerified)
+    throw new Error("A captação Chrome não comprovou HTTP 201 inicial e duplicado com a mesma referência.");
 
   await input.page.goto("/admin/leads", { waitUntil: "domcontentloaded" });
   const initialSnapshotPromise = input.page.waitForResponse(
@@ -2025,6 +2030,7 @@ async function acceptIabLeadAndMarkResponded(input: {
     campaignPath: input.campaignPath,
     browserAttestation: {
       ...cmsRealBrowserEvidenceSummary(attestation, screenshotPath),
+      ...(input.environment === "staging" ? { stagingHttpIdempotencyVerified } : {}),
       authoritativePersistence: {
         scopedLeadCount: 1,
         referenceMatched: true,

@@ -1,6 +1,15 @@
 import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
+import { lstatSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { createClient } from "@supabase/supabase-js";
+import { assertConsumedRealBrowserEvidence } from "../ev2/phase12/real-browser-release-evidence-lib.mjs";
+import {
+  assertRealBrowserLeadControls,
+  leadControlsBinding,
+  REAL_BROWSER_LEAD_CHECKS,
+  STAGING_LEAD_PROOF_MESSAGE,
+} from "./real-browser-lead-controls-lib.mjs";
 import {
   assertQaActorLease,
   completeQaActorLease,
@@ -10,6 +19,8 @@ import {
 } from "../qa/qa-actor-lease.mjs";
 
 const stagingProjectRef = "glcqsosxwgmlhzgcsnzv";
+const positiveLeadControls = process.argv[2] === "--real-browser-lead-controls";
+if (process.argv.length > (positiveLeadControls ? 3 : 2)) throw new Error("G7_MODE_REFUSED");
 const supabaseUrl = process.env.GAIATEC_SUPABASE_URL;
 let anonKey = process.env.GAIATEC_SUPABASE_ANON_KEY;
 let serviceKey = process.env.GAIATEC_SUPABASE_SERVICE_ROLE_KEY;
@@ -210,7 +221,7 @@ async function durableLeaseRpc(name, body) {
 }
 
 async function createActor(role) {
-  const email = `cms-${role}-${shortTag}@example.invalid`;
+  const email = `cms-${positiveLeadControls ? "chrome-controls-" : ""}${role}-${shortTag}@example.invalid`;
   const password = `T!${crypto.randomBytes(24).toString("base64url")}9a`;
   const { data, error } = await admin.auth.admin.createUser({
     email,
@@ -650,21 +661,20 @@ async function run() {
     release: health.release,
   });
 
-  const [adminActor, marketing, reviewer, commercial] = await Promise.all([
+  const [adminActor, marketing, reviewer] = await Promise.all([
     createActor("admin"),
     createActor("marketing"),
     createActor("reviewer"),
-    createActor("commercial"),
   ]);
   assert(
-    [adminActor, marketing, reviewer, commercial].every(
+    [adminActor, marketing, reviewer].every(
       (actor) =>
         actor.lease?.status === "active" && actor.lease.ttlSeconds === QA_ACTOR_LEASE_TTL_MINUTES * 60,
     ),
     "Lease automática não foi confirmada antes da concessão de acesso",
   );
   record("Identidades temporárias e RBAC", {
-    roles: ["admin", "marketing", "reviewer", "commercial"],
+    roles: ["admin", "marketing", "reviewer"],
     initialAal: "aal1",
     watchdogLease: `active-${QA_ACTOR_LEASE_TTL_MINUTES}m`,
   });
@@ -913,7 +923,6 @@ async function run() {
     },
     consent: { accepted: true, text: consentText, version: `g7-${runTag}` },
     honeypot: "",
-    captchaToken: "XXXX.DUMMY.TOKEN.XXXX",
   };
   const captureHeaders = {
     apikey: anonKey,
@@ -945,122 +954,8 @@ async function run() {
   );
   record("Turnstile obrigatório", { missingDenied: true, invalidDenied: true });
 
-  const firstCaptureResponse = await fetch(`${supabaseUrl}/functions/v1/lead-capture`, {
-    method: "POST",
-    headers: captureHeaders,
-    body: JSON.stringify(leadBody),
-  });
-  const firstCapture = await firstCaptureResponse.json();
-  assert(
-    firstCaptureResponse.status === 201 && firstCapture.duplicate === false,
-    "Primeira captação falhou",
-    firstCapture,
-  );
-  const repeatCaptureResponse = await fetch(`${supabaseUrl}/functions/v1/lead-capture`, {
-    method: "POST",
-    headers: captureHeaders,
-    body: JSON.stringify(leadBody),
-  });
-  const repeatCapture = await repeatCaptureResponse.json();
-  assert(
-    repeatCaptureResponse.status === 201 &&
-      repeatCapture.duplicate === true &&
-      repeatCapture.reference === firstCapture.reference,
-    "Idempotência do lead falhou",
-    repeatCapture,
-  );
-  const leadQuery = await admin
-    .from("cms_leads")
-    .select("id,status,assigned_to,payload,utm")
-    .eq("reference_code", firstCapture.reference)
-    .single();
-  if (leadQuery.error) throw leadQuery.error;
-  await leadCommand(
-    marketing,
-    {
-      action: "update_lead",
-      leadId: leadQuery.data.id,
-      status: "assigned",
-      assignedTo: commercial.id,
-      reason: `Teste negativo RBAC ${runTag}`,
-    },
-    403,
-  );
-  const commercialAssignment = await invoke("cms-leads", commercial, {
-    action: "update_lead",
-    leadId: leadQuery.data.id,
-    status: "assigned",
-    assignedTo: commercial.id,
-    reason: `Atribuição sintética ${runTag}`,
-  });
-  if (commercialAssignment.status !== 200) {
-    const claims = decodeJwt(commercial.session.access_token);
-    const diagnostic = await admin.rpc("cms_manage_lead", {
-      p_actor_id: commercial.id,
-      p_lead_id: leadQuery.data.id,
-      p_status: "assigned",
-      p_assigned_to: commercial.id,
-      p_reason: `Diagnóstico sintético ${runTag}`,
-      p_aal: claims.aal,
-      p_session_id: claims.session_id,
-      p_issued_at: new Date(claims.iat * 1000).toISOString(),
-      p_correlation_id: uid(),
-    });
-    throw new Error(
-      `Atribuição comercial rejeitada: ${JSON.stringify({ edge: commercialAssignment.data, database: diagnostic.error })}`,
-    );
-  }
-  await leadCommand(
-    commercial,
-    { action: "export_leads", status: "assigned", justification: `Exportação sintética ${runTag}` },
-    403,
-  );
-  await elevate(commercial);
-  const exported = await leadCommand(commercial, {
-    action: "export_leads",
-    status: "assigned",
-    justification: `Exportação sintética ${runTag}`,
-  });
-  assert(
-    exported.data.rows.some((row) => row.reference === firstCapture.reference),
-    "Lead atribuído não apareceu na exportação auditada",
-  );
-  await leadCommand(adminActor, {
-    action: "anonymize_lead",
-    leadId: leadQuery.data.id,
-    reason: `Anonimização sintética ${runTag}`,
-  });
-  const anonymized = await admin
-    .from("cms_leads")
-    .select("status,assigned_to,payload,utm,anonymized_at")
-    .eq("id", leadQuery.data.id)
-    .single();
-  if (anonymized.error) throw anonymized.error;
-  assert(
-    anonymized.data.status === "anonymized" &&
-      anonymized.data.assigned_to === null &&
-      Object.keys(anonymized.data.payload).length === 0 &&
-      Object.keys(anonymized.data.utm).length === 0,
-    "Anonimização não removeu dados pessoais",
-    anonymized.data,
-  );
-  const leadOutbox = await admin
-    .from("cms_lead_outbox")
-    .select("event_type,status")
-    .eq("lead_id", leadQuery.data.id);
-  if (leadOutbox.error) throw leadOutbox.error;
-  assert(
-    leadOutbox.data.length >= 2,
-    "Outbox do lead não registrou recebimento e atribuição",
-    leadOutbox.data,
-  );
-  record("Lead completo, RBAC, exportação e LGPD", {
-    duplicateSuppressed: true,
-    marketingAssignmentDenied: true,
-    aal1ExportDenied: true,
-    anonymized: true,
-    outboxEvents: leadOutbox.data.length,
-  });
+  // Positive capture, idempotency and dependent controls are mandatory in the
+  // browser_attestation lane, after the genuine widget has accepted the lead.
 
   const expiryCases = [
     ["redirect", { mode: "redirect", destinationPath: "/contato" }, 301, "/contato"],
@@ -1416,9 +1311,6 @@ async function run() {
     "cms:form.archive",
     "cms:form.restore",
     "cms:content.publish",
-    "cms:leads.update",
-    "cms:leads.export",
-    "cms:leads.anonymize",
     "cms:bulk_import.create",
     "cms:content.reopen",
   ];
@@ -1432,6 +1324,8 @@ async function run() {
 
   return {
     status: "passed",
+    scope: "automatic-editorial-and-negative-captcha-only",
+    positiveLeadControls: "required-in-browser_attestation-before-terminal-evidence",
     runTag,
     environment: { supabaseProject: "glcqsosxwgmlhzgcsnzv", siteOrigin, productionTouched: false },
     evidence,
@@ -1441,6 +1335,233 @@ async function run() {
       dpoApproval: "outside_this_canary_enforced_by_release_gate",
       goLiveApproval: "requires_sha_bound_literal_after_homologation",
     },
+  };
+}
+
+function readBrowserEvidence(name, maximumBytes = 64 * 1024) {
+  const file = resolve("outputs", name);
+  const stat = lstatSync(file);
+  assert(
+    stat.isFile() && !stat.isSymbolicLink() && stat.size > 1 && stat.size <= maximumBytes,
+    "G7_REAL_BROWSER_EVIDENCE_FILE_REFUSED",
+  );
+  return JSON.parse(readFileSync(file, "utf8"));
+}
+
+async function runRealBrowserLeadControls() {
+  assert(
+    siteOrigin === "https://ev2-g17-canary.gaiatec-cms-staging.pages.dev",
+    "G7_REAL_BROWSER_ORIGIN_REFUSED",
+  );
+  const attestation = readBrowserEvidence("cms-real-browser-attestation.json");
+  assertConsumedRealBrowserEvidence({
+    report: attestation,
+    screenshot: readFileSync(resolve("outputs/cms-real-browser-attestation.png")),
+    expected: {
+      environment: "staging",
+      candidateSha: expectedSha,
+      runTag,
+      runId: process.env.GITHUB_RUN_ID,
+      runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT),
+      controlSha: process.env.GITHUB_SHA,
+    },
+  });
+  assert(
+    attestation.visibleSuccessText.includes(STAGING_LEAD_PROOF_MESSAGE),
+    "G7_REAL_BROWSER_HTTP_IDEMPOTENCY_PROOF_MISSING",
+  );
+  const ui = readBrowserEvidence("cms-ui-created-state.json");
+  const runtime = readBrowserEvidence("cms-final-coverage.json", 32 * 1024 * 1024);
+  const persistence = runtime.mutatingEntityLifecycles?.browserHandoff?.authoritativePersistence;
+  assert(
+    ui.schemaVersion === 1 &&
+      ui.status === "ready" &&
+      ui.environment === "staging" &&
+      ui.candidateSha === expectedSha &&
+      ui.runTag === runTag &&
+      ui.lease?.source === "cms-browser-fixture" &&
+      ui.lease?.resourceIdsCaptured === true &&
+      [ui.lease?.actorId, ui.form?.id, ui.form?.versionId, ui.ids?.campaignId].every((id) =>
+        leaseActorPattern.test(id ?? ""),
+      ) &&
+      ui.lead?.reference === attestation.reference &&
+      ui.lead?.campaignPath === attestation.campaignPath &&
+      ui.lead?.status === "responded",
+    "G7_REAL_BROWSER_UI_BINDING_REFUSED",
+  );
+  assert(
+    runtime.sourceSha === expectedSha &&
+      runtime.runTag === runTag &&
+      runtime.mutatingEntityLifecycles?.status === "passed" &&
+      runtime.mutatingEntityLifecycles?.browserHandoff?.stagingHttpIdempotencyVerified === true &&
+      persistence?.scopedLeadCount === 1 &&
+      persistence?.consentCount === 1 &&
+      persistence?.consentAccepted === true &&
+      persistence?.consentEvidenceMatched === true &&
+      persistence?.actorRunShaEnvironmentMatched === true &&
+      persistence?.formBindingMatched === true &&
+      persistence?.initialHistoryCount === 1 &&
+      persistence?.leadReceivedOutboxCount === 1 &&
+      persistence?.emailHashMatched === true &&
+      persistence?.auditCorrelationMatched === true,
+    "G7_REAL_BROWSER_RLS_PERSISTENCE_PROOF_MISSING",
+  );
+  const binding = leadControlsBinding(attestation, process.env.GAIATEC_DEPLOYMENT_ID);
+  assert(
+    /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(
+      binding.deploymentId ?? "",
+    ),
+    "G7_REAL_BROWSER_DEPLOYMENT_ID_REQUIRED",
+  );
+  const leadQuery = await admin
+    .from("cms_leads")
+    .select(
+      "id,status,assigned_to,form_id,form_version_id,origin_path,qa_actor_id,qa_run_tag,qa_candidate_sha,qa_environment",
+    )
+    .eq("reference_code", attestation.reference)
+    .single();
+  if (leadQuery.error) throw new Error("G7_REAL_BROWSER_LEAD_LOOKUP_FAILED");
+  const lead = leadQuery.data;
+  assert(
+    lead.status === "responded" &&
+      lead.qa_actor_id === ui.lease.actorId &&
+      lead.qa_run_tag === runTag &&
+      lead.qa_candidate_sha === expectedSha &&
+      lead.qa_environment === "staging" &&
+      lead.origin_path === attestation.campaignPath &&
+      lead.form_id === ui.form.id &&
+      lead.form_version_id === ui.form.versionId,
+    "G7_REAL_BROWSER_LEAD_SCOPE_REFUSED",
+  );
+  await assertQaActorLease(
+    leaseRpc,
+    {
+      actorId: ui.lease.actorId,
+      runTag,
+      candidateSha: expectedSha,
+      environment: "staging",
+    },
+    "active",
+  );
+
+  // Provision only after all consumed-Chrome/HTTP/lease bindings passed. The
+  // existing durable actor leases and finally cleanup cover these three roles.
+  const adminActor = await createActor("admin");
+  const marketing = await createActor("marketing");
+  const commercial = await createActor("commercial");
+  assert(
+    [adminActor, marketing, commercial].every(
+      (actor) =>
+        actor.lease?.status === "active" &&
+        actor.lease.ttlSeconds === QA_ACTOR_LEASE_TTL_MINUTES * 60 &&
+        decodeJwt(actor.session.access_token).aal === "aal1",
+    ),
+    "G7_REAL_BROWSER_ACTOR_LEASE_REFUSED",
+  );
+  await leadCommand(
+    marketing,
+    {
+      action: "update_lead",
+      leadId: lead.id,
+      status: "assigned",
+      assignedTo: commercial.id,
+      reason: `Teste negativo RBAC ${runTag}`,
+    },
+    403,
+  );
+  await leadCommand(commercial, {
+    action: "update_lead",
+    leadId: lead.id,
+    status: "assigned",
+    assignedTo: commercial.id,
+    reason: `Atribuição sintética ${runTag}`,
+  });
+  const assigned = await commercial.client
+    .from("cms_leads")
+    .select("id,status,assigned_to")
+    .eq("id", lead.id)
+    .single();
+  assert(
+    !assigned.error && assigned.data?.status === "assigned" && assigned.data?.assigned_to === commercial.id,
+    "G7_REAL_BROWSER_ASSIGNMENT_RLS_FAILED",
+  );
+  await leadCommand(
+    commercial,
+    {
+      action: "export_leads",
+      status: "assigned",
+      justification: `Exportação sintética ${runTag}`,
+    },
+    403,
+  );
+  await elevate(commercial);
+  const exported = await leadCommand(commercial, {
+    action: "export_leads",
+    status: "assigned",
+    justification: `Exportação sintética ${runTag}`,
+  });
+  assert(
+    Array.isArray(exported.data.rows) &&
+      exported.data.rows.filter((row) => row.reference === attestation.reference).length === 1,
+    "G7_REAL_BROWSER_AAL2_EXPORT_FAILED",
+  );
+  await elevate(adminActor);
+  await leadCommand(adminActor, {
+    action: "anonymize_lead",
+    leadId: lead.id,
+    reason: `Anonimização sintética ${runTag}`,
+  });
+  const anonymized = await admin
+    .from("cms_leads")
+    .select("status,assigned_to,payload,utm,anonymized_at")
+    .eq("id", lead.id)
+    .single();
+  assert(
+    !anonymized.error &&
+      anonymized.data?.status === "anonymized" &&
+      anonymized.data.assigned_to === null &&
+      Boolean(anonymized.data.anonymized_at) &&
+      Object.keys(anonymized.data.payload).length === 0 &&
+      Object.keys(anonymized.data.utm).length === 0,
+    "G7_REAL_BROWSER_ANONYMIZATION_FAILED",
+  );
+  const leadOutbox = await admin.from("cms_lead_outbox").select("event_type,status").eq("lead_id", lead.id);
+  assert(
+    !leadOutbox.error &&
+      leadOutbox.data.filter((event) => event.event_type === "lead_received").length === 1 &&
+      leadOutbox.data.some((event) => event.event_type === "lead_assigned") &&
+      leadOutbox.data.length >= 2,
+    "G7_REAL_BROWSER_OUTBOX_INCOMPLETE",
+  );
+  const audit = await admin
+    .from("cms_audit_log")
+    .select("action,target_type,target_id,correlation_id")
+    .in("actor_id", [adminActor.id, commercial.id])
+    .in("action", ["cms:leads.update", "cms:leads.export", "cms:leads.anonymize"]);
+  assert(
+    !audit.error &&
+      ["cms:leads.update", "cms:leads.anonymize"].every((action) =>
+        audit.data.some(
+          (entry) => entry.action === action && entry.target_type === "lead" && entry.target_id === lead.id,
+        ),
+      ) &&
+      audit.data.some(
+        (entry) =>
+          entry.action === "cms:leads.export" &&
+          entry.target_type === "lead_export" &&
+          leaseActorPattern.test(entry.correlation_id ?? ""),
+      ),
+    "G7_REAL_BROWSER_AUDIT_INCOMPLETE",
+  );
+  return {
+    schemaVersion: 1,
+    event: "g7.real_browser.lead_controls.passed",
+    status: "passed",
+    environment: "staging",
+    ...binding,
+    checks: Object.fromEntries(REAL_BROWSER_LEAD_CHECKS.map((key) => [key, true])),
+    productionTouched: false,
+    tokenCaptured: false,
   };
 }
 
@@ -1621,7 +1742,7 @@ async function cleanup() {
 
 let report;
 try {
-  report = await run();
+  report = await (positiveLeadControls ? runRealBrowserLeadControls() : run());
 } catch (error) {
   report = {
     status: "failed",
@@ -1633,5 +1754,14 @@ try {
 } finally {
   const cleanupEvidence = await cleanup();
   report = { ...report, cleanup: cleanupEvidence };
+}
+if (positiveLeadControls && report.status === "passed") {
+  assertRealBrowserLeadControls(
+    report,
+    leadControlsBinding(
+      readBrowserEvidence("cms-real-browser-attestation.json"),
+      process.env.GAIATEC_DEPLOYMENT_ID,
+    ),
+  );
 }
 process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);

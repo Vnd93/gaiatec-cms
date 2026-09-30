@@ -1,8 +1,14 @@
 import { lstatSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
 
 import { assertConsumedRealBrowserEvidence } from "../ev2/phase12/real-browser-release-evidence-lib.mjs";
+import {
+  assertRealBrowserLeadControls,
+  leadControlsBinding,
+  REAL_BROWSER_LEAD_CHECKS,
+} from "../phase7/real-browser-lead-controls-lib.mjs";
 
 export const CMS_TERMINAL_COVERAGE_SCHEMA_VERSION = 1;
 export const CMS_TERMINAL_VIEWPORTS = ["390x844", "768x1024", "1440x900", "1920x1080"];
@@ -42,6 +48,7 @@ function evidenceManifestFileNames(environment) {
         security: "cms-security-boundaries.json",
         realBrowser: "cms-real-browser-attestation.json",
         realBrowserScreenshot: "cms-real-browser-attestation.png",
+        leadControls: "cms-real-browser-lead-controls.json",
       };
 }
 
@@ -1627,6 +1634,17 @@ export function assertCmsTerminalCoverage(value) {
     throw new Error("CMS_TERMINAL_REPORT_CLAIMS_INVALID");
   }
   const realBrowserManifest = record(report.evidenceManifest, "CMS_TERMINAL_EVIDENCE_MANIFEST_INVALID");
+  if (report.environment === "staging") {
+    const controls = realBrowserManifest.stagingLeadControls;
+    if (
+      controls?.status !== "passed" ||
+      !/^[a-f0-9]{64}$/.test(controls?.reportSha256 ?? "") ||
+      JSON.stringify(Object.keys(controls?.checks ?? {}).sort()) !==
+        JSON.stringify([...REAL_BROWSER_LEAD_CHECKS].sort()) ||
+      REAL_BROWSER_LEAD_CHECKS.some((key) => controls.checks[key] !== true)
+    )
+      throw new Error("CMS_TERMINAL_STAGING_LEAD_CONTROLS_INCOMPLETE");
+  }
   const expectedEvidenceFiles = evidenceManifestFileNames(report.environment);
   if (
     Object.entries(expectedEvidenceFiles).some(([key, file]) => realBrowserManifest[key] !== file) ||
@@ -2059,6 +2077,20 @@ export function materializeCmsTerminalCoverage(input) {
   const cleanupReport = assertCleanupReport(reports.cleanup, candidateSha, environment, runTag);
   const residueReport = assertResidueReport(reports.residue, candidateSha, environment, runTag);
   const realBrowserSummary = assertRealBrowserSummary(input.realBrowser, candidateSha, environment, runTag);
+  let stagingLeadControls;
+  if (environment === "staging") {
+    const controls = assertRealBrowserLeadControls(input.leadControls, {
+      ...input.leadControlsExpected,
+      candidateSha,
+      runTag,
+      screenshotSha256: realBrowserSummary.screenshotSha256,
+    });
+    stagingLeadControls = {
+      status: "passed",
+      checks: { ...controls.checks },
+      reportSha256: createHash("sha256").update(JSON.stringify(controls)).digest("hex"),
+    };
+  }
   const boundReports = Object.fromEntries(
     evidenceLabels.map((label) => [
       label,
@@ -2244,6 +2276,7 @@ export function materializeCmsTerminalCoverage(input) {
     },
     evidenceManifest: {
       ...evidenceManifestFileNames(environment),
+      ...(environment === "staging" ? { stagingLeadControls } : {}),
       realBrowserStatus: realBrowserSummary.status,
       realBrowserChannel: realBrowserSummary.channel,
       realBrowserCanonicalFrontendReleaseBound: realBrowserSummary.canonicalFrontendReleaseBound,
@@ -2333,6 +2366,15 @@ function runCli(args) {
     },
   });
   const report = materializeCmsTerminalCoverage({
+    ...(environment === "staging"
+      ? {
+          leadControls: readJsonFile(
+            resolve(repositoryRoot, option(args, "--lead-controls")),
+            "CMS_TERMINAL_LEAD_CONTROLS",
+          ),
+          leadControlsExpected: leadControlsBinding(realBrowserReport, option(args, "--deployment-id")),
+        }
+      : {}),
     inventory: readJsonFile(paths.inventory, "CMS_TERMINAL_INVENTORY"),
     runtime: readJsonFile(paths.runtime, "CMS_TERMINAL_RUNTIME"),
     reports: Object.fromEntries(

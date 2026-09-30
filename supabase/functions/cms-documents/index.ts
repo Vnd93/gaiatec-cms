@@ -1,5 +1,6 @@
 import { z } from "npm:zod@4.4.3";
 import { authenticateCms } from "../_shared/cms-auth.ts";
+import { isCanonicalDocumentWriteFence } from "../_shared/cms-document-confirmation.ts";
 import { isEdgeFetchTimeout } from "../_shared/cms-edge-fetch.ts";
 import { MAX_PDF_BYTES, validatePassivePdf } from "../_shared/cms-pdf-validation.ts";
 import {
@@ -1352,8 +1353,7 @@ async function neutralizeSynthetic(
   // devolvia 503 para uma operacao que deu certo.
   const confirmMessage = String((confirmed.error as { message?: string } | null)?.message ?? "");
   const confirmSqlState = String((confirmed.error as { code?: string } | null)?.code ?? "");
-  const canonicalFenceActive =
-    confirmMessage.includes("CMS_DOCUMENT_CANONICAL_WRITE_FENCE_ACTIVE") || confirmSqlState === "40001";
+  const canonicalFenceActive = isCanonicalDocumentWriteFence(confirmed.error);
   // Um prazo de transporte estourado nao e uma recusa: e ausencia de resposta. O que importa para a
   // seguranca ja esta duravel neste ponto, porque o acesso foi revogado pela preparacao, que
   // commitou, e o objeto foi removido do Storage e conferido ausente logo acima. O que falta e

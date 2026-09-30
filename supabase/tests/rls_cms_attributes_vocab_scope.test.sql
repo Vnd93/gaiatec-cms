@@ -455,7 +455,7 @@ select throws_ok(
       null, 'aal2', 'scope71-qa-one-session', now() - interval '1 minute', gen_random_uuid()
     )
   $call$,
-  '40001', 'CMS_CONTROLLED_VERSION_CONFLICT',
+  'PT409', 'CMS_CONTROLLED_VERSION_CONFLICT',
   'a stale optimistic version is rejected'
 );
 select is(

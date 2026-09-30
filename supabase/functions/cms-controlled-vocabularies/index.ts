@@ -175,7 +175,7 @@ Deno.serve(async (req) => {
   if (error) {
     const message = error.message ?? "";
     const forbidden = message.includes("FORBIDDEN");
-    const conflict = message.includes("CONFLICT") || error.code === "40001" || error.code === "23505";
+    const conflict = message.includes("CONFLICT") || error.code === "PT409" || error.code === "40001" || error.code === "23505";
     return json(
       req,
       {

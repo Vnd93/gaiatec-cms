@@ -368,7 +368,7 @@ Deno.serve(async (req) => {
       ? error.message.match(/CMS_PAGE_BLOCK_INVALID:([a-z_]{3,32})\b/)?.[1]
       : undefined;
     const constraint = error.message.match(/constraint [\"']([^\"']+)[\"']/i)?.[1];
-    const code = error.message.includes("FORBIDDEN") ? 403 : error.message.includes("CONFLICT") || error.code === "40001" ? 409 :
+    const code = error.message.includes("FORBIDDEN") ? 403 : error.message.includes("CONFLICT") || error.code === "PT409" || error.code === "40001" ? 409 :
       error.message.includes("NOT_FOUND") ? 404 : error.code === "23514" || error.code === "22023" ? 422 : 500;
     return json(req, { error: code === 403 ? "Permissão insuficiente." : code === 409 ? "O conteúdo foi alterado em outra sessão." :
       code === 404 ? "Conteúdo não encontrado." : code === 422 ? "Transição ou conteúdo inválido." : "Falha editorial.",

@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
-select plan(61);
+select plan(66);
 
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -185,7 +185,7 @@ select throws_ok(
     '57000000-0000-4000-8000-000000000017', repeat('1',64),
     '57000000-0000-4000-8000-000000000018'
   )$$,
-  '40001', 'CMS_DOCUMENT_REVIEW_SHA_MISMATCH',
+  'PT409', 'CMS_DOCUMENT_REVIEW_SHA_MISMATCH',
   'a reviewer cannot attest a hash different from the quarantined bytes'
 );
 select lives_ok(
@@ -457,7 +457,7 @@ select throws_ok(
     '57000000-0000-4000-8000-000000000034', repeat('f',64),
     '57000000-0000-4000-8000-000000000035'
   )$$,
-  '40001', 'CMS_DOCUMENT_LOCK_CONFLICT', 'stale document lifecycle writes are rejected'
+  'PT409', 'CMS_DOCUMENT_LOCK_CONFLICT', 'stale document lifecycle writes are rejected'
 );
 select lives_ok(
   $$select public.cms_transition_document_asset(
@@ -556,6 +556,46 @@ select is((
   from public.cms_document_assets where id='57000000-0000-4000-8000-000000000010'
 ), 'neutralized:access_revoked:true',
   'the synthetic document is inaccessible while physical removal awaits the fixed fence');
+-- Reproduce the real RPC refusal that previously made PostgREST loop on 40001.
+-- Neither repeated refusal may advance the fence or forge a successful receipt/audit event.
+create temporary table document_fence_before as
+select blob_disposition, canonical_cleanup_not_before, canonical_cleanup_verify_until,
+  canonical_write_claim_id, canonical_write_claim_expires_at
+from public.cms_document_assets where id='57000000-0000-4000-8000-000000000010';
+select throws_ok(
+  $$select public.cms_confirm_synthetic_document_removal(
+    '57000000-0000-4000-8000-000000000001',
+    '57000000-0000-4000-8000-000000000010', repeat('b',64), 'staging',
+    'aal2', 'documents-session', now()-interval '1 minute',
+    '57000000-0000-4000-8000-000000000042', repeat('4',64),
+    '57000000-0000-4000-8000-000000000043'
+  )$$,
+  'PT409', 'CMS_DOCUMENT_CANONICAL_WRITE_FENCE_ACTIVE',
+  'a premature confirmation refuses once with HTTP 409, not serialization failure'
+);
+select throws_ok(
+  $$select public.cms_confirm_synthetic_document_removal(
+    '57000000-0000-4000-8000-000000000001',
+    '57000000-0000-4000-8000-000000000010', repeat('b',64), 'staging',
+    'aal2', 'documents-session', now()-interval '1 minute',
+    '57000000-0000-4000-8000-000000000042', repeat('4',64),
+    '57000000-0000-4000-8000-000000000043'
+  )$$,
+  'PT409', 'CMS_DOCUMENT_CANONICAL_WRITE_FENCE_ACTIVE',
+  'replaying the same premature confirmation still refuses deterministically'
+);
+select is((select to_jsonb(fence) from (
+  select blob_disposition, canonical_cleanup_not_before, canonical_cleanup_verify_until,
+    canonical_write_claim_id, canonical_write_claim_expires_at
+  from public.cms_document_assets where id='57000000-0000-4000-8000-000000000010'
+) fence), (select to_jsonb(fence) from document_fence_before fence),
+  'refusals preserve revoked access, claim and fixed canonical deadlines');
+select is((select count(*)::integer from public.cms_document_command_receipts
+  where idempotency_key='57000000-0000-4000-8000-000000000042'), 0,
+  'a refused confirmation cannot record a successful command receipt');
+select is((select count(*)::integer from public.cms_audit_log
+  where correlation_id='57000000-0000-4000-8000-000000000043'), 0,
+  'a refused confirmation cannot claim that physical cleanup completed');
 select is((select count(*)::integer from public.cms_document_security_reviews
   where document_id='57000000-0000-4000-8000-000000000010'),
   1, 'terminal cleanup preserves the immutable scanner attestation');

@@ -1,4 +1,5 @@
 import { managementRequest } from "./production-backend-lib.mjs";
+import { businessConflictTransportSemanticSql } from "./business-conflict-transport.mjs";
 import {
   CMS_LEAD_ORIGIN_BINDING_0084_OWNER_ONLY_HELPERS,
   CMS_PUBLIC_RELATION_LIMIT_0085_OWNER_ONLY_HELPERS,
@@ -193,6 +194,7 @@ const [result] = await managementRequest(`/v1/projects/${STAGING_PROJECT_REF}/da
         CMS_BLOG_TAXONOMY_TERMINAL_CLEANUP_0106_OWNER_ONLY_FUNCTIONS,
       )},
       ${blogTaxonomyTerminalCleanupSemanticSql("blog_taxonomy_terminal_cleanup_0106_semantics_exact")},
+      ${businessConflictTransportSemanticSql("business_conflict_transport_0114_semantics_exact")},
       ${ownerOnlyFunctionContractSql(
         "release_stability_followup_0101_functions_locked",
         CMS_RELEASE_STABILITY_FOLLOWUP_0101_OWNER_ONLY_FUNCTIONS,
@@ -294,6 +296,7 @@ const checks = [
   "session_logout_fast_path_0105_semantics_exact",
   "blog_taxonomy_terminal_cleanup_0106_functions_locked",
   "blog_taxonomy_terminal_cleanup_0106_semantics_exact",
+  "business_conflict_transport_0114_semantics_exact",
   "release_stability_followup_0101_functions_locked",
   "qa_rate_limit_proof_cleanup_present",
   "qa_actor_auth_trigger_present",

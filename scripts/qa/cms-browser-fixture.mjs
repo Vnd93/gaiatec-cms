@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { QA_ACTOR_LEASE_MAX_MINUTES, QA_ACTOR_LEASE_TTL_MINUTES } from "./qa-actor-lease.mjs";
+import { isCanonicalDocumentWriteFence } from "../../supabase/functions/_shared/cms-document-confirmation.ts";
 
 let createClient;
 
@@ -2788,10 +2789,7 @@ async function neutralizeSyntheticDocuments(state, actorIds) {
       p_correlation_id: randomUUID(),
     });
     if (confirmed.error) {
-      if (
-        confirmed.error.code !== "40001" ||
-        !String(confirmed.error.message ?? "").includes("CMS_DOCUMENT_CANONICAL_WRITE_FENCE_ACTIVE")
-      )
+      if (!isCanonicalDocumentWriteFence(confirmed.error))
         throw new Error("QA_CMS_FIXTURE_DOCUMENT_NEUTRALIZATION_FAILED");
       continue;
     }

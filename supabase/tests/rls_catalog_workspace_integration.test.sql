@@ -64,7 +64,7 @@ select throws_ok($$insert into public.cms_catalog_products(slug,title,created_by
   '42501',null,'direct table insertion cannot bypass command fence');
 select lives_ok($$select pg_temp.command((pg_temp.product(20)-'action')||jsonb_build_object('action','update_product','expectedVersion',1,'title','Updated draft'))$$,'operator saves expected revision');
 select throws_ok($$select pg_temp.command((pg_temp.product(20)-'action')||jsonb_build_object('action','update_product','expectedVersion',1,'title','Stale write'))$$,
-  '40001','CMS_CATALOG_REVISION_CONFLICT','stale revision is rejected');
+  'PT409','CMS_CATALOG_REVISION_CONFLICT','stale revision is rejected');
 select is(pg_temp.current_product(20)->>'title','Updated draft','stale write has no partial effect');
 select is(jsonb_array_length(public.cms_catalog_product_history('local',pg_temp.uid(20))),2,'history has exactly successful revisions');
 select throws_ok($$select pg_temp.command(pg_temp.product(21)||jsonb_build_object('content',jsonb_build_object('summary','x','description','y','price',1)))$$,
@@ -89,7 +89,7 @@ select lives_ok($$select pg_temp.command(pg_temp.action('unpublish_product',20,8
 reset role;
 select is((select count(*)::integer from public.cms_catalog_product_snapshots where product_id=pg_temp.uid(20) and is_current),0,'no current snapshot survives explicit withdrawal');
 select throws_ok($$select public.cms_catalog_ack_publication(id,snapshot_id,revision) from public.cms_catalog_publication_outbox where product_id=pg_temp.uid(20) and revision=4$$,
-  '40001','CMS_CATALOG_OUTBOX_STALE','outbox cannot revive superseded snapshot');
+  'PT409','CMS_CATALOG_OUTBOX_STALE','outbox cannot revive superseded snapshot');
 select lives_ok($$select public.cms_catalog_ack_publication(id,snapshot_id,revision) from public.cms_catalog_publication_outbox where product_id=pg_temp.uid(20) and event_type='invalidated'$$,'invalidation receipt succeeds');
 select lives_ok($$select public.cms_catalog_ack_publication(id,snapshot_id,revision) from public.cms_catalog_publication_outbox where product_id=pg_temp.uid(20) and event_type='invalidated'$$,'same outbox receipt is idempotent');
 set local role authenticated;

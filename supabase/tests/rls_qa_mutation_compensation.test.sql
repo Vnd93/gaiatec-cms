@@ -821,7 +821,7 @@ select throws_ok(
   $$update private.cms_qa_actor_leases
     set status = 'cleaned', cleaned_at = now()
     where actor_id = '64000000-0000-4000-8000-000000000004'$$,
-  '40001',
+  'PT409',
   'CMS_QA_GLOBAL_EXTERNAL_CONFLICT:64000000-0000-4000-8000-000000000101',
   'CAS compensation fails explicitly instead of overwriting an external operator'
 );
@@ -913,7 +913,7 @@ select throws_ok(
   $$update private.cms_qa_actor_leases
     set status = 'cleaned', cleaned_at = now()
     where actor_id = '64000000-0000-4000-8000-000000000005'$$,
-  '40001',
+  'PT409',
   'CMS_QA_DAM_EXTERNAL_CONFLICT',
   'an external DAM relationship aborts cleanup before the synthetic asset is archived'
 );
@@ -952,7 +952,7 @@ select throws_ok(
   $$update private.cms_qa_actor_leases
     set status = 'cleaned', cleaned_at = now()
     where actor_id = '64000000-0000-4000-8000-000000000006'$$,
-  '40001',
+  'PT409',
   'CMS_QA_PIM_EXTERNAL_CONFLICT',
   'an externally edited PIM product aborts cleanup without overwriting it'
 );
@@ -984,7 +984,7 @@ select throws_ok(
   $$update private.cms_qa_actor_leases
     set status = 'cleaned', cleaned_at = now()
     where actor_id = '64000000-0000-4000-8000-000000000007'$$,
-  '40001',
+  'PT409',
   'CMS_QA_MASTER_EXTERNAL_CONFLICT',
   'an externally edited master-data entity aborts cleanup without overwriting it'
 );

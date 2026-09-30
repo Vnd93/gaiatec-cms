@@ -150,7 +150,7 @@ Deno.serve(async (req) => {
         : String(error ?? "");
     const missing = message.includes("ITEM_NOT_FOUND") || message.includes("CONTENT_NOT_FOUND");
     const forbidden = message.includes("FORBIDDEN");
-    const conflict = message.includes("IDEMPOTENCY_CONFLICT") || errorRecord?.code === "40001";
+    const conflict = message.includes("IDEMPOTENCY_CONFLICT") || errorRecord?.code === "PT409" || errorRecord?.code === "40001";
     return json(
       req,
       {

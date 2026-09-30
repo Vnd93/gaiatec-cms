@@ -262,7 +262,7 @@ select throws_ok(
     repeat('d', 64),
     '41000000-0000-4000-8000-000000000032'
   )$$,
-  '40001',
+  'PT409',
   'CMS_RELEASE_CONFLICT',
   'optimistic concurrency rejects a stale release version'
 );

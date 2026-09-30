@@ -7,6 +7,7 @@ const lease = readFileSync("supabase/migrations/0061_cms_qa_actor_lease_watchdog
 const fence = readFileSync("supabase/migrations/0063_cms_document_security_attestation.sql", "utf8");
 const database = readFileSync("supabase/tests/rls_cms_qa_lease_document_canonical_fence.test.sql", "utf8");
 const handler = readFileSync("supabase/functions/cms-documents/index.ts", "utf8");
+const confirmation = readFileSync("supabase/functions/_shared/cms-document-confirmation.ts", "utf8");
 const edgeFetch = readFileSync("supabase/functions/_shared/cms-edge-fetch.ts", "utf8");
 const canary = readFileSync("scripts/ev2/phase12/staging-migrations-canary.mjs", "utf8");
 
@@ -55,14 +56,16 @@ describe("qa lease document canonical fence", () => {
   it("stops reporting the fence as a cleanup failure", () => {
     // The handler used to record database_confirm_failed and answer 503 for the one outcome the
     // database is designed to produce, which made a successful neutralization look broken.
-    expect(handler).toContain("CMS_DOCUMENT_CANONICAL_WRITE_FENCE_ACTIVE");
+    expect(confirmation).toContain("CMS_DOCUMENT_CANONICAL_WRITE_FENCE_ACTIVE");
     expect(handler).toContain("canonicalCleanupScheduled");
     const neutralize = handler.slice(handler.indexOf("async function neutralizeSynthetic"));
     // The storage removal keeps its own failure recording; only the confirmation branch changes, so
     // the fence has to be recognised before database_confirm_failed is ever written.
     const confirmFailure = neutralize.indexOf('"database_confirm_failed"');
     expect(confirmFailure).toBeGreaterThan(0);
-    expect(neutralize.indexOf("CMS_DOCUMENT_CANONICAL_WRITE_FENCE_ACTIVE")).toBeLessThan(confirmFailure);
+    const recognizedFence = neutralize.indexOf("isCanonicalDocumentWriteFence(confirmed.error)");
+    expect(recognizedFence).toBeGreaterThan(0);
+    expect(recognizedFence).toBeLessThan(confirmFailure);
   });
 
   it("makes the canary assert the outcome instead of accepting any pending state", () => {
@@ -103,8 +106,9 @@ describe("qa lease document canonical fence", () => {
 
   it("treats an unanswered confirmation as scheduled, not as a refusal", () => {
     // Proved by the staging run: the confirmation answered CMS_DOCUMENT_BLOB_CONFIRM_FAILED_FETCH_TIMEOUT
-    // twice, and the database cannot be the cause because service_role inherits an eight second
-    // ceiling from authenticator. By then access is already revoked and the object is already gone
+    // twice. A statement ceiling does not bound PostgREST retries in fresh transactions (0114
+    // removes the custom serialization code responsible for that storm). Access is already revoked
+    // by a committed preparation and the object is already gone
     // from storage, and the canonical write is forbidden by the fence for the rest of the window
     // anyway, so nothing is left for this request that the reconciler will not do.
     expect(handler).toContain("const confirmationDeadline =");

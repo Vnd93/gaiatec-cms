@@ -284,6 +284,16 @@ const compatibilityTests = {
     "tests/unit/ev2-ai-model-transition.test.ts",
     "tests/unit/openrouter-adapter.test.ts",
   ],
+  "0114": [
+    "supabase/tests/rls_cms_business_conflict_transport.test.sql",
+    "supabase/tests/rls_cms_documents.test.sql",
+    "scripts/ev2/phase12/business-conflict-transport.test.mjs",
+    "scripts/qa/cms-document-cleanup.test.mjs",
+    "tests/unit/cms-document-confirmation.test.ts",
+    "tests/unit/cms-idempotent-retry.test.ts",
+    "tests/unit/catalog-workspace-api.test.ts",
+    "tests/components/catalog-workspace.test.tsx",
+  ],
 };
 for (const migration of additions) {
   const version = migration.version;

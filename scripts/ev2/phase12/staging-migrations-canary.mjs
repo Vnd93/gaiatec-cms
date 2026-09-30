@@ -4,6 +4,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
 import { QA_ACTOR_LEASE_TTL_MINUTES } from "../../qa/qa-actor-lease.mjs";
+import { businessConflictTransportSemanticSql } from "./business-conflict-transport.mjs";
 import {
   authFailureIdentity,
   canaryFailureIdentity,
@@ -117,6 +118,7 @@ const scenarioCoverage = [
   "0104",
   "0105",
   "0106",
+  "0114",
 ];
 const accessToken = process.env.SUPABASE_ACCESS_TOKEN ?? "";
 const expectedSha = process.env.G12_MIGRATION_CANARY_EXPECTED_SHA ?? "";
@@ -784,6 +786,7 @@ async function preflightMigrations() {
       CMS_BLOG_TAXONOMY_TERMINAL_CLEANUP_0106_OWNER_ONLY_FUNCTIONS,
     )},
     ${blogTaxonomyTerminalCleanupSemanticSql("blog_taxonomy_terminal_cleanup_0106_semantics_exact")},
+    ${businessConflictTransportSemanticSql("business_conflict_transport_0114_semantics_exact")},
     ${ownerOnlyFunctionContractSql(
       "release_stability_followup_0101_functions_locked",
       CMS_RELEASE_STABILITY_FOLLOWUP_0101_OWNER_ONLY_FUNCTIONS,
@@ -1032,6 +1035,10 @@ async function preflightMigrations() {
   check(
     "blog_taxonomy_terminal_cleanup_0106_semantics_exact",
     row?.blog_taxonomy_terminal_cleanup_0106_semantics_exact === true,
+  );
+  check(
+    "business_conflict_transport_0114_semantics_exact",
+    row?.business_conflict_transport_0114_semantics_exact === true,
   );
   check(
     "release_stability_followup_0101_functions_locked",
@@ -2120,7 +2127,8 @@ async function closeDocumentFixture() {
       neutralized.json?.status === "neutralized" &&
       (neutralized.json?.blobDisposition === "removed" ||
         (neutralized.json?.blobDisposition === "access_revoked" &&
-          neutralized.json?.canonicalCleanupScheduled === true)),
+          neutralized.json?.canonicalCleanupScheduled === true &&
+          neutralized.json?.canonicalCleanupReason === "canonical_write_fence")),
   );
   documentNeutralizationMs = neutralized.elapsedMs ?? null;
   documentFixture.archived = true;

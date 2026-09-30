@@ -467,7 +467,7 @@ Deno.serve(async (req) => {
     const message = error.message ?? "";
     const forbidden = message.includes("FORBIDDEN") || message.includes("FEATURE_DISABLED");
     const notFound = message.includes("NOT_FOUND");
-    const conflict = message.includes("CONFLICT") || message.includes("DUPLICATE") || error.code === "23505";
+    const conflict = message.includes("CONFLICT") || message.includes("DUPLICATE") || error.code === "PT409" || error.code === "23505";
     const invalid = message.includes("INVALID") || message.includes("REDUNDANT") || error.code === "22023" || error.code === "23514";
     const status = forbidden ? 403 : notFound ? 404 : conflict ? 409 : invalid ? 422 : 500;
     const code =

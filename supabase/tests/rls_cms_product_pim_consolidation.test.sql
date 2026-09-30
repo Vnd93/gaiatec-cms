@@ -1487,7 +1487,7 @@ select throws_ok(
     set status = 'cleaned', cleaned_at = now()
     where actor_id = '78000000-0000-4000-8000-000000000002'
   $$,
-  '40001',
+  'PT409',
   'CMS_QA_PRODUCT_OPTION_REFERENCE_ACTIVE',
   'an active product reference blocks terminal shared-option cleanup'
 );
@@ -1515,7 +1515,7 @@ select throws_ok(
     set status = 'cleaned', cleaned_at = now()
     where actor_id = '78000000-0000-4000-8000-000000000002'
   $$,
-  '40001',
+  'PT409',
   'CMS_QA_PRODUCT_OPTION_REFERENCE_ACTIVE',
   'a cross-actor archived reference blocks terminal shared-option cleanup'
 );
@@ -1534,7 +1534,7 @@ select throws_ok(
     set status = 'cleaned', cleaned_at = now()
     where actor_id = '78000000-0000-4000-8000-000000000002'
   $$,
-  '40001',
+  'PT409',
   'CMS_QA_PRODUCT_OPTION_REFERENCE_ACTIVE',
   'an out-of-window archived reference blocks terminal shared-option cleanup'
 );
@@ -1560,7 +1560,7 @@ select throws_ok(
     set status = 'cleaned', cleaned_at = now()
     where actor_id = '78000000-0000-4000-8000-000000000002'
   $$,
-  '40001',
+  'PT409',
   'CMS_QA_PRODUCT_OPTION_REFERENCE_ACTIVE',
   'a live projection blocks terminal shared-option cleanup'
 );

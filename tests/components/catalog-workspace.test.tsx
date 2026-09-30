@@ -71,7 +71,7 @@ describe("catalog workspace user flows", () => {
     const title = screen.getByLabelText("Nome");
     await user.clear(title);
     await user.type(title, "My attempt");
-    mock.execute.mockRejectedValueOnce(new CatalogWorkspaceError(409, "40001"));
+    mock.execute.mockRejectedValueOnce(new CatalogWorkspaceError(409, "PT409"));
     mock.read.mockResolvedValue({
       ...workspace,
       products: [{ ...product, revision: 2, title: "Current product" }],

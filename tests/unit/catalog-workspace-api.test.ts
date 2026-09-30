@@ -27,10 +27,10 @@ describe("authenticated catalog RPC adapter", () => {
       p_correlation_id: expect.any(String),
     });
   });
-  it("maps optimistic conflicts to 409 without retrying", async () => {
+  it.each(["PT409", "40001"])("maps %s conflicts to 409 without retrying", async (code) => {
     mocks.rpc.mockResolvedValue({
       data: null,
-      error: { code: "40001", message: "never expose backend content" },
+      error: { code, message: "never expose backend content" },
     });
     await expect(executeCatalogWorkspaceCommand(command)).rejects.toMatchObject({ status: 409 });
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
@@ -41,13 +41,13 @@ describe("authenticated catalog RPC adapter", () => {
   });
   it("exposes only allowlisted conflict provenance and never raw database details", async () => {
     const detail = { author: "other", changedAt: "2026-09-29T02:00:00Z", correlationId: command.id };
-    mocks.rpc.mockResolvedValue({ data: null, error: { code: "40001", details: JSON.stringify(detail) } });
+    mocks.rpc.mockResolvedValue({ data: null, error: { code: "PT409", details: JSON.stringify(detail) } });
     await expect(executeCatalogWorkspaceCommand(command)).rejects.toMatchObject({ conflict: detail });
     for (const details of [
       "untrusted text",
       JSON.stringify({ ...detail, email: "forbidden@example.test" }),
     ]) {
-      mocks.rpc.mockResolvedValue({ data: null, error: { code: "40001", details } });
+      mocks.rpc.mockResolvedValue({ data: null, error: { code: "PT409", details } });
       await expect(executeCatalogWorkspaceCommand(command)).rejects.toMatchObject({
         status: 409,
         conflict: null,

@@ -64,6 +64,24 @@ describe("idempotent Supabase operation retry", () => {
     expect(pause).toHaveBeenCalledOnce();
   });
 
+  it("does not retry a canonical fence, stale revision, or other PT409 business refusal", async () => {
+    for (const message of [
+      "CMS_DOCUMENT_CANONICAL_WRITE_FENCE_ACTIVE",
+      "CMS_CATALOG_REVISION_CONFLICT",
+      "CMS_CATALOG_OUTBOX_STALE",
+    ]) {
+      const result = { data: null, error: { code: "PT409", message }, status: 409 };
+      const operation = vi.fn(async () => result);
+      const pause = vi.fn(async () => {});
+      expect(isTransientSupabaseOperationError(result.error)).toBe(false);
+      await expect(retryIdempotentSupabaseOperation(operation, pause)).resolves.toBe(result);
+      expect(operation).toHaveBeenCalledOnce();
+      expect(pause).not.toHaveBeenCalled();
+    }
+    // Engine-origin serialization failures remain genuinely transient.
+    expect(isTransientSupabaseOperationError({ code: "40001" })).toBe(true);
+  });
+
   it("uses the top-level PostgREST HTTP status when the database error has no SQLSTATE", async () => {
     const operation = vi
       .fn()

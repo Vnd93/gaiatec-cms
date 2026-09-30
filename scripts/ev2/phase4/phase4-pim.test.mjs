@@ -87,7 +87,7 @@ test("PIM and attribute Edge boundaries are authenticated and production-gated",
   assert.match(pim, /contentItemId: row\.content_item_id \?\? undefined/);
   assert.match(pim, /sourceSha256: entry\.source_sha256 \?\? undefined/);
   assert.match(pim, /typeof errorRecord\.message === "string"/);
-  assert.match(pim, /\["P0001", "40001", "23505"\]\.includes\(databaseCode\)/);
+  assert.match(pim, /\["P0001", "PT409", "40001", "23505"\]\.includes\(databaseCode\)/);
   assert.doesNotMatch(pim, /canonicalMin:/);
   assert.doesNotMatch(attributes, /\.insert\(|\.update\(|\.delete\(/);
 });

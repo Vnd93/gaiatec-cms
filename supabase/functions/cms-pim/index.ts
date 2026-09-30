@@ -837,7 +837,7 @@ Deno.serve(async (req) => {
     const conflict =
       message.includes("CONFLICT") ||
       message.includes("DUPLICATE") ||
-      ["P0001", "40001", "23505"].includes(databaseCode);
+      ["P0001", "PT409", "40001", "23505"].includes(databaseCode);
     const invalid =
       message.includes("INVALID") ||
       message.includes("SKU_REQUIRED") ||

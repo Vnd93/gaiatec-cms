@@ -386,7 +386,7 @@ select throws_ok(
     'staging',
     'cleaned'
   )$$,
-  '40001',
+  'PT409',
   'CMS_QA_BLOG_TAXONOMY_REFERENCE_AMBIGUOUS',
   'a malformed structural taxonomy UUID fails closed without deleting the exact group'
 );
@@ -413,7 +413,7 @@ select throws_ok(
     'staging',
     'cleaned'
   )$$,
-  '40001',
+  'PT409',
   'CMS_QA_BLOG_TAXONOMY_REFERENCE_ACTIVE',
   'an uppercase structural UUID reference blocks taxonomy deletion while content is active'
 );
@@ -445,7 +445,7 @@ select throws_ok(
     'staging',
     'cleaned'
   )$$,
-  '40001',
+  'PT409',
   'CMS_QA_BLOG_TAXONOMY_REFERENCE_ACTIVE',
   'an active draft snapshot blocks taxonomy deletion'
 );
@@ -476,7 +476,7 @@ select throws_ok(
     'staging',
     'cleaned'
   )$$,
-  '40001',
+  'PT409',
   'CMS_QA_BLOG_TAXONOMY_REFERENCE_ACTIVE',
   'an archived cross-scope child reference blocks taxonomy deletion'
 );

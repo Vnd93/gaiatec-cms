@@ -305,7 +305,7 @@ Deno.serve(async (req) => {
       const message = error.message ?? "";
       const forbidden = message.includes("FORBIDDEN") || message.includes("FEATURE_DISABLED");
       const notFound = message.includes("NOT_FOUND");
-      const conflict = message.includes("CONFLICT") || error.code === "40001" || error.code === "23505";
+      const conflict = message.includes("CONFLICT") || error.code === "PT409" || error.code === "40001" || error.code === "23505";
       const invalid = message.includes("INVALID") || error.code === "22023" || error.code === "23514";
       const status = forbidden ? 403 : notFound ? 404 : conflict ? 409 : invalid ? 422 : 500;
       const code =
@@ -370,7 +370,7 @@ Deno.serve(async (req) => {
     const message = error.message ?? "";
     const forbidden = message.includes("FORBIDDEN") || message.includes("FEATURE_DISABLED");
     const notFound = message.includes("NOT_FOUND");
-    const conflict = message.includes("CONFLICT") || error.code === "40001" || error.code === "23505";
+    const conflict = message.includes("CONFLICT") || error.code === "PT409" || error.code === "40001" || error.code === "23505";
     const tooLarge = message.includes("TOO_LARGE") || error.code === "22001";
     const invalid = message.includes("INVALID") || error.code === "22023";
     const status = forbidden ? 403 : notFound ? 404 : conflict ? 409 : tooLarge ? 413 : invalid ? 422 : 500;

@@ -133,6 +133,7 @@ test("G7 uses five exact QA options and the verified governed attribute catalog"
     CmsProductContentSchema.parse(buildPayload(slug, slug)),
   );
   assert.notEqual(rows[0].models[0].sku, rows[1].models[0].sku);
+  assert.notEqual(rows[0].specifications[0].id, rows[1].specifications[0].id);
   assert.equal(rows[0].specifications[0].definitionId, planned.attributeDefinitionId);
 });
 

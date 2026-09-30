@@ -518,7 +518,10 @@ function productPayload(slug, title, manufacturerVisibility = "internal") {
         variants: [{ id: uid(), name: "Variante sintética", code: `VAR-${shortTag}`, order: 0 }],
       },
     ],
-    specifications: structuredClone(controlledProductSpecifications),
+    specifications: structuredClone(controlledProductSpecifications).map((specification) => ({
+      ...specification,
+      id: uid(),
+    })),
     media: [],
     documents: [],
     relations: { productIds: [], applicationIds: [], sectorIds: [], serviceIds: [] },

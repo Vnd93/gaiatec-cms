@@ -199,3 +199,10 @@ test("staging operational commands bind idempotency to the exact envelope", asyn
   );
   assert.doesNotMatch(canary, /idempotent \? \{ "X-Idempotency-Key": randomUUID\(\) \}/);
 });
+
+test("AI canary references retain complete UUIDs instead of phone-shaped numeric prefixes", async () => {
+  const canary = await read("scripts/ev2/phase17/staging-canary.mjs");
+  assert.match(canary, /targetRef: `g10x-draft-\$\{randomUUID\(\)\}`/);
+  assert.match(canary, /reference: `g10x-source-\$\{randomUUID\(\)\}`/);
+  assert.doesNotMatch(canary, /g10x-(?:source|draft)-\$\{randomUUID\(\)\.slice/);
+});

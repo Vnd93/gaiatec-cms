@@ -566,10 +566,11 @@ try {
       sessionId: opened.json.sessionId,
       proposalKind: "draft_patch",
       prompt: "Crie um resumo técnico curto e fiel à fonte.",
-      targetRef: `g10x-draft-${randomUUID().slice(0, 8)}`,
+      // Keep complete UUID metadata: an eight-digit prefix can look like a phone number.
+      targetRef: `g10x-draft-${randomUUID()}`,
       source: {
         kind: "synthetic_document",
-        reference: `g10x-source-${randomUUID().slice(0, 8)}`,
+        reference: `g10x-source-${randomUUID()}`,
         title: "Manual sintético G17",
         version: "v1",
         locator: "seção 1",

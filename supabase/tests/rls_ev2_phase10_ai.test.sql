@@ -1,7 +1,34 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
-select plan(46);
+select plan(50);
+
+select is(
+  private.cms_ai_contains_sensitive_text('{"sourceRef":"g10x-source-12345678"}'::jsonb),
+  true,
+  'truncated numeric source references remain indistinguishable from phone numbers'
+);
+select is(
+  private.cms_ai_contains_sensitive_text('{"targetRef":"g10x-draft-12345678"}'::jsonb),
+  true,
+  'truncated numeric target references cannot bypass the sensitive-data boundary'
+);
+select is(
+  private.cms_ai_contains_sensitive_text(jsonb_build_object(
+    'sourceRef', 'g10x-source-12345678-1234-4123-8123-123456789012',
+    'targetRef', 'g10x-draft-12345678-1234-4123-8123-123456789012'
+  )),
+  false,
+  'complete UUID reference metadata is accepted even when its prefix is numeric'
+);
+select is(
+  private.cms_ai_contains_sensitive_text(jsonb_build_object(
+    'sourceRef', 'g10x-source-12345678-1234-4123-8123-123456789012',
+    'fields', jsonb_build_array(jsonb_build_object('value', 'Contato qa@example.invalid, telefone 12345678'))
+  )),
+  true,
+  'complete reference metadata never exempts sensitive nested content'
+);
 
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,

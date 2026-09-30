@@ -192,12 +192,8 @@
     "exceljs": {
       "uuid": "11.1.1"
     },
-    "jsdom": {
-      "undici": "8.10.2"
-    },
-    "miniflare": {
-      "undici": "7.29.1"
-    },
+    "undici@7": "7.29.1",
+    "undici@8": "8.10.2",
     "sharp": "0.35.4"
   },
   "pnpm": {

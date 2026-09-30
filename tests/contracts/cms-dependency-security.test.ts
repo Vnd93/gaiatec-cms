@@ -8,9 +8,11 @@ const lock = JSON.parse(readFileSync("package-lock.json", "utf8"));
 describe("toolchain dependency security", () => {
   it("pins both Undici security patches without crossing the consumers' major versions", () => {
     // GHSA-w293-vg96-wgc3 / GHSA-rfgv-xxqx-mfg5 and related 2026-09 advisories.
-    // Keep the existing jsdom and Miniflare APIs while repairing their transitive clients.
-    expect(manifest.overrides.jsdom.undici).toBe("8.10.2");
-    expect(manifest.overrides.miniflare.undici).toBe("7.29.1");
+    // Scope by the client's major: npm 10 does not preserve the nested override
+    // through Miniflare's prerelease parent during a clean install.
+    expect(manifest.overrides["undici@8"]).toBe("8.10.2");
+    expect(manifest.overrides["undici@7"]).toBe("7.29.1");
+    expect(manifest.overrides.miniflare?.undici).toBeUndefined();
     expect(readFileSync(".nvmrc", "utf8").trim()).toBe("22");
     const clients = Object.entries(lock.packages).filter(([path]) => path.endsWith("/undici"));
     expect(clients).toHaveLength(2);

@@ -342,8 +342,8 @@ export function buildPimPrerequisitePlan(
   };
 }
 
-async function listProductVocabularies(token) {
-  const vocabulary = await invokeAuthenticatedCmsFunction(
+async function listProductVocabularies(token, invokeCms = invokeAuthenticatedCmsFunction) {
+  const vocabulary = await invokeCms(
     token,
     "cms-controlled-vocabularies",
     { action: "list", entityType: "product", includeInactive: false },
@@ -353,8 +353,24 @@ async function listProductVocabularies(token) {
   return vocabulary.items;
 }
 
-async function provisionPimPrerequisites(actor, plan) {
-  const lists = await listProductVocabularies(actor.token);
+export async function provisionPimPrerequisites(
+  actor,
+  plan,
+  {
+    invokeCms = invokeAuthenticatedCmsFunction,
+    query = managementQuery,
+    environment = target?.environment,
+  } = {},
+) {
+  if (
+    !["staging", "production"].includes(environment) ||
+    !uuidPattern.test(actor?.actorId ?? "") ||
+    actor.actorId.replaceAll("-", "").slice(0, 12).toLowerCase() !== plan?.namespace ||
+    typeof invokeCms !== "function" ||
+    typeof query !== "function"
+  )
+    throw new Error("QA_CMS_FIXTURE_PIM_CONTEXT_INVALID");
+  const lists = await listProductVocabularies(actor.token, invokeCms);
   const listByKey = new Map(lists.map((list) => [list.list_key, list]));
   if (
     !plan.dimensions.every((dimension) => {
@@ -369,7 +385,7 @@ async function provisionPimPrerequisites(actor, plan) {
   for (const dimension of plan.dimensions) {
     const list = listByKey.get(dimension.listKey);
     try {
-      const option = await invokeAuthenticatedCmsFunction(
+      const option = await invokeCms(
         actor.token,
         "cms-controlled-vocabularies",
         {
@@ -392,7 +408,7 @@ async function provisionPimPrerequisites(actor, plan) {
     } catch (error) {
       // A chamada de vocabulário não possui receipt. Uma resposta ambígua só é aceita quando a
       // releitura prova o UUID planejado e todos os campos naturais exatos; nunca repetimos a mutação.
-      const relisted = await listProductVocabularies(actor.token).catch(() => []);
+      const relisted = await listProductVocabularies(actor.token, invokeCms).catch(() => []);
       const observed = relisted
         .find((candidate) => candidate.list_key === dimension.listKey)
         ?.options?.find((candidate) => candidate.id === dimension.optionId);
@@ -406,8 +422,8 @@ async function provisionPimPrerequisites(actor, plan) {
       }
     }
 
-    const envelope = cmsCommandEnvelope(target.environment);
-    const master = await invokeAuthenticatedCmsFunction(
+    const envelope = cmsCommandEnvelope(environment);
+    const master = await invokeCms(
       actor.token,
       "cms-master-data",
       {
@@ -428,7 +444,7 @@ async function provisionPimPrerequisites(actor, plan) {
 
   const categoryMasterId = masterEntityIds[0];
   const attributeLabel = `${plan.namespace} validação técnica`;
-  const configured = await managementQuery(`begin;
+  const configured = await query(`begin;
     select set_config('cms.qa_mutation_actor_id', ${sqlText(actor.actorId)}, true);
     insert into public.cms_pim_attribute_definitions (
       id, site_key, attribute_key, label, description, data_type,
@@ -463,7 +479,7 @@ async function provisionPimPrerequisites(actor, plan) {
     select true as configured;`);
   if (configured.at(-1)?.configured !== true) throw new Error("QA_CMS_FIXTURE_PIM_ATTRIBUTE_CATALOG_FAILED");
 
-  const verifiedLists = await listProductVocabularies(actor.token);
+  const verifiedLists = await listProductVocabularies(actor.token, invokeCms);
   for (const dimension of plan.dimensions) {
     const option = verifiedLists
       .find((list) => list.list_key === dimension.listKey)
@@ -478,8 +494,8 @@ async function provisionPimPrerequisites(actor, plan) {
     }
   }
 
-  const catalogEnvelope = cmsCommandEnvelope(target.environment);
-  const catalog = await invokeAuthenticatedCmsFunction(
+  const catalogEnvelope = cmsCommandEnvelope(environment);
+  const catalog = await invokeCms(
     actor.token,
     "cms-attributes",
     { action: "list_catalog", envelope: catalogEnvelope, categoryId: plan.dimensions[0].optionId },

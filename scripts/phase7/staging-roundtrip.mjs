@@ -3,6 +3,8 @@ import { spawnSync } from "node:child_process";
 import { lstatSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createClient } from "@supabase/supabase-js";
+import { buildPimPrerequisitePlan, provisionPimPrerequisites } from "../qa/cms-browser-fixture.mjs";
+import { buildGovernedProductFields, PRODUCT_PREREQUISITE_FLAGS } from "./product-prerequisites-lib.mjs";
 import { assertConsumedRealBrowserEvidence } from "../ev2/phase12/real-browser-release-evidence-lib.mjs";
 import {
   assertRealBrowserLeadControls,
@@ -84,6 +86,7 @@ const createdItems = [];
 const createdForms = [];
 const evidence = [];
 let controlledProductClassification = null;
+let controlledProductSpecifications = null;
 const leaseActorPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const leaseRunTagPattern = /^QA-CMS-FINAL-[0-9]{8}-[0-9a-f]{8}$/;
 const LEASE_COMPLETION_STATEMENT_TIMEOUT_MS = 60_000;
@@ -510,25 +513,12 @@ function productPayload(slug, title, manufacturerVisibility = "internal") {
         id: uid(),
         model: `MODELO-${shortTag}`,
         manufacturerReference: `REF-${shortTag}`,
-        sku: `SKU-${shortTag}`,
+        sku: `SKU-${shortTag}-${slug}`,
         status: "active",
         variants: [{ id: uid(), name: "Variante sintética", code: `VAR-${shortTag}`, order: 0 }],
       },
     ],
-    specifications: [
-      {
-        id: uid(),
-        key: "faixa-sintetica",
-        label: "Faixa sintética",
-        type: "range",
-        value: { min: 0, max: 100 },
-        unit: "u",
-        required: true,
-        filterable: true,
-        comparable: true,
-        searchable: true,
-      },
-    ],
+    specifications: structuredClone(controlledProductSpecifications),
     media: [],
     documents: [],
     relations: { productIds: [], applicationIds: [], sectorIds: [], serviceIds: [] },
@@ -605,39 +595,70 @@ async function publishFlow({ creator, approver, publisher, contentType, slug, pa
   };
 }
 
-async function loadControlledProductClassification() {
-  const dimensions = {
-    "product.category": "productCategory",
-    "product.application_magnitude": "applicationMagnitude",
-    "product.technology": "technology",
-    "product.installation_operation": "installationOperation",
-    "product.monitored_element": "monitoredElement",
-  };
-  const { data: lists, error: listsError } = await admin
-    .from("cms_controlled_lists")
-    .select("id,list_key")
-    .in("list_key", Object.keys(dimensions))
-    .eq("active", true);
-  if (listsError) throw listsError;
-  assert(lists.length === Object.keys(dimensions).length, "Listas mestras de produto incompletas", lists);
-  const { data: options, error: optionsError } = await admin
-    .from("cms_controlled_options")
-    .select("id,list_id,slug,label,sort_order")
-    .in(
-      "list_id",
-      lists.map((list) => list.id),
-    )
-    .eq("active", true)
-    .order("sort_order")
-    .order("label");
-  if (optionsError) throw optionsError;
-  const refs = {};
-  for (const list of lists) {
-    const option = options.find((candidate) => candidate.list_id === list.id);
-    assert(option, `Lista mestra sem opção ativa: ${list.list_key}`);
-    refs[dimensions[list.list_key]] = { id: option.id, slug: option.slug, label: option.label };
-  }
-  return refs;
+async function prepareGovernedProductPrerequisites(actor) {
+  // The existing durable lease owns options, master entities, attributes and
+  // overrides before their first mutation, including cancellation recovery.
+  await assertQaActorLease(leaseRpc, actor.identity, "active");
+  assert(decodeJwt(actor.session.access_token).aal === "aal2", "G7_PIM_AAL2_REQUIRED");
+  const now = Date.now();
+  const flags = await admin
+    .from("cms_feature_flags")
+    .select("flag_key")
+    .in("flag_key", PRODUCT_PREREQUISITE_FLAGS)
+    .eq("kill_switch", false)
+    .or(`expires_at.is.null,expires_at.gt.${new Date(now).toISOString()}`);
+  const available = new Set(flags.data?.map((flag) => flag.flag_key) ?? []);
+  assert(
+    !flags.error && PRODUCT_PREREQUISITE_FLAGS.every((key) => available.has(key)),
+    "G7_PIM_FLAGS_UNAVAILABLE",
+  );
+  const overrides = await admin.from("cms_feature_flag_overrides").insert(
+    PRODUCT_PREREQUISITE_FLAGS.map((flagKey) => ({
+      flag_key: flagKey,
+      environment: "staging",
+      scope_type: "user",
+      scope_key: actor.id,
+      enabled: true,
+      reason: `Pré-requisitos sintéticos G7 ${runTag}`,
+      starts_at: new Date(now).toISOString(),
+      expires_at: new Date(now + 30 * 60_000).toISOString(),
+      created_by: actor.id,
+    })),
+  );
+  assert(!overrides.error, "G7_PIM_OVERRIDE_FAILED");
+  const plan = buildPimPrerequisitePlan(runTag, actor.id, expectedSha);
+  const ready = await provisionPimPrerequisites(
+    { actorId: actor.id, token: actor.session.access_token },
+    plan,
+    {
+      environment: "staging",
+      query: managementQuery,
+      invokeCms: async (_token, functionName, body, errorCode, options = {}) => {
+        assert(
+          ["cms-controlled-vocabularies", "cms-master-data", "cms-attributes"].includes(functionName),
+          "G7_PIM_FUNCTION_REFUSED",
+        );
+        const result = await invoke(functionName, actor, body, {
+          key: options.idempotencyKey,
+          idempotent: Boolean(options.idempotencyKey),
+        });
+        assert(result.status === 200, `${errorCode}:${result.status}`);
+        return result.data;
+      },
+    },
+  );
+  const fields = buildGovernedProductFields(ready);
+  controlledProductClassification = fields.controlledClassification;
+  controlledProductSpecifications = fields.specifications;
+  record("Pré-requisitos de produto isolados por lease", {
+    controlledOptions: ready.controlledOptions,
+    masterEntities: ready.masterEntities,
+    attributeDefinitions: ready.attributeDefinitions,
+    attributeSets: ready.attributeSets,
+    catalogVerified: ready.catalogVerified,
+    corporateOptionsAdopted: 0,
+    catalogFlagChanged: false,
+  });
 }
 
 async function run() {
@@ -1002,7 +1023,7 @@ async function run() {
   }
   record("Expiração de campanhas", { statuses: [301, 404, 410, 302] });
 
-  controlledProductClassification = await loadControlledProductClassification();
+  await prepareGovernedProductPrerequisites(adminActor);
   const bulkSlugs = [`produto-lote-a-${shortTag}`, `produto-lote-b-${shortTag}`];
   const validRows = bulkSlugs.map((slug, index) => ({
     sourceRow: index + 2,

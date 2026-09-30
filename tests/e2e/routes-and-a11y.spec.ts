@@ -50,7 +50,7 @@ for (const route of routes) {
   });
 }
 
-test("@a11y critical public journeys have no serious automated violations", async ({ page }) => {
+test("@a11y critical public journeys have no serious automated violations", async ({ page, baseURL }) => {
   // Six complete axe scans against the remote edge can legitimately exceed the
   // default 30 s even after every route has rendered.
   test.setTimeout(60_000);
@@ -62,15 +62,20 @@ test("@a11y critical public journeys have no serious automated violations", asyn
     "/blog",
     "/campanhas/campanha-sintetica-inexistente",
   ]) {
-    await page.goto(route, { waitUntil: "load" });
-    // Assercao direta de que a rota renderizou, no lugar do silencio de rede: mais forte, e
-    // deterministica onde `networkidle` nao e.
-    await expect(page.locator("h1").first()).toBeVisible();
-    const results = await new AxeBuilder({ page }).analyze();
-    const serious = results.violations.filter((violation) =>
-      ["serious", "critical"].includes(violation.impact ?? ""),
-    );
-    expect(serious, `${route}: ${serious.map((item) => item.id).join(", ")}`).toEqual([]);
+    await test.step(`${route}: document, visible heading and complete accessibility scan`, async () => {
+      const response = await page.goto(route, { waitUntil: "load" });
+      const edgeRuntime = Boolean(process.env.PLAYWRIGHT_EDGE || baseURL?.includes("pages.dev"));
+      const expectedStatus = edgeRuntime && route === "/campanhas/campanha-sintetica-inexistente" ? 404 : 200;
+      expect(response?.status(), `${route}: document HTTP status`).toBe(expectedStatus);
+      // Keep the original visibility deadline and scan every route. Static route labels
+      // identify the failed gate without logging request headers, bodies or credentials.
+      await expect(page.locator("h1").first(), `${route}: first heading is visible`).toBeVisible();
+      const results = await new AxeBuilder({ page }).analyze();
+      const serious = results.violations.filter((violation) =>
+        ["serious", "critical"].includes(violation.impact ?? ""),
+      );
+      expect(serious, `${route}: ${serious.map((item) => item.id).join(", ")}`).toEqual([]);
+    });
   }
 });
 

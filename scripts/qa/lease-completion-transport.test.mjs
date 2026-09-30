@@ -254,7 +254,10 @@ test("cada navegacao trocada mantem assercao explicita sobre o conteudo que exam
     spec.indexOf("staging exposes the clean-room launch projection"),
   );
   assert.match(journeys, /waitUntil: "load"/);
-  assert.match(journeys, /await expect\(page\.locator\("h1"\)\.first\(\)\)\.toBeVisible\(\);/);
+  assert.match(
+    journeys,
+    /await expect\(page\.locator\("h1"\)\.first\(\), `\$\{route\}: first heading is visible`\)\.toBeVisible\(\);/,
+  );
   assert.ok(
     journeys.indexOf("toBeVisible") < journeys.indexOf("new AxeBuilder"),
     "a rota precisa estar provada renderizada antes do axe",
@@ -268,4 +271,41 @@ test("cada navegacao trocada mantem assercao explicita sobre o conteudo que exam
 
   const mobileMenu = spec.slice(spec.indexOf("@a11y mobile menu"));
   assert.match(mobileMenu, /await expect\(menu\)\.toBeVisible\(\);/);
+});
+
+test("a11y identifica a rota e status sem ampliar prazos ou reduzir scans", async () => {
+  const spec = await read(SPEC);
+  const journeys = spec.slice(
+    spec.indexOf("@a11y critical public journeys"),
+    spec.indexOf("staging exposes the clean-room launch projection"),
+  );
+  assert.match(journeys, /test\.setTimeout\(60_000\);/);
+  assert.match(
+    journeys,
+    /await test\.step\(`\$\{route\}: document, visible heading and complete accessibility scan`/,
+  );
+  assert.match(
+    journeys,
+    /expect\(response\?\.status\(\), `\$\{route\}: document HTTP status`\)\.toBe\(expectedStatus\);/,
+  );
+  assert.match(
+    journeys,
+    /edgeRuntime && route === "\/campanhas\/campanha-sintetica-inexistente" \? 404 : 200/,
+  );
+  for (const route of [
+    "/",
+    "/contato",
+    "/produtos",
+    "/solucoes",
+    "/blog",
+    "/campanhas/campanha-sintetica-inexistente",
+  ]) {
+    assert.ok(journeys.includes(`"${route}",`), `scan da rota ${route} precisa permanecer`);
+  }
+  assert.match(journeys, /await new AxeBuilder\(\{ page \}\)\.analyze\(\)/);
+  assert.match(journeys, /\["serious", "critical"\]\.includes/);
+  assert.doesNotMatch(
+    journeys,
+    /test\.(?:skip|fixme)|\.toBeVisible\(\{|console\.|\.headers\(|\.text\(|\.body\(/,
+  );
 });

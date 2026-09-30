@@ -99,14 +99,17 @@ const units = [
   },
 ];
 
-function SpecificationHarness() {
+function SpecificationHarness({ dataType = "decimal" }: { dataType?: "decimal" | "boolean" | "text" }) {
   const [value, setValue] = useState("[]");
   return (
     <>
       <ProductSpecificationsEditor
         value={value}
         modelsValue={JSON.stringify(models)}
-        definitions={[controlledDefinition, enumDefinition]}
+        definitions={[
+          { ...controlledDefinition, dataType, canonicalUnitCode: dataType === "decimal" ? "bar" : null },
+          enumDefinition,
+        ]}
         units={units}
         onChange={setValue}
       />
@@ -116,6 +119,36 @@ function SpecificationHarness() {
 }
 
 describe("semantic product identity editors", () => {
+  it.each(["boolean", "decimal", "text"] as const)(
+    "binds the live-browser %s value selector without matching type, source or approval",
+    (dataType) => {
+      const browserSource = readFileSync("tests/e2e/cms-final-coverage.spec.ts", "utf8");
+      const valueLocators = Array.from(
+        browserSource.matchAll(/attribute\.getByLabel\("Valor"(?:,\s*\{\s*exact:\s*(true|false)\s*\})?\)/g),
+        ([, exact]) => ({ exact: exact === "true" }),
+      );
+      expect(valueLocators).toHaveLength(2);
+      render(<SpecificationHarness dataType={dataType} />);
+      fireEvent.click(screen.getByRole("button", { name: "Adicionar atributo" }));
+      fireEvent.change(screen.getByLabelText("Atributo controlado"), { target: { value: definitionId } });
+
+      // The previous substring locator also selected type, provenance and approval controls.
+      expect(screen.getAllByLabelText("Valor", { exact: false }).length).toBeGreaterThan(1);
+      const fields = screen.getAllByLabelText("Valor", valueLocators[dataType === "boolean" ? 0 : 1]);
+      expect(fields).toHaveLength(1);
+      fireEvent.change(fields[0], {
+        target: { value: dataType === "boolean" ? "true" : dataType === "decimal" ? "1" : "Valor QA" },
+      });
+      const [specification] = JSON.parse(screen.getByTestId("specification-value").textContent ?? "[]");
+      expect(specification.value).toBe(
+        dataType === "boolean" ? true : dataType === "decimal" ? 1 : "Valor QA",
+      );
+      expect(specification.homologated).toBe(false);
+      expect(screen.getByLabelText("Tipo de valor")).toBeDisabled();
+      expect(screen.getByLabelText("Origem do valor")).toHaveValue("manual");
+    },
+  );
+
   it("binds every live-browser model locator to one current editable field", () => {
     const browserSource = readFileSync("tests/e2e/cms-final-coverage.spec.ts", "utf8");
     const modelStep = browserSource

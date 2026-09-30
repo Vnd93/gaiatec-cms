@@ -1560,9 +1560,9 @@ async function fillSyntheticProductForCreate(page: Page, runTag: string) {
     await attribute.getByLabel("Limite mínimo").fill("1");
     await attribute.getByLabel("Limite máximo").fill("2");
   } else if (valueType === "boolean") {
-    await attribute.getByLabel("Valor").selectOption("true");
+    await attribute.getByLabel("Valor", { exact: true }).selectOption("true");
   } else {
-    await attribute.getByLabel("Valor").fill(valueType === "number" ? "1" : "Valor QA");
+    await attribute.getByLabel("Valor", { exact: true }).fill(valueType === "number" ? "1" : "Valor QA");
   }
   await attribute.getByLabel("Valor técnico homologado").setChecked(true);
 

@@ -71,7 +71,8 @@ jobs:
       source_artifact_digest: ${{ steps.frontend_source.outputs.artifact_digest }}
       archive_sha256: ${{ steps.frontend_package.outputs.archive_sha256 }}
       tree_sha256: ${{ steps.frontend_package.outputs.tree_sha256 }}
-      bridge_run_attempt: ${{ steps.frontend_bridge_run.outputs.run_attempt }}
+      # Duration belongs to the green metrics attempt; deployment evidence keeps its producer attempt.
+      bridge_run_attempt: ${{ steps.frontend_bridge_run.outputs.gate_run_attempt }}
       bridge_control_sha: ${{ steps.frontend_bridge_run.outputs.control_sha }}
       canonical_deployment_id: ${{ steps.staging_bridge_deployment.outputs.deployment_id }}
       browser_run_tag: ${{ steps.staging_state.outputs.browser_run_tag }}

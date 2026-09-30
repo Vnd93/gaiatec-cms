@@ -1,5 +1,6 @@
 import { appendFile } from "node:fs/promises";
 import {
+  resolveStagingBridgeAttempts,
   selectStagingFrontendBridgeArtifact,
   STAGING_FRONTEND_BRIDGE_REPOSITORY,
   validateStagingFrontendBridgeRun,
@@ -41,6 +42,11 @@ const artifacts = await github(`/actions/runs/${runId}/artifacts?per_page=100`);
 const selected = selectStagingFrontendBridgeArtifact({ artifacts: artifacts?.artifacts, run, candidateSha });
 if (!selected.valid)
   throw new Error(`G12_STAGING_FRONTEND_BRIDGE_ARTIFACT_REFUSED:${selected.violations.join(",")}`);
+// At most 50 GitHub attempts, with exactly two jobs per attempt. Refuse a partial inventory.
+const jobsPayload = await github(`/actions/runs/${runId}/jobs?filter=all&per_page=100`);
+const attempts = resolveStagingBridgeAttempts({ run, jobsPayload, artifact: selected.artifact });
+if (!attempts.valid)
+  throw new Error(`G12_STAGING_FRONTEND_BRIDGE_ATTEMPTS_REFUSED:${attempts.violations.join(",")}`);
 if (!process.env.GITHUB_OUTPUT) throw new Error("G12_STAGING_FRONTEND_BRIDGE_OUTPUT_REQUIRED");
 await appendFile(
   process.env.GITHUB_OUTPUT,
@@ -48,9 +54,22 @@ await appendFile(
     `artifact_id=${selected.artifact.id}`,
     `artifact_digest=${selected.artifact.digest}`,
     `control_sha=${run.head_sha}`,
-    `run_attempt=${run.run_attempt}`,
+    `run_attempt=${attempts.producerAttempt}`,
+    `gate_run_attempt=${attempts.gateAttempt}`,
     "",
   ].join("\n"),
   "utf8",
 );
-console.log(JSON.stringify({ event: "g12.staging.frontend_bridge.run.verified", runId, candidateSha }));
+console.log(
+  JSON.stringify({
+    event: "g12.staging.frontend_bridge.run.verified",
+    runId,
+    candidateSha,
+    producerAttempt: attempts.producerAttempt,
+    gateAttempt: attempts.gateAttempt,
+    producerJobId: attempts.producerJobId,
+    metricsJobId: attempts.metricsJobId,
+    artifactId: selected.artifact.id,
+    artifactDigest: selected.artifact.digest,
+  }),
+);

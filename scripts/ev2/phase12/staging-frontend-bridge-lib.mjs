@@ -331,3 +331,113 @@ export function selectStagingFrontendBridgeArtifact({ artifacts, run, candidateS
     violations.push("artifact_invalid");
   return { valid: violations.length === 0, violations, artifact: violations.length ? null : artifact };
 }
+
+// GitHub copies a successful dependency into a metrics-only rerun, with a new job ID and
+// run_attempt but the original execution timestamps. Never attribute its artifact to that copy.
+export function resolveStagingBridgeAttempts({ run, jobsPayload, artifact }) {
+  const violations = [];
+  const jobs = Array.isArray(jobsPayload?.jobs) ? jobsPayload.jobs : [];
+  const gateAttempt = run?.run_attempt;
+  if (
+    run?.status !== "completed" ||
+    run?.conclusion !== "success" ||
+    !Number.isSafeInteger(gateAttempt) ||
+    gateAttempt < 1 ||
+    jobs.length === 0 ||
+    jobs.length !== jobsPayload?.total_count ||
+    new Set(jobs.map((job) => job.id)).size !== jobs.length
+  )
+    return { valid: false, violations: ["bridge_job_inventory_invalid"] };
+
+  for (const job of jobs) {
+    if (
+      !Number.isSafeInteger(job.id) ||
+      job.id < 1 ||
+      job.run_id !== run.id ||
+      job.head_sha !== run.head_sha ||
+      job.head_branch !== "main" ||
+      job.workflow_name !== STAGING_FRONTEND_BRIDGE_WORKFLOW_NAME ||
+      !Number.isSafeInteger(job.run_attempt) ||
+      job.run_attempt < 1 ||
+      job.run_attempt > gateAttempt ||
+      !["promote", "pipeline-metrics"].includes(job.name) ||
+      job.status !== "completed" ||
+      !Number.isFinite(Date.parse(job.started_at)) ||
+      !Number.isFinite(Date.parse(job.completed_at)) ||
+      Date.parse(job.started_at) > Date.parse(job.completed_at)
+    )
+      violations.push("bridge_job_identity_invalid");
+  }
+  const current = jobs.filter((job) => job.run_attempt === gateAttempt);
+  const promote = current.find((job) => job.name === "promote");
+  const metrics = current.find((job) => job.name === "pipeline-metrics");
+  if (current.length !== 2 || promote?.conclusion !== "success" || metrics?.conclusion !== "success")
+    return { valid: false, violations: [...violations, "bridge_current_gates_invalid"] };
+
+  const executionIdentity = (job) =>
+    JSON.stringify({
+      startedAt: job.started_at,
+      completedAt: job.completed_at,
+      steps: (job.steps ?? []).map((step) => ({
+        number: step.number,
+        name: step.name,
+        status: step.status,
+        conclusion: step.conclusion,
+        startedAt: step.started_at,
+        completedAt: step.completed_at,
+      })),
+    });
+  const successfulProducers = jobs
+    .filter(
+      (job) =>
+        job.name === "promote" &&
+        job.conclusion === "success" &&
+        executionIdentity(job) === executionIdentity(promote),
+    )
+    .sort((left, right) => left.run_attempt - right.run_attempt);
+  const producer = successfulProducers[0];
+  const producerAttempt = producer?.run_attempt;
+  const artifactTime = Date.parse(artifact?.created_at);
+  // A copied dependency predates this attempt. Missing or changed producer history is not proof.
+  if (
+    !Number.isFinite(Date.parse(run.run_started_at)) ||
+    Date.parse(metrics.started_at) < Date.parse(run.run_started_at) ||
+    (producerAttempt === gateAttempt && Date.parse(producer.started_at) < Date.parse(run.run_started_at))
+  )
+    violations.push("bridge_producer_history_invalid");
+  if (
+    !Number.isFinite(artifactTime) ||
+    artifactTime < Date.parse(promote.started_at) ||
+    artifactTime > Date.parse(promote.completed_at)
+  )
+    violations.push("bridge_artifact_producer_time_invalid");
+  for (let attempt = producerAttempt; attempt <= gateAttempt; attempt += 1) {
+    const attemptJobs = jobs.filter((job) => job.run_attempt === attempt);
+    const attemptPromote = attemptJobs.find((job) => job.name === "promote");
+    const attemptMetrics = attemptJobs.find((job) => job.name === "pipeline-metrics");
+    if (
+      attemptJobs.length !== 2 ||
+      attemptPromote?.conclusion !== "success" ||
+      !attemptMetrics ||
+      executionIdentity(attemptPromote) !== executionIdentity(producer) ||
+      Date.parse(attemptMetrics.started_at) < Date.parse(producer.completed_at)
+    )
+      violations.push("bridge_metrics_only_reuse_invalid");
+  }
+  for (const name of [
+    "Upload immutable staging bridge evidence",
+    "Enforce terminal staging bridge outcome",
+  ]) {
+    const steps = (producer?.steps ?? []).filter((step) => step.name === name);
+    if (steps.length !== 1 || steps[0].status !== "completed" || steps[0].conclusion !== "success")
+      violations.push("bridge_producer_terminal_proof_invalid");
+  }
+  return {
+    valid: violations.length === 0,
+    violations: [...new Set(violations)],
+    producerAttempt,
+    gateAttempt,
+    producerJobId: producer?.id,
+    metricsJobId: metrics.id,
+  };
+}

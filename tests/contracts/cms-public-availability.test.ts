@@ -68,6 +68,39 @@ describe("cms-public availability contract", () => {
     expect(publicApi).toMatch(/catch \{[\s\S]*temporariamente indisponível[\s\S]*503/);
   });
 
+  it("uses read-only transport for the scoped form without widening selectors or permissions", () => {
+    const loader = section("const loadPublishedForm", "const resolveGovernedFormBindings");
+    const migration = readFileSync(
+      "supabase/migrations/0072_cms_forms_leads_authoritative_scope.sql",
+      "utf8",
+    );
+    const scopedRead = migration
+      .split("create or replace function public.cms_public_form_scoped(")[1]
+      .split("$$;")[0];
+
+    expect(loader).toContain('client.rpc("cms_public_form_scoped"');
+    expect(loader).toContain("publicFormReadArguments(environment, filters), { get: true }).retry(false)");
+    expect(loader).toContain(
+      'if (!service) return { data: null, error: new Error("CMS_FORM_SERVICE_UNAVAILABLE") }',
+    );
+    expect(loader).toContain("record.form_key !== filters.key");
+    expect(loader).toContain("record.id.toLowerCase() !== filters.formId.toLowerCase()");
+    expect(loader).toContain("record.version_id.toLowerCase() !== filters.versionId.toLowerCase()");
+    expect(loader).toContain("record.version !== filters.version");
+    expect(scopedRead).toMatch(/language sql\s+stable\s+security definer/);
+    expect(scopedRead).toContain("p_form_key text default null");
+    expect(scopedRead).toContain("p_form_id uuid default null");
+    expect(scopedRead).toContain("p_version_id uuid default null");
+    expect(scopedRead).toContain("(p_form_key is not null or p_form_id is not null)");
+    expect(scopedRead).toContain("private.cms_form_public_allowed(form.id, p_environment)");
+    expect(migration).toMatch(
+      /revoke all on function public\.cms_public_form_scoped\(text,text,uuid,uuid\)\s+from public,\s*anon,\s*authenticated/,
+    );
+    expect(migration).toMatch(
+      /grant execute on function public\.cms_public_form_scoped\(text,text,uuid,uuid\)\s+to service_role/,
+    );
+  });
+
   it("allows governed public images to be embedded from the cross-site Supabase proxy", () => {
     const media = section('if (type === "media")', 'if (type === "document")');
 

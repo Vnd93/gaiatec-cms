@@ -15,7 +15,7 @@ import { flattenPublicSearchValues, publicBlockSearchValues } from "../_shared/c
 import { governedSignedMediaIdentity } from "../_shared/cms-public-media-proxy.ts";
 import { buildPublicSitemapXml } from "../_shared/cms-public-sitemap.ts";
 import { PUBLIC_RELATION_LIMIT, publicRelationIds } from "../_shared/cms-public-relations.ts";
-import { resolveGovernedPublicFormBindings } from "../_shared/cms-public-form-bindings.ts";
+import { publicFormReadArguments, resolveGovernedPublicFormBindings } from "../_shared/cms-public-form-bindings.ts";
 import { resolvePublicPagePathLookups } from "./page-path.ts";
 import { authenticateCms } from "../_shared/cms-auth.ts";
 import {
@@ -663,12 +663,10 @@ const handleRequest = async (req: Request) => {
   });
   const loadPublishedForm = async (filters: { key?: string; formId?: string; versionId?: string; version?: number }) => {
     if (!service) return { data: null, error: new Error("CMS_FORM_SERVICE_UNAVAILABLE") };
-    const { data: record, error } = await client.rpc("cms_public_form_scoped", {
-      p_environment: environment,
-      p_form_key: filters.key ?? null,
-      p_form_id: filters.formId ?? null,
-      p_version_id: filters.versionId ?? null,
-    });
+    // This STABLE, service-only RPC is a read. Let boundedFetch own its single
+    // timeout retry; SDK retries must not multiply the two-attempt deadline.
+    const { data: record, error } = await client.rpc("cms_public_form_scoped",
+      publicFormReadArguments(environment, filters), { get: true }).retry(false);
     if (error) return { data: null, error };
     if (
       !record ||

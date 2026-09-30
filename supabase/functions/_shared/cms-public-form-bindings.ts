@@ -17,6 +17,20 @@ export type PublicFormBindingLoadResult = {
   error: unknown | null;
 };
 
+export function publicFormReadArguments(
+  environment: string,
+  filters: { key?: string | null; formId?: string | null; versionId?: string | null },
+): { p_environment: string; p_form_key?: string; p_form_id?: string; p_version_id?: string } {
+  // GET RPC arguments serialize null as the string "null". Omit absent selectors so
+  // Postgres uses its SQL NULL defaults without changing any explicit selector.
+  return {
+    p_environment: environment,
+    ...(filters.key == null ? {} : { p_form_key: filters.key }),
+    ...(filters.formId == null ? {} : { p_form_id: filters.formId }),
+    ...(filters.versionId == null ? {} : { p_version_id: filters.versionId }),
+  };
+}
+
 // CmsPageContent accepts at most 80 blocks. A page made entirely of governed
 // form blocks must remain renderable, while concurrency keeps the authoritative
 // lookups bounded.

@@ -947,7 +947,9 @@ jobs:
         # `cmd | tee` sob `bash -e` devolve o status do tee, sempre 0. `shell: bash` liga
         # `-eo pipefail`, entao a falha do comando da esquerda volta a reprovar o passo.
         shell: bash
-        run: node scripts/ev2/phase12/configure-staging-auth.mjs | tee "$RUNNER_TEMP/g12-staging-auth.json"
+        # The sealed database payload stays untouched; all downstream evidence readers and the
+        # immutable upload resolve this report from the workspace root, not RUNNER_TEMP.
+        run: node scripts/ev2/phase12/configure-staging-auth.mjs | tee "$GITHUB_WORKSPACE/g12-staging-auth.json"
       - name: Configure and verify the exact privacy-safe staging AI provider policy
         id: staging_edge_ai_transition
         if: >-

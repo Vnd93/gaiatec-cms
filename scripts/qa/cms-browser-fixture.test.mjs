@@ -249,7 +249,8 @@ test("staging recovery SQL is bounded, exact-tuple bound and sweeper-only", () =
   assert.match(sql, /lock table private\.cms_qa_actor_leases in share row exclusive mode/);
   assert.match(sql, /where lease\.status='active' and lease\.run_tag=/);
   assert.match(sql, /if v_matched > 25 then/);
-  assert.match(sql, /set expires_at=lease\.created_at \+ interval '1 microsecond'/);
+  assert.match(sql, /set expires_at=least\(lease\.expires_at, clock_timestamp\(\)\)/);
+  assert.doesNotMatch(sql, /set expires_at=lease\.created_at/);
   assert.match(sql, /for v_round in 1\.\.4 loop/);
   assert.match(sql, /private\.cms_sweep_expired_qa_actor_leases\(100\)/);
   assert.match(sql, /if v_failed <> 0 then/);
@@ -1078,6 +1079,33 @@ test("editorial cleanup is one locked transaction with exact graph bindings and 
     () => buildOwnedContentCleanupSql(state, [actorIds[1]], itemIds),
     /QA_CMS_FIXTURE_CONTENT_CLEANUP_BINDING_INVALID/,
   );
+});
+
+test("cleanup qualifies the provenance entry and PostgreSQL regressions bind to generated SQL", () => {
+  const actorIds = ["10000000-0000-4000-8000-000000000001"];
+  const sql = buildOwnedContentCleanupSql(
+    { actorId: actorIds[0], runTag, expectedSha: sha, environment: "staging" },
+    actorIds,
+    ["10000000-0000-4000-8000-000000000020"],
+  );
+  const predicate = sql.match(
+    /select 1 from jsonb_array_elements\(draft\.provenance\)[\s\S]*?where [^\n]+/,
+  )?.[0];
+  assert.ok(predicate);
+  assert.match(predicate, /as provenance_entry\(value\)/);
+  assert.match(predicate, /where provenance_entry\.value->>'authorizationReference'/);
+  assert.doesNotMatch(predicate, /where provenance->>/);
+
+  const databaseRegression = readFileSync(
+    new URL("../../supabase/tests/cms_browser_fixture_sql_regression.test.sql", import.meta.url),
+    "utf8",
+  );
+  const normalized = (value) => value.replace(/\s+/g, " ");
+  assert.ok(normalized(databaseRegression).includes(normalized(predicate)));
+  const recoverySql = buildBrowserFixtureRecoverySql({ runTag, candidateSha: sha, environment: "staging" });
+  const expiryAssignment = recoverySql.match(/set expires_at=[^\n]+/)?.[0];
+  assert.ok(expiryAssignment);
+  assert.ok(databaseRegression.includes(expiryAssignment));
 });
 
 test("scoped-role cleanup rejects cross-user targets and accepts only exact QA provenance", () => {

@@ -1536,12 +1536,14 @@ async function fillSyntheticProductForCreate(page: Page, runTag: string) {
   await page.getByLabel("Texto", { exact: true }).first().fill(`${runTag} descrição técnica sintética.`);
 
   await page.getByRole("tab", { name: "Modelos" }).click();
-  await page.getByLabel("Modelo 1").fill(`MODELO-${nonce}`);
-  await page.getByLabel("Referência 1").fill(`REF-${nonce}`);
-  await page.getByLabel("SKU 1").fill(`QA-${nonce}`);
-  await page.getByLabel("Nome da variante 1 do modelo 1").fill("Variante QA");
-  await page.getByLabel("Código da variante 1 do modelo 1").fill(`VAR-${nonce}`);
-  await page.getByLabel("SKU da variante 1 do modelo 1").fill(`QA-VAR-${nonce}`);
+  await page.getByLabel("Modelo 1", { exact: true }).fill(`MODELO-${nonce}`);
+  await page.getByLabel("Referência 1", { exact: true }).fill(`REF-${nonce}`);
+  await page.getByLabel("Código comercial do modelo 1", { exact: true }).fill(`QA-${nonce}`);
+  await page.getByLabel("Nome da variante 1 do modelo 1", { exact: true }).fill("Variante QA");
+  await page.getByLabel("Referência da variante 1 do modelo 1", { exact: true }).fill(`VAR-${nonce}`);
+  await page
+    .getByLabel("Código comercial da variante 1 do modelo 1", { exact: true })
+    .fill(`QA-VAR-${nonce}`);
   const definition = page.getByLabel("Atributo controlado").first();
   await expect(definition.locator('option:not([value=""])').first()).toHaveCount(1, { timeout: 20_000 });
   const definitionValue = await definition.locator('option:not([value=""])').first().getAttribute("value");

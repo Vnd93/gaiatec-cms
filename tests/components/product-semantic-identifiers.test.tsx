@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it } from "vitest";
@@ -115,6 +116,41 @@ function SpecificationHarness() {
 }
 
 describe("semantic product identity editors", () => {
+  it("binds every live-browser model locator to one current editable field", () => {
+    const browserSource = readFileSync("tests/e2e/cms-final-coverage.spec.ts", "utf8");
+    const modelStep = browserSource
+      .split('await page.getByRole("tab", { name: "Modelos" }).click();')[1]
+      ?.split("const definition =")[0];
+    expect(modelStep).toBeDefined();
+    const locators = Array.from(
+      (modelStep ?? "").matchAll(/getByLabel\(\s*"([^"]+)"\s*(?:,\s*\{\s*exact:\s*(true|false)\s*\})?\s*\)/g),
+      ([, label, exact]) => ({ label, exact: exact === "true" }),
+    );
+    expect(locators).toEqual(
+      [
+        "Modelo 1",
+        "Referência 1",
+        "Código comercial do modelo 1",
+        "Nome da variante 1 do modelo 1",
+        "Referência da variante 1 do modelo 1",
+        "Código comercial da variante 1 do modelo 1",
+      ].map((label) => ({ label, exact: true })),
+    );
+    render(<ModelHarness />);
+    for (const [index, locator] of locators.entries()) {
+      const fields = screen.getAllByLabelText(locator.label, { exact: locator.exact });
+      expect(fields).toHaveLength(1);
+      fireEvent.change(fields[0], { target: { value: `QA-FIELD-${index}` } });
+    }
+    const [model] = JSON.parse(screen.getByTestId("model-value").textContent ?? "[]");
+    expect(model).toMatchObject({
+      model: "QA-FIELD-0",
+      manufacturerReference: "QA-FIELD-1",
+      sku: "QA-FIELD-2",
+      variants: [{ name: "QA-FIELD-3", code: "QA-FIELD-4", sku: "QA-FIELD-5" }],
+    });
+  });
+
   it("creates a GTIN linked through a human-readable model selection", () => {
     render(<IdentifierHarness />);
     fireEvent.click(screen.getByRole("button", { name: "Adicionar identificador" }));

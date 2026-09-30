@@ -597,8 +597,10 @@ begin
     raise exception 'CMS_QA_FIXTURE_RECOVERY_BOUND_EXCEEDED' using errcode = '54000';
   end if;
 
+  -- Preserve the proven creation window used by terminal draft/taxonomy guards.
+  -- Make active leases sweepable now, without extending already-expired leases.
   update private.cms_qa_actor_leases lease
-  set expires_at=lease.created_at + interval '1 microsecond'
+  set expires_at=least(lease.expires_at, clock_timestamp())
   where lease.status='active' and ${exactTuple};
   get diagnostics v_forced = row_count;
 
@@ -3186,8 +3188,8 @@ begin
       draft.payload->>'contentType' is distinct from item.content_type or
       position(${sqlText(state.runTag)} in coalesce(draft.payload->>'title',''))<>1 or
       not exists (
-        select 1 from jsonb_array_elements(draft.provenance) provenance
-        where provenance->>'authorizationReference'=${sqlText(state.runTag)}
+        select 1 from jsonb_array_elements(draft.provenance) as provenance_entry(value)
+        where provenance_entry.value->>'authorizationReference'=${sqlText(state.runTag)}
       )
     )
   ) then raise exception 'QA_CMS_FIXTURE_CONTENT_PROVENANCE_MISMATCH'; end if;

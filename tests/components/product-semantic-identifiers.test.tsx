@@ -120,21 +120,18 @@ function SpecificationHarness({ dataType = "decimal" }: { dataType?: "decimal" |
 
 describe("semantic product identity editors", () => {
   it.each(["boolean", "decimal", "text"] as const)(
-    "binds the live-browser %s value selector without matching type, source or approval",
+    "persists the %s value without changing type, source or approval",
     (dataType) => {
-      const browserSource = readFileSync("tests/e2e/cms-final-coverage.spec.ts", "utf8");
-      const valueLocators = Array.from(
-        browserSource.matchAll(/attribute\.getByLabel\("Valor"(?:,\s*\{\s*exact:\s*(true|false)\s*\})?\)/g),
-        ([, exact]) => ({ exact: exact === "true" }),
-      );
-      expect(valueLocators).toHaveLength(2);
       render(<SpecificationHarness dataType={dataType} />);
       fireEvent.click(screen.getByRole("button", { name: "Adicionar atributo" }));
       fireEvent.change(screen.getByLabelText("Atributo controlado"), { target: { value: definitionId } });
 
       // The previous substring locator also selected type, provenance and approval controls.
       expect(screen.getAllByLabelText("Valor", { exact: false }).length).toBeGreaterThan(1);
-      const fields = screen.getAllByLabelText("Valor", valueLocators[dataType === "boolean" ? 0 : 1]);
+      const fields =
+        dataType === "boolean"
+          ? screen.getAllByRole("combobox", { name: /^Valor$/ })
+          : screen.getAllByLabelText("Valor", { exact: true });
       expect(fields).toHaveLength(1);
       fireEvent.change(fields[0], {
         target: { value: dataType === "boolean" ? "true" : dataType === "decimal" ? "1" : "Valor QA" },

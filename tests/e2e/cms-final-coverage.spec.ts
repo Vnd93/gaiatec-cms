@@ -57,6 +57,13 @@ import {
   waitForCmsRealBrowserAttestation,
 } from "./cms-real-browser-attestation";
 import { submitCmsMfaAndAwaitReady } from "./cms-mfa-session-gate";
+import { fillSyntheticProductSpecification } from "./cms-product-specification";
+import {
+  campaignIndexableField,
+  campaignPublishedFormField,
+  campaignTemplateField,
+  campaignTitleField,
+} from "./cms-campaign-fields";
 
 type CoverageSurface = {
   id: string;
@@ -1550,20 +1557,7 @@ async function fillSyntheticProductForCreate(page: Page, runTag: string) {
   if (!definitionValue) throw new Error("Produto: catálogo de atributo controlado indisponível.");
   await definition.selectOption(definitionValue);
   const attribute = page.locator("fieldset.admin-semantic-card").filter({ hasText: "Atributo 1" });
-  const valueType = await attribute.getByLabel("Tipo de valor").inputValue();
-  if (valueType === "enum") {
-    const approved = attribute.getByLabel("Valores aprovados");
-    const option = await approved.locator("option").first().getAttribute("value");
-    if (!option) throw new Error("Produto: atributo enum sem opção aprovada.");
-    await approved.selectOption([option]);
-  } else if (valueType === "range") {
-    await attribute.getByLabel("Limite mínimo").fill("1");
-    await attribute.getByLabel("Limite máximo").fill("2");
-  } else if (valueType === "boolean") {
-    await attribute.getByLabel("Valor", { exact: true }).selectOption("true");
-  } else {
-    await attribute.getByLabel("Valor", { exact: true }).fill(valueType === "number" ? "1" : "Valor QA");
-  }
+  await fillSyntheticProductSpecification(attribute);
   await attribute.getByLabel("Valor técnico homologado").setChecked(true);
 
   await page.getByRole("tab", { name: "SEO e publicação" }).click();
@@ -1664,20 +1658,20 @@ async function fillSyntheticDiscoveryForCreate(
 async function fillSyntheticCampaignForCreate(page: Page, runTag: string, form: SyntheticFormFixture) {
   const nonce = randomUUID().replaceAll("-", "").slice(0, 8);
   const campaignPath = `/campanhas/qa-lead-${runTag.toLowerCase()}-${nonce}`;
-  await page.getByLabel("Título", { exact: true }).fill(`${runTag} CAMPANHA RASCUNHO`);
+  await campaignTitleField(page).fill(`${runTag} CAMPANHA RASCUNHO`);
   await page.getByLabel("Resumo", { exact: true }).fill(`${runTag} campanha sintética controlada.`);
   await page.getByLabel("Personalizar o endereço público").check();
   await page.getByLabel("Nome personalizado do endereço").fill(`qa-lead-${runTag.toLowerCase()}-${nonce}`);
   await expect(page.getByLabel("Endereço público gerado")).toHaveText(campaignPath);
   await page.getByLabel("Objetivo").selectOption("lead_generation");
-  await page.getByLabel("Template aprovado").selectOption("landing_conversion");
+  await campaignTemplateField(page).selectOption("landing_conversion");
   const startsAt = new Date(Date.now() - 60_000).toISOString().slice(0, 16);
   const endsAt = new Date(Date.now() + 24 * 60 * 60_000).toISOString().slice(0, 16);
   await page.getByLabel("Início (America/São_Paulo)").fill(startsAt);
   await page.getByLabel("Término").fill(endsAt);
   await bindSyntheticFormToCampaign(page, form);
   await page.getByLabel("Estado editorial").selectOption("synthetic_test");
-  await page.getByLabel("Indexável").setChecked(false);
+  await campaignIndexableField(page).setChecked(false);
   await page.getByLabel("Título SEO").fill(`${runTag} CAMPANHA | GAIATEC`);
   await page.getByLabel("Descrição SEO").fill(`${runTag} campanha temporária não indexável.`);
   await page.getByLabel("Referência da autorização").fill(runTag);
@@ -2207,7 +2201,9 @@ async function fillEditorialRevision(
   if (["service", "industry", "application", "solution"].includes(plan.kind)) {
     await page.getByRole("tab", { name: "Conteúdo" }).click();
   }
-  await page.getByLabel(plan.titleLabel, { exact: true }).fill(input.title);
+  await (
+    plan.kind === "campaign" ? campaignTitleField(page) : page.getByLabel(plan.titleLabel, { exact: true })
+  ).fill(input.title);
   await page.getByLabel(plan.summaryLabel, { exact: true }).fill(input.summary);
   if (plan.kind === "post") {
     await page.getByLabel("Corpo do artigo").fill(`${input.summary}\n\n${input.title}`);
@@ -2226,7 +2222,7 @@ async function fillEditorialRevision(
     await page.getByLabel("Permitir indexação quando este conteúdo estiver em produção").setChecked(false);
   } else {
     await page.getByLabel("Descrição SEO").fill(input.summary);
-    await page.getByLabel("Indexável").setChecked(false);
+    await campaignIndexableField(page).setChecked(false);
   }
   await page.getByLabel(plan.seoLabel, { exact: true }).fill(input.seoTitle);
   if (plan.kind === "post" || plan.kind === "product") {
@@ -2237,7 +2233,7 @@ async function fillEditorialRevision(
 }
 
 async function bindSyntheticFormToCampaign(page: Page, form: SyntheticFormFixture) {
-  const campaignForm = page.getByLabel("Formulário publicado", { exact: true });
+  const campaignForm = campaignPublishedFormField(page);
   await expect(campaignForm.locator("option", { hasText: form.title })).toHaveCount(1);
   if ((await campaignForm.inputValue()) === form.formId) return;
   await page.getByLabel("Tipo de novo bloco").selectOption("form");
@@ -2262,7 +2258,9 @@ async function expectEditorialPersistence(
   if (["service", "industry", "application", "solution"].includes(plan.kind)) {
     await page.getByRole("tab", { name: "Conteúdo" }).click();
   }
-  await expect(page.getByLabel(plan.titleLabel, { exact: true })).toHaveValue(input.title);
+  await expect(
+    plan.kind === "campaign" ? campaignTitleField(page) : page.getByLabel(plan.titleLabel, { exact: true }),
+  ).toHaveValue(input.title);
   if (plan.kind === "product") await page.getByRole("tab", { name: "SEO e publicação" }).click();
   if (["service", "industry", "application", "solution"].includes(plan.kind)) {
     await page.getByRole("tab", { name: "Busca e divulgação" }).click();
@@ -2752,7 +2750,9 @@ async function expectEditorialTitle(page: Page, plan: EditorialSurfacePlan, expe
   if (["service", "industry", "application", "solution"].includes(plan.kind)) {
     await page.getByRole("tab", { name: "Conteúdo" }).click();
   }
-  await expect(page.getByLabel(plan.titleLabel, { exact: true })).toHaveValue(expectedTitle);
+  await expect(
+    plan.kind === "campaign" ? campaignTitleField(page) : page.getByLabel(plan.titleLabel, { exact: true }),
+  ).toHaveValue(expectedTitle);
 }
 
 async function runEditorialSurfaceLifecycle(input: {

@@ -29,6 +29,39 @@ const capability = {
 };
 
 describe("EV2.11 system assurance contracts", () => {
+  it("recognizes the approved staging command policy without changing production or legacy capabilities", () => {
+    for (const environment of ["local", "staging", "production"]) {
+      expect(Ev2SystemCapabilitySchema.safeParse({ ...capability, environment }).success).toBe(true);
+      const revised = {
+        ...capability,
+        environment,
+        baselines: { ...capability.baselines, commandP95Ms: 2000 },
+      };
+      expect(Ev2SystemCapabilitySchema.safeParse(revised).success).toBe(environment === "staging");
+    }
+    for (const commandP95Ms of [0, 799, 801, 1000, 1999, 2001, 5241, "2000", null]) {
+      expect(
+        Ev2SystemCapabilitySchema.safeParse({
+          ...capability,
+          baselines: { ...capability.baselines, commandP95Ms },
+        }).success,
+      ).toBe(false);
+    }
+    const staging = { ...capability, baselines: { ...capability.baselines, commandP95Ms: 2000 } };
+    for (const change of [
+      { environment: "production-preview" },
+      { environment: undefined },
+      { requiresIndependentReview: false },
+      { realDataAllowed: true },
+      { syntheticOnly: false },
+      { maxOverrideMinutes: 31 },
+      { baselines: { ...staging.baselines, adminReadP95Ms: 501 } },
+      { baselines: { ...staging.baselines, auditCoveragePercent: 99 } },
+    ]) {
+      expect(Ev2SystemCapabilitySchema.safeParse({ ...staging, ...change }).success).toBe(false);
+    }
+  });
+
   it("accepts only a bounded, synthetic and independently reviewed capability", () => {
     expect(Ev2SystemCapabilitySchema.parse(capability)).toEqual(capability);
     expect(() => Ev2SystemCapabilitySchema.parse({ ...capability, realDataAllowed: true })).toThrow();

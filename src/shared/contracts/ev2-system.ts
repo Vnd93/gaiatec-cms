@@ -25,9 +25,20 @@ export const Ev2SystemCapabilitySchema = z
     syntheticOnly: z.literal(true),
     maxOverrideMinutes: z.literal(30),
     requiresIndependentReview: z.literal(true),
-    baselines: Ev2SystemBaselinesSchema,
+    // Accept the stricter legacy staging capability during the staged rollout.
+    // The 2s command policy is never valid for local or production capabilities.
+    baselines: Ev2SystemBaselinesSchema.extend({ commandP95Ms: z.union([z.literal(800), z.literal(2000)]) }),
   })
-  .strict();
+  .strict()
+  .superRefine((capability, context) => {
+    if (capability.environment !== "staging" && capability.baselines.commandP95Ms !== 800) {
+      context.addIssue({
+        code: "custom",
+        path: ["baselines", "commandP95Ms"],
+        message: "O limite de 2 segundos é exclusivo de staging.",
+      });
+    }
+  });
 
 export const Ev2SystemQueueSchema = z
   .object({

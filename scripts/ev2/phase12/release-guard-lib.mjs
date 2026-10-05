@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { commandP95Budget } from "./staging-command-budget.mjs";
 import { GITHUB_SOLE_MAINTAINER, validateProductionReadinessControls } from "../phase16/readiness-lib.mjs";
 import {
   RELEASE_EVIDENCE_REPOSITORY,
@@ -372,7 +373,10 @@ export function evaluateRolloutWindow(evidence) {
 
   for (const [field, limit] of [
     ["adminReadP95Ms", G12_BUDGETS.adminReadP95Ms],
-    ["commandP95Ms", G12_BUDGETS.commandP95Ms],
+    [
+      "commandP95Ms",
+      commandP95Budget(evidence?.stage === "staging-canary" ? evidence?.environment : "production"),
+    ],
     ["outboxLagP95Ms", G12_BUDGETS.outboxLagP95Ms],
   ]) {
     if (!isFiniteNumber(evidence?.[field])) violations.push(`${field}_missing`);

@@ -175,6 +175,11 @@ export const G12_PINNED_MIGRATION_TAIL = Object.freeze([
     file: "0115_cms_staging_command_latency_budget.sql",
     sha256: "b05a643511d481bb55ebd9b7c7d7f7064b28ea6d58ddffc0c5bfa0cce88f8b08",
   }),
+  Object.freeze({
+    version: "0116",
+    file: "0116_cms_staging_read_latency_budget.sql",
+    sha256: "0a60f9c67f03f6abe893373bbb03e42e86d5e03d4afecda5bc643cad0a1a0204",
+  }),
 ]);
 
 export const CMS_MEDIA_UPLOAD_ABORT_0082_RPCS = Object.freeze([

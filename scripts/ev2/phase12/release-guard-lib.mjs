@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { commandP95Budget } from "./staging-command-budget.mjs";
+import { adminReadP95Budget } from "./staging-read-budget.mjs";
 import { GITHUB_SOLE_MAINTAINER, validateProductionReadinessControls } from "../phase16/readiness-lib.mjs";
 import {
   RELEASE_EVIDENCE_REPOSITORY,
@@ -372,7 +373,10 @@ export function evaluateRolloutWindow(evidence) {
   if (evidence?.restoreStatus !== "passed") violations.push("restore_not_passed");
 
   for (const [field, limit] of [
-    ["adminReadP95Ms", G12_BUDGETS.adminReadP95Ms],
+    [
+      "adminReadP95Ms",
+      adminReadP95Budget(evidence?.stage === "staging-canary" ? evidence?.environment : "production"),
+    ],
     [
       "commandP95Ms",
       commandP95Budget(evidence?.stage === "staging-canary" ? evidence?.environment : "production"),

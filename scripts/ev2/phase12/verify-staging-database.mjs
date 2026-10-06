@@ -1,6 +1,6 @@
 import { managementRequest } from "./production-backend-lib.mjs";
 import { businessConflictTransportSemanticSql } from "./business-conflict-transport.mjs";
-import { stagingCommandBudgetSemanticSql } from "./staging-command-budget.mjs";
+import { stagingReadBudgetSemanticSql } from "./staging-read-budget.mjs";
 import {
   CMS_LEAD_ORIGIN_BINDING_0084_OWNER_ONLY_HELPERS,
   CMS_PUBLIC_RELATION_LIMIT_0085_OWNER_ONLY_HELPERS,
@@ -196,7 +196,7 @@ const [result] = await managementRequest(`/v1/projects/${STAGING_PROJECT_REF}/da
       )},
       ${blogTaxonomyTerminalCleanupSemanticSql("blog_taxonomy_terminal_cleanup_0106_semantics_exact")},
       ${businessConflictTransportSemanticSql("business_conflict_transport_0114_semantics_exact")},
-      ${stagingCommandBudgetSemanticSql("staging_command_budget_0115_exact")},
+      ${stagingReadBudgetSemanticSql("staging_read_and_command_budget_0116_exact")},
       ${ownerOnlyFunctionContractSql(
         "release_stability_followup_0101_functions_locked",
         CMS_RELEASE_STABILITY_FOLLOWUP_0101_OWNER_ONLY_FUNCTIONS,
@@ -299,7 +299,7 @@ const checks = [
   "blog_taxonomy_terminal_cleanup_0106_functions_locked",
   "blog_taxonomy_terminal_cleanup_0106_semantics_exact",
   "business_conflict_transport_0114_semantics_exact",
-  "staging_command_budget_0115_exact",
+  "staging_read_and_command_budget_0116_exact",
   "release_stability_followup_0101_functions_locked",
   "qa_rate_limit_proof_cleanup_present",
   "qa_actor_auth_trigger_present",

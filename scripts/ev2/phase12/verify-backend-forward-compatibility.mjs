@@ -51,6 +51,14 @@ for (const migration of additions) {
 }
 
 const compatibilityTests = {
+  "0116": [
+    "supabase/tests/rls_cms_staging_read_budget.test.sql",
+    "supabase/tests/rls_cms_staging_command_budget.test.sql",
+    "supabase/tests/rls_ev2_phase11_system.test.sql",
+    "supabase/tests/rls_cms_system_rbac_scope.test.sql",
+    "tests/contracts/ev2-system.test.ts",
+    "scripts/ev2/phase12/staging-read-budget.test.mjs",
+  ],
   "0115": [
     "supabase/tests/rls_cms_staging_command_budget.test.sql",
     "supabase/tests/rls_ev2_phase11_system.test.sql",

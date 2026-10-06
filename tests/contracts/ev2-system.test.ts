@@ -29,6 +29,75 @@ const capability = {
 };
 
 describe("EV2.11 system assurance contracts", () => {
+  it("accepts legacy and revised read budgets only within the staging capability", () => {
+    for (const environment of ["local", "staging", "production"]) {
+      for (const adminReadP95Ms of [500, 2000]) {
+        for (const commandP95Ms of [800, 2000]) {
+          const candidate = {
+            ...capability,
+            environment,
+            baselines: { ...capability.baselines, adminReadP95Ms, commandP95Ms },
+          };
+          expect(Ev2SystemCapabilitySchema.safeParse(candidate).success).toBe(
+            environment === "staging" || (adminReadP95Ms === 500 && commandP95Ms === 800),
+          );
+        }
+      }
+    }
+    for (const adminReadP95Ms of [
+      0,
+      499,
+      501,
+      737,
+      1000,
+      1999,
+      2001,
+      2406,
+      "2000",
+      null,
+      undefined,
+      Infinity,
+      NaN,
+    ]) {
+      expect(
+        Ev2SystemCapabilitySchema.safeParse({
+          ...capability,
+          baselines: { ...capability.baselines, adminReadP95Ms },
+        }).success,
+      ).toBe(false);
+    }
+    for (const environment of [
+      undefined,
+      null,
+      "",
+      "STAGING",
+      " staging ",
+      "production-preview",
+      "unknown",
+    ]) {
+      expect(
+        Ev2SystemCapabilitySchema.safeParse({
+          ...capability,
+          environment,
+          baselines: { ...capability.baselines, adminReadP95Ms: 2000 },
+        }).success,
+      ).toBe(false);
+    }
+    const revised = {
+      ...capability,
+      baselines: { ...capability.baselines, adminReadP95Ms: 2000, commandP95Ms: 2000 },
+    };
+    for (const change of [
+      { requiresIndependentReview: false },
+      { realDataAllowed: true },
+      { syntheticOnly: false },
+      { maxOverrideMinutes: 31 },
+      { baselines: { ...revised.baselines, auditCoveragePercent: 99 } },
+    ]) {
+      expect(Ev2SystemCapabilitySchema.safeParse({ ...revised, ...change }).success).toBe(false);
+    }
+  });
+
   it("recognizes the approved staging command policy without changing production or legacy capabilities", () => {
     for (const environment of ["local", "staging", "production"]) {
       expect(Ev2SystemCapabilitySchema.safeParse({ ...capability, environment }).success).toBe(true);

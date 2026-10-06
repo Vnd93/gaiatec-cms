@@ -69,7 +69,7 @@ test("G11 accepts 2s only in staging and retains every independent gate", () => 
     { realDataUsed: true },
     { accessibilityCritical: 1 },
     { accessibilitySerious: 1 },
-    { metrics: { ...metrics, adminReadP95Ms: 501 } },
+    { metrics: { ...metrics, adminReadP95Ms: 2001 } },
     { metrics: { ...metrics, auditCoveragePercent: 99 } },
   ]) {
     assert.equal(evaluateSystemEvidence({ ...evidence, ...change }).passed, false);
@@ -122,7 +122,7 @@ test("G12 requires both staging environment and staging-canary stage for 2s", ()
     { environment: "production" },
     { environment: "local" },
     { environment: "production-preview" },
-    { adminReadP95Ms: 501 },
+    { adminReadP95Ms: 2001 },
     { securityIncidentCount: 1 },
     { restoreStatus: "failed" },
   ]) {
@@ -175,12 +175,8 @@ test("0115 changes only the two bound budget expressions, preserving source and 
   assert.ok(sql.includes("p.oid is null"));
   assert.ok(sql.includes("acl.grantee <> p.proowner"));
   assert.throws(() => stagingCommandBudgetSemanticSql("x;select"));
-  for (const path of [
-    "scripts/ev2/phase12/verify-staging-database.mjs",
-    "scripts/ev2/phase12/staging-migrations-canary.mjs",
-  ]) {
-    const content = readFileSync(path, "utf8");
-    assert.ok(content.includes('stagingCommandBudgetSemanticSql("staging_command_budget_0115_exact")'));
-    assert.ok(content.includes('"staging_command_budget_0115_exact",'));
-  }
+  // 0116 extends only read budgets. Its preconditions retain the exact 0115
+  // sources; current remote gates must pin the complete successor bodies.
+  const successor = readFileSync("supabase/migrations/0116_cms_staging_read_latency_budget.sql", "utf8");
+  for (const [, digest] of STAGING_COMMAND_BUDGET_SOURCES) assert.ok(successor.includes(digest));
 });

@@ -58,7 +58,7 @@ select is(pg_temp.record_budget('staging',2000,'{"restoreStatus":"failed"}')->>'
 select is(pg_temp.record_budget('staging',2000,'{"p0Count":1}')->>'status','failed','P0 is still blocking');
 select is(pg_temp.record_budget('staging',2000,jsonb_build_object('metrics',
   (select metrics from public.cms_assurance_runs where id=(select (response->>'runId')::uuid from budget_result))
-  || '{"adminReadP95Ms":501}'::jsonb))->>'status','failed','read p95 remains 500ms');
+  || '{"adminReadP95Ms":2001}'::jsonb))->>'status','failed','read p95 cannot exceed the approved 2s staging boundary');
 select is(pg_temp.record_budget('staging',2000,jsonb_build_object('metrics',
   (select metrics from public.cms_assurance_runs where id=(select (response->>'runId')::uuid from budget_result))
   || '{"auditCoveragePercent":99}'::jsonb))->>'status','failed','audit coverage stays 100 percent');

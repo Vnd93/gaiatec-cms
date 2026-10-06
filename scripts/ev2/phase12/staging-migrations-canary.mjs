@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
 import { QA_ACTOR_LEASE_TTL_MINUTES } from "../../qa/qa-actor-lease.mjs";
 import { businessConflictTransportSemanticSql } from "./business-conflict-transport.mjs";
-import { stagingCommandBudgetSemanticSql } from "./staging-command-budget.mjs";
+import { stagingReadBudgetSemanticSql } from "./staging-read-budget.mjs";
 import {
   authFailureIdentity,
   canaryFailureIdentity,
@@ -121,6 +121,7 @@ const scenarioCoverage = [
   "0106",
   "0114",
   "0115",
+  "0116",
 ];
 const accessToken = process.env.SUPABASE_ACCESS_TOKEN ?? "";
 const expectedSha = process.env.G12_MIGRATION_CANARY_EXPECTED_SHA ?? "";
@@ -789,7 +790,7 @@ async function preflightMigrations() {
     )},
     ${blogTaxonomyTerminalCleanupSemanticSql("blog_taxonomy_terminal_cleanup_0106_semantics_exact")},
     ${businessConflictTransportSemanticSql("business_conflict_transport_0114_semantics_exact")},
-    ${stagingCommandBudgetSemanticSql("staging_command_budget_0115_exact")},
+    ${stagingReadBudgetSemanticSql("staging_read_and_command_budget_0116_exact")},
     ${ownerOnlyFunctionContractSql(
       "release_stability_followup_0101_functions_locked",
       CMS_RELEASE_STABILITY_FOLLOWUP_0101_OWNER_ONLY_FUNCTIONS,
@@ -1043,7 +1044,10 @@ async function preflightMigrations() {
     "business_conflict_transport_0114_semantics_exact",
     row?.business_conflict_transport_0114_semantics_exact === true,
   );
-  check("staging_command_budget_0115_exact", row?.staging_command_budget_0115_exact === true);
+  check(
+    "staging_read_and_command_budget_0116_exact",
+    row?.staging_read_and_command_budget_0116_exact === true,
+  );
   check(
     "release_stability_followup_0101_functions_locked",
     row?.release_stability_followup_0101_functions_locked === true,

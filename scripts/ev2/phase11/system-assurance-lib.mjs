@@ -1,4 +1,5 @@
 import { commandP95Budget } from "../phase12/staging-command-budget.mjs";
+import { adminReadP95Budget } from "../phase12/staging-read-budget.mjs";
 
 export const G11_BASELINES = Object.freeze({
   availabilityPercent: 99.9,
@@ -112,7 +113,7 @@ export function evaluateSystemEvidence(evidence) {
     ],
     [
       "admin_read_p95",
-      finite(metrics.adminReadP95Ms) && metrics.adminReadP95Ms <= G11_BASELINES.adminReadP95Ms,
+      finite(metrics.adminReadP95Ms) && metrics.adminReadP95Ms <= adminReadP95Budget(evidence?.environment),
     ],
     [
       "command_p95",

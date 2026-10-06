@@ -6,6 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 import { buildPimPrerequisitePlan, provisionPimPrerequisites } from "../qa/cms-browser-fixture.mjs";
 import { buildGovernedProductFields, PRODUCT_PREREQUISITE_FLAGS } from "./product-prerequisites-lib.mjs";
 import { assertConsumedRealBrowserEvidence } from "../ev2/phase12/real-browser-release-evidence-lib.mjs";
+import { awaitCampaignExpiryEvidence, readCampaignExpirySnapshot } from "./campaign-expiry-evidence.mjs";
 import {
   assertRealBrowserLeadControls,
   leadControlsBinding,
@@ -1003,11 +1004,23 @@ async function run() {
       slug,
       payload: campaignPayload(slug, { expired: true, expiry }),
     });
-    expiryRoutes.push({ slug, itemId: item.itemId, expectedStatus, destination });
+    expiryRoutes.push({
+      slug,
+      itemId: item.itemId,
+      revisionId: item.revisionId,
+      expectedStatus,
+      destination,
+    });
   }
   const expired = await admin.rpc("cms_expire_campaigns", { p_limit: 50, p_correlation_id: uid() });
   if (expired.error) throw expired.error;
-  assert(expired.data >= 4, "Worker não expirou todas as campanhas sintéticas", expired.data);
+  assert(
+    Number.isSafeInteger(expired.data) && expired.data >= 0 && expired.data <= 50,
+    "Recibo da chamada de expiração inválido",
+  );
+  const expiryEvidence = await awaitCampaignExpiryEvidence(expiryRoutes, (remainingMs) =>
+    readCampaignExpirySnapshot(admin, expiryRoutes, remainingMs),
+  );
   for (const route of expiryRoutes) {
     const response = await fetch(`${siteOrigin}/campanhas/${route.slug}?homologacao=${shortTag}`, {
       redirect: "manual",
@@ -1024,7 +1037,11 @@ async function run() {
         response.headers.get("location"),
       );
   }
-  record("Expiração de campanhas", { statuses: [301, 404, 410, 302] });
+  record("Expiração de campanhas", {
+    statuses: [301, 404, 410, 302],
+    ...expiryEvidence,
+    expiredByExplicitCall: expired.data,
+  });
 
   await prepareGovernedProductPrerequisites(adminActor);
   const bulkSlugs = [`produto-lote-a-${shortTag}`, `produto-lote-b-${shortTag}`];

@@ -58,6 +58,7 @@ import {
 } from "./cms-real-browser-attestation";
 import { submitCmsMfaAndAwaitReady } from "./cms-mfa-session-gate";
 import { fillSyntheticProductSpecification } from "./cms-product-specification";
+import { clickSyntheticProductCreation, prepareSyntheticProductDraft } from "./cms-product-creation";
 import {
   campaignIndexableField,
   campaignPublishedFormField,
@@ -1514,6 +1515,7 @@ async function fillSyntheticPostForCreate(page: Page, runTag: string) {
 }
 
 async function fillSyntheticProductForCreate(page: Page, runTag: string) {
+  await prepareSyntheticProductDraft(page);
   const nonce = randomUUID().replaceAll("-", "").slice(0, 8);
   await page.getByRole("tab", { name: "Dados essenciais" }).click();
   await page.getByLabel("Nome comercial do produto").fill(`${runTag} PRODUTO`);
@@ -1734,18 +1736,24 @@ async function createMandatoryEditorialSurfacesViaUi(
     await page.goto(creation.route, { waitUntil: "domcontentloaded" });
     await expect(page.locator("[data-admin-surface]")).toBeVisible({ timeout: 20_000 });
     await creation.fill();
-    const created = await clickEditorialAction(
-      page,
-      "create",
-      "draft",
-      () => page.getByRole("button", { name: creation.button, exact: true }).first().click(),
-      expectedApiOrigin,
-      {
-        surfaceId: editorialSurfaceId(creation.kind, "create"),
-        controlName: creation.button,
-        scenarioId: `${creation.kind}-create-via-ui`,
-      },
-    );
+    const target = {
+      surfaceId: editorialSurfaceId(creation.kind, "create"),
+      controlName: creation.button,
+      scenarioId: `${creation.kind}-create-via-ui`,
+    };
+    const created =
+      creation.kind === "product"
+        ? await clickSyntheticProductCreation(page, expectedApiOrigin, mutationTargetEnvironment())
+        : await clickEditorialAction(
+            page,
+            "create",
+            "draft",
+            () => page.getByRole("button", { name: creation.button, exact: true }).first().click(),
+            expectedApiOrigin,
+            target,
+          );
+    if (creation.kind === "product")
+      registerSemanticActionEvidence(target, "promote", created.evidence.httpStatus!, "promoted");
     const key = creation.kind === "post" ? "contentId" : `${creation.kind}Id`;
     (ids as Record<string, string>)[key] = created.itemId;
     await page.waitForURL(/\/[0-9a-f-]{36}$/i, { timeout: 20_000 });
@@ -3112,17 +3120,16 @@ async function createComparisonProductViaUi(input: {
   await expect(page.locator("[data-admin-surface]")).toBeVisible({ timeout: 20_000 });
   const comparisonTag = `${runTag}-COMPARACAO`;
   await fillSyntheticProductForCreate(page, comparisonTag);
-  const created = await clickEditorialAction(
-    page,
-    "create",
-    "draft",
-    () => page.getByRole("button", { name: "Salvar rascunho", exact: true }).first().click(),
-    expectedApiOrigin,
+  const created = await clickSyntheticProductCreation(page, expectedApiOrigin, mutationTargetEnvironment());
+  registerSemanticActionEvidence(
     {
       surfaceId: "product-create",
       controlName: "Salvar rascunho",
       scenarioId: "comparison-product-create-via-ui",
     },
+    "promote",
+    created.evidence.httpStatus,
+    "promoted",
   );
   await page.waitForURL(/\/admin\/produtos\/[0-9a-f-]{36}$/i, { timeout: 20_000 });
   const plan = editorialSurfacePlans({ ...ids, productId: created.itemId }).find(

@@ -1,11 +1,12 @@
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { signMediaDownloadUrls } from "./cms-media-signing.ts";
 
 export async function resolveMediaAssets(
   client: SupabaseClient,
   assetIds: string[],
   primaryId: string | undefined,
   ttlSeconds: number,
-  limits: { maxAssets?: number; maxVariants?: number } = {},
+  limits: { maxAssets?: number; maxVariants?: number; retrySigningOnTimeout?: boolean } = {},
 ) {
   const mediaUrls: Record<string, string> = {};
   const mediaAlt: Record<string, string> = {};
@@ -56,7 +57,12 @@ export async function resolveMediaAssets(
   if ((variants ?? []).length > maxVariants) throw new Error("CMS_MEDIA_VARIANT_LIMIT_EXCEEDED");
   const paths = [...new Set((variants ?? []).map((variant) => variant.transform_path))];
   const { data: signedVariants, error: signingError } = paths.length
-    ? await client.storage.from("cms-media-private").createSignedUrls(paths, ttlSeconds)
+    ? await signMediaDownloadUrls(
+        client.storage.from("cms-media-private"),
+        paths,
+        ttlSeconds,
+        limits.retrySigningOnTimeout === true,
+      )
     : { data: [], error: null };
   if (signingError) throw signingError;
   const signedByPath = new Map((signedVariants ?? []).map((signed) => [signed.path, signed.signedUrl]));

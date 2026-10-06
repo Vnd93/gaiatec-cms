@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { boundedFetch } from "../_shared/cms-edge-fetch.ts";
+import { boundedFetch, isEdgeFetchTimeout } from "../_shared/cms-edge-fetch.ts";
 import { containsInternalProductValue, sanitizePublicPayload, sanitizePublicSeo } from "../_shared/cms-public-projection.ts";
 import { resolveMediaAssets } from "../_shared/cms-media-resolution.ts";
 import {
@@ -490,7 +490,7 @@ const handleRequest = async (req: Request) => {
       prepared.map(({ assetIds, primaryId, documents }) => ({ assetIds, primaryId, documents })),
       {
         resolveMedia: (assetIds, limits) =>
-          resolveMediaAssets(client, assetIds, undefined, 3600, limits),
+          resolveMediaAssets(client, assetIds, undefined, 3600, { ...limits, retrySigningOnTimeout: true }),
         resolveDocuments: (documents, limits) =>
             resolveDocumentAssets(
               client as unknown as DocumentResolutionClient,
@@ -1159,7 +1159,11 @@ const handleRequest = async (req: Request) => {
 Deno.serve(async (req) => {
   try {
     return await handleRequest(req);
-  } catch {
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: "cms.public.request_failed",
+      reason: isEdgeFetchTimeout(error) ? "upstream_timeout" : "request_failed",
+    }));
     return json({ error: "Conteúdo temporariamente indisponível." }, 503, { "Cache-Control": "no-store" });
   }
 });

@@ -6,6 +6,7 @@ const fn = readFileSync("supabase/functions/cms-public/index.ts", "utf8");
 const worker = readFileSync("cloudflare/_worker.js", "utf8");
 const session = readFileSync("supabase/functions/cms-session/index.ts", "utf8");
 const adminAuth = readFileSync("src/admin/auth/AdminAuthContext.tsx", "utf8");
+const mediaResolution = readFileSync("supabase/functions/_shared/cms-media-resolution.ts", "utf8");
 
 describe("public upstream deadline", () => {
   it("gives up well before the caller does", () => {
@@ -49,6 +50,16 @@ describe("public upstream deadline", () => {
     // Measured on staging: the public routes sit around 450 ms at the median and the budget breaches
     // came from isolated stalls whose maximum was pinned exactly at the worker's ceiling.
     expect(fn).toContain("global: { fetch:");
+  });
+
+  it("opts in only the governed public media signing read without changing the generic POST policy", () => {
+    expect(fn).toContain("3600, { ...limits, retrySigningOnTimeout: true }");
+    expect(fn.match(/retrySigningOnTimeout: true/g)).toHaveLength(1);
+    expect(mediaResolution).toContain('client.storage.from("cms-media-private")');
+    expect(mediaResolution).toContain("limits.retrySigningOnTimeout === true");
+    expect(mediaResolution).toContain("if (signingError) throw signingError;");
+    expect(fn).toContain('reason: isEdgeFetchTimeout(error) ? "upstream_timeout" : "request_failed"');
+    expect(fn).not.toContain("console.error(error)");
   });
 });
 

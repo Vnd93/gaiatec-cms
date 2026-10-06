@@ -286,7 +286,11 @@ test("a11y identifica a rota e status sem ampliar prazos ou reduzir scans", asyn
   );
   assert.match(
     journeys,
-    /expect\(response\?\.status\(\), `\$\{route\}: document HTTP status`\)\.toBe\(expectedStatus\);/,
+    /expect\(response\?\.status\(\), `\$\{route\}: document HTTP status\$\{diagnostic \? `; \$\{diagnostic\}` : ""\}`\)\.toBe\(\s*expectedStatus,\s*\);/,
+  );
+  assert.match(
+    journeys,
+    /response\?\.status\(\) === expectedStatus\s*\? ""\s*: await publicDocumentFailureDiagnostic\(route, response, performance\.now\(\) - navigationStartedAt\)/,
   );
   assert.match(
     journeys,

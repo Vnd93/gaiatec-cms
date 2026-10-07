@@ -12,6 +12,7 @@ import type {
 import type { CmsRelatedItem } from "./components/CmsPageRenderer";
 import { activateLegacyCatalogContext, adaptLegacyCatalogResponse } from "./catalog-backend-compatibility";
 import { normalizeLegacyFormResponse, transferLegacyFormBinding } from "./form-backend-compatibility";
+import { fetchPublicPageResponse } from "./public-page-fetch";
 import {
   CatalogEditorialPublicTermSchema,
   CatalogPublicProductSchema,
@@ -811,10 +812,7 @@ function normalizeResource<T>(wire: unknown, expectedKinds: ReadonlySet<string>)
 async function catalogFetch<T>(params: URLSearchParams): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${SUPABASE_URL}/functions/v1/cms-public?${params}`, {
-      headers: { apikey: SUPABASE_ANON_KEY },
-      signal: AbortSignal.timeout(10_000),
-    });
+    response = await fetchPublicPageResponse(params);
   } catch {
     throw new Error("Catálogo temporariamente indisponível.");
   }

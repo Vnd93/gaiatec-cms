@@ -19,6 +19,55 @@ const patchedBraceDependencies = [
 type BraceExpand = (pattern: string, options?: { maxDepth?: number; maxRewrites?: number }) => string[];
 
 describe("toolchain dependency security", () => {
+  it("pins every Sharp consumer and prebuilt binary to the librsvg security fix", () => {
+    // GHSA-wq5f-xc86-pv6w: Sharp 0.35.5 bundles patched librsvg 2.63.2.
+    expect(manifest.optionalDependencies.sharp).toBe("0.35.5");
+    expect(manifest.overrides.sharp).toBe("0.35.5");
+    expect(lock.packages[""].optionalDependencies.sharp).toBe("0.35.5");
+    const consumers = Object.keys(lock.packages).filter((path) => path.endsWith("/sharp"));
+    expect(consumers).toEqual(["node_modules/sharp"]);
+    const sharp = lock.packages[consumers[0]];
+    expect(sharp.version).toBe("0.35.5");
+    expect(sharp.resolved).toBe("https://registry.npmjs.org/sharp/-/sharp-0.35.5.tgz");
+    expect(sharp.integrity).toMatch(/^sha512-[A-Za-z0-9+/]+=*$/);
+    const binaries = Object.entries(lock.packages).filter(([path]) => path.includes("/@img/sharp-"));
+    expect(binaries.length).toBeGreaterThan(0);
+    for (const [path, entry] of binaries) {
+      const dependency = entry as { version: string; resolved: string; integrity: string };
+      const name = path.slice(path.lastIndexOf("/@img/") + 1);
+      const version = name.startsWith("@img/sharp-libvips-") ? "1.3.4" : "0.35.5";
+      expect(dependency.version).toBe(version);
+      expect(dependency.resolved).toBe(
+        `https://registry.npmjs.org/${name}/-/${name.slice(5)}-${version}.tgz`,
+      );
+      expect(dependency.integrity).toMatch(/^sha512-[A-Za-z0-9+/]+=*$/);
+    }
+    for (const [name, version] of Object.entries(sharp.optionalDependencies)) {
+      expect(version).toBe(name.startsWith("@img/sharp-libvips-") ? "1.3.4" : "0.35.5");
+      expect(lock.packages[`node_modules/${name}`].version).toBe(version);
+    }
+  });
+
+  it("preserves real SVG decoding and PNG, WebP and AVIF conversion with patched librsvg", async () => {
+    const sharp = loadDependency("sharp") as typeof import("sharp").default;
+    expect(sharp.versions.sharp).toBe("0.35.5");
+    expect(sharp.versions.rsvg).toBe("2.63.2");
+    const svg = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="24"><rect width="32" height="24" fill="#327496"/></svg>',
+    );
+    const png = await sharp(svg).png().toBuffer();
+    expect(await sharp(png).metadata()).toMatchObject({ format: "png", width: 32, height: 24 });
+    const webp = await sharp(png).resize(16, 12).webp().toBuffer();
+    expect(await sharp(webp).metadata()).toMatchObject({ format: "webp", width: 16, height: 12 });
+    const avif = await sharp(png).resize(16, 12).avif().toBuffer();
+    expect(await sharp(avif).metadata()).toMatchObject({
+      format: "heif",
+      compression: "av1",
+      width: 16,
+      height: 12,
+    });
+  });
+
   it("locks every source-map-js consumer to the indexed-map denial-of-service fix", () => {
     // GHSA-68fv-2mgg-jv7q / CVE-2026-93749. The existing consumer ranges accept 1.2.2.
     const sourceMaps = Object.keys(lock.packages).filter((path) => path.endsWith("/source-map-js"));

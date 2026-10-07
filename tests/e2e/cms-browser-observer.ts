@@ -1,5 +1,6 @@
 import type { BrowserContext, ConsoleMessage, Page, Request, Response } from "@playwright/test";
 import { isAllowedThirdPartyConsoleOrigin } from "./console-origins";
+import { createPublicReadObserver } from "./cms-public-read-observer";
 
 type PathMatcher = string | RegExp;
 
@@ -21,6 +22,7 @@ export type BrowserObserverSnapshot = {
   unexpectedConsole: number;
   unexpectedHttp: number;
   requestFailures: number;
+  redundantPublicReadCancellations: number;
   expectedHttp: Array<{ id: string; occurrences: number }>;
   secretsPersisted: false;
 };
@@ -231,7 +233,7 @@ export function createCmsBrowserObserver(configuration: ObserverConfiguration) {
   const observedContexts = new WeakSet<BrowserContext>();
   const unexpectedConsole: string[] = [];
   const unexpectedHttp: string[] = [];
-  const requestFailures: string[] = [];
+  const requestFailures: Array<{ message: string; isProvenRedundant: () => boolean }> = [];
   const pendingTrackedRequests = new Map<Request, string>();
   let trackedRequestRevision = 0;
   const successfulTrackedHeadFetches = new WeakSet<Request>();
@@ -334,7 +336,7 @@ export function createCmsBrowserObserver(configuration: ObserverConfiguration) {
     unexpectedConsole.push(sanitize(text));
   }
 
-  function onRequestFailed(request: Request) {
+  function onRequestFailed(request: Request, publicReads: ReturnType<typeof createPublicReadObserver>) {
     settleTrackedRequest(request);
     const failure = request.failure();
     if (
@@ -355,9 +357,12 @@ export function createCmsBrowserObserver(configuration: ObserverConfiguration) {
     ) {
       return;
     }
-    requestFailures.push(
-      sanitize(`${request.method()} ${safePath(request.url())}: ${failure?.errorText ?? "request failed"}`),
-    );
+    requestFailures.push({
+      message: sanitize(
+        `${request.method()} ${safePath(request.url())}: ${failure?.errorText ?? "request failed"}`,
+      ),
+      isProvenRedundant: () => publicReads.isProvenRedundantCancellation(request),
+    });
   }
 
   function onRequest(request: Request) {
@@ -380,10 +385,16 @@ export function createCmsBrowserObserver(configuration: ObserverConfiguration) {
   function observePage(page: Page) {
     if (observedPages.has(page)) return;
     observedPages.add(page);
+    const publicReads = createPublicReadObserver(trackedRequestOrigins);
+    // Observe passive transport events only. Never mock a response or suppress a failed body.
+    page.on("request", publicReads.onRequest);
+    page.on("response", publicReads.onResponse);
+    page.on("requestfinished", publicReads.onRequestFinished);
+    page.on("requestfailed", publicReads.onRequestFailed);
     page.on("request", onRequest);
     page.on("console", onConsole);
     page.on("pageerror", (error) => unexpectedConsole.push(sanitize(error)));
-    page.on("requestfailed", onRequestFailed);
+    page.on("requestfailed", (request) => onRequestFailed(request, publicReads));
     page.on("requestfinished", onRequestFinished);
     page.on("response", onResponse);
   }
@@ -422,7 +433,7 @@ export function createCmsBrowserObserver(configuration: ObserverConfiguration) {
     return [
       ...unexpectedConsole,
       ...unexpectedHttp,
-      ...requestFailures,
+      ...requestFailures.filter((failure) => !failure.isProvenRedundant()).map((failure) => failure.message),
       ...[...pendingTrackedRequests.values()].map((request) => `pending first-party request ${request}`),
       ...unmatchedConsoleMirrors,
       ...missing,
@@ -449,7 +460,11 @@ export function createCmsBrowserObserver(configuration: ObserverConfiguration) {
       status: violations().length === 0 ? "passed" : "failed",
       unexpectedConsole: unexpectedConsole.length + unmatchedMirrorCount,
       unexpectedHttp: unexpectedHttp.length,
-      requestFailures: requestFailures.length + pendingTrackedRequests.size,
+      requestFailures:
+        requestFailures.filter((failure) => !failure.isProvenRedundant()).length +
+        pendingTrackedRequests.size,
+      redundantPublicReadCancellations: requestFailures.filter((failure) => failure.isProvenRedundant())
+        .length,
       expectedHttp: allowances.map(({ id, occurrences }) => ({ id, occurrences })),
       secretsPersisted: false,
     };

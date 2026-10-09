@@ -17,6 +17,7 @@ import { buildPublicSitemapXml } from "../_shared/cms-public-sitemap.ts";
 import { PUBLIC_RELATION_LIMIT, publicRelationIds } from "../_shared/cms-public-relations.ts";
 import { publicFormReadArguments, resolveGovernedPublicFormBindings } from "../_shared/cms-public-form-bindings.ts";
 import { resolvePublicPagePathLookups } from "./page-path.ts";
+import { documentTrace } from "./document-trace.ts";
 import { authenticateCms } from "../_shared/cms-auth.ts";
 import {
   CMS_QA_RATE_LIMIT_ACTION,
@@ -1157,13 +1158,21 @@ const handleRequest = async (req: Request) => {
 };
 
 Deno.serve(async (req) => {
+  const trace = documentTrace(req, Deno.env.get("CMS_ENVIRONMENT"), Deno.env.get("CMS_RELEASE_SHA"));
+  const startedAt = Date.now();
+  let status = 503;
+  if (trace) console.info(JSON.stringify({ event: "cms.public.document.start", ...trace, observedAt: new Date().toISOString() }));
   try {
-    return await handleRequest(req);
+    const response = await handleRequest(req);
+    status = response.status;
+    return response;
   } catch (error) {
     console.error(JSON.stringify({
       event: "cms.public.request_failed",
       reason: isEdgeFetchTimeout(error) ? "upstream_timeout" : "request_failed",
     }));
     return json({ error: "Conteúdo temporariamente indisponível." }, 503, { "Cache-Control": "no-store" });
+  } finally {
+    if (trace) console.info(JSON.stringify({ event: "cms.public.document.finish", ...trace, observedAt: new Date().toISOString(), status, durationMs: Math.min(60000, Math.max(0, Date.now() - startedAt)) }));
   }
 });

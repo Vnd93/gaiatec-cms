@@ -64,8 +64,17 @@ describe("cms-public availability contract", () => {
     expect(publicApi).toContain("cms_public_document_download_target");
     expect(publicApi).toContain("sha256Bytes(bytes)");
     expect(publicApi).not.toContain("status: 304");
-    expect(publicApi).toMatch(/Deno\.serve\(async \(req\) => \{[\s\S]*return await handleRequest\(req\);/);
-    expect(publicApi).toMatch(/catch \{[\s\S]*temporariamente indisponível[\s\S]*503/);
+    const boundary = publicApi.slice(publicApi.lastIndexOf("Deno.serve(async (req) => {"));
+    expect(boundary).toMatch(
+      /try \{\s*const response = await handleRequest\(req\);\s*status = response.status;\s*return response;/,
+    );
+    expect(boundary).toMatch(
+      /catch \(error\) \{[\s\S]*return json\(\{ error: "Conteúdo temporariamente indisponível\." \}, 503, \{ "Cache-Control": "no-store" \}\);/,
+    );
+    expect(boundary).toContain('reason: isEdgeFetchTimeout(error) ? "upstream_timeout" : "request_failed"');
+    expect(boundary).not.toContain("console.error(error)");
+    expect(boundary).toContain("} finally {");
+    expect(boundary).not.toContain("req.headers.entries");
   });
 
   it("uses read-only transport for the scoped form without widening selectors or permissions", () => {

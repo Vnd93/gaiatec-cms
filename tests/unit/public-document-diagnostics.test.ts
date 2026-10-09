@@ -20,6 +20,8 @@ describe("public document failure diagnostics", () => {
     });
     expect(JSON.parse(await publicDocumentFailureDiagnostic("/contato", upstream, 2999.4))).toEqual({
       event: "public.document.failure",
+      observedAt: expect.any(String),
+      trace: null,
       route: "/contato",
       status: 503,
       elapsedMs: 2999,
@@ -36,6 +38,7 @@ describe("public document failure diagnostics", () => {
       "cf-ray",
       "content-type",
       "x-cms-upstream",
+      "x-cms-document-trace",
     ]);
   });
 
@@ -90,6 +93,25 @@ describe("public document failure diagnostics", () => {
       edgeMs: null,
       ray: null,
     });
+  });
+});
+
+describe("request-exact staging correlation", () => {
+  it("accepts only an opaque random trace, never arbitrary visitor data", async () => {
+    const trace = "01234567-89ab-4cde-8fab-0123456789ab";
+    const report = JSON.parse(
+      await publicDocumentFailureDiagnostic("/", response({ "x-cms-document-trace": trace }), 1),
+    );
+    expect(report.trace).toBe(trace);
+    expect(Number.isFinite(Date.parse(report.observedAt))).toBe(true);
+    const untrusted = "private?email=never-record";
+    const rejected = await publicDocumentFailureDiagnostic(
+      "/",
+      response({ "x-cms-document-trace": untrusted }),
+      1,
+    );
+    expect(JSON.parse(rejected).trace).toBeNull();
+    expect(rejected).not.toContain(untrusted);
   });
 });
 

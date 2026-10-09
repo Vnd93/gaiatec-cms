@@ -332,7 +332,11 @@ async function spaResponse(request, env, status, options = {}) {
   return new Response(html, { status, headers });
 }
 
-async function cmsPublic(params, env = {}, { retryTransport = false, observe = () => {} } = {}) {
+async function cmsPublic(
+  params,
+  env = {},
+  { retryTransport = false, observe = () => {}, trace = null } = {},
+) {
   const lookup = new Set(["page-by-path", "entity-detail", "detail", "redirect"]).has(params.type)
     ? params.type
     : "other";
@@ -346,6 +350,7 @@ async function cmsPublic(params, env = {}, { retryTransport = false, observe = (
       attempts,
       status: response?.status ?? 0,
       durationMs: Math.min(60000, Math.max(0, Date.now() - startedAt)),
+      trace,
     });
     return response;
   };
@@ -374,7 +379,7 @@ async function cmsPublic(params, env = {}, { retryTransport = false, observe = (
     const result = Promise.resolve()
       .then(() =>
         fetch(target, {
-          headers: { apikey: anonKey },
+          headers: { apikey: anonKey, ...(trace ? { "x-cms-document-trace": `${trace}.${id}` } : {}) },
           signal: controller.signal,
         }),
       )
@@ -837,7 +842,17 @@ async function handleRequest(request, env, observe) {
   const url = new URL(request.url);
   const path = url.pathname;
   const stagingHost = url.hostname.endsWith(".pages.dev");
-  const fetchCmsPublic = (params, options) => cmsPublic(params, env, { ...options, observe });
+  const fetchCmsPublic = (params, options) =>
+    cmsPublic(params, env, {
+      ...options,
+      observe,
+      // Generated here, never copied from the visitor. This is not an authorization token.
+      trace:
+        new Set(["page-by-path", "entity-detail", "detail", "redirect"]).has(params.type) &&
+        deploymentEnvironment(url, env) === "staging"
+          ? crypto.randomUUID()
+          : null,
+    });
   const publicApiEndpoint = env.CMS_PUBLIC_API ?? CMS_PUBLIC_API;
 
   if (path === "/healthz") return healthResponse(request, env);
@@ -1217,6 +1232,7 @@ export default {
         "X-CMS-Upstream",
         `${upstream.lookup};${upstream.outcome};${upstream.attempts};${upstream.status};${upstream.durationMs}`,
       );
+      if (upstream.trace) headers.set("X-CMS-Document-Trace", upstream.trace);
     }
     const finalResponse = new Response(response.body, {
       status: response.status,

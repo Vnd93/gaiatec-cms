@@ -29,14 +29,18 @@ export async function publicDocumentFailureDiagnostic(
       return "";
     }
   };
-  const [release, timing, ray, contentType, upstream] = await Promise.all(
-    ["x-release", "server-timing", "cf-ray", "content-type", "x-cms-upstream"].map(header),
+  const [release, timing, ray, contentType, upstream, trace] = await Promise.all(
+    ["x-release", "server-timing", "cf-ray", "content-type", "x-cms-upstream", "x-cms-document-trace"].map(
+      header,
+    ),
   );
   const edgeMs = /(?:^|,\s*)edge;dur=(\d+(?:\.\d+)?)(?:\s*(?:,|$))/.exec(timing)?.[1];
   const mime = contentType.split(";", 1)[0].trim().toLowerCase();
   const status = response?.status();
   return JSON.stringify({
     event: "public.document.failure",
+    observedAt: new Date().toISOString(),
+    trace: /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(trace) ? trace : null,
     route: PUBLIC_JOURNEYS.has(path) ? path : "other",
     status:
       status !== undefined && Number.isInteger(status) && status >= 100 && status <= 599 ? status : null,

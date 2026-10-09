@@ -29,8 +29,8 @@ export async function publicDocumentFailureDiagnostic(
       return "";
     }
   };
-  const [release, timing, ray, contentType] = await Promise.all(
-    ["x-release", "server-timing", "cf-ray", "content-type"].map(header),
+  const [release, timing, ray, contentType, upstream] = await Promise.all(
+    ["x-release", "server-timing", "cf-ray", "content-type", "x-cms-upstream"].map(header),
   );
   const edgeMs = /(?:^|,\s*)edge;dur=(\d+(?:\.\d+)?)(?:\s*(?:,|$))/.exec(timing)?.[1];
   const mime = contentType.split(";", 1)[0].trim().toLowerCase();
@@ -46,5 +46,11 @@ export async function publicDocumentFailureDiagnostic(
     edgeMs: edgeMs === undefined ? null : milliseconds(Number(edgeMs)),
     ray: /^[a-f0-9]{16,32}-[A-Z]{3}$/.test(ray) ? ray : null,
     contentType: ["text/html", "application/json", "text/plain"].includes(mime) ? mime : "other",
+    upstream:
+      /^(?:page-by-path|entity-detail|detail|redirect|other);(?:http|timeout|transport|unconfigured);[0-2];(?:0|[1-5]\d{2});(?:[0-9]{1,4}|[1-5][0-9]{4}|60000)$/.test(
+        upstream,
+      )
+        ? upstream
+        : null,
   });
 }

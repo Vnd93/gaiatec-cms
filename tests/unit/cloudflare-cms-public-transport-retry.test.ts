@@ -75,6 +75,83 @@ afterEach(() => {
 });
 
 describe("cms-public transport retry", () => {
+  it("isolates diagnostics between concurrent requests", async () => {
+    const network = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
+      if (url.searchParams.get("type") === "entity-detail") throw new TypeError("not-recorded");
+      return new Response(null, { status: 502 });
+    });
+    vi.stubGlobal("fetch", network);
+    const [entity, managed] = await Promise.all([
+      worker.fetch(new Request(`${origin}/industrias/instrumentacao`), environment()),
+      worker.fetch(new Request(`${origin}/managed-page`), environment()),
+    ]);
+    expect(entity.headers.get("X-CMS-Upstream")).toMatch(/^entity-detail;transport;1;503;\d+$/);
+    expect(managed.headers.get("X-CMS-Upstream")).toMatch(/^page-by-path;http;1;502;\d+$/);
+  });
+
+  it("omits diagnostics on successful documents and private routes", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => managedPage()),
+    );
+    const success = await worker.fetch(new Request(`${origin}/contato`), environment());
+    const privatePage = await worker.fetch(new Request(`${origin}/admin/login`), environment());
+    expect(success.status).toBe(200);
+    expect(success.headers.has("X-CMS-Upstream")).toBe(false);
+    expect(privatePage.headers.has("X-CMS-Upstream")).toBe(false);
+  });
+
+  it("labels a discovery transport rejection without exposing its error or credentials", async () => {
+    const network = vi.fn(async () => {
+      throw new TypeError("secret-payload-never-record");
+    });
+    vi.stubGlobal("fetch", network);
+    const response = await worker.fetch(
+      new Request(`${origin}/industrias/instrumentacao?private=value`),
+      environment(),
+    );
+    expect(response.status).toBe(503);
+    expect(network).toHaveBeenCalledTimes(1);
+    expect(response.headers.get("X-CMS-Upstream")).toMatch(/^entity-detail;transport;1;503;\d+$/);
+    expect([...response.headers].join()).not.toContain("secret-payload");
+    expect([...response.headers].join()).not.toContain("private=value");
+  });
+
+  it("distinguishes an upstream HTTP 503 and keeps its original single attempt", async () => {
+    const network = vi.fn(async () => new Response(null, { status: 503 }));
+    vi.stubGlobal("fetch", network);
+    const response = await worker.fetch(new Request(`${origin}/industrias/instrumentacao`), environment());
+    expect(response.status).toBe(503);
+    expect(network).toHaveBeenCalledTimes(1);
+    expect(response.headers.get("X-CMS-Upstream")).toMatch(/^entity-detail;http;1;503;\d+$/);
+  });
+
+  it("keeps the discovery deadline unchanged and distinguishes its timeout", async () => {
+    vi.useFakeTimers();
+    const network = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => rejectWhenAborted(init?.signal));
+    vi.stubGlobal("fetch", network);
+    const pending = worker.fetch(new Request(`${origin}/industrias/instrumentacao`), environment());
+    await vi.advanceTimersByTimeAsync(5000);
+    const response = await pending;
+    expect(response.status).toBe(503);
+    expect(network).toHaveBeenCalledTimes(1);
+    expect(response.headers.get("X-CMS-Upstream")).toBe("entity-detail;timeout;1;503;5000");
+  });
+
+  it("does not expose upstream diagnostics in production", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 503 })),
+    );
+    const response = await worker.fetch(
+      new Request("https://www.gaiatec.com.br/industrias/instrumentacao"),
+      environment(),
+    );
+    expect(response.status).toBe(503);
+    expect(response.headers.has("X-CMS-Upstream")).toBe(false);
+  });
+
   it("does not hedge a managed page that answers before the tail window", async () => {
     vi.useFakeTimers();
     const network = vi.fn(async () => managedPage());

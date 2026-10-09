@@ -110,8 +110,15 @@ test("staging exposes the clean-room launch projection", async ({ page, baseURL 
     ["/solucoes/instrumentacao-monitoramento-remoto", "Instrumentação e Monitoramento Remoto"],
   ] as const) {
     await test.step(`${path} renders the expected launch projection`, async () => {
+      const navigationStartedAt = performance.now();
       const response = await page.goto(path, { waitUntil: "load" });
-      expect(response?.status()).toBe(200);
+      const diagnostic =
+        response?.status() === 200
+          ? ""
+          : await publicDocumentFailureDiagnostic(path, response, performance.now() - navigationStartedAt);
+      expect(response?.status(), `${path}: document HTTP status${diagnostic ? `; ${diagnostic}` : ""}`).toBe(
+        200,
+      );
       await expect(page.getByRole("heading", { name: heading, level: 1 })).toBeVisible();
       expect(await page.locator("body").evaluate((body) => body.scrollWidth <= body.clientWidth + 1)).toBe(
         true,

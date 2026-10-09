@@ -332,10 +332,26 @@ async function spaResponse(request, env, status, options = {}) {
   return new Response(html, { status, headers });
 }
 
-async function cmsPublic(params, env = {}, { retryTransport = false } = {}) {
+async function cmsPublic(params, env = {}, { retryTransport = false, observe = () => {} } = {}) {
+  const lookup = new Set(["page-by-path", "entity-detail", "detail", "redirect"]).has(params.type)
+    ? params.type
+    : "other";
+  const startedAt = Date.now();
+  let attempts = 0;
+  let timedOut = false;
+  const finish = (response, outcome) => {
+    observe({
+      lookup,
+      outcome,
+      attempts,
+      status: response?.status ?? 0,
+      durationMs: Math.min(60000, Math.max(0, Date.now() - startedAt)),
+    });
+    return response;
+  };
   const endpoint = env.CMS_PUBLIC_API ?? CMS_PUBLIC_API;
   const anonKey = env.CMS_PUBLIC_ANON_KEY ?? CMS_PUBLIC_ANON_KEY;
-  if (endpoint.startsWith("__") || anonKey.startsWith("__")) return null;
+  if (endpoint.startsWith("__") || anonKey.startsWith("__")) return finish(null, "unconfigured");
   const target = new URL(endpoint);
   for (const [key, value] of Object.entries(params)) target.searchParams.set(key, value);
 
@@ -346,9 +362,13 @@ async function cmsPublic(params, env = {}, { retryTransport = false } = {}) {
   const startAttempt = (id) => {
     const remainingMs = deadline - Date.now();
     if (remainingMs <= 0) return null;
+    attempts += 1;
     const controller = new AbortController();
     const timeout = setTimeout(
-      () => controller.abort(),
+      () => {
+        timedOut = true;
+        controller.abort();
+      },
       retryTransport ? Math.min(CMS_PUBLIC_ATTEMPT_TIMEOUT_MS, remainingMs) : remainingMs,
     );
     const result = Promise.resolve()
@@ -367,10 +387,12 @@ async function cmsPublic(params, env = {}, { retryTransport = false } = {}) {
   };
 
   const primary = startAttempt(1);
-  if (!primary) return new Response(null, { status: 503 });
+  if (!primary) return finish(new Response(null, { status: 503 }), "timeout");
   if (!retryTransport) {
     const outcome = await primary.result;
-    return outcome.kind === "response" ? outcome.response : new Response(null, { status: 503 });
+    return outcome.kind === "response"
+      ? finish(outcome.response, "http")
+      : finish(new Response(null, { status: 503 }), timedOut ? "timeout" : "transport");
   }
 
   const pending = new Map([[primary.id, primary]]);
@@ -402,7 +424,7 @@ async function cmsPublic(params, env = {}, { retryTransport = false } = {}) {
     if (outcome.kind === "response") {
       clearTimeout(hedgeTimer);
       for (const attempt of pending.values()) attempt.controller.abort();
-      return outcome.response;
+      return finish(outcome.response, "http");
     }
 
     // A transport failure is safe to repeat because this mode is used only for the GET
@@ -414,7 +436,7 @@ async function cmsPublic(params, env = {}, { retryTransport = false } = {}) {
     }
   }
   clearTimeout(hedgeTimer);
-  return new Response(null, { status: 503 });
+  return finish(new Response(null, { status: 503 }), timedOut ? "timeout" : "transport");
 }
 
 const PUBLIC_ASSET_BRIDGE_PATH = "/__cms-public-asset";
@@ -811,11 +833,11 @@ export function legacyMetadataPage(page, requestUrl) {
   return socialImage ? { ...normalized, seo: { ...page.seo, socialImage } } : normalized;
 }
 
-async function handleRequest(request, env) {
+async function handleRequest(request, env, observe) {
   const url = new URL(request.url);
   const path = url.pathname;
   const stagingHost = url.hostname.endsWith(".pages.dev");
-  const fetchCmsPublic = (params, options) => cmsPublic(params, env, options);
+  const fetchCmsPublic = (params, options) => cmsPublic(params, env, { ...options, observe });
   const publicApiEndpoint = env.CMS_PUBLIC_API ?? CMS_PUBLIC_API;
 
   if (path === "/healthz") return healthResponse(request, env);
@@ -1155,9 +1177,12 @@ export default {
     const startedAt = Date.now();
     const url = new URL(request.url);
     let response;
+    let upstream;
 
     try {
-      response = await handleRequest(request, env);
+      response = await handleRequest(request, env, (value) => {
+        upstream = value;
+      });
     } catch {
       response = new Response("Internal Server Error", {
         status: 500,
@@ -1179,6 +1204,20 @@ export default {
     applyContentSecurityPolicy(headers, environment, env, url.pathname);
     headers.set("X-Release", env.CF_PAGES_COMMIT_SHA ?? "local");
     headers.set("Server-Timing", `edge;dur=${Date.now() - startedAt}`);
+    // Request-local, finite diagnostic vocabulary only: never URLs, payloads, errors or credentials.
+    // A received backend HTTP failure still wins; no retry, timeout or response policy is changed.
+    if (
+      environment === "staging" &&
+      response.status >= 500 &&
+      request.method === "GET" &&
+      !PRIVATE_ROUTE.test(url.pathname) &&
+      upstream
+    ) {
+      headers.set(
+        "X-CMS-Upstream",
+        `${upstream.lookup};${upstream.outcome};${upstream.attempts};${upstream.status};${upstream.durationMs}`,
+      );
+    }
     const finalResponse = new Response(response.body, {
       status: response.status,
       statusText: response.statusText,

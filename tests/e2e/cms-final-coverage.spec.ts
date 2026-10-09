@@ -1478,6 +1478,18 @@ async function fillFirstDatalistOption(page: Page, label: string) {
   await expect(input).toHaveValue(value);
 }
 
+async function selectFirstActiveControlledOption(page: Page, label: string) {
+  const select = page.getByRole("combobox", { name: label, exact: true });
+  const option = select.locator('option:not([value=""]):not(:disabled)').first();
+  await expect(option, `${label}: vocabulário controlado precisa estar disponível`).toHaveCount(1, {
+    timeout: 20_000,
+  });
+  const value = await option.getAttribute("value");
+  if (!value) throw new Error(`${label}: vocabulário controlado não possui opção ativa.`);
+  await select.selectOption(value);
+  await expect(select).toHaveValue(value);
+}
+
 async function fillSyntheticPostForCreate(page: Page, runTag: string) {
   await page.getByLabel("Título", { exact: true }).fill(`${runTag} POST RASCUNHO`);
   await page.getByLabel("Resumo", { exact: true }).fill(`${runTag} resumo editorial sintético controlado.`);
@@ -1593,7 +1605,7 @@ async function fillSyntheticDiscoveryForCreate(
   await page.getByLabel("Resumo").fill(`${runTag} resumo sintético de ${kind}.`);
   await page.getByLabel("Texto editorial complementar").fill(`${runTag} texto controlado de ${kind}.`);
   if (kind === "service") {
-    await fillFirstDatalistOption(page, "Categoria do serviço");
+    await selectFirstActiveControlledOption(page, "Categoria do serviço");
     await page.getByLabel("Escopo").fill("Escopo sintético controlado");
     await page.getByLabel("Quando contratar").fill("Cenário sintético");
     await page.getByLabel("Entregáveis").fill("Entregável sintético");

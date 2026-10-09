@@ -13,7 +13,7 @@ export function validateScheduledPublicationSnapshot(fixture, snapshot) {
   const item = snapshot.items[0];
   if (
     snapshot.items.length !== 1 ||
-    item.id !== fixture.itemId ||
+    item?.id !== fixture.itemId ||
     item.workflow_status !== "published" ||
     item.scheduled_for !== null
   )
@@ -21,14 +21,14 @@ export function validateScheduledPublicationSnapshot(fixture, snapshot) {
   for (const key of ["publications", "projections"]) {
     if (
       snapshot[key].length !== 1 ||
-      snapshot[key][0].item_id !== fixture.itemId ||
+      snapshot[key][0]?.item_id !== fixture.itemId ||
       snapshot[key][0].revision_id !== fixture.revisionId
     )
       violations.push(`${key}_revision_mismatch`);
   }
   if (
     snapshot.audit.length !== 1 ||
-    snapshot.audit[0].target_id !== fixture.itemId ||
+    snapshot.audit[0]?.target_id !== fixture.itemId ||
     snapshot.audit[0].action !== "cms:content.publish" ||
     snapshot.audit[0].event_data?.scheduled !== true ||
     snapshot.audit[0].event_data?.revisionId !== fixture.revisionId
@@ -52,37 +52,71 @@ export async function readScheduledPublicationSnapshot(admin, fixture, remaining
         let query = admin.from(table).select(columns).eq(idKey, fixture.itemId);
         if (key === "audit") query = query.eq("action", "cms:content.publish");
         const result = await query.abortSignal(signal);
-        if (result.error || !Array.isArray(result.data))
-          throw new Error(`G7_SCHEDULED_PUBLICATION_READ_FAILED:${key}`);
+        if (result.error || !Array.isArray(result.data)) {
+          const code = /^[A-Z0-9_]{1,20}$/.test(result.error?.code ?? "") ? result.error.code : "transport";
+          throw new Error(
+            `G7_SCHEDULED_PUBLICATION_READ_FAILED:${key}:${signal.aborted ? "deadline" : code}`,
+          );
+        }
         return [key, result.data];
       }),
     ),
   );
 }
 
-// The real scheduler invokes the same due-publication RPC. Observe its exact
-// result instead of racing it with a second publication after a fixed sleep.
-// Keep the former 7.5-second wait budget; reads and backoff share that deadline.
+// Wait for the server's due time, not for a five-minute cron to happen to run.
+// The old 7.5-second waiting budget remains bounded. Publication and evidence
+// requests have separate, shorter bounds than the former unbounded RPC/reads.
 export async function awaitScheduledPublicationEvidence(
   fixture,
   readSnapshot,
-  { now = () => performance.now(), sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) } = {},
+  {
+    scheduledFor,
+    readServerNow,
+    publishOnce,
+    now = () => performance.now(),
+    sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  } = {},
 ) {
   assertFixture(fixture);
+  const dueAt = Date.parse(scheduledFor ?? "");
+  if (!Number.isFinite(dueAt) || typeof readServerNow !== "function" || typeof publishOnce !== "function")
+    throw new Error("G7_SCHEDULED_PUBLICATION_DRIVER_REFUSED");
   const deadline = now() + 7_500;
   let intervalMs = 100;
-  let violations = ["not_observed"];
+  let due = false;
   for (let attempt = 1; attempt <= 16; attempt += 1) {
     const remainingMs = deadline - now();
     if (remainingMs <= 0) break;
-    const result = validateScheduledPublicationSnapshot(fixture, await readSnapshot(remainingMs));
-    violations = result.violations;
+    const serverTime = await readServerNow(remainingMs);
+    if (!Number.isFinite(serverTime)) throw new Error("G7_SCHEDULED_PUBLICATION_CLOCK_REFUSED");
     if (now() >= deadline) break;
-    if (result.valid) return { verifiedScheduledPublications: 1, observations: attempt };
+    if (serverTime >= dueAt) {
+      due = true;
+      break;
+    }
     const delayMs = Math.min(intervalMs, deadline - now());
     if (delayMs <= 0 || attempt === 16) break;
     await sleep(delayMs);
     intervalMs = Math.min(intervalMs * 2, 1_000);
   }
-  throw new Error(`G7_SCHEDULED_PUBLICATION_STATE_REFUSED:${violations.join(",") || "deadline"}`);
+  if (!due) throw new Error("G7_SCHEDULED_PUBLICATION_DUE_DEADLINE");
+  // Only the exact pending fixture may enter the existing row-locked RPC.
+  const pending = await readSnapshot(5_000);
+  if (validateScheduledPublicationSnapshot(fixture, pending).valid)
+    return { verifiedScheduledPublications: 1, publicationAttempts: 0 };
+  if (
+    !Array.isArray(pending?.items) ||
+    pending.items.length !== 1 ||
+    pending.items[0]?.id !== fixture.itemId ||
+    pending.items[0].workflow_status !== "scheduled" ||
+    Date.parse(pending.items[0].scheduled_for) !== dueAt
+  )
+    throw new Error("G7_SCHEDULED_PUBLICATION_PENDING_REFUSED");
+  const result = await publishOnce(5_000);
+  const schedulerRace = result?.error?.code === "23514" && result.error.message === "CMS_SCHEDULE_NOT_DUE";
+  if (result?.error && !schedulerRace) throw new Error("G7_SCHEDULED_PUBLICATION_RPC_REFUSED");
+  const final = validateScheduledPublicationSnapshot(fixture, await readSnapshot(5_000));
+  if (!final.valid) throw new Error(`G7_SCHEDULED_PUBLICATION_STATE_REFUSED:${final.violations.join(",")}`);
+  return { verifiedScheduledPublications: 1, publicationAttempts: 1, schedulerWonRace: schedulerRace };
 }

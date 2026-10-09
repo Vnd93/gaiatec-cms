@@ -363,12 +363,14 @@ async function publicApi(params) {
   });
   return { status: response.status, data: await response.json().catch(() => ({})) };
 }
-async function serverNow() {
+async function serverNow(timeoutMs = 15_000) {
   const response = await fetch(`${supabaseUrl}/functions/v1/cms-public?type=sitemap`, {
     headers: { apikey: anonKey },
+    signal: AbortSignal.timeout(Math.max(1, Math.floor(timeoutMs))),
   });
   const timestamp = Date.parse(response.headers.get("date") ?? "");
-  return Number.isFinite(timestamp) ? timestamp : Date.now();
+  if (!response.ok || !Number.isFinite(timestamp)) throw new Error("G7_SERVER_CLOCK_REFUSED");
+  return timestamp;
 }
 
 function postPayload(slug) {
@@ -876,10 +878,22 @@ async function run() {
     publishAt,
   });
   const scheduledFixture = { itemId: postCreated.data.itemId, revisionId: postSubmitted.data.revisionId };
-  const scheduledEvidence = await awaitScheduledPublicationEvidence(scheduledFixture, (remainingMs) =>
-    readScheduledPublicationSnapshot(admin, scheduledFixture, remainingMs),
+  const scheduledEvidence = await awaitScheduledPublicationEvidence(
+    scheduledFixture,
+    (remainingMs) => readScheduledPublicationSnapshot(admin, scheduledFixture, remainingMs),
+    {
+      scheduledFor: publishAt,
+      readServerNow: serverNow,
+      publishOnce: (timeoutMs) =>
+        admin
+          .rpc("cms_publish_due_schedule", {
+            p_item_id: scheduledFixture.itemId,
+            p_correlation_id: crypto.randomUUID(),
+          })
+          .abortSignal(AbortSignal.timeout(timeoutMs)),
+    },
   );
-  record("Publicação agendada pelo scheduler real com revisão e auditoria exatas", scheduledEvidence);
+  record("Publicação agendada com RPC único ou scheduler e revisão/auditoria exatas", scheduledEvidence);
   const blogPage = await fetch(`${siteOrigin}/blog/${blogSlug}?homologacao=${shortTag}`);
   const blogHtml = await blogPage.text();
   assert(

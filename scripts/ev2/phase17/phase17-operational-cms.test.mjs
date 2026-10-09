@@ -49,14 +49,14 @@ test("every EV2 mutation endpoint keeps the production switch fail-closed", asyn
   }
 });
 
-test("OpenRouter adapter is locked to the privacy-safe Sante free endpoint", async () => {
+test("OpenRouter adapter is locked to the privacy-safe Apodex free endpoint", async () => {
   const [adapter, edge, contract, page] = await Promise.all([
     read("supabase/functions/_shared/openrouter.ts"),
     read("supabase/functions/cms-ai/index.ts"),
     read("src/shared/contracts/ev2-ai.ts"),
     read("src/admin/pages/AdminAiAssistantPage.tsx"),
   ]);
-  assert.match(adapter, /inclusionai\/ling-3\.0-flash-sante:free/);
+  assert.match(adapter, /apodex\/apodex-1\.1-mini:free/);
   assert.match(adapter, /OPENROUTER_MODEL/);
   assert.match(adapter, /AbortController/);
   assert.doesNotMatch(adapter, /response_format/);

@@ -51,6 +51,13 @@ for (const migration of additions) {
 }
 
 const compatibilityTests = {
+  "0117": [
+    "supabase/tests/rls_cms_ai_private_model_transition.test.sql",
+    "supabase/tests/rls_cms_ai_authoritative_scope.test.sql",
+    "tests/contracts/cms-ai-apodex-free-transition.test.ts",
+    "tests/unit/ev2-ai-model-transition.test.ts",
+    "tests/unit/openrouter-adapter.test.ts",
+  ],
   "0116": [
     "supabase/tests/rls_cms_staging_read_budget.test.sql",
     "supabase/tests/rls_cms_staging_command_budget.test.sql",

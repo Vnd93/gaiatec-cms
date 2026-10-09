@@ -4,7 +4,8 @@ import { extname, join } from "node:path";
 export const AI_LEGACY_RESPONSE_MODEL = "nvidia/nemotron-3.5-lightning:free";
 export const AI_PREVIOUS_RESPONSE_MODEL = "inclusionai/ling-3.0-flash-vl:free";
 export const AI_INTERIM_RESPONSE_MODEL = "qwen/qwen3.8-27b:free";
-export const AI_ACTIVE_RESPONSE_MODEL = "inclusionai/ling-3.0-flash-sante:free";
+export const AI_SANTE_RESPONSE_MODEL = "inclusionai/ling-3.0-flash-sante:free";
+export const AI_ACTIVE_RESPONSE_MODEL = "apodex/apodex-1.1-mini:free";
 
 const MAX_REMOTE_JAVASCRIPT_ASSETS = 256;
 const JAVASCRIPT_SPECIFIER = String.raw`[^"']+\.m?js(?:\?[^"']*)?`;
@@ -75,6 +76,7 @@ export function evaluateAiModelRollbackCompatibilityBundle(sourceRoot, bundles) 
   if (!assist.includes(AI_LEGACY_RESPONSE_MODEL)) violations.push("legacy_response_model_missing");
   if (!assist.includes(AI_PREVIOUS_RESPONSE_MODEL)) violations.push("previous_response_model_missing");
   if (!assist.includes(AI_INTERIM_RESPONSE_MODEL)) violations.push("interim_response_model_missing");
+  if (!assist.includes(AI_SANTE_RESPONSE_MODEL)) violations.push("sante_response_model_missing");
   if (!assist.includes("z.enum(EV2_AI_COMPATIBLE_RESPONSE_MODELS)"))
     violations.push("compatible_response_schema_missing");
   if (occurrences(assist, "Ev2AiCompatibleResponseModelSchema") < 6)
@@ -105,6 +107,7 @@ export function evaluateAiModelRollbackCompatibilityBundle(sourceRoot, bundles) 
   if (!bundle.includes(AI_LEGACY_RESPONSE_MODEL)) violations.push("legacy_model_bundle_missing");
   if (!bundle.includes(AI_PREVIOUS_RESPONSE_MODEL)) violations.push("previous_model_bundle_missing");
   if (!bundle.includes(AI_INTERIM_RESPONSE_MODEL)) violations.push("interim_model_bundle_missing");
+  if (!bundle.includes(AI_SANTE_RESPONSE_MODEL)) violations.push("sante_model_bundle_missing");
   if (
     !Array.isArray(bundles) ||
     !bundles.some(
@@ -112,6 +115,7 @@ export function evaluateAiModelRollbackCompatibilityBundle(sourceRoot, bundles) 
         asset.includes(AI_ACTIVE_RESPONSE_MODEL) &&
         asset.includes(AI_PREVIOUS_RESPONSE_MODEL) &&
         asset.includes(AI_INTERIM_RESPONSE_MODEL) &&
+        asset.includes(AI_SANTE_RESPONSE_MODEL) &&
         asset.includes(AI_LEGACY_RESPONSE_MODEL),
     )
   )
@@ -124,6 +128,7 @@ export function evaluateAiModelRollbackCompatibilityBundle(sourceRoot, bundles) 
     legacyResponseModel: AI_LEGACY_RESPONSE_MODEL,
     previousResponseModel: AI_PREVIOUS_RESPONSE_MODEL,
     interimResponseModel: AI_INTERIM_RESPONSE_MODEL,
+    santeResponseModel: AI_SANTE_RESPONSE_MODEL,
     sourceBridgeVerified: violations.every((item) => item.includes("bundle")),
     bundleBridgeVerified: violations.every((item) => !item.includes("bundle")),
     inspectedBundleFiles: Array.isArray(bundles) ? bundles.length : 0,

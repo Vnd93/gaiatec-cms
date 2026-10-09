@@ -287,7 +287,7 @@ from (
         'inputTokens', 20,
         'outputTokens', 15,
         'providerMode', 'openrouter',
-        'providerModel', 'inclusionai/ling-3.0-flash-sante:free',
+        'providerModel', 'apodex/apodex-1.1-mini:free',
         'externalProviderEnabled', true,
         'policyVersion', 'f015-v1'
       ),

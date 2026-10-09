@@ -396,7 +396,7 @@ try {
   check(
     "approved_provider_ready",
     operatorCapability.json.providerMode === "openrouter" &&
-      operatorCapability.json.providerModel === "inclusionai/ling-3.0-flash-sante:free" &&
+      operatorCapability.json.providerModel === "apodex/apodex-1.1-mini:free" &&
       operatorCapability.json.externalProviderEnabled === true &&
       operatorCapability.json.externalProviderReady === true &&
       operatorCapability.json.aiExecute === false &&

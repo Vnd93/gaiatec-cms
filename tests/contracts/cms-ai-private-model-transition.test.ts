@@ -13,7 +13,7 @@ const productionBackend = readFileSync("scripts/ev2/phase12/production-backend-l
 const legacyModel = "nvidia/nemotron-3.5-lightning:free";
 const activeModel = "inclusionai/ling-3.0-flash-vl:free";
 const interimModel = "qwen/qwen3.8-27b:free";
-const nextModel = "inclusionai/ling-3.0-flash-sante:free";
+const nextModel = "apodex/apodex-1.1-mini:free";
 
 describe("private zero-cost AI model transition", () => {
   it("preserves historical evidence while closing new writes on Ling", () => {
@@ -63,10 +63,11 @@ describe("private zero-cost AI model transition", () => {
     expect(productionBackend).not.toContain(nextModel);
   });
 
-  it("ships a four-model frontend bridge before staging changes its backend", () => {
+  it("ships a five-model frontend bridge before staging changes its backend", () => {
     expect(assistContract).toContain(`"${legacyModel}"`);
     expect(assistContract).toContain(`"${activeModel}"`);
     expect(assistContract).toContain(`"${interimModel}"`);
+    expect(assistContract).toContain('"inclusionai/ling-3.0-flash-sante:free"');
     expect(assistContract).toContain(`"${nextModel}"`);
     expect(assistContract).toContain("EV2_AI_ACTIVE_OPENROUTER_MODEL");
     expect(executeContract).toContain("CompatibleResponseModel = Ev2AiCompatibleResponseModelSchema");

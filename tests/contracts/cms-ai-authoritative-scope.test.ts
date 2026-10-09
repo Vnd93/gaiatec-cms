@@ -13,7 +13,7 @@ const fixture = readFileSync("scripts/qa/cms-browser-fixture.mjs", "utf8");
 const pgTap = readFileSync("supabase/tests/rls_cms_ai_authoritative_scope.test.sql", "utf8");
 
 const legacyModel = "nvidia/nemotron-3.5-lightning:free";
-const approvedModel = "inclusionai/ling-3.0-flash-sante:free";
+const approvedModel = "apodex/apodex-1.1-mini:free";
 
 describe("authoritative AI scope for F-015 and F-016", () => {
   it("pins the sole provider/model and forbids autonomous or direct data access", () => {

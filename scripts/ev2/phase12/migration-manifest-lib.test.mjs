@@ -98,19 +98,19 @@ test("the repository migration history is contiguous", () => {
   // A ultima entrada da cauda fixada e re-selada deliberadamente a cada migration nova, com o
   // digest dos bytes. E o que impede que alguem acrescente migration sem revisao: nao basta criar
   // o arquivo, e preciso declarar o conteudo dele aqui.
-  assert.deepEqual(G12_PINNED_MIGRATION_TAIL.at(-9), {
+  assert.deepEqual(G12_PINNED_MIGRATION_TAIL.at(-10), {
     version: "0108",
     file: "0108_catalog_fatia_2_publication.sql",
     sha256: "ef1b6e83aaf0c257eaa3602c0dabc14ff440d21bd3af1aef8a3d732afeef7b01",
   });
-  assert.deepEqual(G12_PINNED_MIGRATION_TAIL.at(-8), {
+  assert.deepEqual(G12_PINNED_MIGRATION_TAIL.at(-9), {
     version: "0109",
     file: "0109_catalog_fatia_3_relations.sql",
     sha256: createHash("sha256")
       .update(readFileSync("supabase/migrations/0109_catalog_fatia_3_relations.sql"))
       .digest("hex"),
   });
-  assert.deepEqual(G12_PINNED_MIGRATION_TAIL.slice(-7), [
+  assert.deepEqual(G12_PINNED_MIGRATION_TAIL.slice(-8), [
     {
       version: "0110",
       file: "0110_catalog_workspace_integration.sql",
@@ -145,6 +145,11 @@ test("the repository migration history is contiguous", () => {
       version: "0116",
       file: "0116_cms_staging_read_latency_budget.sql",
       sha256: "0a60f9c67f03f6abe893373bbb03e42e86d5e03d4afecda5bc643cad0a1a0204",
+    },
+    {
+      version: "0117",
+      file: "0117_cms_ai_apodex_free_model_transition.sql",
+      sha256: "9f391f302a4eabc63c754a7de7f5ec83b835f88df11a096d2478ca5d20b1cbc5",
     },
   ]);
   assert.deepEqual(manifest.slice(-G12_PINNED_MIGRATION_TAIL.length), G12_PINNED_MIGRATION_TAIL);

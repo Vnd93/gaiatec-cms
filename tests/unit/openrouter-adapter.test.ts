@@ -81,7 +81,7 @@ describe("OpenRouter adapter", () => {
       zdr: true,
       max_price: { prompt: 0, completion: 0, request: 0 },
     });
-    expect(body.model).toBe("inclusionai/ling-3.0-flash-sante:free");
+    expect(body.model).toBe("apodex/apodex-1.1-mini:free");
     expect(body).not.toHaveProperty("models");
     expect(body).not.toHaveProperty("response_format");
     expect(request.headers).toMatchObject({ "X-OpenRouter-Metadata": "enabled" });
@@ -93,6 +93,8 @@ describe("OpenRouter adapter", () => {
     "qwen/qwen3.8-27b",
     "qwen/qwen3.8-27b:free",
     "inclusionai/ling-3.0-flash-sante",
+    "inclusionai/ling-3.0-flash-sante:free",
+    "apodex/apodex-1.1-mini",
     "openrouter/auto",
   ])("refuses unapproved configuration before any network call: %s", async (model) => {
     vi.stubGlobal("Deno", {

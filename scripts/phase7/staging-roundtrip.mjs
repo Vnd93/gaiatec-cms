@@ -8,6 +8,10 @@ import { buildGovernedProductFields, PRODUCT_PREREQUISITE_FLAGS } from "./produc
 import { assertConsumedRealBrowserEvidence } from "../ev2/phase12/real-browser-release-evidence-lib.mjs";
 import { awaitCampaignExpiryEvidence, readCampaignExpirySnapshot } from "./campaign-expiry-evidence.mjs";
 import {
+  awaitScheduledPublicationEvidence,
+  readScheduledPublicationSnapshot,
+} from "./scheduled-publication-evidence.mjs";
+import {
   assertRealBrowserLeadControls,
   leadControlsBinding,
   REAL_BROWSER_LEAD_CHECKS,
@@ -871,12 +875,11 @@ async function run() {
     reason: `Agendamento blog ${runTag}`,
     publishAt,
   });
-  await new Promise((resolve) => setTimeout(resolve, 7500));
-  const due = await admin.rpc("cms_publish_due_schedule", {
-    p_item_id: postCreated.data.itemId,
-    p_correlation_id: uid(),
-  });
-  if (due.error) throw due.error;
+  const scheduledFixture = { itemId: postCreated.data.itemId, revisionId: postSubmitted.data.revisionId };
+  const scheduledEvidence = await awaitScheduledPublicationEvidence(scheduledFixture, (remainingMs) =>
+    readScheduledPublicationSnapshot(admin, scheduledFixture, remainingMs),
+  );
+  record("Publicação agendada pelo scheduler real com revisão e auditoria exatas", scheduledEvidence);
   const blogPage = await fetch(`${siteOrigin}/blog/${blogSlug}?homologacao=${shortTag}`);
   const blogHtml = await blogPage.text();
   assert(

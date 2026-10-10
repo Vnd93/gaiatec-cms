@@ -225,6 +225,9 @@ const handleRequest = async (req: Request) => {
   // prazo bem abaixo desse teto, para que a funcao responda dentro da janela de quem espera em vez de
   // ser abandonada nela.
   const client = createClient(supabaseUrl, service ?? anon, {
+    // boundedFetch owns the two 900 ms read attempts. SDK retries would multiply them and
+    // add 1/2/4 second backoffs outside the Worker's unchanged five-second ceiling.
+    db: { retry: false },
     global: { fetch: boundedFetch(PUBLIC_UPSTREAM_TIMEOUT_MS,
       postReadTransport(req, environment, Deno.env.get("CMS_RELEASE_SHA"),
         formReadTransport(req, environment, Deno.env.get("CMS_RELEASE_SHA"))), true) },

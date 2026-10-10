@@ -36,6 +36,8 @@ describe("public upstream deadline", () => {
     );
     expect(worker).toContain("...(hedgeActive ? [hedge] : [])");
     expect(fn).toContain("const PUBLIC_UPSTREAM_TIMEOUT_MS = 900;");
+    expect(fn).toContain("db: { retry: false }");
+    expect(fn.match(/createClient\(/g)).toHaveLength(1);
     const budget = Number(/PUBLIC_UPSTREAM_TIMEOUT_MS = ([\d_]+);/.exec(fn)?.[1].replace(/_/g, ""));
     // Two attempts have to fit inside the caller's ceiling with room for the rest of the request,
     // and the worst case has to stay near the latency budget rather than three times over it.

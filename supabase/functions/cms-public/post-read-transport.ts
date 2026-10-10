@@ -53,7 +53,7 @@ function observeResolver(probe: DnsProbe | undefined, signal: AbortSignal | unde
 }
 const projectionCategory = (lookup: string) => lookup === "post-detail" ? "post"
   : lookup === "entity-detail" || lookup === "detail" ? "entity"
-  : lookup === "products" ? "collection"
+  : ["products", "search", "autocomplete"].includes(lookup) ? "collection"
   : lookup === "page-by-path" ? "page" : null;
 
 export function pagePathFailureDiagnostic(

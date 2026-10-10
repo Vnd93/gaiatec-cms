@@ -168,7 +168,7 @@ describe("cms-public availability contract", () => {
     expect(publicApi).toContain("await observePostReadQuery(");
     expect(transport).toContain('lookup === "post-detail" ? "post"');
     expect(transport).toContain('lookup === "entity-detail" || lookup === "detail" ? "entity"');
-    expect(transport).toContain('lookup === "products" ? "collection"');
+    expect(transport).toContain('["products", "search", "autocomplete"].includes(lookup) ? "collection"');
     expect(transport).toContain('lookup === "page-by-path" ? "page" : null');
     expect(transport).toContain('url.searchParams.has("payload->route->>path")');
     expect(transport).toContain('url.searchParams.get("content_type") === "in.(page,homepage)"');
@@ -216,6 +216,20 @@ describe("cms-public availability contract", () => {
     expect(publicApi).toContain("if (redirectError)");
     expect(publicApi).toContain("error: synonymError");
     expect(publicApi).toContain("if (synonymError)");
+  });
+
+  it("observes search dependencies without retrying rate-limit mutations or accepting failures", () => {
+    const search = section("if (expensivePublicSearch)", "const enrichMediaRows");
+    expect(search).toContain('"rate-limit", () => consumeRateLimit(');
+    expect(search).toContain('"cms_public_search"');
+    expect(search).toContain("if (!allowed)");
+    expect(search).toContain("429");
+    expect(search).toContain("catch {");
+    expect(search).toContain('503, { "Cache-Control": "no-store" }');
+    expect(search.match(/consumeRateLimit\(/g)).toHaveLength(1);
+    expect(publicApi).toContain('"synonyms", () => client');
+    expect(publicApi).toContain("db: { retry: false }");
+    expect(publicApi).toContain("const PUBLIC_UPSTREAM_TIMEOUT_MS = 900");
   });
 
   it("keeps the raw collection row until its single media-enrichment sanitization", () => {

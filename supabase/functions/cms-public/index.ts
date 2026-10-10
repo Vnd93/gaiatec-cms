@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { observeSearchDependency } from "./search-dependency-trace.ts";
 import { boundedFetch, isEdgeFetchTimeout } from "../_shared/cms-edge-fetch.ts";
 import { containsInternalProductValue, sanitizePublicPayload, sanitizePublicSeo } from "../_shared/cms-public-projection.ts";
 import { resolveMediaAssets } from "../_shared/cms-media-resolution.ts";
@@ -441,14 +442,14 @@ const handleRequest = async (req: Request) => {
   if (expensivePublicSearch) {
     if (!service) return json({ error: "Busca temporariamente indisponível." }, 503, { "Cache-Control": "no-store" });
     try {
-      const allowed = await consumeRateLimit(
+      const allowed = await observeSearchDependency(req, environment, Deno.env.get("CMS_RELEASE_SHA"), "rate-limit", () => consumeRateLimit(
         client,
         req,
         "cms_public_search",
         clientAddress(req),
         120,
         60,
-      );
+      ));
       if (!allowed)
         return json(
           { error: "Muitas buscas. Aguarde um minuto." },
@@ -1145,12 +1146,12 @@ const handleRequest = async (req: Request) => {
     monitoredElement: url.searchParams.get("monitoredElement"),
   };
   const { data: synonymRows, error: synonymError } = query
-    ? await client
+    ? await observeSearchDependency(req, environment, Deno.env.get("CMS_RELEASE_SHA"), "synonyms", () => client
         .from("cms_search_synonyms")
         .select("canonical_term,aliases,scope")
         .eq("active", true)
         .order("canonical_term", { ascending: true })
-        .limit(SYNONYM_LIMIT)
+        .limit(SYNONYM_LIMIT))
     : { data: [], error: null };
   if (synonymError)
     return json({ error: "Busca temporariamente indisponível." }, 503, { "Cache-Control": "no-store" });

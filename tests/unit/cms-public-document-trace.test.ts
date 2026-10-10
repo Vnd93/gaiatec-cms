@@ -14,12 +14,19 @@ describe("staging document trace boundary", () => {
     expect(documentTrace(request(), "staging", release)).toEqual({ trace, release, lookup: "page-by-path" });
     expect(documentTrace(request(trace.replace(/1$/, "2")), "staging", release)?.trace).toMatch(/\.2$/);
   });
-  it.each(["entity-detail", "detail", "redirect", "form", "post-detail", "campaign-by-path", "products"])(
-    "correlates only allowlisted metadata: %s",
-    (lookup) => {
-      expect(documentTrace(request(trace, lookup), "staging", release)?.lookup).toBe(lookup);
-    },
-  );
+  it.each([
+    "entity-detail",
+    "detail",
+    "redirect",
+    "form",
+    "post-detail",
+    "campaign-by-path",
+    "products",
+    "search",
+    "autocomplete",
+  ])("correlates only allowlisted metadata: %s", (lookup) => {
+    expect(documentTrace(request(trace, lookup), "staging", release)?.lookup).toBe(lookup);
+  });
   it.each(["production", "local", undefined])("never logs traces in %s", (environment) => {
     expect(documentTrace(request(), environment, release)).toBeNull();
   });
@@ -32,7 +39,7 @@ describe("staging document trace boundary", () => {
     },
   );
   it("excludes other operations, non-GET and unbound releases", () => {
-    expect(documentTrace(request(trace, "search"), "staging", release)).toBeNull();
+    expect(documentTrace(request(trace, "unknown"), "staging", release)).toBeNull();
     expect(documentTrace(request(trace, "page-by-path", "POST"), "staging", release)).toBeNull();
     expect(documentTrace(request(), "staging", "local")).toBeNull();
   });

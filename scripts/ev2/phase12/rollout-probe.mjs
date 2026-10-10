@@ -348,4 +348,5 @@ const diagnosticReport = buildFailureProbeDiagnostics({
 if (diagnosticsPath && diagnosticReport)
   await writeFile(diagnosticsPath, `${JSON.stringify(diagnosticReport, null, 2)}\n`, "utf8");
 console.log(JSON.stringify(report));
+if (diagnosticReport) console.error(JSON.stringify(diagnosticReport));
 if (violations.length > 0) process.exitCode = 1;

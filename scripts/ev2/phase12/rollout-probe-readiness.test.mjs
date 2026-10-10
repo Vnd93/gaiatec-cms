@@ -109,3 +109,74 @@ test("readiness failure writes and logs bounded sanitized diagnostics", async (t
     assert.equal(output.includes(sensitiveHeader), false);
   }
 });
+
+test("one measured 503 remains fatal and logs sanitized diagnostics without an optional path", async (t) => {
+  let rootRequests = 0;
+  const server = createServer((request, response) => {
+    const failed = request.url === "/" && ++rootRequests === 7;
+    response.statusCode = failed ? 503 : 200;
+    response.setHeader("content-security-policy-report-only", csp);
+    response.setHeader("x-private-readiness-token", sensitiveHeader);
+    response.setHeader("x-release", expectedSha);
+    response.setHeader("cache-control", "no-store");
+    if (request.url === "/healthz" || request.url === "/release-manifest.json") {
+      response.setHeader("content-type", "application/json");
+      response.end(
+        JSON.stringify(
+          request.url === "/healthz"
+            ? { schemaVersion: 1, status: "ready", release: expectedSha, environment: "local" }
+            : {
+                schemaVersion: 1,
+                release: expectedSha,
+                files: [{ path: "index.html", bytes: 1, sha256: "b".repeat(64) }],
+              },
+        ),
+      );
+    } else response.end(sensitiveBody);
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  t.after(async () => new Promise((resolve) => server.close(resolve)));
+  const address = server.address();
+  assert.equal(typeof address, "object");
+  const result = await runProbe({
+    EV2_G12_ORIGIN: `http://127.0.0.1:${address.port}`,
+    EV2_G12_EXPECTED_SHA: expectedSha,
+    EV2_G12_ENVIRONMENT: "local",
+    EV2_G12_PROBE_PROFILE: "full",
+    EV2_G12_SAMPLE_COUNT: "5",
+    EV2_G12_REQUEST_TIMEOUT_MS: "1000",
+    EV2_G12_READINESS_ATTEMPTS: "1",
+    EV2_G12_WARMUP_SAMPLES_PER_ROUTE: "5",
+    EV2_G12_WARMUP_ATTEMPTS: "1",
+    EV2_G12_CSP_MODE: "report-only",
+    EV2_G12_REPORT_PATH: "",
+    EV2_G12_DIAGNOSTICS_PATH: "",
+    NO_PROXY: "127.0.0.1",
+  });
+  assert.equal(result.code, 1);
+  assert.equal(result.signal, null);
+  const report = JSON.parse(result.stdout.trim());
+  assert.equal(report.measuredResponses, 22);
+  assert.equal(report.outcome, "pause");
+  assert.equal(report.healthContractValid, true);
+  assert.equal(report.manifestReleaseExact, true);
+  assert.ok(report.violations.includes("http_5xx_budget_exceeded"));
+  assert.equal(rootRequests, 11, "the measured failure must not trigger another request");
+  const diagnostics = JSON.parse(result.stderr.trim());
+  assert.equal(diagnostics.event, "g12.rollout.probe.diagnostics");
+  assert.equal(diagnostics.candidateSha, expectedSha);
+  assert.equal(diagnostics.observationCount, 22);
+  assert.equal(diagnostics.truncated, false);
+  const failures = diagnostics.observations.filter((item) => item.status === 503);
+  assert.equal(failures.length, 1);
+  assert.equal(failures[0].route, "/");
+  assert.equal(failures[0].ordinal, 1);
+  assert.equal(failures[0].bodyComplete, true);
+  for (const output of [result.stdout, result.stderr]) {
+    assert.equal(output.includes(sensitiveBody), false);
+    assert.equal(output.includes(sensitiveHeader), false);
+  }
+});

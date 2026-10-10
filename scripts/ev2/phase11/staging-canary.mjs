@@ -62,7 +62,7 @@ let qaFormVersionId;
 let broadOverrideId;
 
 function quoteWindowsArgument(value) {
-  if (/^[A-Za-z0-9_./:\\=-]+$/.test(value)) return value;
+  if (/^[A-Za-z0-9_@./:\\=-]+$/.test(value)) return value;
   return '"' + value.replaceAll("%", "%%").replaceAll('"', '""') + '"';
 }
 

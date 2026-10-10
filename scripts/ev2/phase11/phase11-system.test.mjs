@@ -15,6 +15,19 @@ import { revokeStagingQaSessions } from "./qa-session-revocation-lib.mjs";
 
 const read = (path) => readFile(path, "utf8");
 
+test("G11 Windows CLI keeps the pinned package argument free of literal quotes", async () => {
+  const source = await read("scripts/ev2/phase11/staging-canary.mjs");
+  const start = source.indexOf("function quoteWindowsArgument");
+  const end = source.indexOf("function runCommand", start);
+  const quote = new Function(`${source.slice(start, end)}; return quoteWindowsArgument;`)();
+  assert.equal(quote("supabase@2.116.0"), "supabase@2.116.0");
+  assert.equal(quote("C:\\dev\\cms-site\\gaiatec-cms"), "C:\\dev\\cms-site\\gaiatec-cms");
+  assert.equal(quote("unsafe&argument"), '"unsafe&argument"');
+  assert.equal(quote("path with spaces"), '"path with spaces"');
+  assert.match(source, /"--yes", "supabase@2\.116\.0"/);
+  assert.match(source, /"--workdir", process\.cwd\(\)/);
+});
+
 function qaSessionFixture() {
   const identity = {
     actorId: "00000000-0000-4000-8000-000000000001",

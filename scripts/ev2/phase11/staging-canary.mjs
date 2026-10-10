@@ -1013,7 +1013,7 @@ try {
       });
       check(
         "snapshot_diagnostic_fixture_resolved",
-        completedOutbox.json.length === 1 && completedOutbox.json[0]?.status === "processed",
+        completedOutbox.json.length === 1 && completedOutbox.json[0]?.status === "completed",
         "exact owned synthetic delivery is resolved without contacting an external provider",
       );
     }

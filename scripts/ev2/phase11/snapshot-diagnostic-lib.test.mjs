@@ -171,7 +171,7 @@ test("focused mode shares lease, MFA and terminal cleanup but cannot become a ca
   );
   assert.match(
     focused,
-    /completedOutbox\.json\.length === 1 && completedOutbox\.json\[0\]\?\.status === "processed"/,
+    /completedOutbox\.json\.length === 1 && completedOutbox\.json\[0\]\?\.status === "completed"/,
   );
   assert.match(focused, /fixtureProfile: snapshotDiagnosticWithFixture \? "resolved-lead" : "empty"/);
   assert.ok(canary.indexOf("qa_actor_watchdog_leases_active") < canary.indexOf("if (snapshotDiagnostic) {"));
@@ -181,6 +181,8 @@ test("focused mode shares lease, MFA and terminal cleanup but cannot become a ca
   assert.match(canary, /remaining\.cleanedLeases === actorIds\.length/);
   assert.match(canary, /"supabase@2\.116\.0", \.\.\.args, "--workdir", process\.cwd\(\)/);
   assert.match(canary, /project\.linked !== true/);
+  const outboxMigration = readFileSync("supabase/migrations/0050_ev2_system_assurance.sql", "utf8");
+  assert.match(outboxMigration, /status = case when p_success then 'completed'/);
   assert.match(canary, /releaseEligible: !snapshotDiagnostic && !operationError && !cleanupError/);
   assert.ok(
     canary.indexOf("writeFileSync(process.env.EV2_G11_REPORT_PATH") <

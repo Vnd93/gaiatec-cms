@@ -358,10 +358,18 @@ async function leadCommand(actor, body, status = 200) {
   return expectInvoke("cms-leads", actor, body, status);
 }
 async function publicApi(params) {
+  const trace = `${crypto.randomUUID()}.1`;
+  const observedAt = new Date().toISOString();
+  const startedAt = performance.now();
   const response = await fetch(`${supabaseUrl}/functions/v1/cms-public?${new URLSearchParams(params)}`, {
-    headers: { apikey: anonKey },
+    headers: { apikey: anonKey, "x-cms-document-trace": trace },
   });
-  return { status: response.status, data: await response.json().catch(() => ({})) };
+  const data = await response.json().catch(() => ({}));
+  return {
+    status: response.status,
+    data,
+    diagnostic: { trace, observedAt, durationMs: Math.round(performance.now() - startedAt) },
+  };
 }
 async function serverNow(timeoutMs = 15_000) {
   const response = await fetch(`${supabaseUrl}/functions/v1/cms-public?type=sitemap`, {

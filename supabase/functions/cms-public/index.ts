@@ -18,6 +18,7 @@ import { PUBLIC_RELATION_LIMIT, publicRelationIds } from "../_shared/cms-public-
 import { publicFormReadArguments, resolveGovernedPublicFormBindings } from "../_shared/cms-public-form-bindings.ts";
 import { resolvePublicPagePathLookups } from "./page-path.ts";
 import { documentTrace } from "./document-trace.ts";
+import { formReadDiagnostic } from "./form-read-diagnostic.ts";
 import { authenticateCms } from "../_shared/cms-auth.ts";
 import {
   CMS_QA_RATE_LIMIT_ACTION,
@@ -882,11 +883,19 @@ const handleRequest = async (req: Request) => {
       return json({ error: "Não encontrado." }, 404, { "Cache-Control": PUBLIC_REVALIDATE });
     if (!service) return json({ error: "Serviço indisponível." }, 503, { "Cache-Control": "no-store" });
     const formResult = await loadPublishedForm({ key, ...(version === undefined ? {} : { version }) });
+    if (formResult.error) {
+      const diagnostic = formReadDiagnostic(req, environment, Deno.env.get("CMS_RELEASE_SHA"), formResult.error);
+      if (diagnostic) console.error(JSON.stringify(diagnostic));
+    }
     if (formResult.error)
       return json({ error: "Formulário temporariamente indisponível." }, 503, { "Cache-Control": "no-store" });
     if (!formResult.data)
       return new Response(null, { status: 204, headers: { ...headers, "Cache-Control": PUBLIC_REVALIDATE } });
     const publicForm = presentPublicForm(formResult.data);
+    if (!publicForm) {
+      const diagnostic = formReadDiagnostic(req, environment, Deno.env.get("CMS_RELEASE_SHA"));
+      if (diagnostic) console.error(JSON.stringify(diagnostic));
+    }
     return publicForm
       ? json(publicForm, 200, { "Cache-Control": PUBLIC_REVALIDATE })
       : json({ error: "Formulário temporariamente indisponível." }, 503, { "Cache-Control": "no-store" });

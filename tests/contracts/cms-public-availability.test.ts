@@ -18,6 +18,25 @@ function section(start: string, end: string): string {
 }
 
 describe("cms-public availability contract", () => {
+  it("diagnoses traced staging form failures without changing response or retry policy", () => {
+    const form = section('if (type === "form")', 'if (type === "campaign-by-path")');
+    const roundtrip = readFileSync("scripts/phase7/staging-roundtrip.mjs", "utf8");
+    const read = roundtrip
+      .split("async function publicApi(params) {")[1]
+      .split("async function serverNow")[0];
+    expect(form).toContain(
+      'formReadDiagnostic(req, environment, Deno.env.get("CMS_RELEASE_SHA"), formResult.error)',
+    );
+    expect(form).toContain('formReadDiagnostic(req, environment, Deno.env.get("CMS_RELEASE_SHA"))');
+    expect(form).toContain("if (diagnostic) console.error(JSON.stringify(diagnostic))");
+    expect(form).not.toContain("console.error(formResult.error)");
+    expect(read).toContain('"x-cms-document-trace": trace');
+    expect(read).toContain("crypto.randomUUID()");
+    expect(read.match(/await fetch\(/g)).toHaveLength(1);
+    expect(read).toContain("status: response.status");
+    expect(read).toContain("diagnostic: { trace, observedAt, durationMs:");
+    expect(publicApi).toContain("const PUBLIC_UPSTREAM_TIMEOUT_MS = 900");
+  });
   it("distinguishes route absence from route storage failures", () => {
     const redirect = section('if (type === "redirect")', "const campaignIsActive");
     const page = section('if (type === "page-by-path")', 'if (type === "posts")');

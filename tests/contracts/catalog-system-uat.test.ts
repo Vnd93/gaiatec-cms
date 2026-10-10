@@ -55,6 +55,7 @@ const complete = () => ({
   gates: Object.fromEntries(Object.keys(record.gates).map((key) => [key, passed])),
   recovery: {
     status: "passed",
+    proof: passed.proof,
     manifestDigest: "e".repeat(64),
     preparedBeforeMutation: true,
     activeOwnedEntities: 0,
@@ -143,6 +144,33 @@ describe("empty manual system delivery evidence", () => {
       ).toBe(false);
     }
     expect(CatalogManualSystemUatSchema.safeParse({ ...baseline, recovery: record.recovery }).success).toBe(
+      false,
+    );
+  });
+  it("rejects recovery evidence from another candidate even while delivery is pending", () => {
+    const baseline = complete();
+    for (const [key, value] of Object.entries({
+      candidateSha: "f".repeat(40),
+      artifactDigest: "f".repeat(64),
+      deploymentId: "c0120000-0000-4000-8000-000000000002",
+      backendSnapshotDigest: "f".repeat(64),
+    })) {
+      for (const status of ["pending", "passed"]) {
+        expect(
+          CatalogManualSystemUatSchema.safeParse({
+            ...baseline,
+            status,
+            recovery: {
+              ...baseline.recovery,
+              proof: { ...passed.proof, binding: { ...binding, [key]: value } },
+            },
+          }).success,
+        ).toBe(false);
+      }
+    }
+    const { proof: omitted, ...unboundRecovery } = baseline.recovery;
+    expect(omitted).toBeDefined();
+    expect(CatalogManualSystemUatSchema.safeParse({ ...baseline, recovery: unboundRecovery }).success).toBe(
       false,
     );
   });

@@ -71,6 +71,7 @@ export const CatalogManualSystemUatSchema = z
       z
         .object({
           status: z.literal("passed"),
+          proof,
           manifestDigest: digest,
           preparedBeforeMutation: z.literal(true),
           activeOwnedEntities: z.literal(0),
@@ -98,6 +99,7 @@ export const CatalogManualSystemUatSchema = z
       ...Object.entries(record.flows),
       ...Object.entries(record.gates),
       ["browser", record.browser] as const,
+      ["recovery", record.recovery] as const,
     ];
     for (const [name, result] of checks) {
       if (record.status === "passed" && result.status !== "passed") {

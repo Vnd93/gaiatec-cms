@@ -40,6 +40,27 @@ function safeWorkerDiagnostic(value) {
     );
   if (!match || Number(match[5]) > 60_000) return {};
   const result = { workerUpstream: upstream };
+  const timings = value.workerAttemptTimings;
+  if (typeof timings === "string" && timings.length <= 100) {
+    const records = timings
+      .split(";")
+      .map((record) =>
+        /^([12]),([0-9]{1,5}),([0-9]{1,5}),(http|timeout|transport|cancelled|pending),(0|[1-5][0-9]{2})$/.exec(
+          record,
+        ),
+      );
+    if (
+      records.length === Number(match[3]) &&
+      records.every(
+        (record, index) =>
+          record &&
+          Number(record[1]) === index + 1 &&
+          Number(record[2]) <= 60_000 &&
+          Number(record[3]) <= 60_000,
+      )
+    )
+      result.workerAttemptTimings = timings;
+  }
   if (
     typeof value.documentTrace === "string" &&
     /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value.documentTrace)
@@ -84,6 +105,7 @@ function diagnosticHeaders(headers, status) {
     ...safeWorkerDiagnostic({
       status,
       workerUpstream: headers.get("x-cms-upstream"),
+      workerAttemptTimings: headers.get("x-cms-upstream-attempts"),
       documentTrace: headers.get("x-cms-document-trace"),
       observedAt: new Date().toISOString(),
     }),

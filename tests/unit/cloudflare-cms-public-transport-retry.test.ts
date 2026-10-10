@@ -134,6 +134,7 @@ describe("cms-public transport retry", () => {
       vi.stubGlobal("fetch", network);
       const response = await worker.fetch(new Request(`https://www.gaiatec.com.br${path}`), environment());
       expect(response.headers.has("X-CMS-Document-Trace")).toBe(false);
+      expect(response.headers.has("X-CMS-Upstream-Attempts")).toBe(false);
       for (const call of network.mock.calls) {
         const init = (call as unknown as [unknown, RequestInit])[1];
         expect(new Headers(init.headers).has("x-cms-document-trace")).toBe(false);
@@ -166,7 +167,9 @@ describe("cms-public transport retry", () => {
     const privatePage = await worker.fetch(new Request(`${origin}/admin/login`), environment());
     expect(success.status).toBe(200);
     expect(success.headers.has("X-CMS-Upstream")).toBe(false);
+    expect(success.headers.has("X-CMS-Upstream-Attempts")).toBe(false);
     expect(privatePage.headers.has("X-CMS-Upstream")).toBe(false);
+    expect(privatePage.headers.has("X-CMS-Upstream-Attempts")).toBe(false);
   });
 
   it("labels a discovery transport rejection without exposing its error or credentials", async () => {
@@ -204,6 +207,7 @@ describe("cms-public transport retry", () => {
     expect(response.status).toBe(503);
     expect(network).toHaveBeenCalledTimes(1);
     expect(response.headers.get("X-CMS-Upstream")).toBe("entity-detail;timeout;1;503;5000");
+    expect(response.headers.get("X-CMS-Upstream-Attempts")).toBe("1,0,5000,timeout,0");
   });
 
   it("does not expose upstream diagnostics in production", async () => {
@@ -271,6 +275,7 @@ describe("cms-public transport retry", () => {
     expect(response.status).toBe(503);
     expect(network).toHaveBeenCalledTimes(2);
     expect(Date.now() - startedAt).toBeLessThan(5_000);
+    expect(response.headers.get("X-CMS-Upstream-Attempts")).toBe("1,0,2200,timeout,0;2,700,2200,timeout,0");
   });
 
   it("does not retry an HTTP failure received from the backend", async () => {
@@ -300,6 +305,7 @@ describe("cms-public transport retry", () => {
 
     expect(response.status).toBe(503);
     expect(network).toHaveBeenCalledTimes(2);
+    expect(response.headers.get("X-CMS-Upstream-Attempts")).toBe("1,0,700,pending,0;2,700,0,http,503");
   });
 
   it("starts the backup immediately after an early transport rejection", async () => {

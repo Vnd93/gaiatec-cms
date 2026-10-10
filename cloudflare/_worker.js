@@ -343,6 +343,7 @@ async function cmsPublic(
   const startedAt = Date.now();
   let attempts = 0;
   let timedOut = false;
+  const attemptTimings = [];
   const finish = (response, outcome) => {
     observe({
       lookup,
@@ -351,6 +352,13 @@ async function cmsPublic(
       status: response?.status ?? 0,
       durationMs: Math.min(60000, Math.max(0, Date.now() - startedAt)),
       trace,
+      attemptTimings: attemptTimings.map((attempt) => ({
+        id: attempt.id,
+        startMs: Math.min(60000, Math.max(0, attempt.startedAt - startedAt)),
+        durationMs: Math.min(60000, Math.max(0, (attempt.finishedAt ?? Date.now()) - attempt.startedAt)),
+        outcome: attempt.outcome,
+        status: attempt.status,
+      })),
     });
     return response;
   };
@@ -368,10 +376,16 @@ async function cmsPublic(
     const remainingMs = deadline - Date.now();
     if (remainingMs <= 0) return null;
     attempts += 1;
+    const timing = trace
+      ? { id, startedAt: Date.now(), finishedAt: null, outcome: "pending", status: 0 }
+      : null;
+    if (timing) attemptTimings.push(timing);
+    let attemptTimedOut = false;
     const controller = new AbortController();
     const timeout = setTimeout(
       () => {
         timedOut = true;
+        attemptTimedOut = true;
         controller.abort();
       },
       retryTransport ? Math.min(CMS_PUBLIC_ATTEMPT_TIMEOUT_MS, remainingMs) : remainingMs,
@@ -394,8 +408,19 @@ async function cmsPublic(
         }),
       )
       .then(
-        (response) => ({ id, kind: "response", response }),
-        () => ({ id, kind: "transport-failure" }),
+        (response) => {
+          if (timing)
+            Object.assign(timing, { finishedAt: Date.now(), outcome: "http", status: response.status });
+          return { id, kind: "response", response };
+        },
+        () => {
+          if (timing)
+            Object.assign(timing, {
+              finishedAt: Date.now(),
+              outcome: attemptTimedOut ? "timeout" : controller.signal.aborted ? "cancelled" : "transport",
+            });
+          return { id, kind: "transport-failure" };
+        },
       )
       .finally(() => clearTimeout(timeout));
     return { id, controller, result };
@@ -1249,6 +1274,17 @@ export default {
         `${upstream.lookup};${upstream.outcome};${upstream.attempts};${upstream.status};${upstream.durationMs}`,
       );
       if (upstream.trace) headers.set("X-CMS-Document-Trace", upstream.trace);
+      if (upstream.trace && upstream.attemptTimings.length) {
+        headers.set(
+          "X-CMS-Upstream-Attempts",
+          upstream.attemptTimings
+            .map(
+              (attempt) =>
+                `${attempt.id},${attempt.startMs},${attempt.durationMs},${attempt.outcome},${attempt.status}`,
+            )
+            .join(";"),
+        );
+      }
     }
     const finalResponse = new Response(response.body, {
       status: response.status,

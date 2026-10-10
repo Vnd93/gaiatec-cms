@@ -18,6 +18,7 @@ test("rejects invalid status, trace, time and unbounded Worker fields", () => {
     expectedStatus: 200,
     status: 503,
     workerUpstream: "page-by-path;timeout;2;503;2900",
+    workerAttemptTimings: "1,0,2200,timeout,0;2,700,2200,timeout,0",
     documentTrace: "12345678-1234-4234-8234-123456789abc",
     observedAt: "2026-10-10T04:10:00.000Z",
   };
@@ -39,6 +40,16 @@ test("rejects invalid status, trace, time and unbounded Worker fields", () => {
     assert.equal(report({ workerUpstream }).workerUpstream, undefined);
   assert.equal(report({ documentTrace: "Bearer secret" }).documentTrace, undefined);
   assert.equal(report({ observedAt: "2026-02-30T04:10:00.000Z" }).observedAt, undefined);
+  assert.equal(report({}).workerAttemptTimings, base.workerAttemptTimings);
+  for (const workerAttemptTimings of [
+    "1,0,2200,timeout,0",
+    "1,0,60001,timeout,0;2,700,2200,timeout,0",
+    "1,0,2200,secret,0;2,700,2200,timeout,0",
+    "1,0,2200,timeout,0;1,700,2200,timeout,0",
+    "1,0,2200,timeout,0;2,700,2200,timeout,999",
+    "Bearer private-value",
+  ])
+    assert.equal(report({ workerAttemptTimings }).workerAttemptTimings, undefined);
 });
 
 test("preserves closed staging Worker failure correlation without accepting arbitrary headers", async () => {
@@ -55,6 +66,7 @@ test("preserves closed staging Worker failure correlation without accepting arbi
             status: 503,
             headers: {
               "X-CMS-Upstream": upstream,
+              "X-CMS-Upstream-Attempts": "1,0,2200,timeout,0;2,700,2200,timeout,0",
               "X-CMS-Document-Trace": trace,
               Authorization: "Bearer secret",
             },
@@ -71,10 +83,12 @@ test("preserves closed staging Worker failure correlation without accepting arbi
       if (environment === "staging" && upstream.startsWith("page-by-path")) {
         assert.equal(observation.workerUpstream, upstream);
         assert.equal(observation.documentTrace, trace);
+        assert.equal(observation.workerAttemptTimings, "1,0,2200,timeout,0;2,700,2200,timeout,0");
         assert.ok(Number.isFinite(Date.parse(observation.observedAt)));
       } else {
         assert.equal(observation.workerUpstream, undefined);
         assert.equal(observation.documentTrace, undefined);
+        assert.equal(observation.workerAttemptTimings, undefined);
       }
       assert.doesNotMatch(JSON.stringify(report), /secret|Authorization|Bearer/);
     }

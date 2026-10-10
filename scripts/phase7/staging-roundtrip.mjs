@@ -8,6 +8,7 @@ import { buildGovernedProductFields, PRODUCT_PREREQUISITE_FLAGS } from "./produc
 import { assertConsumedRealBrowserEvidence } from "../ev2/phase12/real-browser-release-evidence-lib.mjs";
 import { awaitCampaignExpiryEvidence, readCampaignExpirySnapshot } from "./campaign-expiry-evidence.mjs";
 import { observeEditorialPublication } from "./editorial-publication-observer.mjs";
+import { observeSiteDocument } from "./site-document-diagnostics.mjs";
 import {
   awaitScheduledPublicationEvidence,
   readScheduledPublicationSnapshot,
@@ -92,6 +93,17 @@ const createdItems = [];
 const createdForms = [];
 const evidence = [];
 const editorialDiagnostics = [];
+const siteDocumentDiagnostics = [];
+function siteDocument(context, url, options) {
+  return observeSiteDocument({
+    context,
+    fetchResponse: () => fetch(url, options),
+    report: (diagnostic) => {
+      siteDocumentDiagnostics.push(diagnostic);
+      process.stdout.write(`${JSON.stringify(diagnostic)}\n`);
+    },
+  });
+}
 let controlledProductClassification = null;
 let controlledProductSpecifications = null;
 const leaseActorPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -912,7 +924,10 @@ async function run() {
     },
   );
   record("Publicação agendada com RPC único ou scheduler e revisão/auditoria exatas", scheduledEvidence);
-  const blogPage = await fetch(`${siteOrigin}/blog/${blogSlug}?homologacao=${shortTag}`);
+  const blogPage = await siteDocument(
+    "published-blog",
+    `${siteOrigin}/blog/${blogSlug}?homologacao=${shortTag}`,
+  );
   const blogHtml = await blogPage.text();
   assert(
     blogPage.status === 200 &&
@@ -950,7 +965,10 @@ async function run() {
       form: { formId: savedForm.data.formId, versionId: savedForm.data.versionId, key: formKey },
     }),
   });
-  const campaignPage = await fetch(`${siteOrigin}/campanhas/${campaignSlug}?homologacao=${shortTag}`);
+  const campaignPage = await siteDocument(
+    "published-campaign",
+    `${siteOrigin}/campanhas/${campaignSlug}?homologacao=${shortTag}`,
+  );
   const campaignHtml = await campaignPage.text();
   const campaignApi = await publicApi({ type: "campaign-by-path", path: `/campanhas/${campaignSlug}` });
   assert(
@@ -1057,9 +1075,13 @@ async function run() {
     readCampaignExpirySnapshot(admin, expiryRoutes, remainingMs),
   );
   for (const route of expiryRoutes) {
-    const response = await fetch(`${siteOrigin}/campanhas/${route.slug}?homologacao=${shortTag}`, {
-      redirect: "manual",
-    });
+    const response = await siteDocument(
+      "expired-campaign",
+      `${siteOrigin}/campanhas/${route.slug}?homologacao=${shortTag}`,
+      {
+        redirect: "manual",
+      },
+    );
     assert(
       response.status === route.expectedStatus,
       `Rota expirada ${route.slug} retornou status incorreto`,
@@ -1210,7 +1232,10 @@ async function run() {
     "Busca encontrou fabricante interno",
     internalSearch.data,
   );
-  const internalPageResponse = await fetch(`${siteOrigin}/produtos/${bulkSlugs[0]}?homologacao=${shortTag}`);
+  const internalPageResponse = await siteDocument(
+    "internal-product",
+    `${siteOrigin}/produtos/${bulkSlugs[0]}?homologacao=${shortTag}`,
+  );
   const internalPage = await internalPageResponse.text();
   assert(
     internalPageResponse.status === 200 && !internalPage.includes(`OEM-INTERNO-${shortTag}`),
@@ -1330,7 +1355,10 @@ async function run() {
     "Fixture permaneceu na projeção pública",
     remainingProjection.count,
   );
-  const archivedPage = await fetch(`${siteOrigin}/blog/${blogSlug}?retirada=${shortTag}`);
+  const archivedPage = await siteDocument(
+    "archived-blog",
+    `${siteOrigin}/blog/${blogSlug}?retirada=${shortTag}`,
+  );
   assert(archivedPage.status === 404, "Artigo arquivado continuou público", archivedPage.status);
   record("Retirada e projeção pública", { remainingPublishedFixtures: 0, archivedRouteStatus: 404 });
 
@@ -1832,7 +1860,7 @@ try {
   process.exitCode = 1;
 } finally {
   const cleanupEvidence = await cleanup();
-  report = { ...report, cleanup: cleanupEvidence, editorialDiagnostics };
+  report = { ...report, cleanup: cleanupEvidence, editorialDiagnostics, siteDocumentDiagnostics };
 }
 if (positiveLeadControls && report.status === "passed") {
   assertRealBrowserLeadControls(

@@ -129,6 +129,10 @@ test("staging exposes the clean-room launch projection", async ({ page, baseURL 
         );
       } catch (error) {
         const states = {
+          routeBusy: await publicRenderState(page.locator('main [aria-busy="true"]').first()),
+          discoveryUnavailable: await publicRenderState(
+            page.getByRole("heading", { name: "Conteúdo indisponível", exact: true }),
+          ),
           loading: await publicRenderState(page.locator('.cms-managed-page__loading[aria-busy="true"]')),
           unavailable: await publicRenderState(
             page.getByRole("heading", { name: "Não foi possível carregar a publicação segura", exact: true }),

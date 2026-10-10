@@ -30,6 +30,38 @@ const request = (path = "/sobre", origin = "https://glcqsosxwgmlhzgcsnzv.supabas
   }) as Request;
 
 describe("public rendering diagnostics", () => {
+  it("tracks exact discovery reads and their pending body without exposing query data", () => {
+    const fake = fakePage();
+    const recorder = observePublicPageRender(fake.page, "/industrias/protecao-catodica", () => 10);
+    const entity = (kind: string, slug: string, method = "GET") => ({
+      method: () => method,
+      url: () =>
+        `https://glcqsosxwgmlhzgcsnzv.supabase.co/functions/v1/cms-public?type=entity-detail&contentType=${kind}&slug=${slug}&private=never-record`,
+    });
+    for (const unrelated of [
+      entity("service", "protecao-catodica"),
+      entity("industry", "instrumentacao"),
+      entity("industry", "protecao-catodica", "POST"),
+    ]) {
+      fake.emit("request", unrelated);
+      fake.emit("response", { request: () => unrelated, status: () => 200 });
+    }
+    expect(recorder.snapshot()).toMatchObject({ pageReadPending: false, events: [] });
+    const req = entity("industry", "protecao-catodica");
+    fake.emit("request", req);
+    fake.emit("response", { request: () => req, status: () => 503 });
+    expect(recorder.snapshot()).toMatchObject({
+      pageReadPending: true,
+      events: [{ event: "page-read-headers", status: 503, elapsedMs: 0 }],
+    });
+    fake.emit("requestfinished", req);
+    expect(recorder.snapshot().pageReadPending).toBe(false);
+    fake.emit("request", req);
+    fake.emit("requestfailed", req);
+    expect(recorder.snapshot().pageReadPending).toBe(false);
+    expect(JSON.stringify(recorder.snapshot())).not.toMatch(/never-record|private=|contentType|https:/);
+    recorder.dispose();
+  });
   it("distinguishes headers, read completion and failed first-party modules without recording URLs", () => {
     const fake = fakePage();
     let now = 0;

@@ -28,6 +28,12 @@ const ROUTES = new Set([
 ]);
 const BACKEND = "https://glcqsosxwgmlhzgcsnzv.supabase.co";
 const FRONTEND = "https://ev2-g17-canary.gaiatec-cms-staging.pages.dev";
+const DISCOVERY_PREFIXES: Record<string, string> = {
+  servicos: "service",
+  industrias: "industry",
+  aplicacoes: "application",
+  solucoes: "solution",
+};
 
 export function publicRenderErrorCategory(message: string) {
   if (/content security|violates.*directive|\bcsp\b/i.test(message)) return "csp";
@@ -47,6 +53,7 @@ export function observePublicPageRender(
   const events: Array<Record<string, string | number | null>> = [];
   const starts = new WeakMap<Request, number>();
   let dropped = 0;
+  const pendingReads = new Set<Request>();
   const append = (event: Record<string, string | number | null>) => {
     if (events.length < 12) events.push(event);
     else dropped++;
@@ -55,13 +62,21 @@ export function observePublicPageRender(
     if (route === "other" || request.method() !== "GET") return false;
     try {
       const url = new URL(request.url());
-      return (
+      const firstPartyRead =
         !url.username &&
         !url.password &&
         url.origin === BACKEND &&
-        url.pathname === "/functions/v1/cms-public" &&
-        url.searchParams.get("type") === "page-by-path" &&
-        url.searchParams.get("path") === path
+        url.pathname === "/functions/v1/cms-public";
+      if (!firstPartyRead) return false;
+      if (url.searchParams.get("type") === "page-by-path") return url.searchParams.get("path") === path;
+      const [, prefix, slug, extra] = path.split("/");
+      return (
+        !extra &&
+        !!slug &&
+        !!DISCOVERY_PREFIXES[prefix] &&
+        url.searchParams.get("type") === "entity-detail" &&
+        url.searchParams.get("contentType") === DISCOVERY_PREFIXES[prefix] &&
+        url.searchParams.get("slug") === slug
       );
     } catch {
       return false;
@@ -88,6 +103,7 @@ export function observePublicPageRender(
   };
   const request = (value: Request) => {
     if (matches(value) || isModule(value)) starts.set(value, clock());
+    if (matches(value)) pendingReads.add(value);
   };
   const response = (value: Response) => {
     const upstream = value.request();
@@ -101,10 +117,12 @@ export function observePublicPageRender(
     });
   };
   const failed = (value: Request) => {
+    pendingReads.delete(value);
     if (matches(value)) append({ event: "page-read-transport-failed", elapsedMs: elapsed(value) });
     else if (isModule(value)) append({ event: "module-read-transport-failed", elapsedMs: elapsed(value) });
   };
   const finished = (value: Request) => {
+    pendingReads.delete(value);
     if (matches(value)) append({ event: "page-read-finished", elapsedMs: elapsed(value) });
   };
   const pageError = (value: Error) =>
@@ -121,6 +139,7 @@ export function observePublicPageRender(
       route,
       events: [...events],
       dropped,
+      pageReadPending: pendingReads.size > 0,
     }),
     dispose: () => {
       page.off("request", request);

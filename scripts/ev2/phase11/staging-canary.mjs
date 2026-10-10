@@ -87,7 +87,7 @@ function runCommand(binary, args, options = {}) {
 }
 
 function runSupabase(args) {
-  return runCommand("npx", ["supabase", ...args]);
+  return runCommand("npx", ["--yes", "supabase@2.116.0", ...args, "--workdir", process.cwd()]);
 }
 
 function supabaseJson(args) {

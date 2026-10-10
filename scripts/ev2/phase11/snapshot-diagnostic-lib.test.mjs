@@ -131,6 +131,8 @@ test("focused mode shares lease, MFA and terminal cleanup but cannot become a ca
   assert.match(canary, /finally \{[\s\S]*await closeSyntheticResidue\(context\)/);
   assert.match(canary, /remaining\.activeSessions === 0/);
   assert.match(canary, /remaining\.cleanedLeases === actorIds\.length/);
+  assert.match(canary, /"supabase@2\.116\.0", \.\.\.args, "--workdir", process\.cwd\(\)/);
+  assert.match(canary, /project\.linked !== true/);
   assert.match(canary, /releaseEligible: !snapshotDiagnostic && !operationError && !cleanupError/);
   assert.ok(
     canary.indexOf("writeFileSync(process.env.EV2_G11_REPORT_PATH") <

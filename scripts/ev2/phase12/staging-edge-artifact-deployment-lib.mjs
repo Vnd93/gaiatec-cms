@@ -8,6 +8,37 @@ import {
 const SHA256 = /^[a-f0-9]{64}$/;
 const RECONCILIATION_MODES = new Set(["initial", "reconcile-candidate", "candidate"]);
 
+// Never serialize an upstream error: messages/causes can contain URLs, bodies or credentials.
+// Preserve only closed-set transport classes and our exact management HTTP status code.
+export function classifyStagingFunctionDeploymentFailure(error) {
+  const transportCodes = new Set([
+    "ECONNRESET",
+    "ECONNREFUSED",
+    "ETIMEDOUT",
+    "ENOTFOUND",
+    "EAI_AGAIN",
+    "UND_ERR_CONNECT_TIMEOUT",
+    "UND_ERR_HEADERS_TIMEOUT",
+    "UND_ERR_BODY_TIMEOUT",
+    "UND_ERR_SOCKET",
+  ]);
+  let current = error;
+  for (let depth = 0; depth < 4 && current; depth += 1, current = current.cause) {
+    const http =
+      typeof current.message === "string"
+        ? /^G12_STAGING_FUNCTION_MANAGEMENT_REQUEST_FAILED:(GET|PATCH):HTTP_([1-5]\d{2})$/.exec(
+            current.message,
+          )
+        : null;
+    if (http) return { failureClass: "management_http_error", method: http[1], status: Number(http[2]) };
+    if (current.name === "TimeoutError" || current.name === "AbortError")
+      return { failureClass: "management_request_aborted", errorKind: current.name };
+    if (transportCodes.has(current.code))
+      return { failureClass: "management_transport_error", transportCode: current.code };
+  }
+  return { failureClass: "unclassified" };
+}
+
 function label(value) {
   return String(value instanceof Error ? value.message : value)
     .replace(/[^A-Za-z0-9_.:-]/g, "_")

@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  classifyStagingFunctionDeploymentFailure,
   deployEdgeArtifactWithVerifiedCompensation,
   evaluateExactBaselineRestoration,
   evaluateExactEdgeArtifactDeployment,
@@ -13,6 +14,49 @@ import {
 
 const deployCli = await readFile(new URL("./deploy-staging-functions.mjs", import.meta.url), "utf8");
 const verifyCli = await readFile(new URL("./verify-all-edge-runtime-artifact.mjs", import.meta.url), "utf8");
+
+test("deployment failure diagnostic retains only closed-set causes behind compensation", () => {
+  const underlying = new Error("G12_STAGING_FUNCTION_MANAGEMENT_REQUEST_FAILED:PATCH:HTTP_503");
+  const compensated = new Error("G12_STAGING_FUNCTION_DEPLOY_FAILED_COMPENSATED:cms-public", {
+    cause: underlying,
+  });
+  assert.deepEqual(classifyStagingFunctionDeploymentFailure(compensated), {
+    failureClass: "management_http_error",
+    method: "PATCH",
+    status: 503,
+  });
+  assert.equal(compensated.cause, underlying);
+  const timeout = new Error("private URL and credentials");
+  timeout.name = "TimeoutError";
+  assert.deepEqual(classifyStagingFunctionDeploymentFailure(new Error("wrapper", { cause: timeout })), {
+    failureClass: "management_request_aborted",
+    errorKind: "TimeoutError",
+  });
+  const transport = Object.assign(new Error("sensitive request"), { code: "ECONNRESET" });
+  assert.deepEqual(
+    classifyStagingFunctionDeploymentFailure(new TypeError("fetch failed", { cause: transport })),
+    {
+      failureClass: "management_transport_error",
+      transportCode: "ECONNRESET",
+    },
+  );
+});
+
+test("deployment failure diagnostic refuses arbitrary messages, codes and excessive depth", () => {
+  for (const message of [
+    "secret-token",
+    "G12_STAGING_FUNCTION_MANAGEMENT_REQUEST_FAILED:PATCH:HTTP_503 secret",
+    "G12_STAGING_FUNCTION_MANAGEMENT_REQUEST_FAILED:DELETE:HTTP_503",
+  ]) {
+    const error = Object.assign(new Error(message), { code: "sensitive-key", name: "SensitiveError" });
+    assert.deepEqual(classifyStagingFunctionDeploymentFailure(error), { failureClass: "unclassified" });
+  }
+  const cycle = new Error("private payload");
+  cycle.cause = cycle;
+  assert.deepEqual(classifyStagingFunctionDeploymentFailure(cycle), { failureClass: "unclassified" });
+  assert.match(deployCli, /classifyStagingFunctionDeploymentFailure\(error\)/);
+  assert.match(deployCli, /process\.exitCode = 1/);
+});
 
 function remote(name, digest, version, updatedAt, verifyJwt) {
   return {

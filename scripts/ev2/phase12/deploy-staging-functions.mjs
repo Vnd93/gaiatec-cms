@@ -9,6 +9,7 @@ import { functionInventorySnapshot } from "./staging-cms-public-hotfix-lib.mjs";
 import { loadAndVerifyStagingEdgeBaselineArtifact } from "./staging-edge-baseline-artifact-lib.mjs";
 import { verifyStagingEdgeConfigurationReceipt } from "./staging-edge-configuration-transition-lib.mjs";
 import {
+  classifyStagingFunctionDeploymentFailure,
   deployEdgeArtifactWithVerifiedCompensation,
   evaluateExactBaselineRestoration,
   evaluateExactEdgeArtifactDeployment,
@@ -341,6 +342,12 @@ async function main() {
 }
 
 main().catch((error) => {
+  process.stderr.write(
+    `${JSON.stringify({
+      event: "g12.staging.functions.deployment_failed",
+      ...classifyStagingFunctionDeploymentFailure(error),
+    })}\n`,
+  );
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
   process.exitCode = 1;
 });

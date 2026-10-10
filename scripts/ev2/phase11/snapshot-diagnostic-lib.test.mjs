@@ -38,6 +38,23 @@ test("focused diagnostics are explicit, local-only and require a durable report 
   assert.throws(() =>
     snapshotDiagnosticRequested(["--snapshot-diagnostic", "--extra"], { EV2_G11_REPORT_PATH: "output.json" }),
   );
+  assert.equal(
+    snapshotDiagnosticRequested(["--snapshot-diagnostic-with-fixture"], {
+      EV2_G11_REPORT_PATH: "output.json",
+    }),
+    true,
+  );
+  assert.throws(() =>
+    snapshotDiagnosticRequested(["--snapshot-diagnostic-with-fixture"], {
+      CI: "true",
+      EV2_G11_REPORT_PATH: "output.json",
+    }),
+  );
+  assert.throws(() =>
+    snapshotDiagnosticRequested(["--snapshot-diagnostic", "--snapshot-diagnostic-with-fixture"], {
+      EV2_G11_REPORT_PATH: "output.json",
+    }),
+  );
 });
 
 test("one serial window retains 20 warmups and 20 measured server samples, never release approval", async () => {
@@ -61,6 +78,7 @@ test("one serial window retains 20 warmups and 20 measured server samples, never
   assert.equal(evidence.samples.filter((sample) => sample.phase === "measured").length, 20);
   assert.equal(evidence.adminReadP95Ms, 20);
   assert.equal(evidence.releaseEligible, false);
+  assert.equal(evidence.fixtureProfile, "empty");
   assert.equal(evidence.database.delta.calls, 40);
   assert.ok(
     evidence.samples.every((sample) => Date.parse(sample.finishedAt) >= Date.parse(sample.startedAt)),
@@ -80,6 +98,27 @@ test("changed or decreasing statistics cannot be used as a comparable delta", as
     assert.equal(evidence.database.comparable, false);
     assert.equal(evidence.database.delta, null);
   }
+});
+
+test("fixture comparison labels the cohort and rejects unknown profiles before any request", async () => {
+  let reads = 0;
+  await assert.rejects(() =>
+    runSnapshotDiagnostic({ fixtureProfile: "corporate", readSnapshot: async () => reads++ }),
+  );
+  assert.equal(reads, 0);
+  const evidence = await runSnapshotDiagnostic({
+    sourceSha: sha,
+    servedReleaseSha: sha,
+    fixtureProfile: "resolved-lead",
+    readSnapshot: async () => {
+      reads++;
+      return response();
+    },
+    readDatabase: async () => counter(reads + 10),
+  });
+  assert.equal(reads, 40);
+  assert.equal(evidence.fixtureProfile, "resolved-lead");
+  assert.equal(evidence.releaseEligible, false);
 });
 
 test("malformed identity, counters and response timing fail closed without retries", async () => {
@@ -122,10 +161,19 @@ test("focused mode shares lease, MFA and terminal cleanup but cannot become a ca
   const canary = readFileSync("scripts/ev2/phase11/staging-canary.mjs", "utf8");
   const focused = canary.slice(
     canary.indexOf("if (snapshotDiagnostic) {"),
-    canary.indexOf("await createQaFixtureForm(context);"),
+    canary.indexOf("} else {", canary.indexOf("if (snapshotDiagnostic) {")),
   );
   assert.match(focused, /runSnapshotDiagnostic/);
-  assert.doesNotMatch(focused, /createSyntheticLead|record_run|review_run|createQaFixtureForm/);
+  assert.doesNotMatch(focused, /record_run|review_run/);
+  assert.match(
+    focused,
+    /if \(snapshotDiagnosticWithFixture\) \{\s*await createQaFixtureForm\(context\);\s*await createSyntheticLead\(context\);/,
+  );
+  assert.match(
+    focused,
+    /completedOutbox\.json\.length === 1 && completedOutbox\.json\[0\]\?\.status === "processed"/,
+  );
+  assert.match(focused, /fixtureProfile: snapshotDiagnosticWithFixture \? "resolved-lead" : "empty"/);
   assert.ok(canary.indexOf("qa_actor_watchdog_leases_active") < canary.indexOf("if (snapshotDiagnostic) {"));
   assert.ok(canary.indexOf("production_environment_denied") < canary.indexOf("if (snapshotDiagnostic) {"));
   assert.match(canary, /finally \{[\s\S]*await closeSyntheticResidue\(context\)/);

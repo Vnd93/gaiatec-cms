@@ -38,6 +38,7 @@ if (!/^[0-9a-f]{40}$/.test(expectedSha ?? ""))
 const sourceSha = process.env.EV2_G11_SOURCE_SHA ?? expectedSha;
 if (!/^[0-9a-f]{40}$/.test(sourceSha)) throw new Error("EV2_G11_SOURCE_SHA_INVALID");
 const snapshotDiagnostic = snapshotDiagnosticRequested(process.argv.slice(2), process.env);
+const snapshotDiagnosticWithFixture = process.argv.includes("--snapshot-diagnostic-with-fixture");
 const qaRunTag = createQaRunTag(expectedSha);
 // Falso por padrao seria perigoso ao contrario: um run canonico que esquecesse de declarar deixaria
 // de verificar acessibilidade em silencio. O padrao e verificar; so o passe de diagnostico desliga.
@@ -997,11 +998,31 @@ try {
   );
 
   if (snapshotDiagnostic) {
+    // Controlled comparison, not a release retry: reuse the exact lease-owned fixture
+    // and cleanup protocol, with no external delivery or commercial catalog mutation.
+    if (snapshotDiagnosticWithFixture) {
+      await createQaFixtureForm(context);
+      await createSyntheticLead(context);
+      await rpc(context, "cms_finish_lead_outbox", {
+        p_id: outboxId,
+        p_success: true,
+        p_error_code: null,
+      });
+      const completedOutbox = await rest(context, "cms_lead_outbox", {
+        query: "id=eq." + outboxId + "&select=status",
+      });
+      check(
+        "snapshot_diagnostic_fixture_resolved",
+        completedOutbox.json.length === 1 && completedOutbox.json[0]?.status === "processed",
+        "exact owned synthetic delivery is resolved without contacting an external provider",
+      );
+    }
     finalEvidence = await runSnapshotDiagnostic({
       readSnapshot: () => system(context, operator, "snapshot"),
       readDatabase: managementQuery,
       sourceSha,
       servedReleaseSha: expectedSha,
+      fixtureProfile: snapshotDiagnosticWithFixture ? "resolved-lead" : "empty",
     });
     const after = await baseline(context);
     check(

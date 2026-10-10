@@ -12,7 +12,12 @@ where query like '%cms_get_system_snapshot_authenticated_timed%'
   and query not like '%pg_stat_statements%';`;
 
 export function snapshotDiagnosticRequested(argv, env) {
-  if (!argv.includes("--snapshot-diagnostic")) return false;
+  if (
+    !argv.some((argument) =>
+      ["--snapshot-diagnostic", "--snapshot-diagnostic-with-fixture"].includes(argument),
+    )
+  )
+    return false;
   if (argv.length !== 1 || env.GITHUB_ACTIONS === "true" || env.CI === "true")
     throw new Error("G11_SNAPSHOT_DIAGNOSTIC_NOT_A_RELEASE");
   if (!env.EV2_G11_REPORT_PATH) throw new Error("G11_SNAPSHOT_DIAGNOSTIC_REPORT_REQUIRED");
@@ -35,7 +40,15 @@ function databaseCounters(rows) {
   return { ...counters, statsReset: new Date(row.stats_reset).toISOString() };
 }
 
-export async function runSnapshotDiagnostic({ readSnapshot, readDatabase, sourceSha, servedReleaseSha }) {
+export async function runSnapshotDiagnostic({
+  readSnapshot,
+  readDatabase,
+  sourceSha,
+  servedReleaseSha,
+  fixtureProfile = "empty",
+}) {
+  if (!["empty", "resolved-lead"].includes(fixtureProfile))
+    throw new Error("G11_SNAPSHOT_DIAGNOSTIC_FIXTURE_INVALID");
   if (![sourceSha, servedReleaseSha].every((sha) => /^[0-9a-f]{40}$/.test(sha ?? "")))
     throw new Error("G11_SNAPSHOT_DIAGNOSTIC_SHA_INVALID");
   const before = databaseCounters(await readDatabase(SNAPSHOT_DATABASE_DIAGNOSTIC_SQL));
@@ -84,6 +97,7 @@ export async function runSnapshotDiagnostic({ readSnapshot, readDatabase, source
     syntheticOnly: true,
     containsPersonalData: false,
     releaseEligible: false,
+    fixtureProfile,
     protocol: { sequence: "serial", warmups: 20, measured: 20, estimator: "nearest-rank", percentile: 95 },
     samples,
     database: {

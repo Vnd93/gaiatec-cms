@@ -12,6 +12,7 @@ import {
 } from "./system-assurance-lib.mjs";
 import { resolveStableBaseline } from "./stable-baseline-lib.mjs";
 import { revokeStagingQaSessions } from "./qa-session-revocation-lib.mjs";
+import { runSnapshotDiagnostic, snapshotDiagnosticRequested } from "./snapshot-diagnostic-lib.mjs";
 import { validateHealthContract, validateReleaseManifest } from "../phase12/release-guard-lib.mjs";
 import {
   assertQaActorLease,
@@ -36,6 +37,7 @@ if (!/^[0-9a-f]{40}$/.test(expectedSha ?? ""))
   throw new Error("Defina EV2_G11_EXPECTED_SHA com o SHA completo explicitamente autorizado.");
 const sourceSha = process.env.EV2_G11_SOURCE_SHA ?? expectedSha;
 if (!/^[0-9a-f]{40}$/.test(sourceSha)) throw new Error("EV2_G11_SOURCE_SHA_INVALID");
+const snapshotDiagnostic = snapshotDiagnosticRequested(process.argv.slice(2), process.env);
 const qaRunTag = createQaRunTag(expectedSha);
 // Falso por padrao seria perigoso ao contrario: um run canonico que esquecesse de declarar deixaria
 // de verificar acessibilidade em silencio. O padrao e verificar; so o passe de diagnostico desliga.
@@ -947,6 +949,12 @@ try {
     before.flags.find((flag) => flag.flag_key === "ev2.system_assurance")?.default_enabled === false,
     JSON.stringify(before.flags.find((flag) => flag.flag_key === "ev2.system_assurance")),
   );
+  if (snapshotDiagnostic)
+    check(
+      "snapshot_diagnostic_catalog_default_off",
+      before.flags.find((flag) => flag.flag_key === "ev2.catalog_v1")?.default_enabled === false,
+      "catalog global activation is forbidden",
+    );
 
   operator = await createActor(context, "super_admin", "operator");
   reviewer = await createActor(context, "technical", "reviewer");
@@ -988,407 +996,437 @@ try {
     production.json.code,
   );
 
-  await createQaFixtureForm(context);
-  await createSyntheticLead(context);
-  await rpc(context, "cms_finish_lead_outbox", {
-    p_id: outboxId,
-    p_success: false,
-    p_error_code: "synthetic_provider_failure",
-  });
-  const failedLead = await rest(context, "cms_leads", {
-    query: "id=eq." + leadId + "&select=id,status,payload",
-  });
-  const failedEvent = await rest(context, "cms_lead_outbox", {
-    query: "id=eq." + outboxId + "&select=id,status,attempts,last_error_code,available_at",
-  });
-  check(
-    "lead_preserved_after_delivery_failure",
-    failedLead.json.length === 1 && failedEvent.json[0]?.status === "failed",
-    JSON.stringify({ lead: failedLead.json, event: failedEvent.json }),
-  );
-  check(
-    "delivery_failure_visible_for_inbox",
-    failedEvent.json[0]?.last_error_code === "synthetic_provider_failure" &&
-      Boolean(failedEvent.json[0]?.available_at),
-    JSON.stringify(failedEvent.json[0]),
-  );
-
-  const retryIdempotency = randomUUID();
-  const retryBody = {
-    action: "retry_delivery",
-    eventId: outboxId,
-    justification: "Dependência sintética recuperada no canary G11",
-  };
-  const commandDurations = [];
-  const commandAuthDurations = [];
-  const commandRpcDurations = [];
-  const commandRateLimitDurations = [];
-  const commandCoreDurations = [];
-  const commandWallDurations = [];
-  let retryCorrelationId;
-  for (let index = 0; index < 10; index += 1) {
-    const replay = await leads(context, operator, retryBody, { idempotencyKey: retryIdempotency });
-    commandDurations.push(serverTimingDuration(replay.headers, "command"));
-    commandAuthDurations.push(serverTimingDuration(replay.headers, "command-auth"));
-    commandRpcDurations.push(serverTimingDuration(replay.headers, "command-rpc"));
-    commandRateLimitDurations.push(serverTimingDuration(replay.headers, "command-rate-limit"));
-    commandCoreDurations.push(serverTimingDuration(replay.headers, "command-core"));
-    commandWallDurations.push(replay.durationMs);
-    if (index === 0) {
-      retryCorrelationId = replay.json.correlationId;
-      check("failed_delivery_requeued", replay.json.status === "pending", JSON.stringify(replay.json));
-    }
-    if (index === 1)
-      check("delivery_retry_idempotent", replay.json.duplicate === true, JSON.stringify(replay.json));
-  }
-  const aal1Retry = await leads(context, operator, retryBody, {
-    aal1: true,
-    idempotencyKey: randomUUID(),
-    allowed: [403],
-  });
-  check("delivery_retry_requires_mfa", aal1Retry.status === 403, aal1Retry.json.code);
-
-  await rest(context, "cms_lead_outbox", {
-    method: "PATCH",
-    query: "id=eq." + outboxId,
-    prefer: "return=minimal",
-    body: { status: "processing", attempts: 20, locked_at: new Date().toISOString() },
-  });
-  await rpc(context, "cms_finish_lead_outbox", {
-    p_id: outboxId,
-    p_success: false,
-    p_error_code: "synthetic_provider_failure",
-  });
-  const deadLetter = await rest(context, "cms_lead_outbox", {
-    query: "id=eq." + outboxId + "&select=status",
-  });
-  check(
-    "delivery_dead_letter_after_bounded_retries",
-    deadLetter.json[0]?.status === "dead_letter",
-    deadLetter.json[0]?.status,
-  );
-  await leads(
-    context,
-    operator,
-    { ...retryBody, justification: "Reprocessamento do dead-letter sintético G11" },
-    { idempotencyKey: randomUUID() },
-  );
-  await rest(context, "cms_lead_outbox", {
-    method: "PATCH",
-    query: "id=eq." + outboxId,
-    prefer: "return=minimal",
-    body: { status: "processing", attempts: 1, locked_at: new Date().toISOString() },
-  });
-  await rpc(context, "cms_finish_lead_outbox", { p_id: outboxId, p_success: true, p_error_code: null });
-  const resolvedDeadLetter = await rest(context, "cms_operational_events", {
-    query:
-      "event_type=eq.cms.leads.delivery_dead_letter&correlation_id=eq." +
-      retryCorrelationId +
-      "&select=resolved_at",
-  });
-  check(
-    "dead_letter_alert_resolved_on_requeue",
-    resolvedDeadLetter.json.length === 1 && Boolean(resolvedDeadLetter.json[0]?.resolved_at),
-    JSON.stringify(resolvedDeadLetter.json),
-  );
-
-  const broadNow = await authenticationClock(context);
-  const broad = await rest(context, "cms_feature_flag_overrides", {
-    method: "POST",
-    prefer: "return=representation",
-    body: {
-      flag_key: "ev2.system_assurance",
-      environment: "staging",
-      scope_type: "environment",
-      scope_key: "staging",
-      enabled: true,
-      reason: "Teste negativo temporário do fail-closed G11.",
-      starts_at: new Date(broadNow - 1000).toISOString(),
-      expires_at: new Date(broadNow + 5 * 60_000).toISOString(),
-      created_by: operator.id,
-    },
-  });
-  broadOverrideId = broad.json[0].id;
-  const broadCapability = await system(context, operator, "capability");
-  check(
-    "broad_override_fails_closed",
-    broadCapability.json.enabled === false &&
-      broadCapability.json.source === "broad_activation_not_supported",
-    JSON.stringify(broadCapability.json),
-  );
-  await rest(context, "cms_feature_flag_overrides", { method: "DELETE", query: "id=eq." + broadOverrideId });
-  broadOverrideId = undefined;
-
-  // O snapshot autenticado pode atravessar runtime e cache frios logo depois do deploy. Cinco
-  // aquecimentos deixaram essa cauda entrar na janela medida mesmo quando todos ainda estavam acima
-  // do budget. Aqueça uma janela completa, como o probe G12, mas mantenha uma unica janela medida:
-  // isto evita tanto falso negativo por inicializacao quanto retry-until-green.
-  const adminReadSamples = 20;
-  const adminReadWarmups = adminReadSamples;
-  const snapshotWarmupDurations = [];
-  const snapshotWarmupRpcDurations = [];
-  const snapshotWarmupRateLimitDurations = [];
-  const snapshotWarmupDbDurations = [];
-  const snapshotWarmupWallDurations = [];
-  for (let warmup = 0; warmup < adminReadWarmups; warmup += 1) {
-    const response = await system(context, operator, "snapshot");
-    snapshotWarmupDurations.push(serverTimingDuration(response.headers, "admin-read"));
-    snapshotWarmupRpcDurations.push(serverTimingDuration(response.headers, "admin-rpc"));
-    snapshotWarmupRateLimitDurations.push(serverTimingDuration(response.headers, "admin-rate-limit"));
-    snapshotWarmupDbDurations.push(serverTimingDuration(response.headers, "admin-snapshot-db"));
-    snapshotWarmupWallDurations.push(response.durationMs);
-  }
-
-  const snapshotDurations = [];
-  const snapshotRpcDurations = [];
-  const snapshotRateLimitDurations = [];
-  const snapshotDbDurations = [];
-  const snapshotWallDurations = [];
-  let latestSnapshot;
-  for (let index = 0; index < adminReadSamples; index += 1) {
-    const response = await system(context, operator, "snapshot");
-    snapshotDurations.push(serverTimingDuration(response.headers, "admin-read"));
-    snapshotRpcDurations.push(serverTimingDuration(response.headers, "admin-rpc"));
-    snapshotRateLimitDurations.push(serverTimingDuration(response.headers, "admin-rate-limit"));
-    snapshotDbDurations.push(serverTimingDuration(response.headers, "admin-snapshot-db"));
-    snapshotWallDurations.push(response.durationMs);
-    latestSnapshot = response.json;
-  }
-  const timingSamples = {
-    schemaVersion: 1,
-    event: "g11.timing.samples",
-    sourceSha,
-    servedReleaseSha: expectedSha,
-    environment: "staging",
-    syntheticOnly: true,
-    containsPersonalData: false,
-    protocol: {
-      estimator: "nearest-rank",
-      percentile: 95,
-      sequence: "serial",
-      adminReadWarmups,
-      adminReadSamples,
-      commandSamples: 10,
-      commandMutationSamples: 1,
-      commandReplaySamples: 9,
-      commandSampleKinds: ["mutation", "idempotent_replay"],
-    },
-    vectors: {
-      adminReadWarmupServerMs: sanitizeTimingVector(snapshotWarmupDurations),
-      adminReadWarmupRpcMs: sanitizeTimingVector(snapshotWarmupRpcDurations),
-      adminReadWarmupRateLimitMs: sanitizeTimingVector(snapshotWarmupRateLimitDurations),
-      adminReadWarmupSnapshotDbMs: sanitizeTimingVector(snapshotWarmupDbDurations),
-      adminReadWarmupWallMs: sanitizeTimingVector(snapshotWarmupWallDurations),
-      adminReadMeasuredServerMs: sanitizeTimingVector(snapshotDurations),
-      adminReadMeasuredRpcMs: sanitizeTimingVector(snapshotRpcDurations),
-      adminReadMeasuredRateLimitMs: sanitizeTimingVector(snapshotRateLimitDurations),
-      adminReadMeasuredSnapshotDbMs: sanitizeTimingVector(snapshotDbDurations),
-      adminReadMeasuredWallMs: sanitizeTimingVector(snapshotWallDurations),
-      commandMeasuredServerMs: sanitizeTimingVector(commandDurations),
-      commandMeasuredAuthMs: sanitizeTimingVector(commandAuthDurations),
-      commandMeasuredRpcMs: sanitizeTimingVector(commandRpcDurations),
-      commandMeasuredRateLimitMs: sanitizeTimingVector(commandRateLimitDurations),
-      commandMeasuredCoreMs: sanitizeTimingVector(commandCoreDurations),
-      commandMeasuredWallMs: sanitizeTimingVector(commandWallDurations),
-    },
-  };
-  if (process.env.EV2_G11_TIMING_REPORT_PATH)
-    writeFileSync(process.env.EV2_G11_TIMING_REPORT_PATH, `${JSON.stringify(timingSamples, null, 2)}\n`, {
-      encoding: "utf8",
-      mode: 0o600,
+  if (snapshotDiagnostic) {
+    finalEvidence = await runSnapshotDiagnostic({
+      readSnapshot: () => system(context, operator, "snapshot"),
+      readDatabase: managementQuery,
+      sourceSha,
+      servedReleaseSha: expectedSha,
     });
-  console.log(JSON.stringify(timingSamples));
-  check(
-    "backend_server_timing_available",
-    commandDurations.every(Number.isFinite) &&
-      snapshotDurations.every(Number.isFinite) &&
-      snapshotWarmupDurations.every(Number.isFinite) &&
-      snapshotWarmupRpcDurations.every(Number.isFinite) &&
-      snapshotWarmupRateLimitDurations.every(Number.isFinite) &&
-      snapshotWarmupDbDurations.every(Number.isFinite) &&
-      snapshotRpcDurations.every(Number.isFinite) &&
-      snapshotRateLimitDurations.every(Number.isFinite) &&
-      snapshotDbDurations.every(Number.isFinite),
-    JSON.stringify({
-      commandSamples: commandDurations.length,
-      adminReadSamples: snapshotDurations.length,
-      adminRpcWarmups: snapshotWarmupRpcDurations.length,
-      adminRpcSamples: snapshotRpcDurations.length,
-      adminRateLimitWarmups: snapshotWarmupRateLimitDurations.length,
-      adminRateLimitSamples: snapshotRateLimitDurations.length,
-      adminSnapshotDbWarmups: snapshotWarmupDbDurations.length,
-      adminSnapshotDbSamples: snapshotDbDurations.length,
-    }),
-  );
-  check("database_snapshot_ready", latestSnapshot.gateReady === true, JSON.stringify(latestSnapshot.metrics));
-  check(
-    "outbox_lag_within_budget",
-    latestSnapshot.metrics.outboxWorstLagSeconds <= 60,
-    latestSnapshot.metrics.outboxWorstLagSeconds,
-  );
-  check(
-    "database_reconciliation_clean",
-    latestSnapshot.metrics.projectionDivergence === 0 && latestSnapshot.metrics.leadDivergence === 0,
-    JSON.stringify(latestSnapshot.metrics),
-  );
-
-  const publicLoad = await runHttpLoadProbe({
-    url: TARGET.candidateOrigin + "/release-manifest.json",
-    requests: 30,
-    concurrency: 5,
-  });
-  check("candidate_availability", publicLoad.availabilityPercent >= 99.9, publicLoad.availabilityPercent);
-  const restore = runRestoreDrill();
-  check(
-    "transactional_restore_rpo_zero",
-    restore.rows === 1000 && restore.rpoMinutes === 0,
-    JSON.stringify(restore),
-  );
-  check("transactional_restore_rto_within_budget", restore.durationMs <= 15 * 60_000, restore.durationMs);
-  // O alias so serve o candidato depois que um run canonico o publica. Num passe que nao publica, a
-  // suite de acessibilidade mede o build ANTERIOR, e o numero que ela produz nao e do candidato.
-  //
-  // Isso ja produziu falso negativo: no passe 34552942444 a varredura devolveu zero violacoes e no
-  // 34554432797, mesma fonte e mesmo alias, devolveu dezesseis — o elemento infrator e transitorio e
-  // depende de estar no DOM no instante da varredura. Zero por sorte foi lido como prova.
-  //
-  // A medicao depende disso duas vezes: o relatorio enviado ao `record_run` declara
-  // `accessibilityCritical` e `accessibilitySerious`, e o backend exige ambos em zero para decidir
-  // `measured`. Declarar zero a partir de uma varredura que nao mediu o candidato seria afirmar ao
-  // banco algo que nao foi verificado. Entao, sem frontend sob teste, nada disso roda: os checks
-  // saem como NAO EXERCITADOS, que e diferente de aprovados.
-  // O alias so serve o candidato depois que um run canonico o publica. Medir a pagina publicada num
-  // passe que nao publica e medir o build ANTERIOR, e o numero obtido nao e do candidato. Isso ja
-  // produziu falso negativo: uma varredura devolveu zero violacoes e a seguinte, mesma fonte e mesmo
-  // alias, devolveu dezesseis, porque o elemento infrator e transitorio.
-  const accessibility = frontendUnderTest ? runAccessibility() : null;
-  if (frontendUnderTest)
+    const after = await baseline(context);
     check(
-      "accessibility_critical_serious_zero",
-      accessibility.critical === 0 && accessibility.serious === 0,
-      JSON.stringify(accessibility),
+      "stable_manifest_and_default_flags_unchanged",
+      before.stableRelease === after.stableRelease &&
+        before.candidateRelease === after.candidateRelease &&
+        JSON.stringify(before.flags) === JSON.stringify(after.flags),
+      "focused diagnostics must preserve release contracts and global flags",
     );
-  else
-    skip(
-      "accessibility_critical_serious_zero",
-      "EV2_G11_FRONTEND_UNDER_TEST=false: o alias publicado nao serve o candidato",
+  } else {
+    await createQaFixtureForm(context);
+    await createSyntheticLead(context);
+    await rpc(context, "cms_finish_lead_outbox", {
+      p_id: outboxId,
+      p_success: false,
+      p_error_code: "synthetic_provider_failure",
+    });
+    const failedLead = await rest(context, "cms_leads", {
+      query: "id=eq." + leadId + "&select=id,status,payload",
+    });
+    const failedEvent = await rest(context, "cms_lead_outbox", {
+      query: "id=eq." + outboxId + "&select=id,status,attempts,last_error_code,available_at",
+    });
+    check(
+      "lead_preserved_after_delivery_failure",
+      failedLead.json.length === 1 && failedEvent.json[0]?.status === "failed",
+      JSON.stringify({ lead: failedLead.json, event: failedEvent.json }),
+    );
+    check(
+      "delivery_failure_visible_for_inbox",
+      failedEvent.json[0]?.last_error_code === "synthetic_provider_failure" &&
+        Boolean(failedEvent.json[0]?.available_at),
+      JSON.stringify(failedEvent.json[0]),
     );
 
-  const metrics = {
-    availabilityPercent: publicLoad.availabilityPercent,
-    adminReadP95Ms: Math.round(percentile(snapshotDurations, 95)),
-    commandP95Ms: Math.round(percentile(commandDurations, 95)),
-    adminReadWallP95Ms: Math.round(percentile(snapshotWallDurations, 95)),
-    commandWallP95Ms: Math.round(percentile(commandWallDurations, 95)),
-    outboxLagP95Ms: latestSnapshot.metrics.outboxWorstLagSeconds * 1000,
-    auditCoveragePercent: latestSnapshot.metrics.auditCoveragePercent,
-    restoreRpoMinutes: restore.rpoMinutes,
-    restoreRtoMinutes: Math.ceil(restore.durationMs / 60_000),
-  };
-
-  // Medir nao e afirmar. As metricas de backend sao calculadas e registradas SEMPRE, inclusive quando
-  // a medicao nao pode ser submetida, porque e por elas que se descobre qual orcamento estourou. Sem
-  // isto o unico lugar capaz de nomear o orcamento seria o run canonico, que e justamente o caro.
-  //
-  // Os orcamentos comparados aqui sao so os que estas metricas cobrem. Acessibilidade fica de fora
-  // quando nao foi medida: compara-la contra um valor ausente reportaria um estouro que nao houve.
-  const backendBaselines = Object.fromEntries(
-    Object.entries(operatorCapability.json.baselines ?? {}).filter(([metric]) => metric in metrics),
-  );
-  const missedBudgets = budgetsMissed(backendBaselines, metrics);
-  console.log(JSON.stringify({ event: "g11.metrics", frontendUnderTest, submitted: metrics, missedBudgets }));
-
-  let measurementEvidence = null;
-  if (frontendUnderTest) {
-    // `SKIPPED` nao entra nem no total nem no aprovado: contar como exercitado inflaria a cobertura.
-    const measuredChecks = checks.filter((entry) => entry.result === "PASS").length;
-    const report = {
-      suiteKey: "g11-staging-system",
-      candidateSha: expectedSha,
-      startedAt: canaryStartedAt,
-      finishedAt: new Date().toISOString(),
-      totalChecks: measuredChecks,
-      passedChecks: measuredChecks,
-      p0Count: 0,
-      p1Count: 0,
-      accessibilityCritical: accessibility.critical,
-      accessibilitySerious: accessibility.serious,
-      securityStatus: "passed",
-      restoreStatus: "passed",
-      metrics,
-      evidenceHash: createHash("sha256").update(JSON.stringify({ checks, metrics })).digest("hex"),
-      syntheticOnly: true,
-      realDataUsed: false,
+    const retryIdempotency = randomUUID();
+    const retryBody = {
+      action: "retry_delivery",
+      eventId: outboxId,
+      justification: "Dependência sintética recuperada no canary G11",
     };
-    const record = await system(
+    const commandDurations = [];
+    const commandAuthDurations = [];
+    const commandRpcDurations = [];
+    const commandRateLimitDurations = [];
+    const commandCoreDurations = [];
+    const commandWallDurations = [];
+    let retryCorrelationId;
+    for (let index = 0; index < 10; index += 1) {
+      const replay = await leads(context, operator, retryBody, { idempotencyKey: retryIdempotency });
+      commandDurations.push(serverTimingDuration(replay.headers, "command"));
+      commandAuthDurations.push(serverTimingDuration(replay.headers, "command-auth"));
+      commandRpcDurations.push(serverTimingDuration(replay.headers, "command-rpc"));
+      commandRateLimitDurations.push(serverTimingDuration(replay.headers, "command-rate-limit"));
+      commandCoreDurations.push(serverTimingDuration(replay.headers, "command-core"));
+      commandWallDurations.push(replay.durationMs);
+      if (index === 0) {
+        retryCorrelationId = replay.json.correlationId;
+        check("failed_delivery_requeued", replay.json.status === "pending", JSON.stringify(replay.json));
+      }
+      if (index === 1)
+        check("delivery_retry_idempotent", replay.json.duplicate === true, JSON.stringify(replay.json));
+    }
+    const aal1Retry = await leads(context, operator, retryBody, {
+      aal1: true,
+      idempotencyKey: randomUUID(),
+      allowed: [403],
+    });
+    check("delivery_retry_requires_mfa", aal1Retry.status === 403, aal1Retry.json.code);
+
+    await rest(context, "cms_lead_outbox", {
+      method: "PATCH",
+      query: "id=eq." + outboxId,
+      prefer: "return=minimal",
+      body: { status: "processing", attempts: 20, locked_at: new Date().toISOString() },
+    });
+    await rpc(context, "cms_finish_lead_outbox", {
+      p_id: outboxId,
+      p_success: false,
+      p_error_code: "synthetic_provider_failure",
+    });
+    const deadLetter = await rest(context, "cms_lead_outbox", {
+      query: "id=eq." + outboxId + "&select=status",
+    });
+    check(
+      "delivery_dead_letter_after_bounded_retries",
+      deadLetter.json[0]?.status === "dead_letter",
+      deadLetter.json[0]?.status,
+    );
+    await leads(
       context,
       operator,
-      "record_run",
-      { report },
+      { ...retryBody, justification: "Reprocessamento do dead-letter sintético G11" },
       { idempotencyKey: randomUUID() },
     );
-    const measurementReviewable =
-      record.json.status === "measured" && record.json.requiresIndependentReview === true;
-    if (measurementReviewable) {
+    await rest(context, "cms_lead_outbox", {
+      method: "PATCH",
+      query: "id=eq." + outboxId,
+      prefer: "return=minimal",
+      body: { status: "processing", attempts: 1, locked_at: new Date().toISOString() },
+    });
+    await rpc(context, "cms_finish_lead_outbox", { p_id: outboxId, p_success: true, p_error_code: null });
+    const resolvedDeadLetter = await rest(context, "cms_operational_events", {
+      query:
+        "event_type=eq.cms.leads.delivery_dead_letter&correlation_id=eq." +
+        retryCorrelationId +
+        "&select=resolved_at",
+    });
+    check(
+      "dead_letter_alert_resolved_on_requeue",
+      resolvedDeadLetter.json.length === 1 && Boolean(resolvedDeadLetter.json[0]?.resolved_at),
+      JSON.stringify(resolvedDeadLetter.json),
+    );
+
+    const broadNow = await authenticationClock(context);
+    const broad = await rest(context, "cms_feature_flag_overrides", {
+      method: "POST",
+      prefer: "return=representation",
+      body: {
+        flag_key: "ev2.system_assurance",
+        environment: "staging",
+        scope_type: "environment",
+        scope_key: "staging",
+        enabled: true,
+        reason: "Teste negativo temporário do fail-closed G11.",
+        starts_at: new Date(broadNow - 1000).toISOString(),
+        expires_at: new Date(broadNow + 5 * 60_000).toISOString(),
+        created_by: operator.id,
+      },
+    });
+    broadOverrideId = broad.json[0].id;
+    const broadCapability = await system(context, operator, "capability");
+    check(
+      "broad_override_fails_closed",
+      broadCapability.json.enabled === false &&
+        broadCapability.json.source === "broad_activation_not_supported",
+      JSON.stringify(broadCapability.json),
+    );
+    await rest(context, "cms_feature_flag_overrides", {
+      method: "DELETE",
+      query: "id=eq." + broadOverrideId,
+    });
+    broadOverrideId = undefined;
+
+    // O snapshot autenticado pode atravessar runtime e cache frios logo depois do deploy. Cinco
+    // aquecimentos deixaram essa cauda entrar na janela medida mesmo quando todos ainda estavam acima
+    // do budget. Aqueça uma janela completa, como o probe G12, mas mantenha uma unica janela medida:
+    // isto evita tanto falso negativo por inicializacao quanto retry-until-green.
+    const adminReadSamples = 20;
+    const adminReadWarmups = adminReadSamples;
+    const snapshotWarmupDurations = [];
+    const snapshotWarmupRpcDurations = [];
+    const snapshotWarmupRateLimitDurations = [];
+    const snapshotWarmupDbDurations = [];
+    const snapshotWarmupWallDurations = [];
+    for (let warmup = 0; warmup < adminReadWarmups; warmup += 1) {
+      const response = await system(context, operator, "snapshot");
+      snapshotWarmupDurations.push(serverTimingDuration(response.headers, "admin-read"));
+      snapshotWarmupRpcDurations.push(serverTimingDuration(response.headers, "admin-rpc"));
+      snapshotWarmupRateLimitDurations.push(serverTimingDuration(response.headers, "admin-rate-limit"));
+      snapshotWarmupDbDurations.push(serverTimingDuration(response.headers, "admin-snapshot-db"));
+      snapshotWarmupWallDurations.push(response.durationMs);
+    }
+
+    const snapshotDurations = [];
+    const snapshotRpcDurations = [];
+    const snapshotRateLimitDurations = [];
+    const snapshotDbDurations = [];
+    const snapshotWallDurations = [];
+    let latestSnapshot;
+    for (let index = 0; index < adminReadSamples; index += 1) {
+      const response = await system(context, operator, "snapshot");
+      snapshotDurations.push(serverTimingDuration(response.headers, "admin-read"));
+      snapshotRpcDurations.push(serverTimingDuration(response.headers, "admin-rpc"));
+      snapshotRateLimitDurations.push(serverTimingDuration(response.headers, "admin-rate-limit"));
+      snapshotDbDurations.push(serverTimingDuration(response.headers, "admin-snapshot-db"));
+      snapshotWallDurations.push(response.durationMs);
+      latestSnapshot = response.json;
+    }
+    const timingSamples = {
+      schemaVersion: 1,
+      event: "g11.timing.samples",
+      sourceSha,
+      servedReleaseSha: expectedSha,
+      environment: "staging",
+      syntheticOnly: true,
+      containsPersonalData: false,
+      protocol: {
+        estimator: "nearest-rank",
+        percentile: 95,
+        sequence: "serial",
+        adminReadWarmups,
+        adminReadSamples,
+        commandSamples: 10,
+        commandMutationSamples: 1,
+        commandReplaySamples: 9,
+        commandSampleKinds: ["mutation", "idempotent_replay"],
+      },
+      vectors: {
+        adminReadWarmupServerMs: sanitizeTimingVector(snapshotWarmupDurations),
+        adminReadWarmupRpcMs: sanitizeTimingVector(snapshotWarmupRpcDurations),
+        adminReadWarmupRateLimitMs: sanitizeTimingVector(snapshotWarmupRateLimitDurations),
+        adminReadWarmupSnapshotDbMs: sanitizeTimingVector(snapshotWarmupDbDurations),
+        adminReadWarmupWallMs: sanitizeTimingVector(snapshotWarmupWallDurations),
+        adminReadMeasuredServerMs: sanitizeTimingVector(snapshotDurations),
+        adminReadMeasuredRpcMs: sanitizeTimingVector(snapshotRpcDurations),
+        adminReadMeasuredRateLimitMs: sanitizeTimingVector(snapshotRateLimitDurations),
+        adminReadMeasuredSnapshotDbMs: sanitizeTimingVector(snapshotDbDurations),
+        adminReadMeasuredWallMs: sanitizeTimingVector(snapshotWallDurations),
+        commandMeasuredServerMs: sanitizeTimingVector(commandDurations),
+        commandMeasuredAuthMs: sanitizeTimingVector(commandAuthDurations),
+        commandMeasuredRpcMs: sanitizeTimingVector(commandRpcDurations),
+        commandMeasuredRateLimitMs: sanitizeTimingVector(commandRateLimitDurations),
+        commandMeasuredCoreMs: sanitizeTimingVector(commandCoreDurations),
+        commandMeasuredWallMs: sanitizeTimingVector(commandWallDurations),
+      },
+    };
+    if (process.env.EV2_G11_TIMING_REPORT_PATH)
+      writeFileSync(process.env.EV2_G11_TIMING_REPORT_PATH, `${JSON.stringify(timingSamples, null, 2)}\n`, {
+        encoding: "utf8",
+        mode: 0o600,
+      });
+    console.log(JSON.stringify(timingSamples));
+    check(
+      "backend_server_timing_available",
+      commandDurations.every(Number.isFinite) &&
+        snapshotDurations.every(Number.isFinite) &&
+        snapshotWarmupDurations.every(Number.isFinite) &&
+        snapshotWarmupRpcDurations.every(Number.isFinite) &&
+        snapshotWarmupRateLimitDurations.every(Number.isFinite) &&
+        snapshotWarmupDbDurations.every(Number.isFinite) &&
+        snapshotRpcDurations.every(Number.isFinite) &&
+        snapshotRateLimitDurations.every(Number.isFinite) &&
+        snapshotDbDurations.every(Number.isFinite),
+      JSON.stringify({
+        commandSamples: commandDurations.length,
+        adminReadSamples: snapshotDurations.length,
+        adminRpcWarmups: snapshotWarmupRpcDurations.length,
+        adminRpcSamples: snapshotRpcDurations.length,
+        adminRateLimitWarmups: snapshotWarmupRateLimitDurations.length,
+        adminRateLimitSamples: snapshotRateLimitDurations.length,
+        adminSnapshotDbWarmups: snapshotWarmupDbDurations.length,
+        adminSnapshotDbSamples: snapshotDbDurations.length,
+      }),
+    );
+    check(
+      "database_snapshot_ready",
+      latestSnapshot.gateReady === true,
+      JSON.stringify(latestSnapshot.metrics),
+    );
+    check(
+      "outbox_lag_within_budget",
+      latestSnapshot.metrics.outboxWorstLagSeconds <= 60,
+      latestSnapshot.metrics.outboxWorstLagSeconds,
+    );
+    check(
+      "database_reconciliation_clean",
+      latestSnapshot.metrics.projectionDivergence === 0 && latestSnapshot.metrics.leadDivergence === 0,
+      JSON.stringify(latestSnapshot.metrics),
+    );
+
+    const publicLoad = await runHttpLoadProbe({
+      url: TARGET.candidateOrigin + "/release-manifest.json",
+      requests: 30,
+      concurrency: 5,
+    });
+    check("candidate_availability", publicLoad.availabilityPercent >= 99.9, publicLoad.availabilityPercent);
+    const restore = runRestoreDrill();
+    check(
+      "transactional_restore_rpo_zero",
+      restore.rows === 1000 && restore.rpoMinutes === 0,
+      JSON.stringify(restore),
+    );
+    check("transactional_restore_rto_within_budget", restore.durationMs <= 15 * 60_000, restore.durationMs);
+    // O alias so serve o candidato depois que um run canonico o publica. Num passe que nao publica, a
+    // suite de acessibilidade mede o build ANTERIOR, e o numero que ela produz nao e do candidato.
+    //
+    // Isso ja produziu falso negativo: no passe 34552942444 a varredura devolveu zero violacoes e no
+    // 34554432797, mesma fonte e mesmo alias, devolveu dezesseis — o elemento infrator e transitorio e
+    // depende de estar no DOM no instante da varredura. Zero por sorte foi lido como prova.
+    //
+    // A medicao depende disso duas vezes: o relatorio enviado ao `record_run` declara
+    // `accessibilityCritical` e `accessibilitySerious`, e o backend exige ambos em zero para decidir
+    // `measured`. Declarar zero a partir de uma varredura que nao mediu o candidato seria afirmar ao
+    // banco algo que nao foi verificado. Entao, sem frontend sob teste, nada disso roda: os checks
+    // saem como NAO EXERCITADOS, que e diferente de aprovados.
+    // O alias so serve o candidato depois que um run canonico o publica. Medir a pagina publicada num
+    // passe que nao publica e medir o build ANTERIOR, e o numero obtido nao e do candidato. Isso ja
+    // produziu falso negativo: uma varredura devolveu zero violacoes e a seguinte, mesma fonte e mesmo
+    // alias, devolveu dezesseis, porque o elemento infrator e transitorio.
+    const accessibility = frontendUnderTest ? runAccessibility() : null;
+    if (frontendUnderTest)
       check(
-        "measurement_requires_independent_review",
-        true,
-        JSON.stringify({ ...record.json, missedBudgets }),
+        "accessibility_critical_serious_zero",
+        accessibility.critical === 0 && accessibility.serious === 0,
+        JSON.stringify(accessibility),
       );
-      const selfReview = await system(
+    else
+      skip(
+        "accessibility_critical_serious_zero",
+        "EV2_G11_FRONTEND_UNDER_TEST=false: o alias publicado nao serve o candidato",
+      );
+
+    const metrics = {
+      availabilityPercent: publicLoad.availabilityPercent,
+      adminReadP95Ms: Math.round(percentile(snapshotDurations, 95)),
+      commandP95Ms: Math.round(percentile(commandDurations, 95)),
+      adminReadWallP95Ms: Math.round(percentile(snapshotWallDurations, 95)),
+      commandWallP95Ms: Math.round(percentile(commandWallDurations, 95)),
+      outboxLagP95Ms: latestSnapshot.metrics.outboxWorstLagSeconds * 1000,
+      auditCoveragePercent: latestSnapshot.metrics.auditCoveragePercent,
+      restoreRpoMinutes: restore.rpoMinutes,
+      restoreRtoMinutes: Math.ceil(restore.durationMs / 60_000),
+    };
+
+    // Medir nao e afirmar. As metricas de backend sao calculadas e registradas SEMPRE, inclusive quando
+    // a medicao nao pode ser submetida, porque e por elas que se descobre qual orcamento estourou. Sem
+    // isto o unico lugar capaz de nomear o orcamento seria o run canonico, que e justamente o caro.
+    //
+    // Os orcamentos comparados aqui sao so os que estas metricas cobrem. Acessibilidade fica de fora
+    // quando nao foi medida: compara-la contra um valor ausente reportaria um estouro que nao houve.
+    const backendBaselines = Object.fromEntries(
+      Object.entries(operatorCapability.json.baselines ?? {}).filter(([metric]) => metric in metrics),
+    );
+    const missedBudgets = budgetsMissed(backendBaselines, metrics);
+    console.log(
+      JSON.stringify({ event: "g11.metrics", frontendUnderTest, submitted: metrics, missedBudgets }),
+    );
+
+    let measurementEvidence = null;
+    if (frontendUnderTest) {
+      // `SKIPPED` nao entra nem no total nem no aprovado: contar como exercitado inflaria a cobertura.
+      const measuredChecks = checks.filter((entry) => entry.result === "PASS").length;
+      const report = {
+        suiteKey: "g11-staging-system",
+        candidateSha: expectedSha,
+        startedAt: canaryStartedAt,
+        finishedAt: new Date().toISOString(),
+        totalChecks: measuredChecks,
+        passedChecks: measuredChecks,
+        p0Count: 0,
+        p1Count: 0,
+        accessibilityCritical: accessibility.critical,
+        accessibilitySerious: accessibility.serious,
+        securityStatus: "passed",
+        restoreStatus: "passed",
+        metrics,
+        evidenceHash: createHash("sha256").update(JSON.stringify({ checks, metrics })).digest("hex"),
+        syntheticOnly: true,
+        realDataUsed: false,
+      };
+      const record = await system(
         context,
         operator,
-        "review_run",
-        { runId: record.json.runId, accept: true, rationale: "Tentativa negativa de autoaprovação" },
-        { idempotencyKey: randomUUID(), allowed: [409] },
-      );
-      check(
-        "independent_review_required",
-        selfReview.json.code === "CMS_SYSTEM_REVIEWER_SEPARATION_REQUIRED",
-        selfReview.json.code,
-      );
-      const accepted = await system(
-        context,
-        reviewer,
-        "review_run",
-        {
-          runId: record.json.runId,
-          accept: true,
-          rationale: "Evidência sintética G11 conferida por revisor segregado",
-        },
+        "record_run",
+        { report },
         { idempotencyKey: randomUUID() },
       );
-      check("segregated_review_accepted", accepted.json.status === "accepted", JSON.stringify(accepted.json));
-      measurementEvidence = { metrics, assuranceRunId: record.json.runId };
+      const measurementReviewable =
+        record.json.status === "measured" && record.json.requiresIndependentReview === true;
+      if (measurementReviewable) {
+        check(
+          "measurement_requires_independent_review",
+          true,
+          JSON.stringify({ ...record.json, missedBudgets }),
+        );
+        const selfReview = await system(
+          context,
+          operator,
+          "review_run",
+          { runId: record.json.runId, accept: true, rationale: "Tentativa negativa de autoaprovação" },
+          { idempotencyKey: randomUUID(), allowed: [409] },
+        );
+        check(
+          "independent_review_required",
+          selfReview.json.code === "CMS_SYSTEM_REVIEWER_SEPARATION_REQUIRED",
+          selfReview.json.code,
+        );
+        const accepted = await system(
+          context,
+          reviewer,
+          "review_run",
+          {
+            runId: record.json.runId,
+            accept: true,
+            rationale: "Evidência sintética G11 conferida por revisor segregado",
+          },
+          { idempotencyKey: randomUUID() },
+        );
+        check(
+          "segregated_review_accepted",
+          accepted.json.status === "accepted",
+          JSON.stringify(accepted.json),
+        );
+        measurementEvidence = { metrics, assuranceRunId: record.json.runId };
+      } else {
+        const reason = `measurement_not_reviewable:${JSON.stringify({
+          status: record.json.status,
+          measurementPassed: record.json.measurementPassed,
+          requiresIndependentReview: record.json.requiresIndependentReview,
+          missedBudgets,
+        })}`;
+        skip("independent_review_required", reason);
+        skip("segregated_review_accepted", reason);
+        check("measurement_requires_independent_review", false, reason);
+      }
     } else {
-      const reason = `measurement_not_reviewable:${JSON.stringify({
-        status: record.json.status,
-        measurementPassed: record.json.measurementPassed,
-        requiresIndependentReview: record.json.requiresIndependentReview,
-        missedBudgets,
-      })}`;
-      skip("independent_review_required", reason);
-      skip("segregated_review_accepted", reason);
-      check("measurement_requires_independent_review", false, reason);
+      for (const name of [
+        "measurement_requires_independent_review",
+        "independent_review_required",
+        "segregated_review_accepted",
+      ])
+        skip(name, "EV2_G11_FRONTEND_UNDER_TEST=false: o alias publicado nao serve o candidato");
     }
-  } else {
-    for (const name of [
-      "measurement_requires_independent_review",
-      "independent_review_required",
-      "segregated_review_accepted",
-    ])
-      skip(name, "EV2_G11_FRONTEND_UNDER_TEST=false: o alias publicado nao serve o candidato");
+    const after = await baseline(context);
+    check(
+      "stable_manifest_and_default_flags_unchanged",
+      before.stableRelease === after.stableRelease &&
+        JSON.stringify(before.flags) === JSON.stringify(after.flags),
+      JSON.stringify({ before, after }),
+    );
+    finalEvidence = measurementEvidence
+      ? { before, after, ...measurementEvidence }
+      : { before, after, frontendUnderTest: false };
   }
-  const after = await baseline(context);
-  check(
-    "stable_manifest_and_default_flags_unchanged",
-    before.stableRelease === after.stableRelease &&
-      JSON.stringify(before.flags) === JSON.stringify(after.flags),
-    JSON.stringify({ before, after }),
-  );
-  finalEvidence = measurementEvidence
-    ? { before, after, ...measurementEvidence }
-    : { before, after, frontendUnderTest: false };
 } catch (error) {
   operationError = error;
 } finally {
@@ -1419,25 +1457,27 @@ try {
   }
 }
 
-if (operationError || cleanupError)
-  throw new AggregateError(
-    [operationError, cleanupError].filter(Boolean),
-    "Canary G11 falhou; consulte os erros operacional e de encerramento seguro.",
-  );
-
 const finalReport = {
-  outcome: "G11_CANARY_PASS",
+  outcome:
+    operationError || cleanupError
+      ? "G11_CANARY_FAIL"
+      : snapshotDiagnostic
+        ? "G11_SNAPSHOT_DIAGNOSTIC"
+        : "G11_CANARY_PASS",
+  releaseEligible: !snapshotDiagnostic && !operationError && !cleanupError,
   target: TARGET,
   candidateSha: expectedSha,
   checks: checks.length,
   passed: checks.filter((item) => item.result === "PASS").length,
-  p0: 0,
-  p1: 0,
+  p0: snapshotDiagnostic || operationError || cleanupError ? null : 0,
+  p1: snapshotDiagnostic || operationError || cleanupError ? null : 0,
   realDataUsed: false,
   productionMutations: 0,
   stablePromoted: false,
   evidence: finalEvidence,
   syntheticResidue: finalResidue,
+  operationFailed: Boolean(operationError),
+  cleanupFailed: Boolean(cleanupError),
 };
 if (process.env.EV2_G11_REPORT_PATH)
   writeFileSync(process.env.EV2_G11_REPORT_PATH, `${JSON.stringify(finalReport, null, 2)}\n`, {
@@ -1445,3 +1485,8 @@ if (process.env.EV2_G11_REPORT_PATH)
     mode: 0o600,
   });
 console.log(JSON.stringify(finalReport, null, 2));
+if (operationError || cleanupError)
+  throw new AggregateError(
+    [operationError, cleanupError].filter(Boolean),
+    "Canary G11 falhou; consulte os erros operacional e de encerramento seguro.",
+  );

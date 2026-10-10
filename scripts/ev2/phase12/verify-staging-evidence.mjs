@@ -21,7 +21,16 @@ import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
 const FAILED_STATUS = new Set(["failed", "failure", "cleanup-failed", "error", "refused"]);
-const FAILED_OUTCOME = new Set(["fail", "failed", "failure", "reproved", "refused", "blocked"]);
+const FAILED_OUTCOME = new Set([
+  "fail",
+  "failed",
+  "failure",
+  "reproved",
+  "refused",
+  "blocked",
+  "g11_canary_fail",
+  "g11_snapshot_diagnostic",
+]);
 
 export function evaluateStagingEvidence(file, contents) {
   const violations = [];
@@ -47,6 +56,7 @@ export function evaluateStagingEvidence(file, contents) {
   // `ok: false` e `passed: false` sao a mesma afirmacao escrita de outro jeito.
   if (record.ok === false) violations.push("evidence_not_ok");
   if (record.passed === false) violations.push("evidence_not_passed");
+  if (record.releaseEligible === false) violations.push("evidence_not_release_eligible");
 
   return { file, valid: violations.length === 0, violations };
 }

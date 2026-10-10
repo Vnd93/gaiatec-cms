@@ -55,3 +55,20 @@ test("an empty file is still refused, so the old guarantee is not lost", () => {
     assert.equal(evaluateStagingEvidence("empty.json", empty).valid, false);
   }
 });
+
+test("a focused snapshot diagnostic or failed terminal report cannot authorize a release", () => {
+  for (const outcome of ["G11_CANARY_FAIL", "G11_SNAPSHOT_DIAGNOSTIC"]) {
+    assert.equal(evaluateStagingEvidence("g11.json", JSON.stringify({ outcome })).valid, false);
+  }
+  assert.equal(evaluateStagingEvidence("g11.json", JSON.stringify({ releaseEligible: false })).valid, false);
+  assert.equal(
+    evaluateStagingEvidence(
+      "g11.json",
+      JSON.stringify({
+        outcome: "G11_CANARY_PASS",
+        releaseEligible: true,
+      }),
+    ).valid,
+    true,
+  );
+});

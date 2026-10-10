@@ -517,7 +517,7 @@ test("G11 executable controls remain reproducible and fail-closed", async () => 
     /email|token|secret|correlation|idempotency|payload|headers|actor/i,
   );
   const timingWrite = canary.indexOf("writeFileSync(process.env.EV2_G11_TIMING_REPORT_PATH");
-  const firstPostSamplingCheck = canary.indexOf('check(\n    "backend_server_timing_available"');
+  const firstPostSamplingCheck = /check\(\s+"backend_server_timing_available"/.exec(canary)?.index ?? -1;
   assert.ok(timingWrite > 0 && firstPostSamplingCheck > timingWrite);
   assert.match(canary, /adminReadWallP95Ms/);
   assert.match(canary, /commandWallP95Ms/);

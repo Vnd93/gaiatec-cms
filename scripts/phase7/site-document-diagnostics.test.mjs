@@ -139,7 +139,7 @@ test("staging driver preserves withdrawal gate and reports before cleanup", () =
   assert.match(source, /const archivedPage = await siteDocument\(\s*"archived-blog"/);
   assert.match(source, /assert\(archivedPage\.status === 404,/);
   assert.match(source, /fetchResponse: \(\) => fetch\(url, options\)/);
-  assert.match(source, /siteDocumentDiagnostics\.push\(diagnostic\);\s*process\.stdout\.write/);
+  assert.match(source, /siteDocumentDiagnostics\.push\(diagnostic\);\s*process\.stderr\.write/);
   assert.match(source, /cleanup: cleanupEvidence, editorialDiagnostics, siteDocumentDiagnostics/);
   assert.match(source, /supabaseUrl !== `https:\/\/\$\{stagingProjectRef\}\.supabase\.co`/);
 });

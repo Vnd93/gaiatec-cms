@@ -239,7 +239,10 @@ test("integration uses only one bounded row-locked RPC and preserves end-to-end 
   assert.equal(source.match(/\badmin\s*\.rpc\("cms_publish_due_schedule"/g)?.length, 1);
   assert.doesNotMatch(source, /setTimeout\(resolve, 7500\)/);
   assert.match(source, /blogPage\.status === 200/);
-  assert.match(source, /await cleanup\(\)/);
+  assert.match(source, /finally \{\s*report = await finalizeLifecycleEvidence\(report, cleanup\)/);
+  assert.match(source, /if \(report\.status === "failed"\) process\.exitCode = 1/);
+  const finalizer = readFileSync(new URL("./lifecycle-terminal-evidence.mjs", import.meta.url), "utf8");
+  assert.equal(finalizer.match(/await cleanup\(\)/g)?.length, 1);
 });
 
 test("five-minute cron is not required to execute within the 7.5-second due wait", async () => {

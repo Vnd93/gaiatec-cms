@@ -242,7 +242,11 @@ test("G7 retains durable cleanup and never changes a global flag or adopts corpo
   assert.match(prep, /environment: "staging"/);
   assert.doesNotMatch(source, /\.from\("cms_controlled_options"\)/);
   assert.doesNotMatch(prep, /default_enabled|ev2\.catalog_v1/);
-  assert.match(source, /finally \{\s*const cleanupEvidence = await cleanup\(\)/);
+  assert.match(source, /finally \{\s*report = await finalizeLifecycleEvidence\(report, cleanup\)/);
+  assert.match(source, /if \(report\.status === "failed"\) process\.exitCode = 1/);
+  const finalizer = readFileSync(new URL("./lifecycle-terminal-evidence.mjs", import.meta.url), "utf8");
+  assert.equal(finalizer.match(/await cleanup\(\)/g)?.length, 1);
+  assert.match(finalizer, /zeroActiveResidueProved: false/);
   assert.match(source, /completeQaActorLease\(durableLeaseRpc, actor.identity\)/);
   const sql = readFileSync(
     new URL("../../supabase/migrations/0078_cms_product_pim_consolidation.sql", import.meta.url),

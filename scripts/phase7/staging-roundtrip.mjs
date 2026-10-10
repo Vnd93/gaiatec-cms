@@ -10,6 +10,12 @@ import { awaitCampaignExpiryEvidence, readCampaignExpirySnapshot } from "./campa
 import { observeEditorialPublication } from "./editorial-publication-observer.mjs";
 import { observeSiteDocument } from "./site-document-diagnostics.mjs";
 import {
+  finalizeLifecycleEvidence,
+  LifecycleCleanupError,
+  lifecycleCleanupDiagnostic,
+  lifecycleFailure,
+} from "./lifecycle-terminal-evidence.mjs";
+import {
   awaitScheduledPublicationEvidence,
   readScheduledPublicationSnapshot,
 } from "./scheduled-publication-evidence.mjs";
@@ -100,7 +106,7 @@ function siteDocument(context, url, options) {
     fetchResponse: () => fetch(url, options),
     report: (diagnostic) => {
       siteDocumentDiagnostics.push(diagnostic);
-      process.stdout.write(`${JSON.stringify(diagnostic)}\n`);
+      process.stderr.write(`${JSON.stringify(diagnostic)}\n`);
     },
   });
 }
@@ -372,7 +378,10 @@ async function editorial(actor, body, status = 200, key) {
     return observeEditorialPublication({
       operation: () => expectInvoke("cms-content", actor, body, status, { key }),
       sample: (query, signal) => managementQuery(query, 1_000, signal),
-      report: (diagnostic) => editorialDiagnostics.push(diagnostic),
+      report: (diagnostic) => {
+        editorialDiagnostics.push(diagnostic);
+        process.stderr.write(`${JSON.stringify(diagnostic)}\n`);
+      },
     });
   return expectInvoke("cms-content", actor, body, status, { key });
 }
@@ -1680,7 +1689,7 @@ async function cleanup() {
       if (result?.error) throw result.error;
       return result;
     } catch (error) {
-      cleanupErrors.push(new Error(label, { cause: error }));
+      cleanupErrors.push(lifecycleCleanupDiagnostic(label, error));
       return null;
     }
   };
@@ -1818,11 +1827,7 @@ async function cleanup() {
     });
     await attempt(`lease:${actor.id}`, () => completeQaActorLease(durableLeaseRpc, actor.identity));
   }
-  if (cleanupErrors.length)
-    throw new AggregateError(
-      cleanupErrors,
-      "Encerramento da homologação sintética incompleto; o watchdog automático permanece ativo.",
-    );
+  if (cleanupErrors.length) throw new LifecycleCleanupError(cleanupErrors);
   const audit = createdUsers.length
     ? await admin
         .from("cms_audit_log")
@@ -1854,12 +1859,14 @@ try {
   report = {
     status: "failed",
     runTag,
-    error: error instanceof Error ? error.message : String(error),
+    error: lifecycleFailure(error),
     evidence,
   };
   process.exitCode = 1;
 } finally {
-  const cleanupEvidence = await cleanup();
+  report = await finalizeLifecycleEvidence(report, cleanup);
+  if (report.status === "failed") process.exitCode = 1;
+  const cleanupEvidence = report.cleanup;
   report = { ...report, cleanup: cleanupEvidence, editorialDiagnostics, siteDocumentDiagnostics };
 }
 if (positiveLeadControls && report.status === "passed") {

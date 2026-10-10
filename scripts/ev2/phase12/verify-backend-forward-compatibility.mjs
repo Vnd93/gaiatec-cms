@@ -51,6 +51,13 @@ for (const migration of additions) {
 }
 
 const compatibilityTests = {
+  "0118": [
+    "supabase/tests/rls_catalog_qa_durable_recovery.test.sql",
+    "supabase/tests/rls_catalog_workspace_integration.test.sql",
+    "supabase/tests/rls_catalog_fatia2_publication.test.sql",
+    "supabase/tests/rls_catalog_fatia3_relations.test.sql",
+    "tests/contracts/catalog-qa-durable-recovery.test.ts",
+  ],
   "0117": [
     "supabase/tests/rls_cms_ai_private_model_transition.test.sql",
     "supabase/tests/rls_cms_ai_authoritative_scope.test.sql",

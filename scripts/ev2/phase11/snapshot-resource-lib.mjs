@@ -6,8 +6,43 @@ const gauges = new Set([
   "node_memory_MemTotal_bytes",
   "pgrst_db_pool_waiting",
   "pgbouncer_pools_client_waiting_connections",
+  "postgres_active_connections",
+  "postgres_active_lock_waits",
+  "postgres_active_io_waits",
+  "postgres_active_running",
+  "postgres_idle_transactions",
+  "postgres_blocked_connections",
 ]);
 const modes = new Set(["idle", "iowait", "irq", "nice", "softirq", "steal", "system", "user"]);
+
+export const SNAPSHOT_RESOURCE_WAIT_SQL = `select
+  count(*) filter(where state='active') as active_connections,
+  count(*) filter(where state='active' and wait_event_type='Lock') as active_lock_waits,
+  count(*) filter(where state='active' and wait_event_type='IO') as active_io_waits,
+  count(*) filter(where state='active' and wait_event_type is null) as active_running,
+  count(*) filter(where state='idle in transaction') as idle_transactions,
+  count(*) filter(where cardinality(pg_blocking_pids(pid))>0) as blocked_connections
+from pg_stat_activity where datname=current_database() and pid<>pg_backend_pid();`;
+
+export function resourceWaitMetrics(rows) {
+  const keys = [
+    "active_connections",
+    "active_lock_waits",
+    "active_io_waits",
+    "active_running",
+    "idle_transactions",
+    "blocked_connections",
+  ];
+  if (!Array.isArray(rows) || rows.length !== 1) throw new Error("G11_RESOURCE_WAITS_INVALID");
+  return keys
+    .map((key) => {
+      const value = Number(rows[0][key]);
+      if (rows[0][key] == null || !Number.isSafeInteger(value) || value < 0)
+        throw new Error("G11_RESOURCE_WAITS_INVALID");
+      return `postgres_${key} ${value}`;
+    })
+    .join("\n");
+}
 
 export function sanitizeResourceMetrics(text) {
   if (typeof text !== "string" || text.length > 4 * 1024 * 1024)

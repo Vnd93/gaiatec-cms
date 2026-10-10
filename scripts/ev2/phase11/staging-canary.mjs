@@ -13,6 +13,7 @@ import {
 import { resolveStableBaseline } from "./stable-baseline-lib.mjs";
 import { revokeStagingQaSessions } from "./qa-session-revocation-lib.mjs";
 import { runSnapshotDiagnostic, snapshotDiagnosticRequested } from "./snapshot-diagnostic-lib.mjs";
+import { resourceWaitMetrics, SNAPSHOT_RESOURCE_WAIT_SQL } from "./snapshot-resource-lib.mjs";
 import { validateHealthContract, validateReleaseManifest } from "../phase12/release-guard-lib.mjs";
 import {
   assertQaActorLease,
@@ -1029,7 +1030,9 @@ try {
           },
         );
         if (response.status !== 200) throw new Error("G11_RESOURCE_METRICS_UNAVAILABLE");
-        return response.text();
+        const metrics = await response.text();
+        const waits = resourceWaitMetrics(await managementQuery(SNAPSHOT_RESOURCE_WAIT_SQL, 10_000));
+        return metrics + "\n" + waits;
       },
       sourceSha,
       servedReleaseSha: expectedSha,

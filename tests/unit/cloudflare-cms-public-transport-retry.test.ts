@@ -94,6 +94,7 @@ describe("cms-public transport retry", () => {
     const trace = response.headers.get("X-CMS-Document-Trace");
     expect(trace).toMatch(/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/);
     expect(new Headers(call[1].headers).get("x-cms-document-trace")).toBe(`${trace}.1`);
+    expect(new Headers(call[1].headers).get("user-agent")).toBe(`gaiatec-cms-staging-document/${trace}.1`);
     expect(response.headers.get("X-CMS-Upstream")).toMatch(/^other;http;1;503;\d+$/);
     expect([...response.headers].join()).not.toContain("visitor-private-value");
   });
@@ -105,7 +106,10 @@ describe("cms-public transport retry", () => {
     vi.stubGlobal("fetch", network);
     const response = await worker.fetch(
       new Request(`${origin}/managed-page`, {
-        headers: { "x-cms-document-trace": "visitor-private-value" },
+        headers: {
+          "x-cms-document-trace": "visitor-private-value",
+          "user-agent": "visitor-private-agent",
+        },
       }),
       environment(),
     );
@@ -115,6 +119,10 @@ describe("cms-public transport retry", () => {
     for (const [position, call] of network.mock.calls.entries()) {
       const init = (call as unknown as [unknown, RequestInit])[1];
       expect(new Headers(init.headers).get("x-cms-document-trace")).toBe(`${trace}.${position + 1}`);
+      expect(new Headers(init.headers).get("user-agent")).toBe(
+        `gaiatec-cms-staging-document/${trace}.${position + 1}`,
+      );
+      expect(JSON.stringify(init.headers)).not.toContain("visitor-private-agent");
     }
     expect([...response.headers].join()).not.toContain("visitor-private-value");
   });
@@ -129,6 +137,7 @@ describe("cms-public transport retry", () => {
       for (const call of network.mock.calls) {
         const init = (call as unknown as [unknown, RequestInit])[1];
         expect(new Headers(init.headers).has("x-cms-document-trace")).toBe(false);
+        expect(new Headers(init.headers).has("user-agent")).toBe(false);
       }
     },
   );

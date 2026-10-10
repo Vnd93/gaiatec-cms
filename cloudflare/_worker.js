@@ -379,7 +379,17 @@ async function cmsPublic(
     const result = Promise.resolve()
       .then(() =>
         fetch(target, {
-          headers: { apikey: anonKey, ...(trace ? { "x-cms-document-trace": `${trace}.${id}` } : {}) },
+          headers: {
+            apikey: anonKey,
+            ...(trace
+              ? {
+                  "x-cms-document-trace": `${trace}.${id}`,
+                  // Function gateway logs capture User-Agent, not arbitrary correlation headers.
+                  // The staging-only marker is generated locally and contains no visitor data.
+                  "user-agent": `gaiatec-cms-staging-document/${trace}.${id}`,
+                }
+              : {}),
+          },
           signal: controller.signal,
         }),
       )

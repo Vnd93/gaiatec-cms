@@ -13,7 +13,7 @@ import {
 import { resolveStableBaseline } from "./stable-baseline-lib.mjs";
 import { revokeStagingQaSessions } from "./qa-session-revocation-lib.mjs";
 import { runSnapshotDiagnostic, snapshotDiagnosticRequested } from "./snapshot-diagnostic-lib.mjs";
-import { resourceWaitMetrics, SNAPSHOT_RESOURCE_WAIT_SQL } from "./snapshot-resource-lib.mjs";
+import { createResourceMetricsReader, SNAPSHOT_RESOURCE_WAIT_SQL } from "./snapshot-resource-lib.mjs";
 import { validateHealthContract, validateReleaseManifest } from "../phase12/release-guard-lib.mjs";
 import {
   assertQaActorLease,
@@ -1021,19 +1021,20 @@ try {
     finalEvidence = await runSnapshotDiagnostic({
       readSnapshot: () => system(context, operator, "snapshot"),
       readDatabase: managementQuery,
-      readResourceMetrics: async () => {
-        const response = await fetch(
-          `https://api.supabase.com/v1/projects/${TARGET.ref}/analytics/endpoints/metrics`,
-          {
-            headers: { Authorization: `Bearer ${supabaseAccessToken}` },
-            signal: AbortSignal.timeout(10_000),
-          },
-        );
-        if (response.status !== 200) throw new Error("G11_RESOURCE_METRICS_UNAVAILABLE");
-        const metrics = await response.text();
-        const waits = resourceWaitMetrics(await managementQuery(SNAPSHOT_RESOURCE_WAIT_SQL, 10_000));
-        return metrics + "\n" + waits;
-      },
+      readResourceMetrics: createResourceMetricsReader({
+        readMetrics: async () => {
+          const response = await fetch(
+            `https://api.supabase.com/v1/projects/${TARGET.ref}/analytics/endpoints/metrics`,
+            {
+              headers: { Authorization: `Bearer ${supabaseAccessToken}` },
+              signal: AbortSignal.timeout(10_000),
+            },
+          );
+          if (response.status !== 200) throw new Error("G11_RESOURCE_METRICS_UNAVAILABLE");
+          return response.text();
+        },
+        readWaits: () => managementQuery(SNAPSHOT_RESOURCE_WAIT_SQL, 10_000),
+      }),
       sourceSha,
       servedReleaseSha: expectedSha,
       fixtureProfile: snapshotDiagnosticWithFixture ? "resolved-lead" : "empty",

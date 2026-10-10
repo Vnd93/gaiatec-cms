@@ -44,6 +44,20 @@ export function resourceWaitMetrics(rows) {
     .join("\n");
 }
 
+// Infrastructure scrapes follow the documented one-minute cadence. Live wait
+// counts remain separate, fresh reads at the observer's bounded cadence.
+export function createResourceMetricsReader({ readMetrics, readWaits, now = Date.now }) {
+  let cached;
+  let fetchedAt = -Infinity;
+  return async () => {
+    if (cached === undefined || now() - fetchedAt >= 60_000) {
+      cached = await readMetrics();
+      fetchedAt = now();
+    }
+    return cached + "\n" + resourceWaitMetrics(await readWaits());
+  };
+}
+
 export function sanitizeResourceMetrics(text) {
   if (typeof text !== "string" || text.length > 4 * 1024 * 1024)
     throw new Error("G11_RESOURCE_METRICS_INVALID");

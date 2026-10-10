@@ -5,6 +5,7 @@ import {
   sanitizeResourceMetrics,
   resourceWaitMetrics,
   SNAPSHOT_RESOURCE_WAIT_SQL,
+  createResourceMetricsReader,
 } from "./snapshot-resource-lib.mjs";
 
 const metrics = `node_cpu_seconds_total{cpu="0",mode="idle",instance="SENSITIVE_SENTINEL"} 100
@@ -13,6 +14,38 @@ node_cpu_seconds_total{cpu="0",mode="user"} 20
 node_cpu_online{instance="SENSITIVE_SENTINEL"} 2
 pgrst_db_pool_waiting{user="SENSITIVE_SENTINEL"} 3
 unknown_private_metric{token="SENSITIVE_SENTINEL"} 999`;
+
+test("infrastructure metrics use a one-minute cadence while live waits stay independent", async () => {
+  let clock = 0;
+  let scrapes = 0;
+  let waits = 0;
+  const read = createResourceMetricsReader({
+    now: () => clock,
+    readMetrics: async () => {
+      scrapes++;
+      return metrics;
+    },
+    readWaits: async () => {
+      waits++;
+      return [
+        {
+          active_connections: 0,
+          active_lock_waits: 0,
+          active_io_waits: 0,
+          active_running: 0,
+          idle_transactions: 0,
+          blocked_connections: 0,
+        },
+      ];
+    },
+  });
+  for (clock = 0; clock < 60_000; clock += 5_000) await read();
+  assert.equal(scrapes, 1);
+  assert.equal(waits, 12);
+  await read();
+  assert.equal(scrapes, 2);
+  assert.equal(waits, 13);
+});
 
 test("live waits contain only bounded aggregate counts, never SQL text or session identities", () => {
   const row = {

@@ -72,6 +72,10 @@ export async function runSnapshotDiagnostic({
       response.status !== 200 ||
       response.json?.containsPersonalData !== false ||
       response.json?.environment !== "staging" ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(
+        response.json?.capturedAt ?? "",
+      ) ||
+      !Number.isFinite(Date.parse(response.json?.capturedAt)) ||
       !Number.isFinite(response.durationMs) ||
       response.durationMs < 0
     )
@@ -81,6 +85,7 @@ export async function runSnapshotDiagnostic({
       phase: index < 20 ? "warmup" : "measured",
       startedAt,
       finishedAt: new Date().toISOString(),
+      backendCapturedAt: new Date(response.json.capturedAt).toISOString(),
       serverMs: timing["admin-read"],
       rpcMs: timing["admin-rpc"],
       rateLimitMs: timing["admin-rate-limit"],
@@ -104,6 +109,8 @@ export async function runSnapshotDiagnostic({
     releaseEligible: false,
     fixtureProfile,
     protocol: { sequence: "serial", warmups: 20, measured: 20, estimator: "nearest-rank", percentile: 95 },
+    timeBasis:
+      "startedAt/finishedAt are host UTC; backendCapturedAt is database UTC; align before correlating cron or logs",
     samples,
     resources: resourceEvidence,
     database: {

@@ -24,7 +24,12 @@ const response = () => ({
   headers: new Headers({
     "server-timing": "admin-read;dur=20,admin-rpc;dur=18,admin-rate-limit;dur=1,admin-snapshot-db;dur=10",
   }),
-  json: { environment: "staging", containsPersonalData: false, ignored: "SENSITIVE_SENTINEL" },
+  json: {
+    environment: "staging",
+    capturedAt: "2026-10-10T00:00:00Z",
+    containsPersonalData: false,
+    ignored: "SENSITIVE_SENTINEL",
+  },
 });
 
 test("focused diagnostics are explicit, local-only and require a durable report destination", () => {
@@ -79,6 +84,7 @@ test("one serial window retains 20 warmups and 20 measured server samples, never
   assert.equal(evidence.adminReadP95Ms, 20);
   assert.equal(evidence.releaseEligible, false);
   assert.equal(evidence.fixtureProfile, "empty");
+  assert.equal(evidence.samples[0].backendCapturedAt, "2026-10-10T00:00:00.000Z");
   assert.equal(evidence.database.delta.calls, 40);
   assert.ok(
     evidence.samples.every((sample) => Date.parse(sample.finishedAt) >= Date.parse(sample.startedAt)),
@@ -154,6 +160,8 @@ test("malformed identity, counters and response timing fail closed without retri
     { headers: new Headers() },
     { durationMs: NaN },
     { json: { environment: "production", containsPersonalData: false } },
+    { json: { environment: "staging", containsPersonalData: false, capturedAt: "invalid" } },
+    { json: { environment: "staging", containsPersonalData: false, capturedAt: 0 } },
   ]) {
     let calls = 0;
     await assert.rejects(() =>

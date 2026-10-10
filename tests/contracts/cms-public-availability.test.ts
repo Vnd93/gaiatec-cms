@@ -162,13 +162,17 @@ describe("cms-public availability contract", () => {
     expect(driver).not.toContain("data: finallyRetiredForm.data");
   });
 
-  it("observes only traced staging primary post/entity reads without changing HTTP outcomes or consuming the body twice", () => {
+  it("observes only traced staging primary projection reads without changing HTTP outcomes or consuming the body twice", () => {
     const transport = readFileSync("supabase/functions/cms-public/post-read-transport.ts", "utf8");
     expect(publicApi).toContain('postReadTransport(req, environment, Deno.env.get("CMS_RELEASE_SHA"),');
     expect(publicApi).toContain("await observePostReadQuery(");
     expect(transport).toContain('lookup === "post-detail" ? "post"');
     expect(transport).toContain('lookup === "entity-detail" || lookup === "detail" ? "entity"');
-    expect(transport).toContain('lookup === "products" ? "collection" : null');
+    expect(transport).toContain('lookup === "products" ? "collection"');
+    expect(transport).toContain('lookup === "page-by-path" ? "page" : null');
+    expect(transport).toContain('url.searchParams.has("payload->route->>path")');
+    expect(transport).toContain('url.searchParams.get("content_type") === "in.(page,homepage)"');
+    expect(transport.match(/searchParams\.get\(/g)).toHaveLength(1);
     expect(transport).toContain("if (!binding || !category) return transport");
     expect(transport).toContain('!url.searchParams.has("slug")');
     expect(transport).toContain("resultKind: queryResultKind(result)");
@@ -188,8 +192,14 @@ describe("cms-public availability contract", () => {
     expect(transport).toContain("return response;");
     expect(transport).toContain("throw error;");
     expect(transport).not.toMatch(
-      /\.clone\(|response\.json|error\.(?:message|details)|setTimeout|x-region|searchParams\.(?:get|getAll|entries|values)/,
+      /\.clone\(|response\.json|error\.(?:message|details)|setTimeout|x-region|searchParams\.(?:getAll|entries|values)/,
     );
+    const page = section('if (type === "page-by-path")', 'if (type === "posts")');
+    expect(page).toContain("() => observePostReadQuery(");
+    for (const stage of ["primary", "managed-route", "legacy-route", "related", "form"]) {
+      expect(page).toContain(`observeFailure("${stage}")`);
+    }
+    expect(transport).toContain('if (!binding || binding.lookup !== "page-by-path") return null');
   });
 
   it("allows governed public images to be embedded from the cross-site Supabase proxy", () => {

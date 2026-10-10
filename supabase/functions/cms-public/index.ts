@@ -20,7 +20,7 @@ import { resolvePublicPagePathLookups } from "./page-path.ts";
 import { documentTrace } from "./document-trace.ts";
 import { formReadDiagnostic } from "./form-read-diagnostic.ts";
 import { formReadTransport } from "./form-read-transport.ts";
-import { observePostReadQuery, postReadTransport } from "./post-read-transport.ts";
+import { observePostReadQuery, pagePathFailureDiagnostic, postReadTransport } from "./post-read-transport.ts";
 import { authenticateCms } from "../_shared/cms-auth.ts";
 import {
   CMS_QA_RATE_LIMIT_ACTION,
@@ -780,15 +780,19 @@ const handleRequest = async (req: Request) => {
   if (type === "page-by-path") {
     const path = url.searchParams.get("path") ?? "";
     if (!publicPathPattern.test(path) || path.length > 300) return json({ error: "Não encontrado." }, 404);
+    const observeFailure = (stage: Parameters<typeof pagePathFailureDiagnostic>[3]) => {
+      const diagnostic = pagePathFailureDiagnostic(req, environment, Deno.env.get("CMS_RELEASE_SHA"), stage);
+      if (diagnostic) console.error(JSON.stringify(diagnostic));
+    };
     const pathLookup = await resolvePublicPagePathLookups(
-      () => client
+      () => observePostReadQuery(req, environment, Deno.env.get("CMS_RELEASE_SHA"), () => client
         .from("cms_published_projection")
         .select(PUBLISHED_PROJECTION_COLUMNS)
         .in("content_type", ["page", "homepage"])
         .eq("payload->route->>path", path)
         .order("published_at", { ascending: false })
         .limit(1)
-        .maybeSingle(),
+        .maybeSingle()),
       (signal) => client
         .from("cms_route_rules")
         .select("destination_path,status_code")
@@ -804,16 +808,22 @@ const handleRequest = async (req: Request) => {
         .abortSignal(signal)
         .maybeSingle(),
     );
-    if (pathLookup.kind === "page-error")
+    if (pathLookup.kind === "page-error") {
+      observeFailure("primary");
       return json({ error: "Conteúdo temporariamente indisponível." }, 503, { "Cache-Control": "no-store" });
+    }
     if (pathLookup.kind === "miss") {
       const { data: managedRule, error: managedRuleError } = pathLookup.managedRuleResult;
-      if (managedRuleError)
+      if (managedRuleError) {
+        observeFailure("managed-route");
         return json({ error: "Conteúdo temporariamente indisponível." }, 503, { "Cache-Control": "no-store" });
+      }
       if (managedRule) return json({ kind: "route", rule: presentRouteRule(managedRule) }, 200, { "Cache-Control": PUBLIC_REVALIDATE });
       const { data: legacyRule, error: legacyRuleError } = pathLookup.legacyRuleResult;
-      if (legacyRuleError)
+      if (legacyRuleError) {
+        observeFailure("legacy-route");
         return json({ error: "Conteúdo temporariamente indisponível." }, 503, { "Cache-Control": "no-store" });
+      }
       return legacyRule ? json({ kind: "route", rule: presentRouteRule(legacyRule) }, 200, { "Cache-Control": PUBLIC_REVALIDATE }) : json({ kind: "fallback" }, 200, { "Cache-Control": PUBLIC_REVALIDATE });
     }
     const row = pathLookup.row;
@@ -827,11 +837,15 @@ const handleRequest = async (req: Request) => {
     ]);
     if (!page) return json({ error: "Não encontrado." }, 404, { "Cache-Control": "no-store" });
     const { data: relatedRows, error: relatedError } = relatedResult;
-    if (relatedError)
+    if (relatedError) {
+      observeFailure("related");
       return json({ error: "Conteúdo temporariamente indisponível." }, 503, { "Cache-Control": "no-store" });
+    }
     const relatedItems = (relatedRows ?? []).map(summarizeRelated);
-    if (formBindings.error)
+    if (formBindings.error) {
+      observeFailure("form");
       return json({ error: "Formulário temporariamente indisponível." }, 503, { "Cache-Control": "no-store" });
+    }
     return json({
       kind: "page",
       page: {

@@ -5,7 +5,19 @@ const defaultLog: Log = (value) => console.log(JSON.stringify(value));
 const duration = (started: number) => Math.min(60000, Math.max(0, Math.round(performance.now() - started)));
 const projectionCategory = (lookup: string) => lookup === "post-detail" ? "post"
   : lookup === "entity-detail" || lookup === "detail" ? "entity"
-  : lookup === "products" ? "collection" : null;
+  : lookup === "products" ? "collection"
+  : lookup === "page-by-path" ? "page" : null;
+
+export function pagePathFailureDiagnostic(
+  req: Request,
+  environment: string | undefined,
+  release: string | undefined,
+  stage: "primary" | "managed-route" | "legacy-route" | "related" | "form",
+) {
+  const binding = documentTrace(req, environment, release);
+  if (!binding || binding.lookup !== "page-by-path") return null;
+  return { event: "cms.public.page.failure", ...binding, stage, observedAt: new Date().toISOString() };
+}
 
 // Classify only the SDK envelope; never read error messages, selectors or returned rows.
 function queryResultKind(result: unknown): string {
@@ -14,7 +26,7 @@ function queryResultKind(result: unknown): string {
   return "status" in result && result.status === 0 ? "transport_error" : "query_error";
 }
 
-// Only staging's traced primary post/entity/collection read is observed, not related reads.
+// Only staging's traced primary projection read is observed, not related or routing reads.
 export function postReadTransport(
   req: Request,
   environment: string | undefined,
@@ -29,7 +41,11 @@ export function postReadTransport(
   return async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
     const method = String(init?.method ?? (input instanceof Request ? input.method : "GET"));
-    const primarySelector = category === "collection"
+    const primarySelector = category === "page"
+      ? url.searchParams.has("payload->route->>path") &&
+        url.searchParams.get("content_type") === "in.(page,homepage)" &&
+        !url.searchParams.has("item_id") && !url.searchParams.has("slug")
+      : category === "collection"
       ? !url.searchParams.has("slug") && !url.searchParams.has("item_id")
       : url.searchParams.has("slug");
     if (url.origin !== "https://glcqsosxwgmlhzgcsnzv.supabase.co" ||

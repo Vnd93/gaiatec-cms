@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { boundedFetch } from "../../supabase/functions/_shared/cms-edge-fetch";
 import {
   observePostReadQuery,
+  pagePathFailureDiagnostic,
   postReadTransport,
 } from "../../supabase/functions/cms-public/post-read-transport";
 
@@ -14,6 +15,75 @@ const target =
   "https://glcqsosxwgmlhzgcsnzv.supabase.co/rest/v1/cms_published_projection?slug=private-selector";
 
 describe("staging post projection read correlation", () => {
+  it("observes only the exact primary page path read and preserves HTTP errors", async () => {
+    const request = new Request("https://example.invalid/?type=page-by-path&path=/private-selector", {
+      headers: { "x-cms-document-trace": trace },
+    });
+    const pageTarget = target.replace(
+      "slug=private-selector",
+      "content_type=in.(page,homepage)&payload-%3Eroute-%3E%3Epath=eq.private-selector",
+    );
+    const response = new Response("private-payload", { status: 503 });
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(response);
+    const log = vi.fn();
+    const fetcher = postReadTransport(request, "staging", release, transport, log);
+    for (const other of [
+      target,
+      pageTarget + "&item_id=eq.private-id",
+      pageTarget.replace("in.(page,homepage)", "eq.product"),
+    ])
+      await fetcher(other);
+    expect(log).not.toHaveBeenCalled();
+    const value = { data: null, error: { message: "private-error" }, status: 503 };
+    expect(
+      await observePostReadQuery(
+        request,
+        "staging",
+        release,
+        async () => {
+          expect(await fetcher(pageTarget)).toBe(response);
+          expect(await response.text()).toBe("private-payload");
+          return value;
+        },
+        log,
+      ),
+    ).toBe(value);
+    expect(log.mock.calls.map(([event]) => event.event)).toEqual([
+      "cms.public.page.query.start",
+      "cms.public.page.upstream.start",
+      "cms.public.page.upstream.finish",
+      "cms.public.page.body.start",
+      "cms.public.page.body.finish",
+      "cms.public.page.query.finish",
+    ]);
+    expect(log.mock.calls.at(-1)?.[0]).toMatchObject({ resultKind: "query_error" });
+    expect(new Headers(transport.mock.calls[3][1]?.headers).get("x-client-info")).toContain(
+      `cms-staging-page-trace/${trace}.1`,
+    );
+    expect(JSON.stringify(log.mock.calls)).not.toMatch(/private-|payload-|route-|message|data/);
+    expect(transport).toHaveBeenCalledTimes(4);
+  });
+  it("reports only closed page failure stages under the exact staging binding", () => {
+    const request = new Request("https://example.invalid/?type=page-by-path&path=/private-selector", {
+      headers: { "x-cms-document-trace": trace },
+    });
+    for (const stage of ["primary", "managed-route", "legacy-route", "related", "form"] as const) {
+      expect(pagePathFailureDiagnostic(request, "staging", release, stage)).toMatchObject({
+        event: "cms.public.page.failure",
+        trace,
+        release,
+        lookup: "page-by-path",
+        stage,
+      });
+      for (const environment of ["production", "local", undefined])
+        expect(pagePathFailureDiagnostic(request, environment, release, stage)).toBeNull();
+      expect(pagePathFailureDiagnostic(request, "staging", "unknown", stage)).toBeNull();
+      expect(pagePathFailureDiagnostic(req, "staging", release, stage)).toBeNull();
+    }
+    expect(JSON.stringify(pagePathFailureDiagnostic(request, "staging", release, "primary"))).not.toContain(
+      "private-selector",
+    );
+  });
   it("observes only the primary unfiltered product collection and preserves its 503", async () => {
     const request = new Request("https://example.invalid/?type=products", {
       headers: { "x-cms-document-trace": trace },
@@ -55,7 +125,7 @@ describe("staging post projection read correlation", () => {
     expect(JSON.stringify(log.mock.calls)).not.toMatch(/private-|content_type|message|data/);
     expect(transport).toHaveBeenCalledTimes(3);
   });
-  it.each(["entity-detail", "detail", "products"])(
+  it.each(["entity-detail", "detail", "products", "page-by-path"])(
     "leaves %s unobserved outside staging or without an exact binding",
     async (lookup) => {
       const request = new Request(`https://example.invalid/?type=${lookup}`, {
@@ -141,7 +211,7 @@ describe("staging post projection read correlation", () => {
     expect(log.mock.calls.at(-1)?.[0]).toMatchObject({ resultKind });
     expect(JSON.stringify(log.mock.calls)).not.toMatch(/private-|message|data/);
   });
-  it.each(["entity-detail", "detail", "products"])(
+  it.each(["entity-detail", "detail", "products", "page-by-path"])(
     "retains the original two 900ms attempts for %s",
     async (lookup) => {
       vi.useFakeTimers();
@@ -164,7 +234,14 @@ describe("staging post projection read correlation", () => {
           true,
         );
         const primaryTarget =
-          lookup === "products" ? target.replace("slug=private-selector", "content_type=eq.product") : target;
+          lookup === "page-by-path"
+            ? target.replace(
+                "slug=private-selector",
+                "content_type=in.(page,homepage)&payload-%3Eroute-%3E%3Epath=eq.private-selector",
+              )
+            : lookup === "products"
+              ? target.replace("slug=private-selector", "content_type=eq.product")
+              : target;
         const result = expect(fetcher(primaryTarget)).rejects.toThrow("CMS_EDGE_FETCH_TIMEOUT:");
         await vi.advanceTimersByTimeAsync(1800);
         await result;

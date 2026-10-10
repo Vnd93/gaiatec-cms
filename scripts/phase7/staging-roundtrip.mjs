@@ -7,6 +7,7 @@ import { buildPimPrerequisitePlan, provisionPimPrerequisites } from "../qa/cms-b
 import { buildGovernedProductFields, PRODUCT_PREREQUISITE_FLAGS } from "./product-prerequisites-lib.mjs";
 import { assertConsumedRealBrowserEvidence } from "../ev2/phase12/real-browser-release-evidence-lib.mjs";
 import { awaitCampaignExpiryEvidence, readCampaignExpirySnapshot } from "./campaign-expiry-evidence.mjs";
+import { observeEditorialPublication } from "./editorial-publication-observer.mjs";
 import {
   awaitScheduledPublicationEvidence,
   readScheduledPublicationSnapshot,
@@ -90,6 +91,7 @@ const createdUsers = [];
 const createdItems = [];
 const createdForms = [];
 const evidence = [];
+const editorialDiagnostics = [];
 let controlledProductClassification = null;
 let controlledProductSpecifications = null;
 const leaseActorPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -126,7 +128,7 @@ function decodeJwt(token) {
   return JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString("utf8"));
 }
 
-async function managementQuery(query, timeoutMs = 30_000) {
+async function managementQuery(query, timeoutMs = 30_000, observerSignal) {
   const response = await fetch(`https://api.supabase.com/v1/projects/${stagingProjectRef}/database/query`, {
     method: "POST",
     headers: {
@@ -134,7 +136,9 @@ async function managementQuery(query, timeoutMs = 30_000) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ query }),
-    signal: AbortSignal.timeout(timeoutMs),
+    signal: observerSignal
+      ? AbortSignal.any([observerSignal, AbortSignal.timeout(timeoutMs)])
+      : AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
@@ -352,6 +356,12 @@ async function expectInvoke(fn, actor, body, status = 200, options = {}) {
   return result;
 }
 async function editorial(actor, body, status = 200, key) {
+  if (body.action === "publish")
+    return observeEditorialPublication({
+      operation: () => expectInvoke("cms-content", actor, body, status, { key }),
+      sample: (query, signal) => managementQuery(query, 1_000, signal),
+      report: (diagnostic) => editorialDiagnostics.push(diagnostic),
+    });
   return expectInvoke("cms-content", actor, body, status, { key });
 }
 async function leadCommand(actor, body, status = 200) {
@@ -1822,7 +1832,7 @@ try {
   process.exitCode = 1;
 } finally {
   const cleanupEvidence = await cleanup();
-  report = { ...report, cleanup: cleanupEvidence };
+  report = { ...report, cleanup: cleanupEvidence, editorialDiagnostics };
 }
 if (positiveLeadControls && report.status === "passed") {
   assertRealBrowserLeadControls(

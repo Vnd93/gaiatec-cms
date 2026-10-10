@@ -848,8 +848,14 @@ async function handleRequest(request, env, observe) {
       observe,
       // Generated here, never copied from the visitor. This is not an authorization token.
       trace:
-        new Set(["page-by-path", "entity-detail", "detail", "redirect"]).has(params.type) &&
-        deploymentEnvironment(url, env) === "staging"
+        new Set([
+          "page-by-path",
+          "entity-detail",
+          "detail",
+          "redirect",
+          "post-detail",
+          "campaign-by-path",
+        ]).has(params.type) && deploymentEnvironment(url, env) === "staging"
           ? crypto.randomUUID()
           : null,
     });

@@ -75,6 +75,29 @@ afterEach(() => {
 });
 
 describe("cms-public transport retry", () => {
+  it.each([
+    ["/blog/artigo-arquivado", "post-detail"],
+    ["/campanhas/campanha", "campaign-by-path"],
+  ])("correlates %s without changing its single-request failure policy", async (path, lookup) => {
+    const network = vi.fn(async () => new Response(null, { status: 503 }));
+    vi.stubGlobal("fetch", network);
+    const response = await worker.fetch(
+      new Request(`${origin}${path}`, {
+        headers: { "x-cms-document-trace": "visitor-private-value" },
+      }),
+      environment(),
+    );
+    expect(response.status).toBe(503);
+    expect(network).toHaveBeenCalledTimes(1);
+    const call = network.mock.calls[0] as unknown as [URL, RequestInit];
+    expect(call[0].searchParams.get("type")).toBe(lookup);
+    const trace = response.headers.get("X-CMS-Document-Trace");
+    expect(trace).toMatch(/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/);
+    expect(new Headers(call[1].headers).get("x-cms-document-trace")).toBe(`${trace}.1`);
+    expect(response.headers.get("X-CMS-Upstream")).toMatch(/^other;http;1;503;\d+$/);
+    expect([...response.headers].join()).not.toContain("visitor-private-value");
+  });
+
   it("binds both staging attempts to a fresh trace and ignores visitor-supplied markers", async () => {
     const network = vi.fn(async () => {
       throw new TypeError("not-recorded");
@@ -96,19 +119,19 @@ describe("cms-public transport retry", () => {
     expect([...response.headers].join()).not.toContain("visitor-private-value");
   });
 
-  it("never sends document correlation headers to the production backend", async () => {
-    const network = vi.fn(async () => new Response(null, { status: 503 }));
-    vi.stubGlobal("fetch", network);
-    const response = await worker.fetch(
-      new Request("https://www.gaiatec.com.br/managed-page"),
-      environment(),
-    );
-    expect(response.headers.has("X-CMS-Document-Trace")).toBe(false);
-    for (const call of network.mock.calls) {
-      const init = (call as unknown as [unknown, RequestInit])[1];
-      expect(new Headers(init.headers).has("x-cms-document-trace")).toBe(false);
-    }
-  });
+  it.each(["/managed-page", "/blog/artigo-arquivado", "/campanhas/campanha"])(
+    "never sends document correlation headers to the production backend for %s",
+    async (path) => {
+      const network = vi.fn(async () => new Response(null, { status: 503 }));
+      vi.stubGlobal("fetch", network);
+      const response = await worker.fetch(new Request(`https://www.gaiatec.com.br${path}`), environment());
+      expect(response.headers.has("X-CMS-Document-Trace")).toBe(false);
+      for (const call of network.mock.calls) {
+        const init = (call as unknown as [unknown, RequestInit])[1];
+        expect(new Headers(init.headers).has("x-cms-document-trace")).toBe(false);
+      }
+    },
+  );
 
   it("isolates diagnostics between concurrent requests", async () => {
     const network = vi.fn(async (input: RequestInfo | URL) => {

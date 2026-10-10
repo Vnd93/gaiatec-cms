@@ -14,7 +14,7 @@ describe("staging document trace boundary", () => {
     expect(documentTrace(request(), "staging", release)).toEqual({ trace, release, lookup: "page-by-path" });
     expect(documentTrace(request(trace.replace(/1$/, "2")), "staging", release)?.trace).toMatch(/\.2$/);
   });
-  it.each(["entity-detail", "detail", "redirect", "form"])(
+  it.each(["entity-detail", "detail", "redirect", "form", "post-detail", "campaign-by-path"])(
     "correlates only allowlisted metadata: %s",
     (lookup) => {
       expect(documentTrace(request(trace, lookup), "staging", release)?.lookup).toBe(lookup);

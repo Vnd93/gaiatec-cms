@@ -1061,13 +1061,15 @@ const handleRequest = async (req: Request) => {
   if (type === "detail" || type === "entity-detail") {
     const slug = url.searchParams.get("slug") ?? "", domain = url.searchParams.get("contentType") ?? "product";
     if (!slugPattern.test(slug) || !searchableTypes.includes(domain)) return json({ error: "Não encontrado." }, 404);
-    const { data: row, error: detailError } = await client
+    const { data: row, error: detailError } = await observePostReadQuery(
+      req, environment, Deno.env.get("CMS_RELEASE_SHA"), () => client
       .from("cms_published_projection")
       .select(PUBLISHED_PROJECTION_COLUMNS)
       .eq("content_type", domain)
       .eq("slug", slug)
       .limit(1)
-      .maybeSingle();
+      .maybeSingle(),
+    );
     if (detailError)
       return json({ error: "Conteúdo temporariamente indisponível." }, 503, { "Cache-Control": "no-store" });
     if (!row) return json({ error: "Não encontrado." }, 404, { "Cache-Control": PUBLIC_REVALIDATE });

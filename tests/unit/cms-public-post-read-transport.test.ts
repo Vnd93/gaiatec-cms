@@ -14,6 +14,118 @@ const target =
   "https://glcqsosxwgmlhzgcsnzv.supabase.co/rest/v1/cms_published_projection?slug=private-selector";
 
 describe("staging post projection read correlation", () => {
+  it.each(["entity-detail", "detail"])(
+    "leaves %s unobserved outside staging or without an exact binding",
+    async (lookup) => {
+      const request = new Request(`https://example.invalid/?type=${lookup}`, {
+        headers: { "x-cms-document-trace": trace },
+      });
+      const transport = vi.fn<typeof fetch>();
+      for (const environment of ["production", "local", undefined]) {
+        const log = vi.fn();
+        expect(postReadTransport(request, environment, release, transport, log)).toBe(transport);
+        const value = { data: "private-row", error: null };
+        expect(await observePostReadQuery(request, environment, release, async () => value, log)).toBe(value);
+        expect(log).not.toHaveBeenCalled();
+      }
+      expect(postReadTransport(request, "staging", "unknown", transport)).toBe(transport);
+      expect(
+        postReadTransport(
+          new Request(`https://example.invalid/?type=${lookup}`),
+          "staging",
+          release,
+          transport,
+        ),
+      ).toBe(transport);
+    },
+  );
+  it.each(["entity-detail", "detail"])(
+    "correlates primary %s headers, body and query without logging content",
+    async (lookup) => {
+      const request = new Request(`https://example.invalid/?type=${lookup}&slug=private-selector`, {
+        headers: { "x-cms-document-trace": trace },
+      });
+      const response = new Response('{"private-payload":true}', { status: 503 });
+      const transport = vi.fn<typeof fetch>().mockResolvedValue(response);
+      const log = vi.fn();
+      const fetcher = postReadTransport(request, "staging", release, transport, log);
+      const value = { data: null, error: { message: "private-error", code: "private-code" }, status: 503 };
+      expect(
+        await observePostReadQuery(
+          request,
+          "staging",
+          release,
+          async () => {
+            expect(await fetcher(target)).toBe(response);
+            expect(await response.text()).toBe('{"private-payload":true}');
+            return value;
+          },
+          log,
+        ),
+      ).toBe(value);
+      expect(transport).toHaveBeenCalledTimes(1);
+      expect(new Headers(transport.mock.calls[0][1]?.headers).get("x-client-info")).toContain(
+        `cms-staging-entity-trace/${trace}.1`,
+      );
+      expect(log.mock.calls.map(([event]) => event.event)).toEqual([
+        "cms.public.entity.query.start",
+        "cms.public.entity.upstream.start",
+        "cms.public.entity.upstream.finish",
+        "cms.public.entity.body.start",
+        "cms.public.entity.body.finish",
+        "cms.public.entity.query.finish",
+      ]);
+      expect(log.mock.calls.at(-1)?.[0]).toMatchObject({ trace, release, lookup, resultKind: "query_error" });
+      expect(JSON.stringify(log.mock.calls)).not.toMatch(/private-|slug=|message|code|data/);
+    },
+  );
+  it("excludes related projection reads without consuming primary attempts", async () => {
+    const transport = vi.fn<typeof fetch>().mockImplementation(async () => new Response("[]"));
+    const log = vi.fn();
+    const fetcher = postReadTransport(req, "staging", release, transport, log);
+    await fetcher(target.replace("slug=private-selector", "item_id=in.(private-selector)"));
+    expect(log).not.toHaveBeenCalled();
+    await fetcher(target);
+    await fetcher(target);
+    expect(log.mock.calls.filter(([event]) => event.event.endsWith("upstream.start"))).toHaveLength(2);
+    expect(transport).toHaveBeenCalledTimes(3);
+  });
+  it.each([
+    [{ data: "private-row", error: null, status: 200 }, "success"],
+    [{ data: null, error: { message: "private-error" }, status: 0 }, "transport_error"],
+    [{ data: null, error: { message: "private-error" }, status: 503 }, "query_error"],
+  ])("classifies only the envelope and preserves the result", async (value, resultKind) => {
+    const log = vi.fn();
+    expect(await observePostReadQuery(req, "staging", release, async () => value, log)).toBe(value);
+    expect(log.mock.calls.at(-1)?.[0]).toMatchObject({ resultKind });
+    expect(JSON.stringify(log.mock.calls)).not.toMatch(/private-|message|data/);
+  });
+  it.each(["entity-detail", "detail"])("retains the original two 900ms attempts for %s", async (lookup) => {
+    vi.useFakeTimers();
+    try {
+      const request = new Request(`https://example.invalid/?type=${lookup}`, {
+        headers: { "x-cms-document-trace": trace },
+      });
+      const log = vi.fn();
+      const transport = vi.fn<typeof fetch>(
+        (_input, init) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => reject(new Error("private-error")), { once: true });
+          }),
+      );
+      const fetcher = boundedFetch(900, postReadTransport(request, "staging", release, transport, log), true);
+      const result = expect(fetcher(target)).rejects.toThrow("CMS_EDGE_FETCH_TIMEOUT:");
+      await vi.advanceTimersByTimeAsync(1800);
+      await result;
+      expect(transport).toHaveBeenCalledTimes(2);
+      expect(
+        log.mock.calls.filter(([event]) => event.event.endsWith("finish")).map(([event]) => event.outcome),
+      ).toEqual(["deadline", "deadline"]);
+      expect(JSON.stringify(log.mock.calls)).not.toContain("private-error");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it.each(["local", "production", undefined])("leaves %s transport untouched", (environment) => {
     const transport = vi.fn<typeof fetch>();
     expect(postReadTransport(req, environment, release, transport)).toBe(transport);

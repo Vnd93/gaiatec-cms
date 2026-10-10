@@ -148,11 +148,22 @@ describe("cms-public availability contract", () => {
     expect(driver).not.toContain("data: finallyRetiredForm.data");
   });
 
-  it("observes only the traced staging post read without changing HTTP outcomes or consuming its body twice", () => {
+  it("observes only traced staging primary post/entity reads without changing HTTP outcomes or consuming the body twice", () => {
     const transport = readFileSync("supabase/functions/cms-public/post-read-transport.ts", "utf8");
     expect(publicApi).toContain('postReadTransport(req, environment, Deno.env.get("CMS_RELEASE_SHA"),');
     expect(publicApi).toContain("await observePostReadQuery(");
-    expect(transport).toContain('if (!binding || binding.lookup !== "post-detail") return transport');
+    expect(transport).toContain('lookup === "post-detail" ? "post"');
+    expect(transport).toContain('lookup === "entity-detail" || lookup === "detail" ? "entity" : null');
+    expect(transport).toContain("if (!binding || !category) return transport");
+    expect(transport).toContain('!url.searchParams.has("slug")');
+    expect(transport).toContain("resultKind: queryResultKind(result)");
+    const entity = section(
+      'if (type === "detail" || type === "entity-detail")',
+      'if (!["products", "collection"',
+    );
+    expect(entity).toContain("await observePostReadQuery(");
+    expect(entity).toContain("if (detailError)");
+    expect(entity).toContain('503, { "Cache-Control": "no-store" }');
     expect(transport).toContain('url.origin !== "https://glcqsosxwgmlhzgcsnzv.supabase.co"');
     expect(transport).toContain('url.pathname !== "/rest/v1/cms_published_projection"');
     expect(transport).toContain('method !== "GET"');
@@ -162,7 +173,7 @@ describe("cms-public availability contract", () => {
     expect(transport).toContain("return response;");
     expect(transport).toContain("throw error;");
     expect(transport).not.toMatch(
-      /\.clone\(|response\.json|error\.(?:message|details)|setTimeout|x-region|searchParams/,
+      /\.clone\(|response\.json|error\.(?:message|details)|setTimeout|x-region|searchParams\.(?:get|getAll|entries|values)/,
     );
   });
 

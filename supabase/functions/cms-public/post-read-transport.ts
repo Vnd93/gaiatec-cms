@@ -3,8 +3,17 @@ import { documentTrace } from "./document-trace.ts";
 type Log = (value: Record<string, unknown>) => void;
 const defaultLog: Log = (value) => console.log(JSON.stringify(value));
 const duration = (started: number) => Math.min(60000, Math.max(0, Math.round(performance.now() - started)));
+const projectionCategory = (lookup: string) => lookup === "post-detail" ? "post"
+  : lookup === "entity-detail" || lookup === "detail" ? "entity" : null;
 
-// Only staging's traced post projection read is observed. Never read selectors or response bytes.
+// Classify only the SDK envelope; never read error messages, selectors or returned rows.
+function queryResultKind(result: unknown): string {
+  if (!result || typeof result !== "object" || !("error" in result)) return "unclassified";
+  if (!result.error) return "success";
+  return "status" in result && result.status === 0 ? "transport_error" : "query_error";
+}
+
+// Only staging's traced primary post/entity projection read is observed, not related reads.
 export function postReadTransport(
   req: Request,
   environment: string | undefined,
@@ -13,21 +22,23 @@ export function postReadTransport(
   log: Log = defaultLog,
 ): typeof fetch {
   const binding = documentTrace(req, environment, release);
-  if (!binding || binding.lookup !== "post-detail") return transport;
+  const category = binding && projectionCategory(binding.lookup);
+  if (!binding || !category) return transport;
   let attempts = 0;
   return async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
     const method = String(init?.method ?? (input instanceof Request ? input.method : "GET"));
     if (url.origin !== "https://glcqsosxwgmlhzgcsnzv.supabase.co" ||
-      url.pathname !== "/rest/v1/cms_published_projection" || method !== "GET" || attempts >= 2)
+      url.pathname !== "/rest/v1/cms_published_projection" || !url.searchParams.has("slug") ||
+      method !== "GET" || attempts >= 2)
       return transport(input, init);
     const attempt = ++attempts;
     const upstreamTrace = `${binding.trace}.${attempt}`;
     const common = { ...binding, upstreamTrace, attempt };
     const emit = (stage: string, fields: Record<string, unknown> = {}) =>
-      log({ event: `cms.public.post.${stage}`, ...common, observedAt: new Date().toISOString(), ...fields });
+      log({ event: `cms.public.${category}.${stage}`, ...common, observedAt: new Date().toISOString(), ...fields });
     const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
-    headers.set("x-client-info", `${headers.get("x-client-info") ?? "supabase"} cms-staging-post-trace/${upstreamTrace}`);
+    headers.set("x-client-info", `${headers.get("x-client-info") ?? "supabase"} cms-staging-${category}-trace/${upstreamTrace}`);
     const started = performance.now();
     emit("upstream.start");
     try {
@@ -67,14 +78,15 @@ export async function observePostReadQuery<T>(
   log: Log = defaultLog,
 ): Promise<T> {
   const binding = documentTrace(req, environment, release);
-  if (!binding || binding.lookup !== "post-detail") return await read();
+  const category = binding && projectionCategory(binding.lookup);
+  if (!binding || !category) return await read();
   const started = performance.now();
   const emit = (stage: string, fields: Record<string, unknown> = {}) =>
-    log({ event: `cms.public.post.query.${stage}`, ...binding, observedAt: new Date().toISOString(), ...fields });
+    log({ event: `cms.public.${category}.query.${stage}`, ...binding, observedAt: new Date().toISOString(), ...fields });
   emit("start");
   try {
     const result = await read();
-    emit("finish", { durationMs: duration(started), outcome: "settled" });
+    emit("finish", { durationMs: duration(started), outcome: "settled", resultKind: queryResultKind(result) });
     return result;
   } catch (error) {
     emit("finish", { durationMs: duration(started), outcome: "rejected" });

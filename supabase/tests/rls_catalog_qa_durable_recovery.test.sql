@@ -120,7 +120,7 @@ select is((select status from public.cms_catalog_current_editorial where term_id
 select is((select count(*)::integer from public.cms_catalog_publication_outbox where product_id=pg_temp.cat_uid(20) and status in ('pending','processing','failed')),0,'no active outbox residue');
 select is((select count(*)::integer from public.cms_catalog_product_terms where product_id=pg_temp.cat_uid(20)),0,'current mapping retired with immutable audit retained');
 select throws_ok($$delete from public.cms_catalog_audit_events where entity_id=pg_temp.cat_uid(20)::text$$,
-  '55000',null,'recovery does not weaken immutable audit');
+  '42501','CMS audit records are immutable','recovery does not weaken immutable audit');
 select lives_ok($$select private.cms_catalog_compensate_qa_recovery((select id from cat_manifest))$$,'terminal compensation is idempotent');
 select throws_ok($$select private.cms_catalog_recovery_actor('product',pg_temp.cat_uid(20))$$,
   '42501','CMS_CATALOG_ACTOR_REQUIRED','terminal manifest cannot be reused as actor authority');

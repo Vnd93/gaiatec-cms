@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { mockCmsPublicFallbacks } from "./cms-public-mock";
 import { type ConsoleEntry, relevantConsoleErrors } from "./console-origins";
 import { publicDocumentFailureDiagnostic } from "./public-document-diagnostics";
+import { observePublicPageRender, publicRenderState } from "./public-render-diagnostics";
 
 test.beforeEach(async ({ page, baseURL }) => {
   if (!baseURL?.includes("pages.dev")) await mockCmsPublicFallbacks(page);
@@ -110,19 +111,38 @@ test("staging exposes the clean-room launch projection", async ({ page, baseURL 
     ["/solucoes/instrumentacao-monitoramento-remoto", "Instrumentação e Monitoramento Remoto"],
   ] as const) {
     await test.step(`${path} renders the expected launch projection`, async () => {
+      const render = observePublicPageRender(page, path);
       const navigationStartedAt = performance.now();
-      const response = await page.goto(path, { waitUntil: "load" });
-      const diagnostic =
-        response?.status() === 200
-          ? ""
-          : await publicDocumentFailureDiagnostic(path, response, performance.now() - navigationStartedAt);
-      expect(response?.status(), `${path}: document HTTP status${diagnostic ? `; ${diagnostic}` : ""}`).toBe(
-        200,
-      );
-      await expect(page.getByRole("heading", { name: heading, level: 1 })).toBeVisible();
-      expect(await page.locator("body").evaluate((body) => body.scrollWidth <= body.clientWidth + 1)).toBe(
-        true,
-      );
+      try {
+        const response = await page.goto(path, { waitUntil: "load" });
+        const diagnostic =
+          response?.status() === 200
+            ? ""
+            : await publicDocumentFailureDiagnostic(path, response, performance.now() - navigationStartedAt);
+        expect(
+          response?.status(),
+          `${path}: document HTTP status${diagnostic ? `; ${diagnostic}` : ""}`,
+        ).toBe(200);
+        await expect(page.getByRole("heading", { name: heading, level: 1 })).toBeVisible();
+        expect(await page.locator("body").evaluate((body) => body.scrollWidth <= body.clientWidth + 1)).toBe(
+          true,
+        );
+      } catch (error) {
+        const states = {
+          loading: await publicRenderState(page.locator('.cms-managed-page__loading[aria-busy="true"]')),
+          unavailable: await publicRenderState(
+            page.getByRole("heading", { name: "Não foi possível carregar a publicação segura", exact: true }),
+          ),
+          notFound: await publicRenderState(
+            page.getByRole("heading", { name: "Não encontramos o conteúdo solicitado", exact: true }),
+          ),
+        };
+        throw new Error(`Launch projection failed; ${JSON.stringify({ ...render.snapshot(), states })}`, {
+          cause: error,
+        });
+      } finally {
+        render.dispose();
+      }
     });
   }
 });

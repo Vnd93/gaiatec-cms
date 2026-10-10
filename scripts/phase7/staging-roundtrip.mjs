@@ -1360,7 +1360,10 @@ async function run() {
     reason: `Arquivamento final ${runTag}`,
   });
   const finallyRetiredForm = await publicApi({ type: "form", key: formKey });
-  assert(finallyRetiredForm.status === 204, "Formulário sintético não terminou arquivado");
+  assert(finallyRetiredForm.status === 204, "Formulário sintético não terminou arquivado", {
+    status: finallyRetiredForm.status,
+    diagnostic: finallyRetiredForm.diagnostic,
+  });
   record("Ciclo público do formulário", {
     archiveStatus: retiredPublicForm.status,
     restoredVersion: restoredPublicForm.data.version,

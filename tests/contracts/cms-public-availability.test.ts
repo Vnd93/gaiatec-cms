@@ -129,6 +129,25 @@ describe("cms-public availability contract", () => {
     );
   });
 
+  it("correlates staging form transport without changing read budgets or leaking response bodies", () => {
+    const transport = readFileSync("supabase/functions/cms-public/form-read-transport.ts", "utf8");
+    const driver = readFileSync("scripts/phase7/staging-roundtrip.mjs", "utf8");
+    expect(publicApi).toContain("const PUBLIC_UPSTREAM_TIMEOUT_MS = 900");
+    expect(publicApi).toContain("fetch: boundedFetch(PUBLIC_UPSTREAM_TIMEOUT_MS,");
+    expect(publicApi).toContain(
+      'formReadTransport(req, environment, Deno.env.get("CMS_RELEASE_SHA")), true)',
+    );
+    expect(transport).toContain('url.origin !== "https://glcqsosxwgmlhzgcsnzv.supabase.co"');
+    expect(transport).toContain('url.pathname !== "/rest/v1/rpc/cms_public_form_scoped"');
+    expect(transport).toContain('method !== "GET"');
+    expect(transport).toContain("attempts >= 2");
+    expect(transport).not.toMatch(/response\.(?:json|text)|error\.(?:message|details)|setTimeout|x-region/);
+    expect(driver).toContain('"Formulário sintético não terminou arquivado", {');
+    expect(driver).toContain("status: finallyRetiredForm.status");
+    expect(driver).toContain("diagnostic: finallyRetiredForm.diagnostic");
+    expect(driver).not.toContain("data: finallyRetiredForm.data");
+  });
+
   it("allows governed public images to be embedded from the cross-site Supabase proxy", () => {
     const media = section('if (type === "media")', 'if (type === "document")');
 

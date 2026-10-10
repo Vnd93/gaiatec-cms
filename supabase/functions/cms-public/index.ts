@@ -19,6 +19,7 @@ import { publicFormReadArguments, resolveGovernedPublicFormBindings } from "../_
 import { resolvePublicPagePathLookups } from "./page-path.ts";
 import { documentTrace } from "./document-trace.ts";
 import { formReadDiagnostic } from "./form-read-diagnostic.ts";
+import { formReadTransport } from "./form-read-transport.ts";
 import { authenticateCms } from "../_shared/cms-auth.ts";
 import {
   CMS_QA_RATE_LIMIT_ACTION,
@@ -223,7 +224,8 @@ const handleRequest = async (req: Request) => {
   // prazo bem abaixo desse teto, para que a funcao responda dentro da janela de quem espera em vez de
   // ser abandonada nela.
   const client = createClient(supabaseUrl, service ?? anon, {
-    global: { fetch: boundedFetch(PUBLIC_UPSTREAM_TIMEOUT_MS, fetch, true) },
+    global: { fetch: boundedFetch(PUBLIC_UPSTREAM_TIMEOUT_MS,
+      formReadTransport(req, environment, Deno.env.get("CMS_RELEASE_SHA")), true) },
     auth: { persistSession: false },
   });
   const publicEndpoint = `${supabaseUrl}/functions/v1/cms-public`;

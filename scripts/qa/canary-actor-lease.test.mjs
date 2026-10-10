@@ -84,11 +84,12 @@ test("explicit completion is followed by an authoritative cleaned-status read", 
 });
 
 test("all final staging canaries lease before privilege and revoke every active access surface", async () => {
-  const [g11, g17, phase7, watchdog] = await Promise.all([
+  const [g11, g17, phase7, watchdog, g11SessionRevocation] = await Promise.all([
     readFile("scripts/ev2/phase11/staging-canary.mjs", "utf8"),
     readFile("scripts/ev2/phase17/staging-canary.mjs", "utf8"),
     readFile("scripts/phase7/staging-roundtrip.mjs", "utf8"),
     readFile("supabase/migrations/0061_cms_qa_actor_lease_watchdog.sql", "utf8"),
+    readFile("scripts/ev2/phase11/qa-session-revocation-lib.mjs", "utf8"),
   ]);
 
   for (const source of [g11, g17, phase7]) {
@@ -103,10 +104,17 @@ test("all final staging canaries lease before privilege and revoke every active 
     assert.match(source, /cms_published_projection/);
     assert.match(source, /cms_route_rules/);
     assert.match(source, /workflow_status: "archived"/);
-    assert.match(source, /delete from auth\.sessions where user_id/);
+    assert.match(source === g11 ? g11SessionRevocation : source, /delete from auth\.sessions where user_id/);
     assert.match(source, /sessions_valid_after/);
     assert.match(source, /ban_duration: "876000h"/);
   }
+  assert.match(g11, /import \{ revokeStagingQaSessions \} from "\.\/qa-session-revocation-lib\.mjs"/);
+  assert.match(g11, /await attempt\(`sessions:\$\{actorId\}`, \(\) =>\s*revokeStagingQaSessions\(/);
+  assert.match(g11SessionRevocation, /auth\/v1\/logout\?scope=global/);
+  assert.match(g11SessionRevocation, /await assertQaActorLease\(invokeLeaseRpc, identity, "active"\)/);
+  assert.match(g11SessionRevocation, /response\.status !== 204/);
+  assert.match(g11, /select count\(\*\)::integer as count from auth\.sessions/);
+  assert.match(g11, /remaining\.activeSessions === 0/);
   assert.match(
     g11,
     /actorIds\.push\(created\.json\.id\);[\s\S]*assertQaActorLease\([\s\S]*await rest\(ctx, "cms_profiles"/,

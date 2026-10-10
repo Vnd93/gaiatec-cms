@@ -11,8 +11,116 @@ import {
   summarizeDurations,
 } from "./system-assurance-lib.mjs";
 import { resolveStableBaseline } from "./stable-baseline-lib.mjs";
+import { revokeStagingQaSessions } from "./qa-session-revocation-lib.mjs";
 
 const read = (path) => readFile(path, "utf8");
+
+function qaSessionFixture() {
+  const identity = {
+    actorId: "00000000-0000-4000-8000-000000000001",
+    runTag: "QA-CMS-FINAL-20261010-aaaaaaaa",
+    candidateSha: "a".repeat(40),
+    environment: "staging",
+  };
+  const token = `test.${Buffer.from(JSON.stringify({ sub: identity.actorId, session_id: "test-session" })).toString("base64url")}.test`;
+  const calls = [];
+  return {
+    identity,
+    token,
+    anonKey: "test-key",
+    calls,
+    invokeLeaseRpc: async () => {
+      calls.push("lease");
+      return {
+        schemaVersion: 1,
+        ...identity,
+        status: "active",
+        ttlSeconds: 14400,
+        failureCount: 0,
+        swept: false,
+      };
+    },
+    managementQuery: async () => {
+      throw new Error("platform SQL unavailable");
+    },
+    fetchImpl: async (url, options) => {
+      calls.push("logout");
+      assert.equal(url, "https://glcqsosxwgmlhzgcsnzv.supabase.co/auth/v1/logout?scope=global");
+      assert.equal(options.method, "POST");
+      assert.equal(options.headers.Authorization, `Bearer ${token}`);
+      assert.ok(options.signal instanceof AbortSignal);
+      return { status: 204 };
+    },
+  };
+}
+
+test("G11 removes signed-in QA sessions via Auth even when platform SQL is unavailable", async () => {
+  const fixture = qaSessionFixture();
+  await revokeStagingQaSessions(fixture);
+  assert.deepEqual(fixture.calls, ["lease", "logout"]);
+});
+
+test("G11 refuses foreign environments, actor tokens and non-active leases before session mutation", async () => {
+  for (const change of [
+    { identity: { ...qaSessionFixture().identity, environment: "production" } },
+    { identity: { ...qaSessionFixture().identity, actorId: "00000000-0000-4000-8000-000000000002" } },
+    { token: "invalid" },
+    { invokeLeaseRpc: async () => ({ status: "cleaned" }) },
+  ]) {
+    const fixture = qaSessionFixture();
+    await assert.rejects(revokeStagingQaSessions({ ...fixture, ...change }));
+    assert.ok(!fixture.calls.includes("logout"));
+  }
+});
+
+test("G11 refuses every non-204 Auth response without retries, fallback or sensitive error bodies", async () => {
+  for (const status of [200, 401, 403, 404, 502, 503]) {
+    const fixture = qaSessionFixture();
+    let requests = 0;
+    await assert.rejects(
+      revokeStagingQaSessions({
+        ...fixture,
+        fetchImpl: async () => {
+          requests += 1;
+          return { status, text: () => fixture.token };
+        },
+      }),
+      new RegExp(`^Error: G11_QA_SESSION_REVOCATION_FAILED:${status}$`),
+    );
+    assert.equal(requests, 1);
+  }
+  await assert.rejects(
+    revokeStagingQaSessions({
+      ...qaSessionFixture(),
+      fetchImpl: async () => {
+        throw new Error("sensitive transport payload");
+      },
+    }),
+    /^Error: G11_QA_SESSION_REVOCATION_TRANSPORT_FAILED$/,
+  );
+});
+
+test("G11 still revokes partial fixtures only after exact lease proof and preserves terminal gates", async () => {
+  const fixture = qaSessionFixture();
+  let query;
+  await revokeStagingQaSessions({
+    ...fixture,
+    token: undefined,
+    managementQuery: async (sql) => {
+      fixture.calls.push("partial-sql");
+      query = sql;
+    },
+  });
+  assert.deepEqual(fixture.calls, ["lease", "partial-sql"]);
+  assert.equal(query, `delete from auth.sessions where user_id = '${fixture.identity.actorId}'::uuid`);
+  const canary = await read("scripts/ev2/phase11/staging-canary.mjs");
+  assert.match(canary, /actorSessionTokens\.set\(created\.json\.id, aal1Token\)/);
+  assert.match(canary, /actorSessionTokens\.set\(created\.json\.id, token\)/);
+  assert.match(canary, /remaining\.activeSessions === 0/);
+  assert.match(canary, /select count\(\*\)::integer as count from auth\.sessions/);
+  assert.match(canary, /completeQaActorLease\(/);
+  assert.match(canary, /remaining\.retainedLeaseAuditEvents >= actorIds\.length \* 2/);
+});
 
 function response(status, type, json) {
   return { status, headers: new Headers({ "Content-Type": type }), json };

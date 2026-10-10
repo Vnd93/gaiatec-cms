@@ -11,6 +11,7 @@ import {
   serverTimingDuration,
 } from "./system-assurance-lib.mjs";
 import { resolveStableBaseline } from "./stable-baseline-lib.mjs";
+import { revokeStagingQaSessions } from "./qa-session-revocation-lib.mjs";
 import { validateHealthContract, validateReleaseManifest } from "../phase12/release-guard-lib.mjs";
 import {
   assertQaActorLease,
@@ -48,6 +49,7 @@ const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
 const fixturePrefix = "g11-" + suffix;
 const checks = [];
 const actorIds = [];
+const actorSessionTokens = new Map();
 let context;
 let operator;
 let reviewer;
@@ -357,6 +359,7 @@ async function createActor(ctx, roleKey, label) {
   const signedIn = await client.auth.signInWithPassword({ email, password });
   if (signedIn.error || !signedIn.data.session) throw signedIn.error ?? new Error("AAL1 ausente.");
   const aal1Token = signedIn.data.session.access_token;
+  actorSessionTokens.set(created.json.id, aal1Token);
   const enrolled = await client.auth.mfa.enroll({ factorType: "totp", friendlyName: "EV2 G11 " + label });
   if (enrolled.error) throw enrolled.error;
   let lastError;
@@ -370,6 +373,7 @@ async function createActor(ctx, roleKey, label) {
     });
     const token = verified.data?.session?.access_token ?? verified.data?.access_token;
     if (!verified.error && token) {
+      actorSessionTokens.set(created.json.id, token);
       await rest(ctx, "cms_profiles", {
         method: "PATCH",
         query: "user_id=eq." + created.json.id,
@@ -779,7 +783,13 @@ async function closeSyntheticResidue(ctx) {
       }),
     );
     await attempt(`sessions:${actorId}`, () =>
-      managementQuery(`delete from auth.sessions where user_id = '${actorId}'::uuid`),
+      revokeStagingQaSessions({
+        identity: { actorId, runTag: qaRunTag, candidateSha: expectedSha, environment: "staging" },
+        token: actorSessionTokens.get(actorId),
+        anonKey: ctx.anonKey,
+        invokeLeaseRpc: (name, body) => leaseRpc(ctx, name, body),
+        managementQuery,
+      }),
     );
     await attempt(`credentials:${actorId}`, () =>
       request(ctx.url + "/auth/v1/admin/users/" + actorId, {

@@ -3,6 +3,54 @@ import { documentTrace } from "./document-trace.ts";
 type Log = (value: Record<string, unknown>) => void;
 const defaultLog: Log = (value) => console.log(JSON.stringify(value));
 const duration = (started: number) => Math.min(60000, Math.max(0, Math.round(performance.now() - started)));
+type DnsProbe = (hostname: string, record: "A", options: { signal: AbortSignal }) => Promise<string[]>;
+const errorKinds = new Set(["AbortError", "TimeoutError", "TypeError", "NotFound", "NotCapable", "PermissionDenied", "NotSupported", "TimedOut", "ConnectionRefused", "ConnectionReset", "UnexpectedEof"]);
+function errorKind(error: unknown): string {
+  const name = error instanceof Error ? error.name : "";
+  return errorKinds.has(name) ? name : "other";
+}
+function runtimeDnsProbe(): DnsProbe | undefined {
+  const runtime = (globalThis as typeof globalThis & { Deno?: { resolveDns?: DnsProbe } }).Deno;
+  return typeof runtime?.resolveDns === "function" ? runtime.resolveDns.bind(runtime) : undefined;
+}
+
+// Independent resolver reachability, NOT timings of fetch's internal DNS/TCP/TLS phases.
+// One A lookup per traced staging request, no HTTP request, address logging, changed
+// transport or extra wait. Its lifetime ends at the existing fetch cancellation/settlement.
+function observeResolver(probe: DnsProbe | undefined, signal: AbortSignal | undefined,
+  emit: (stage: string, fields?: Record<string, unknown>) => void): () => void {
+  if (!probe) {
+    emit("dns.probe.finish", { outcome: "unsupported" });
+    return () => {};
+  }
+  const controller = new AbortController();
+  const started = performance.now();
+  let finished = false;
+  const finish = (outcome: string, fields: Record<string, unknown> = {}) => {
+    if (finished) return;
+    finished = true;
+    signal?.removeEventListener("abort", cancel);
+    emit("dns.probe.finish", { durationMs: duration(started), outcome, ...fields });
+  };
+  const cancel = () => {
+    finish("fetch_cancelled");
+    controller.abort();
+  };
+  if (signal?.aborted) cancel();
+  else {
+    signal?.addEventListener("abort", cancel, { once: true });
+    // Own sync throws and async rejection; diagnostic failure never changes the read.
+    void Promise.resolve().then(() => {
+      if (controller.signal.aborted) return [];
+      return probe("glcqsosxwgmlhzgcsnzv.supabase.co", "A", { signal: controller.signal });
+    }).then((records) => finish("resolved", { recordCount: Math.min(16, records.length) }),
+      (error) => finish("resolver_error", { errorKind: errorKind(error) }));
+  }
+  return () => {
+    finish("fetch_settled");
+    controller.abort();
+  };
+}
 const projectionCategory = (lookup: string) => lookup === "post-detail" ? "post"
   : lookup === "entity-detail" || lookup === "detail" ? "entity"
   : lookup === "products" ? "collection"
@@ -33,6 +81,7 @@ export function postReadTransport(
   release: string | undefined,
   transport: typeof fetch = fetch,
   log: Log = defaultLog,
+  dnsProbe: DnsProbe | undefined = runtimeDnsProbe(),
 ): typeof fetch {
   const binding = documentTrace(req, environment, release);
   const category = binding && projectionCategory(binding.lookup);
@@ -60,7 +109,9 @@ export function postReadTransport(
     const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
     headers.set("x-client-info", `${headers.get("x-client-info") ?? "supabase"} cms-staging-${category}-trace/${upstreamTrace}`);
     const started = performance.now();
-    emit("upstream.start");
+    emit("upstream.start", { resolverProbeSupported: Boolean(dnsProbe) });
+    const stopResolver = attempt === 1 && dnsProbe
+      ? observeResolver(dnsProbe, init?.signal ?? undefined, emit) : () => {};
     try {
       const response = await transport(input, { ...init, headers });
       emit("upstream.finish", { durationMs: duration(started), outcome: "response", status: response.status });
@@ -84,8 +135,10 @@ export function postReadTransport(
       const outcome = init?.signal?.aborted
         ? ((init.signal.reason as DOMException | undefined)?.name === "TimeoutError" ? "deadline" : "cancelled")
         : "transport_error";
-      emit("upstream.finish", { durationMs: duration(started), outcome });
+      emit("upstream.finish", { durationMs: duration(started), outcome, errorKind: errorKind(error) });
       throw error;
+    } finally {
+      stopResolver();
     }
   };
 }

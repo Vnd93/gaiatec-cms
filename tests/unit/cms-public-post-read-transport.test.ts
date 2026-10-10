@@ -15,6 +15,128 @@ const target =
   "https://glcqsosxwgmlhzgcsnzv.supabase.co/rest/v1/cms_published_projection?slug=private-selector";
 
 describe("staging post projection read correlation", () => {
+  it("observes independent resolver reachability without awaiting or replacing fetch", async () => {
+    const log = vi.fn();
+    const probe = vi.fn().mockResolvedValue(["private-network-address"]);
+    let complete!: (response: Response) => void;
+    const transport = vi.fn<typeof fetch>(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+    );
+    const fetcher = postReadTransport(req, "staging", release, transport, log, probe);
+    const result = fetcher(target, { headers: { apikey: "private-key" } });
+    await vi.waitFor(() => expect(log.mock.calls.some(([event]) => event.outcome === "resolved")).toBe(true));
+    const response = new Response("private-body", { status: 503 });
+    complete(response);
+    expect(await result).toBe(response);
+    expect(transport).toHaveBeenCalledTimes(1);
+    expect(probe).toHaveBeenCalledTimes(1);
+    expect(probe.mock.calls[0].slice(0, 2)).toEqual(["glcqsosxwgmlhzgcsnzv.supabase.co", "A"]);
+    expect(log.mock.calls.find(([event]) => event.event.endsWith("dns.probe.finish"))?.[0]).toMatchObject({
+      outcome: "resolved",
+      recordCount: 1,
+      upstreamTrace: `${trace}.1`,
+    });
+    expect(JSON.stringify(log.mock.calls)).not.toMatch(/private-|supabase\.co|apikey|slug=/);
+  });
+  it("cancels a stalled resolver within the existing two-attempt 900ms budget", async () => {
+    vi.useFakeTimers();
+    try {
+      const log = vi.fn();
+      const probe = vi.fn(
+        (_host, _record, options) =>
+          new Promise<string[]>((_resolve, reject) => {
+            options.signal.addEventListener("abort", () => reject(new Error("private-dns-error")), {
+              once: true,
+            });
+          }),
+      );
+      const transport = vi.fn<typeof fetch>(
+        (_input, init) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener(
+              "abort",
+              () => reject(new DOMException("private-error", "TimeoutError")),
+              { once: true },
+            );
+          }),
+      );
+      const fetcher = boundedFetch(
+        900,
+        postReadTransport(req, "staging", release, transport, log, probe),
+        true,
+      );
+      const result = expect(fetcher(target)).rejects.toThrow("CMS_EDGE_FETCH_TIMEOUT:");
+      await vi.advanceTimersByTimeAsync(1800);
+      await result;
+      expect(transport).toHaveBeenCalledTimes(2);
+      expect(probe).toHaveBeenCalledTimes(1);
+      expect(probe.mock.calls[0][2].signal.aborted).toBe(true);
+      expect(log.mock.calls.filter(([event]) => event.event.endsWith("dns.probe.finish"))).toHaveLength(1);
+      expect(log.mock.calls.find(([event]) => event.event.endsWith("dns.probe.finish"))?.[0].outcome).toBe(
+        "fetch_cancelled",
+      );
+      expect(
+        log.mock.calls
+          .filter(([event]) => event.event.endsWith("upstream.finish"))
+          .map(([event]) => event.outcome),
+      ).toEqual(["deadline", "deadline"]);
+      expect(JSON.stringify(log.mock.calls)).not.toContain("private-");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("stops independent observation when fetch settles even if the resolver ignores cancellation", async () => {
+    const log = vi.fn();
+    const probe = vi.fn(
+      (_host: string, _record: "A", _options: { signal: AbortSignal }) => new Promise<string[]>(() => {}),
+    );
+    const response = new Response("[]");
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(response);
+    expect(await postReadTransport(req, "staging", release, transport, log, probe)(target)).toBe(response);
+    expect(probe.mock.calls[0][2].signal.aborted).toBe(true);
+    expect(log.mock.calls.find(([event]) => event.event.endsWith("dns.probe.finish"))?.[0].outcome).toBe(
+      "fetch_settled",
+    );
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+  it("sanitizes resolver and native transport errors without changing them", async () => {
+    const log = vi.fn();
+    const probe = vi.fn(() => {
+      throw new TypeError("private-host-secret");
+    });
+    const error = new Error("private-url-cookie");
+    error.name = "private-error-name";
+    let rejectTransport!: (error: Error) => void;
+    const transport = vi.fn<typeof fetch>(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectTransport = reject;
+        }),
+    );
+    const result = postReadTransport(req, "staging", release, transport, log, probe)(target);
+    const rejection = expect(result).rejects.toBe(error);
+    await vi.waitFor(() =>
+      expect(log.mock.calls.some(([event]) => event.outcome === "resolver_error")).toBe(true),
+    );
+    rejectTransport(error);
+    await rejection;
+    expect(log.mock.calls.find(([event]) => event.outcome === "resolver_error")?.[0].errorKind).toBe(
+      "TypeError",
+    );
+    expect(log.mock.calls.find(([event]) => event.outcome === "transport_error")?.[0].errorKind).toBe(
+      "other",
+    );
+    expect(JSON.stringify(log.mock.calls)).not.toMatch(/private-|stack|cause/);
+  });
+  it.each(["production", "local", undefined])("does not probe DNS in %s", async (environment) => {
+    const probe = vi.fn();
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(new Response("[]"));
+    expect(postReadTransport(req, environment, release, transport, vi.fn(), probe)).toBe(transport);
+    expect(probe).not.toHaveBeenCalled();
+  });
   it("observes only the exact primary page path read and preserves HTTP errors", async () => {
     const request = new Request("https://example.invalid/?type=page-by-path&path=/private-selector", {
       headers: { "x-cms-document-trace": trace },

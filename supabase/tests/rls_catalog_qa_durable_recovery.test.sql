@@ -99,12 +99,21 @@ create function pg_temp.foreign_history() returns void language plpgsql as $$
 begin
   insert into public.cms_catalog_product_revisions(product_id,revision,slug,title,lifecycle_status,publication_state,content,changed_by)
     values(pg_temp.cat_uid(20),99,'qa-durable-product','Foreign history','draft','draft','{}',pg_temp.cat_uid(2));
-  perform private.cms_catalog_compensate_qa_recovery((select id from cat_manifest));
+  update private.cms_qa_actor_leases set status='expired',swept_at=clock_timestamp()
+    where actor_id=pg_temp.cat_uid(1);
 end;
 $$;
 select throws_ok($$select pg_temp.foreign_history()$$,'55000','CMS_CATALOG_RECOVERY_FOREIGN_STATE','mixed historical actor aborts compensation atomically');
 select is((select state from private.cms_catalog_qa_recovery where manifest_id=(select id from cat_manifest)),'prepared','failed recovery leaves durable intent retriable, not falsely cleaned');
-select lives_ok($$select private.cms_catalog_compensate_qa_recovery((select id from cat_manifest))$$,'exact owned catalog can be compensated without fake JWT claims');
+select is((select status from private.cms_qa_actor_leases where actor_id=pg_temp.cat_uid(1)),
+  'active','failed terminal compensation rolls back the lease transition');
+select set_config('cms.catalog_terminal_actor','',true);
+select lives_ok($$update private.cms_qa_actor_leases set status='expired',swept_at=clock_timestamp()
+  where actor_id=pg_temp.cat_uid(1)$$,'terminal lease trigger compensates exact owned catalog without fake JWT claims');
+select is((select status from private.cms_qa_actor_leases where actor_id=pg_temp.cat_uid(1)),
+  'expired','lease becomes terminal only after catalog compensation succeeds');
+select is(coalesce(nullif(current_setting('cms.catalog_terminal_actor',true),''),''),'',
+  'terminal trigger restores the prior actor selector');
 select is((select state from private.cms_catalog_qa_recovery where manifest_id=(select id from cat_manifest)),'cleaned','manifest terminal only after residue checks');
 select is((select count(*)::integer from public.cms_catalog_products where id=pg_temp.cat_uid(20) and catalog_lifecycle_state='active'),0,'zero active synthetic products');
 select is((select count(*)::integer from public.cms_catalog_taxonomy_terms where id=pg_temp.cat_uid(10) and status<>'inactive'),0,'zero active synthetic taxonomy');

@@ -1114,10 +1114,12 @@ const handleRequest = async (req: Request) => {
   const requiresBoundedScan = Boolean(query || requested.length || hasFacetFilter);
   const scanLimit = requiresBoundedScan ? SEARCH_SCAN_LIMIT : limit;
   const scanOffset = requiresBoundedScan ? 0 : offset;
-  const { data: publishedRows, error: collectionError, count: collectionCount } = await projectionQuery
+  const { data: publishedRows, error: collectionError, count: collectionCount } = await observePostReadQuery(
+    req, environment, Deno.env.get("CMS_RELEASE_SHA"), () => projectionQuery
     .order("published_at", { ascending: false })
     .order("item_id", { ascending: true })
-    .range(scanOffset, scanOffset + scanLimit - 1);
+    .range(scanOffset, scanOffset + scanLimit - 1),
+  );
   if (collectionError)
     return json({ error: "Conteúdo temporariamente indisponível." }, 503, { "Cache-Control": "no-store" });
   const published = publishedRows ?? [];

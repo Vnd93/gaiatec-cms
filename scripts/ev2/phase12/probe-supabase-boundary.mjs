@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 const environment = process.env.CMS_BACKEND_ENVIRONMENT;
 const url = String(process.env.CMS_BACKEND_URL ?? "").replace(/\/$/, "");
 const anonKey = process.env.CMS_BACKEND_ANON_KEY ?? "";
@@ -26,12 +28,16 @@ const check = (name, condition, detail) => {
   checks.push({ name, result: condition ? "PASS" : "FAIL", detail });
   if (!condition) throw new Error(`${name}:${detail}`);
 };
-const request = async (functionName, { method = "POST", requestOrigin = origin, query = "", body } = {}) => {
+const request = async (
+  functionName,
+  { method = "POST", requestOrigin = origin, query = "", body, trace } = {},
+) => {
   const response = await fetch(`${url}/functions/v1/${functionName}${query}`, {
     method,
     headers: {
       apikey: anonKey,
       Origin: requestOrigin,
+      ...(trace ? { "x-cms-document-trace": trace } : {}),
       ...(body === undefined ? {} : { "Content-Type": "application/json" }),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -47,10 +53,31 @@ const request = async (functionName, { method = "POST", requestOrigin = origin, 
   return { response, payload, text };
 };
 
+const collectionTrace = environment === "staging" ? `${randomUUID()}.1` : undefined;
+const collectionStarted = performance.now();
+if (collectionTrace)
+  console.log(
+    JSON.stringify({
+      event: "g12.supabase.boundary.collection.start",
+      trace: collectionTrace,
+      observedAt: new Date().toISOString(),
+    }),
+  );
 const collection = await request("cms-public", {
   method: "GET",
   query: "?type=products&contentType=product",
+  trace: collectionTrace,
 });
+if (collectionTrace)
+  console.log(
+    JSON.stringify({
+      event: "g12.supabase.boundary.collection",
+      trace: collectionTrace,
+      observedAt: new Date().toISOString(),
+      durationMs: Math.min(60000, Math.max(0, Math.round(performance.now() - collectionStarted))),
+      status: collection.response.status,
+    }),
+  );
 check("public_collection_available", collection.response.status === 200, collection.response.status);
 check("public_collection_contract", Array.isArray(collection.payload?.items), "items");
 check(

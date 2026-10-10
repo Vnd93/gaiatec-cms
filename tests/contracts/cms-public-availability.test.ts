@@ -18,6 +18,20 @@ function section(start: string, end: string): string {
 }
 
 describe("cms-public availability contract", () => {
+  it("traces the primary product collection without changing its fail-closed gate", () => {
+    const collection = section("const requiresBoundedScan", "const published = publishedRows");
+    const driver = readFileSync("scripts/ev2/phase12/probe-supabase-boundary.mjs", "utf8");
+    expect(collection).toContain("await observePostReadQuery(");
+    expect(collection).toContain(".range(scanOffset, scanOffset + scanLimit - 1)");
+    expect(collection).toContain("if (collectionError)");
+    expect(collection).toContain('503, { "Cache-Control": "no-store" }');
+    expect(driver).toContain('environment === "staging" ? `${randomUUID()}.1` : undefined');
+    expect(driver).toContain('"x-cms-document-trace": trace');
+    expect(driver).toContain('check("public_collection_available", collection.response.status === 200');
+    expect(driver).toContain("AbortSignal.timeout(20_000)");
+    expect(driver.match(/await fetch\(/g)).toHaveLength(1);
+    expect(driver).not.toMatch(/console\.(?:log|error)\((?:text|payload|response|anonKey)/);
+  });
   it("diagnoses traced staging form failures without changing response or retry policy", () => {
     const form = section('if (type === "form")', 'if (type === "campaign-by-path")');
     const roundtrip = readFileSync("scripts/phase7/staging-roundtrip.mjs", "utf8");
@@ -153,7 +167,8 @@ describe("cms-public availability contract", () => {
     expect(publicApi).toContain('postReadTransport(req, environment, Deno.env.get("CMS_RELEASE_SHA"),');
     expect(publicApi).toContain("await observePostReadQuery(");
     expect(transport).toContain('lookup === "post-detail" ? "post"');
-    expect(transport).toContain('lookup === "entity-detail" || lookup === "detail" ? "entity" : null');
+    expect(transport).toContain('lookup === "entity-detail" || lookup === "detail" ? "entity"');
+    expect(transport).toContain('lookup === "products" ? "collection" : null');
     expect(transport).toContain("if (!binding || !category) return transport");
     expect(transport).toContain('!url.searchParams.has("slug")');
     expect(transport).toContain("resultKind: queryResultKind(result)");

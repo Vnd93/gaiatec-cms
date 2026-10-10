@@ -1075,6 +1075,7 @@ jobs:
           # workflow is allowed to swap even the staging-only public backend.
           EV2_G12_WARMUP_SAMPLES_PER_ROUTE: "20"
           EV2_G12_REPORT_PATH: ../staging-bridge-preview-current-backend-probe.json
+          EV2_G12_DIAGNOSTICS_PATH: ../staging-bridge-preview-current-backend-diagnostics.json
           EV2_G12_READINESS_ATTEMPTS: "20"
           EV2_G12_READINESS_INTERVAL_MS: "4000"
       - name: Plan the temporary legacy public backend swap without mutating anything
@@ -1634,6 +1635,7 @@ jobs:
             staging-bridge-baseline-probe.json
             staging-bridge-baseline-diagnostics.json
             staging-bridge-preview-current-backend-probe.json
+            staging-bridge-preview-current-backend-diagnostics.json
             staging-bridge-preview-convergence-*.json
             staging-bridge-preview-probe.json
             staging-bridge-canonical-convergence-*.json

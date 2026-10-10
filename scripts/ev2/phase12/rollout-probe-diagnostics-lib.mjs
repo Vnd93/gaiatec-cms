@@ -25,6 +25,36 @@ const CF_RAY_PATTERN = /^[a-f0-9]{8,32}-[a-z0-9]{3}$/i;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 export const MAX_PROBE_DIAGNOSTICS = 100;
 
+function safeWorkerDiagnostic(value) {
+  const upstream = value?.workerUpstream;
+  if (
+    typeof upstream !== "string" ||
+    !Number.isSafeInteger(value.status) ||
+    value.status < 500 ||
+    value.status > 599
+  )
+    return {};
+  const match =
+    /^(page-by-path|entity-detail|detail|redirect|other);(http|timeout|transport|unconfigured);([0-2]);(0|[1-5][0-9]{2});([0-9]{1,5})$/.exec(
+      upstream,
+    );
+  if (!match || Number(match[5]) > 60_000) return {};
+  const result = { workerUpstream: upstream };
+  if (
+    typeof value.documentTrace === "string" &&
+    /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value.documentTrace)
+  )
+    result.documentTrace = value.documentTrace;
+  if (
+    typeof value.observedAt === "string" &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value.observedAt) &&
+    Number.isFinite(Date.parse(value.observedAt)) &&
+    new Date(value.observedAt).toISOString() === value.observedAt
+  )
+    result.observedAt = value.observedAt;
+  return result;
+}
+
 function boundedNumber(value, maximum = 120_000) {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.min(value, maximum) : null;
 }
@@ -42,7 +72,7 @@ function parsedEdgeDuration(headers) {
   return boundedNumber(match ? Number(match[1]) : null);
 }
 
-function diagnosticHeaders(headers) {
+function diagnosticHeaders(headers, status) {
   const ray = headers.get("cf-ray") ?? "";
   const cfRay = CF_RAY_PATTERN.test(ray) ? ray : null;
   const cache = (headers.get("cf-cache-status") ?? "").toUpperCase();
@@ -51,6 +81,12 @@ function diagnosticHeaders(headers) {
     colo: cfRay ? cfRay.slice(cfRay.lastIndexOf("-") + 1).toUpperCase() : null,
     edgeDurationMs: parsedEdgeDuration(headers),
     cfCacheStatus: CACHE_STATUSES.has(cache) ? cache : null,
+    ...safeWorkerDiagnostic({
+      status,
+      workerUpstream: headers.get("x-cms-upstream"),
+      documentTrace: headers.get("x-cms-document-trace"),
+      observedAt: new Date().toISOString(),
+    }),
   };
 }
 
@@ -90,7 +126,7 @@ export async function observeProbeRequest({
     const diagnosticBase = {
       ...baseDiagnostic({ route, category, ordinal, expectedStatus, ttfbMs }),
       status: response.status,
-      ...diagnosticHeaders(response.headers),
+      ...diagnosticHeaders(response.headers, response.status),
     };
     try {
       const body = new Uint8Array(await response.arrayBuffer());
@@ -142,7 +178,7 @@ export async function observeProbeRequest({
   }
 }
 
-function sanitizedDiagnostic(value) {
+function sanitizedDiagnostic(value, environment) {
   if (!value || !DIAGNOSTIC_ROUTES.has(value.route) || !DIAGNOSTIC_CATEGORIES.has(value.category))
     return null;
   const errorClass = ERROR_CLASSES.has(value.errorClass) ? value.errorClass : "network";
@@ -165,6 +201,7 @@ function sanitizedDiagnostic(value) {
       typeof value.bodySha256 === "string" && SHA256_PATTERN.test(value.bodySha256) ? value.bodySha256 : null,
     bodyComplete: value.bodyComplete === true,
     errorClass,
+    ...(environment === "staging" ? safeWorkerDiagnostic(value) : {}),
   };
 }
 
@@ -178,7 +215,7 @@ export function buildFailureProbeDiagnostics({
   if (!Array.isArray(violations) || violations.length === 0) return null;
   const safe = Array.isArray(diagnostics)
     ? diagnostics.flatMap((item) => {
-        const sanitized = sanitizedDiagnostic(item);
+        const sanitized = sanitizedDiagnostic(item, environment);
         return sanitized ? [sanitized] : [];
       })
     : [];

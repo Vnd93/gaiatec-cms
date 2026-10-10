@@ -10,6 +10,76 @@ import {
 
 const sha = "a".repeat(40);
 
+test("rejects invalid status, trace, time and unbounded Worker fields", () => {
+  const base = {
+    route: "/contato",
+    category: "route",
+    ordinal: 1,
+    expectedStatus: 200,
+    status: 503,
+    workerUpstream: "page-by-path;timeout;2;503;2900",
+    documentTrace: "12345678-1234-4234-8234-123456789abc",
+    observedAt: "2026-10-10T04:10:00.000Z",
+  };
+  const report = (changes) =>
+    buildFailureProbeDiagnostics({
+      violations: ["http_5xx_budget_exceeded"],
+      candidateSha: sha,
+      environment: "staging",
+      probeProfile: "full",
+      diagnostics: [{ ...base, ...changes }],
+    }).observations[0];
+  for (const status of [undefined, NaN, "503", 499, 600, 503.5])
+    assert.equal(report({ status }).workerUpstream, undefined);
+  for (const workerUpstream of [
+    "page-by-path;timeout;2;503;60001",
+    "page-by-path;timeout;3;503;2900",
+    "page-by-path;timeout;2;999;2900",
+  ])
+    assert.equal(report({ workerUpstream }).workerUpstream, undefined);
+  assert.equal(report({ documentTrace: "Bearer secret" }).documentTrace, undefined);
+  assert.equal(report({ observedAt: "2026-02-30T04:10:00.000Z" }).observedAt, undefined);
+});
+
+test("preserves closed staging Worker failure correlation without accepting arbitrary headers", async () => {
+  const trace = "12345678-1234-4234-8234-123456789abc";
+  for (const upstream of ["page-by-path;timeout;2;503;2900", "secret;token;9;999;999999"])
+    for (const environment of ["staging", "production"]) {
+      const result = await observeProbeRequest({
+        route: "/contato",
+        category: "route",
+        ordinal: 1,
+        expectedStatus: 200,
+        fetchResponse: async () =>
+          new Response(null, {
+            status: 503,
+            headers: {
+              "X-CMS-Upstream": upstream,
+              "X-CMS-Document-Trace": trace,
+              Authorization: "Bearer secret",
+            },
+          }),
+      });
+      const report = buildFailureProbeDiagnostics({
+        violations: ["http_5xx_budget_exceeded"],
+        candidateSha: sha,
+        environment,
+        probeProfile: "full",
+        diagnostics: [result.diagnostic],
+      });
+      const observation = report.observations[0];
+      if (environment === "staging" && upstream.startsWith("page-by-path")) {
+        assert.equal(observation.workerUpstream, upstream);
+        assert.equal(observation.documentTrace, trace);
+        assert.ok(Number.isFinite(Date.parse(observation.observedAt)));
+      } else {
+        assert.equal(observation.workerUpstream, undefined);
+        assert.equal(observation.documentTrace, undefined);
+      }
+      assert.doesNotMatch(JSON.stringify(report), /secret|Authorization|Bearer/);
+    }
+});
+
 test("measures TTFB at headers and drains the complete response afterwards", async () => {
   const bytes = new TextEncoder().encode("controlled response");
   let bodyDrainStarted = false;

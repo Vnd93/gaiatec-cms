@@ -987,6 +987,10 @@ test("the legacy public backend is swapped in under an exclusive lease and alway
     currentBackendProbeBlock,
     /EV2_G12_REPORT_PATH: \.\.\/staging-bridge-preview-current-backend-probe\.json/,
   );
+  assert.match(
+    currentBackendProbeBlock,
+    /EV2_G12_DIAGNOSTICS_PATH: \.\.\/staging-bridge-preview-current-backend-diagnostics\.json/,
+  );
   const previewConvergenceBlock = workflow.slice(previewConvergence, previewProbe);
   assert.match(previewConvergenceBlock, /id: preview_convergence/);
   assert.match(previewConvergenceBlock, /if: steps\.legacy_engage\.outcome == 'success'/);
@@ -1054,6 +1058,7 @@ test("the legacy public backend is swapped in under an exclusive lease and alway
   assert.match(workflow, /^\s+staging-bridge-baseline-probe\.json$/m);
   assert.match(workflow, /^\s+staging-bridge-baseline-diagnostics\.json$/m);
   assert.match(workflow, /^\s+staging-bridge-preview-current-backend-probe\.json$/m);
+  assert.match(workflow, /^\s+staging-bridge-preview-current-backend-diagnostics\.json$/m);
   assert.match(workflow, /^\s+staging-bridge-preview-convergence-\*\.json$/m);
   assert.match(workflow, /^\s+staging-bridge-preview-probe\.json$/m);
   assert.match(workflow, /^\s+staging-bridge-canonical-convergence-\*\.json$/m);

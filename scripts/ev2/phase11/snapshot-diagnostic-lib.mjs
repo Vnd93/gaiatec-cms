@@ -1,4 +1,5 @@
 import { percentile, serverTimingDuration } from "./system-assurance-lib.mjs";
+import { createResourceObserver } from "./snapshot-resource-lib.mjs";
 
 // These statements expose counts and timings only, never SQL text or identities.
 export const SNAPSHOT_DATABASE_DIAGNOSTIC_SQL = `
@@ -43,6 +44,7 @@ function databaseCounters(rows) {
 export async function runSnapshotDiagnostic({
   readSnapshot,
   readDatabase,
+  readResourceMetrics,
   sourceSha,
   servedReleaseSha,
   fixtureProfile = "empty",
@@ -53,8 +55,10 @@ export async function runSnapshotDiagnostic({
     throw new Error("G11_SNAPSHOT_DIAGNOSTIC_SHA_INVALID");
   const before = databaseCounters(await readDatabase(SNAPSHOT_DATABASE_DIAGNOSTIC_SQL));
   const samples = [];
+  const resources = readResourceMetrics ? createResourceObserver(readResourceMetrics) : null;
   // One window only; same sample counts and server metric as the normative gate.
   for (let index = 0; index < 40; index += 1) {
+    resources?.sample();
     const startedAt = new Date().toISOString();
     const response = await readSnapshot();
     const timing = Object.fromEntries(
@@ -85,6 +89,7 @@ export async function runSnapshotDiagnostic({
     });
   }
   const after = databaseCounters(await readDatabase(SNAPSHOT_DATABASE_DIAGNOSTIC_SQL));
+  const resourceEvidence = resources ? await resources.finish() : null;
   const comparable =
     before.statsReset === after.statsReset &&
     ["calls", "total_ms", "shared_hits", "shared_reads"].every((key) => after[key] >= before[key]);
@@ -100,6 +105,7 @@ export async function runSnapshotDiagnostic({
     fixtureProfile,
     protocol: { sequence: "serial", warmups: 20, measured: 20, estimator: "nearest-rank", percentile: 95 },
     samples,
+    resources: resourceEvidence,
     database: {
       comparable,
       before,

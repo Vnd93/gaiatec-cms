@@ -1020,6 +1020,17 @@ try {
     finalEvidence = await runSnapshotDiagnostic({
       readSnapshot: () => system(context, operator, "snapshot"),
       readDatabase: managementQuery,
+      readResourceMetrics: async () => {
+        const response = await fetch(
+          `https://api.supabase.com/v1/projects/${TARGET.ref}/analytics/endpoints/metrics`,
+          {
+            headers: { Authorization: `Bearer ${supabaseAccessToken}` },
+            signal: AbortSignal.timeout(10_000),
+          },
+        );
+        if (response.status !== 200) throw new Error("G11_RESOURCE_METRICS_UNAVAILABLE");
+        return response.text();
+      },
       sourceSha,
       servedReleaseSha: expectedSha,
       fixtureProfile: snapshotDiagnosticWithFixture ? "resolved-lead" : "empty",

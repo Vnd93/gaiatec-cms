@@ -100,6 +100,29 @@ test("changed or decreasing statistics cannot be used as a comparable delta", as
   }
 });
 
+test("resource observation adds no snapshot retries and reports unavailable metrics without raw errors", async () => {
+  let snapshots = 0;
+  let metricReads = 0;
+  const evidence = await runSnapshotDiagnostic({
+    sourceSha: sha,
+    servedReleaseSha: sha,
+    readSnapshot: async () => {
+      snapshots++;
+      return response();
+    },
+    readDatabase: async () => counter(snapshots + 10),
+    readResourceMetrics: async () => {
+      metricReads++;
+      throw new Error("SENSITIVE_SENTINEL");
+    },
+  });
+  assert.equal(snapshots, 40);
+  assert.equal(metricReads, 1);
+  assert.equal(evidence.resources.failureCode, "G11_RESOURCE_METRICS_UNAVAILABLE");
+  assert.equal(evidence.releaseEligible, false);
+  assert.ok(!JSON.stringify(evidence).includes("SENSITIVE_SENTINEL"));
+});
+
 test("fixture comparison labels the cohort and rejects unknown profiles before any request", async () => {
   let reads = 0;
   await assert.rejects(() =>

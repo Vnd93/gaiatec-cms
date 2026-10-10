@@ -135,7 +135,7 @@ describe("cms-public availability contract", () => {
     expect(publicApi).toContain("const PUBLIC_UPSTREAM_TIMEOUT_MS = 900");
     expect(publicApi).toContain("fetch: boundedFetch(PUBLIC_UPSTREAM_TIMEOUT_MS,");
     expect(publicApi).toContain(
-      'formReadTransport(req, environment, Deno.env.get("CMS_RELEASE_SHA")), true)',
+      'formReadTransport(req, environment, Deno.env.get("CMS_RELEASE_SHA"))), true)',
     );
     expect(transport).toContain('url.origin !== "https://glcqsosxwgmlhzgcsnzv.supabase.co"');
     expect(transport).toContain('url.pathname !== "/rest/v1/rpc/cms_public_form_scoped"');
@@ -146,6 +146,24 @@ describe("cms-public availability contract", () => {
     expect(driver).toContain("status: finallyRetiredForm.status");
     expect(driver).toContain("diagnostic: finallyRetiredForm.diagnostic");
     expect(driver).not.toContain("data: finallyRetiredForm.data");
+  });
+
+  it("observes only the traced staging post read without changing HTTP outcomes or consuming its body twice", () => {
+    const transport = readFileSync("supabase/functions/cms-public/post-read-transport.ts", "utf8");
+    expect(publicApi).toContain('postReadTransport(req, environment, Deno.env.get("CMS_RELEASE_SHA"),');
+    expect(publicApi).toContain("await observePostReadQuery(");
+    expect(transport).toContain('if (!binding || binding.lookup !== "post-detail") return transport');
+    expect(transport).toContain('url.origin !== "https://glcqsosxwgmlhzgcsnzv.supabase.co"');
+    expect(transport).toContain('url.pathname !== "/rest/v1/cms_published_projection"');
+    expect(transport).toContain('method !== "GET"');
+    expect(transport).toContain("attempts >= 2");
+    expect(transport).toContain("const text = response.text.bind(response)");
+    expect(transport).toContain("return body;");
+    expect(transport).toContain("return response;");
+    expect(transport).toContain("throw error;");
+    expect(transport).not.toMatch(
+      /\.clone\(|response\.json|error\.(?:message|details)|setTimeout|x-region|searchParams/,
+    );
   });
 
   it("allows governed public images to be embedded from the cross-site Supabase proxy", () => {

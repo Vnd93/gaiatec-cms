@@ -48,7 +48,8 @@ describe("public upstream deadline", () => {
   it("retries the read once instead of being abandoned mid-stall", () => {
     const transport = readFileSync("supabase/functions/cms-public/form-read-transport.ts", "utf8");
     expect(fn).toContain("boundedFetch(PUBLIC_UPSTREAM_TIMEOUT_MS,");
-    expect(fn).toContain('formReadTransport(req, environment, Deno.env.get("CMS_RELEASE_SHA")), true)');
+    expect(fn).toContain('postReadTransport(req, environment, Deno.env.get("CMS_RELEASE_SHA"),');
+    expect(fn).toContain('formReadTransport(req, environment, Deno.env.get("CMS_RELEASE_SHA"))), true)');
     expect(transport).toContain("transport: typeof fetch = fetch");
     expect(transport).toContain('if (!binding || binding.lookup !== "form") return transport');
     expect(transport).not.toContain("setTimeout");

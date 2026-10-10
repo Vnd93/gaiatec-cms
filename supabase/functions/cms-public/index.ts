@@ -20,6 +20,7 @@ import { resolvePublicPagePathLookups } from "./page-path.ts";
 import { documentTrace } from "./document-trace.ts";
 import { formReadDiagnostic } from "./form-read-diagnostic.ts";
 import { formReadTransport } from "./form-read-transport.ts";
+import { observePostReadQuery, postReadTransport } from "./post-read-transport.ts";
 import { authenticateCms } from "../_shared/cms-auth.ts";
 import {
   CMS_QA_RATE_LIMIT_ACTION,
@@ -225,7 +226,8 @@ const handleRequest = async (req: Request) => {
   // ser abandonada nela.
   const client = createClient(supabaseUrl, service ?? anon, {
     global: { fetch: boundedFetch(PUBLIC_UPSTREAM_TIMEOUT_MS,
-      formReadTransport(req, environment, Deno.env.get("CMS_RELEASE_SHA")), true) },
+      postReadTransport(req, environment, Deno.env.get("CMS_RELEASE_SHA"),
+        formReadTransport(req, environment, Deno.env.get("CMS_RELEASE_SHA"))), true) },
     auth: { persistSession: false },
   });
   const publicEndpoint = `${supabaseUrl}/functions/v1/cms-public`;
@@ -857,13 +859,14 @@ const handleRequest = async (req: Request) => {
   if (type === "post-detail") {
     const slug = url.searchParams.get("slug") ?? "";
     if (!slugPattern.test(slug)) return json({ error: "Não encontrado." }, 404);
-    const { data: row, error: postError } = await client
+    const { data: row, error: postError } = await observePostReadQuery(
+      req, environment, Deno.env.get("CMS_RELEASE_SHA"), () => client
       .from("cms_published_projection")
       .select(PUBLISHED_PROJECTION_COLUMNS)
       .eq("content_type", "post")
       .eq("slug", slug)
       .limit(1)
-      .maybeSingle();
+      .maybeSingle());
     if (postError)
       return json({ error: "Conteúdo temporariamente indisponível." }, 503, { "Cache-Control": "no-store" });
     if (!row) return json({ error: "Não encontrado." }, 404, { "Cache-Control": PUBLIC_REVALIDATE });

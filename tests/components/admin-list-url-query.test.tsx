@@ -49,6 +49,28 @@ describe("busca das listagens sincronizada com a URL", () => {
     mocks.from.mockReset();
   });
 
+  it.each([
+    ["artigos", "/admin/conteudo", <AdminContentPage />],
+    ["produtos", "/admin/produtos", <AdminProductsPage />],
+  ])("resolve a busca de %s pela chave real item_id do rascunho", async (_name, path, element) => {
+    const itemRequests: ReturnType<typeof createRequest>[] = [];
+    const draftRequests: ReturnType<typeof createRequest>[] = [];
+    mocks.from.mockImplementation((table: string) => {
+      const request = createRequest({
+        data: table === "cms_content_drafts" ? [{ item_id: "matched-item" }] : [],
+        error: null,
+      });
+      if (table === "cms_content_drafts") draftRequests.push(request);
+      else itemRequests.push(request);
+      return request;
+    });
+
+    renderRoute(`${path}?q=correspondencia`, path, element);
+    await waitFor(() => expect(draftRequests).toHaveLength(1));
+    expect(draftRequests[0].select).toHaveBeenCalledWith("item_id");
+    await waitFor(() => expect(itemRequests[0].in).toHaveBeenCalledWith("id", ["matched-item"]));
+  });
+
   it("atualiza e limpa consecutivamente o filtro de páginas sem remontar a rota", async () => {
     mocks.from.mockImplementation(() =>
       createRequest({

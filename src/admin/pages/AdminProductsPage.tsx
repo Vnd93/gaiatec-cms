@@ -88,7 +88,7 @@ export default function AdminProductsPage() {
         for (let offset = 0; ; offset += TITLE_LOOKUP_PAGE_SIZE) {
           const titleMatches = await supabase
             .from("cms_content_drafts")
-            .select("content_id")
+            .select("item_id")
             .or(
               `payload->>title.ilike.%${normalizedQuery}%,payload->manufacturer->>name.ilike.%${normalizedQuery}%`,
             )
@@ -97,7 +97,7 @@ export default function AdminProductsPage() {
             titleLookupFailed = true;
             break;
           }
-          matchingIds.push(...(titleMatches.data ?? []).map((item) => item.content_id));
+          matchingIds.push(...(titleMatches.data ?? []).map((item) => item.item_id));
           if ((titleMatches.data ?? []).length < TITLE_LOOKUP_PAGE_SIZE) break;
         }
         if (!active) return;

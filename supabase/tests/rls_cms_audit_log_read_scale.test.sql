@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
-select plan(36);
+select plan(40);
 
 select ok(to_regprocedure('public.cms_audit_session_scope_allowed()') is not null,
   'audit session predicate exists');
@@ -118,8 +118,8 @@ select is((select (
     - length(replace(upper(pg_get_expr(polqual,polrelid)),'SELECT',''))
   ) / length('SELECT') from pg_policy
   where polname='cms_audit_authorized_read'
-    and polrelid='public.cms_audit_log'::regclass),2,
-  'both statement-invariant audit predicates are cached scalar subqueries');
+    and polrelid='public.cms_audit_log'::regclass),3,
+  'session, corporate and QA candidate predicates are cached scalar subqueries');
 
 select ok(strpos(pg_get_functiondef(
   'public.cms_audit_session_scope_allowed()'::regprocedure
@@ -160,5 +160,19 @@ select ok(exists(select 1
 select is(has_table_privilege('anon','public.cms_audit_log','SELECT'),false,
   'audit records remain unreadable to anonymous callers before RLS');
 
+select ok(to_regprocedure('public.cms_audit_qa_candidate_actor_ids()') is not null,
+  'statement-invariant QA candidate helper is installed');
+select isnt(has_function_privilege('anon','public.cms_audit_qa_candidate_actor_ids()','EXECUTE'),true,
+  'anonymous callers cannot inspect QA candidates');
+select isnt(has_function_privilege('service_role','public.cms_audit_qa_candidate_actor_ids()','EXECUTE'),true,
+  'service callers cannot inspect QA candidates');
+select is((select replace(replace(replace(replace(replace(replace(
+  lower(regexp_replace(pg_get_expr(polqual,polrelid),'[[:space:]]+','','g')),
+  'public.',''),'ascms_audit_session_scope_allowed',''),
+  'ascms_audit_corporate_session_allowed',''),'ascms_audit_qa_candidate_actor_ids',''),
+  'cms_audit_log.actor_id','actor_id'),'::uuid[]','')
+  from pg_policy where polname='cms_audit_authorized_read' and polrelid='public.cms_audit_log'::regclass),
+  '((selectcms_audit_session_scope_allowed())and((selectcms_audit_corporate_session_allowed())or((actor_id=any((selectcms_audit_qa_candidate_actor_ids())))andcms_audit_event_row_allowed(actor_id))))',
+  'QA prefilter is an additional AND guard with exactly the original authorization branches');
 select * from finish();
 rollback;

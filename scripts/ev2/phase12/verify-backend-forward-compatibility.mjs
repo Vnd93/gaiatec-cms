@@ -51,6 +51,11 @@ for (const migration of additions) {
 }
 
 const compatibilityTests = {
+  "0119": [
+    "supabase/tests/rls_cms_audit_log_read_scale.test.sql",
+    "supabase/tests/rls_cms_users_auth_scope.test.sql",
+    "tests/contracts/cms-audit-qa-prefilter.test.ts",
+  ],
   "0118": [
     "supabase/tests/rls_catalog_qa_durable_recovery.test.sql",
     "supabase/tests/rls_catalog_workspace_integration.test.sql",

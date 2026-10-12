@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions;
-select plan(40);
+select plan(44);
 
 select has_function('public','cms_user_target_read_allowed',array['uuid','uuid','text'],
   'identity scope has an authoritative server-side predicate');
@@ -173,6 +173,14 @@ insert into public.cms_audit_log(actor_id,action,target_type,target_id,correlati
 ('70000000-0000-4000-8000-000000000005','cms:audit.scope_test','scope_test','qa-other',gen_random_uuid()),
 (null,'cms:audit.scope_test','scope_test','system',gen_random_uuid());
 
+-- Transaction-local stress fixture only. Never replay these synthetic claims
+-- or history writes against hosted staging. Fewer visible events than the six
+-- requested by the home forces the reader to exhaust unrelated recent history.
+insert into public.cms_audit_log(actor_id,action,target_type,target_id,correlation_id,occurred_at)
+select '70000000-0000-4000-8000-000000000005','cms:audit.scope_noise','scope_test',
+  'unrelated-history-'||ordinal,gen_random_uuid(),clock_timestamp()+interval '1 minute'
+from generate_series(1,20000) ordinal;
+
 set local role authenticated;
 select set_config('request.jwt.claims',jsonb_build_object(
   'sub','70000000-0000-4000-8000-000000000003','role','authenticated',
@@ -189,6 +197,15 @@ select is((select count(*)::integer from public.cms_login_events where reason_co
 select is((select count(*)::integer from public.cms_audit_log
   where action='cms:audit.scope_test'),2,
   'QA auditors see only actors from their exact active run');
+select is(cardinality(public.cms_audit_qa_candidate_actor_ids()),2,
+  'QA prefilter contains exactly the same active-run actor set');
+select ok(not('70000000-0000-4000-8000-000000000005'::uuid=any(public.cms_audit_qa_candidate_actor_ids())),
+  'QA candidate prefilter excludes other runs');
+select ok(not('70000000-0000-4000-8000-000000000002'::uuid=any(public.cms_audit_qa_candidate_actor_ids())),
+  'QA candidate prefilter excludes corporate actors');
+select lives_ok($$select id,action,target_type,target_id,occurred_at
+  from public.cms_audit_log order by occurred_at desc limit 6$$,
+  'the exact home query completes with fewer than six visible events and 20000 unrelated recent events');
 
 select set_config('request.jwt.claims',jsonb_build_object(
   'sub','70000000-0000-4000-8000-000000000001','role','authenticated',

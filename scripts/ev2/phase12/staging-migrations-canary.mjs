@@ -30,6 +30,7 @@ import {
   CMS_MEDIA_UPLOAD_ABORT_0082_OWNER_ONLY_HELPERS,
   CMS_SESSION_REFRESH_REVOCATION_0083_RPCS,
   auditLogReadScaleSemanticSql,
+  auditQaCandidatePrefilterSemanticSql,
   blogTaxonomyTerminalCleanupSemanticSql,
   exactMigrationHistorySql,
   leadRetrySubphaseTimingSemanticSql,
@@ -124,6 +125,7 @@ const scenarioCoverage = [
   "0115",
   "0116",
   "0118",
+  "0119",
 ];
 const accessToken = process.env.SUPABASE_ACCESS_TOKEN ?? "";
 const expectedSha = process.env.G12_MIGRATION_CANARY_EXPECTED_SHA ?? "";
@@ -771,6 +773,7 @@ async function preflightMigrations() {
     )},
     ${runtimeIntegrityFollowupSemanticSql("runtime_integrity_followup_0088_semantics_exact")},
     ${auditLogReadScaleSemanticSql("audit_log_read_scale_0098_semantics_exact")},
+    ${auditQaCandidatePrefilterSemanticSql("audit_qa_candidate_prefilter_0119_exact")} as audit_qa_candidate_prefilter_0119_exact,
     ${systemSnapshotOpenCriticalScaleSemanticSql("system_snapshot_open_critical_scale_0099_semantics_exact")},
     ${systemSnapshotLeadReadScaleSemanticSql("system_snapshot_lead_read_scale_0100_semantics_exact")},
     ${releaseStabilityFollowupSemanticSql("release_stability_followup_0101_semantics_exact")},
@@ -999,6 +1002,7 @@ async function preflightMigrations() {
     row?.runtime_integrity_followup_0088_semantics_exact === true,
   );
   check("audit_log_read_scale_0098_semantics_exact", row?.audit_log_read_scale_0098_semantics_exact === true);
+  check("audit_qa_candidate_prefilter_0119_exact", row?.audit_qa_candidate_prefilter_0119_exact === true);
   check(
     "system_snapshot_open_critical_scale_0099_semantics_exact",
     row?.system_snapshot_open_critical_scale_0099_semantics_exact === true,

@@ -190,6 +190,11 @@ export const G12_PINNED_MIGRATION_TAIL = Object.freeze([
     file: "0118_cms_catalog_qa_durable_recovery.sql",
     sha256: "67f95c8754fe584eed1e830bf070d55d162c0a45b947f367909dfe3835a405a4",
   }),
+  Object.freeze({
+    version: "0119",
+    file: "0119_cms_audit_qa_candidate_prefilter.sql",
+    sha256: "8ac9da363120cfd751a7533ee83375c95b9b191316a7d0e17f762c3d7e04134a",
+  }),
 ]);
 
 export const CMS_MEDIA_UPLOAD_ABORT_0082_RPCS = Object.freeze([
@@ -1187,8 +1192,13 @@ export function auditLogReadScaleSemanticSql(alias) {
              where p.polname = 'cms_audit_authorized_read'
                and p.polrelid = 'public.cms_audit_log'::regclass
                and p.polcmd = 'r')
-      and ${canonicalPolicy} =
-        '((selectcms_audit_session_scope_allowed())and((selectcms_audit_corporate_session_allowed())orcms_audit_event_row_allowed(actor_id)))'
+      and (
+        ${canonicalPolicy} =
+          '((selectcms_audit_session_scope_allowed())and((selectcms_audit_corporate_session_allowed())orcms_audit_event_row_allowed(actor_id)))'
+        or (${auditQaCandidatePrefilterSemanticSql("audit_qa_prefilter_exact")}
+          and replace(replace(${canonicalPolicy},'ascms_audit_qa_candidate_actor_ids',''),'::uuid[]','') =
+          '((selectcms_audit_session_scope_allowed())and((selectcms_audit_corporate_session_allowed())or((actor_id=any((selectcms_audit_qa_candidate_actor_ids())))andcms_audit_event_row_allowed(actor_id))))')
+      )
       and lower(${definition(session)}) like '%auth.uid() is not null%'
       and lower(${definition(session)}) like '%auth.users%'
       and lower(${definition(session)}) like '%cms_has_permission%'
@@ -1201,6 +1211,36 @@ export function auditLogReadScaleSemanticSql(alias) {
       and ${indexExact}
       and not has_table_privilege('anon', 'public.cms_audit_log', 'SELECT')
     , false) as ${alias}`;
+}
+
+// Statement-invariant QA candidates are an additional conjunct, never a
+// replacement for the original audit permission/corporate/row predicates.
+export function auditQaCandidatePrefilterSemanticSql(alias) {
+  if (!/^[a-z][a-z0-9_]*$/.test(alias)) fail("audit-qa-prefilter-alias");
+  const signature = "public.cms_audit_qa_candidate_actor_ids()";
+  return `exists(select 1 from pg_catalog.pg_proc p
+    join pg_catalog.pg_language l on l.oid=p.prolang
+    where p.oid=to_regprocedure('${signature}') and p.prokind='f'
+      and p.prorettype='uuid[]'::regtype and p.prosecdef and p.provolatile='s'
+      and not p.proisstrict and not p.proleakproof and p.proparallel='u'
+      and p.proowner='postgres'::regrole and l.lanname='sql'
+      and p.proconfig=array['search_path=pg_catalog, private, auth, pg_temp']::text[]
+      and encode(extensions.digest(convert_to(replace(replace(p.prosrc,E'\\r\\n',E'\\n'),E'\\r',E'\\n'),'UTF8'),'sha256'),'hex')
+        ='c8590a62ec362c8d4008c8369fc923c29de5f29470e4eb80b3f4c3462890f09f'
+      and not exists(select 1 from pg_catalog.aclexplode(coalesce(p.proacl,pg_catalog.acldefault('f',p.proowner))) acl
+        where not(acl.grantee=p.proowner or (acl.grantee='authenticated'::regrole
+          and acl.grantor=p.proowner and acl.privilege_type='EXECUTE' and not acl.is_grantable)))
+      and has_function_privilege('authenticated',p.oid,'EXECUTE')
+      and not has_function_privilege('anon',p.oid,'EXECUTE')
+      and not has_function_privilege('service_role',p.oid,'EXECUTE'))
+    and (select replace(replace(replace(replace(replace(replace(
+      lower(regexp_replace(pg_get_expr(polqual,polrelid),'[[:space:]]+','','g')),
+      'public.',''),'ascms_audit_session_scope_allowed',''),
+      'ascms_audit_corporate_session_allowed',''),'ascms_audit_qa_candidate_actor_ids',''),
+      'cms_audit_log.actor_id','actor_id'),'::uuid[]','')
+      from pg_catalog.pg_policy where polname='cms_audit_authorized_read'
+        and polrelid='public.cms_audit_log'::regclass and polcmd='r') =
+      '((selectcms_audit_session_scope_allowed())and((selectcms_audit_corporate_session_allowed())or((actor_id=any((selectcms_audit_qa_candidate_actor_ids())))andcms_audit_event_row_allowed(actor_id))))'`;
 }
 
 // A 0099 gives the snapshot's critical-alert aggregate the exact partial index

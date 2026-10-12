@@ -39,6 +39,19 @@ describe("authenticated catalog RPC adapter", () => {
     mocks.rpc.mockResolvedValue({ data: { enabled: true }, error: null });
     await expect(readCatalogWorkspace()).rejects.toMatchObject({ status: 503, code: "response_invalid" });
   });
+  it("distinguishes duplicate values from stale revisions without exposing database details", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: null,
+      error: { code: "23505", message: "private database content", details: "private constraint detail" },
+    });
+    await expect(executeCatalogWorkspaceCommand(command)).rejects.toMatchObject({
+      status: 409,
+      code: "23505",
+      message: "Este slug ou vínculo já está em uso. Revise os valores antes de salvar.",
+      conflict: null,
+    });
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+  });
   it("exposes only allowlisted conflict provenance and never raw database details", async () => {
     const detail = { author: "other", changedAt: "2026-09-29T02:00:00Z", correlationId: command.id };
     mocks.rpc.mockResolvedValue({ data: null, error: { code: "PT409", details: JSON.stringify(detail) } });

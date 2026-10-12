@@ -163,7 +163,7 @@ export default function AdminCatalogWorkspacePage() {
       );
       if (committed || !(caught instanceof CatalogWorkspaceError) || caught.status === 503)
         setUnknownOutcome(true);
-      if (caught instanceof CatalogWorkspaceError && caught.status === 409) {
+      if (caught instanceof CatalogWorkspaceError && caught.status === 409 && caught.code !== "23505") {
         setConflictDetail(caught.conflict);
         try {
           const value = await readCatalogWorkspace();

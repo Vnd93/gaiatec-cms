@@ -70,10 +70,14 @@ export function CatalogEditorialWorkspace({
     setDirty(false);
     setConflicted(false);
     setError("");
+    setNotice("");
+    setComparison(null);
+    setConflictDetail(null);
   }
   async function run(command: CatalogEditorialCommand) {
     const parsed = CatalogEditorialCommandSchema.safeParse(command);
     if (busy || conflicted) return;
+    setNotice("");
     if (!parsed.success) {
       setError("Preencha título, resumo, blocos e justificativa.");
       return;
@@ -81,7 +85,6 @@ export function CatalogEditorialWorkspace({
     setBusy(true);
     setError("");
     setConflictDetail(null);
-    setNotice("");
     let committed = false;
     try {
       await executeCatalogEditorialCommand(parsed.data);

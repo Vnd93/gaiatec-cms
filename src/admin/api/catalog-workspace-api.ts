@@ -30,7 +30,9 @@ export class CatalogWorkspaceError extends Error {
   ) {
     super(
       status === 409
-        ? "O registro mudou. Compare as versões antes de salvar novamente."
+        ? code === "23505"
+          ? "Este slug ou vínculo já está em uso. Revise os valores antes de salvar."
+          : "O registro mudou. Compare as versões antes de salvar novamente."
         : status === 403
           ? "Operação indisponível para esta sessão ou para este ambiente."
           : status === 422
@@ -51,7 +53,7 @@ function fail(error: { code?: string; details?: string } | null) {
         ? 422
         : 503;
   let conflict: CatalogConflictDetail | null = null;
-  if (status === 409 && error.details) {
+  if (status === 409 && code !== "23505" && error.details) {
     try {
       const parsed = ConflictDetailSchema.safeParse(JSON.parse(error.details));
       if (parsed.success) conflict = parsed.data;

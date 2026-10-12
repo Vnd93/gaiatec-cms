@@ -96,4 +96,19 @@ describe("catalog workspace user flows", () => {
     expect(screen.queryByRole("button", { name: "Publicar revisão" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Classificação e termos" })).toBeDisabled();
   });
+  it("keeps duplicate input editable without creating a revision-comparison flow", async () => {
+    const user = userEvent.setup();
+    mount();
+    await user.click(await screen.findByRole("button", { name: "Novo produto" }));
+    await user.type(screen.getByRole("textbox", { name: "Nome" }), "Duplicate attempt");
+    await user.type(screen.getByRole("textbox", { name: "Slug" }), product.slug);
+    mock.execute.mockRejectedValueOnce(new CatalogWorkspaceError(409, "23505"));
+    await user.click(screen.getByRole("button", { name: "Salvar rascunho" }));
+    await screen.findByText("Este slug ou vínculo já está em uso. Revise os valores antes de salvar.");
+    expect(screen.queryByRole("region", { name: "Comparação de versões" })).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Slug" })).toHaveValue(product.slug);
+    expect(screen.getByRole("button", { name: "Salvar rascunho" })).toBeEnabled();
+    expect(mock.read).toHaveBeenCalledTimes(1);
+    expect(mock.execute).toHaveBeenCalledTimes(1);
+  });
 });

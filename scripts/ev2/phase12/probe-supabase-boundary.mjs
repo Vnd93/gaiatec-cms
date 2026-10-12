@@ -56,7 +56,7 @@ const request = async (
 const collectionTrace = environment === "staging" ? `${randomUUID()}.1` : undefined;
 const collectionStarted = performance.now();
 if (collectionTrace)
-  console.log(
+  console.error(
     JSON.stringify({
       event: "g12.supabase.boundary.collection.start",
       trace: collectionTrace,
@@ -69,7 +69,7 @@ const collection = await request("cms-public", {
   trace: collectionTrace,
 });
 if (collectionTrace)
-  console.log(
+  console.error(
     JSON.stringify({
       event: "g12.supabase.boundary.collection",
       trace: collectionTrace,

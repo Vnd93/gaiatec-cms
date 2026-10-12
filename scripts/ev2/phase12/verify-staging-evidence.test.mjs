@@ -56,6 +56,19 @@ test("an empty file is still refused, so the old guarantee is not lost", () => {
   }
 });
 
+test("diagnostic JSON lines plus a passing boundary report remain refused", () => {
+  const mixed = [
+    { event: "g12.supabase.boundary.collection.start" },
+    { event: "g12.supabase.boundary.collection", status: 200 },
+    { event: "g12.supabase.boundary.probe", outcome: "pass" },
+  ]
+    .map((event) => JSON.stringify(event))
+    .join("\n");
+  const result = evaluateStagingEvidence("g12-staging-boundary.json", mixed);
+  assert.equal(result.valid, false);
+  assert.deepEqual(result.violations, ["evidence_not_json"]);
+});
+
 test("a focused snapshot diagnostic or failed terminal report cannot authorize a release", () => {
   for (const outcome of ["G11_CANARY_FAIL", "G11_SNAPSHOT_DIAGNOSTIC"]) {
     assert.equal(evaluateStagingEvidence("g11.json", JSON.stringify({ outcome })).valid, false);

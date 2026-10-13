@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import {
   CatalogEditorialCommandSchema,
   type CatalogEditorialCommand,
@@ -21,6 +21,8 @@ export function CatalogEditorialWorkspace({
   onDirtyChange: (dirty: boolean) => void;
 }) {
   const [pages, setPages] = useState<CatalogEditorialRevision[]>([]);
+  const previewId = useId();
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [selected, setSelected] = useState("");
   const [title, setTitle] = useState(""),
     [summary, setSummary] = useState("");
@@ -62,6 +64,7 @@ export function CatalogEditorialWorkspace({
     };
   }, []);
   function choose(id: string) {
+    setPreviewOpen(false);
     const page = pages.find((item) => item.term_id === id);
     setSelected(id);
     setTitle(page?.title ?? terms.find((term) => term.id === id)?.title ?? "");
@@ -77,6 +80,7 @@ export function CatalogEditorialWorkspace({
   async function run(command: CatalogEditorialCommand) {
     const parsed = CatalogEditorialCommandSchema.safeParse(command);
     if (busy || conflicted) return;
+    setPreviewOpen(false);
     setNotice("");
     if (!parsed.success) {
       setError("Preencha título, resumo, blocos e justificativa.");
@@ -330,6 +334,43 @@ export function CatalogEditorialWorkspace({
             </fieldset>
           )}
         </form>
+      )}
+      {current && workspace.enabled && (
+        <section aria-label="Prévia editorial privada">
+          <p>
+            Prévia somente da revisão gravada, restrita à sessão administrativa. Não publica, não solicita
+            indexação e não abre a rota pública.
+          </p>
+          <button
+            type="button"
+            disabled={busy || dirty || conflicted}
+            aria-expanded={previewOpen && !busy && !dirty && !conflicted}
+            aria-controls={previewId}
+            onClick={() => setPreviewOpen(!previewOpen)}
+          >
+            {previewOpen && !busy && !dirty && !conflicted ? "Fechar prévia privada" : "Ver revisão gravada"}
+          </button>
+          {dirty && <p>Salve ou descarte as alterações antes de visualizar a revisão gravada.</p>}
+          <article
+            id={previewId}
+            aria-label={`Prévia da revisão ${current.revision}`}
+            hidden={!previewOpen || busy || dirty || conflicted}
+          >
+            <p>
+              Revisão {current.revision} · {current.status} · prévia privada
+            </p>
+            <h3>{current.title}</h3>
+            <p>{current.summary}</p>
+            {current.blocks.map((block, index) => (
+              <section key={index}>
+                <h4>{block.heading}</h4>
+                {block.paragraphs.map((paragraph, paragraphIndex) => (
+                  <p key={paragraphIndex}>{paragraph}</p>
+                ))}
+              </section>
+            ))}
+          </article>
+        </section>
       )}
     </section>
   );

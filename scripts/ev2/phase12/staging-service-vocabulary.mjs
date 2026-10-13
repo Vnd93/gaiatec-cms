@@ -2,7 +2,7 @@ export const SERVICE_VOCABULARY_SOURCES = Object.freeze(
   [
     [
       "public.cms_controlled_vocabularies_scoped(uuid,text,text,boolean,integer)",
-      "43c8ff80b28a42359b7107ece9141fd237f545f0015924f90d234ac0afd2b871",
+      "e91a40129eb038ac72ed33bfeb481bffa4a40241249e50708654c2015dab42bd",
       true,
       "pg_catalog, public, private, pg_temp",
       "s",

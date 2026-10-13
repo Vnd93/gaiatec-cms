@@ -177,7 +177,7 @@ test("the repository migration history is contiguous", () => {
       {
         version: "0121",
         file: "0121_cms_qa_service_vocabulary.sql",
-        sha256: "4ff4b221fdfae02760d05f759ca58ccf2d2b97a8a89bc025f241315cc363ddd4",
+        sha256: "557d7c9b502feef2084e2851293e9583f2f80a3b514095a3b1dabd15c2280f6b",
       },
     ],
   );

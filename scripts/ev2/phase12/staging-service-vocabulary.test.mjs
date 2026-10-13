@@ -30,6 +30,14 @@ test("source-bound recipe changes only reviewed bodies while preserving security
   ])
     assert.ok(migration.includes(guard));
   assert.ok(migration.includes("to_jsonb(p) - 'prosrc'"));
+  const reader = recipes.find(({ signature }) =>
+    signature.startsWith("public.cms_controlled_vocabularies_scoped"),
+  );
+  assert.match(reader.edits[0].new_text, /cms_service_controlled_option_scope_allowed_0121/);
+  assert.match(reader.edits[1].new_text, /p_environment = 'staging' and list.list_key = 'service.category'/);
+  assert.match(reader.edits[1].new_text, /caller_history.actor_id = p_actor_id/);
+  assert.match(reader.edits[1].new_text, /p_actor_id, list.created_by, list.created_at, p_environment/);
+  assert.match(reader.edits[1].new_text, /p_actor_id, list.updated_by, list.updated_at, p_environment/);
   assert.ok(migration.includes("set local lock_timeout = '5s'"));
   assert.ok(migration.includes("set local statement_timeout = '30s'"));
   assert.ok(!/disable trigger|disable row level|grant .*authenticated|drop policy/i.test(migration));

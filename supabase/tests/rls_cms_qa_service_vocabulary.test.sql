@@ -1,11 +1,11 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
-select plan(35);
+select plan(36);
 
 select has_function('private','cms_qa_service_shared_list_allowed_0121',array['uuid','uuid','text']);
 select has_function('private','cms_service_controlled_option_scope_allowed_0121',array['uuid','uuid','text','boolean']);
-select has_trigger('private','cms_qa_actor_leases','cms_prepare_qa_actor_terminal_service_shared_vocab_cleanup');
+select has_trigger('private','cms_qa_actor_leases','cms_prepare_qa_actor_terminal_service_shared_vocab_cleanup','exact service terminal trigger exists');
 select has_function('private','cms_qa_archived_service_reference_exact_0121',array['uuid','text','text','text','uuid','uuid','timestamp with time zone']);
 select isnt(has_function_privilege('authenticated','private.cms_qa_archived_service_reference_exact_0121(uuid,text,text,text,uuid,uuid,timestamptz)','EXECUTE'),true,'clients cannot grant archived-reference exceptions');
 select isnt(has_function_privilege('anon','private.cms_qa_service_shared_list_allowed_0121(uuid,uuid,text)','EXECUTE'),true,'anon cannot bypass service scope');
@@ -73,6 +73,7 @@ select is((select count(*)::integer from public.cms_controlled_options where id=
 select is((select count(*)::integer from public.cms_audit_log where actor_id='12100000-0000-4000-8000-000000000002' and action='cms:qa.service_controlled_options.compensated'),1,'cleanup is audited');
 select isnt(private.cms_qa_service_shared_list_allowed_0121('12100000-0000-4000-8000-000000000002','12100000-0000-4000-8000-000000000010','staging'),true,'closed lease never reopens');
 select ok((select to_jsonb(list)=snapshot from public.cms_controlled_lists list cross join service_list_before where list_key='service.category'),'cleanup leaves container unchanged');
+select is((select jsonb_array_length(cms_controlled_options) from public.cms_controlled_vocabularies_scoped('12100000-0000-4000-8000-000000000001','staging','service',false,500)),1,'corporate reader remains unchanged after QA cleanup');
 select isnt(has_table_privilege('authenticated','public.cms_controlled_options','INSERT'),true,'no direct client writes were granted');
 select * from finish();
 rollback;

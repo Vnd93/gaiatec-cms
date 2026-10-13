@@ -199,7 +199,7 @@ const [result] = await managementRequest(`/v1/projects/${STAGING_PROJECT_REF}/da
       )},
       ${blogTaxonomyTerminalCleanupSemanticSql("blog_taxonomy_terminal_cleanup_0106_semantics_exact")},
       ${businessConflictTransportSemanticSql("business_conflict_transport_0114_semantics_exact")},
-      ${stagingReadBudgetSemanticSql("staging_read_and_command_budget_0116_exact")},
+      ${stagingReadBudgetSemanticSql("admin_read_and_command_budget_0120_exact")},
       ${catalogRecoveryPreflightSql("catalog_qa_recovery_0118_exact")},
       ${ownerOnlyFunctionContractSql(
         "release_stability_followup_0101_functions_locked",
@@ -304,7 +304,7 @@ const checks = [
   "blog_taxonomy_terminal_cleanup_0106_functions_locked",
   "blog_taxonomy_terminal_cleanup_0106_semantics_exact",
   "business_conflict_transport_0114_semantics_exact",
-  "staging_read_and_command_budget_0116_exact",
+  "admin_read_and_command_budget_0120_exact",
   "catalog_qa_recovery_0118_exact",
   "release_stability_followup_0101_functions_locked",
   "qa_rate_limit_proof_cleanup_present",

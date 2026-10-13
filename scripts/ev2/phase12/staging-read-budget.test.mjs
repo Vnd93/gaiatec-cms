@@ -9,6 +9,7 @@ import {
   adminReadP95Budget,
   stagingReadBudgetSemanticSql,
   STAGING_READ_BUDGET_SOURCES,
+  ADMIN_READ_BUDGET_SOURCES,
 } from "./staging-read-budget.mjs";
 
 const metrics = {
@@ -64,11 +65,12 @@ const window = {
   outboxLagP95Ms: 0,
 };
 
-test("G11 accepts the explicit 2s read ceiling only for exact staging", () => {
-  assert.equal(adminReadP95Budget("staging"), 2000);
+test("G11 accepts 2147ms reads in exact staging and production only", () => {
+  assert.equal(adminReadP95Budget("staging"), 2147);
+  assert.equal(adminReadP95Budget("production"), 2147);
   assert.equal(evaluateSystemEvidence(evidence).passed, true);
   assert.equal(evaluateSystemEvidence(evidence).requiresIndependentReview, true);
-  for (const adminReadP95Ms of [2001, 2406, Infinity, NaN, null, undefined, "2000"]) {
+  for (const adminReadP95Ms of [2148, 2406, Infinity, NaN, null, undefined, "2147"]) {
     assert.equal(
       evaluateSystemEvidence({ ...evidence, metrics: { ...metrics, adminReadP95Ms } }).passed,
       false,
@@ -81,7 +83,6 @@ test("G11 accepts the explicit 2s read ceiling only for exact staging", () => {
     "STAGING",
     " staging ",
     "local",
-    "production",
     "production-preview",
     "unknown",
   ]) {
@@ -94,6 +95,18 @@ test("G11 accepts the explicit 2s read ceiling only for exact staging", () => {
     assert.equal(evaluateSystemEvidence(strict).passed, true);
     assert.equal(
       evaluateSystemEvidence({ ...strict, metrics: { ...strict.metrics, adminReadP95Ms: 501 } }).passed,
+      false,
+    );
+  }
+  for (const environment of ["staging", "production"]) {
+    const revised = {
+      ...evidence,
+      environment,
+      metrics: { ...metrics, commandP95Ms: 800, adminReadP95Ms: 2147 },
+    };
+    assert.equal(evaluateSystemEvidence(revised).passed, true);
+    assert.equal(
+      evaluateSystemEvidence({ ...revised, metrics: { ...revised.metrics, adminReadP95Ms: 2148 } }).passed,
       false,
     );
   }
@@ -130,10 +143,10 @@ test("read approval does not change independent G11 checks or nearest-rank sampl
   assert.equal(vector.length, 20);
 });
 
-test("G12 scopes the 2s read ceiling to both staging and staging-canary", () => {
+test("G12 permits the approved read ceiling without borrowing command policies", () => {
   assert.equal(evaluateRolloutWindow(window).healthy, true);
   for (const change of [
-    { adminReadP95Ms: 2001 },
+    { adminReadP95Ms: 2148 },
     { adminReadP95Ms: 2406 },
     { adminReadP95Ms: null },
     { adminReadP95Ms: "2000" },
@@ -167,7 +180,8 @@ test("G12 scopes the 2s read ceiling to both staging and staging-canary", () => 
     adminReadP95Ms: 500,
   };
   assert.equal(evaluateRolloutWindow(production).healthy, true);
-  assert.equal(evaluateRolloutWindow({ ...production, adminReadP95Ms: 501 }).healthy, false);
+  assert.equal(evaluateRolloutWindow({ ...production, adminReadP95Ms: 2147 }).healthy, true);
+  assert.equal(evaluateRolloutWindow({ ...production, adminReadP95Ms: 2148 }).healthy, false);
 });
 
 test("0116 patches only two read expressions from exact 0115 and preserves security attributes", () => {
@@ -229,18 +243,19 @@ test("0116 patches only two read expressions from exact 0115 and preserves secur
     assert.throws(() => stagingReadBudgetSemanticSql(alias));
 });
 
-test("current remote gates and forward compatibility require the exact 0116 read and command bodies", () => {
+test("current remote gates and forward compatibility require the exact 0120 read and command bodies", () => {
   for (const path of [
     "scripts/ev2/phase12/verify-staging-database.mjs",
     "scripts/ev2/phase12/staging-migrations-canary.mjs",
   ]) {
     const content = readFileSync(path, "utf8");
-    assert.ok(content.includes('stagingReadBudgetSemanticSql("staging_read_and_command_budget_0116_exact")'));
-    assert.ok(content.includes('"staging_read_and_command_budget_0116_exact",'));
+    assert.ok(content.includes('stagingReadBudgetSemanticSql("admin_read_and_command_budget_0120_exact")'));
+    assert.ok(content.includes('"admin_read_and_command_budget_0120_exact",'));
     assert.ok(!content.includes('stagingCommandBudgetSemanticSql("staging_command_budget_0115_exact")'));
   }
   const compatibility = readFileSync("scripts/ev2/phase12/verify-backend-forward-compatibility.mjs", "utf8");
   assert.ok(compatibility.includes('"0116": ['));
+  assert.ok(compatibility.includes('"0120": ['));
   for (const path of [
     "supabase/tests/rls_cms_staging_read_budget.test.sql",
     "tests/contracts/ev2-system.test.ts",
@@ -248,4 +263,57 @@ test("current remote gates and forward compatibility require the exact 0116 read
   ])
     assert.ok(compatibility.includes(path));
   assert.ok(readFileSync("scripts/ev2/phase12/staging-migrations-canary.mjs", "utf8").includes('"0116",'));
+  assert.ok(readFileSync("scripts/ev2/phase12/staging-migrations-canary.mjs", "utf8").includes('"0120",'));
+});
+
+test("0120 changes only the two approved read expressions and preserves exact attributes", () => {
+  const original = readFileSync("supabase/migrations/0050_ev2_system_assurance.sql", "utf8").replaceAll(
+    "\r\n",
+    "\n",
+  );
+  const migration = readFileSync("supabase/migrations/0120_cms_admin_read_latency_budget.sql", "utf8");
+  for (const [index, name] of ["cms_system_capability", "cms_execute_system_command"].entries()) {
+    let source = original.split(`create function public.${name}(`)[1].split("as $$")[1].split("$$;")[0];
+    source =
+      index === 0
+        ? source
+            .replace(
+              "'commandP95Ms', 800",
+              "'commandP95Ms', case when p_environment = 'staging' then 2000 else 800 end",
+            )
+            .replace(
+              "'adminReadP95Ms', 500",
+              "'adminReadP95Ms', case when p_environment = 'staging' then 2000 else 500 end",
+            )
+        : source
+            .replace(
+              "::numeric <= 800, false)",
+              "::numeric <= (case when p_environment = 'staging' then 2000 else 800 end), false)",
+            )
+            .replace(
+              "(p_payload #>> '{metrics,adminReadP95Ms}')::numeric <= 500, false)",
+              "(p_payload #>> '{metrics,adminReadP95Ms}')::numeric <= (case when p_environment = 'staging' then 2000 else 500 end), false)",
+            );
+    const digest = (text) => createHash("sha256").update(text).digest("hex");
+    assert.equal(digest(source), STAGING_READ_BUDGET_SOURCES[index][1]);
+    const old = "case when p_environment = 'staging' then 2000 else 500 end";
+    const replacement = "case when p_environment in ('staging','production') then 2147 else 500 end";
+    assert.equal(source.split(old).length, 2);
+    assert.equal(digest(source.replace(old, replacement)), ADMIN_READ_BUDGET_SOURCES[index][1]);
+    assert.ok(migration.includes(digest(source)));
+    assert.ok(migration.includes(ADMIN_READ_BUDGET_SOURCES[index][1]));
+  }
+  for (const marker of [
+    "CMS_ADMIN_READ_BUDGET_SOURCE_DRIFT",
+    "CMS_ADMIN_READ_BUDGET_POSTCONDITION_DRIFT",
+    "pg_get_functiondef(v_function) is distinct from v_after",
+    "is distinct from v_attributes",
+    "set local lock_timeout = '5s'",
+    "set local statement_timeout = '30s'",
+  ])
+    assert.ok(migration.includes(marker));
+  assert.doesNotMatch(migration, /\b(?:grant|revoke|drop|disable|truncate|update|delete|insert)\b/i);
+  const semantic = stagingReadBudgetSemanticSql("approved_reads_exact");
+  for (const [, digest] of ADMIN_READ_BUDGET_SOURCES) assert.ok(semantic.includes(digest));
+  for (const [, digest] of STAGING_READ_BUDGET_SOURCES) assert.ok(!semantic.includes(digest));
 });

@@ -26,19 +26,23 @@ export const Ev2SystemCapabilitySchema = z
     maxOverrideMinutes: z.literal(30),
     requiresIndependentReview: z.literal(true),
     // Accept the stricter legacy staging capability during the staged rollout.
-    // Neither 2s policy is valid for local or production capabilities.
+    // 2147ms reads are approved in staging and future production candidates.
+    // Commands retain their independent staging-only 2s policy.
     baselines: Ev2SystemBaselinesSchema.extend({
-      adminReadP95Ms: z.union([z.literal(500), z.literal(2000)]),
+      adminReadP95Ms: z.union([z.literal(500), z.literal(2000), z.literal(2147)]),
       commandP95Ms: z.union([z.literal(800), z.literal(2000)]),
     }),
   })
   .strict()
   .superRefine((capability, context) => {
-    if (capability.environment !== "staging" && capability.baselines.adminReadP95Ms !== 500) {
+    if (
+      (capability.environment === "local" && capability.baselines.adminReadP95Ms !== 500) ||
+      (capability.environment === "production" && capability.baselines.adminReadP95Ms === 2000)
+    ) {
       context.addIssue({
         code: "custom",
         path: ["baselines", "adminReadP95Ms"],
-        message: "O limite de leitura de 2 segundos é exclusivo de staging.",
+        message: "O limite de leitura não corresponde ao ambiente e à política aprovada.",
       });
     }
     if (capability.environment !== "staging" && capability.baselines.commandP95Ms !== 800) {

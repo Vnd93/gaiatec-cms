@@ -373,10 +373,7 @@ export function evaluateRolloutWindow(evidence) {
   if (evidence?.restoreStatus !== "passed") violations.push("restore_not_passed");
 
   for (const [field, limit] of [
-    [
-      "adminReadP95Ms",
-      adminReadP95Budget(evidence?.stage === "staging-canary" ? evidence?.environment : "production"),
-    ],
+    ["adminReadP95Ms", adminReadP95Budget(evidence?.environment)],
     [
       "commandP95Ms",
       commandP95Budget(evidence?.stage === "staging-canary" ? evidence?.environment : "production"),

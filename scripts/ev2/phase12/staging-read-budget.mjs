@@ -1,10 +1,14 @@
-// 2026-10-06 explicit approval: read p95 <= 2s in staging only.
-// Production/local, sampling and every independent security gate stay unchanged.
-export const STAGING_ADMIN_READ_P95_MS = 2000;
+// 2026-10-13 explicit approval: admin read p95 <= 2147ms in staging and
+// future production candidates, not authorization to mutate production.
+// Local/unknown environments, commands, sampling and security stay unchanged.
+export const STAGING_ADMIN_READ_P95_MS = 2147;
+export const PRODUCTION_ADMIN_READ_P95_MS = 2147;
 export const DEFAULT_ADMIN_READ_P95_MS = 500;
 
 export function adminReadP95Budget(environment) {
-  return environment === "staging" ? STAGING_ADMIN_READ_P95_MS : DEFAULT_ADMIN_READ_P95_MS;
+  if (environment === "staging") return STAGING_ADMIN_READ_P95_MS;
+  if (environment === "production") return PRODUCTION_ADMIN_READ_P95_MS;
+  return DEFAULT_ADMIN_READ_P95_MS;
 }
 
 export const STAGING_READ_BUDGET_SOURCES = Object.freeze([
@@ -18,10 +22,21 @@ export const STAGING_READ_BUDGET_SOURCES = Object.freeze([
   ]),
 ]);
 
+export const ADMIN_READ_BUDGET_SOURCES = Object.freeze([
+  Object.freeze([
+    STAGING_READ_BUDGET_SOURCES[0][0],
+    "f97d18175d4acc1ed9a1a1076ce3546f99c095c643b669cdf8a6fd4a046fb864",
+  ]),
+  Object.freeze([
+    STAGING_READ_BUDGET_SOURCES[1][0],
+    "4ae46a175ebb0a817bfb833f3b2e1b933cfb2e6497b1c06000623cdc362cb2fc",
+  ]),
+]);
+
 export function stagingReadBudgetSemanticSql(alias) {
   if (typeof alias !== "string" || !/^[a-z][a-z0-9_]*$/.test(alias))
     throw new Error("CMS_STAGING_READ_BUDGET_ALIAS_INVALID");
-  const rows = STAGING_READ_BUDGET_SOURCES.map(([signature, digest]) => `('${signature}', '${digest}')`).join(
+  const rows = ADMIN_READ_BUDGET_SOURCES.map(([signature, digest]) => `('${signature}', '${digest}')`).join(
     ",",
   );
   return `not exists (

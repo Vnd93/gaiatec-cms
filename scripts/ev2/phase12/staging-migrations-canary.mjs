@@ -126,6 +126,7 @@ const scenarioCoverage = [
   "0116",
   "0118",
   "0119",
+  "0120",
 ];
 const accessToken = process.env.SUPABASE_ACCESS_TOKEN ?? "";
 const expectedSha = process.env.G12_MIGRATION_CANARY_EXPECTED_SHA ?? "";
@@ -795,7 +796,7 @@ async function preflightMigrations() {
     )},
     ${blogTaxonomyTerminalCleanupSemanticSql("blog_taxonomy_terminal_cleanup_0106_semantics_exact")},
     ${businessConflictTransportSemanticSql("business_conflict_transport_0114_semantics_exact")},
-    ${stagingReadBudgetSemanticSql("staging_read_and_command_budget_0116_exact")},
+    ${stagingReadBudgetSemanticSql("admin_read_and_command_budget_0120_exact")},
     ${catalogRecoveryPreflightSql("catalog_qa_recovery_0118_exact")},
     ${ownerOnlyFunctionContractSql(
       "release_stability_followup_0101_functions_locked",
@@ -1051,10 +1052,7 @@ async function preflightMigrations() {
     "business_conflict_transport_0114_semantics_exact",
     row?.business_conflict_transport_0114_semantics_exact === true,
   );
-  check(
-    "staging_read_and_command_budget_0116_exact",
-    row?.staging_read_and_command_budget_0116_exact === true,
-  );
+  check("admin_read_and_command_budget_0120_exact", row?.admin_read_and_command_budget_0120_exact === true);
   check("catalog_qa_recovery_0118_exact", row?.catalog_qa_recovery_0118_exact === true);
   check(
     "release_stability_followup_0101_functions_locked",

@@ -29,9 +29,9 @@ const capability = {
 };
 
 describe("EV2.11 system assurance contracts", () => {
-  it("accepts legacy and revised read budgets only within the staging capability", () => {
+  it("accepts the approved 2147ms reads in staging and future production, not local", () => {
     for (const environment of ["local", "staging", "production"]) {
-      for (const adminReadP95Ms of [500, 2000]) {
+      for (const adminReadP95Ms of [500, 2000, 2147]) {
         for (const commandP95Ms of [800, 2000]) {
           const candidate = {
             ...capability,
@@ -39,7 +39,9 @@ describe("EV2.11 system assurance contracts", () => {
             baselines: { ...capability.baselines, adminReadP95Ms, commandP95Ms },
           };
           expect(Ev2SystemCapabilitySchema.safeParse(candidate).success).toBe(
-            environment === "staging" || (adminReadP95Ms === 500 && commandP95Ms === 800),
+            environment === "staging" ||
+              (commandP95Ms === 800 &&
+                (adminReadP95Ms === 500 || (environment === "production" && adminReadP95Ms === 2147))),
           );
         }
       }
@@ -52,6 +54,7 @@ describe("EV2.11 system assurance contracts", () => {
       1000,
       1999,
       2001,
+      2148,
       2406,
       "2000",
       null,

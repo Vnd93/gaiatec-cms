@@ -23,10 +23,10 @@ insert into public.cms_feature_flag_overrides(flag_key,environment,scope_type,sc
 
 select is((public.cms_system_capability_unscoped_0076(null,environment,'main','aal2','test',now())
   #>> '{baselines,adminReadP95Ms}')::integer,expected,'exact read budget for ' || coalesce(environment,'null'))
-from (values ('local',500),('staging',2000),('production',500),('production-preview',500),('STAGING',500),(' staging ',500),('unknown',500),(null,500)) policy(environment,expected);
+from (values ('local',500),('staging',2147),('production',2147),('production-preview',500),('STAGING',500),(' staging ',500),('unknown',500),(null,500)) policy(environment,expected);
 select is((public.cms_system_capability_limited('11600000-0000-4000-8000-000000000002',
   'staging','main','aal2','read-budget-session',clock_timestamp(),repeat('f',64))
-  #>> '{baselines,adminReadP95Ms}')::integer,2000,'the real scoped limited capability exposes the approved read budget');
+  #>> '{baselines,adminReadP95Ms}')::integer,2147,'the real scoped limited capability exposes the approved read budget');
 select is((public.cms_system_capability_unscoped_0076(null,environment,'main','aal2','test',now())
   #>> '{baselines,commandP95Ms}')::integer,expected,'command budget remains unchanged for ' || coalesce(environment,'null'))
 from (values ('local',800),('staging',2000),('production',800),('unknown',800),(null,800)) policy(environment,expected);
@@ -49,10 +49,11 @@ returns jsonb language sql as $$
     ) || p_override,p_environment,'main','aal2','read-budget-session',clock_timestamp(),
     gen_random_uuid(),gen_random_uuid(),gen_random_uuid(),repeat('c',64),repeat('d',64));
 $$;
-create temporary table read_budget_result as select pg_temp.record_read_budget('staging',2000,2000) as response;
-select is((select response->>'status' from read_budget_result),'measured','two 2s ceilings yield measured, never accepted');
+create temporary table read_budget_result as select pg_temp.record_read_budget('staging',2147,2000) as response;
+select is((select response->>'status' from read_budget_result),'measured','2147ms reads and 2s commands yield measured, never accepted');
 select is((select (response->>'requiresIndependentReview')::boolean from read_budget_result),true,'independent review remains mandatory');
-select is(pg_temp.record_read_budget('staging',2001)->>'status','failed','read 2001ms is refused');
+select is(pg_temp.record_read_budget('staging',2148)->>'status','failed','read 2148ms is refused');
+select is(pg_temp.record_read_budget('staging',2147)->>'status','measured','exact approved boundary is measured, not accepted');
 select is(pg_temp.record_read_budget('staging',2406)->>'status','failed','the previous canonical 2406ms outlier still fails');
 select is(pg_temp.record_read_budget('staging',737)->>'status','measured','737ms requires a new bound measurement and review');
 select is(pg_temp.record_read_budget('staging',500,2001)->>'status','failed','the command ceiling stays independent');

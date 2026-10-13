@@ -21,6 +21,7 @@ test("staging Auth is pinned to the exact CMS canary and closed signup", () => {
     site_url: STAGING_AUTH_SITE_ORIGIN,
     uri_allow_list: STAGING_AUTH_REDIRECT_ALLOW_LIST.join(","),
     disable_signup: true,
+    password_min_length: 12,
   });
 });
 
@@ -28,6 +29,8 @@ test("staging Auth verification fails closed on every altered binding", () => {
   const exact = expectedStagingAuthPatch();
   assert.equal(stagingAuthConfigIsExact(exact), true);
   assert.equal(stagingAuthConfigIsExact({ ...exact, disable_signup: false }), false);
+  for (const password_min_length of [6, 8, 11, 13, "12", undefined, null])
+    assert.equal(stagingAuthConfigIsExact({ ...exact, password_min_length }), false);
   assert.equal(stagingAuthConfigIsExact({ ...exact, site_url: "https://example.invalid" }), false);
   assert.equal(
     stagingAuthConfigIsExact({ ...exact, uri_allow_list: `${exact.uri_allow_list},https://evil.invalid/**` }),

@@ -69,7 +69,7 @@ test("G11 accepts 2s only in staging and retains every independent gate", () => 
     { realDataUsed: true },
     { accessibilityCritical: 1 },
     { accessibilitySerious: 1 },
-    { metrics: { ...metrics, adminReadP95Ms: 2001 } },
+    { metrics: { ...metrics, adminReadP95Ms: 2148 } },
     { metrics: { ...metrics, auditCoveragePercent: 99 } },
   ]) {
     assert.equal(evaluateSystemEvidence({ ...evidence, ...change }).passed, false);
@@ -122,7 +122,7 @@ test("G12 requires both staging environment and staging-canary stage for 2s", ()
     { environment: "production" },
     { environment: "local" },
     { environment: "production-preview" },
-    { adminReadP95Ms: 2001 },
+    { adminReadP95Ms: 2148 },
     { securityIncidentCount: 1 },
     { restoreStatus: "failed" },
   ]) {

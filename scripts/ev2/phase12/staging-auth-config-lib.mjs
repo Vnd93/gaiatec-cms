@@ -12,6 +12,7 @@ export function expectedStagingAuthPatch() {
     site_url: STAGING_AUTH_SITE_ORIGIN,
     uri_allow_list: STAGING_AUTH_REDIRECT_ALLOW_LIST.join(","),
     disable_signup: true,
+    password_min_length: 12,
   };
 }
 
@@ -20,6 +21,7 @@ export function stagingAuthConfigIsExact(config) {
   return (
     config?.site_url === expected.site_url &&
     config?.uri_allow_list === expected.uri_allow_list &&
-    config?.disable_signup === expected.disable_signup
+    config?.disable_signup === expected.disable_signup &&
+    config?.password_min_length === expected.password_min_length
   );
 }

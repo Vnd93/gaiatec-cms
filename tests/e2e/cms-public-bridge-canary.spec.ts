@@ -5,6 +5,7 @@ import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { assertSealedPreviewRoutingUsed, installSealedPreviewRouting } from "./cms-sealed-preview-routing";
+import { createPublicBridgeDiagnostics } from "./cms-public-bridge-diagnostics";
 
 test.use({ trace: "off", screenshot: "off", video: "off" });
 
@@ -229,6 +230,9 @@ test("@public-bridge frontend A renderiza com Turnstile real e falha fechado sem
   const requestFailures: string[] = [];
   let turnstileConsoleFailures = 0;
   let leadRequestCount = 0;
+  const transport = createPublicBridgeDiagnostics();
+  page.on("response", (response) => transport.response(response.request(), response.status()));
+  page.on("requestfinished", (request) => transport.finish(request));
   page.on("console", (message) => {
     if (message.type() !== "error") return;
     const location = message.location().url;
@@ -243,11 +247,13 @@ test("@public-bridge frontend A renderiza com Turnstile real e falha fechado sem
   });
   page.on("pageerror", (error) => consoleFailures.push(error.name));
   page.on("requestfailed", (request) => {
+    transport.finish(request, true);
     const url = new URL(request.url());
     if (url.hostname === "challenges.cloudflare.com") turnstileRequestFailures += 1;
     else requestFailures.push(url.pathname);
   });
   page.on("request", (request) => {
+    transport.start(request);
     if (
       request.method() === "POST" &&
       new URL(request.url()).pathname.endsWith("/functions/v1/lead-capture")
@@ -257,6 +263,7 @@ test("@public-bridge frontend A renderiza com Turnstile real e falha fechado sem
   });
 
   try {
+    transport.phase("page");
     const pageResponse = await page.goto(config.state.page.path, { waitUntil: "domcontentloaded" });
     expect(pageResponse?.status()).toBe(200);
     expect(pageResponse?.headers()["x-release"]).toBe(config.expectedSha);
@@ -265,6 +272,7 @@ test("@public-bridge frontend A renderiza com Turnstile real e falha fechado sem
     });
     expect(await browserStateContainsUuid(page)).toBe(false);
 
+    transport.phase("campaign");
     const campaignResponse = await page.goto(config.state.campaign.path, { waitUntil: "domcontentloaded" });
     expect(campaignResponse?.status()).toBe(200);
     expect(campaignResponse?.headers()["x-release"]).toBe(config.expectedSha);
@@ -337,6 +345,28 @@ test("@public-bridge frontend A renderiza com Turnstile real e falha fechado sem
         secretsPersisted: false,
       },
     });
+  } catch (error) {
+    if (config.environment === "staging") {
+      try {
+        writeEvidence(
+          { ...config, reportPath: `${config.reportPath}.transport-failure.json` },
+          {
+            ...transport.snapshot(),
+            candidateSha: config.expectedSha,
+            runId: process.env.GITHUB_RUN_ID,
+            runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT),
+            instance: config.state.instance,
+            failedAt: new Date().toISOString(),
+            deploymentIdentitySha256: createHash("sha256").update(config.deploymentId).digest("hex"),
+            unexpectedRequests: requestFailures.length,
+            unexpectedConsole: consoleFailures.length,
+          },
+        );
+      } catch {
+        console.error("QA_CMS_PUBLIC_BRIDGE_TRANSPORT_DIAGNOSTIC_UNAVAILABLE");
+      }
+    }
+    throw error;
   } finally {
     await context.close();
   }

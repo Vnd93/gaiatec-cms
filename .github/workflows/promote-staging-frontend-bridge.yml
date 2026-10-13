@@ -1640,6 +1640,8 @@ jobs:
             staging-bridge-preview-probe.json
             staging-bridge-canonical-convergence-*.json
             staging-bridge-canonical-probe.json
+            candidate/outputs/staging-bridge-preview-headless.json.transport-failure.json
+            candidate/outputs/staging-bridge-canonical-headless.json.transport-failure.json
           if-no-files-found: warn
           retention-days: 90
       - name: Enforce terminal staging bridge outcome

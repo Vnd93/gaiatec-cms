@@ -5,6 +5,25 @@ import { DiscoveryContentEditor } from "../../src/admin/components/DiscoveryCont
 import { industryPayload, servicePayload } from "../fixtures/discovery-payloads";
 
 describe("editor estruturado de conteúdo institucional", () => {
+  it("explica o vocabulário vazio sem inventar categoria ou remover a referência existente", () => {
+    const onChange = vi.fn();
+    render(
+      <DiscoveryContentEditor
+        kind="service"
+        payload={servicePayload}
+        slug="servico-sintetico"
+        onChange={onChange}
+        onSlugChange={vi.fn()}
+        serviceKindOptions={[]}
+        contractValid
+      />,
+    );
+    expect(screen.getByLabelText("Categoria do serviço")).toHaveAccessibleDescription(
+      "Nenhuma categoria ativa está disponível no escopo desta conta. Consulte as Listas mestras ou solicite revisão de acesso.",
+    );
+    expect(screen.getByLabelText("Categoria do serviço")).toHaveValue("Categoria sintética");
+    expect(onChange).not.toHaveBeenCalled();
+  });
   it("organiza o cadastro em seções operacionais sem expor editor de JSON", async () => {
     const user = userEvent.setup();
     render(

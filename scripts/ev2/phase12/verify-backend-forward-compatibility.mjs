@@ -51,6 +51,15 @@ for (const migration of additions) {
 }
 
 const compatibilityTests = {
+  "0121": [
+    "supabase/tests/rls_cms_qa_service_vocabulary.test.sql",
+    "supabase/tests/rls_cms_qa_service_legacy_scope.test.sql",
+    "supabase/tests/rls_cms_product_pim_consolidation.test.sql",
+    "supabase/tests/rls_fase10_controlled_vocabularies.test.sql",
+    "scripts/qa/service-vocabulary-prerequisite.test.mjs",
+    "scripts/ev2/phase12/staging-service-vocabulary.test.mjs",
+    "tests/components/discovery-editor.test.tsx",
+  ],
   "0120": [
     "supabase/tests/rls_cms_staging_read_budget.test.sql",
     "supabase/tests/rls_cms_staging_command_budget.test.sql",

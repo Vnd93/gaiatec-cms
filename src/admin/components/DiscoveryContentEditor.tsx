@@ -366,7 +366,14 @@ export function DiscoveryContentEditor({
                 description="Escopo comercial e operacional apresentado ao visitante."
               />
               <div className="admin-field-grid">
-                <Field label="Categoria do serviço">
+                <Field
+                  label="Categoria do serviço"
+                  hint={
+                    activeServiceKindOptions.length === 0
+                      ? "Nenhuma categoria ativa está disponível no escopo desta conta. Consulte as Listas mestras ou solicite revisão de acesso."
+                      : undefined
+                  }
+                >
                   <select
                     value={selectedServiceKind}
                     onChange={(event) => {

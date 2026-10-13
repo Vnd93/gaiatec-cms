@@ -98,75 +98,89 @@ test("the repository migration history is contiguous", () => {
   // A ultima entrada da cauda fixada e re-selada deliberadamente a cada migration nova, com o
   // digest dos bytes. E o que impede que alguem acrescente migration sem revisao: nao basta criar
   // o arquivo, e preciso declarar o conteudo dele aqui.
-  assert.deepEqual(G12_PINNED_MIGRATION_TAIL.at(-13), {
-    version: "0108",
-    file: "0108_catalog_fatia_2_publication.sql",
-    sha256: "ef1b6e83aaf0c257eaa3602c0dabc14ff440d21bd3af1aef8a3d732afeef7b01",
-  });
-  assert.deepEqual(G12_PINNED_MIGRATION_TAIL.at(-12), {
-    version: "0109",
-    file: "0109_catalog_fatia_3_relations.sql",
-    sha256: createHash("sha256")
-      .update(readFileSync("supabase/migrations/0109_catalog_fatia_3_relations.sql"))
-      .digest("hex"),
-  });
-  assert.deepEqual(G12_PINNED_MIGRATION_TAIL.slice(-11), [
+  assert.deepEqual(
+    G12_PINNED_MIGRATION_TAIL.find(({ version }) => version === "0108"),
     {
-      version: "0110",
-      file: "0110_catalog_workspace_integration.sql",
-      sha256: "c16c4064e8810520fe487ae8a6054f5ac961427abe01c461774d8df9b4ff9ac5",
+      version: "0108",
+      file: "0108_catalog_fatia_2_publication.sql",
+      sha256: "ef1b6e83aaf0c257eaa3602c0dabc14ff440d21bd3af1aef8a3d732afeef7b01",
     },
+  );
+  assert.deepEqual(
+    G12_PINNED_MIGRATION_TAIL.find(({ version }) => version === "0109"),
     {
-      version: "0111",
-      file: "0111_catalog_editorial_integration.sql",
-      sha256: "273555d5189d2ab5d8aa126c44d47cf4e060d763c0818108c5af3c2ee5512ded",
+      version: "0109",
+      file: "0109_catalog_fatia_3_relations.sql",
+      sha256: createHash("sha256")
+        .update(readFileSync("supabase/migrations/0109_catalog_fatia_3_relations.sql"))
+        .digest("hex"),
     },
-    {
-      version: "0112",
-      file: "0112_cms_ai_qwen_free_model_transition.sql",
-      sha256: "a9da7e25bd72bad8807f3b63706f5c3fdbf8e35c45c603cc46a45781463b3853",
-    },
-    {
-      version: "0113",
-      file: "0113_cms_ai_sante_free_model_transition.sql",
-      sha256: "3796d0d1f2ef8d8c622e15d3bec44185baf4155ece60de3806d40091a77e211a",
-    },
-    {
-      version: "0114",
-      file: "0114_cms_business_conflict_transport.sql",
-      sha256: "54c7999e4d6c16f5b715d5d38a98622c27d0a9e25013368807057b0457a64377",
-    },
-    {
-      version: "0115",
-      file: "0115_cms_staging_command_latency_budget.sql",
-      sha256: "b05a643511d481bb55ebd9b7c7d7f7064b28ea6d58ddffc0c5bfa0cce88f8b08",
-    },
-    {
-      version: "0116",
-      file: "0116_cms_staging_read_latency_budget.sql",
-      sha256: "0a60f9c67f03f6abe893373bbb03e42e86d5e03d4afecda5bc643cad0a1a0204",
-    },
-    {
-      version: "0117",
-      file: "0117_cms_ai_apodex_free_model_transition.sql",
-      sha256: "9f391f302a4eabc63c754a7de7f5ec83b835f88df11a096d2478ca5d20b1cbc5",
-    },
-    {
-      version: "0118",
-      file: "0118_cms_catalog_qa_durable_recovery.sql",
-      sha256: "67f95c8754fe584eed1e830bf070d55d162c0a45b947f367909dfe3835a405a4",
-    },
-    {
-      version: "0119",
-      file: "0119_cms_audit_qa_candidate_prefilter.sql",
-      sha256: "8ac9da363120cfd751a7533ee83375c95b9b191316a7d0e17f762c3d7e04134a",
-    },
-    {
-      version: "0120",
-      file: "0120_cms_admin_read_latency_budget.sql",
-      sha256: "f4aa323251419b7a95e9cb8077b2b8a0e87cc00ab4f516aa0b4f6f1fdfa99a88",
-    },
-  ]);
+  );
+  assert.deepEqual(
+    G12_PINNED_MIGRATION_TAIL.filter(({ version }) => version >= "0110"),
+    [
+      {
+        version: "0110",
+        file: "0110_catalog_workspace_integration.sql",
+        sha256: "c16c4064e8810520fe487ae8a6054f5ac961427abe01c461774d8df9b4ff9ac5",
+      },
+      {
+        version: "0111",
+        file: "0111_catalog_editorial_integration.sql",
+        sha256: "273555d5189d2ab5d8aa126c44d47cf4e060d763c0818108c5af3c2ee5512ded",
+      },
+      {
+        version: "0112",
+        file: "0112_cms_ai_qwen_free_model_transition.sql",
+        sha256: "a9da7e25bd72bad8807f3b63706f5c3fdbf8e35c45c603cc46a45781463b3853",
+      },
+      {
+        version: "0113",
+        file: "0113_cms_ai_sante_free_model_transition.sql",
+        sha256: "3796d0d1f2ef8d8c622e15d3bec44185baf4155ece60de3806d40091a77e211a",
+      },
+      {
+        version: "0114",
+        file: "0114_cms_business_conflict_transport.sql",
+        sha256: "54c7999e4d6c16f5b715d5d38a98622c27d0a9e25013368807057b0457a64377",
+      },
+      {
+        version: "0115",
+        file: "0115_cms_staging_command_latency_budget.sql",
+        sha256: "b05a643511d481bb55ebd9b7c7d7f7064b28ea6d58ddffc0c5bfa0cce88f8b08",
+      },
+      {
+        version: "0116",
+        file: "0116_cms_staging_read_latency_budget.sql",
+        sha256: "0a60f9c67f03f6abe893373bbb03e42e86d5e03d4afecda5bc643cad0a1a0204",
+      },
+      {
+        version: "0117",
+        file: "0117_cms_ai_apodex_free_model_transition.sql",
+        sha256: "9f391f302a4eabc63c754a7de7f5ec83b835f88df11a096d2478ca5d20b1cbc5",
+      },
+      {
+        version: "0118",
+        file: "0118_cms_catalog_qa_durable_recovery.sql",
+        sha256: "67f95c8754fe584eed1e830bf070d55d162c0a45b947f367909dfe3835a405a4",
+      },
+      {
+        version: "0119",
+        file: "0119_cms_audit_qa_candidate_prefilter.sql",
+        sha256: "8ac9da363120cfd751a7533ee83375c95b9b191316a7d0e17f762c3d7e04134a",
+      },
+      {
+        version: "0120",
+        file: "0120_cms_admin_read_latency_budget.sql",
+        sha256: "f4aa323251419b7a95e9cb8077b2b8a0e87cc00ab4f516aa0b4f6f1fdfa99a88",
+      },
+      {
+        version: "0121",
+        file: "0121_cms_qa_service_vocabulary.sql",
+        sha256: "4ff4b221fdfae02760d05f759ca58ccf2d2b97a8a89bc025f241315cc363ddd4",
+      },
+    ],
+  );
   assert.deepEqual(manifest.slice(-G12_PINNED_MIGRATION_TAIL.length), G12_PINNED_MIGRATION_TAIL);
   for (const migration of manifest.slice(-G12_PINNED_MIGRATION_TAIL.length)) {
     const bytes = readFileSync(join(process.cwd(), "supabase", "migrations", migration.file));

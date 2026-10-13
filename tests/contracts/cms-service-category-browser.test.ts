@@ -9,7 +9,7 @@ describe("categoria de serviço na homologação autenticada", () => {
       coverage.indexOf("async function selectFirstActiveControlledOption"),
       coverage.indexOf("async function fillSyntheticPostForCreate"),
     );
-    expect(editor).toMatch(/<Field label="Categoria do serviço">\s*<select/);
+    expect(editor).toMatch(/<Field\s+label="Categoria do serviço"[\s\S]*?>\s*<select/);
     expect(helper).toContain('getByRole("combobox", { name: label, exact: true })');
     expect(helper).toContain('option:not([value=""]):not(:disabled)');
     expect(helper).toContain("if (!value) throw new Error");

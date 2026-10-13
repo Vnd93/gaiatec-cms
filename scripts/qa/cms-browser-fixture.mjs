@@ -4,6 +4,11 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { QA_ACTOR_LEASE_MAX_MINUTES, QA_ACTOR_LEASE_TTL_MINUTES } from "./qa-actor-lease.mjs";
+import {
+  buildServiceVocabularyPlan,
+  provisionServiceVocabulary,
+  validateServiceVocabularyPlan,
+} from "./service-vocabulary-prerequisite.mjs";
 import { isCanonicalDocumentWriteFence } from "../../supabase/functions/_shared/cms-document-confirmation.ts";
 
 let createClient;
@@ -1672,6 +1677,12 @@ export function validateFixtureState(value, environment, projectRef, candidateSh
     new Set(documentIds).size === documentIds.length &&
     documentIds.every((documentId) => uuidPattern.test(documentId));
   const pim = value?.pimPrerequisites;
+  const serviceVocabulary = value?.serviceVocabularyPrerequisite;
+  const validServiceVocabulary =
+    serviceVocabulary == null ||
+    (value.environment === "staging" &&
+      value.pimCatalogEnabled === true &&
+      validateServiceVocabularyPlan(serviceVocabulary, value.actorId, value.runTag, value.expectedSha));
   const validPim =
     pim === null ||
     (pim &&
@@ -1728,6 +1739,8 @@ export function validateFixtureState(value, environment, projectRef, candidateSh
       [value.recoveryActorId, value.invitedActorId].some((id) => !uuidPattern.test(id ?? ""))) ||
     (!value.authLifecycleEnabled && (value.recoveryActorId !== null || value.invitedActorId !== null)) ||
     !validPim ||
+    !validServiceVocabulary ||
+    (value.status === "ready" && serviceVocabulary != null && serviceVocabulary.status !== "ready") ||
     (!value.pimCatalogEnabled && pim !== null) ||
     (value.status === "ready" && value.pimCatalogEnabled && pim?.status !== "ready") ||
     !(
@@ -3649,6 +3662,7 @@ async function setup() {
     documentIds: [],
     pimCatalogEnabled: pimCatalogProvisioning === "true",
     pimPrerequisites: null,
+    serviceVocabularyPrerequisite: null,
   };
   writeState(state);
   try {
@@ -3710,6 +3724,19 @@ async function setup() {
       writeState(state);
       state.pimPrerequisites = await provisionPimPrerequisites(actor, state.pimPrerequisites);
       writeState(state);
+      if (target.environment === "staging") {
+        state.serviceVocabularyPrerequisite = buildServiceVocabularyPlan(runTag, actor.actorId, expectedSha);
+        writeState(state);
+        state.serviceVocabularyPrerequisite = await provisionServiceVocabulary(
+          actor,
+          state.serviceVocabularyPrerequisite,
+          {
+            invokeCms: invokeAuthenticatedCmsFunction,
+            environment: target.environment,
+          },
+        );
+        writeState(state);
+      }
     }
     if (recoveryLifecycle) {
       const recoverySession = await context.admin.auth.admin.getUserById(recoveryLifecycle.actorId);

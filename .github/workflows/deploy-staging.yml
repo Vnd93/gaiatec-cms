@@ -3022,6 +3022,15 @@ jobs:
           QA_CMS_FIXTURE_STATE_PATH: outputs/cms-browser-mutating-state.json
           QA_CMS_FIXTURE_REPORT_PATH: outputs/cms-browser-mutating-residue.json
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Preserve allowlisted login diagnostics without treating failure as approval
+        if: failure()
+        timeout-minutes: 1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: staging-login-failure-${{ needs.deploy.outputs.candidate_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: candidate/outputs/cms-login-failure.json
+          if-no-files-found: ignore
+          compression-level: 0
       - name: Materialize fail-closed terminal CMS coverage from the single bound run
         timeout-minutes: 8
         working-directory: candidate

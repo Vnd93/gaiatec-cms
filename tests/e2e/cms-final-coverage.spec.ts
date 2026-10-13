@@ -57,6 +57,7 @@ import {
   waitForCmsRealBrowserAttestation,
 } from "./cms-real-browser-attestation";
 import { submitCmsMfaAndAwaitReady } from "./cms-mfa-session-gate";
+import { observeCmsLogin } from "./cms-login-diagnostics";
 import { fillSyntheticProductSpecification } from "./cms-product-specification";
 import { clickSyntheticProductCreation, prepareSyntheticProductDraft } from "./cms-product-creation";
 import {
@@ -669,8 +670,20 @@ async function signInWithAal2(page: Page, auth: ReadyAuthentication, expectedApi
   }
   await page.getByLabel("E-mail corporativo").fill(auth.email);
   await page.getByLabel("Senha").fill(auth.password);
-  await page.getByRole("button", { name: "Entrar" }).click();
-  await expect(page).toHaveURL(/\/admin\/mfa$/);
+  const loginDiagnostic = observeCmsLogin(page, expectedApiOrigin);
+  try {
+    await page.getByRole("button", { name: "Entrar" }).click();
+    await expect(page).toHaveURL(/\/admin\/mfa$/);
+  } catch (error) {
+    loginDiagnostic.writeFailure(
+      resolve(dirname(reportPath), "cms-login-failure.json"),
+      auth.expectedSha,
+      process.env.QA_CMS_TARGET_ENVIRONMENT ?? "",
+    );
+    throw error;
+  } finally {
+    loginDiagnostic.stop();
+  }
   if (
     await page
       .getByRole("heading", { name: "Ativar verificação em duas etapas" })

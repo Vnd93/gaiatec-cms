@@ -105,6 +105,7 @@ export default function AdminDiagnosticsPage() {
       supabase
         .from("cms_operational_events")
         .select("id,event_type,error_code,correlation_id,created_at")
+        .in("severity", ["warning", "critical"])
         .is("resolved_at", null)
         .order("created_at", { ascending: false })
         .limit(EVENT_PAGE_SIZE + 1),

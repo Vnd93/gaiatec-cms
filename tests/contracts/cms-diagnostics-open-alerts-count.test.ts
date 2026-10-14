@@ -6,6 +6,18 @@ const page = readFileSync("src/admin/pages/AdminDiagnosticsPage.tsx", "utf8");
 const migration = readFileSync("supabase/migrations/0089_cms_operational_events_read_scale.sql", "utf8");
 
 describe("diagnostics open alerts count", () => {
+  it("keeps warnings and critical events without calling routine information an open alert", () => {
+    const start = page.indexOf('.from("cms_operational_events")');
+    const eventsQuery = page.slice(start, page.indexOf(".limit(", start) + 60);
+    expect(eventsQuery).toContain('.in("severity", ["warning", "critical"])');
+    expect(eventsQuery).toContain('.is("resolved_at", null)');
+    expect(eventsQuery).toContain('.order("created_at", { ascending: false })');
+    expect(eventsQuery).toContain("limit(EVENT_PAGE_SIZE + 1)");
+    expect(eventsQuery).not.toMatch(/\.not\(\s*"event_type"|retention_applied/);
+    expect(eventsQuery).not.toMatch(/delete\(|update\(|insert\(/);
+    expect(eventsQuery).not.toContain('count: "exact"');
+  });
+
   it("never asks for a count of the whole open alert backlog", () => {
     // Proved against the authenticated staging session: the same read answers in about 400 ms without
     // a count and fails with HTTP 500 after roughly 8.4 seconds with count exact, because the exact

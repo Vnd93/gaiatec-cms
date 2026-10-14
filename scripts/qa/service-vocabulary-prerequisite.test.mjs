@@ -13,6 +13,19 @@ const actorId = "11111111-1111-4111-8111-111111111111";
 const optionId = "22222222-2222-4222-8222-222222222222";
 const listId = "33333333-3333-4333-8333-333333333333";
 const actor = { actorId, token: "synthetic-test-only" };
+const transportSource = readFileSync("scripts/qa/cms-browser-fixture.mjs", "utf8");
+const transportErrorPattern = transportSource.match(
+  /!\/(\^QA_CMS_FIXTURE_\[A-Z0-9_\]\+\$)\/\.test\(errorCode\)/,
+);
+assert.ok(transportErrorPattern, "the actual fixture transport must retain its strict error-code guard");
+const transportErrorCode = new RegExp(transportErrorPattern[1]);
+
+test("retains the transport guard that rejected the unbound service error codes before HTTP", () => {
+  assert.equal(transportErrorCode.test("QA_CMS_SERVICE_LIST_FAILED"), false);
+  assert.equal(transportErrorCode.test("QA_CMS_SERVICE_OPTION_FAILED"), false);
+  assert.equal(transportErrorCode.test("QA_CMS_FIXTURE_SERVICE_LIST_FAILED"), true);
+  assert.equal(transportErrorCode.test("QA_CMS_FIXTURE_SERVICE_OPTION_FAILED"), true);
+});
 
 test("plans the exact actor/run/SHA-owned term before any mutation", () => {
   const plan = buildServiceVocabularyPlan(run, actorId, sha, optionId);
@@ -32,8 +45,9 @@ function api({ ambiguous = false, foreign = false } = {}) {
   let options = [];
   return {
     calls,
-    invokeCms: async (_token, name, command) => {
+    invokeCms: async (_token, name, command, errorCode) => {
       assert.equal(name, "cms-controlled-vocabularies");
+      assert.match(errorCode, transportErrorCode);
       calls.push(command);
       if (command.action === "list")
         return { items: [{ id: listId, list_key: "service.category", active: true, options }] };

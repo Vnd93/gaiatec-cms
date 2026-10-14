@@ -48,7 +48,7 @@ export async function provisionServiceVocabulary(actor, plan, { invokeCms, envir
       actor.token,
       "cms-controlled-vocabularies",
       { action: "list", entityType: "service", includeInactive: false },
-      "QA_CMS_SERVICE_LIST_FAILED",
+      "QA_CMS_FIXTURE_SERVICE_LIST_FAILED",
     );
     if (!Array.isArray(reply?.items)) throw new Error("QA_CMS_SERVICE_LIST_INVALID");
     const matches = reply.items.filter(
@@ -83,7 +83,7 @@ export async function provisionServiceVocabulary(actor, plan, { invokeCms, envir
           sortOrder: 9999,
         },
       },
-      "QA_CMS_SERVICE_OPTION_FAILED",
+      "QA_CMS_FIXTURE_SERVICE_OPTION_FAILED",
     );
     if (reply?.optionId !== plan.optionId) throw new Error("QA_CMS_SERVICE_OPTION_FAILED");
   } catch {

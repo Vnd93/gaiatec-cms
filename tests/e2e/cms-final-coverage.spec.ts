@@ -65,6 +65,7 @@ import {
   campaignPublishedFormField,
   campaignTemplateField,
   campaignTitleField,
+  fillSyntheticCampaignBlocks,
 } from "./cms-campaign-fields";
 
 type CoverageSurface = {
@@ -1692,6 +1693,7 @@ async function fillSyntheticCampaignForCreate(page: Page, runTag: string, form: 
   await expect(page.getByLabel("Endereço público gerado")).toHaveText(campaignPath);
   await page.getByLabel("Objetivo").selectOption("lead_generation");
   await campaignTemplateField(page).selectOption("landing_conversion");
+  await fillSyntheticCampaignBlocks(page, runTag);
   const startsAt = new Date(Date.now() - 60_000).toISOString().slice(0, 16);
   const endsAt = new Date(Date.now() + 24 * 60 * 60_000).toISOString().slice(0, 16);
   await page.getByLabel("Início (America/São_Paulo)").fill(startsAt);
@@ -1713,6 +1715,7 @@ async function fillSyntheticCampaignForCreate(page: Page, runTag: string, form: 
   await page.getByLabel("Revisor de privacidade").fill("Revisor QA");
   await page.getByLabel("Data de aprovação").fill(new Date().toISOString().slice(0, 16));
   await page.getByLabel("Justificativa").fill(`${runTag} criação pela UI`);
+  await expect(page.getByRole("button", { name: "Salvar", exact: true })).toBeEnabled();
   return campaignPath;
 }
 

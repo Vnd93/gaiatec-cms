@@ -7,9 +7,11 @@ import {
   campaignPublishedFormField,
   campaignTemplateField,
   campaignTitleField,
+  fillSyntheticCampaignBlocks,
 } from "./cms-campaign-fields";
 
 let markup: string;
+let validateCampaignBlocks: (title: string, text: string) => boolean[];
 
 test.beforeAll(async () => {
   const browserSource = readFileSync("tests/e2e/cms-final-coverage.spec.ts", "utf8");
@@ -18,8 +20,11 @@ test.beforeAll(async () => {
     "campaignIndexableField",
     "campaignPublishedFormField",
     "campaignTitleField",
+    "fillSyntheticCampaignBlocks",
   ]) {
-    expect(browserSource).toContain(`${helper}(page)`);
+    expect(browserSource).toContain(
+      helper === "fillSyntheticCampaignBlocks" ? `${helper}(page, runTag)` : `${helper}(page)`,
+    );
   }
   // Resolve the router and the page through the same Vite SSR module graph.
   // Effects do not run: no authentication, backend traffic or release approval.
@@ -44,7 +49,16 @@ test.beforeAll(async () => {
               import Editor from "/src/admin/pages/AdminCampaignEditorPage.tsx";
               import { AdminAuthProvider } from "/src/admin/auth/AdminAuthContext.tsx";
               import { PageBlockEditor } from "/src/admin/components/PageBlockEditor.tsx";
-              import { createPageBlock } from "/src/admin/page-builder-model.ts";
+              import { createPageBlock, createEmptyPageBlock } from "/src/admin/page-builder-model.ts";
+              import { CmsPageBlockSchema } from "/src/shared/contracts/cms-content.ts";
+              export function validateBlocks(title, text) {
+                const hero = createEmptyPageBlock("hero");
+                const body = createEmptyPageBlock("rich_text");
+                return [
+                  CmsPageBlockSchema.safeParse({ ...hero, data: { ...hero.data, title } }).success,
+                  CmsPageBlockSchema.safeParse({ ...body, data: { ...body.data, text } }).success,
+                ];
+              }
               export function render() {
                 const router = createMemoryRouter([{
                   path: "/admin/marketing/campanhas/:id", element: createElement(Editor)
@@ -66,8 +80,12 @@ test.beforeAll(async () => {
     ],
   });
   try {
-    const entry = (await vite.ssrLoadModule(entryId)) as { render(): string };
+    const entry = (await vite.ssrLoadModule(entryId)) as {
+      render(): string;
+      validateBlocks: typeof validateCampaignBlocks;
+    };
     markup = entry.render();
+    validateCampaignBlocks = entry.validateBlocks;
   } finally {
     await vite.close();
   }
@@ -101,6 +119,20 @@ test("campaign form selector excludes identically named block selectors", async 
   expect(await page.getByRole("combobox", { name: "Formulário publicado", exact: true }).count()).toBe(2);
   expect(await campaignPublishedFormField(page).count()).toBe(1);
   await expect(campaignPublishedFormField(page)).toHaveValue("");
+});
+
+test("campaign bootstrap fills both required default blocks without weakening validation", async ({
+  page,
+}) => {
+  expect(validateCampaignBlocks("", "")).toEqual([false, false]);
+  await fillSyntheticCampaignBlocks(page, "QA-CMS-BLOCKS");
+  const blocks = page.locator("details.admin-page-block");
+  const title = await blocks.first().getByLabel("Título", { exact: true }).inputValue();
+  const text = await blocks.nth(1).getByLabel("Texto", { exact: true }).inputValue();
+  expect(title).toBe("QA-CMS-BLOCKS destaque sintético");
+  expect(text).toContain("sem dados comerciais reais");
+  expect(validateCampaignBlocks(title, text)).toEqual([true, true]);
+  await expect(campaignTitleField(page)).toHaveValue("");
 });
 
 test("remaining campaign creation labels each identify one real field", async ({ page }) => {

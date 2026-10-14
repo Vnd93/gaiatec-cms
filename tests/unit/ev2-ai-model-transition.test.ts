@@ -87,6 +87,22 @@ describe("AI model transition bridge", () => {
       correlationId: "55555555-5555-4555-8555-555555555555",
     };
     expect(Ev2AiExecutionCapabilitySchema.safeParse(executionCapability).success).toBe(false);
+    const manual = {
+      source: "manual_only",
+      enabled: false,
+      allowedModel: NEXT_MODEL,
+      externalProviderEnabled: false,
+      externalProviderReady: false,
+    };
+    for (const [schema, capability] of [
+      [Ev2AiCapabilitySchema, assistCapability],
+      [Ev2AiExecutionCapabilitySchema, executionCapability],
+    ] as const) {
+      const disabled = { ...capability, ...manual };
+      expect(schema.safeParse(disabled).success).toBe(true);
+      for (const field of ["enabled", "externalProviderEnabled", "externalProviderReady"])
+        expect(schema.safeParse({ ...disabled, [field]: true }).success).toBe(false);
+    }
   });
 
   it.each([LEGACY_MODEL, PREVIOUS_MODEL, INTERIM_MODEL, SANTE_MODEL, NEXT_MODEL])(

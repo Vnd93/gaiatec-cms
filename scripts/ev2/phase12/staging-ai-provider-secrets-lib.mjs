@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
+import deliveryPolicy from "../../../supabase/functions/_shared/ai-delivery-policy.json" with { type: "json" };
 
 export const STAGING_OPENROUTER_MODEL = "apodex/apodex-1.1-mini:free";
-export const STAGING_AI_EXTERNAL_PROVIDER_ENABLED = "true";
+export const STAGING_AI_EXTERNAL_PROVIDER_ENABLED = deliveryPolicy.externalProviderEnabled ? "true" : "false";
 
 const digest = (value) => createHash("sha256").update(value, "utf8").digest("hex");
 const clean = (value) => (typeof value === "string" ? value.trim().toLowerCase() : "");

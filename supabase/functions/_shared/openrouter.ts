@@ -1,3 +1,5 @@
+import { externalAiDeliveryAllowed } from "./ai-delivery-policy.ts";
+
 export const APPROVED_OPENROUTER_MODEL = "apodex/apodex-1.1-mini:free";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
@@ -49,6 +51,7 @@ function noAllowedProviderConfirmed(payload: Record<string, unknown> | null): bo
 }
 
 export function openRouterConfigured(): boolean {
+  if (!externalAiDeliveryAllowed()) return false;
   return (
     Boolean(Deno.env.get("OPENROUTER_API_KEY")) &&
     Deno.env.get("OPENROUTER_MODEL") === APPROVED_OPENROUTER_MODEL &&
@@ -64,6 +67,7 @@ export async function generateOpenRouterProposal(input: {
   sourceExcerpt: string;
   proposalKind: "locate" | "explain" | "extract" | "draft_patch";
 }): Promise<OpenRouterProposal> {
+  if (!externalAiDeliveryAllowed()) throw new Error("CMS_AI_MANUAL_ONLY");
   const apiKey = Deno.env.get("OPENROUTER_API_KEY");
   const configuredModel = Deno.env.get("OPENROUTER_MODEL");
   if (!apiKey || configuredModel !== APPROVED_OPENROUTER_MODEL) throw new Error("OPENROUTER_NOT_CONFIGURED");

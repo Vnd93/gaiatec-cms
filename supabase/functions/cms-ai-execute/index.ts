@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { z } from "npm:zod@4.4.3";
 import { authenticateCms } from "../_shared/cms-auth.ts";
+import { externalAiDeliveryAllowed } from "../_shared/ai-delivery-policy.ts";
 import { isConfiguredCmsEnvironment, isProductionOperationEnabled } from "../_shared/ev2-environment.ts";
 import { APPROVED_OPENROUTER_MODEL, openRouterConfigured } from "../_shared/openrouter.ts";
 import {
@@ -281,7 +282,7 @@ Deno.serve(async (req) => {
       403,
     );
   const externalProviderReady = openRouterConfigured();
-  if (!externalProviderReady && command.action !== "capability")
+  if (externalAiDeliveryAllowed() && !externalProviderReady && command.action !== "capability")
     return json(
       req,
       {
@@ -340,10 +341,11 @@ Deno.serve(async (req) => {
     return json(req, {
       ...capability,
       enabled: capability?.enabled === true && externalProviderReady,
+      ...(!externalAiDeliveryAllowed() ? { source: "manual_only" } : {}),
       correlationId,
       providerMode: "openrouter",
       providerModel: APPROVED_OPENROUTER_MODEL,
-      externalProviderEnabled: true,
+      externalProviderEnabled: externalAiDeliveryAllowed(),
       externalProviderReady,
       realDataAllowed: false,
       syntheticOnly: true,
@@ -360,6 +362,13 @@ Deno.serve(async (req) => {
       },
       412,
     );
+  if (!externalAiDeliveryAllowed())
+    return json(req, {
+      error: "Execução assistida desativada neste candidato. Use o fluxo manual.",
+      code: "CMS_AI_MANUAL_ONLY",
+      preserved: true,
+      correlationId,
+    }, 403);
   if (capability?.enabled !== true)
     return json(
       req,

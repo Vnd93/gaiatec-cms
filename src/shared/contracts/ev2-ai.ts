@@ -42,6 +42,15 @@ export const Ev2AiCapabilitySchema = z
   })
   .strict()
   .superRefine((capability, context) => {
+    if (
+      capability.source === "manual_only" &&
+      (capability.enabled || capability.externalProviderEnabled || capability.externalProviderReady)
+    )
+      context.addIssue({
+        code: "custom",
+        path: ["enabled"],
+        message: "O modo manual não pode habilitar IA externa.",
+      });
     if (capability.providerModel !== capability.allowedModel)
       context.addIssue({
         code: "custom",

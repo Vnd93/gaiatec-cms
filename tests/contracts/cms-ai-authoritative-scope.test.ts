@@ -202,7 +202,10 @@ describe("authoritative AI scope for F-015 and F-016", () => {
     expect(assistPage).toMatch(/O conteúdo é enviado ao modelo\s+aprovado/);
     expect(assistPage).not.toContain("via OpenRouter");
     expect(assistPage).toContain("não é aplicado nem publicado automaticamente");
-    expect(assistPage).toContain("Operação manual sempre disponível");
+    expect(assistPage).toContain("Operação manual");
+    expect(assistPage).toContain("IA externa desativada neste candidato");
+    expect(assistPage).toContain("sujeitos às permissões e flags vigentes");
+    expect(assistPage).toContain("catálogo global permanece desligado");
     expect(executePage).toContain("Fallback manual preservado");
     expect(executePage).toMatch(/Dados reais\s+e\s+tabelas editoriais permanecem bloqueados/);
   });

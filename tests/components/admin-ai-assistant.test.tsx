@@ -3,6 +3,10 @@ import userEvent from "@testing-library/user-event";
 import type { ComponentType } from "react";
 import { MemoryRouter } from "react-router";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+const delivery = vi.hoisted(() => ({ enabled: true }));
+vi.mock("../../supabase/functions/_shared/ai-delivery-policy", () => ({
+  externalAiDeliveryAllowed: () => delivery.enabled,
+}));
 
 const REVIEW_SESSION_ID = "51000000-0000-4000-8000-000000000201";
 const OWN_SESSION_ID = "51000000-0000-4000-8000-000000000202";
@@ -203,9 +207,23 @@ describe("EV2.10 controlled AI assistant", () => {
   afterAll(() => vi.unstubAllEnvs());
 
   beforeEach(() => {
+    delivery.enabled = true;
     mocks.command.mockImplementation((_session, body: Record<string, unknown>) =>
       Promise.resolve(responseFor(body)),
     );
+  });
+
+  it("offers only manual editors and sends no AI command in the manual candidate", async () => {
+    delivery.enabled = false;
+    mocks.command.mockClear();
+    render(
+      <MemoryRouter>
+        <AdminAiAssistantPage />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("IA externa desativada");
+    expect(screen.queryByRole("button", { name: "Preparar proposta sem aplicar" })).not.toBeInTheDocument();
+    expect(mocks.command).not.toHaveBeenCalled();
   });
 
   it("keeps generation owned, review segregated and low confidence pending", async () => {

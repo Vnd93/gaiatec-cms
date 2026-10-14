@@ -34,7 +34,7 @@ export const Ev2AiExecutionCapabilitySchema = z
     providerModel: CompatibleResponseModel,
     allowedProvider: z.literal("openrouter").optional(),
     allowedModel: CompatibleResponseModel.optional(),
-    externalProviderEnabled: z.literal(true),
+    externalProviderEnabled: z.boolean(),
     externalProviderReady: z.boolean(),
     realDataAllowed: z.literal(false),
     syntheticOnly: z.literal(true),
@@ -49,6 +49,16 @@ export const Ev2AiExecutionCapabilitySchema = z
   })
   .strict()
   .superRefine((capability, context) => {
+    if (
+      capability.source === "manual_only"
+        ? capability.enabled || capability.externalProviderEnabled || capability.externalProviderReady
+        : !capability.externalProviderEnabled
+    )
+      context.addIssue({
+        code: "custom",
+        path: ["externalProviderEnabled"],
+        message: "Política de execução assistida inconsistente.",
+      });
     if (capability.environment === "production" && capability.enabled)
       context.addIssue({
         code: "custom",

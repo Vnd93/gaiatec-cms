@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { z } from "npm:zod@4.4.3";
 import { authenticateCms } from "../_shared/cms-auth.ts";
+import { externalAiDeliveryAllowed } from "../_shared/ai-delivery-policy.ts";
 import { isConfiguredCmsEnvironment, isProductionOperationEnabled } from "../_shared/ev2-environment.ts";
 import {
   APPROVED_OPENROUTER_MODEL,
@@ -308,7 +309,7 @@ Deno.serve(async (req) => {
       403,
     );
   const externalProviderEnabled = openRouterConfigured();
-  if (!externalProviderEnabled && command.action !== "capability")
+  if (externalAiDeliveryAllowed() && !externalProviderEnabled && command.action !== "capability")
     return json(
       req,
       {
@@ -381,6 +382,27 @@ Deno.serve(async (req) => {
       },
       503,
     );
+  if (!externalAiDeliveryAllowed()) {
+    if (command.action === "capability")
+      return json(req, {
+        ...capability,
+        enabled: false,
+        source: "manual_only",
+        providerMode: "openrouter",
+        providerModel: APPROVED_OPENROUTER_MODEL,
+        externalProviderEnabled: false,
+        externalProviderReady: false,
+        realDataAllowed: false,
+        manualFallback: true,
+        correlationId,
+      });
+    return json(req, {
+      error: "IA externa desativada neste candidato. Use os editores manuais.",
+      code: "CMS_AI_MANUAL_ONLY",
+      preserved: true,
+      correlationId,
+    }, 403);
+  }
   if (command.action === "capability")
     return json(req, {
       ...capability,

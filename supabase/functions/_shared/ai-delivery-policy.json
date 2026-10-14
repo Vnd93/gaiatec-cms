@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "policyKey": "cms-manual-only-v1",
+  "mode": "manual-only",
+  "externalProviderEnabled": false,
+  "assistedExecutionEnabled": false,
+  "automaticPublishAllowed": false
+}

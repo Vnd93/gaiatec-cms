@@ -108,7 +108,8 @@ test("contracts and UI expose source, confidence, diff, cost and manual fallback
   assert.match(page, /aguarda confirmação/);
   assert.match(page, /fila de revisão/);
   assert.match(page, /selectedProposal\.hasPendingFields/);
-  assert.match(page, /Operação manual sempre disponível/);
+  assert.match(page, /Operação manual/);
+  assert.match(page, /sujeitos às permissões e flags vigentes/);
   assert.match(page, /Sem cobrança/);
   assert.match(navigation, /candidate: "ev2\.ai_assist"/);
   assert.match(routes, /path: "assistente"/);

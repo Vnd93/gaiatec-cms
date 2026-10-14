@@ -12,6 +12,21 @@ import {
 const digest = (value) => createHash("sha256").update(value, "utf8").digest("hex");
 const apiKeyDigest = "a".repeat(64);
 
+test("manual delivery requires the disabled switch and refuses legacy enabling values", () => {
+  assert.equal(STAGING_AI_EXTERNAL_PROVIDER_ENABLED, "false");
+  const before = [{ name: "OPENROUTER_API_KEY", digest: apiKeyDigest }];
+  const after = [
+    ...before,
+    { name: "OPENROUTER_MODEL", digest: digest(STAGING_OPENROUTER_MODEL) },
+    { name: "CMS_AI_EXTERNAL_PROVIDER_ENABLED", digest: digest("true") },
+  ];
+  assert.ok(
+    evaluateStagingAiProviderSecretTransition(before, after).violations.includes(
+      "external_provider_switch_digest_mismatch",
+    ),
+  );
+});
+
 test("staging changes only the model policy and preserves the existing provider credential", () => {
   const privateDigest = "b".repeat(64);
   const result = evaluateStagingAiProviderSecretTransition(

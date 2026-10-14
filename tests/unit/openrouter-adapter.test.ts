@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// Preserve historical transport/privacy regressions independently of the
+// release-bound manual-only guard, tested without this mock in its own suite.
+vi.mock("../../supabase/functions/_shared/ai-delivery-policy", () => ({
+  externalAiDeliveryAllowed: () => true,
+}));
+
 import {
   APPROVED_OPENROUTER_MODEL,
   generateOpenRouterProposal,

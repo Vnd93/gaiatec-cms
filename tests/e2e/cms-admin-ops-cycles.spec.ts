@@ -8,6 +8,7 @@ import {
   type Response,
 } from "@playwright/test";
 import { createHmac, randomUUID } from "node:crypto";
+import deliveryPolicy from "../../supabase/functions/_shared/ai-delivery-policy.json" with { type: "json" };
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -741,16 +742,29 @@ test.describe("CMS administrative operational cycles", () => {
           path: "/functions/v1/cms-ai",
           statuses: [401, 403],
           minOccurrences: 1,
-          maxOccurrences: 2,
+          maxOccurrences: deliveryPolicy.mode === "manual-only" ? 4 : 2,
         },
-        {
-          id: "ai-provider-controlled-unavailability",
-          method: "POST",
-          path: "/functions/v1/cms-ai",
-          statuses: [503],
-          maxOccurrences: 1,
-          minOccurrences: 1,
-        },
+        ...(deliveryPolicy.mode === "manual-only"
+          ? [
+              {
+                id: "manual-ai-execution-blocked",
+                method: "POST" as const,
+                path: "/functions/v1/cms-ai-execute",
+                statuses: [403],
+                minOccurrences: 2,
+                maxOccurrences: 2,
+              },
+            ]
+          : [
+              {
+                id: "ai-provider-controlled-unavailability",
+                method: "POST",
+                path: "/functions/v1/cms-ai",
+                statuses: [503],
+                maxOccurrences: 1,
+                minOccurrences: 1,
+              },
+            ]),
         {
           id: "reviewer-scoped-rest-boundary",
           method: "GET",
@@ -1456,589 +1470,634 @@ test.describe("CMS administrative operational cycles", () => {
         negative: "rota, chamada direta com UUID manipulado, leads e RDO recusados",
       });
 
-      let editorialMutations = 0;
-      const countEditorialMutation = (request: { url(): string; method(): string }) => {
-        if (
-          request.method() === "POST" &&
-          new URL(request.url()).pathname.endsWith("/functions/v1/cms-content")
-        ) {
-          editorialMutations += 1;
+      let responsePromise: Promise<Response>;
+      let actionResponse: Response;
+      if (deliveryPolicy.mode === "manual-only") {
+        expect(deliveryPolicy.externalProviderEnabled).toBe(false);
+        for (const current of [page, reviewerPage]) {
+          await current.goto("/admin/assistente", { waitUntil: "domcontentloaded" });
+          await expect(current.getByRole("status")).toContainText("IA externa desativada");
+          await expect(current.getByRole("button", { name: "Preparar proposta sem aplicar" })).toHaveCount(0);
+          await current.goto("/admin/assistente/execucao", { waitUntil: "domcontentloaded" });
+          await expect(current.getByRole("status")).toContainText("execução assistida desativadas");
+          for (const functionName of ["cms-ai", "cms-ai-execute"]) {
+            const blocked = await browserApi(current, configuration, `/functions/v1/${functionName}`, {
+              method: "POST",
+              body: {
+                action: "workspace",
+                envelope: {
+                  schemaVersion: 1,
+                  commandId: randomUUID(),
+                  correlationId: randomUUID(),
+                  occurredAt: new Date().toISOString(),
+                  actorContext: { environment: "staging", siteKey: "main" },
+                },
+              },
+            });
+            expect(blocked.status).toBe(403);
+            const body = blocked.body as Record<string, unknown>;
+            expect(body.code).toBe("CMS_AI_MANUAL_ONLY");
+            expect(body.preserved).toBe(true);
+          }
         }
-      };
-      page.on("request", countEditorialMutation);
-      reviewerPage.on("request", countEditorialMutation);
-      const aiSessionTitle = `${configuration.runTag} revisão humana`;
-      await page.goto("/admin/assistente", { waitUntil: "domcontentloaded" });
-      await expect(page.getByRole("heading", { name: "Assistente controlada" })).toBeVisible();
-      const sessionTitleField = page.getByLabel("Título operacional");
-      const sessionModeField = page.getByLabel("Modo");
-      await sessionTitleField.fill(aiSessionTitle);
-      await sessionModeField.selectOption("draft");
-      const startSessionSemanticFields = await Promise.all([
-        prepareCmsSemanticField({
-          page,
-          locator: sessionTitleField,
-          surfaceId: "ai-assistant",
-          fieldName: "Título operacional",
-          scenarioId: "ai_synthetic_human_review_manual_fallback",
-          schemaReference: "src/admin/pages/AdminAiAssistantPage.tsx",
-        }),
-        prepareCmsSemanticField({
-          page,
-          locator: sessionModeField,
-          surfaceId: "ai-assistant",
-          fieldName: "Modo",
-          scenarioId: "ai_synthetic_human_review_manual_fallback",
-          schemaReference: "src/admin/pages/AdminAiAssistantPage.tsx",
-          absence: { applicability: "optional" },
-        }),
-      ]);
-      let responsePromise = waitForEdgeAction(page, "cms-ai", "start_session");
-      await page.getByRole("button", { name: "Abrir sessão de 30 minutos" }).click();
-      let actionResponse = await responsePromise;
-      const startSessionHttpStatus = actionResponse.status();
-      const sessionResult = await responseBody(actionResponse);
-      expect(uuidPattern.test(String(sessionResult.sessionId))).toBe(true);
-      semanticActions.record({
-        surfaceId: "ai-assistant",
-        controlName: "Abrir sessão de 30 minutos",
-        action: "start_session",
-        scenarioId: "ai_synthetic_human_review_manual_fallback",
-        backendStatus: String(sessionResult.status ?? "opened"),
-        httpStatus: actionResponse.status(),
-      });
-      const proposalKindField = page.getByLabel("Ação assistiva");
-      const promptField = page.getByLabel("Solicitação");
-      const sourceDocumentField = page.getByLabel("Documento");
-      const sourceVersionField = page.getByLabel("Versão");
-      const sourcePageField = page.getByLabel("Página");
-      const sourceLocatorField = page.getByLabel("Localizador");
-      const sourceExcerptField = page.getByLabel("Trecho técnico autorizado");
-      await proposalKindField.selectOption("draft_patch");
-      await promptField.fill("Prepare um resumo sintético, verificável e sujeito a revisão humana.");
-      await sourceDocumentField.fill(`${configuration.runTag} documento sintético`);
-      await sourceVersionField.fill("qa-v1");
-      await sourcePageField.fill("1");
-      await sourceLocatorField.fill("Seção sintética 1");
-      await sourceExcerptField.fill(
-        "Equipamento sintético com faixa operacional controlada e validação exclusivamente de QA.",
-      );
-      const proposalSemanticFields = await Promise.all([
-        prepareCmsSemanticField({
-          page,
-          locator: proposalKindField,
-          surfaceId: "ai-assistant",
-          fieldName: "Ação assistiva",
-          scenarioId: "ai_synthetic_human_review_manual_fallback",
-          schemaReference: "src/admin/pages/AdminAiAssistantPage.tsx",
-          absence: { applicability: "optional" },
-        }),
-        ...[
-          [promptField, "Solicitação"],
-          [sourceDocumentField, "Documento"],
-          [sourceVersionField, "Versão"],
-          [sourceLocatorField, "Localizador"],
-          [sourceExcerptField, "Trecho técnico autorizado"],
-        ].map(([locator, fieldName]) =>
+        aiFinalState = "IA externa e execução assistida bloqueadas; nenhuma sessão ou proposta criada";
+        scenarios.push({
+          id: "ai_manual_only_delivery",
+          status: "passed",
+          backend: "ambos os atores receberam bloqueio autoritativo nas duas APIs",
+          audit: "auditoria e limpeza terminal verificadas pelos gates sintéticos",
+          negative: "nenhum controle de geração ou execução disponível; chamada direta recusada",
+          cleanup: aiFinalState,
+        });
+      } else {
+        let editorialMutations = 0;
+        const countEditorialMutation = (request: { url(): string; method(): string }) => {
+          if (
+            request.method() === "POST" &&
+            new URL(request.url()).pathname.endsWith("/functions/v1/cms-content")
+          ) {
+            editorialMutations += 1;
+          }
+        };
+        page.on("request", countEditorialMutation);
+        reviewerPage.on("request", countEditorialMutation);
+        const aiSessionTitle = `${configuration.runTag} revisão humana`;
+        await page.goto("/admin/assistente", { waitUntil: "domcontentloaded" });
+        await expect(page.getByRole("heading", { name: "Assistente controlada" })).toBeVisible();
+        const sessionTitleField = page.getByLabel("Título operacional");
+        const sessionModeField = page.getByLabel("Modo");
+        await sessionTitleField.fill(aiSessionTitle);
+        await sessionModeField.selectOption("draft");
+        const startSessionSemanticFields = await Promise.all([
           prepareCmsSemanticField({
             page,
-            locator: locator as ReturnType<Page["getByLabel"]>,
+            locator: sessionTitleField,
             surfaceId: "ai-assistant",
-            fieldName: fieldName as string,
+            fieldName: "Título operacional",
             scenarioId: "ai_synthetic_human_review_manual_fallback",
             schemaReference: "src/admin/pages/AdminAiAssistantPage.tsx",
           }),
-        ),
-        prepareCmsSemanticField({
-          page,
-          locator: sourcePageField,
+          prepareCmsSemanticField({
+            page,
+            locator: sessionModeField,
+            surfaceId: "ai-assistant",
+            fieldName: "Modo",
+            scenarioId: "ai_synthetic_human_review_manual_fallback",
+            schemaReference: "src/admin/pages/AdminAiAssistantPage.tsx",
+            absence: { applicability: "optional" },
+          }),
+        ]);
+        responsePromise = waitForEdgeAction(page, "cms-ai", "start_session");
+        await page.getByRole("button", { name: "Abrir sessão de 30 minutos" }).click();
+        actionResponse = await responsePromise;
+        const startSessionHttpStatus = actionResponse.status();
+        const sessionResult = await responseBody(actionResponse);
+        expect(uuidPattern.test(String(sessionResult.sessionId))).toBe(true);
+        semanticActions.record({
           surfaceId: "ai-assistant",
-          fieldName: "Página",
+          controlName: "Abrir sessão de 30 minutos",
+          action: "start_session",
           scenarioId: "ai_synthetic_human_review_manual_fallback",
-          schemaReference: "src/admin/pages/AdminAiAssistantPage.tsx",
-          absence: { applicability: "optional" },
-          invalid: {
-            applicability: "exercise",
-            value: "0",
-            expectedResult: "A página abaixo do intervalo permitido deve ser recusada.",
-            observedResult: "A validação nativa recusou a página fora do intervalo.",
-          },
-        }),
-      ]);
-      responsePromise = waitForEdgeAction(page, "cms-ai", "generate_proposal");
-      await page.getByRole("button", { name: "Preparar proposta sem aplicar" }).click();
-      actionResponse = await responsePromise;
-      const proposalHttpStatus = actionResponse.status();
-      const proposalResult = await responseBody(actionResponse);
-      expect(uuidPattern.test(String(proposalResult.proposalId))).toBe(true);
-      expect(proposalResult.applied).toBe(false);
-      expect(proposalResult.published).toBe(false);
-      semanticActions.record({
-        surfaceId: "ai-assistant",
-        controlName: "Preparar proposta sem aplicar",
-        action: "generate_proposal",
-        scenarioId: "ai_synthetic_human_review_manual_fallback",
-        backendStatus: String(proposalResult.status ?? "generated"),
-        httpStatus: actionResponse.status(),
-      });
-      await expect(page.getByText("Aplicado: não · Publicado: não", { exact: false })).toBeVisible();
-      await expect(page.getByRole("button", { name: /Registrar edição/ })).toBeDisabled();
-      await expect(page.getByText(/segregação exige que outro revisor autorizado/i)).toBeVisible();
+          backendStatus: String(sessionResult.status ?? "opened"),
+          httpStatus: actionResponse.status(),
+        });
+        const proposalKindField = page.getByLabel("Ação assistiva");
+        const promptField = page.getByLabel("Solicitação");
+        const sourceDocumentField = page.getByLabel("Documento");
+        const sourceVersionField = page.getByLabel("Versão");
+        const sourcePageField = page.getByLabel("Página");
+        const sourceLocatorField = page.getByLabel("Localizador");
+        const sourceExcerptField = page.getByLabel("Trecho técnico autorizado");
+        await proposalKindField.selectOption("draft_patch");
+        await promptField.fill("Prepare um resumo sintético, verificável e sujeito a revisão humana.");
+        await sourceDocumentField.fill(`${configuration.runTag} documento sintético`);
+        await sourceVersionField.fill("qa-v1");
+        await sourcePageField.fill("1");
+        await sourceLocatorField.fill("Seção sintética 1");
+        await sourceExcerptField.fill(
+          "Equipamento sintético com faixa operacional controlada e validação exclusivamente de QA.",
+        );
+        const proposalSemanticFields = await Promise.all([
+          prepareCmsSemanticField({
+            page,
+            locator: proposalKindField,
+            surfaceId: "ai-assistant",
+            fieldName: "Ação assistiva",
+            scenarioId: "ai_synthetic_human_review_manual_fallback",
+            schemaReference: "src/admin/pages/AdminAiAssistantPage.tsx",
+            absence: { applicability: "optional" },
+          }),
+          ...[
+            [promptField, "Solicitação"],
+            [sourceDocumentField, "Documento"],
+            [sourceVersionField, "Versão"],
+            [sourceLocatorField, "Localizador"],
+            [sourceExcerptField, "Trecho técnico autorizado"],
+          ].map(([locator, fieldName]) =>
+            prepareCmsSemanticField({
+              page,
+              locator: locator as ReturnType<Page["getByLabel"]>,
+              surfaceId: "ai-assistant",
+              fieldName: fieldName as string,
+              scenarioId: "ai_synthetic_human_review_manual_fallback",
+              schemaReference: "src/admin/pages/AdminAiAssistantPage.tsx",
+            }),
+          ),
+          prepareCmsSemanticField({
+            page,
+            locator: sourcePageField,
+            surfaceId: "ai-assistant",
+            fieldName: "Página",
+            scenarioId: "ai_synthetic_human_review_manual_fallback",
+            schemaReference: "src/admin/pages/AdminAiAssistantPage.tsx",
+            absence: { applicability: "optional" },
+            invalid: {
+              applicability: "exercise",
+              value: "0",
+              expectedResult: "A página abaixo do intervalo permitido deve ser recusada.",
+              observedResult: "A validação nativa recusou a página fora do intervalo.",
+            },
+          }),
+        ]);
+        responsePromise = waitForEdgeAction(page, "cms-ai", "generate_proposal");
+        await page.getByRole("button", { name: "Preparar proposta sem aplicar" }).click();
+        actionResponse = await responsePromise;
+        const proposalHttpStatus = actionResponse.status();
+        const proposalResult = await responseBody(actionResponse);
+        expect(uuidPattern.test(String(proposalResult.proposalId))).toBe(true);
+        expect(proposalResult.applied).toBe(false);
+        expect(proposalResult.published).toBe(false);
+        semanticActions.record({
+          surfaceId: "ai-assistant",
+          controlName: "Preparar proposta sem aplicar",
+          action: "generate_proposal",
+          scenarioId: "ai_synthetic_human_review_manual_fallback",
+          backendStatus: String(proposalResult.status ?? "generated"),
+          httpStatus: actionResponse.status(),
+        });
+        await expect(page.getByText("Aplicado: não · Publicado: não", { exact: false })).toBeVisible();
+        await expect(page.getByRole("button", { name: /Registrar edição/ })).toBeDisabled();
+        await expect(page.getByText(/segregação exige que outro revisor autorizado/i)).toBeVisible();
 
-      const reviewerWorkspace = waitForEdgeAction(reviewerPage, "cms-ai", "workspace");
-      await reviewerPage.goto("/admin/assistente", { waitUntil: "domcontentloaded" });
-      const reviewerWorkspaceResponse = await reviewerWorkspace;
-      expect(reviewerWorkspaceResponse.status()).toBe(200);
-      const sessionSelect = reviewerPage.getByLabel("Sessão atual");
-      await expect(sessionSelect.locator("option").filter({ hasText: aiSessionTitle })).toHaveCount(1, {
-        timeout: 20_000,
-      });
-      const reviewSessionId = await sessionSelect
-        .locator("option")
-        .filter({ hasText: aiSessionTitle })
-        .getAttribute("value");
-      expect(reviewSessionId).toBeTruthy();
-      await sessionSelect.selectOption(reviewSessionId!);
-      await expect(reviewerPage.getByText("Aplicado: não · Publicado: não", { exact: false })).toBeVisible();
-      const proposalSelect = reviewerPage.getByLabel("Proposta");
-      const rationaleField = reviewerPage.getByLabel("Justificativa da decisão");
-      const manualAdjustmentField = reviewerPage.getByLabel("Ajuste manual do primeiro campo");
-      await proposalSelect.selectOption(await proposalSelect.inputValue());
-      await rationaleField.fill(`${configuration.runTag} revisão humana independente concluída.`);
-      await manualAdjustmentField.fill(
-        "Resumo sintético revisado manualmente; nenhum conteúdo foi aplicado ou publicado.",
-      );
-      const reviewerQuerySemanticFields = await Promise.all([
-        prepareCmsSemanticField({
-          page: reviewerPage,
-          locator: sessionSelect,
+        const reviewerWorkspace = waitForEdgeAction(reviewerPage, "cms-ai", "workspace");
+        await reviewerPage.goto("/admin/assistente", { waitUntil: "domcontentloaded" });
+        const reviewerWorkspaceResponse = await reviewerWorkspace;
+        expect(reviewerWorkspaceResponse.status()).toBe(200);
+        const sessionSelect = reviewerPage.getByLabel("Sessão atual");
+        await expect(sessionSelect.locator("option").filter({ hasText: aiSessionTitle })).toHaveCount(1, {
+          timeout: 20_000,
+        });
+        const reviewSessionId = await sessionSelect
+          .locator("option")
+          .filter({ hasText: aiSessionTitle })
+          .getAttribute("value");
+        expect(reviewSessionId).toBeTruthy();
+        await sessionSelect.selectOption(reviewSessionId!);
+        await expect(
+          reviewerPage.getByText("Aplicado: não · Publicado: não", { exact: false }),
+        ).toBeVisible();
+        const proposalSelect = reviewerPage.getByLabel("Proposta");
+        const rationaleField = reviewerPage.getByLabel("Justificativa da decisão");
+        const manualAdjustmentField = reviewerPage.getByLabel("Ajuste manual do primeiro campo");
+        await proposalSelect.selectOption(await proposalSelect.inputValue());
+        await rationaleField.fill(`${configuration.runTag} revisão humana independente concluída.`);
+        await manualAdjustmentField.fill(
+          "Resumo sintético revisado manualmente; nenhum conteúdo foi aplicado ou publicado.",
+        );
+        const reviewerQuerySemanticFields = await Promise.all([
+          prepareCmsSemanticField({
+            page: reviewerPage,
+            locator: sessionSelect,
+            surfaceId: "ai-assistant",
+            fieldName: "Sessão atual",
+            scenarioId: "ai_synthetic_human_review_manual_fallback",
+            schemaReference: "src/admin/pages/AdminAiAssistantPage.tsx",
+            absence: { applicability: "optional" },
+          }),
+          prepareCmsSemanticField({
+            page: reviewerPage,
+            locator: proposalSelect,
+            surfaceId: "ai-assistant",
+            fieldName: "Proposta",
+            scenarioId: "ai_synthetic_human_review_manual_fallback",
+            schemaReference: "src/admin/pages/AdminAiAssistantPage.tsx",
+            absence: { applicability: "optional" },
+          }),
+        ]);
+        const decisionSemanticFields = await Promise.all([
+          prepareCmsSemanticField({
+            page: reviewerPage,
+            locator: rationaleField,
+            surfaceId: "ai-assistant",
+            fieldName: "Justificativa da decisão",
+            scenarioId: "ai_synthetic_human_review_manual_fallback",
+            schemaReference: "src/admin/pages/AdminAiAssistantPage.tsx",
+          }),
+          prepareCmsSemanticField({
+            page: reviewerPage,
+            locator: manualAdjustmentField,
+            surfaceId: "ai-assistant",
+            fieldName: "Ajuste manual do primeiro campo",
+            scenarioId: "ai_synthetic_human_review_manual_fallback",
+            schemaReference: "src/admin/pages/AdminAiAssistantPage.tsx",
+            absence: { applicability: "optional" },
+          }),
+        ]);
+        responsePromise = waitForEdgeAction(reviewerPage, "cms-ai", "decide_proposal");
+        const decisionControl = reviewerPage.getByRole("button", { name: /Registrar edição/ });
+        const decisionControlName = (await decisionControl.textContent())?.replace(/\s+/g, " ").trim() ?? "";
+        await decisionControl.click();
+        actionResponse = await responsePromise;
+        const decisionResult = await responseBody(actionResponse);
+        expect(decisionResult.decision).toBe("edited");
+        expect(decisionResult.applied).toBe(false);
+        expect(decisionResult.published).toBe(false);
+        semanticActions.record({
           surfaceId: "ai-assistant",
-          fieldName: "Sessão atual",
+          controlName: decisionControlName,
+          action: "decide_proposal",
           scenarioId: "ai_synthetic_human_review_manual_fallback",
-          schemaReference: "src/admin/pages/AdminAiAssistantPage.tsx",
-          absence: { applicability: "optional" },
-        }),
-        prepareCmsSemanticField({
-          page: reviewerPage,
-          locator: proposalSelect,
+          backendStatus: String(decisionResult.decision),
+          httpStatus: actionResponse.status(),
+        });
+        await expect(
+          reviewerPage.getByText(/Decisão humana registrada sem aplicar ou publicar/),
+        ).toBeVisible();
+        const persistedWorkspace = waitForEdgeAction(reviewerPage, "cms-ai", "workspace");
+        await reviewerPage.reload({ waitUntil: "domcontentloaded" });
+        const persistedWorkspaceResponse = await persistedWorkspace;
+        expect(persistedWorkspaceResponse.status()).toBe(200);
+        await expect(
+          reviewerPage.getByText(/Aplicado: não · Publicado: não/, { exact: false }),
+        ).toBeVisible();
+        recordPersistedAdminFields(semanticScenarios, startSessionSemanticFields, startSessionHttpStatus);
+        recordPersistedAdminFields(semanticScenarios, proposalSemanticFields, proposalHttpStatus);
+        recordPersistedAdminFields(semanticScenarios, decisionSemanticFields, actionResponse.status());
+        for (const field of reviewerQuerySemanticFields) {
+          recordTransientAdminField(
+            semanticScenarios,
+            field,
+            reviewerWorkspaceResponse.status(),
+            "query",
+            false,
+          );
+        }
+        semanticScenarios.recordStructure({
           surfaceId: "ai-assistant",
-          fieldName: "Proposta",
+          controlKind: "form",
+          controlName: "Abrir sessão da assistente",
           scenarioId: "ai_synthetic_human_review_manual_fallback",
-          schemaReference: "src/admin/pages/AdminAiAssistantPage.tsx",
-          absence: { applicability: "optional" },
-        }),
-      ]);
-      const decisionSemanticFields = await Promise.all([
-        prepareCmsSemanticField({
-          page: reviewerPage,
-          locator: rationaleField,
+          effectKind: "backend-response",
+          httpStatus: startSessionHttpStatus,
+        });
+        semanticScenarios.recordStructure({
           surfaceId: "ai-assistant",
-          fieldName: "Justificativa da decisão",
+          controlKind: "form",
+          controlName: "Solicitar proposta com fonte",
           scenarioId: "ai_synthetic_human_review_manual_fallback",
-          schemaReference: "src/admin/pages/AdminAiAssistantPage.tsx",
-        }),
-        prepareCmsSemanticField({
-          page: reviewerPage,
-          locator: manualAdjustmentField,
+          effectKind: "backend-response",
+          httpStatus: proposalHttpStatus,
+        });
+
+        await page.route("**/functions/v1/cms-ai", async (route) => {
+          const body = route.request().postDataJSON() as Record<string, unknown> | null;
+          if (body?.action !== "generate_proposal") return route.continue();
+          await route.fulfill({
+            status: 503,
+            contentType: "application/json",
+            headers: {
+              "Access-Control-Allow-Origin": targets[configuration.environment].site,
+              "Cache-Control": "no-store",
+            },
+            body: JSON.stringify({
+              error: "A IA está temporariamente indisponível; o cadastro manual continua funcionando.",
+              code: "CMS_AI_PROVIDER_UNAVAILABLE",
+              preserved: true,
+            }),
+          });
+        });
+        await page.getByRole("button", { name: "Preparar proposta sem aplicar" }).click();
+        await expect(page.getByRole("alert")).toContainText(/IA está temporariamente indisponível/i);
+        await expect(page.getByRole("heading", { name: "Operação manual" })).toBeVisible();
+        await expect(
+          page.getByRole("navigation", { name: "Atalhos para operação manual" }).getByRole("link"),
+        ).toHaveCount(3);
+        await page.unroute("**/functions/v1/cms-ai");
+        responsePromise = waitForEdgeAction(page, "cms-ai", "close_session");
+        await page.getByRole("button", { name: "Encerrar sessão" }).click();
+        actionResponse = await responsePromise;
+        const closeResult = await responseBody(actionResponse);
+        expect(closeResult.status).toBe("closed");
+        semanticActions.record({
           surfaceId: "ai-assistant",
-          fieldName: "Ajuste manual do primeiro campo",
+          controlName: "Encerrar sessão",
+          action: "close_session",
           scenarioId: "ai_synthetic_human_review_manual_fallback",
-          schemaReference: "src/admin/pages/AdminAiAssistantPage.tsx",
-          absence: { applicability: "optional" },
-        }),
-      ]);
-      responsePromise = waitForEdgeAction(reviewerPage, "cms-ai", "decide_proposal");
-      const decisionControl = reviewerPage.getByRole("button", { name: /Registrar edição/ });
-      const decisionControlName = (await decisionControl.textContent())?.replace(/\s+/g, " ").trim() ?? "";
-      await decisionControl.click();
-      actionResponse = await responsePromise;
-      const decisionResult = await responseBody(actionResponse);
-      expect(decisionResult.decision).toBe("edited");
-      expect(decisionResult.applied).toBe(false);
-      expect(decisionResult.published).toBe(false);
-      semanticActions.record({
-        surfaceId: "ai-assistant",
-        controlName: decisionControlName,
-        action: "decide_proposal",
-        scenarioId: "ai_synthetic_human_review_manual_fallback",
-        backendStatus: String(decisionResult.decision),
-        httpStatus: actionResponse.status(),
-      });
-      await expect(reviewerPage.getByText(/Decisão humana registrada sem aplicar ou publicar/)).toBeVisible();
-      const persistedWorkspace = waitForEdgeAction(reviewerPage, "cms-ai", "workspace");
-      await reviewerPage.reload({ waitUntil: "domcontentloaded" });
-      const persistedWorkspaceResponse = await persistedWorkspace;
-      expect(persistedWorkspaceResponse.status()).toBe(200);
-      await expect(reviewerPage.getByText(/Aplicado: não · Publicado: não/, { exact: false })).toBeVisible();
-      recordPersistedAdminFields(semanticScenarios, startSessionSemanticFields, startSessionHttpStatus);
-      recordPersistedAdminFields(semanticScenarios, proposalSemanticFields, proposalHttpStatus);
-      recordPersistedAdminFields(semanticScenarios, decisionSemanticFields, actionResponse.status());
-      for (const field of reviewerQuerySemanticFields) {
+          backendStatus: String(closeResult.status),
+          httpStatus: actionResponse.status(),
+        });
+
+        const aiExecutionScenario = "ai_transactional_plan_execute_compensate";
+        const operatorWorkspacePromise = waitForEdgeAction(page, "cms-ai-execute", "workspace");
+        await page.goto("/admin/assistente/execucao", { waitUntil: "domcontentloaded" });
+        expect((await operatorWorkspacePromise).status()).toBe(200);
+        await expect(
+          page.getByRole("heading", { name: "Execução transacional controlada", exact: true }),
+        ).toBeVisible();
+        const targetTitle = `${configuration.runTag} alvo transacional`;
+        const targetSummary = "Estado sintético inicial controlado para validar execução e compensação.";
+        const targetTitleField = page.getByLabel("Título", { exact: true });
+        const targetSummaryField = page.getByLabel("Resumo inicial", { exact: true });
+        await targetTitleField.fill(targetTitle);
+        await targetSummaryField.fill(targetSummary);
+        const targetSemanticFields = await Promise.all([
+          prepareCmsSemanticField({
+            page,
+            locator: targetTitleField,
+            surfaceId: "ai-execution",
+            fieldName: "Título",
+            scenarioId: aiExecutionScenario,
+            schemaReference: "supabase/functions/cms-ai-execute/index.ts",
+          }),
+          prepareCmsSemanticField({
+            page,
+            locator: targetSummaryField,
+            surfaceId: "ai-execution",
+            fieldName: "Resumo inicial",
+            scenarioId: aiExecutionScenario,
+            schemaReference: "supabase/functions/cms-ai-execute/index.ts",
+          }),
+        ]);
+        const createdTarget = await executeAiPlanAction(
+          page,
+          "Criar alvo de ensaio",
+          "create_target",
+          semanticActions,
+          aiExecutionScenario,
+        );
+        expect(typeof createdTarget.body.targetRef).toBe("string");
+
+        const planTitle = `${configuration.runTag} plano transacional`;
+        const planTitleField = page.getByLabel("Título do plano", { exact: true });
+        const targetSelectField = page.getByLabel("Alvo", { exact: true });
+        const toolField = page.getByLabel("Comando oficial sintético", { exact: true });
+        await planTitleField.fill(planTitle);
+        await expect(targetSelectField.locator("option").filter({ hasText: targetTitle })).toHaveCount(1, {
+          timeout: 20_000,
+        });
+        await targetSelectField.selectOption(
+          (await targetSelectField.locator("option").filter({ hasText: targetTitle }).getAttribute("value"))!,
+        );
+        await toolField.selectOption("release.schedule");
+        const scheduledAtField = page.getByLabel("Data do ensaio (máximo 24 horas)", { exact: true });
+        await scheduledAtField.fill(new Date(Date.now() + 10 * 60_000).toISOString().slice(0, 16));
+        const scheduledAtSemanticField = await prepareCmsSemanticField({
+          page,
+          locator: scheduledAtField,
+          surfaceId: "ai-execution",
+          fieldName: "Data do ensaio (máximo 24 horas)",
+          scenarioId: aiExecutionScenario,
+          schemaReference: "supabase/functions/cms-ai-execute/index.ts",
+        });
+        const addStepButton = page.getByRole("button", { name: "Adicionar ao plano", exact: true });
+        await addStepButton.click();
+        await expect(page.getByRole("list", { name: "Etapas planejadas" }).getByRole("listitem")).toHaveCount(
+          1,
+        );
+
+        await toolField.selectOption("draft.apply_patch");
+        const patchField = page.getByLabel("Novo resumo sintético", { exact: true });
+        await patchField.fill("Resumo sintético alterado por um plano controlado e reversível.");
+        const planSemanticFields = await Promise.all([
+          prepareCmsSemanticField({
+            page,
+            locator: planTitleField,
+            surfaceId: "ai-execution",
+            fieldName: "Título do plano",
+            scenarioId: aiExecutionScenario,
+            schemaReference: "supabase/functions/cms-ai-execute/index.ts",
+          }),
+          prepareCmsSemanticField({
+            page,
+            locator: targetSelectField,
+            surfaceId: "ai-execution",
+            fieldName: "Alvo",
+            scenarioId: aiExecutionScenario,
+            schemaReference: "src/shared/contracts/ev2-ai-execute.ts",
+          }),
+          prepareCmsSemanticField({
+            page,
+            locator: toolField,
+            surfaceId: "ai-execution",
+            fieldName: "Comando oficial sintético",
+            scenarioId: aiExecutionScenario,
+            schemaReference: "src/shared/contracts/ev2-ai-execute.ts",
+          }),
+          prepareCmsSemanticField({
+            page,
+            locator: patchField,
+            surfaceId: "ai-execution",
+            fieldName: "Novo resumo sintético",
+            scenarioId: aiExecutionScenario,
+            schemaReference: "supabase/functions/cms-ai-execute/index.ts",
+          }),
+        ]);
+        await addStepButton.click();
+        await toolField.selectOption("workflow.submit");
+        await addStepButton.click();
+        const removableStep = page.getByRole("button", { name: "Remover etapa 3", exact: true });
+        await removableStep.click();
+        await expect(page.getByRole("list", { name: "Etapas planejadas" }).getByRole("listitem")).toHaveCount(
+          2,
+        );
+        await toolField.selectOption("draft.apply_patch");
+
+        const createdPlan = await executeAiPlanAction(
+          page,
+          "Validar simulação e solicitar revisão",
+          "create_plan",
+          semanticActions,
+          aiExecutionScenario,
+        );
+        expect(typeof createdPlan.body.planId).toBe("string");
+        for (const [controlName, action] of [
+          ["Adicionar ao plano", "compose-plan-step"],
+          ["Remover etapa 3", "remove-plan-step"],
+        ] as const) {
+          semanticActions.record({
+            surfaceId: "ai-execution",
+            controlName,
+            action,
+            scenarioId: aiExecutionScenario,
+            backendStatus: "ready",
+            httpStatus: createdPlan.response.status(),
+          });
+        }
+
+        const persistedPlanWorkspacePromise = waitForEdgeAction(page, "cms-ai-execute", "workspace");
+        await page.reload({ waitUntil: "domcontentloaded" });
+        const persistedPlanWorkspace = await responseBody(await persistedPlanWorkspacePromise);
+        const persistedTargets = persistedPlanWorkspace.targets as Array<Record<string, unknown>>;
+        const persistedPlans = persistedPlanWorkspace.plans as Array<Record<string, unknown>>;
+        expect(persistedTargets.some((target) => target.title === targetTitle)).toBe(true);
+        const persistedPlan = persistedPlans.find((plan) => plan.title === planTitle);
+        expect(persistedPlan?.status).toBe("ready");
+        expect((persistedPlan?.steps as Array<Record<string, unknown>>)?.map((step) => step.toolKey)).toEqual(
+          ["release.schedule", "draft.apply_patch"],
+        );
+        recordPersistedAdminFields(semanticScenarios, targetSemanticFields, createdTarget.response.status());
+        recordPersistedAdminFields(
+          semanticScenarios,
+          [...planSemanticFields, scheduledAtSemanticField],
+          createdPlan.response.status(),
+        );
+        semanticScenarios.recordStructure({
+          surfaceId: "ai-execution",
+          controlKind: "form",
+          controlName: "Criar alvo sintético de ensaio",
+          scenarioId: aiExecutionScenario,
+          effectKind: "backend-response",
+          httpStatus: createdTarget.response.status(),
+        });
+
+        const reviewerExecutionWorkspacePromise = waitForEdgeAction(
+          reviewerPage,
+          "cms-ai-execute",
+          "workspace",
+        );
+        await reviewerPage.goto("/admin/assistente/execucao", { waitUntil: "domcontentloaded" });
+        expect((await reviewerExecutionWorkspacePromise).status()).toBe(200);
+        const reviewerPlanField = reviewerPage.getByLabel("Plano", { exact: true });
+        const reviewerPlanOption = reviewerPlanField.locator("option").filter({ hasText: planTitle });
+        await expect(reviewerPlanOption).toHaveCount(1, { timeout: 20_000 });
+        await reviewerPlanField.selectOption((await reviewerPlanOption.getAttribute("value"))!);
+        const executionRationaleField = reviewerPage.getByLabel("Justificativa", { exact: true });
+        await executionRationaleField.fill(`${configuration.runTag} revisão segregada e compensável.`);
+        const approvalSemanticFields = await Promise.all([
+          prepareCmsSemanticField({
+            page: reviewerPage,
+            locator: reviewerPlanField,
+            surfaceId: "ai-execution",
+            fieldName: "Plano",
+            scenarioId: aiExecutionScenario,
+            schemaReference: "src/shared/contracts/ev2-ai-execute.ts",
+          }),
+          prepareCmsSemanticField({
+            page: reviewerPage,
+            locator: executionRationaleField,
+            surfaceId: "ai-execution",
+            fieldName: "Justificativa",
+            scenarioId: aiExecutionScenario,
+            schemaReference: "supabase/functions/cms-ai-execute/index.ts",
+          }),
+        ]);
+        const approvedPlan = await executeAiPlanAction(
+          reviewerPage,
+          "Aprovar por 10 minutos",
+          "approve_plan",
+          semanticActions,
+          aiExecutionScenario,
+        );
+        expect(approvedPlan.body.status).toBe("approved");
         recordTransientAdminField(
           semanticScenarios,
-          field,
-          reviewerWorkspaceResponse.status(),
+          approvalSemanticFields[0]!,
+          approvedPlan.response.status(),
           "query",
           false,
         );
-      }
-      semanticScenarios.recordStructure({
-        surfaceId: "ai-assistant",
-        controlKind: "form",
-        controlName: "Abrir sessão da assistente",
-        scenarioId: "ai_synthetic_human_review_manual_fallback",
-        effectKind: "backend-response",
-        httpStatus: startSessionHttpStatus,
-      });
-      semanticScenarios.recordStructure({
-        surfaceId: "ai-assistant",
-        controlKind: "form",
-        controlName: "Solicitar proposta com fonte",
-        scenarioId: "ai_synthetic_human_review_manual_fallback",
-        effectKind: "backend-response",
-        httpStatus: proposalHttpStatus,
-      });
+        recordPersistedAdminFields(
+          semanticScenarios,
+          [approvalSemanticFields[1]!],
+          approvedPlan.response.status(),
+        );
 
-      await page.route("**/functions/v1/cms-ai", async (route) => {
-        const body = route.request().postDataJSON() as Record<string, unknown> | null;
-        if (body?.action !== "generate_proposal") return route.continue();
-        await route.fulfill({
-          status: 503,
-          contentType: "application/json",
-          headers: {
-            "Access-Control-Allow-Origin": targets[configuration.environment].site,
-            "Cache-Control": "no-store",
-          },
-          body: JSON.stringify({
-            error: "A IA está temporariamente indisponível; o cadastro manual continua funcionando.",
-            code: "CMS_AI_PROVIDER_UNAVAILABLE",
-            preserved: true,
-          }),
+        const executableWorkspacePromise = waitForEdgeAction(page, "cms-ai-execute", "workspace");
+        await page.reload({ waitUntil: "domcontentloaded" });
+        expect((await executableWorkspacePromise).status()).toBe(200);
+        const operatorPlanField = page.getByLabel("Plano", { exact: true });
+        await operatorPlanField.selectOption(
+          (await operatorPlanField.locator("option").filter({ hasText: planTitle }).getAttribute("value"))!,
+        );
+        const executedPlan = await executeAiPlanAction(
+          page,
+          "Executar plano aprovado",
+          "execute_plan",
+          semanticActions,
+          aiExecutionScenario,
+        );
+        expect(executedPlan.body.status).toBe("executed");
+
+        const compensationWorkspacePromise = waitForEdgeAction(reviewerPage, "cms-ai-execute", "workspace");
+        await reviewerPage.reload({ waitUntil: "domcontentloaded" });
+        expect((await compensationWorkspacePromise).status()).toBe(200);
+        await reviewerPage
+          .getByLabel("Plano", { exact: true })
+          .selectOption(
+            (await reviewerPage
+              .getByLabel("Plano", { exact: true })
+              .locator("option")
+              .filter({ hasText: planTitle })
+              .getAttribute("value"))!,
+          );
+        const compensationApproved = await executeAiPlanAction(
+          reviewerPage,
+          "Aprovar compensação",
+          "approve_compensation",
+          semanticActions,
+          aiExecutionScenario,
+        );
+        expect(compensationApproved.body.status).toBe("compensation_approved");
+
+        const compensatableWorkspacePromise = waitForEdgeAction(page, "cms-ai-execute", "workspace");
+        await page.reload({ waitUntil: "domcontentloaded" });
+        expect((await compensatableWorkspacePromise).status()).toBe(200);
+        await page
+          .getByLabel("Plano", { exact: true })
+          .selectOption(
+            (await page
+              .getByLabel("Plano", { exact: true })
+              .locator("option")
+              .filter({ hasText: planTitle })
+              .getAttribute("value"))!,
+          );
+        const compensatedPlan = await executeAiPlanAction(
+          page,
+          "Executar compensação",
+          "compensate_run",
+          semanticActions,
+          aiExecutionScenario,
+        );
+        expect(compensatedPlan.body.status).toBe("compensated");
+        const terminalWorkspacePromise = waitForEdgeAction(page, "cms-ai-execute", "workspace");
+        await page.reload({ waitUntil: "domcontentloaded" });
+        const terminalWorkspace = await responseBody(await terminalWorkspacePromise);
+        const terminalTarget = (terminalWorkspace.targets as Array<Record<string, unknown>>).find(
+          (target) => target.title === targetTitle,
+        );
+        expect(terminalTarget?.lifecycle).toBe("draft");
+        expect((terminalTarget?.payload as Record<string, unknown>)?.summary).toBe(targetSummary);
+
+        expect(editorialMutations).toBe(0);
+        aiFinalState =
+          "sessão fechada; proposta revisada; plano transacional executado e compensado; zero mutações editoriais";
+        scenarios.push({
+          id: "ai_synthetic_human_review_manual_fallback",
+          status: "passed",
+          backend: "sessão/proposta/decisão persistidas e sessão fechada",
+          audit: "eventos dedicados de IA refletidos pelo workspace após reload",
+          negative: "criador impedido de revisar; 503 preservou operação manual",
+          cleanup: aiFinalState,
         });
-      });
-      await page.getByRole("button", { name: "Preparar proposta sem aplicar" }).click();
-      await expect(page.getByRole("alert")).toContainText(/IA está temporariamente indisponível/i);
-      await expect(page.getByRole("heading", { name: "Operação manual sempre disponível" })).toBeVisible();
-      await expect(
-        page.getByRole("navigation", { name: "Atalhos para operação manual" }).getByRole("link"),
-      ).toHaveCount(3);
-      await page.unroute("**/functions/v1/cms-ai");
-      responsePromise = waitForEdgeAction(page, "cms-ai", "close_session");
-      await page.getByRole("button", { name: "Encerrar sessão" }).click();
-      actionResponse = await responsePromise;
-      const closeResult = await responseBody(actionResponse);
-      expect(closeResult.status).toBe("closed");
-      semanticActions.record({
-        surfaceId: "ai-assistant",
-        controlName: "Encerrar sessão",
-        action: "close_session",
-        scenarioId: "ai_synthetic_human_review_manual_fallback",
-        backendStatus: String(closeResult.status),
-        httpStatus: actionResponse.status(),
-      });
-
-      const aiExecutionScenario = "ai_transactional_plan_execute_compensate";
-      const operatorWorkspacePromise = waitForEdgeAction(page, "cms-ai-execute", "workspace");
-      await page.goto("/admin/assistente/execucao", { waitUntil: "domcontentloaded" });
-      expect((await operatorWorkspacePromise).status()).toBe(200);
-      await expect(
-        page.getByRole("heading", { name: "Execução transacional controlada", exact: true }),
-      ).toBeVisible();
-      const targetTitle = `${configuration.runTag} alvo transacional`;
-      const targetSummary = "Estado sintético inicial controlado para validar execução e compensação.";
-      const targetTitleField = page.getByLabel("Título", { exact: true });
-      const targetSummaryField = page.getByLabel("Resumo inicial", { exact: true });
-      await targetTitleField.fill(targetTitle);
-      await targetSummaryField.fill(targetSummary);
-      const targetSemanticFields = await Promise.all([
-        prepareCmsSemanticField({
-          page,
-          locator: targetTitleField,
-          surfaceId: "ai-execution",
-          fieldName: "Título",
-          scenarioId: aiExecutionScenario,
-          schemaReference: "supabase/functions/cms-ai-execute/index.ts",
-        }),
-        prepareCmsSemanticField({
-          page,
-          locator: targetSummaryField,
-          surfaceId: "ai-execution",
-          fieldName: "Resumo inicial",
-          scenarioId: aiExecutionScenario,
-          schemaReference: "supabase/functions/cms-ai-execute/index.ts",
-        }),
-      ]);
-      const createdTarget = await executeAiPlanAction(
-        page,
-        "Criar alvo de ensaio",
-        "create_target",
-        semanticActions,
-        aiExecutionScenario,
-      );
-      expect(typeof createdTarget.body.targetRef).toBe("string");
-
-      const planTitle = `${configuration.runTag} plano transacional`;
-      const planTitleField = page.getByLabel("Título do plano", { exact: true });
-      const targetSelectField = page.getByLabel("Alvo", { exact: true });
-      const toolField = page.getByLabel("Comando oficial sintético", { exact: true });
-      await planTitleField.fill(planTitle);
-      await expect(targetSelectField.locator("option").filter({ hasText: targetTitle })).toHaveCount(1, {
-        timeout: 20_000,
-      });
-      await targetSelectField.selectOption(
-        (await targetSelectField.locator("option").filter({ hasText: targetTitle }).getAttribute("value"))!,
-      );
-      await toolField.selectOption("release.schedule");
-      const scheduledAtField = page.getByLabel("Data do ensaio (máximo 24 horas)", { exact: true });
-      await scheduledAtField.fill(new Date(Date.now() + 10 * 60_000).toISOString().slice(0, 16));
-      const scheduledAtSemanticField = await prepareCmsSemanticField({
-        page,
-        locator: scheduledAtField,
-        surfaceId: "ai-execution",
-        fieldName: "Data do ensaio (máximo 24 horas)",
-        scenarioId: aiExecutionScenario,
-        schemaReference: "supabase/functions/cms-ai-execute/index.ts",
-      });
-      const addStepButton = page.getByRole("button", { name: "Adicionar ao plano", exact: true });
-      await addStepButton.click();
-      await expect(page.getByRole("list", { name: "Etapas planejadas" }).getByRole("listitem")).toHaveCount(
-        1,
-      );
-
-      await toolField.selectOption("draft.apply_patch");
-      const patchField = page.getByLabel("Novo resumo sintético", { exact: true });
-      await patchField.fill("Resumo sintético alterado por um plano controlado e reversível.");
-      const planSemanticFields = await Promise.all([
-        prepareCmsSemanticField({
-          page,
-          locator: planTitleField,
-          surfaceId: "ai-execution",
-          fieldName: "Título do plano",
-          scenarioId: aiExecutionScenario,
-          schemaReference: "supabase/functions/cms-ai-execute/index.ts",
-        }),
-        prepareCmsSemanticField({
-          page,
-          locator: targetSelectField,
-          surfaceId: "ai-execution",
-          fieldName: "Alvo",
-          scenarioId: aiExecutionScenario,
-          schemaReference: "src/shared/contracts/ev2-ai-execute.ts",
-        }),
-        prepareCmsSemanticField({
-          page,
-          locator: toolField,
-          surfaceId: "ai-execution",
-          fieldName: "Comando oficial sintético",
-          scenarioId: aiExecutionScenario,
-          schemaReference: "src/shared/contracts/ev2-ai-execute.ts",
-        }),
-        prepareCmsSemanticField({
-          page,
-          locator: patchField,
-          surfaceId: "ai-execution",
-          fieldName: "Novo resumo sintético",
-          scenarioId: aiExecutionScenario,
-          schemaReference: "supabase/functions/cms-ai-execute/index.ts",
-        }),
-      ]);
-      await addStepButton.click();
-      await toolField.selectOption("workflow.submit");
-      await addStepButton.click();
-      const removableStep = page.getByRole("button", { name: "Remover etapa 3", exact: true });
-      await removableStep.click();
-      await expect(page.getByRole("list", { name: "Etapas planejadas" }).getByRole("listitem")).toHaveCount(
-        2,
-      );
-      await toolField.selectOption("draft.apply_patch");
-
-      const createdPlan = await executeAiPlanAction(
-        page,
-        "Validar simulação e solicitar revisão",
-        "create_plan",
-        semanticActions,
-        aiExecutionScenario,
-      );
-      expect(typeof createdPlan.body.planId).toBe("string");
-      for (const [controlName, action] of [
-        ["Adicionar ao plano", "compose-plan-step"],
-        ["Remover etapa 3", "remove-plan-step"],
-      ] as const) {
-        semanticActions.record({
-          surfaceId: "ai-execution",
-          controlName,
-          action,
-          scenarioId: aiExecutionScenario,
-          backendStatus: "ready",
-          httpStatus: createdPlan.response.status(),
+        scenarios.push({
+          id: aiExecutionScenario,
+          status: "passed",
+          backend: "alvo e plano sintéticos persistidos, aprovados, executados e compensados",
+          audit: "respostas autoritativas confirmaram cada transição segregada",
+          negative: "nenhuma tabela editorial foi alterada e a compensação restaurou o estado inicial",
+          cleanup: "estado sintético compensado; remoção terminal permanece sob a lease da fixture",
         });
       }
-
-      const persistedPlanWorkspacePromise = waitForEdgeAction(page, "cms-ai-execute", "workspace");
-      await page.reload({ waitUntil: "domcontentloaded" });
-      const persistedPlanWorkspace = await responseBody(await persistedPlanWorkspacePromise);
-      const persistedTargets = persistedPlanWorkspace.targets as Array<Record<string, unknown>>;
-      const persistedPlans = persistedPlanWorkspace.plans as Array<Record<string, unknown>>;
-      expect(persistedTargets.some((target) => target.title === targetTitle)).toBe(true);
-      const persistedPlan = persistedPlans.find((plan) => plan.title === planTitle);
-      expect(persistedPlan?.status).toBe("ready");
-      expect((persistedPlan?.steps as Array<Record<string, unknown>>)?.map((step) => step.toolKey)).toEqual([
-        "release.schedule",
-        "draft.apply_patch",
-      ]);
-      recordPersistedAdminFields(semanticScenarios, targetSemanticFields, createdTarget.response.status());
-      recordPersistedAdminFields(
-        semanticScenarios,
-        [...planSemanticFields, scheduledAtSemanticField],
-        createdPlan.response.status(),
-      );
-      semanticScenarios.recordStructure({
-        surfaceId: "ai-execution",
-        controlKind: "form",
-        controlName: "Criar alvo sintético de ensaio",
-        scenarioId: aiExecutionScenario,
-        effectKind: "backend-response",
-        httpStatus: createdTarget.response.status(),
-      });
-
-      const reviewerExecutionWorkspacePromise = waitForEdgeAction(
-        reviewerPage,
-        "cms-ai-execute",
-        "workspace",
-      );
-      await reviewerPage.goto("/admin/assistente/execucao", { waitUntil: "domcontentloaded" });
-      expect((await reviewerExecutionWorkspacePromise).status()).toBe(200);
-      const reviewerPlanField = reviewerPage.getByLabel("Plano", { exact: true });
-      const reviewerPlanOption = reviewerPlanField.locator("option").filter({ hasText: planTitle });
-      await expect(reviewerPlanOption).toHaveCount(1, { timeout: 20_000 });
-      await reviewerPlanField.selectOption((await reviewerPlanOption.getAttribute("value"))!);
-      const executionRationaleField = reviewerPage.getByLabel("Justificativa", { exact: true });
-      await executionRationaleField.fill(`${configuration.runTag} revisão segregada e compensável.`);
-      const approvalSemanticFields = await Promise.all([
-        prepareCmsSemanticField({
-          page: reviewerPage,
-          locator: reviewerPlanField,
-          surfaceId: "ai-execution",
-          fieldName: "Plano",
-          scenarioId: aiExecutionScenario,
-          schemaReference: "src/shared/contracts/ev2-ai-execute.ts",
-        }),
-        prepareCmsSemanticField({
-          page: reviewerPage,
-          locator: executionRationaleField,
-          surfaceId: "ai-execution",
-          fieldName: "Justificativa",
-          scenarioId: aiExecutionScenario,
-          schemaReference: "supabase/functions/cms-ai-execute/index.ts",
-        }),
-      ]);
-      const approvedPlan = await executeAiPlanAction(
-        reviewerPage,
-        "Aprovar por 10 minutos",
-        "approve_plan",
-        semanticActions,
-        aiExecutionScenario,
-      );
-      expect(approvedPlan.body.status).toBe("approved");
-      recordTransientAdminField(
-        semanticScenarios,
-        approvalSemanticFields[0]!,
-        approvedPlan.response.status(),
-        "query",
-        false,
-      );
-      recordPersistedAdminFields(
-        semanticScenarios,
-        [approvalSemanticFields[1]!],
-        approvedPlan.response.status(),
-      );
-
-      const executableWorkspacePromise = waitForEdgeAction(page, "cms-ai-execute", "workspace");
-      await page.reload({ waitUntil: "domcontentloaded" });
-      expect((await executableWorkspacePromise).status()).toBe(200);
-      const operatorPlanField = page.getByLabel("Plano", { exact: true });
-      await operatorPlanField.selectOption(
-        (await operatorPlanField.locator("option").filter({ hasText: planTitle }).getAttribute("value"))!,
-      );
-      const executedPlan = await executeAiPlanAction(
-        page,
-        "Executar plano aprovado",
-        "execute_plan",
-        semanticActions,
-        aiExecutionScenario,
-      );
-      expect(executedPlan.body.status).toBe("executed");
-
-      const compensationWorkspacePromise = waitForEdgeAction(reviewerPage, "cms-ai-execute", "workspace");
-      await reviewerPage.reload({ waitUntil: "domcontentloaded" });
-      expect((await compensationWorkspacePromise).status()).toBe(200);
-      await reviewerPage
-        .getByLabel("Plano", { exact: true })
-        .selectOption(
-          (await reviewerPage
-            .getByLabel("Plano", { exact: true })
-            .locator("option")
-            .filter({ hasText: planTitle })
-            .getAttribute("value"))!,
-        );
-      const compensationApproved = await executeAiPlanAction(
-        reviewerPage,
-        "Aprovar compensação",
-        "approve_compensation",
-        semanticActions,
-        aiExecutionScenario,
-      );
-      expect(compensationApproved.body.status).toBe("compensation_approved");
-
-      const compensatableWorkspacePromise = waitForEdgeAction(page, "cms-ai-execute", "workspace");
-      await page.reload({ waitUntil: "domcontentloaded" });
-      expect((await compensatableWorkspacePromise).status()).toBe(200);
-      await page
-        .getByLabel("Plano", { exact: true })
-        .selectOption(
-          (await page
-            .getByLabel("Plano", { exact: true })
-            .locator("option")
-            .filter({ hasText: planTitle })
-            .getAttribute("value"))!,
-        );
-      const compensatedPlan = await executeAiPlanAction(
-        page,
-        "Executar compensação",
-        "compensate_run",
-        semanticActions,
-        aiExecutionScenario,
-      );
-      expect(compensatedPlan.body.status).toBe("compensated");
-      const terminalWorkspacePromise = waitForEdgeAction(page, "cms-ai-execute", "workspace");
-      await page.reload({ waitUntil: "domcontentloaded" });
-      const terminalWorkspace = await responseBody(await terminalWorkspacePromise);
-      const terminalTarget = (terminalWorkspace.targets as Array<Record<string, unknown>>).find(
-        (target) => target.title === targetTitle,
-      );
-      expect(terminalTarget?.lifecycle).toBe("draft");
-      expect((terminalTarget?.payload as Record<string, unknown>)?.summary).toBe(targetSummary);
-
-      expect(editorialMutations).toBe(0);
-      aiFinalState =
-        "sessão fechada; proposta revisada; plano transacional executado e compensado; zero mutações editoriais";
-      scenarios.push({
-        id: "ai_synthetic_human_review_manual_fallback",
-        status: "passed",
-        backend: "sessão/proposta/decisão persistidas e sessão fechada",
-        audit: "eventos dedicados de IA refletidos pelo workspace após reload",
-        negative: "criador impedido de revisar; 503 preservou operação manual",
-        cleanup: aiFinalState,
-      });
-      scenarios.push({
-        id: aiExecutionScenario,
-        status: "passed",
-        backend: "alvo e plano sintéticos persistidos, aprovados, executados e compensados",
-        audit: "respostas autoritativas confirmaram cada transição segregada",
-        negative: "nenhuma tabela editorial foi alterada e a compensação restaurou o estado inicial",
-        cleanup: "estado sintético compensado; remoção terminal permanece sob a lease da fixture",
-      });
-
       const browserHandoff = await loadCmsRealBrowserAttestation({
         repositoryRoot,
         environment: configuration.environment,

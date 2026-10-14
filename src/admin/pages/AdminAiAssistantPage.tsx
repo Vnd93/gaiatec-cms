@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bot, Check, FileSearch, LockKeyhole, PencilLine, ShieldAlert, X } from "lucide-react";
 import { Link } from "react-router";
+import { externalAiDeliveryAllowed } from "../../../supabase/functions/_shared/ai-delivery-policy";
 import {
   Ev2AiCapabilitySchema,
   Ev2AiDecisionResultSchema,
@@ -71,7 +72,7 @@ function envelope() {
 
 export default function AdminAiAssistantPage() {
   const { session, profile } = useAdminAuth();
-  const candidateEnabled = isEv2FeatureEnabled(profile, "ev2.ai_assist");
+  const candidateEnabled = externalAiDeliveryAllowed() && isEv2FeatureEnabled(profile, "ev2.ai_assist");
   const executionCandidateEnabled = isEv2FeatureEnabled(profile, "ev2.ai_execute");
   const [capability, setCapability] = useState<"checking" | "enabled" | "disabled" | "error">(
     candidateEnabled ? "checking" : "disabled",
@@ -256,9 +257,12 @@ export default function AdminAiAssistantPage() {
       <section>
         <h1>Assistente controlada</h1>
         <div role="status" className="admin-notice">
-          A assistência por inteligência artificial não está disponível para esta conta. Todos os editores
-          manuais continuam disponíveis.
+          {externalAiDeliveryAllowed()
+            ? "A assistência por inteligência artificial não está disponível para esta conta."
+            : "Operação manual: IA externa desativada neste candidato. Nenhum conteúdo é enviado ao provedor de IA."}{" "}
+          Os editores manuais seguem as permissões e flags desta conta.
         </div>
+        <ManualFallback />
       </section>
     );
   }
@@ -660,10 +664,10 @@ export default function AdminAiAssistantPage() {
 function ManualFallback() {
   return (
     <aside className="admin-editor-card admin-ai__fallback" aria-labelledby="ai-manual-title">
-      <h2 id="ai-manual-title">Operação manual sempre disponível</h2>
+      <h2 id="ai-manual-title">Operação manual</h2>
       <p>
-        Uma indisponibilidade ou bloqueio da assistência não impede localizar, editar, revisar ou publicar
-        pelo fluxo editorial normal.
+        A assistência não é necessária para o fluxo editorial manual. Acesso, cadastro, revisão e publicação
+        continuam sujeitos às permissões e flags vigentes; o catálogo global permanece desligado.
       </p>
       <nav aria-label="Atalhos para operação manual">
         <Link to="/admin/conteudo">Conteúdo editorial</Link>

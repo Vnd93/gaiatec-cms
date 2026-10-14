@@ -1,6 +1,7 @@
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
+import deliveryPolicy from "../../../supabase/functions/_shared/ai-delivery-policy.json" with { type: "json" };
 import {
   assertQaActorLease,
   completeQaActorLease,
@@ -441,6 +442,8 @@ async function verifyAiTerminalCleanup(actorIds) {
     throw new Error("G17_AI_PROVIDER_EVIDENCE_NOT_DETACHED");
   if (providerEvidenceExpected && providerEvidence.json.length < 1)
     throw new Error("G17_AI_PROVIDER_EVIDENCE_MISSING");
+  if (deliveryPolicy.mode === "manual-only" && providerEvidence.json.length !== 0)
+    throw new Error("G17_MANUAL_EXTERNAL_PROVIDER_CALL_FORBIDDEN");
   if (eventEvidence.json.some((row) => row.session_id !== null || row.proposal_id !== null))
     throw new Error("G17_AI_EVENT_EVIDENCE_NOT_DETACHED");
   const terminalEventActors = new Set(
@@ -541,124 +544,200 @@ try {
     ]),
   );
   const capability = await edge(operator, "cms-ai", "capability");
-  check(
-    "openrouter_ready",
-    capability.json.providerMode === "openrouter" &&
-      capability.json.providerModel === EXPECTED_MODEL &&
-      capability.json.allowedModel === EXPECTED_MODEL &&
-      capability.json.externalProviderReady === true,
-    capability.json.providerModel,
-  );
-  const opened = await edge(
-    operator,
-    "cms-ai",
-    "start_session",
-    { mode: "draft", title: "Cadastro sintético G17" },
-    { idempotent: true },
-  );
-  const sourceExcerpt =
-    "O instrumento sintético mede pressão de zero a dez bar e possui saída de quatro a vinte miliampères.";
-  const generated = await edge(
-    operator,
-    "cms-ai",
-    "generate_proposal",
-    {
-      sessionId: opened.json.sessionId,
-      proposalKind: "draft_patch",
-      prompt: "Crie um resumo técnico curto e fiel à fonte.",
-      // Keep complete UUID metadata: an eight-digit prefix can look like a phone number.
-      targetRef: `g10x-draft-${randomUUID()}`,
-      source: {
-        kind: "synthetic_document",
-        reference: `g10x-source-${randomUUID()}`,
-        title: "Manual sintético G17",
-        version: "v1",
-        locator: "seção 1",
-        page: 1,
-        excerpt: sourceExcerpt,
+  if (deliveryPolicy.mode === "manual-only") {
+    check(
+      "manual_delivery_policy",
+      deliveryPolicy.schemaVersion === 1 &&
+        deliveryPolicy.policyKey === "cms-manual-only-v1" &&
+        deliveryPolicy.externalProviderEnabled === false &&
+        deliveryPolicy.assistedExecutionEnabled === false &&
+        deliveryPolicy.automaticPublishAllowed === false,
+      "manual-only-v1",
+    );
+    for (const current of [operator, reviewer]) {
+      for (const functionName of ["cms-ai", "cms-ai-execute"]) {
+        const disabled = await edge(current, functionName, "capability");
+        check(
+          "manual_capability_" + functionName,
+          disabled.json.enabled === false &&
+            disabled.json.source === "manual_only" &&
+            disabled.json.externalProviderEnabled === false &&
+            disabled.json.externalProviderReady === false &&
+            disabled.json.manualFallback === true,
+          "disabled-despite-individual-override",
+        );
+        const blocked = await edge(current, functionName, "workspace", {}, { allowed: [403] });
+        check(
+          "manual_workspace_blocked_" + functionName,
+          blocked.json.code === "CMS_AI_MANUAL_ONLY" && blocked.json.preserved === true,
+          "no-workspace-or-provider-call",
+        );
+      }
+      const session = await edge(
+        current,
+        "cms-ai",
+        "start_session",
+        {
+          mode: "draft",
+          title: "Ensaio de bloqueio manual G17",
+        },
+        { allowed: [403], idempotent: true },
+      );
+      check(
+        "manual_session_blocked",
+        session.json.code === "CMS_AI_MANUAL_ONLY" && session.json.preserved === true,
+        "no-session-created",
+      );
+      const proposal = await edge(
+        current,
+        "cms-ai",
+        "generate_proposal",
+        {
+          sessionId: randomUUID(),
+          proposalKind: "extract",
+          prompt: "Resumo sintético",
+          source: {
+            kind: "synthetic_document",
+            reference: "g10x-manual-block-test",
+            title: "Fonte sintética",
+            version: "v1",
+            locator: "seção 1",
+            excerpt: "Somente ensaio de bloqueio.",
+          },
+        },
+        { allowed: [403], idempotent: true },
+      );
+      check(
+        "manual_generation_blocked",
+        proposal.json.code === "CMS_AI_MANUAL_ONLY" && proposal.json.preserved === true,
+        "no-proposal-or-provider-call",
+      );
+    }
+    const providerRows = await rest("cms_ai_provider_calls", {
+      query: `actor_id=in.(${operator.id},${reviewer.id})&select=id`,
+    });
+    check("manual_zero_provider_calls", providerRows.json.length === 0, providerRows.json.length);
+  } else {
+    check(
+      "openrouter_ready",
+      capability.json.providerMode === "openrouter" &&
+        capability.json.providerModel === EXPECTED_MODEL &&
+        capability.json.allowedModel === EXPECTED_MODEL &&
+        capability.json.externalProviderReady === true,
+      capability.json.providerModel,
+    );
+    const opened = await edge(
+      operator,
+      "cms-ai",
+      "start_session",
+      { mode: "draft", title: "Cadastro sintético G17" },
+      { idempotent: true },
+    );
+    const sourceExcerpt =
+      "O instrumento sintético mede pressão de zero a dez bar e possui saída de quatro a vinte miliampères.";
+    const generated = await edge(
+      operator,
+      "cms-ai",
+      "generate_proposal",
+      {
+        sessionId: opened.json.sessionId,
+        proposalKind: "draft_patch",
+        prompt: "Crie um resumo técnico curto e fiel à fonte.",
+        // Keep complete UUID metadata: an eight-digit prefix can look like a phone number.
+        targetRef: `g10x-draft-${randomUUID()}`,
+        source: {
+          kind: "synthetic_document",
+          reference: `g10x-source-${randomUUID()}`,
+          title: "Manual sintético G17",
+          version: "v1",
+          locator: "seção 1",
+          page: 1,
+          excerpt: sourceExcerpt,
+        },
       },
-    },
-    { idempotent: true },
-  );
-  providerEvidenceExpected = true;
-  check(
-    "ling_proposal",
-    Boolean(generated.json.proposalId) &&
-      generated.json.providerMode === "openrouter" &&
-      generated.json.providerModel === EXPECTED_MODEL &&
-      generated.json.applied === false &&
-      generated.json.published === false,
-    generated.json.providerModel,
-  );
-  const ownerWorkspace = await edge(operator, "cms-ai", "workspace");
-  const ownerSession = ownerWorkspace.json.sessions.find((item) => item.id === opened.json.sessionId);
-  check(
-    "proposal_owner_cannot_self_review",
-    ownerSession?.owned === true && ownerSession.reviewable === false,
-    JSON.stringify({ owned: ownerSession?.owned, reviewable: ownerSession?.reviewable }),
-  );
-  const workspace = await edge(reviewer, "cms-ai", "workspace");
-  const sessionItem = workspace.json.sessions.find((item) => item.id === opened.json.sessionId);
-  check(
-    "ling_workspace_model",
-    workspace.json.policy?.providerModel === EXPECTED_MODEL && sessionItem?.providerModel === EXPECTED_MODEL,
-    sessionItem?.providerModel ?? "missing-session",
-  );
-  const proposal = sessionItem?.proposals.find((item) => item.id === generated.json.proposalId);
-  check(
-    "human_review_ready",
-    sessionItem?.providerMode === "openrouter" &&
-      sessionItem.owned === false &&
-      sessionItem.reviewable === true,
-    JSON.stringify({
-      providerMode: sessionItem?.providerMode ?? "missing-session",
-      owned: sessionItem?.owned,
-      reviewable: sessionItem?.reviewable,
-    }),
-  );
-  check(
-    "proposal_source_binding",
-    proposal?.sourceIds.includes(generated.json.sourceId) === true &&
-      proposal.fields.some(
-        (field) => field.sourceId === generated.json.sourceId && field.excerpt === sourceExcerpt,
-      ),
-    proposal?.id ?? "missing-proposal",
-  );
-  const groundedText = `${proposal?.summary ?? ""} ${
-    proposal?.fields.map((field) => field.value).join(" ") ?? ""
-  }`
-    .normalize("NFD")
-    .replaceAll(/\p{Diacritic}/gu, "")
-    .toLowerCase()
-    .replaceAll(/[^a-z0-9]+/g, " ");
-  check(
-    "proposal_source_grounding",
-    groundedText.includes("press") &&
-      (groundedText.includes("bar") ||
-        groundedText.includes("miliamp") ||
-        /\b4\s+(?:a\s+)?20\b/.test(groundedText)),
-    "synthetic-source-facts",
-  );
-  const decision = await edge(
-    reviewer,
-    "cms-ai",
-    "decide_proposal",
-    {
-      proposalId: proposal.id,
-      expectedProposalHash: proposal.proposalHash,
-      decision: "edited",
-      rationale: "Proposta sintética conferida pelo operador humano com MFA.",
-      editedFields: proposal.fields.map((field) => ({ path: field.path, value: field.value })),
-    },
-    { idempotent: true },
-  );
-  check(
-    "human_decision_no_publish",
-    decision.json.decision === "edited" &&
-      decision.json.applied === false &&
-      decision.json.published === false,
-    decision.json.decision,
-  );
+      { idempotent: true },
+    );
+    providerEvidenceExpected = true;
+    check(
+      "ling_proposal",
+      Boolean(generated.json.proposalId) &&
+        generated.json.providerMode === "openrouter" &&
+        generated.json.providerModel === EXPECTED_MODEL &&
+        generated.json.applied === false &&
+        generated.json.published === false,
+      generated.json.providerModel,
+    );
+    const ownerWorkspace = await edge(operator, "cms-ai", "workspace");
+    const ownerSession = ownerWorkspace.json.sessions.find((item) => item.id === opened.json.sessionId);
+    check(
+      "proposal_owner_cannot_self_review",
+      ownerSession?.owned === true && ownerSession.reviewable === false,
+      JSON.stringify({ owned: ownerSession?.owned, reviewable: ownerSession?.reviewable }),
+    );
+    const workspace = await edge(reviewer, "cms-ai", "workspace");
+    const sessionItem = workspace.json.sessions.find((item) => item.id === opened.json.sessionId);
+    check(
+      "ling_workspace_model",
+      workspace.json.policy?.providerModel === EXPECTED_MODEL &&
+        sessionItem?.providerModel === EXPECTED_MODEL,
+      sessionItem?.providerModel ?? "missing-session",
+    );
+    const proposal = sessionItem?.proposals.find((item) => item.id === generated.json.proposalId);
+    check(
+      "human_review_ready",
+      sessionItem?.providerMode === "openrouter" &&
+        sessionItem.owned === false &&
+        sessionItem.reviewable === true,
+      JSON.stringify({
+        providerMode: sessionItem?.providerMode ?? "missing-session",
+        owned: sessionItem?.owned,
+        reviewable: sessionItem?.reviewable,
+      }),
+    );
+    check(
+      "proposal_source_binding",
+      proposal?.sourceIds.includes(generated.json.sourceId) === true &&
+        proposal.fields.some(
+          (field) => field.sourceId === generated.json.sourceId && field.excerpt === sourceExcerpt,
+        ),
+      proposal?.id ?? "missing-proposal",
+    );
+    const groundedText = `${proposal?.summary ?? ""} ${
+      proposal?.fields.map((field) => field.value).join(" ") ?? ""
+    }`
+      .normalize("NFD")
+      .replaceAll(/\p{Diacritic}/gu, "")
+      .toLowerCase()
+      .replaceAll(/[^a-z0-9]+/g, " ");
+    check(
+      "proposal_source_grounding",
+      groundedText.includes("press") &&
+        (groundedText.includes("bar") ||
+          groundedText.includes("miliamp") ||
+          /\b4\s+(?:a\s+)?20\b/.test(groundedText)),
+      "synthetic-source-facts",
+    );
+    const decision = await edge(
+      reviewer,
+      "cms-ai",
+      "decide_proposal",
+      {
+        proposalId: proposal.id,
+        expectedProposalHash: proposal.proposalHash,
+        decision: "edited",
+        rationale: "Proposta sintética conferida pelo operador humano com MFA.",
+        editedFields: proposal.fields.map((field) => ({ path: field.path, value: field.value })),
+      },
+      { idempotent: true },
+    );
+    check(
+      "human_decision_no_publish",
+      decision.json.decision === "edited" &&
+        decision.json.applied === false &&
+        decision.json.published === false,
+      decision.json.decision,
+    );
+  }
   const productionAttempt = await edge(
     reviewer,
     "cms-ai",
@@ -685,7 +764,9 @@ console.log(
     outcome: "G17_CANARY_PASS",
     candidateSha: EXPECTED_SHA,
     checks: checks.length,
-    provider: "openrouter",
+    deliveryProfile: deliveryPolicy.policyKey,
+    externalProviderEnabled: deliveryPolicy.externalProviderEnabled,
+    provider: deliveryPolicy.mode === "manual-only" ? "disabled" : "openrouter",
     model: EXPECTED_MODEL,
     syntheticUsers: 2,
     productionMutations: 0,

@@ -11,6 +11,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { Link } from "react-router";
+import { externalAiDeliveryAllowed } from "../../../supabase/functions/_shared/ai-delivery-policy";
 import {
   Ev2AiExecutionCapabilitySchema,
   Ev2AiExecutionMutationResultSchema,
@@ -64,7 +65,7 @@ export default function AdminAiExecutionPage() {
   const { session, profile } = useAdminAuth();
   const assistEnabled = isEv2FeatureEnabled(profile, "ev2.ai_assist");
   const executeEnabled = isEv2FeatureEnabled(profile, "ev2.ai_execute");
-  const candidateEnabled = assistEnabled && executeEnabled;
+  const candidateEnabled = externalAiDeliveryAllowed() && assistEnabled && executeEnabled;
   const [capability, setCapability] = useState<"checking" | "enabled" | "disabled" | "error">(
     candidateEnabled ? "checking" : "disabled",
   );
@@ -362,8 +363,10 @@ export default function AdminAiExecutionPage() {
       <section>
         <h1>Execução transacional controlada</h1>
         <div role="status" className="admin-notice">
-          A execução assistida precisa ser habilitada individualmente para esta conta. O fluxo manual
-          permanece disponível enquanto a autorização não estiver completa.
+          {externalAiDeliveryAllowed()
+            ? "A execução assistida precisa ser habilitada individualmente para esta conta."
+            : "Operação manual: IA externa e execução assistida desativadas neste candidato."}{" "}
+          Nenhuma alteração assistida será aplicada. Use os editores manuais conforme suas permissões.
         </div>
         <Link to="/admin/assistente">Voltar à assistência sem execução</Link>
       </section>

@@ -257,7 +257,9 @@ test("rejects replay, reordered or broken chains, unbound proof, and weakened se
       r.steps[1].configurationProof.apiKeyPreserved = false;
     },
     (r) => {
-      r.steps[1].configurationProof.switchDigest = digest("false");
+      r.steps[1].configurationProof.switchDigest = digest(
+        STAGING_AI_EXTERNAL_PROVIDER_ENABLED === "true" ? "false" : "true",
+      );
     },
     (r) => {
       r.steps[0].configurationProof.unmanagedSecretsPreserved = false;

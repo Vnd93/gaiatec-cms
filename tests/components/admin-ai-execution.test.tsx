@@ -3,6 +3,10 @@ import userEvent from "@testing-library/user-event";
 import type { ComponentType } from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+const delivery = vi.hoisted(() => ({ enabled: true }));
+vi.mock("../../supabase/functions/_shared/ai-delivery-policy", () => ({
+  externalAiDeliveryAllowed: () => delivery.enabled,
+}));
 
 const ACTOR_ID = "51400000-0000-4000-8000-000000000101";
 const PLANNER_ID = "51400000-0000-4000-8000-000000000102";
@@ -201,6 +205,7 @@ describe("EV2.14 transactional AI surface", () => {
   afterAll(() => vi.unstubAllEnvs());
 
   beforeEach(() => {
+    delivery.enabled = true;
     mocks.command.mockReset();
     mocks.command.mockImplementation((_session, body: Record<string, unknown>) =>
       Promise.resolve(responseFor(body)),
@@ -208,6 +213,13 @@ describe("EV2.14 transactional AI surface", () => {
   });
 
   afterEach(() => cleanup());
+
+  it("does not send execution commands in the manual candidate", () => {
+    delivery.enabled = false;
+    renderPage();
+    expect(screen.getByRole("status")).toHaveTextContent("execução assistida desativadas");
+    expect(mocks.command).not.toHaveBeenCalled();
+  });
 
   it("builds an expected-version plan without exposing raw JSON", async () => {
     const user = userEvent.setup();

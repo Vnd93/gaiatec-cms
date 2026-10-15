@@ -58,6 +58,7 @@ import {
 } from "./cms-real-browser-attestation";
 import { submitCmsMfaAndAwaitReady } from "./cms-mfa-session-gate";
 import { observeCmsLogin } from "./cms-login-diagnostics";
+import { editorialStateFromVisibleText, editorialVisibleStateText } from "./cms-editorial-visible-state";
 import { fillSyntheticProductSpecification } from "./cms-product-specification";
 import { clickSyntheticProductCreation, prepareSyntheticProductDraft } from "./cms-product-creation";
 import {
@@ -2210,7 +2211,9 @@ function editorialStateLocator(page: Page, plan: EditorialSurfacePlan) {
 }
 
 async function expectEditorialState(page: Page, plan: EditorialSurfacePlan, state: string) {
-  await expect(editorialStateLocator(page, plan)).toContainText(state, { timeout: 20_000 });
+  await expect(editorialStateLocator(page, plan)).toHaveText(editorialVisibleStateText(plan.kind, state), {
+    timeout: 20_000,
+  });
 }
 
 async function currentEditorialPublicPath(page: Page, plan: EditorialSurfacePlan) {
@@ -2759,8 +2762,11 @@ async function assertNewDraftsStartIncomplete(page: Page, expectedApiOrigin: str
 async function archiveEditorialSurface(page: Page, plan: EditorialSurfacePlan, expectedApiOrigin: string) {
   await page.goto(plan.adminPath, { waitUntil: "domcontentloaded" });
   await expect(page.locator("[data-admin-surface]")).toBeVisible({ timeout: 20_000 });
-  const state = ((await editorialStateLocator(page, plan).textContent()) ?? "").trim();
-  if (state.includes("archived") || state.includes("trashed")) {
+  const state = editorialStateFromVisibleText(
+    plan.kind,
+    (await editorialStateLocator(page, plan).textContent()) ?? "",
+  );
+  if (state === "archived" || state === "trashed") {
     return {
       step: `${plan.kind}_cleanup_already_archived`,
       result: "passed",
@@ -2768,9 +2774,10 @@ async function archiveEditorialSurface(page: Page, plan: EditorialSurfacePlan, e
     } satisfies MutationStepEvidence;
   }
   if (plan.kind === "product") await page.getByRole("tab", { name: "SEO e publicação" }).click();
-  const buttonName = state.includes("published")
-    ? plan.archiveButton
-    : plan.archiveButton.replace("Despublicar e arquivar", "Arquivar");
+  const buttonName =
+    state === "published"
+      ? plan.archiveButton
+      : plan.archiveButton.replace("Despublicar e arquivar", "Arquivar");
   const archived = await clickEditorialAction(
     page,
     "archive",

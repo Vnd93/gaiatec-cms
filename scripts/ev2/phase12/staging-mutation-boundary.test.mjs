@@ -17,6 +17,34 @@ test("staging watchdog classifier uses the exact workflow mutation boundary name
   assert.equal(workflow.split(marker).length - 1, 1);
 });
 
+test("an unstarted deploy skips finalization without approving a failed baseline or skipping watchdog proof", async () => {
+  const workflow = await readFile(
+    new URL("../../../.github/workflows/deploy-staging.yml", import.meta.url),
+    "utf8",
+  );
+  const finalizer = workflow.split("\n  finalize:")[1].split("\n  pipeline-metrics:")[0];
+  const browser = workflow.split("\n  browser_attestation:")[1].split("\n  evidence:")[0];
+  assert.ok(finalizer.includes("if: always() && !inputs.diagnostic_run && needs.deploy.result != 'skipped'"));
+  assert.ok(finalizer.includes("needs: [deploy, browser_attestation, evidence]"));
+  assert.ok(finalizer.includes("Classify the staging mutation boundary without trusting an empty output"));
+  assert.ok(browser.includes("needs.deploy.result == 'success'"));
+  // GitHub's trusted job result, not empty outputs, prevents an unstarted lane from
+  // reaching recovery. The separate watchdog still requires exactly zero steps.
+  assert.equal(
+    classifyStagingWatchdogParent(parentJobs({ deployConclusion: "skipped" })).recoveryRequired,
+    false,
+  );
+  assert.equal(
+    classifyStagingWatchdogParent({ jobs: [{ name: "deploy", conclusion: "skipped" }] }).recoveryRequired,
+    true,
+  );
+  for (const deployResult of ["success", "failure", "cancelled"])
+    assert.equal(
+      classifyStagingMutationBoundary({ deployResult, armed: "true", boundaryOutcome: "success" }),
+      "armed",
+    );
+});
+
 test("staging mutation boundary accepts only consistent armed and pre-mutation states", () => {
   for (const deployResult of ["success", "failure", "cancelled"])
     assert.equal(

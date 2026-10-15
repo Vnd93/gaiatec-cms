@@ -3340,8 +3340,10 @@ jobs:
 
   finalize:
     # O finalizador compensa mutacoes do run canonico. Em diagnostico nao ha mutacao para compensar.
+    # A trusted skipped job never entered the mutation lane. Keep the rejected run failed;
+    # the independent watchdog still confirms the unstarted deploy has exactly zero steps.
     needs: [deploy, browser_attestation, evidence]
-    if: always() && !inputs.diagnostic_run
+    if: always() && !inputs.diagnostic_run && needs.deploy.result != 'skipped'
     runs-on: ubuntu-latest
     timeout-minutes: 180
     environment: staging

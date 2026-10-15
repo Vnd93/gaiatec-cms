@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   CatalogWorkspaceCommandSchema,
   catalogProductDiff,
@@ -89,6 +89,7 @@ export default function AdminCatalogWorkspacePage() {
   const [replacementId, setReplacementId] = useState("");
   const [sourceRevision, setSourceRevision] = useState(1);
   const [history, setHistory] = useState<Awaited<ReturnType<typeof readCatalogProductHistory>>>([]);
+  const historyRequest = useRef(0);
   const [unknownOutcome, setUnknownOutcome] = useState(false);
   const [editorialDirty, setEditorialDirty] = useState(false);
   const [relationKind, setRelationKind] =
@@ -120,6 +121,7 @@ export default function AdminCatalogWorkspacePage() {
       });
     return () => {
       cancelled = true;
+      historyRequest.current += 1;
     };
   }, [canRead, sessionIdentity]);
   const edit = workspace?.enabled && workspace.permissions.edit;
@@ -211,7 +213,7 @@ export default function AdminCatalogWorkspacePage() {
     setDraft(item);
     setBase(item);
     setConflict(null);
-    setHistory([]);
+    clearProductHistory();
     setError("");
   }
   function refreshSelected(value: CatalogWorkspace) {
@@ -219,6 +221,21 @@ export default function AdminCatalogWorkspacePage() {
     if (next) {
       setDraft(next);
       setBase(next);
+      clearProductHistory();
+    }
+  }
+  function clearProductHistory() {
+    historyRequest.current += 1;
+    setHistory([]);
+    setSourceRevision(1);
+  }
+  async function loadProductHistory(id: string) {
+    const request = ++historyRequest.current;
+    try {
+      const result = await readCatalogProductHistory(id);
+      if (request === historyRequest.current) setHistory(result);
+    } catch {
+      if (request === historyRequest.current) setError("Não foi possível carregar o histórico.");
     }
   }
   function saveProduct(event: FormEvent) {
@@ -362,6 +379,7 @@ export default function AdminCatalogWorkspacePage() {
                         setDraft(blankProduct());
                         setBase(null);
                         setConflict(null);
+                        clearProductHistory();
                       }}
                     >
                       Novo produto
@@ -532,15 +550,7 @@ export default function AdminCatalogWorkspacePage() {
                     </section>
                   )}
                   {base && (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() =>
-                        void readCatalogProductHistory(base.id)
-                          .then(setHistory)
-                          .catch(() => setError("Não foi possível carregar o histórico."))
-                      }
-                    >
+                    <button type="button" disabled={busy} onClick={() => void loadProductHistory(base.id)}>
                       Consultar histórico imutável
                     </button>
                   )}

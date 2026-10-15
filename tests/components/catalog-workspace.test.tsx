@@ -1,8 +1,8 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mock = vi.hoisted(() => ({ read: vi.fn(), execute: vi.fn() }));
+const mock = vi.hoisted(() => ({ read: vi.fn(), execute: vi.fn(), history: vi.fn() }));
 vi.mock("@/admin/auth/AdminAuthContext", () => ({
   useAdminAuth: () => ({
     session: { user: { id: "fixture" } },
@@ -14,6 +14,7 @@ vi.mock("@/admin/api/catalog-workspace-api", async (original) => ({
   ...(await original<typeof import("@/admin/api/catalog-workspace-api")>()),
   readCatalogWorkspace: mock.read,
   executeCatalogWorkspaceCommand: mock.execute,
+  readCatalogProductHistory: mock.history,
 }));
 import AdminCatalogWorkspacePage from "@/admin/pages/AdminCatalogWorkspacePage";
 import { CatalogWorkspaceError } from "@/admin/api/catalog-workspace-api";
@@ -49,8 +50,45 @@ function mount() {
 beforeEach(() => {
   mock.read.mockReset().mockResolvedValue(workspace);
   mock.execute.mockReset().mockResolvedValue(undefined);
+  mock.history.mockReset().mockResolvedValue([]);
 });
 describe("catalog workspace user flows", () => {
+  it("clears the previous product history when starting a new product", async () => {
+    mock.history.mockResolvedValue([{ revision: 1, state: product, changedAt: "2026-10-15T00:00:00Z" }]);
+    const user = userEvent.setup();
+    mount();
+    await user.click(await screen.findByRole("button", { name: /Original product · Rascunho/ }));
+    await user.click(screen.getByRole("button", { name: "Consultar histórico imutável" }));
+    await screen.findByRole("list", { name: "Histórico do produto" });
+    await user.click(screen.getByRole("button", { name: "Novo produto" }));
+    expect(screen.queryByRole("list", { name: "Histórico do produto" })).not.toBeInTheDocument();
+  });
+  it.each(["new", "other"])(
+    "ignores a late history response after selecting %s product",
+    async (selection) => {
+      const other = { ...product, id: "c0110000-0000-4000-8000-000000000021", title: "Other product" };
+      mock.read.mockResolvedValue({ ...workspace, products: [product, other] });
+      let resolveHistory!: (value: unknown) => void;
+      mock.history.mockReturnValue(
+        new Promise((resolve) => {
+          resolveHistory = resolve;
+        }),
+      );
+      const user = userEvent.setup();
+      mount();
+      await user.click(await screen.findByRole("button", { name: /Original product · Rascunho/ }));
+      await user.click(screen.getByRole("button", { name: "Consultar histórico imutável" }));
+      await user.click(
+        screen.getByRole("button", {
+          name: selection === "new" ? "Novo produto" : /Other product · Rascunho/,
+        }),
+      );
+      await act(async () =>
+        resolveHistory([{ revision: 1, state: product, changedAt: "2026-10-15T00:00:00Z" }]),
+      );
+      expect(screen.queryByRole("list", { name: "Histórico do produto" })).not.toBeInTheDocument();
+    },
+  );
   it.each(["", "Invalid Slug", "-invalid", "invalid-", "invalid--slug", "invalid/slug"])(
     "does not submit an invalid manual slug %j",
     async (slug) => {

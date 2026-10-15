@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { observeSearchDependency } from "./search-dependency-trace.ts";
+import { mediaDependencyTransport } from "./media-dependency-transport.ts";
 import { boundedFetch, isEdgeFetchTimeout } from "../_shared/cms-edge-fetch.ts";
 import { containsInternalProductValue, sanitizePublicPayload, sanitizePublicSeo } from "../_shared/cms-public-projection.ts";
 import { resolveMediaAssets } from "../_shared/cms-media-resolution.ts";
@@ -230,8 +231,9 @@ const handleRequest = async (req: Request) => {
     // add 1/2/4 second backoffs outside the Worker's unchanged five-second ceiling.
     db: { retry: false },
     global: { fetch: boundedFetch(PUBLIC_UPSTREAM_TIMEOUT_MS,
-      postReadTransport(req, environment, Deno.env.get("CMS_RELEASE_SHA"),
-        formReadTransport(req, environment, Deno.env.get("CMS_RELEASE_SHA"))), true) },
+      mediaDependencyTransport(req, environment, Deno.env.get("CMS_RELEASE_SHA"),
+        postReadTransport(req, environment, Deno.env.get("CMS_RELEASE_SHA"),
+          formReadTransport(req, environment, Deno.env.get("CMS_RELEASE_SHA")))), true) },
     auth: { persistSession: false },
   });
   const publicEndpoint = `${supabaseUrl}/functions/v1/cms-public`;

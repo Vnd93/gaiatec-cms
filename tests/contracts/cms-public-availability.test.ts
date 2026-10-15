@@ -149,7 +149,7 @@ describe("cms-public availability contract", () => {
     expect(publicApi).toContain("const PUBLIC_UPSTREAM_TIMEOUT_MS = 900");
     expect(publicApi).toContain("fetch: boundedFetch(PUBLIC_UPSTREAM_TIMEOUT_MS,");
     expect(publicApi).toContain(
-      'formReadTransport(req, environment, Deno.env.get("CMS_RELEASE_SHA"))), true)',
+      'formReadTransport(req, environment, Deno.env.get("CMS_RELEASE_SHA")))), true)',
     );
     expect(transport).toContain('url.origin !== "https://glcqsosxwgmlhzgcsnzv.supabase.co"');
     expect(transport).toContain('url.pathname !== "/rest/v1/rpc/cms_public_form_scoped"');

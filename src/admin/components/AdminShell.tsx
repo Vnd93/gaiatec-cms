@@ -141,7 +141,7 @@ export function AdminShell() {
 
   return (
     <div className="admin-app" data-admin-surface data-sidebar-collapsed={sidebarCollapsed}>
-      <a className="admin-skip-link" href="#admin-main">
+      <a className="admin-skip-link" href="#admin-main" onClick={() => main.current?.focus()}>
         Ir para o conteúdo principal
       </a>
       <header className="admin-mobile-bar">
@@ -266,7 +266,7 @@ export function AdminShell() {
         </div>
       </aside>
 
-      <main ref={main} className="admin-main" id="admin-main">
+      <main ref={main} className="admin-main" id="admin-main" tabIndex={-1}>
         <nav className="admin-breadcrumbs" aria-label="Caminho da página">
           <ol>
             {breadcrumbs.map((breadcrumb, index) => (

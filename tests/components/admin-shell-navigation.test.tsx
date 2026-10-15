@@ -34,6 +34,28 @@ describe("shell administrativo achatado", () => {
     authState.permissions = ["cms:products.read", "cms:posts.read", "cms:pages.read"];
   });
 
+  it("move o foco para o conteúdo principal ao acionar o atalho com teclado", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin" element={<AdminShell />}>
+            <Route index element={<Destination />} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const skip = screen.getByRole("link", { name: "Ir para o conteúdo principal" });
+    skip.focus();
+    await user.keyboard("{Enter}");
+
+    const main = screen.getByRole("main");
+    expect(main).toHaveAttribute("tabindex", "-1");
+    expect(main).toHaveFocus();
+    expect(skip).toHaveAttribute("href", "#admin-main");
+  });
+
   it("recolhe e expande a sidebar preservando a preferência", async () => {
     const user = userEvent.setup();
     render(

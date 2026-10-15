@@ -2,6 +2,7 @@ import type { Page, Request, Response } from "@playwright/test";
 import { describe, expect, it, vi } from "vitest";
 import {
   observePublicPageRender,
+  publicRenderDomState,
   publicRenderErrorCategory,
   publicRenderState,
 } from "../e2e/public-render-diagnostics";
@@ -30,6 +31,70 @@ const request = (path = "/sobre", origin = "https://glcqsosxwgmlhzgcsnzv.supabas
   }) as Request;
 
 describe("public rendering diagnostics", () => {
+  it("records fixed DOM states without reading content and preserves an unobservable state as null", async () => {
+    const visible = (value: boolean | null) => ({
+      first() {
+        return this;
+      },
+      async isVisible() {
+        if (value === null) throw new Error("closed page with private details");
+        return value;
+      },
+    });
+    const states = await publicRenderDomState({
+      locator: (selector: string) =>
+        visible(selector === "main" ? true : selector.includes("data-route-loading") ? null : false),
+      getByRole: () => visible(false),
+    } as unknown as Pick<Page, "locator" | "getByRole">);
+    expect(states).toEqual({
+      mainVisible: true,
+      headingVisible: false,
+      lazyRoutePending: null,
+      routeBusy: false,
+      discoveryUnavailable: false,
+      loading: false,
+      unavailable: false,
+      notFound: false,
+    });
+    expect(JSON.stringify(states)).not.toMatch(/private|closed|selector/);
+  });
+  it("retains pending module counts even when the bounded event buffer fills", () => {
+    const fake = fakePage();
+    const recorder = observePublicPageRender(fake.page, "/industrias");
+    const module = {
+      method: () => "GET",
+      url: () =>
+        "https://ev2-g17-canary.gaiatec-cms-staging.pages.dev/assets/private-name.js?secret=never-record",
+    };
+    fake.emit("request", module);
+    fake.emit("response", { request: () => module, status: () => 200 });
+    for (let index = 0; index < 20; index++) fake.emit("pageerror", new Error("private"));
+    expect(recorder.snapshot()).toMatchObject({ moduleReadPending: 1 });
+    fake.emit("requestfinished", module);
+    expect(recorder.snapshot()).toMatchObject({ moduleReadPending: 0 });
+    fake.emit("request", module);
+    fake.emit("requestfailed", module);
+    expect(recorder.snapshot()).toMatchObject({ moduleReadPending: 0 });
+    expect(JSON.stringify(recorder.snapshot())).not.toMatch(/private-name|secret|never-record/);
+    recorder.dispose();
+  });
+  it("observes only the exact collection type for a static public route", () => {
+    const fake = fakePage();
+    const recorder = observePublicPageRender(fake.page, "/industrias");
+    const collection = (kind: string) => ({
+      method: () => "GET",
+      url: () =>
+        `https://glcqsosxwgmlhzgcsnzv.supabase.co/functions/v1/cms-public?type=collection&contentType=${kind}&q=never-record`,
+    });
+    fake.emit("request", collection("service"));
+    expect(recorder.snapshot().pageReadPending).toBe(false);
+    const industry = collection("industry");
+    fake.emit("request", industry);
+    expect(recorder.snapshot().pageReadPending).toBe(true);
+    fake.emit("requestfinished", industry);
+    expect(recorder.snapshot().pageReadPending).toBe(false);
+    recorder.dispose();
+  });
   it("tracks exact discovery reads and their pending body without exposing query data", () => {
     const fake = fakePage();
     const recorder = observePublicPageRender(fake.page, "/industrias/protecao-catodica", () => 10);

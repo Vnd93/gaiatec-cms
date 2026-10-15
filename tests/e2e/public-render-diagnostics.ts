@@ -9,8 +9,39 @@ export async function publicRenderState(locator: Pick<Locator, "isVisible">) {
   }
 }
 
+/** Only fixed boolean UI states; no text, HTML, inputs, identifiers or credentials. */
+export async function publicRenderDomState(page: Pick<Page, "locator" | "getByRole">) {
+  return {
+    mainVisible: await publicRenderState(page.locator("main").first()),
+    headingVisible: await publicRenderState(page.locator("main h1").first()),
+    lazyRoutePending: await publicRenderState(page.locator('main [data-route-loading="true"]').first()),
+    routeBusy: await publicRenderState(page.locator('main [aria-busy="true"]').first()),
+    discoveryUnavailable: await publicRenderState(
+      page.getByRole("heading", { name: "Conteúdo indisponível", exact: true }),
+    ),
+    loading: await publicRenderState(page.locator('.cms-managed-page__loading[aria-busy="true"]')),
+    unavailable: await publicRenderState(
+      page.getByRole("heading", { name: "Não foi possível carregar a publicação segura", exact: true }),
+    ),
+    notFound: await publicRenderState(
+      page.getByRole("heading", { name: "Não encontramos o conteúdo solicitado", exact: true }),
+    ),
+  };
+}
+
 const ROUTES = new Set([
   "/",
+  "/produtos",
+  "/servicos",
+  "/industrias",
+  "/aplicacoes",
+  "/solucoes",
+  "/contato",
+  "/blog",
+  "/campanhas/campanha-sintetica-inexistente",
+  "/relatorio-de-obra/login",
+  "/admin/login",
+  "/admin/recuperar-senha",
   "/sobre",
   "/politica-de-privacidade",
   "/biodigestor",
@@ -54,6 +85,7 @@ export function observePublicPageRender(
   const starts = new WeakMap<Request, number>();
   let dropped = 0;
   const pendingReads = new Set<Request>();
+  const pendingModules = new Set<Request>();
   const append = (event: Record<string, string | number | null>) => {
     if (events.length < 12) events.push(event);
     else dropped++;
@@ -70,6 +102,11 @@ export function observePublicPageRender(
       if (!firstPartyRead) return false;
       if (url.searchParams.get("type") === "page-by-path") return url.searchParams.get("path") === path;
       const [, prefix, slug, extra] = path.split("/");
+      if (!slug && DISCOVERY_PREFIXES[prefix])
+        return (
+          url.searchParams.get("type") === "collection" &&
+          url.searchParams.get("contentType") === DISCOVERY_PREFIXES[prefix]
+        );
       return (
         !extra &&
         !!slug &&
@@ -104,6 +141,7 @@ export function observePublicPageRender(
   const request = (value: Request) => {
     if (matches(value) || isModule(value)) starts.set(value, clock());
     if (matches(value)) pendingReads.add(value);
+    if (isModule(value)) pendingModules.add(value);
   };
   const response = (value: Response) => {
     const upstream = value.request();
@@ -118,12 +156,15 @@ export function observePublicPageRender(
   };
   const failed = (value: Request) => {
     pendingReads.delete(value);
+    pendingModules.delete(value);
     if (matches(value)) append({ event: "page-read-transport-failed", elapsedMs: elapsed(value) });
     else if (isModule(value)) append({ event: "module-read-transport-failed", elapsedMs: elapsed(value) });
   };
   const finished = (value: Request) => {
     pendingReads.delete(value);
+    pendingModules.delete(value);
     if (matches(value)) append({ event: "page-read-finished", elapsedMs: elapsed(value) });
+    else if (isModule(value)) append({ event: "module-read-finished", elapsedMs: elapsed(value) });
   };
   const pageError = (value: Error) =>
     append({ event: "page-error", category: publicRenderErrorCategory(value.message) });
@@ -140,6 +181,7 @@ export function observePublicPageRender(
       events: [...events],
       dropped,
       pageReadPending: pendingReads.size > 0,
+      moduleReadPending: pendingModules.size,
     }),
     dispose: () => {
       page.off("request", request);

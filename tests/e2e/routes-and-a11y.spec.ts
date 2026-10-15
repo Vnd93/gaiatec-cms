@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 import { mockCmsPublicFallbacks } from "./cms-public-mock";
 import { type ConsoleEntry, relevantConsoleErrors } from "./console-origins";
 import { publicDocumentFailureDiagnostic } from "./public-document-diagnostics";
-import { observePublicPageRender, publicRenderState } from "./public-render-diagnostics";
+import { observePublicPageRender, publicRenderDomState } from "./public-render-diagnostics";
 
 test.beforeEach(async ({ page, baseURL }) => {
   if (!baseURL?.includes("pages.dev")) await mockCmsPublicFallbacks(page);
@@ -33,22 +33,32 @@ for (const route of routes) {
       }
     });
 
-    const response = await page.goto(route.path, { waitUntil: "load" });
-    const edgeRuntime = Boolean(process.env.PLAYWRIGHT_EDGE || baseURL?.includes("pages.dev"));
-    const expectedStatus =
-      edgeRuntime && "edgeStatus" in route ? (route.edgeStatus ?? route.status) : route.status;
-    expect(response?.status()).toBe(expectedStatus);
-    await expect(page.locator("h1").first()).toBeVisible();
-    expect(await page.locator("body").evaluate((body) => body.scrollWidth <= body.clientWidth + 1)).toBe(
-      true,
-    );
-    // Erro de origem de terceiro declarada nao reprova; erro de primeira parte reprova sempre.
-    const consoleErrors = relevantConsoleErrors(consoleEntries);
-    const unexpectedConsoleErrors =
-      expectedStatus >= 400
-        ? consoleErrors.filter((message) => !message.endsWith(`@ ${page.url()}`))
-        : consoleErrors;
-    expect(unexpectedConsoleErrors).toEqual([]);
+    const render = observePublicPageRender(page, route.path);
+    try {
+      const response = await page.goto(route.path, { waitUntil: "load" });
+      const edgeRuntime = Boolean(process.env.PLAYWRIGHT_EDGE || baseURL?.includes("pages.dev"));
+      const expectedStatus =
+        edgeRuntime && "edgeStatus" in route ? (route.edgeStatus ?? route.status) : route.status;
+      expect(response?.status()).toBe(expectedStatus);
+      await expect(page.locator("h1").first()).toBeVisible();
+      expect(await page.locator("body").evaluate((body) => body.scrollWidth <= body.clientWidth + 1)).toBe(
+        true,
+      );
+      // Erro de origem de terceiro declarada nao reprova; erro de primeira parte reprova sempre.
+      const consoleErrors = relevantConsoleErrors(consoleEntries);
+      const unexpectedConsoleErrors =
+        expectedStatus >= 400
+          ? consoleErrors.filter((message) => !message.endsWith(`@ ${page.url()}`))
+          : consoleErrors;
+      expect(unexpectedConsoleErrors).toEqual([]);
+    } catch (error) {
+      throw new Error(
+        `Public smoke failed; ${JSON.stringify({ ...render.snapshot(), states: await publicRenderDomState(page) })}`,
+        { cause: error },
+      );
+    } finally {
+      render.dispose();
+    }
   });
 }
 
@@ -128,19 +138,7 @@ test("staging exposes the clean-room launch projection", async ({ page, baseURL 
           true,
         );
       } catch (error) {
-        const states = {
-          routeBusy: await publicRenderState(page.locator('main [aria-busy="true"]').first()),
-          discoveryUnavailable: await publicRenderState(
-            page.getByRole("heading", { name: "Conteúdo indisponível", exact: true }),
-          ),
-          loading: await publicRenderState(page.locator('.cms-managed-page__loading[aria-busy="true"]')),
-          unavailable: await publicRenderState(
-            page.getByRole("heading", { name: "Não foi possível carregar a publicação segura", exact: true }),
-          ),
-          notFound: await publicRenderState(
-            page.getByRole("heading", { name: "Não encontramos o conteúdo solicitado", exact: true }),
-          ),
-        };
+        const states = await publicRenderDomState(page);
         throw new Error(`Launch projection failed; ${JSON.stringify({ ...render.snapshot(), states })}`, {
           cause: error,
         });

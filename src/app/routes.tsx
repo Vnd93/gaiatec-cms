@@ -2,6 +2,7 @@
 import { lazy, Suspense } from "react";
 import { createBrowserRouter, Navigate, Outlet } from "react-router";
 import { Layout } from "./components/Layout";
+import { PageLoader } from "./components/PageLoader";
 import { AuthProvider } from "./rdo/AuthContext";
 import { RequireAuth } from "./rdo/RequireAuth";
 import { AdminAuthProvider } from "../admin/auth/AdminAuthContext";
@@ -77,15 +78,6 @@ const CmsPublishedPage = lazy(() => import("../admin/pages/CmsPublishedPage"));
 const CmsManagedPageRoute = lazy(() =>
   import("../public/pages/CmsManagedPageRoute").then((module) => ({ default: module.CmsManagedPageRoute })),
 );
-
-// Loader minimalista — não bloqueia o paint
-function PageLoader() {
-  return (
-    <div className="min-h-[60vh] flex items-center justify-center">
-      <div className="w-8 h-8 border-2 border-[#0057DE]/20 border-t-[#0057DE] rounded-full animate-spin" />
-    </div>
-  );
-}
 
 // Wrapper Suspense para rotas lazy
 const lazyWrap = (Component: React.ComponentType) => (

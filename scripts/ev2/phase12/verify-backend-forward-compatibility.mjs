@@ -51,6 +51,12 @@ for (const migration of additions) {
 }
 
 const compatibilityTests = {
+  "0122": [
+    "supabase/tests/rls_catalog_qa_repeat_cycles.test.sql",
+    "supabase/tests/rls_catalog_qa_durable_recovery.test.sql",
+    "tests/contracts/catalog-qa-repeat-cycles.test.ts",
+    "scripts/ev2/phase12/catalog-recovery-preflight.test.mjs",
+  ],
   "0121": [
     "supabase/tests/rls_cms_qa_service_vocabulary.test.sql",
     "supabase/tests/rls_cms_qa_service_legacy_scope.test.sql",

@@ -19,6 +19,13 @@ test("recovery preflight requires private ACL, committed preparation, PID and al
     "count(*)=6",
     "t.tgenabled='O'",
     "zzy_catalog_durable_terminal_recovery",
+    "cms_catalog_qa_recovery_open_cycle_uidx",
+    "cms_catalog_qa_recovery_actor_once_uidx",
+    "i.indisunique and i.indisvalid and i.indisready",
+    "a.actor_id=old.actor_id",
+    "a.lease_created_at=old.created_at",
+    "a.lease_expires_at=old.expires_at",
+    "cms_catalog_recovery_terminal_binding_mismatch",
   ]) {
     assert.ok(sql.includes(boundary), boundary);
   }
